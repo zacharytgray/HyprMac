@@ -98,13 +98,48 @@ Hypr+N pressed:
 - **App exclusions**: Quick Look windows are excluded from tiling by bundle ID filter in AccessibilityManager.
 
 ## File Structure
-- `HyprMac/App/` — SwiftUI app entry, AppDelegate (permissions, KeyRemapper setup), menubar with workspace indicators
-- `HyprMac/Core/` — All managers (workspace, hotkey, accessibility, space, display, cursor, app launcher, key remapper)
-- `HyprMac/Tiling/` — BSP node/tree (dwindle layout, smart insert, split ratio adjustment) and tiling engine
-- `HyprMac/Models/` — HyprWindow (setFrame, focus), Keybind, Action, UserConfig
-- `HyprMac/PrivateAPI/` — C headers for undocumented CGS functions
-- `HyprMac/Settings/` — SwiftUI settings views (general, keybinds, app launcher, tiling)
-- `docs/` — Internal notes (desktop-switching-notes.md)
+```
+HyprMac/
+├── project.yml                    # XcodeGen project spec
+├── scripts/run-debug.sh           # Build & run for development
+├── docs/
+│   └── desktop-switching-notes.md # Implementation notes for virtual workspaces
+├── HyprMac/
+│   ├── App/
+│   │   ├── HyprMacApp.swift       # @main — menubar + settings window
+│   │   ├── AppDelegate.swift      # Permission flow, key remap, starts WindowManager
+│   │   └── MenuBarView.swift      # Menubar popover UI + workspace indicators
+│   ├── Core/
+│   │   ├── WindowManager.swift    # Central orchestrator — actions, polling, drag-swap, mouse
+│   │   ├── WorkspaceManager.swift # Virtual workspaces — hide/show, home screen tracking
+│   │   ├── HotkeyManager.swift    # CGEventTap — intercepts F18 combos
+│   │   ├── AccessibilityManager.swift  # AXUIElement — single-pass window ID matching
+│   │   ├── SpaceManager.swift     # macOS Spaces via private CGS APIs (enumeration only)
+│   │   ├── DisplayManager.swift   # Multi-monitor tracking + coordinate conversion
+│   │   ├── CursorManager.swift    # Mouse warp to focused window
+│   │   ├── AppLauncherManager.swift  # NSWorkspace app launch/focus
+│   │   └── KeyRemapper.swift      # hidutil Caps Lock → F18 remap
+│   ├── Tiling/
+│   │   ├── BSPNode.swift          # BSP node — dwindle layout, togglesplit, depth tracking
+│   │   ├── BSPTree.swift          # BSP tree — smart insert, split ratio adjustment, swap
+│   │   └── TilingEngine.swift     # Per-(workspace, screen) tiling, two-pass layout, auto-float
+│   ├── Models/
+│   │   ├── HyprWindow.swift       # Window model — setFrame (resize-move-resize), focus
+│   │   ├── Keybind.swift          # Keybind model + default keybind table
+│   │   ├── Action.swift           # All possible actions enum
+│   │   └── UserConfig.swift       # Persisted JSON config
+│   ├── PrivateAPI/
+│   │   ├── CGSPrivate.h           # Private CoreGraphics function declarations
+│   │   └── HyprMac-Bridging-Header.h
+│   ├── Settings/
+│   │   ├── SettingsView.swift     # Tab view container
+│   │   ├── GeneralSettingsView.swift  # Enable toggle, focus-follows-mouse toggle
+│   │   ├── KeybindsSettingsView.swift # In-app keybind editor with key recording
+│   │   ├── AppLauncherSettingsView.swift  # App launcher editor with Finder picker
+│   │   └── TilingSettingsView.swift  # Gap/padding config with live preview
+│   └── Resources/
+│       └── Assets.xcassets
+```
 
 ## Default Keybinds (Caps Lock = Hypr key)
 | Hotkey | Action |
