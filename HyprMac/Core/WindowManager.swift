@@ -44,6 +44,9 @@ class WindowManager {
     private var mouseButtonDown = false
     private var lastMouseFocusedID: CGWindowID = 0
 
+    // suppress FFM while menu bar is active
+    private var menuBarTracking = false
+
     // suppress focus-follows-mouse briefly after keyboard actions
     private var suppressMouseFocusUntil: Date = .distantPast
 
@@ -106,6 +109,18 @@ class WindowManager {
         wsnc.addObserver(self, selector: #selector(appVisibilityChanged(_:)),
                          name: NSWorkspace.didUnhideApplicationNotification, object: nil)
 
+        // suppress FFM while any app's menu bar is active
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(menuTrackingBegan),
+            name: NSNotification.Name("com.apple.HIToolbox.beginMenuTrackingNotification"),
+            object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(menuTrackingEnded),
+            name: NSNotification.Name("com.apple.HIToolbox.endMenuTrackingNotification"),
+            object: nil
+        )
+
         NotificationCenter.default.addObserver(
             self, selector: #selector(retileRequested),
             name: .hyprMacRetile, object: nil
@@ -132,7 +147,16 @@ class WindowManager {
         hotkeyManager.stop()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         NotificationCenter.default.removeObserver(self)
+        DistributedNotificationCenter.default().removeObserver(self)
         print("[HyprMac] stopped")
+    }
+
+    @objc private func menuTrackingBegan(_ note: Notification) {
+        menuBarTracking = true
+    }
+
+    @objc private func menuTrackingEnded(_ note: Notification) {
+        menuBarTracking = false
     }
 
     func restart() {
@@ -167,11 +191,17 @@ class WindowManager {
     private func handleMouseMove() {
         guard config.focusFollowsMouse else { return }
         guard !mouseButtonDown else { return }
+        guard !menuBarTracking else { return }
         guard Date() > suppressMouseFocusUntil else { return }
 
         let mouseNS = NSEvent.mouseLocation
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+
+        // dead zone: menu bar region (~25px in CG top-left coords)
+        if cgY < 25 {
+            return
+        }
 
         for (wid, rect) in tiledPositions {
             if rect.contains(cgPoint) {
