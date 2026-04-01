@@ -108,6 +108,14 @@ HyprMac manages 9 global workspaces in userspace, bypassing macOS Spaces entirel
 
 Recommended: use a single macOS Space per monitor.
 
+## Updating
+
+- **Homebrew**: `brew upgrade --cask hyprmac`
+- **In-app**: HyprMac checks for updates automatically via Sparkle. You can also check manually from the menubar → "Check for Updates..."
+- **Manual**: Download the latest DMG from [GitHub Releases](https://github.com/zacharytgray/HyprMac/releases) and replace the app in `/Applications`
+
+After updating, you may need to re-grant Accessibility permission in System Settings since the binary signature changes.
+
 ## Known Limitations
 
 - **Floating window z-order flicker** — When you click a tiled window from a different app, floating windows may briefly dip behind tiled windows before popping back to the front. This is a macOS limitation: setting another process's window level requires SIP to be disabled (yabai solves this via Dock.app code injection; [AeroSpace has had an open issue](https://github.com/nikitabobko/AeroSpace/issues/4) for 2+ years with no SIP-compatible solution). HyprMac uses focus-without-raise (same SkyLight private APIs as yabai/Amethyst) for hover focus, and event-driven re-raise on app activation to keep floating windows on top. HyprMac's own settings window is unaffected since `NSWindow.level = .floating` works for in-process windows.
