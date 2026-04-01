@@ -1,11 +1,11 @@
 import Cocoa
 
 private struct TilingKey: Hashable {
-    let spaceID: CGSSpaceID
+    let workspace: Int
     let screenID: Int
 
-    init(space: CGSSpaceID, screen: NSScreen) {
-        self.spaceID = space
+    init(workspace: Int, screen: NSScreen) {
+        self.workspace = workspace
         self.screenID = Int(screen.frame.origin.x * 10000 + screen.frame.origin.y)
     }
 }
@@ -18,12 +18,9 @@ class TilingEngine {
     var outerPadding: CGFloat = 8
 
     // max BSP depth: 3 = eighth screen (full, half, quarter, eighth)
-    // each split adds 1 depth level
     var maxDepth: Int = 3
 
-    // minimum child dimension (px) for smart insert backtracking.
-    // if splitting a leaf would create children with either dimension below this,
-    // backtrack to a shallower leaf with more space.
+    // minimum child dimension (px) for smart insert backtracking
     var minSlotDimension: CGFloat = 500
 
     // callback when a window can't fit (exceeds max depth)
@@ -46,7 +43,6 @@ class TilingEngine {
         let actual: CGSize
     }
 
-    // apply layout, return windows that couldn't shrink to their allocated size
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)]) -> [MinSizeConflict] {
         var conflicts: [MinSizeConflict] = []
         for (window, frame) in layouts {
@@ -59,81 +55,71 @@ class TilingEngine {
         return conflicts
     }
 
-    // apply layout without readback (for the second pass after ratio adjustment)
     private func applyLayoutFinal(_ layouts: [(HyprWindow, CGRect)]) {
         for (window, frame) in layouts {
             window.setFrame(frame)
         }
     }
 
-    func tileWindows(_ windows: [HyprWindow], onSpace spaceID: CGSSpaceID) {
-        var windowsByScreen: [NSScreen: [HyprWindow]] = [:]
-        for window in windows {
-            guard !window.isFloating else { continue }
-            guard let screen = displayManager.screen(for: window) ?? displayManager.screens.first else { continue }
-            windowsByScreen[screen, default: []].append(window)
-        }
+    // tile windows for a workspace on a specific screen.
+    // screen is provided explicitly — don't trust window physical position (may be hidden in corner)
+    func tileWindows(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        let t = tree(for: key)
+        let rect = displayManager.cgRect(for: screen)
 
-        var activeKeys: Set<TilingKey> = []
+        let tileWindows = windows.filter { !$0.isFloating }
+        let treeWindows = t.allWindows
+        let currentIDs = Set(tileWindows.map { $0.windowID })
+        let treeIDs = Set(treeWindows.map { $0.windowID })
 
-        for (screen, screenWindows) in windowsByScreen {
-            let key = TilingKey(space: spaceID, screen: screen)
-            activeKeys.insert(key)
-            let t = tree(for: key)
-            let rect = displayManager.cgRect(for: screen)
+        // remove gone windows
+        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
 
-            let treeWindows = t.allWindows
-            let currentIDs = Set(screenWindows.map { $0.windowID })
-            let treeIDs = Set(treeWindows.map { $0.windowID })
-
-            // remove gone windows
-            for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
-
-            // add new windows — smart insert backtracks to shallower leaves
-            // when splitting the deepest-right would create too-small slots
-            for w in screenWindows where !treeIDs.contains(w.windowID) {
-                if !t.smartInsert(w, maxDepth: maxDepth, in: rect, gap: gapSize,
-                                  padding: outerPadding, minSlotDimension: minSlotDimension) {
-                    print("[HyprMac] max depth exceeded — auto-floating '\(w.title ?? "?")'")
-                    onAutoFloat?(w)
-                }
-            }
-
-            // reset ratios before layout so stale adjustments don't persist
-            t.root.resetSplitRatios()
-
-            // pass 1: layout + readback to detect min-size conflicts
-            let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
-            print("[HyprMac] tiling \(layouts.count) windows on screen \(Int(screen.frame.width))x\(Int(screen.frame.height))")
-            let conflicts = applyLayout(layouts)
-
-            if !conflicts.isEmpty {
-                // pass 2: adjust split ratios and re-layout
-                let mapped = conflicts.map { (window: $0.window, actual: $0.actual) }
-                t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
-                let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
-                for (window, frame) in adjusted {
-                    print("[HyprMac]   '\(window.title ?? "?")' → \(frame)")
-                }
-                applyLayoutFinal(adjusted)
-            } else {
-                for (window, frame) in layouts {
-                    print("[HyprMac]   '\(window.title ?? "?")' → \(frame)")
-                }
+        // add new windows via smart insert
+        for w in tileWindows where !treeIDs.contains(w.windowID) {
+            if !t.smartInsert(w, maxDepth: maxDepth, in: rect, gap: gapSize,
+                              padding: outerPadding, minSlotDimension: minSlotDimension) {
+                print("[HyprMac] max depth exceeded — auto-floating '\(w.title ?? "?")'")
+                onAutoFloat?(w)
             }
         }
 
-        for (key, t) in trees where key.spaceID == spaceID {
-            if !activeKeys.contains(key) && t.allWindows.isEmpty {
+        t.root.resetSplitRatios()
+
+        // pass 1: layout + readback
+        let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+        print("[HyprMac] tiling \(layouts.count) windows on workspace \(workspace) screen \(Int(screen.frame.width))x\(Int(screen.frame.height))")
+        let conflicts = applyLayout(layouts)
+
+        if !conflicts.isEmpty {
+            // pass 2: adjust ratios and re-layout
+            let mapped = conflicts.map { (window: $0.window, actual: $0.actual) }
+            t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
+            let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+            for (window, frame) in adjusted {
+                print("[HyprMac]   '\(window.title ?? "?")' → \(frame)")
+            }
+            applyLayoutFinal(adjusted)
+        } else {
+            for (window, frame) in layouts {
+                print("[HyprMac]   '\(window.title ?? "?")' → \(frame)")
+            }
+        }
+
+        // clean up empty trees for this workspace on other screens
+        for (key, t) in trees where key.workspace == workspace {
+            if !t.allWindows.isEmpty { continue }
+            if TilingKey(workspace: workspace, screen: screen) != key {
                 trees.removeValue(forKey: key)
             }
         }
     }
 
-    func addWindow(_ window: HyprWindow, toSpace spaceID: CGSSpaceID) {
+    // add a single window to the tree for its workspace+screen and retile
+    func addWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen) {
         guard !window.isFloating else { return }
-        guard let screen = displayManager.screen(for: window) ?? displayManager.screens.first else { return }
-        let key = TilingKey(space: spaceID, screen: screen)
+        let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
         if !t.contains(window) {
@@ -147,13 +133,16 @@ class TilingEngine {
         retile(key: key, screen: screen)
     }
 
-    func removeWindow(_ window: HyprWindow, fromSpace spaceID: CGSSpaceID) {
-        for screen in displayManager.screens {
-            let key = TilingKey(space: spaceID, screen: screen)
-            let t = tree(for: key)
+    func removeWindow(_ window: HyprWindow, fromWorkspace workspace: Int) {
+        // search all trees for this workspace
+        for (key, t) in trees where key.workspace == workspace {
             if t.contains(window) {
                 t.remove(window)
-                retile(key: key, screen: screen)
+                if let screen = displayManager.screens.first(where: {
+                    TilingKey(workspace: workspace, screen: $0) == key
+                }) {
+                    retile(key: key, screen: screen)
+                }
                 return
             }
         }
@@ -176,9 +165,8 @@ class TilingEngine {
         }
     }
 
-    func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onSpace spaceID: CGSSpaceID) {
-        guard let screen = displayManager.screen(for: a) ?? displayManager.screens.first else { return }
-        let key = TilingKey(space: spaceID, screen: screen)
+    func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {
+        let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         if t.contains(a) && t.contains(b) {
             t.swap(a, b)
@@ -202,32 +190,29 @@ class TilingEngine {
         if let nodeA = tA.root.find(a) { nodeA.window = b }
         if let nodeB = tB.root.find(b) { nodeB.window = a }
 
-        let screenA = displayManager.screens.first { TilingKey(space: kA.spaceID, screen: $0) == kA }
-        let screenB = displayManager.screens.first { TilingKey(space: kB.spaceID, screen: $0) == kB }
+        let screenA = displayManager.screens.first { TilingKey(workspace: kA.workspace, screen: $0) == kA }
+        let screenB = displayManager.screens.first { TilingKey(workspace: kB.workspace, screen: $0) == kB }
 
         if let sA = screenA { retile(key: kA, screen: sA) }
         if let sB = screenB { retile(key: kB, screen: sB) }
     }
 
-    func toggleSplit(_ window: HyprWindow, onSpace spaceID: CGSSpaceID) {
-        guard let screen = displayManager.screen(for: window) ?? displayManager.screens.first else { return }
-        let key = TilingKey(space: spaceID, screen: screen)
+    func toggleSplit(_ window: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {
+        let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
         t.toggleSplit(for: window, in: rect, gap: gapSize, padding: outerPadding)
         retile(key: key, screen: screen)
     }
 
-    // check if a screen's tree has room for another window (matches smart insert logic)
-    func canFitWindow(onSpace spaceID: CGSSpaceID, screen: NSScreen) -> Bool {
-        let key = TilingKey(space: spaceID, screen: screen)
+    func canFitWindow(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+        let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         if t.root.isEmpty { return true }
 
         let rect = displayManager.cgRect(for: screen)
         let leaves = t.root.allLeavesRightToLeft()
 
-        // check if any leaf below maxDepth can accommodate a split
         for leaf in leaves {
             guard leaf.depth < maxDepth else { continue }
             guard let leafRect = t.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
@@ -242,28 +227,23 @@ class TilingEngine {
             if childMin >= minSlotDimension { return true }
         }
 
-        // fallback: any leaf below maxDepth at all (smart insert has a fallback too)
         return leaves.contains { $0.depth < maxDepth }
     }
 
-    // force-insert a window, evicting the most recent window if tree is full.
-    // returns the evicted window or nil.
-    func forceInsertWindow(_ window: HyprWindow, toSpace spaceID: CGSSpaceID) -> HyprWindow? {
-        guard let screen = displayManager.screen(for: window) ?? displayManager.screens.first else { return nil }
-        let key = TilingKey(space: spaceID, screen: screen)
+    // force-insert a window on an explicit screen, evicting deepest-right if full
+    func forceInsertWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen) -> HyprWindow? {
+        let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
 
         if t.contains(window) { return nil }
 
-        // try smart insert
         if t.smartInsert(window, maxDepth: maxDepth, in: rect, gap: gapSize,
                          padding: outerPadding, minSlotDimension: minSlotDimension) {
             retile(key: key, screen: screen)
             return nil
         }
 
-        // tree full — evict deepest-right (most recent) window to make room
         guard let evicted = t.deepestRightLeafWindow() else { return nil }
         t.remove(evicted)
 
@@ -273,18 +253,8 @@ class TilingEngine {
             return evicted
         }
 
-        // shouldn't happen — restore
         _ = t.insert(evicted, maxDepth: maxDepth)
         retile(key: key, screen: screen)
         return nil
-    }
-
-    func toggleFloating(_ window: HyprWindow, space spaceID: CGSSpaceID) {
-        window.isFloating.toggle()
-        if window.isFloating {
-            removeWindow(window, fromSpace: spaceID)
-        } else {
-            addWindow(window, toSpace: spaceID)
-        }
     }
 }

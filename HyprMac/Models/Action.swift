@@ -9,6 +9,7 @@ enum Action: Equatable {
     case swapDirection(Direction)
     case switchDesktop(Int)
     case moveToDesktop(Int)
+    case moveWorkspaceToMonitor(Direction)  // move current workspace to adjacent monitor
     case toggleFloating
     case toggleSplit
     case launchApp(bundleID: String)

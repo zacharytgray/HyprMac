@@ -17,6 +17,7 @@
 		33D18D1F45F3CB1C3E2FDA03 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06CFE0CDB28ECDC9411EEB1 /* HotkeyManager.swift */; };
 		3C05D5F0C1395F04AAC506A7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EC19E9DB53B109940984B5D5 /* Assets.xcassets */; };
 		3D84219CDFABCE2B2019F0DC /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913F7521CBE5FF04365D18D8 /* SpaceManager.swift */; };
+		42778D615628483A357572DF /* WorkspaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */; };
 		440732216A02AA6BC39588CC /* AppLauncherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */; };
 		498931AB0DE01FD760A0C1DC /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */; };
 		9C6752FADA9267F639122F68 /* AppLauncherSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */; };
@@ -46,6 +47,7 @@
 		593D96A7340421A4588DE5D5 /* DisplayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayManager.swift; sourceTree = "<group>"; };
 		6E4E656D3CA021B130775CC3 /* Keybind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keybind.swift; sourceTree = "<group>"; };
 		772FFAF897AAC136F605737C /* TilingSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingSettingsView.swift; sourceTree = "<group>"; };
+		8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManager.swift; sourceTree = "<group>"; };
 		8B20DF87F29CD5B1164F1E80 /* Action.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Action.swift; sourceTree = "<group>"; };
 		8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityManager.swift; sourceTree = "<group>"; };
@@ -103,6 +105,7 @@
 				F24369A83C38C9C3757A23FB /* KeyRemapper.swift */,
 				913F7521CBE5FF04365D18D8 /* SpaceManager.swift */,
 				2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */,
+				8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */,
 			);
 			path = Core;
 			sourceTree = "<group>";
@@ -267,6 +270,7 @@
 				F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */,
 				9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */,
 				DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */,
+				42778D615628483A357572DF /* WorkspaceManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -14,6 +14,7 @@ struct Keybind: Codable, Equatable, Identifiable {
         case swapDirection(String)
         case switchDesktop(Int)
         case moveToDesktop(Int)
+        case moveWorkspaceToMonitor(String)
         case toggleFloating
         case toggleSplit
         case launchApp(bundleID: String)
@@ -24,6 +25,7 @@ struct Keybind: Codable, Equatable, Identifiable {
             case .swapDirection(let d): return .swapDirection(Direction(rawValue: d)!)
             case .switchDesktop(let n): return .switchDesktop(n)
             case .moveToDesktop(let n): return .moveToDesktop(n)
+            case .moveWorkspaceToMonitor(let d): return .moveWorkspaceToMonitor(Direction(rawValue: d)!)
             case .toggleFloating: return .toggleFloating
             case .toggleSplit: return .toggleSplit
             case .launchApp(let b): return .launchApp(bundleID: b)
@@ -101,6 +103,12 @@ extension Keybind {
             binds.append(Keybind(keyCode: key, modifiers: [.hypr, .shift],
                                  action: .moveToDesktop(i + 1)))
         }
+
+        // hypr + ctrl + left/right: move current workspace to adjacent monitor
+        binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .control],
+                             action: .moveWorkspaceToMonitor("left")))
+        binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: [.hypr, .control],
+                             action: .moveWorkspaceToMonitor("right")))
 
         // hypr + shift + t: toggle floating
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_T), modifiers: [.hypr, .shift],

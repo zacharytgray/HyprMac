@@ -79,6 +79,7 @@ extension Keybind {
         case .swapDirection(let d): return "Swap \(d)"
         case .switchDesktop(let n): return "Switch to Desktop \(n)"
         case .moveToDesktop(let n): return "Move to Desktop \(n)"
+        case .moveWorkspaceToMonitor(let d): return "Move Workspace \(d)"
         case .toggleFloating: return "Toggle Floating"
         case .toggleSplit: return "Toggle Split"
         case .launchApp(let b): return "Launch \(b)"
