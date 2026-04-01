@@ -74,15 +74,24 @@ class TilingEngine {
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
         // remove gone windows
+        let removedAny = treeWindows.contains { !currentIDs.contains($0.windowID) }
         for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
 
         // add new windows via smart insert
+        var addedAny = false
         for w in tileWindows where !treeIDs.contains(w.windowID) {
             if !t.smartInsert(w, maxDepth: maxDepth, in: rect, gap: gapSize,
                               padding: outerPadding, minSlotDimension: minSlotDimension) {
                 print("[HyprMac] max depth exceeded — auto-floating '\(w.title ?? "?")'")
                 onAutoFloat?(w)
+            } else {
+                addedAny = true
             }
+        }
+
+        // structural change — clear user-set ratios so layout resets to even splits
+        if removedAny || addedAny {
+            t.root.clearUserSetRatios()
         }
 
         t.root.resetSplitRatios()
@@ -163,6 +172,16 @@ class TilingEngine {
             let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
             applyLayoutFinal(adjusted)
         }
+    }
+
+    // apply a manual resize: update split ratios from the new frame, then retile
+    func applyResize(_ window: HyprWindow, newFrame: CGRect, onWorkspace workspace: Int, screen: NSScreen) {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        let t = tree(for: key)
+        let rect = displayManager.cgRect(for: screen)
+
+        t.applyResizeDelta(for: window, newFrame: newFrame, in: rect, gap: gapSize, padding: outerPadding)
+        retile(key: key, screen: screen)
     }
 
     func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {

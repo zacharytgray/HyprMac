@@ -234,6 +234,63 @@ class BSPTree {
         }
     }
 
+    // map a manual resize back to split ratio changes.
+    // walks from the resized window's leaf up to root, adjusting each ancestor's
+    // split ratio based on the new frame's edge position.
+    func applyResizeDelta(for window: HyprWindow, newFrame: CGRect,
+                          in rect: CGRect, gap: CGFloat, padding: CGFloat) {
+        let padded = rect.insetBy(dx: padding, dy: padding)
+        guard let leaf = root.find(window) else { return }
+
+        var node = leaf
+        while let parent = node.parent {
+            guard let parentRect = rectForNodeHelper(node: root, target: parent, rect: padded, gap: gap) else {
+                node = parent
+                continue
+            }
+
+            let isLeft = parent.left === node
+            let dir = parent.direction(for: parentRect)
+
+            switch dir {
+            case .horizontal:
+                // the shared edge is at: origin.x + width * ratio
+                // if this node is the left child, its right edge = the split line
+                // if right child, its left edge = the split line
+                let splitX: CGFloat
+                if isLeft {
+                    splitX = newFrame.maxX + gap / 2
+                } else {
+                    splitX = newFrame.origin.x - gap / 2
+                }
+                let newRatio = (splitX - parentRect.origin.x) / parentRect.width
+                let clamped = min(max(newRatio, 0.15), 0.85)
+                if abs(clamped - parent.splitRatio) > 0.01 {
+                    parent.splitRatio = clamped
+                    parent.userSetRatio = true
+                    print("[HyprMac] manual resize: horizontal ratio → \(String(format: "%.2f", clamped))")
+                }
+
+            case .vertical:
+                let splitY: CGFloat
+                if isLeft {
+                    splitY = newFrame.maxY + gap / 2
+                } else {
+                    splitY = newFrame.origin.y - gap / 2
+                }
+                let newRatio = (splitY - parentRect.origin.y) / parentRect.height
+                let clamped = min(max(newRatio, 0.15), 0.85)
+                if abs(clamped - parent.splitRatio) > 0.01 {
+                    parent.splitRatio = clamped
+                    parent.userSetRatio = true
+                    print("[HyprMac] manual resize: vertical ratio → \(String(format: "%.2f", clamped))")
+                }
+            }
+
+            node = parent
+        }
+    }
+
     func layout(in rect: CGRect, gap: CGFloat, padding: CGFloat) -> [(HyprWindow, CGRect)] {
         let padded = rect.insetBy(dx: padding, dy: padding)
         return root.layout(in: padded, gap: gap)

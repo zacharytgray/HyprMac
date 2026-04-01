@@ -8,6 +8,7 @@ enum SplitDirection {
 class BSPNode {
     var parent: BSPNode?
     var splitRatio: CGFloat = 0.5
+    var userSetRatio: Bool = false
 
     // nil = compute from rect aspect ratio (dwindle default)
     // set = forced direction (from togglesplit)
@@ -40,6 +41,7 @@ class BSPNode {
         let existing = self.window
         self.window = nil
         self.splitRatio = 0.5
+        self.userSetRatio = false
         self.splitOverride = nil
 
         self.left = BSPNode(window: existing)
@@ -59,6 +61,7 @@ class BSPNode {
         parent.left = sibling?.left
         parent.right = sibling?.right
         parent.splitRatio = sibling?.splitRatio ?? 0.5
+        parent.userSetRatio = sibling?.userSetRatio ?? false
         parent.splitOverride = sibling?.splitOverride
 
         parent.left?.parent = parent
@@ -70,13 +73,20 @@ class BSPNode {
         return left?.find(target) ?? right?.find(target)
     }
 
-    // reset all split ratios to default (for transient min-size adjustments)
+    // reset split ratios to default, preserving user-set ratios from manual resize
     func resetSplitRatios() {
-        if !isLeaf {
+        if !isLeaf && !userSetRatio {
             splitRatio = 0.5
         }
         left?.resetSplitRatios()
         right?.resetSplitRatios()
+    }
+
+    // clear all user-set ratio flags (on structural changes like add/remove)
+    func clearUserSetRatios() {
+        userSetRatio = false
+        left?.clearUserSetRatios()
+        right?.clearUserSetRatios()
     }
 
     func allWindows() -> [HyprWindow] {

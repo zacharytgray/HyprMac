@@ -235,6 +235,28 @@ class WindowManager {
     private func detectDragSwap() {
         let allWindows = accessibility.getAllWindows()
 
+        // check for manual resize first: size changed on any axis.
+        // corner drags move the origin too (e.g. top-left), so don't require position to stay put.
+        for w in allWindows {
+            guard !floatingWindowIDs.contains(w.windowID),
+                  let current = w.frame,
+                  let expected = tiledPositions[w.windowID] else { continue }
+
+            let widthDelta = abs(current.width - expected.width)
+            let heightDelta = abs(current.height - expected.height)
+
+            if widthDelta > 20 || heightDelta > 20 {
+                // manual resize detected — map to split ratio change
+                guard let screen = displayManager.screen(at: CGPoint(x: expected.midX, y: expected.midY)) else { continue }
+                let workspace = workspaceManager.workspaceForScreen(screen)
+                print("[HyprMac] manual resize detected: '\(w.title ?? "?")' \(Int(expected.width))x\(Int(expected.height)) → \(Int(current.width))x\(Int(current.height))")
+                tilingEngine.applyResize(w, newFrame: current, onWorkspace: workspace, screen: screen)
+                updatePositionCache()
+                return
+            }
+        }
+
+        // drag-swap: position changed but size stayed roughly the same
         var draggedWindow: HyprWindow?
         for w in allWindows {
             guard !floatingWindowIDs.contains(w.windowID),
@@ -242,7 +264,8 @@ class WindowManager {
                   let expected = tiledPositions[w.windowID] else { continue }
 
             let dist = abs(current.origin.x - expected.origin.x) + abs(current.origin.y - expected.origin.y)
-            if dist > 50 {
+            let sizeDist = abs(current.width - expected.width) + abs(current.height - expected.height)
+            if dist > 50 && sizeDist < 40 {
                 draggedWindow = w
                 break
             }
