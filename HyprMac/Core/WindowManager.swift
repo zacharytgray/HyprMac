@@ -704,6 +704,14 @@ class WindowManager {
 
     // MARK: - tiling
 
+    // check if a window belongs to an excluded app (auto-float)
+    private func isExcludedApp(_ window: HyprWindow) -> Bool {
+        guard let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier else {
+            return false
+        }
+        return config.excludedBundleIDs.contains(bundleID)
+    }
+
     func snapshotAndTile() {
         let allWindows = accessibility.getAllWindows()
         for w in allWindows {
@@ -712,6 +720,13 @@ class WindowManager {
             }
             knownWindowIDs.insert(w.windowID)
             windowOwners[w.windowID] = w.ownerPID
+
+            // auto-float excluded apps
+            if isExcludedApp(w) && !floatingWindowIDs.contains(w.windowID) {
+                floatingWindowIDs.insert(w.windowID)
+                w.isFloating = true
+                print("[HyprMac] auto-float excluded app: '\(w.title ?? "?")'")
+            }
 
             // assign to workspace of the monitor it's physically on
             if workspaceManager.workspaceFor(w.windowID) == nil {
@@ -792,6 +807,13 @@ class WindowManager {
                 }
                 knownWindowIDs.insert(w.windowID)
                 windowOwners[w.windowID] = w.ownerPID
+
+                // auto-float excluded apps
+                if isExcludedApp(w) {
+                    floatingWindowIDs.insert(w.windowID)
+                    w.isFloating = true
+                    print("[HyprMac] auto-float excluded app: '\(w.title ?? "?")'")
+                }
 
                 // assign to active workspace on the window's screen
                 if workspaceManager.workspaceFor(w.windowID) == nil {

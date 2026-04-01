@@ -62,6 +62,40 @@ struct GeneralSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            Section("Never Tile") {
+                if config.excludedBundleIDs.isEmpty {
+                    Text("No excluded apps. All windows will be tiled.")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                } else {
+                    ForEach(Array(config.excludedBundleIDs).sorted(), id: \.self) { bundleID in
+                        HStack(spacing: 10) {
+                            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                                    .resizable()
+                                    .frame(width: 20, height: 20)
+                            }
+                            Text(appName(for: bundleID))
+                            Spacer()
+                            Text(bundleID)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                            Button(role: .destructive) {
+                                config.excludedBundleIDs.remove(bundleID)
+                            } label: {
+                                Image(systemName: "minus.circle")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                }
+                Button("Add App...") { pickExcludedApp() }
+                Text("These apps will always float and never be placed in the tiling layout.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Hypr Key") {
                 Text("Caps Lock is remapped to F18 while HyprMac is running. It acts as the Hypr modifier key for all keybinds. Normal Caps Lock is restored when the app quits.")
                     .font(.caption)
@@ -86,6 +120,27 @@ struct GeneralSettingsView: View {
         .onAppear {
             // refresh permission status
             accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
+        }
+    }
+
+    private func appName(for bundleID: String) -> String {
+        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+            return url.deletingPathExtension().lastPathComponent
+        }
+        return bundleID
+    }
+
+    private func pickExcludedApp() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Application to Exclude"
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.canChooseDirectories = false
+
+        if panel.runModal() == .OK, let url = panel.url,
+           let bundle = Bundle(url: url), let id = bundle.bundleIdentifier {
+            config.excludedBundleIDs.insert(id)
         }
     }
 }

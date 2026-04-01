@@ -97,7 +97,7 @@ Hypr+N pressed:
 - **DEVELOPMENT_TEAM via env var**: `project.yml` references `$(DEVELOPMENT_TEAM)` so no personal team IDs are committed. Set in your shell profile or pass to xcodebuild.
 - **Multi-monitor**: Each (workspace, screen) pair gets its own BSP tree. Coordinate conversion accounts for NSScreen bottom-left origin vs CG top-left origin using primary screen height. `screen(at:)` uses nearest-screen fallback.
 - **Hidden window tracking**: When a window disappears but its app is still running (minimized/hidden), `originalFrames` and `floatingWindowIDs` are preserved. On return, the window re-enters tiling with its state intact.
-- **App exclusions**: Quick Look windows are excluded from tiling by bundle ID filter in AccessibilityManager.
+- **App exclusions**: Quick Look windows are hard-excluded in AccessibilityManager (not real windows). User-configurable exclusions (`config.excludedBundleIDs`) auto-float windows on discovery — still tracked for workspace assignment but never enter the BSP tree. Default: FaceTime, System Settings. Configurable in Settings → General → "Never Tile" or via config JSON.
 
 ## File Structure
 ```
@@ -193,7 +193,8 @@ The config is a JSON file with this structure:
   "outerPadding": 8,
   "enabled": true,
   "focusFollowsMouse": true,
-  "doubleTapAction": { "focusMenuBar": {} }
+  "doubleTapAction": { "focusMenuBar": {} },
+  "excludedBundleIDs": ["com.apple.FaceTime", "com.apple.systempreferences"]
 }
 ```
 
@@ -217,6 +218,8 @@ The config is a JSON file with this structure:
 - `{"launchApp": {"bundleID": "com.apple.Terminal"}}`
 
 **`doubleTapAction`** — the action fired by double-tapping Caps Lock. Uses the same action encoding as keybinds. Set to `null` to disable. Default: `{"focusMenuBar": {}}`.
+
+**`excludedBundleIDs`** — array of bundle IDs for apps that should never be tiled (auto-float on launch). Configurable in Settings → General → "Never Tile" or via config. Default: `["com.apple.FaceTime", "com.apple.systempreferences"]`.
 
 To add a custom keybind via config, append to the `keybinds` array and restart HyprMac.
 Example — bind Hypr+B to launch Safari:

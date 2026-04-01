@@ -21,6 +21,9 @@ class UserConfig: ObservableObject {
     @Published var doubleTapAction: Keybind.ActionDescriptor? {
         didSet { save() }
     }
+    @Published var excludedBundleIDs: Set<String> {
+        didSet { save() }
+    }
 
     private let configURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -38,6 +41,7 @@ class UserConfig: ObservableObject {
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? true
             self.doubleTapAction = saved.doubleTapAction ?? .focusMenuBar
+            self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
@@ -45,14 +49,21 @@ class UserConfig: ObservableObject {
             self.enabled = true
             self.focusFollowsMouse = true
             self.doubleTapAction = .focusMenuBar
+            self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         }
     }
+
+    static let defaultExcludedBundleIDs: [String] = [
+        "com.apple.FaceTime",
+        "com.apple.systempreferences",
+    ]
 
     func save() {
         let saved = SavedConfig(keybinds: keybinds, gapSize: gapSize,
                                 outerPadding: outerPadding, enabled: enabled,
                                 focusFollowsMouse: focusFollowsMouse,
-                                doubleTapAction: doubleTapAction)
+                                doubleTapAction: doubleTapAction,
+                                excludedBundleIDs: Array(excludedBundleIDs))
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: configURL)
         }
@@ -65,6 +76,7 @@ class UserConfig: ObservableObject {
         enabled = true
         focusFollowsMouse = true
         doubleTapAction = .focusMenuBar
+        excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
     }
 }
 
@@ -75,4 +87,5 @@ private struct SavedConfig: Codable {
     let enabled: Bool
     let focusFollowsMouse: Bool?
     let doubleTapAction: Keybind.ActionDescriptor?
+    let excludedBundleIDs: [String]?
 }
