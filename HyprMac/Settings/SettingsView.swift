@@ -22,5 +22,19 @@ struct SettingsView: View {
                 .tag(3)
         }
         .frame(minWidth: 550, minHeight: 400)
+        .background(WindowLevelSetter())
+    }
+}
+
+// sets the hosting NSWindow to floating level once it's available
+private struct WindowLevelSetter: NSViewRepresentable {
+    func makeNSView(context: Context) -> WLView { WLView() }
+    func updateNSView(_ nsView: WLView, context: Context) {}
+
+    class WLView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            window?.level = .floating
+        }
     }
 }

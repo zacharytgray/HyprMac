@@ -44,8 +44,7 @@ class WindowManager {
     private var mouseButtonDown = false
     private var lastMouseFocusedID: CGWindowID = 0
 
-    // suppress FFM while interacting with a floating window or menu bar
-    private var floatingWindowActive = false
+    // suppress FFM while menu bar is open
     private var menuBarTracking = false
 
     // suppress focus-follows-mouse briefly after keyboard actions
@@ -197,7 +196,6 @@ class WindowManager {
     private func handleMouseMove() {
         guard config.focusFollowsMouse else { return }
         guard !mouseButtonDown else { return }
-        guard !floatingWindowActive else { return }
         guard !menuBarTracking else { return }
         guard Date() > suppressMouseFocusUntil else { return }
 
@@ -213,26 +211,22 @@ class WindowManager {
                 guard wid != lastMouseFocusedID else { return }
                 lastMouseFocusedID = wid
                 if let target = cachedWindows[wid] {
-                    target.focus()
+                    focusForFFM(target)
                 }
                 return
             }
         }
     }
 
-    private func handleMouseUp() {
-        // re-raise floating windows after click/drag — delayed to beat focus() 50ms re-raise
-        if floatingWindowActive {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-                guard let self = self, self.floatingWindowActive else { return }
-                for wid in self.floatingWindowIDs {
-                    guard self.workspaceManager.isWindowVisible(wid),
-                          let w = self.cachedWindows[wid] else { continue }
-                    AXUIElementPerformAction(w.element, kAXRaiseAction as CFString)
-                }
-            }
-        }
+    // focus a tiled window for FFM without disrupting floating window z-order.
+    // uses yabai's focus_without_raise technique: _SLPSSetFrontProcessWithOptions
+    // activates the process without reordering windows, then SLPSPostEventRecordTo
+    // synthesizes keyboard focus events. z-order is completely untouched.
+    private func focusForFFM(_ window: HyprWindow) {
+        window.focusWithoutRaise()
+    }
 
+    private func handleMouseUp() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.detectDragSwap()
         }
@@ -368,8 +362,7 @@ class WindowManager {
         let windows = accessibility.getAllWindows()
 
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
-            target.focus()
-            floatingWindowActive = false
+            target.focusWithoutRaise()
             cursorManager.warpToCenter(of: target)
             lastMouseFocusedID = target.windowID
         }
@@ -679,7 +672,6 @@ class WindowManager {
         if wasFloating {
             floatingWindowIDs.remove(focused.windowID)
             focused.isFloating = false
-            floatingWindowActive = false
 
             if let evicted = tilingEngine.forceInsertWindow(focused, toWorkspace: workspace, on: screen) {
                 evicted.isFloating = true
@@ -696,7 +688,6 @@ class WindowManager {
         } else {
             floatingWindowIDs.insert(focused.windowID)
             focused.isFloating = true
-            floatingWindowActive = true
             tilingEngine.removeWindow(focused, fromWorkspace: workspace)
 
             if let original = originalFrames[focused.windowID] {
@@ -857,6 +848,23 @@ class WindowManager {
     @objc private func appDidActivate(_ notification: Notification) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.pollWindowChanges()
+        }
+        // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
+        // can't set window level cross-process (needs SIP off), so we re-raise instead.
+        // small delay lets the activation + raise settle before we push floaters back on top.
+        if !floatingWindowIDs.isEmpty {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.raiseFloatingWindows()
+            }
+        }
+    }
+
+    // raise all visible floating windows via kAXRaiseAction
+    private func raiseFloatingWindows() {
+        for wid in floatingWindowIDs {
+            guard workspaceManager.isWindowVisible(wid),
+                  let w = cachedWindows[wid] else { continue }
+            AXUIElementPerformAction(w.element, kAXRaiseAction as CFString)
         }
     }
 

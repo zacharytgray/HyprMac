@@ -37,3 +37,7 @@ targets:
         DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
         CODE_SIGN_ENTITLEMENTS: HyprMac/HyprMac.entitlements
         ENABLE_HARDENED_RUNTIME: false
+        OTHER_LDFLAGS:
+          - "-F/System/Library/PrivateFrameworks"
+          - "-framework"
+          - "SkyLight"

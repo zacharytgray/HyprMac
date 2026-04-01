@@ -1,5 +1,20 @@
 import Cocoa
 
+// private SkyLight APIs for focus-without-raise (used by yabai + Amethyst)
+// activates a process without reordering windows
+@_silgen_name("_SLPSSetFrontProcessWithOptions") @discardableResult
+private func _SLPSSetFrontProcessWithOptions(_ psn: inout ProcessSerialNumber, _ wid: UInt32, _ mode: UInt32) -> CGError
+
+// synthesizes keyboard focus events to a specific window
+@_silgen_name("SLPSPostEventRecordTo") @discardableResult
+private func SLPSPostEventRecordTo(_ psn: inout ProcessSerialNumber, _ bytes: inout UInt8) -> CGError
+
+// get PSN from PID (deprecated but functional)
+@_silgen_name("GetProcessForPID") @discardableResult
+private func GetProcessForPID(_ pid: pid_t, _ psn: inout ProcessSerialNumber) -> OSStatus
+
+private let kCPSUserGenerated: UInt32 = 0x200
+
 class HyprWindow: Equatable, Hashable {
     let element: AXUIElement
     let windowID: CGWindowID
@@ -100,6 +115,28 @@ class HyprWindow: Equatable, Hashable {
                 AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
             }
         }
+    }
+
+    // focus this window without changing z-order (yabai's focus_without_raise).
+    // uses _SLPSSetFrontProcessWithOptions to activate the process without
+    // reordering windows, then SLPSPostEventRecordTo to synthesize keyboard
+    // focus events. floating windows stay exactly where they are.
+    func focusWithoutRaise() {
+        var psn = ProcessSerialNumber()
+        guard GetProcessForPID(ownerPID, &psn) == noErr else { return }
+
+        // activate process without reordering windows
+        _SLPSSetFrontProcessWithOptions(&psn, UInt32(windowID), kCPSUserGenerated)
+
+        // synthesize keyboard focus events to make this the key window
+        var bytes = [UInt8](repeating: 0, count: 0xf8)
+        bytes[0x04] = 0xF8  // event type
+        bytes[0x08] = 0x01  // key focus event
+        bytes[0x8a] = 0x02  // window focus
+        SLPSPostEventRecordTo(&psn, &bytes[0])
+
+        bytes[0x08] = 0x02  // second focus event
+        SLPSPostEventRecordTo(&psn, &bytes[0])
     }
 
     static func == (lhs: HyprWindow, rhs: HyprWindow) -> Bool {

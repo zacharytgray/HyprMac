@@ -415,6 +415,11 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"-F/System/Library/PrivateFrameworks",
+					"-framework",
+					SkyLight,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.zachgray.HyprMac;
 				SDKROOT = macosx;
 			};
@@ -437,6 +442,11 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 0.1.0;
+				OTHER_LDFLAGS = (
+					"-F/System/Library/PrivateFrameworks",
+					"-framework",
+					SkyLight,
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.zachgray.HyprMac;
 				SDKROOT = macosx;
 			};

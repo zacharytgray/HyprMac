@@ -90,7 +90,9 @@ Hypr+N pressed:
 - **Resize-move-resize pattern** (from yabai): When moving windows across screens: resize (may be clamped by source screen), move to target, resize again (unclamped). Handles macOS screen-boundary constraints.
 - **Single-pass window ID matching**: AXUIElement->CGWindowID matching uses greedy best-fit across all windows for a PID. Global `usedIDs` set prevents duplicate assignments (critical for Finder).
 - **Focus without activation for same-app**: `HyprWindow.focus()` skips `app.activate()` when already frontmost. Prevents macOS from refocusing the "main" window when switching between windows of the same app.
-- **CGS private APIs with SIP enabled**: Space enumeration uses undocumented CoreGraphics functions declared in `PrivateAPI/CGSPrivate.h`. All work without disabling SIP. Only used for space queries, not workspace management.
+- **Focus-without-raise (SkyLight private APIs)**: `HyprWindow.focusWithoutRaise()` uses `_SLPSSetFrontProcessWithOptions` + `SLPSPostEventRecordTo` (same technique as yabai/Amethyst) to give keyboard focus to a window without changing z-order. Used by FFM and `focusInDirection` so floating windows aren't disturbed. Linked via SkyLight.framework, declared with `@_silgen_name`. The original `focus()` with raise is kept for cases that need it (drag-swap, workspace switch).
+- **Floating window z-order**: macOS doesn't allow setting another process's window level without SIP disabled (yabai injects into Dock.app for this). HyprMac uses two strategies: (1) `focusWithoutRaise()` for hover/keyboard focus prevents z-order changes entirely, (2) `appDidActivate` observer re-raises floating windows via `kAXRaiseAction` after any app activation (e.g. user clicks a tiled window). HyprMac's own settings window uses `NSWindow.level = .floating` which is flicker-free since it's in-process.
+- **CGS/SLS private APIs with SIP enabled**: Space enumeration uses undocumented CoreGraphics functions declared in `PrivateAPI/CGSPrivate.h`. SkyLight framework linked for `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo`. All work without disabling SIP.
 - **NSApp.setActivationPolicy(.accessory)**: Used instead of `LSUIElement=true` in Info.plist to avoid a Sequoia TCC regression that breaks event tap creation.
 - **DEVELOPMENT_TEAM via env var**: `project.yml` references `$(DEVELOPMENT_TEAM)` so no personal team IDs are committed. Set in your shell profile or pass to xcodebuild.
 - **Multi-monitor**: Each (workspace, screen) pair gets its own BSP tree. Coordinate conversion accounts for NSScreen bottom-left origin vs CG top-left origin using primary screen height. `screen(at:)` uses nearest-screen fallback.
@@ -153,10 +155,12 @@ HyprMac/
 | Hypr + Ctrl + Left/Right | Swap workspace with adjacent monitor |
 | Hypr + K | Show/hide keybind overlay |
 | Hypr + Enter | Launch/focus Terminal |
+| Double-tap Caps Lock | Warp cursor to menu bar (configurable action) |
 
 ## Mouse Features
-- **Focus-follows-mouse**: Hovering over a tiled window focuses it (toggleable in Settings, suppressed briefly after keyboard actions)
+- **Focus-follows-mouse**: Hovering over a tiled window focuses it via `focusWithoutRaise()` (toggleable in Settings, suppressed briefly after keyboard actions, suppressed during menu bar interaction). Uses SkyLight private APIs to change keyboard focus without disrupting window z-order.
 - **Drag-swap**: Drag a window onto another window's tiled slot to swap them (works across monitors)
+- **Double-tap Caps Lock**: Fires a configurable action (default: warp cursor to menu bar). Configurable in Settings → General or config.json. Won't trigger if Caps Lock was used as a modifier between taps.
 
 ## Tiling Rules
 - Max BSP depth: 3 (smallest slot = 1/8th of screen)
@@ -188,7 +192,8 @@ The config is a JSON file with this structure:
   "gapSize": 8,
   "outerPadding": 8,
   "enabled": true,
-  "focusFollowsMouse": true
+  "focusFollowsMouse": true,
+  "doubleTapAction": { "focusMenuBar": {} }
 }
 ```
 
@@ -208,8 +213,10 @@ The config is a JSON file with this structure:
 - `{"switchDesktop": {"_0": 3}}` — workspace number 1-9
 - `{"moveToDesktop": {"_0": 3}}`
 - `{"moveWorkspaceToMonitor": {"_0": "left"}}` — left/right only
-- `{"toggleFloating": {}}`, `{"toggleSplit": {}}`, `{"showKeybinds": {}}`
+- `{"toggleFloating": {}}`, `{"toggleSplit": {}}`, `{"showKeybinds": {}}`, `{"focusMenuBar": {}}`
 - `{"launchApp": {"bundleID": "com.apple.Terminal"}}`
+
+**`doubleTapAction`** — the action fired by double-tapping Caps Lock. Uses the same action encoding as keybinds. Set to `null` to disable. Default: `{"focusMenuBar": {}}`.
 
 To add a custom keybind via config, append to the `keybinds` array and restart HyprMac.
 Example — bind Hypr+B to launch Safari:
