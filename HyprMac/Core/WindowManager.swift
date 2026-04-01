@@ -106,6 +106,10 @@ class WindowManager {
             self, selector: #selector(retileRequested),
             name: .hyprMacRetile, object: nil
         )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil
+        )
 
         print("[HyprMac] started")
     }
@@ -306,22 +310,21 @@ class WindowManager {
 
     // MARK: - workspace switching
 
+    // always use cursor position to determine which screen the user is on.
+    // focused window can be stale (e.g. after switching to an empty workspace,
+    // the focused window still belongs to the previous screen).
+    private func screenUnderCursor() -> NSScreen {
+        let mouseNS = NSEvent.mouseLocation
+        let cgY = displayManager.primaryScreenHeight - mouseNS.y
+        return displayManager.screen(at: CGPoint(x: mouseNS.x, y: cgY))
+            ?? displayManager.screens.first!
+    }
+
     private func switchWorkspace(_ number: Int) {
-        // determine which screen the focused app (or cursor) is on
-        let currentScreen: NSScreen
-        if let focused = accessibility.getFocusedWindow(),
-           let s = displayManager.screen(for: focused) {
-            currentScreen = s
-        } else {
-            let mouseNS = NSEvent.mouseLocation
-            let cgY = displayManager.primaryScreenHeight - mouseNS.y
-            currentScreen = displayManager.screen(at: CGPoint(x: mouseNS.x, y: cgY))
-                ?? displayManager.screens.first!
-        }
+        let currentScreen = screenUnderCursor()
 
         let allWindows = accessibility.getAllWindows()
-        let result = workspaceManager.switchWorkspace(number, from: currentScreen,
-                                                      allScreens: displayManager.screens)
+        let result = workspaceManager.switchWorkspace(number, cursorScreen: currentScreen)
 
         if result.alreadyVisible {
             // workspace is showing on result.screen — just focus it
@@ -408,17 +411,7 @@ class WindowManager {
     // MARK: - move workspace to adjacent monitor
 
     private func moveCurrentWorkspaceToMonitor(_ direction: Direction) {
-        // find current screen
-        let currentScreen: NSScreen
-        if let focused = accessibility.getFocusedWindow(),
-           let s = displayManager.screen(for: focused) {
-            currentScreen = s
-        } else {
-            let mouseNS = NSEvent.mouseLocation
-            let cgY = displayManager.primaryScreenHeight - mouseNS.y
-            currentScreen = displayManager.screen(at: CGPoint(x: mouseNS.x, y: cgY))
-                ?? displayManager.screens.first!
-        }
+        let currentScreen = screenUnderCursor()
 
         // find adjacent monitor in the given direction
         let screens = displayManager.screens.sorted { $0.frame.origin.x < $1.frame.origin.x }
@@ -439,11 +432,10 @@ class WindowManager {
         }
 
         let targetScreen = screens[targetIdx]
-        let monitorCount = screens.count
 
-        guard let (wsA, wsB) = workspaceManager.swapWorkspaces(
-            screenA: currentScreen, screenB: targetScreen, monitorCount: monitorCount
-        ) else { return }
+        let (wsA, wsB) = workspaceManager.swapWorkspaces(
+            screenA: currentScreen, screenB: targetScreen
+        )
 
         // wsA was on currentScreen (now on targetScreen)
         // wsB was on targetScreen (now on currentScreen)
@@ -745,27 +737,31 @@ class WindowManager {
         if !gone.isEmpty {
             let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
             for id in gone {
-                knownWindowIDs.remove(id)
                 tiledPositions.removeValue(forKey: id)
                 cachedWindows.removeValue(forKey: id)
 
                 if let pid = windowOwners[id], runningPIDs.contains(pid) {
-                    // app still running — hidden/minimized or on inactive workspace
                     if workspaceManager.isWindowVisible(id) {
-                        // it was visible, so it's now truly minimized/hidden
+                        // window was on a visible workspace → genuinely minimized/hidden
+                        knownWindowIDs.remove(id)
                         hiddenWindowIDs.insert(id)
+                        changed = true
                         print("[HyprMac] window hidden: \(id)")
                     }
-                    // if on inactive workspace, absence from getAllWindows is expected
+                    // on inactive workspace → absence is expected, keep tracking it
+                    // don't remove from knownWindowIDs or it'll be "rediscovered" as new
+                    // and reassigned to the wrong workspace
                 } else {
+                    // app terminated — full cleanup
+                    knownWindowIDs.remove(id)
                     originalFrames.removeValue(forKey: id)
                     floatingWindowIDs.remove(id)
                     windowOwners.removeValue(forKey: id)
                     workspaceManager.removeWindow(id)
+                    changed = true
                     print("[HyprMac] window gone: \(id)")
                 }
             }
-            changed = true
         }
 
         if changed {
@@ -796,6 +792,14 @@ class WindowManager {
     @objc private func appVisibilityChanged(_ notification: Notification) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             self?.pollWindowChanges()
+        }
+    }
+
+    @objc private func screenParametersChanged() {
+        print("[HyprMac] screen parameters changed — reinitializing workspaces")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.workspaceManager.initializeMonitors()
+            self?.snapshotAndTile()
         }
     }
 

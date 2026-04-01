@@ -6,6 +6,9 @@ class WorkspaceManager {
     // screenID → workspace number currently shown on that monitor
     private(set) var monitorWorkspace: [Int: Int] = [:]
 
+    // workspace → last screenID it was shown on (its "home" screen)
+    private(set) var workspaceHomeScreen: [Int: Int] = [:]
+
     // windowID → workspace number
     private var windowWorkspaces: [CGWindowID: Int] = [:]
 
@@ -28,20 +31,53 @@ class WorkspaceManager {
         displayManager.screens.sorted { $0.frame.origin.x < $1.frame.origin.x }
     }
 
-    // call on startup: assign workspace N to the Nth monitor left-to-right
+    // assign workspace N to the Nth monitor left-to-right (startup only).
+    // only fills in screens that don't already have a mapping.
     func initializeMonitors() {
         let sorted = screensLeftToRight()
+        let usedWorkspaces = Set(monitorWorkspace.values)
+
         for (i, screen) in sorted.enumerated() {
-            let ws = i + 1
             let sid = screenID(for: screen)
-            monitorWorkspace[sid] = ws
+            if monitorWorkspace[sid] != nil { continue }
+
+            let preferred = i + 1
+            if !usedWorkspaces.contains(preferred) {
+                monitorWorkspace[sid] = preferred
+                workspaceHomeScreen[preferred] = sid
+            } else {
+                for ws in 1...workspaceCount {
+                    if !usedWorkspaces.contains(ws) && !monitorWorkspace.values.contains(ws) {
+                        monitorWorkspace[sid] = ws
+                        workspaceHomeScreen[ws] = sid
+                        break
+                    }
+                }
+                if monitorWorkspace[sid] == nil {
+                    monitorWorkspace[sid] = preferred
+                    workspaceHomeScreen[preferred] = sid
+                }
+            }
         }
-        print("[HyprMac] workspace init: \(monitorWorkspace)")
+
+        // clean up stale entries for screens that no longer exist
+        let currentSIDs = Set(sorted.map { screenID(for: $0) })
+        for sid in monitorWorkspace.keys where !currentSIDs.contains(sid) {
+            monitorWorkspace.removeValue(forKey: sid)
+        }
+
+        print("[HyprMac] workspace init: monitors=\(monitorWorkspace) homes=\(workspaceHomeScreen)")
     }
 
     // which workspace is currently shown on a given screen
     func workspaceForScreen(_ screen: NSScreen) -> Int {
-        monitorWorkspace[screenID(for: screen)] ?? 1
+        let sid = screenID(for: screen)
+        if let ws = monitorWorkspace[sid] {
+            return ws
+        }
+        print("[HyprMac] WARNING: screen \(sid) had no workspace, reinitializing")
+        initializeMonitors()
+        return monitorWorkspace[sid] ?? 1
     }
 
     // which screen is currently showing a given workspace (nil = not visible)
@@ -51,30 +87,29 @@ class WorkspaceManager {
         return displayManager.screens.first { screenID(for: $0) == sid }
     }
 
-    // is a workspace visible on any monitor right now?
+    // which screen was last showing a workspace (its "home" — may or may not be visible now)
+    func homeScreenForWorkspace(_ workspace: Int) -> NSScreen? {
+        guard let sid = workspaceHomeScreen[workspace] else { return nil }
+        return displayManager.screens.first { screenID(for: $0) == sid }
+    }
+
     func isWorkspaceVisible(_ workspace: Int) -> Bool {
         monitorWorkspace.values.contains(workspace)
     }
 
-    // assign a window to a workspace (global, no screen binding)
     func assignWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
         windowWorkspaces[windowID] = workspace
     }
 
-    // get workspace for a window
     func workspaceFor(_ windowID: CGWindowID) -> Int? {
         windowWorkspaces[windowID]
     }
 
-    // is this window on a currently-visible workspace?
     func isWindowVisible(_ windowID: CGWindowID) -> Bool {
-        guard let ws = windowWorkspaces[windowID] else {
-            return true  // untracked windows are visible
-        }
+        guard let ws = windowWorkspaces[windowID] else { return true }
         return isWorkspaceVisible(ws)
     }
 
-    // all window IDs assigned to a workspace
     func windowIDs(onWorkspace workspace: Int) -> Set<CGWindowID> {
         var result: Set<CGWindowID> = []
         for (wid, ws) in windowWorkspaces where ws == workspace {
@@ -83,22 +118,20 @@ class WorkspaceManager {
         return result
     }
 
-    // move a window to a different workspace
     func moveWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
         windowWorkspaces[windowID] = workspace
     }
 
-    // remove tracking for a terminated window
     func removeWindow(_ windowID: CGWindowID) {
         windowWorkspaces.removeValue(forKey: windowID)
         savedFloatingFrames.removeValue(forKey: windowID)
     }
 
-    // hide corner position: bottom-right of screen's full frame (CG coords, 1px inside)
+    // hide corner position: bottom-right of screen's full frame in CG coords
     func hidePosition(for screen: NSScreen) -> CGPoint {
         let primaryH = displayManager.primaryScreenHeight
         let frame = screen.frame
-        let cgBottom = primaryH - frame.origin.y  // bottom of screen in CG coords
+        let cgBottom = primaryH - frame.origin.y
         let cgRight = frame.origin.x + frame.width
         return CGPoint(x: cgRight - 1, y: cgBottom - 1)
     }
@@ -122,65 +155,70 @@ class WorkspaceManager {
         }
     }
 
-    // Swap the active workspaces between two screens.
-    // Returns (workspaceA, workspaceB) — the workspaces that moved.
-    // Pinned workspaces (1..monitorCount) are blocked from leaving their home monitor.
-    func swapWorkspaces(screenA: NSScreen, screenB: NSScreen, monitorCount: Int) -> (Int, Int)? {
+    // swap workspaces between two screens
+    func swapWorkspaces(screenA: NSScreen, screenB: NSScreen) -> (Int, Int) {
         let sidA = screenID(for: screenA)
         let sidB = screenID(for: screenB)
         let wsA = monitorWorkspace[sidA] ?? 1
         let wsB = monitorWorkspace[sidB] ?? 1
 
-        // pinned: workspaces 1..monitorCount are home-locked
-        if wsA <= monitorCount || wsB <= monitorCount {
-            print("[HyprMac] swapWorkspaces: workspace \(wsA) or \(wsB) is pinned (1..\(monitorCount)), blocked")
-            return nil
-        }
-
         monitorWorkspace[sidA] = wsB
         monitorWorkspace[sidB] = wsA
+        workspaceHomeScreen[wsA] = sidB
+        workspaceHomeScreen[wsB] = sidA
         print("[HyprMac] swapped workspaces: screen \(sidA) now ws\(wsB), screen \(sidB) now ws\(wsA)")
         return (wsA, wsB)
     }
 
-    // Switch the given screen to workspace `number`.
-    // Returns (toHide, toShow, focusScreen) — or focusScreen only if already visible.
-    // alreadyVisible=true means the workspace is showing on some other screen — just focus it.
     struct SwitchResult {
         let toHide: Set<CGWindowID>
         let toShow: Set<CGWindowID>
-        let screen: NSScreen          // screen where the action happened
-        let alreadyVisible: Bool      // workspace was already shown elsewhere
+        let screen: NSScreen      // the screen where the switch happened
+        let alreadyVisible: Bool
     }
 
-    func switchWorkspace(_ number: Int, from currentScreen: NSScreen, allScreens: [NSScreen]) -> SwitchResult {
+    /// Switch to workspace `number`.
+    /// - If already visible somewhere: just focus that screen.
+    /// - If not visible: show it on its HOME screen (where it was last seen),
+    ///   NOT on the cursor's screen. First-time workspaces default to cursorScreen.
+    func switchWorkspace(_ number: Int, cursorScreen: NSScreen) -> SwitchResult {
         guard number >= 1 && number <= workspaceCount else {
-            return SwitchResult(toHide: [], toShow: [], screen: currentScreen, alreadyVisible: false)
+            return SwitchResult(toHide: [], toShow: [], screen: cursorScreen, alreadyVisible: false)
         }
 
         // already visible on some screen?
         if let existingScreen = screenForWorkspace(number) {
-            let sid = screenID(for: currentScreen)
+            let sid = screenID(for: cursorScreen)
             if screenID(for: existingScreen) == sid {
-                // already on this screen — no-op
                 print("[HyprMac] workspace \(number) already active on this screen")
             } else {
-                // on another screen — just focus it
                 print("[HyprMac] workspace \(number) visible on another screen — focusing")
             }
             return SwitchResult(toHide: [], toShow: windowIDs(onWorkspace: number),
                                 screen: existingScreen, alreadyVisible: true)
         }
 
-        // switch current screen to the new workspace
-        let sid = screenID(for: currentScreen)
-        let oldWorkspace = monitorWorkspace[sid] ?? 1
+        // not visible — find where to show it
+        // use home screen if known, otherwise cursor screen
+        let targetScreen: NSScreen
+        if let home = homeScreenForWorkspace(number) {
+            targetScreen = home
+        } else {
+            targetScreen = cursorScreen
+        }
+
+        let targetSID = screenID(for: targetScreen)
+        let oldWorkspace = monitorWorkspace[targetSID] ?? 1
         let toHide = windowIDs(onWorkspace: oldWorkspace)
         let toShow = windowIDs(onWorkspace: number)
 
-        monitorWorkspace[sid] = number
-        print("[HyprMac] screen \(sid): workspace \(oldWorkspace) → \(number) (hide \(toHide.count), show \(toShow.count))")
+        // update mappings
+        monitorWorkspace[targetSID] = number
+        workspaceHomeScreen[oldWorkspace] = targetSID  // displaced ws remembers this screen
+        workspaceHomeScreen[number] = targetSID         // new ws is now on this screen
 
-        return SwitchResult(toHide: toHide, toShow: toShow, screen: currentScreen, alreadyVisible: false)
+        print("[HyprMac] screen \(targetSID): workspace \(oldWorkspace) → \(number) (hide \(toHide.count), show \(toShow.count))")
+
+        return SwitchResult(toHide: toHide, toShow: toShow, screen: targetScreen, alreadyVisible: false)
     }
 }

@@ -1,39 +1,39 @@
-# Desktop/Space Switching — What Worked and What Didn't
+# Desktop/Space Switching — Implementation Notes
 
 ## Goal
-Hypr+N to switch to Desktop N, Hypr+Shift+N to move focused window to Desktop N.
-Desktops map to macOS Spaces across multiple monitors.
+Hyprland-style workspaces on macOS: `Hypr+N` to switch workspace, `Hypr+Shift+N` to move window.
 
-## What worked
-- CGSCopyManagedDisplaySpaces correctly enumerates all spaces per display
-- Space-to-display mapping (displayForSpace, spacesByDisplay) is accurate
-- CGSManagedDisplaySetCurrentSpace switches the correct display to the target space
-- Window focus + cursor warp for cross-monitor "switching" (when space is already visible)
-- Sentinel windows: created and placed on correct spaces, but unreliable for triggering switches
+## Approach: Virtual Workspaces (AeroSpace-style)
 
-## What didn't work
-- CGSMoveWindowsToManagedSpace: windows get assigned to the target space metadata
-  but don't visually leave the source display. They overlay on top of the current
-  desktop like two spaces stacked. The window server treats them as grouped on
-  the target space (they move in unison) but they render on the wrong display.
-- CGSRemoveWindowsFromSpaces + CGSAddWindowsToSpaces: same visual bug.
-  The space assignment updates but the window physically stays on the source monitor.
-- Repositioning window coordinates after CGS move: we set position to the target
-  display rect but the window snaps back or stays overlaid.
-- The core issue: macOS doesn't support programmatic cross-display window migration
-  the way Hyprland does on Wayland. The CGS space APIs update metadata but don't
-  trigger the visual transition that Mission Control does when you drag a window
-  between spaces.
+After investigating CGS private APIs (which don't work for cross-display moves without SIP disabled)
+and yabai's approach (requires SIP disabled for Dock.app injection), we adopted AeroSpace's virtual
+workspace model: manage workspaces entirely in userspace via off-screen window hiding.
 
-## Approaches not yet tried
-- NSWorkspace.shared.open with activation to force app to front on target space
-- AppleScript "move window to desktop N" (Accessibility scripting bridge)
-- CGSMoveWindowsToManagedSpace combined with hiding/unhiding the window
-- Simulating Mission Control drag via accessibility APIs
-- Using CGSSetWindowTransform or similar to force window to new coordinates
-  after the space move
+### How it works
+- 9 global workspaces, each visible on at most one monitor at a time
+- At startup, workspaces are assigned left-to-right: monitor 1 = ws1, monitor 2 = ws2
+- Each workspace tracks its "home screen" — the monitor it was last displayed on
+- Switching to an invisible workspace returns it to its home screen, not the cursor's screen
+- Inactive workspace windows are hidden at the bottom-right corner of their screen (1px visible)
+- Tiling engine uses explicit screen param from workspace→monitor mapping, not window physical position
 
-## Current state
-Feature removed from keybinds. switchDesktop and moveToDesktop action types
-still exist in the code but no keybinds trigger them. The CGS private APIs
-and SpaceManager display mapping code remain for future use.
+### Why not CGS private APIs?
+- `CGSMoveWindowsToManagedSpace` updates metadata but doesn't visually move windows cross-display
+- `CGSRemoveWindowsFromSpaces` + `CGSAddWindowsToSpaces` has the same visual bug
+- The fix (calling from Dock.app context) requires SIP partially disabled (yabai's approach)
+- `CGSManagedDisplaySetCurrentSpace` works for switching but doesn't help with window movement
+
+### Known tradeoffs
+- 1px window sliver visible in screen corner (macOS won't allow fully off-screen windows)
+- macOS Spaces are bypassed entirely — use 1 Space per monitor
+- No switch animation (instant, like Hyprland)
+
+### Key design decisions
+- Cursor position determines the "current screen" for all workspace operations (focused window
+  can be stale after switching to an empty workspace)
+- Windows on inactive workspaces are kept in `knownWindowIDs` even when they disappear from
+  `getAllWindows()` — prevents workspace reassignment drift
+- `workspaceHomeScreen` dict tracks where each workspace was last shown, ensuring workspaces
+  return to their monitor instead of following the cursor
+- `SpaceManager` is still used for space enumeration and window-to-space queries but not for
+  workspace switching
