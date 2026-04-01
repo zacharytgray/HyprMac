@@ -1,0 +1,29 @@
+# build artifacts
+build/
+DerivedData/
+*.app
+*.dSYM
+*.dSYM.zip
+
+# Xcode user data
+xcuserdata/
+*.xcuserdatad
+*.xcworkspace/xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# claude code
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

@@ -1,0 +1,39 @@
+name: HyprMac
+options:
+  bundleIdPrefix: com.zachgray
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "16.0"
+  generateEmptyDirectories: true
+
+settings:
+  base:
+    SWIFT_OBJC_BRIDGING_HEADER: HyprMac/PrivateAPI/HyprMac-Bridging-Header.h
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    SWIFT_VERSION: "5.9"
+
+schemes:
+  HyprMac:
+    build:
+      targets:
+        HyprMac: all
+    run:
+      config: Debug
+
+targets:
+  HyprMac:
+    type: application
+    platform: macOS
+    sources:
+      - HyprMac
+    settings:
+      base:
+        INFOPLIST_FILE: HyprMac/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.zachgray.HyprMac
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        CODE_SIGN_ENTITLEMENTS: HyprMac/HyprMac.entitlements
+        ENABLE_HARDENED_RUNTIME: false
