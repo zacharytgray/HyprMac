@@ -1,4 +1,5 @@
 import Cocoa
+import Combine
 
 class WindowManager {
     let accessibility = AccessibilityManager()
@@ -45,6 +46,9 @@ class WindowManager {
 
     // suppress focus-follows-mouse briefly after keyboard actions
     private var suppressMouseFocusUntil: Date = .distantPast
+
+    // live config reload
+    private var configObserver: AnyCancellable?
 
     init(config: UserConfig) {
         self.config = config
@@ -110,6 +114,13 @@ class WindowManager {
             self, selector: #selector(screenParametersChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil
         )
+
+        // reload keybinds when config changes (no retile, just update hotkey table)
+        configObserver = config.$keybinds.sink { [weak self] newBinds in
+            guard let self = self else { return }
+            self.hotkeyManager.updateKeybinds(newBinds)
+            print("[HyprMac] keybinds reloaded (\(newBinds.count) binds)")
+        }
 
         print("[HyprMac] started")
     }
