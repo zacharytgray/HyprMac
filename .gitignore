@@ -20,6 +20,7 @@ xcuserdata/
 
 # claude code
 .claude/
+CLAUDE.md
 
 # IDE
 .vscode/
@@ -27,3 +28,4 @@ xcuserdata/
 *.swp
 *.swo
 *~
+New Keybinds.txt
