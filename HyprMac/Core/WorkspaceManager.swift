@@ -155,19 +155,50 @@ class WorkspaceManager {
         }
     }
 
-    // swap workspaces between two screens
-    func swapWorkspaces(screenA: NSScreen, screenB: NSScreen) -> (Int, Int) {
-        let sidA = screenID(for: screenA)
-        let sidB = screenID(for: screenB)
-        let wsA = monitorWorkspace[sidA] ?? 1
-        let wsB = monitorWorkspace[sidB] ?? 1
+    // move current workspace from sourceScreen to targetScreen.
+    // source falls back to its pinned home workspace (monitor index + 1).
+    // pinned workspaces (1..monitorCount) can't be moved off their home monitor.
+    // returns (movedWs, fallbackWs, targetOldWs) or nil if blocked.
+    struct MoveResult {
+        let movedWs: Int       // workspace that moved to target
+        let fallbackWs: Int    // workspace source fell back to
+        let targetOldWs: Int   // workspace target was showing before (now displaced)
+    }
 
-        monitorWorkspace[sidA] = wsB
-        monitorWorkspace[sidB] = wsA
-        workspaceHomeScreen[wsA] = sidB
-        workspaceHomeScreen[wsB] = sidA
-        print("[HyprMac] swapped workspaces: screen \(sidA) now ws\(wsB), screen \(sidB) now ws\(wsA)")
-        return (wsA, wsB)
+    func moveWorkspace(from sourceScreen: NSScreen, to targetScreen: NSScreen, monitorCount: Int) -> MoveResult? {
+        let srcSID = screenID(for: sourceScreen)
+        let tgtSID = screenID(for: targetScreen)
+        let srcWs = monitorWorkspace[srcSID] ?? 1
+        let tgtWs = monitorWorkspace[tgtSID] ?? 1
+
+        // can't move pinned workspaces
+        if srcWs <= monitorCount {
+            print("[HyprMac] moveWorkspace: ws\(srcWs) is pinned, can't move")
+            return nil
+        }
+
+        // figure out source's fallback: its pinned home workspace (based on left-to-right index)
+        let sorted = screensLeftToRight()
+        let srcIdx = sorted.firstIndex(of: sourceScreen) ?? 0
+        let fallbackWs = srcIdx + 1  // pinned workspace for this monitor position
+
+        // if fallback is already visible on another screen, this gets complicated — block it
+        if isWorkspaceVisible(fallbackWs) && screenForWorkspace(fallbackWs) != sourceScreen {
+            // fallback ws is showing elsewhere, can't use it
+            print("[HyprMac] moveWorkspace: fallback ws\(fallbackWs) already visible elsewhere")
+            return nil
+        }
+
+        // move: target shows srcWs, source shows fallback
+        monitorWorkspace[tgtSID] = srcWs
+        monitorWorkspace[srcSID] = fallbackWs
+        workspaceHomeScreen[srcWs] = tgtSID
+        workspaceHomeScreen[fallbackWs] = srcSID
+        // displaced workspace from target remembers target as home
+        workspaceHomeScreen[tgtWs] = tgtSID
+
+        print("[HyprMac] moveWorkspace: ws\(srcWs) → screen \(tgtSID), screen \(srcSID) → ws\(fallbackWs) (target had ws\(tgtWs))")
+        return MoveResult(movedWs: srcWs, fallbackWs: fallbackWs, targetOldWs: tgtWs)
     }
 
     struct SwitchResult {

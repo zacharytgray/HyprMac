@@ -432,54 +432,53 @@ class WindowManager {
         }
 
         let targetScreen = screens[targetIdx]
+        let monitorCount = screens.count
 
-        let (wsA, wsB) = workspaceManager.swapWorkspaces(
-            screenA: currentScreen, screenB: targetScreen
-        )
+        guard let result = workspaceManager.moveWorkspace(
+            from: currentScreen, to: targetScreen, monitorCount: monitorCount
+        ) else { return }
 
-        // wsA was on currentScreen (now on targetScreen)
-        // wsB was on targetScreen (now on currentScreen)
         let allWindows = accessibility.getAllWindows()
 
-        // wsA windows: move from currentScreen's corner to targetScreen's corner (they were visible, now need retile)
-        // wsB windows: move from targetScreen's corner to currentScreen's corner
-        // Actually both are now on different screens — just retile everything
-        // The tiling engine will pick up the correct screen from workspaceManager
-
-        // hide all windows that need to move (they'll be retiled to correct positions)
-        let wsAWindows = workspaceManager.windowIDs(onWorkspace: wsA)
-        let wsBWindows = workspaceManager.windowIDs(onWorkspace: wsB)
-
-        for wid in wsAWindows {
+        // hide windows that need to move — they'll be retiled to correct positions
+        // moved workspace windows: currently on source screen, moving to target
+        let movedWindows = workspaceManager.windowIDs(onWorkspace: result.movedWs)
+        for wid in movedWindows {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
                 if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: targetScreen)
             }
         }
-        for wid in wsBWindows {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
-                if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
-                workspaceManager.hideInCorner(w, on: currentScreen)
+
+        // target's old workspace windows: need to be hidden (displaced, no longer visible)
+        let displacedWindows = workspaceManager.windowIDs(onWorkspace: result.targetOldWs)
+        if !workspaceManager.isWorkspaceVisible(result.targetOldWs) {
+            for wid in displacedWindows {
+                if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+                    if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
+                    workspaceManager.hideInCorner(w, on: targetScreen)
+                }
             }
         }
 
-        // retile — workspaceManager now has updated mapping, tileAllVisibleSpaces uses it
-        tileAllVisibleSpaces()
-
-        // restore floating windows
-        for wid in wsAWindows where floatingWindowIDs.contains(wid) {
+        // fallback workspace windows: need to appear on source screen
+        let fallbackWindows = workspaceManager.windowIDs(onWorkspace: result.fallbackWs)
+        for wid in fallbackWindows where floatingWindowIDs.contains(wid) {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
                 workspaceManager.restoreFloatingFrame(w)
             }
         }
-        for wid in wsBWindows where floatingWindowIDs.contains(wid) {
+
+        tileAllVisibleSpaces()
+
+        // restore floating windows on moved workspace (now on target screen)
+        for wid in movedWindows where floatingWindowIDs.contains(wid) {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
                 workspaceManager.restoreFloatingFrame(w)
             }
         }
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
-        print("[HyprMac] moved workspace \(wsA) → \(targetScreen.frame), workspace \(wsB) → \(currentScreen.frame)")
     }
 
     // MARK: - keybind overlay
