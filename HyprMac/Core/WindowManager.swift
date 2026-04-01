@@ -52,6 +52,9 @@ class WindowManager {
     // suppress focus-follows-mouse briefly after keyboard actions
     private var suppressMouseFocusUntil: Date = .distantPast
 
+    // guard against re-entrant appDidActivate during workspace switch
+    private var isSwitchingWorkspace = false
+
     // live config reload
     private var configObservers: Set<AnyCancellable> = []
 
@@ -467,6 +470,9 @@ class WindowManager {
     }
 
     private func switchWorkspace(_ number: Int) {
+        isSwitchingWorkspace = true
+        defer { isSwitchingWorkspace = false }
+
         let currentScreen = screenUnderCursor()
 
         let allWindows = accessibility.getAllWindows()
@@ -935,6 +941,27 @@ class WindowManager {
     // MARK: - observers
 
     @objc private func appDidActivate(_ notification: Notification) {
+        // if we triggered this via our own workspace switch, skip
+        guard !isSwitchingWorkspace else { return }
+
+        // dock click: switch to workspace containing the activated app's window
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            let pid = app.processIdentifier
+            let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
+
+            // find first window for this app on a hidden workspace, preferring lowest workspace number
+            let match = windowOwners
+                .filter { $0.value == pid }
+                .compactMap { (wid, _) -> Int? in workspaceManager.workspaceFor(wid) }
+                .filter { !visibleWorkspaces.contains($0) }
+                .min()
+
+            if let targetWS = match {
+                switchWorkspace(targetWS)
+                return
+            }
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
             self?.pollWindowChanges()
         }
