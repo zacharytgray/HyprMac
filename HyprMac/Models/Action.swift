@@ -14,4 +14,5 @@ enum Action: Equatable {
     case toggleSplit
     case showKeybinds
     case launchApp(bundleID: String)
+    case focusMenuBar
 }

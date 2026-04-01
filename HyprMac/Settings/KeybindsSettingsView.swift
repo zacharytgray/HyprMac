@@ -108,6 +108,7 @@ struct KeybindEditorSheet: View {
         case toggleSplit = "Toggle Split"
         case showKeybinds = "Show Keybinds"
         case launchApp = "Launch App"
+        case focusMenuBar = "Focus Menu Bar"
     }
 
     var body: some View {
@@ -229,6 +230,8 @@ struct KeybindEditorSheet: View {
             selectedAction = .showKeybinds
         case .launchApp(let b):
             selectedAction = .launchApp; bundleIDParam = b
+        case .focusMenuBar:
+            selectedAction = .focusMenuBar
         }
     }
 
@@ -251,6 +254,7 @@ struct KeybindEditorSheet: View {
         case .toggleSplit: action = .toggleSplit
         case .showKeybinds: action = .showKeybinds
         case .launchApp: action = .launchApp(bundleID: bundleIDParam)
+        case .focusMenuBar: action = .focusMenuBar
         }
 
         let bind = Keybind(keyCode: recordedKeyCode, modifiers: mods, action: action)
@@ -360,6 +364,7 @@ extension Keybind {
         case .toggleSplit: return "Toggle Split"
         case .showKeybinds: return "Show Keybinds"
         case .launchApp(let b): return "Launch \(b)"
+        case .focusMenuBar: return "Focus Menu Bar"
         }
     }
 }

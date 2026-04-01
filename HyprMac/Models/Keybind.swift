@@ -19,6 +19,7 @@ struct Keybind: Codable, Equatable, Identifiable {
         case toggleSplit
         case showKeybinds
         case launchApp(bundleID: String)
+        case focusMenuBar
 
         func toAction() -> Action {
             switch self {
@@ -31,6 +32,7 @@ struct Keybind: Codable, Equatable, Identifiable {
             case .toggleSplit: return .toggleSplit
             case .showKeybinds: return .showKeybinds
             case .launchApp(let b): return .launchApp(bundleID: b)
+            case .focusMenuBar: return .focusMenuBar
             }
         }
     }

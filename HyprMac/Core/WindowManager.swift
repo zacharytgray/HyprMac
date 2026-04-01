@@ -44,11 +44,6 @@ class WindowManager {
     private var mouseButtonDown = false
     private var lastMouseFocusedID: CGWindowID = 0
 
-    // dwell delay — mouse must hover briefly before FFM triggers
-    private var pendingFocusID: CGWindowID = 0
-    private var pendingFocusTime: Date = .distantPast
-    private let focusFollowsMouseDelay: TimeInterval = 0.05
-
     // suppress FFM while interacting with a floating window or menu bar
     private var floatingWindowActive = false
     private var menuBarTracking = false
@@ -206,39 +201,18 @@ class WindowManager {
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
         // dead zone: menu bar region (~25px in CG top-left coords)
-        if cgY < 25 {
-            pendingFocusID = 0
-            return
-        }
+        if cgY < 25 { return }
 
         for (wid, rect) in tiledPositions {
             if rect.contains(cgPoint) {
                 guard wid != lastMouseFocusedID else { return }
-
-                if wid != pendingFocusID {
-                    // mouse entered new window — start dwell timer
-                    pendingFocusID = wid
-                    pendingFocusTime = Date()
-                    return
-                }
-
-                // same pending window — check dwell time
-                guard Date().timeIntervalSince(pendingFocusTime) >= focusFollowsMouseDelay else {
-                    return
-                }
-
-                // dwell met — focus
                 lastMouseFocusedID = wid
-                pendingFocusID = 0
                 if let target = cachedWindows[wid] {
                     target.focus()
                 }
                 return
             }
         }
-
-        // mouse not over any tiled window — reset pending
-        pendingFocusID = 0
     }
 
     private func handleMouseUp() {
@@ -356,6 +330,29 @@ class WindowManager {
             showKeybindOverlay()
         case .launchApp(let bundleID):
             appLauncher.launchOrFocus(bundleID: bundleID)
+        case .focusMenuBar:
+            warpToMenuBar()
+        }
+    }
+
+    // MARK: - menu bar warp
+
+    private func warpToMenuBar() {
+        let mouseNS = NSEvent.mouseLocation
+        let cgY = displayManager.primaryScreenHeight - mouseNS.y
+        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+
+        guard let screen = displayManager.screen(at: cgPoint) else { return }
+        let frame = screen.frame
+        let primaryH = displayManager.primaryScreenHeight
+
+        // warp to top-left of this screen's menu bar (CG coords)
+        let menuBarY = primaryH - frame.maxY + 12 // ~center of 25px menu bar
+        let menuBarX = frame.origin.x + 40 // past the Apple menu
+        CGWarpMouseCursorPosition(CGPoint(x: menuBarX, y: menuBarY))
+        CGAssociateMouseAndMouseCursorPosition(0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            CGAssociateMouseAndMouseCursorPosition(1)
         }
     }
 
