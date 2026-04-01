@@ -61,8 +61,15 @@ class AccessibilityManager {
         var windows: [HyprWindow] = []
         var usedIDs: Set<CGWindowID> = []
 
+        // apps to never tile
+        let excludedBundleIDs: Set<String> = [
+            "com.apple.quicklook.QuickLookUIService",
+            "com.apple.QuickLookDaemon",
+        ]
+
         let apps = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular
+            $0.activationPolicy == .regular &&
+            !excludedBundleIDs.contains($0.bundleIdentifier ?? "")
         }
 
         for app in apps {

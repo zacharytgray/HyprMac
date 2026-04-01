@@ -150,6 +150,7 @@ class WindowManager {
     }
 
     private func handleMouseMove() {
+        guard config.focusFollowsMouse else { return }
         guard !mouseButtonDown else { return }
         guard Date() > suppressMouseFocusUntil else { return }
 
@@ -268,6 +269,8 @@ class WindowManager {
             toggleFloating()
         case .toggleSplit:
             toggleSplit()
+        case .showKeybinds:
+            showKeybindOverlay()
         case .launchApp(let bundleID):
             appLauncher.launchOrFocus(bundleID: bundleID)
         }
@@ -485,6 +488,98 @@ class WindowManager {
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         print("[HyprMac] moved workspace \(wsA) → \(targetScreen.frame), workspace \(wsB) → \(currentScreen.frame)")
+    }
+
+    // MARK: - keybind overlay
+
+    private var keybindPanel: NSPanel?
+
+    private func showKeybindOverlay() {
+        // toggle off if already showing
+        if let panel = keybindPanel {
+            panel.close()
+            keybindPanel = nil
+            return
+        }
+
+        let binds = config.keybinds
+        var lines: [(String, String)] = []  // (shortcut, description)
+
+        for bind in binds {
+            var mods: [String] = []
+            if bind.modifiers.contains(.hypr) { mods.append("Caps") }
+            if bind.modifiers.contains(.shift) { mods.append("Shift") }
+            if bind.modifiers.contains(.control) { mods.append("Ctrl") }
+            if bind.modifiers.contains(.option) { mods.append("Opt") }
+            if bind.modifiers.contains(.command) { mods.append("Cmd") }
+
+            let keyName = bind.keyCodeName
+            let shortcut = (mods + [keyName]).joined(separator: " + ")
+            let desc = bind.actionDescription
+            lines.append((shortcut, desc))
+        }
+
+        // build the overlay
+        guard let screen = NSScreen.main else { return }
+        let padding: CGFloat = 24
+        let lineHeight: CGFloat = 22
+        let headerHeight: CGFloat = 36
+        let contentHeight = headerHeight + CGFloat(lines.count) * lineHeight + padding * 2
+        let panelWidth: CGFloat = 400
+        let panelHeight = min(contentHeight, screen.visibleFrame.height * 0.8)
+
+        let panelX = screen.frame.midX - panelWidth / 2
+        let panelY = screen.frame.midY - panelHeight / 2
+        let frame = NSRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight)
+
+        let panel = NSPanel(contentRect: frame,
+                            styleMask: [.titled, .closable, .nonactivatingPanel, .hudWindow],
+                            backing: .buffered, defer: false)
+        panel.title = "HyprMac Keybinds"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.hidesOnDeactivate = false
+
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight - 28))
+        scroll.hasVerticalScroller = true
+        scroll.autoresizingMask = [.width, .height]
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: panelWidth - 20, height: 0))
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.backgroundColor = .clear
+        textView.textContainerInset = NSSize(width: padding, height: padding)
+
+        let attrStr = NSMutableAttributedString()
+        let headerAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.boldSystemFont(ofSize: 14),
+            .foregroundColor: NSColor.labelColor
+        ]
+        let shortcutAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.systemBlue
+        ]
+        let descAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 12),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+
+        attrStr.append(NSAttributedString(string: "Keybinds\n\n", attributes: headerAttrs))
+
+        for (shortcut, desc) in lines {
+            attrStr.append(NSAttributedString(string: shortcut, attributes: shortcutAttrs))
+            attrStr.append(NSAttributedString(string: "  →  ", attributes: descAttrs))
+            attrStr.append(NSAttributedString(string: desc + "\n", attributes: descAttrs))
+        }
+
+        textView.textStorage?.setAttributedString(attrStr)
+        textView.sizeToFit()
+
+        scroll.documentView = textView
+        panel.contentView = scroll
+
+        panel.makeKeyAndOrderFront(nil)
+        keybindPanel = panel
     }
 
     // MARK: - split toggle

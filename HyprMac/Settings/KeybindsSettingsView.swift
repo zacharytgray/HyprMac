@@ -69,6 +69,7 @@ extension Keybind {
         case kVK_ANSI_9: return "9"
         case kVK_ANSI_T: return "T"
         case kVK_ANSI_J: return "J"
+        case kVK_ANSI_K: return "K"
         default: return "Key(\(keyCode))"
         }
     }
@@ -82,6 +83,7 @@ extension Keybind {
         case .moveWorkspaceToMonitor(let d): return "Move Workspace \(d)"
         case .toggleFloating: return "Toggle Floating"
         case .toggleSplit: return "Toggle Split"
+        case .showKeybinds: return "Show Keybinds"
         case .launchApp(let b): return "Launch \(b)"
         }
     }

@@ -17,6 +17,7 @@ struct Keybind: Codable, Equatable, Identifiable {
         case moveWorkspaceToMonitor(String)
         case toggleFloating
         case toggleSplit
+        case showKeybinds
         case launchApp(bundleID: String)
 
         func toAction() -> Action {
@@ -28,6 +29,7 @@ struct Keybind: Codable, Equatable, Identifiable {
             case .moveWorkspaceToMonitor(let d): return .moveWorkspaceToMonitor(Direction(rawValue: d)!)
             case .toggleFloating: return .toggleFloating
             case .toggleSplit: return .toggleSplit
+            case .showKeybinds: return .showKeybinds
             case .launchApp(let b): return .launchApp(bundleID: b)
             }
         }
@@ -117,6 +119,10 @@ extension Keybind {
         // hypr + j: toggle split direction (transpose)
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_J), modifiers: .hypr,
                              action: .toggleSplit))
+
+        // hypr + k: show keybinds
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_K), modifiers: .hypr,
+                             action: .showKeybinds))
 
         // hypr + enter: launch terminal
         binds.append(Keybind(keyCode: UInt16(kVK_Return), modifiers: .hypr,

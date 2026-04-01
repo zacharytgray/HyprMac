@@ -27,6 +27,13 @@ struct GeneralSettingsView: View {
                 }
             }
 
+            Section("Mouse") {
+                Toggle("Focus Follows Mouse", isOn: $config.focusFollowsMouse)
+                Text("Hovering over a tiled window focuses it. Drag-swap still works regardless of this setting.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Hypr Key") {
                 Text("Caps Lock is remapped to F18 while HyprMac is running. It acts as the Hypr modifier key for all keybinds. Normal Caps Lock is restored when the app quits.")
                     .font(.caption)

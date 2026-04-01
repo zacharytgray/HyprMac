@@ -12,5 +12,6 @@ enum Action: Equatable {
     case moveWorkspaceToMonitor(Direction)  // move current workspace to adjacent monitor
     case toggleFloating
     case toggleSplit
+    case showKeybinds
     case launchApp(bundleID: String)
 }
