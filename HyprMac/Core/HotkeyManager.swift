@@ -14,6 +14,7 @@ class HotkeyManager {
     private var lastF18DownTime: Date = .distantPast
     private var f18WasUsedAsModifier = false
     private let doubleTapThreshold: TimeInterval = 0.3
+    var doubleTapAction: Action? = .focusMenuBar
 
     private var keybinds: [Keybind] = Keybind.defaults
 
@@ -67,10 +68,11 @@ class HotkeyManager {
                 // check for double-tap before any combo
                 let now = Date()
                 let elapsed = now.timeIntervalSince(lastF18DownTime)
-                if elapsed < doubleTapThreshold && !f18WasUsedAsModifier {
+                if elapsed < doubleTapThreshold && !f18WasUsedAsModifier,
+                   let action = doubleTapAction {
                     // double-tap detected
                     DispatchQueue.main.async { [weak self] in
-                        self?.onAction?(.focusMenuBar)
+                        self?.onAction?(action)
                     }
                     lastF18DownTime = .distantPast // reset so triple-tap doesn't re-fire
                 } else {

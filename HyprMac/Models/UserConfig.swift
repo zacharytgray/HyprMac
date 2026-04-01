@@ -18,6 +18,9 @@ class UserConfig: ObservableObject {
     @Published var focusFollowsMouse: Bool {
         didSet { save() }
     }
+    @Published var doubleTapAction: Keybind.ActionDescriptor? {
+        didSet { save() }
+    }
 
     private let configURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -34,19 +37,22 @@ class UserConfig: ObservableObject {
             self.outerPadding = saved.outerPadding
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? true
+            self.doubleTapAction = saved.doubleTapAction ?? .focusMenuBar
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
             self.outerPadding = 8
             self.enabled = true
             self.focusFollowsMouse = true
+            self.doubleTapAction = .focusMenuBar
         }
     }
 
     func save() {
         let saved = SavedConfig(keybinds: keybinds, gapSize: gapSize,
                                 outerPadding: outerPadding, enabled: enabled,
-                                focusFollowsMouse: focusFollowsMouse)
+                                focusFollowsMouse: focusFollowsMouse,
+                                doubleTapAction: doubleTapAction)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: configURL)
         }
@@ -58,6 +64,7 @@ class UserConfig: ObservableObject {
         outerPadding = 8
         enabled = true
         focusFollowsMouse = true
+        doubleTapAction = .focusMenuBar
     }
 }
 
@@ -66,5 +73,6 @@ private struct SavedConfig: Codable {
     let gapSize: CGFloat
     let outerPadding: CGFloat
     let enabled: Bool
-    let focusFollowsMouse: Bool?  // optional for backwards compat with old configs
+    let focusFollowsMouse: Bool?
+    let doubleTapAction: Keybind.ActionDescriptor?
 }

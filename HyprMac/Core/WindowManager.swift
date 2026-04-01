@@ -52,7 +52,7 @@ class WindowManager {
     private var suppressMouseFocusUntil: Date = .distantPast
 
     // live config reload
-    private var configObserver: AnyCancellable?
+    private var configObservers: Set<AnyCancellable> = []
 
     init(config: UserConfig) {
         self.config = config
@@ -84,6 +84,7 @@ class WindowManager {
         tilingEngine.gapSize = config.gapSize
         tilingEngine.outerPadding = config.outerPadding
         hotkeyManager.updateKeybinds(config.keybinds)
+        hotkeyManager.doubleTapAction = config.doubleTapAction?.toAction()
         hotkeyManager.start()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -132,11 +133,15 @@ class WindowManager {
         )
 
         // reload keybinds when config changes (no retile, just update hotkey table)
-        configObserver = config.$keybinds.sink { [weak self] newBinds in
+        config.$keybinds.sink { [weak self] newBinds in
             guard let self = self else { return }
             self.hotkeyManager.updateKeybinds(newBinds)
             print("[HyprMac] keybinds reloaded (\(newBinds.count) binds)")
-        }
+        }.store(in: &configObservers)
+
+        config.$doubleTapAction.sink { [weak self] newAction in
+            self?.hotkeyManager.doubleTapAction = newAction?.toAction()
+        }.store(in: &configObservers)
 
         print("[HyprMac] started")
     }

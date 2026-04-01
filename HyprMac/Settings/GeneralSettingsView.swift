@@ -4,6 +4,20 @@ struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
 
+    // double-tap action UI state
+    private var doubleTapEnabled: Binding<Bool> {
+        Binding(
+            get: { config.doubleTapAction != nil },
+            set: { config.doubleTapAction = $0 ? .focusMenuBar : nil }
+        )
+    }
+    private var doubleTapChoice: Binding<DoubleTapChoice> {
+        Binding(
+            get: { DoubleTapChoice.from(config.doubleTapAction) },
+            set: { config.doubleTapAction = $0.toDescriptor() }
+        )
+    }
+
     var body: some View {
         Form {
             Section("Status") {
@@ -34,6 +48,20 @@ struct GeneralSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            Section("Double-Tap Caps Lock") {
+                Toggle("Enabled", isOn: doubleTapEnabled)
+                if config.doubleTapAction != nil {
+                    Picker("Action", selection: doubleTapChoice) {
+                        ForEach(DoubleTapChoice.allCases, id: \.self) { c in
+                            Text(c.rawValue).tag(c)
+                        }
+                    }
+                }
+                Text("Tap Caps Lock twice quickly to trigger the action. Won't fire if Caps Lock is used as a modifier between taps.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Hypr Key") {
                 Text("Caps Lock is remapped to F18 while HyprMac is running. It acts as the Hypr modifier key for all keybinds. Normal Caps Lock is restored when the app quits.")
                     .font(.caption)
@@ -58,6 +86,32 @@ struct GeneralSettingsView: View {
         .onAppear {
             // refresh permission status
             accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
+        }
+    }
+}
+
+// choices for the double-tap caps lock action
+enum DoubleTapChoice: String, CaseIterable {
+    case focusMenuBar = "Focus Menu Bar"
+    case toggleFloating = "Toggle Floating"
+    case toggleSplit = "Toggle Split"
+    case showKeybinds = "Show Keybinds"
+
+    static func from(_ desc: Keybind.ActionDescriptor?) -> DoubleTapChoice {
+        switch desc {
+        case .toggleFloating: return .toggleFloating
+        case .toggleSplit: return .toggleSplit
+        case .showKeybinds: return .showKeybinds
+        default: return .focusMenuBar
+        }
+    }
+
+    func toDescriptor() -> Keybind.ActionDescriptor {
+        switch self {
+        case .focusMenuBar: return .focusMenuBar
+        case .toggleFloating: return .toggleFloating
+        case .toggleSplit: return .toggleSplit
+        case .showKeybinds: return .showKeybinds
         }
     }
 }
