@@ -36,6 +36,7 @@ xcodebuild \
     CODE_SIGN_IDENTITY="Developer ID Application" \
     CODE_SIGN_STYLE=Manual \
     ENABLE_HARDENED_RUNTIME=YES \
+    OTHER_CODE_SIGN_FLAGS="--timestamp" \
     CODE_SIGN_ENTITLEMENTS="$PROJECT_DIR/HyprMac/HyprMac-Release.entitlements" \
     build 2>&1 | grep -E '(error:|warning:|BUILD)' || true
 
@@ -43,6 +44,22 @@ if [ ! -d "$APP_PATH" ]; then
     echo "ERROR: Build failed — $APP_PATH not found"
     exit 1
 fi
+
+# re-sign all nested binaries (Sparkle helpers) with Developer ID + timestamp
+echo "=== Re-signing nested frameworks ==="
+SIGN_ID="Developer ID Application: Zachary Gray (WYY8494SWG)"
+find "$APP_PATH/Contents/Frameworks" -type f -perm +111 -o -name "*.dylib" | while read bin; do
+    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$bin" 2>/dev/null || true
+done
+find "$APP_PATH/Contents/Frameworks" -name "*.xpc" -o -name "*.app" | while read bundle; do
+    codesign --force --deep --sign "$SIGN_ID" --timestamp --options runtime "$bundle" 2>/dev/null || true
+done
+find "$APP_PATH/Contents/Frameworks" -name "*.framework" | while read fw; do
+    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$fw" 2>/dev/null || true
+done
+codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
+    --entitlements "$PROJECT_DIR/HyprMac/HyprMac-Release.entitlements" \
+    "$APP_PATH"
 
 echo "=== Creating DMG ==="
 
