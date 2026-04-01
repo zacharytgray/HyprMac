@@ -72,12 +72,21 @@ All keybinds are configurable in Settings (menubar icon → Settings → Keybind
 | `⇪ + K` | Show keybind overlay |
 | `⇪ + ↵` | Launch/focus Terminal |
 
+| `⇪⇪` (double-tap) | Warp cursor to menu bar |
+
 ### Mouse
 
 | Action | Effect |
 |---|---|
 | Hover over tiled window | Focus follows mouse |
 | Drag window onto another | Swap positions |
+
+### Menu Bar Access
+
+With focus-follows-mouse enabled, moving the mouse to the menu bar can accidentally focus a tiled window along the way. HyprMac handles this two ways:
+
+1. **Menu tracking detection** — FFM is automatically suppressed while any app's menu dropdown is open, so you won't lose the menu once you've clicked it.
+2. **Double-tap Caps Lock** — Instantly warps your cursor to the menu bar on the current monitor. Faster than mousing up there, and avoids the focus-switching problem entirely. Configurable in Settings → General (change the action or disable it).
 
 ## Virtual Workspaces
 
