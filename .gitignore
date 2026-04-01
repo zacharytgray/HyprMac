@@ -21,7 +21,6 @@ xcuserdata/
 
 # claude code
 .claude/
-CLAUDE.md
 
 # IDE
 .vscode/
