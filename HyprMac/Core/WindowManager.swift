@@ -44,7 +44,13 @@ class WindowManager {
     private var mouseButtonDown = false
     private var lastMouseFocusedID: CGWindowID = 0
 
-    // suppress FFM while menu bar is active
+    // dwell delay — mouse must hover briefly before FFM triggers
+    private var pendingFocusID: CGWindowID = 0
+    private var pendingFocusTime: Date = .distantPast
+    private let focusFollowsMouseDelay: TimeInterval = 0.05
+
+    // suppress FFM while interacting with a floating window or menu bar
+    private var floatingWindowActive = false
     private var menuBarTracking = false
 
     // suppress focus-follows-mouse briefly after keyboard actions
@@ -191,6 +197,7 @@ class WindowManager {
     private func handleMouseMove() {
         guard config.focusFollowsMouse else { return }
         guard !mouseButtonDown else { return }
+        guard !floatingWindowActive else { return }
         guard !menuBarTracking else { return }
         guard Date() > suppressMouseFocusUntil else { return }
 
@@ -200,22 +207,53 @@ class WindowManager {
 
         // dead zone: menu bar region (~25px in CG top-left coords)
         if cgY < 25 {
+            pendingFocusID = 0
             return
         }
 
         for (wid, rect) in tiledPositions {
             if rect.contains(cgPoint) {
                 guard wid != lastMouseFocusedID else { return }
+
+                if wid != pendingFocusID {
+                    // mouse entered new window — start dwell timer
+                    pendingFocusID = wid
+                    pendingFocusTime = Date()
+                    return
+                }
+
+                // same pending window — check dwell time
+                guard Date().timeIntervalSince(pendingFocusTime) >= focusFollowsMouseDelay else {
+                    return
+                }
+
+                // dwell met — focus
                 lastMouseFocusedID = wid
+                pendingFocusID = 0
                 if let target = cachedWindows[wid] {
                     target.focus()
                 }
                 return
             }
         }
+
+        // mouse not over any tiled window — reset pending
+        pendingFocusID = 0
     }
 
     private func handleMouseUp() {
+        // re-raise floating windows after click/drag — delayed to beat focus() 50ms re-raise
+        if floatingWindowActive {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                guard let self = self, self.floatingWindowActive else { return }
+                for wid in self.floatingWindowIDs {
+                    guard self.workspaceManager.isWindowVisible(wid),
+                          let w = self.cachedWindows[wid] else { continue }
+                    AXUIElementPerformAction(w.element, kAXRaiseAction as CFString)
+                }
+            }
+        }
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.detectDragSwap()
         }
@@ -329,6 +367,7 @@ class WindowManager {
 
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
             target.focus()
+            floatingWindowActive = false
             cursorManager.warpToCenter(of: target)
             lastMouseFocusedID = target.windowID
         }
@@ -638,6 +677,7 @@ class WindowManager {
         if wasFloating {
             floatingWindowIDs.remove(focused.windowID)
             focused.isFloating = false
+            floatingWindowActive = false
 
             if let evicted = tilingEngine.forceInsertWindow(focused, toWorkspace: workspace, on: screen) {
                 evicted.isFloating = true
@@ -654,6 +694,7 @@ class WindowManager {
         } else {
             floatingWindowIDs.insert(focused.windowID)
             focused.isFloating = true
+            floatingWindowActive = true
             tilingEngine.removeWindow(focused, fromWorkspace: workspace)
 
             if let original = originalFrames[focused.windowID] {
