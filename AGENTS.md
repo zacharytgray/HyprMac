@@ -182,6 +182,17 @@ Example — bind Hypr+B to launch Safari:
 {"keyCode": 11, "modifiers": {"rawValue": 1}, "action": {"launchApp": {"bundleID": "com.apple.Safari"}}}
 ```
 
+### App launchers
+App launchers are keybinds with a `launchApp` action. They can be added:
+1. **In-app**: Settings → App Launcher tab → Add App Launcher (opens Finder to pick an .app, then record a key)
+2. **Via config**: add a keybind entry with `{"launchApp": {"bundleID": "..."}}` action
+
+Common bundle IDs:
+- `com.apple.Terminal`, `com.apple.Safari`, `com.apple.finder`
+- `com.googlecode.iterm2`, `com.microsoft.VSCode`, `com.brave.Browser`
+- `io.alacritty`, `com.github.wez.wezterm`, `net.kovidgoyal.kitty`
+- Find any app's bundle ID: `mdls -name kMDItemCFBundleIdentifier /Applications/AppName.app`
+
 ## Known Limitations
 - **1px window sliver**: Hidden workspace windows leave a 1px sliver visible in the screen corner. macOS limitation. Also serves as crash recovery.
 - **macOS Spaces bypassed**: Use 1 macOS Space per monitor. HyprMac's virtual workspaces replace native Spaces.
