@@ -193,6 +193,27 @@ class TilingEngine {
         }
     }
 
+    // swap in the tree and return target layouts WITHOUT applying frames.
+    // caller is responsible for animating or applying the result.
+    func computeSwapLayout(_ a: HyprWindow, _ b: HyprWindow,
+                           onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)]? {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        let t = tree(for: key)
+        guard t.contains(a) && t.contains(b) else { return nil }
+        let rect = displayManager.cgRect(for: screen)
+
+        t.swap(a, b)
+        t.root.resetSplitRatios()
+        return t.layout(in: rect, gap: gapSize, padding: outerPadding)
+    }
+
+    // apply layouts that were previously computed (e.g. after animation).
+    // runs the two-pass min-size resolution.
+    func applyComputedLayout(onWorkspace workspace: Int, screen: NSScreen) {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        retile(key: key, screen: screen)
+    }
+
     func crossSwapWindows(_ a: HyprWindow, _ b: HyprWindow) {
         var keyA: TilingKey?
         var keyB: TilingKey?

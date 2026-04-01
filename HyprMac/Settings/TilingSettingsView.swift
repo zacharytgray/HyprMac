@@ -23,6 +23,20 @@ struct TilingSettingsView: View {
                 }
             }
 
+            Section("Animation") {
+                Toggle("Animate window swaps", isOn: $config.animateWindows)
+
+                if config.animateWindows {
+                    HStack {
+                        Text("Duration")
+                        Slider(value: $config.animationDuration, in: 0.05...0.4, step: 0.05)
+                        Text("\(Int(config.animationDuration * 1000))ms")
+                            .frame(width: 48)
+                            .monospacedDigit()
+                    }
+                }
+            }
+
             Section("Preview") {
                 TilingPreview(gap: config.gapSize, padding: config.outerPadding)
                     .frame(height: 160)

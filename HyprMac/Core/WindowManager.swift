@@ -9,6 +9,8 @@ class WindowManager {
     let cursorManager = CursorManager()
     let appLauncher = AppLauncherManager()
     let config: UserConfig
+    let animator = WindowAnimator()
+    let focusBorder = FocusBorder()
 
     private(set) var workspaceManager: WorkspaceManager!
     private(set) var tilingEngine: TilingEngine!
@@ -197,6 +199,7 @@ class WindowManager {
         guard config.focusFollowsMouse else { return }
         guard !mouseButtonDown else { return }
         guard !menuBarTracking else { return }
+        guard !animator.isAnimating else { return }
         guard Date() > suppressMouseFocusUntil else { return }
 
         let mouseNS = NSEvent.mouseLocation
@@ -233,6 +236,7 @@ class WindowManager {
     }
 
     private func detectDragSwap() {
+        guard !animator.isAnimating else { return }
         let allWindows = accessibility.getAllWindows()
 
         // check for manual resize first: size changed on any axis.
@@ -292,14 +296,32 @@ class WindowManager {
             if crossMonitor {
                 print("[HyprMac] cross-monitor swap: '\(dragged.title ?? "?")' ↔ '\(target.title ?? "?")'")
                 tilingEngine.crossSwapWindows(dragged, target)
-            } else {
-                if let screen = sourceScreen {
-                    let workspace = workspaceManager.workspaceForScreen(screen)
-                    print("[HyprMac] drag swap: '\(dragged.title ?? "?")' ↔ '\(target.title ?? "?")'")
+                updatePositionCache()
+            } else if let screen = sourceScreen {
+                let workspace = workspaceManager.workspaceForScreen(screen)
+                print("[HyprMac] drag swap: '\(dragged.title ?? "?")' ↔ '\(target.title ?? "?")'")
+
+                if config.animateWindows,
+                   let draggedFrame = dragged.frame,
+                   let targetFrame = target.frame,
+                   let layouts = tilingEngine.computeSwapLayout(dragged, target, onWorkspace: workspace, screen: screen) {
+                    var transitions: [WindowAnimator.FrameTransition] = []
+                    for (w, toRect) in layouts {
+                        let fromRect: CGRect
+                        if w.windowID == dragged.windowID { fromRect = draggedFrame }
+                        else if w.windowID == target.windowID { fromRect = targetFrame }
+                        else { continue }
+                        transitions.append(.init(window: w, from: fromRect, to: toRect))
+                    }
+                    animator.animate(transitions, duration: config.animationDuration) { [weak self] in
+                        self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+                        self?.updatePositionCache()
+                    }
+                } else {
                     tilingEngine.swapWindows(dragged, target, onWorkspace: workspace, screen: screen)
+                    updatePositionCache()
                 }
             }
-            updatePositionCache()
             return
         }
 
@@ -388,6 +410,10 @@ class WindowManager {
             target.focusWithoutRaise()
             cursorManager.warpToCenter(of: target)
             lastMouseFocusedID = target.windowID
+
+            if config.animateWindows, let frame = target.frame {
+                focusBorder.flash(around: frame)
+            }
         }
     }
 
@@ -401,9 +427,31 @@ class WindowManager {
 
         guard let target = accessibility.windowInDirection(direction, from: focused, among: windows) else { return }
 
-        tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
-        cursorManager.warpToCenter(of: focused)
-        updatePositionCache()
+        if config.animateWindows,
+           let focusedFrame = focused.frame,
+           let targetFrame = target.frame,
+           let layouts = tilingEngine.computeSwapLayout(focused, target, onWorkspace: workspace, screen: screen) {
+            // build transitions from current positions to computed targets
+            var transitions: [WindowAnimator.FrameTransition] = []
+            for (w, toRect) in layouts {
+                let fromRect: CGRect
+                if w.windowID == focused.windowID { fromRect = focusedFrame }
+                else if w.windowID == target.windowID { fromRect = targetFrame }
+                else { continue }
+                transitions.append(.init(window: w, from: fromRect, to: toRect))
+            }
+
+            animator.animate(transitions, duration: config.animationDuration) { [weak self] in
+                // snap final state with two-pass min-size resolution
+                self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+                self?.cursorManager.warpToCenter(of: focused)
+                self?.updatePositionCache()
+            }
+        } else {
+            tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
+            cursorManager.warpToCenter(of: focused)
+            updatePositionCache()
+        }
     }
 
     // MARK: - workspace switching
@@ -439,25 +487,20 @@ class WindowManager {
             return
         }
 
-        // hide windows from old workspace
+        // batch: hide old + restore floating new in one tight pass
         for wid in result.toHide {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
-                if floatingWindowIDs.contains(wid) {
-                    workspaceManager.saveFloatingFrame(w)
-                }
+                if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: result.screen)
             }
         }
-
-        // unhide floating windows on new workspace
-        for wid in result.toShow {
-            if floatingWindowIDs.contains(wid),
-               let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+        for wid in result.toShow where floatingWindowIDs.contains(wid) {
+            if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
                 workspaceManager.restoreFloatingFrame(w)
             }
         }
 
-        // retile — visible-only filter applies in tileAllVisibleSpaces
+        // retile immediately — no delay between hide and show
         tileAllVisibleSpaces()
 
         // focus best tiled window on the new workspace, or warp cursor
@@ -806,6 +849,7 @@ class WindowManager {
     // MARK: - poll
 
     private func pollWindowChanges() {
+        guard !animator.isAnimating else { return }
         let allWindows = accessibility.getAllWindows()
         let currentIDs = Set(allWindows.map { $0.windowID })
 

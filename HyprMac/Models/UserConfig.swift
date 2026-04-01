@@ -24,6 +24,12 @@ class UserConfig: ObservableObject {
     @Published var excludedBundleIDs: Set<String> {
         didSet { save() }
     }
+    @Published var animateWindows: Bool {
+        didSet { save() }
+    }
+    @Published var animationDuration: Double {
+        didSet { save() }
+    }
 
     private let configURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -42,6 +48,8 @@ class UserConfig: ObservableObject {
             self.focusFollowsMouse = saved.focusFollowsMouse ?? true
             self.doubleTapAction = saved.doubleTapAction ?? .focusMenuBar
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
+            self.animateWindows = saved.animateWindows ?? true
+            self.animationDuration = saved.animationDuration ?? 0.15
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
@@ -50,6 +58,8 @@ class UserConfig: ObservableObject {
             self.focusFollowsMouse = true
             self.doubleTapAction = .focusMenuBar
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
+            self.animateWindows = true
+            self.animationDuration = 0.15
         }
     }
 
@@ -63,7 +73,9 @@ class UserConfig: ObservableObject {
                                 outerPadding: outerPadding, enabled: enabled,
                                 focusFollowsMouse: focusFollowsMouse,
                                 doubleTapAction: doubleTapAction,
-                                excludedBundleIDs: Array(excludedBundleIDs))
+                                excludedBundleIDs: Array(excludedBundleIDs),
+                                animateWindows: animateWindows,
+                                animationDuration: animationDuration)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: configURL)
         }
@@ -77,6 +89,8 @@ class UserConfig: ObservableObject {
         focusFollowsMouse = true
         doubleTapAction = .focusMenuBar
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
+        animateWindows = true
+        animationDuration = 0.15
     }
 }
 
@@ -88,4 +102,6 @@ private struct SavedConfig: Codable {
     let focusFollowsMouse: Bool?
     let doubleTapAction: Keybind.ActionDescriptor?
     let excludedBundleIDs: [String]?
+    let animateWindows: Bool?
+    let animationDuration: Double?
 }
