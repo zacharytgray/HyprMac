@@ -4,42 +4,67 @@ class UserConfig: ObservableObject {
     static let shared = UserConfig()
 
     @Published var keybinds: [Keybind] {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var gapSize: CGFloat {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var outerPadding: CGFloat {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var enabled: Bool {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var focusFollowsMouse: Bool {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var doubleTapAction: Keybind.ActionDescriptor? {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var excludedBundleIDs: Set<String> {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var animateWindows: Bool {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
     @Published var animationDuration: Double {
-        didSet { save() }
+        didSet { if !isReloading { save() } }
     }
 
-    private let configURL: URL = {
+    // iCloud sync state — stored in UserDefaults, not config.json
+    @Published var iCloudSyncEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(iCloudSyncEnabled, forKey: "iCloudSyncEnabled")
+            if iCloudSyncEnabled { enableICloudSync() } else { disableICloudSync() }
+        }
+    }
+
+    private var isReloading = false
+    private var fileWatcherSource: DispatchSourceFileSystemObject?
+    private var fileWatcherFD: Int32 = -1
+
+    // local config path (may become a symlink when iCloud sync is on)
+    private let localConfigURL: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("HyprMac", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("config.json")
     }()
 
+    // iCloud Drive path — no entitlements needed
+    private var iCloudConfigURL: URL {
+        let iCloudDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs/HyprMac", isDirectory: true)
+        return iCloudDir.appendingPathComponent("config.json")
+    }
+
+    // resolved path — follows symlink if present
+    var configURL: URL { localConfigURL }
+
     init() {
-        if let data = try? Data(contentsOf: configURL),
+        self.iCloudSyncEnabled = UserDefaults.standard.bool(forKey: "iCloudSyncEnabled")
+
+        if let data = try? Data(contentsOf: localConfigURL),
            let saved = try? JSONDecoder().decode(SavedConfig.self, from: data) {
             self.keybinds = saved.keybinds
             self.gapSize = saved.gapSize
@@ -61,6 +86,25 @@ class UserConfig: ObservableObject {
             self.animateWindows = true
             self.animationDuration = 0.15
         }
+
+        // verify symlink integrity if iCloud sync was enabled
+        if iCloudSyncEnabled {
+            let fm = FileManager.default
+            let isSymlink = (try? localConfigURL.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink ?? false
+            if !isSymlink {
+                // symlink is gone — iCloud sync was broken (maybe different machine's first launch)
+                // try to set it up, or disable if iCloud Drive isn't available
+                if fm.fileExists(atPath: iCloudConfigURL.path) {
+                    try? fm.removeItem(at: localConfigURL)
+                    try? fm.createSymbolicLink(at: localConfigURL, withDestinationURL: iCloudConfigURL)
+                } else {
+                    // iCloud file doesn't exist — set up fresh
+                    enableICloudSync()
+                }
+            }
+        }
+
+        startFileWatcher()
     }
 
     static let defaultExcludedBundleIDs: [String] = [
@@ -77,7 +121,7 @@ class UserConfig: ObservableObject {
                                 animateWindows: animateWindows,
                                 animationDuration: animationDuration)
         if let data = try? JSONEncoder().encode(saved) {
-            try? data.write(to: configURL)
+            try? data.write(to: localConfigURL)
         }
     }
 
@@ -91,6 +135,128 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         animateWindows = true
         animationDuration = 0.15
+    }
+
+    // MARK: - iCloud Drive sync
+
+    /// check if iCloud Drive is available (the Mobile Documents folder exists)
+    var isICloudDriveAvailable: Bool {
+        FileManager.default.fileExists(atPath:
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs").path)
+    }
+
+    private func enableICloudSync() {
+        let fm = FileManager.default
+        let iCloudDir = iCloudConfigURL.deletingLastPathComponent()
+
+        // create iCloud HyprMac directory
+        try? fm.createDirectory(at: iCloudDir, withIntermediateDirectories: true)
+
+        // move config to iCloud (or copy if symlink already exists)
+        if fm.fileExists(atPath: localConfigURL.path) {
+            let isSymlink = (try? localConfigURL.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink ?? false
+            if !isSymlink {
+                // move local file to iCloud location
+                if fm.fileExists(atPath: iCloudConfigURL.path) {
+                    try? fm.removeItem(at: iCloudConfigURL)
+                }
+                try? fm.moveItem(at: localConfigURL, to: iCloudConfigURL)
+            }
+        } else {
+            // no local config — save current state to iCloud
+            save() // writes to localConfigURL
+            if fm.fileExists(atPath: localConfigURL.path) {
+                try? fm.moveItem(at: localConfigURL, to: iCloudConfigURL)
+            }
+        }
+
+        // create symlink: local path -> iCloud path
+        if !fm.fileExists(atPath: localConfigURL.path) {
+            try? fm.createSymbolicLink(at: localConfigURL, withDestinationURL: iCloudConfigURL)
+        }
+
+        restartFileWatcher()
+    }
+
+    private func disableICloudSync() {
+        let fm = FileManager.default
+        let isSymlink = (try? localConfigURL.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink ?? false
+
+        if isSymlink {
+            // read current config from iCloud before removing symlink
+            let data = try? Data(contentsOf: localConfigURL)
+            try? fm.removeItem(at: localConfigURL) // removes symlink only
+
+            // write config back as a regular file
+            if let data = data {
+                try? data.write(to: localConfigURL)
+            } else {
+                save()
+            }
+        }
+
+        restartFileWatcher()
+    }
+
+    // MARK: - File watcher
+
+    private func startFileWatcher() {
+        stopFileWatcher()
+
+        // resolve the actual file path (follows symlinks)
+        let watchPath = localConfigURL.resolvingSymlinksInPath().path
+        let fd = open(watchPath, O_EVTONLY)
+        guard fd >= 0 else { return }
+        fileWatcherFD = fd
+
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .rename, .delete],
+            queue: .main
+        )
+
+        source.setEventHandler { [weak self] in
+            self?.reloadFromDisk()
+        }
+
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        source.resume()
+        fileWatcherSource = source
+    }
+
+    private func stopFileWatcher() {
+        fileWatcherSource?.cancel()
+        fileWatcherSource = nil
+        fileWatcherFD = -1
+    }
+
+    private func restartFileWatcher() {
+        stopFileWatcher()
+        // small delay — let filesystem settle after move/symlink
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.startFileWatcher()
+        }
+    }
+
+    func reloadFromDisk() {
+        guard let data = try? Data(contentsOf: localConfigURL),
+              let saved = try? JSONDecoder().decode(SavedConfig.self, from: data) else { return }
+
+        isReloading = true
+        keybinds = saved.keybinds
+        gapSize = saved.gapSize
+        outerPadding = saved.outerPadding
+        enabled = saved.enabled
+        focusFollowsMouse = saved.focusFollowsMouse ?? true
+        doubleTapAction = saved.doubleTapAction ?? .focusMenuBar
+        excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
+        animateWindows = saved.animateWindows ?? true
+        animationDuration = saved.animationDuration ?? 0.15
+        isReloading = false
     }
 }
 

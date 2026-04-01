@@ -6,6 +6,11 @@ options:
   xcodeVersion: "16.0"
   generateEmptyDirectories: true
 
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
 settings:
   base:
     SWIFT_OBJC_BRIDGING_HEADER: HyprMac/PrivateAPI/HyprMac-Bridging-Header.h
@@ -26,6 +31,8 @@ targets:
     platform: macOS
     sources:
       - HyprMac
+    dependencies:
+      - package: Sparkle
     settings:
       base:
         INFOPLIST_FILE: HyprMac/Info.plist

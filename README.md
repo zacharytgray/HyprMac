@@ -26,11 +26,22 @@ See [`AGENTS.md`](AGENTS.md) for architecture, technical decisions, and config f
 ## Requirements
 
 - macOS 13+ (Ventura or later)
-- Xcode 15+ (build from source)
 - Accessibility permission (System Settings → Privacy → Accessibility)
 - Caps Lock set to "⇪ Caps Lock" in Modifier Keys (not "No Action")
 
 ## Installation
+
+### Homebrew (recommended)
+
+```bash
+brew install --cask hyprmac
+```
+
+### Manual Download
+
+Download the latest DMG from [GitHub Releases](https://github.com/zacharytgray/HyprMac/releases), open it, and drag HyprMac to Applications.
+
+### Build from Source
 
 ```bash
 git clone https://github.com/zacharytgray/HyprMac.git
@@ -40,13 +51,11 @@ brew install xcodegen
 xcodegen generate
 
 export DEVELOPMENT_TEAM=YOUR_TEAM_ID
-xcodebuild -project HyprMac.xcodeproj -scheme HyprMac -configuration Release \
+xcodebuild -project HyprMac.xcodeproj -scheme HyprMac -configuration Debug \
   -derivedDataPath build DEVELOPMENT_TEAM=$DEVELOPMENT_TEAM build
 
-cp -r build/Build/Products/Release/HyprMac.app /Applications/
+cp -r build/Build/Products/Debug/HyprMac.app /Applications/
 ```
-
-> **Finding your Team ID**: Run `security find-identity -v -p codesigning` or check Xcode → Settings → Accounts.
 
 ### First Launch
 
@@ -104,11 +113,10 @@ Recommended: use a single macOS Space per monitor.
 - **1px window sliver** — hidden workspace windows leave a tiny artifact in the screen corner. Also serves as crash recovery.
 - **Floating window z-order flicker** — When you click a tiled window from a different app, floating windows may briefly dip behind tiled windows before popping back to the front. This is a macOS limitation: setting another process's window level requires SIP to be disabled (yabai solves this via Dock.app code injection; [AeroSpace has had an open issue](https://github.com/nikitabobko/AeroSpace/issues/4) for 2+ years with no SIP-compatible solution). HyprMac uses focus-without-raise (same SkyLight private APIs as yabai/Amethyst) for hover focus, and event-driven re-raise on app activation to keep floating windows on top. HyprMac's own settings window is unaffected since `NSWindow.level = .floating` works for in-process windows.
 - **No animation** — workspace switches are instant, matching Hyprland's behavior.
-- **Build from source only** — DMG/Homebrew distribution planned.
+- **Accessibility re-prompt after update** — macOS may require re-granting Accessibility permission after updating, since the binary signature changes.
 
 ## Roadmap
 
-- Installer (DMG / Homebrew cask)
 - Workspace overflow (auto-send to next workspace when monitor is full)
 - Resize mode (`Hypr+R` + arrows)
 - Scratchpad windows

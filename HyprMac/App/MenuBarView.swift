@@ -1,9 +1,11 @@
 import SwiftUI
+import Sparkle
 
 struct MenuBarView: View {
     @ObservedObject var config = UserConfig.shared
     @Environment(\.openWindow) private var openWindow
     @State private var refreshID = UUID()
+    let updater: SPUUpdater
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -32,6 +34,10 @@ struct MenuBarView: View {
 
             Button("Retile Current Space") {
                 NotificationCenter.default.post(name: .hyprMacRetile, object: nil)
+            }
+
+            Button("Check for Updates...") {
+                updater.checkForUpdates()
             }
 
             Divider()

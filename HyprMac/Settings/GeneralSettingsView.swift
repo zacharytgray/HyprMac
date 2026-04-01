@@ -96,6 +96,31 @@ struct GeneralSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            Section("iCloud Sync") {
+                if config.isICloudDriveAvailable {
+                    Toggle("Sync Settings via iCloud Drive", isOn: $config.iCloudSyncEnabled)
+                    if config.iCloudSyncEnabled {
+                        HStack {
+                            Image(systemName: "checkmark.icloud.fill")
+                                .foregroundColor(.blue)
+                            Text("Syncing via iCloud Drive")
+                                .foregroundColor(.secondary)
+                                .font(.caption)
+                        }
+                    }
+                } else {
+                    HStack {
+                        Image(systemName: "xmark.icloud")
+                            .foregroundColor(.secondary)
+                        Text("iCloud Drive not available")
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Text("Sync keybinds, tiling settings, and preferences across Macs via iCloud Drive. Requires iCloud Drive enabled in System Settings.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Hypr Key") {
                 Text("Caps Lock is remapped to F18 while HyprMac is running. It acts as the Hypr modifier key for all keybinds. Normal Caps Lock is restored when the app quits.")
                     .font(.caption)
