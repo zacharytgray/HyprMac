@@ -80,7 +80,6 @@ All keybinds are configurable in Settings (menubar icon → Settings → Keybind
 | `⇪ + ⌃ + ←/→` | Move workspace to adjacent monitor |
 | `⇪ + K` | Show keybind overlay |
 | `⇪ + ↵` | Launch/focus Terminal |
-
 | `⇪⇪` (double-tap) | Warp cursor to menu bar |
 
 ### Mouse
