@@ -46,7 +46,14 @@ xcodegen generate 2>&1 | tail -1
 # --- step 3: build, sign, create DMG, notarize ---
 echo "[3/7] Building release"
 mkdir -p "$DIST_DIR"
-security unlock-keychain ~/Library/Keychains/login.keychain-db 2>/dev/null || true
+# unlock keychain and pre-authorize codesign so we don't get 20+ password prompts.
+# set-key-partition-list grants codesign access to the signing key for this session.
+echo "       Unlocking keychain (enter password once to authorize all signing)"
+read -s -p "       Keychain password: " KC_PASS; echo
+security unlock-keychain -p "$KC_PASS" ~/Library/Keychains/login.keychain-db
+security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" \
+    ~/Library/Keychains/login.keychain-db >/dev/null 2>&1
+unset KC_PASS
 
 xcodebuild \
     -project HyprMac.xcodeproj \
