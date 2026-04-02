@@ -28,6 +28,14 @@ export PATH="/usr/local/bin:$PATH" && export DEVELOPMENT_TEAM=WYY8494SWG && sour
 
 The script commits and pushes automatically — commit your changes first, then run the release. Check `project.yml` for the current `MARKETING_VERSION` to pick the next version number.
 
+## Release Feature List
+Before running a release, update the "What's New" screen with features from the new version. Steps:
+1. Find commits since the last version tag: `git log v<previous>..HEAD --oneline`
+2. Identify user-facing features and fixes (skip internal refactors, CI changes, etc.)
+3. Update `WhatsNewFeatures.current` in `HyprMac/App/WelcomeView.swift` with the new feature list
+4. Each entry needs an SF Symbol icon, short title, and one-line description
+5. Commit the updated feature list before running `release.sh`
+
 ## Code Style
 - Comments: short lowercase fragments, not narration
 - No unnecessary abstractions or error handling

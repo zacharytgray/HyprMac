@@ -25,6 +25,7 @@
 		577FBDB77676F37630FAF0FE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D52156D6AEACDCE26A6370BF /* Sparkle */; };
 		9C6752FADA9267F639122F68 /* AppLauncherSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
+		A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
 		B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
 		C5C841CD7B9E0C41D488EF3B /* KeybindsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */; };
 		DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */; };
@@ -59,6 +60,7 @@
 		A034E555A586C182E187021F /* HyprMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprMacApp.swift; sourceTree = "<group>"; };
 		A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherManager.swift; sourceTree = "<group>"; };
 		B38E1F4DBD1DB2807610AB4E /* FocusBorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusBorder.swift; sourceTree = "<group>"; };
+		BB697B2619BEB7E2434E157E /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherSettingsView.swift; sourceTree = "<group>"; };
 		D14B540996EBFC8839339556 /* BSPNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNode.swift; sourceTree = "<group>"; };
 		DBF9449D559067A61BBA8394 /* BSPTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTree.swift; sourceTree = "<group>"; };
@@ -108,6 +110,7 @@
 				54EA610EADBFADA21DC625C3 /* AppDelegate.swift */,
 				A034E555A586C182E187021F /* HyprMacApp.swift */,
 				23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */,
+				BB697B2619BEB7E2434E157E /* WelcomeView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -295,6 +298,7 @@
 				321ED983E085852543CE66E5 /* TilingEngine.swift in Sources */,
 				F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */,
 				9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */,
+				A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */,
 				29E2FA4EAB3E1C5BD02A9F1E /* WindowAnimator.swift in Sources */,
 				DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */,
 				42778D615628483A357572DF /* WorkspaceManager.swift in Sources */,

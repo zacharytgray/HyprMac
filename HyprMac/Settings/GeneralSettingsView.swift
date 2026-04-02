@@ -146,6 +146,15 @@ struct GeneralSettingsView: View {
                 }
                 .foregroundColor(.red)
             }
+
+            Section("About") {
+                HStack {
+                    Text("Version")
+                    Spacer()
+                    Text("\(appVersion) (\(appBuild))")
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
         .padding()
@@ -160,6 +169,14 @@ struct GeneralSettingsView: View {
             return url.deletingPathExtension().lastPathComponent
         }
         return bundleID
+    }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+
+    private var appBuild: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
     }
 
     private func pickExcludedApp() {

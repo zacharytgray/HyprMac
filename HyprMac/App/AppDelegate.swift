@@ -2,6 +2,7 @@ import Cocoa
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
+    private var welcomeController: WelcomeWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -38,6 +39,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let config = UserConfig.shared
         windowManager = WindowManager(config: config)
         windowManager?.start()
+        checkFirstLaunchOrUpdate()
+    }
+
+    private func checkFirstLaunchOrUpdate() {
+        let lastVersion = UserDefaults.standard.string(forKey: "lastSeenVersion")
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+
+        if lastVersion == nil {
+            showWelcome(mode: .welcome)
+        } else if lastVersion != currentVersion {
+            showWelcome(mode: .whatsNew)
+        }
+
+        UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
+    }
+
+    private func showWelcome(mode: WelcomeMode) {
+        // small delay so tiling engine settles first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            let controller = WelcomeWindowController()
+            controller.show(mode: mode)
+            self?.welcomeController = controller
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
