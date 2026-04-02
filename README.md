@@ -21,8 +21,6 @@ Caps Lock becomes a **Hypr** modifier key. BSP dwindle tiling, virtual workspace
 - **Multi-monitor** with per-monitor workspace assignment
 - **Fully configurable** — edit keybinds, app launchers, gaps, and padding in-app or via JSON config
 
-See [`AGENTS.md`](AGENTS.md) for architecture, technical decisions, and config file format.
-
 ## Requirements
 
 - macOS 13+ (Ventura or later)
