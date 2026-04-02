@@ -48,8 +48,12 @@ echo "[3/7] Building release"
 mkdir -p "$DIST_DIR"
 # unlock keychain and pre-authorize codesign so we don't get 20+ password prompts.
 # set-key-partition-list grants codesign access to the signing key for this session.
-echo "       Unlocking keychain (enter password once to authorize all signing)"
-read -s -p "       Keychain password: " KC_PASS; echo
+echo "       Unlocking keychain"
+if [ -n "$KEYCHAIN_PASSWORD" ]; then
+    KC_PASS="$KEYCHAIN_PASSWORD"
+else
+    read -s -p "       Keychain password: " KC_PASS; echo
+fi
 security unlock-keychain -p "$KC_PASS" ~/Library/Keychains/login.keychain-db
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" \
     ~/Library/Keychains/login.keychain-db >/dev/null 2>&1
