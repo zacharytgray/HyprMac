@@ -36,6 +36,10 @@ extern void CGSManagedDisplaySetCurrentSpace(CGSConnectionID cid, CFStringRef _N
 // get CGWindowID from AXUIElement
 extern CGWindowID _AXUIElementGetWindow(AXUIElementRef _Nonnull element);
 
+// apply a visual transform to a window in the compositor (no app re-render).
+// used for smooth animation — content stretches/moves without triggering redraws.
+extern CGError CGSSetWindowTransform(CGSConnectionID cid, uint32_t wid, CGAffineTransform transform);
+
 // space type constants
 // 0 = all spaces, 1 = current spaces visible on screen
 #define kCGSSpaceAll 0
