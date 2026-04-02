@@ -151,7 +151,7 @@ struct GeneralSettingsView: View {
                 HStack {
                     Text("Version")
                     Spacer()
-                    Text("\(appVersion) (\(appBuild))")
+                    Text(appVersion)
                         .foregroundColor(.secondary)
                 }
             }
@@ -173,10 +173,6 @@ struct GeneralSettingsView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-    }
-
-    private var appBuild: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
     }
 
     private func pickExcludedApp() {
