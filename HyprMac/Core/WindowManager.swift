@@ -481,6 +481,20 @@ class WindowManager {
             warpToMenuBar()
         case .focusFloating:
             focusFloatingWindow()
+        case .closeWindow:
+            closeWindow()
+        }
+    }
+
+    // MARK: - close window
+
+    private func closeWindow() {
+        guard let focused = accessibility.getFocusedWindow() else { return }
+        // press the AX close button
+        var closeButton: AnyObject?
+        let err = AXUIElementCopyAttributeValue(focused.element, kAXCloseButtonAttribute as CFString, &closeButton)
+        if err == .success, let button = closeButton {
+            AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
         }
     }
 

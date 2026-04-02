@@ -197,6 +197,7 @@ enum DoubleTapChoice: String, CaseIterable {
     case toggleFloating = "Toggle Floating"
     case toggleSplit = "Toggle Split"
     case showKeybinds = "Show Keybinds"
+    case closeWindow = "Close Window"
 
     static func from(_ desc: Keybind.ActionDescriptor?) -> DoubleTapChoice {
         switch desc {
@@ -204,6 +205,7 @@ enum DoubleTapChoice: String, CaseIterable {
         case .toggleSplit: return .toggleSplit
         case .showKeybinds: return .showKeybinds
         case .focusFloating: return .focusFloating
+        case .closeWindow: return .closeWindow
         default: return .focusMenuBar
         }
     }
@@ -215,6 +217,7 @@ enum DoubleTapChoice: String, CaseIterable {
         case .toggleFloating: return .toggleFloating
         case .toggleSplit: return .toggleSplit
         case .showKeybinds: return .showKeybinds
+        case .closeWindow: return .closeWindow
         }
     }
 }

@@ -277,24 +277,14 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.on.rectangle.angled",
-            title: "Smoother Swap Animations",
-            description: "Window swaps defer resizing to the last phase of animation, reducing stutter on large apps."
+            icon: "xmark.square",
+            title: "Close Window (Hypr + W)",
+            description: "Close the focused window with Caps Lock + W. Works with focus-follows-mouse for quick cleanup."
         ),
         WhatsNewFeature(
-            icon: "arrow.right.arrow.left.square",
-            title: "Overflow Spill to Next Workspace",
-            description: "Windows beyond max BSP depth spill into the next available workspace instead of auto-floating."
-        ),
-        WhatsNewFeature(
-            icon: "square.dashed",
-            title: "Focus Border",
-            description: "Persistent accent-colored border on the focused window with configurable color."
-        ),
-        WhatsNewFeature(
-            icon: "display.2",
-            title: "Per-Monitor Controls",
-            description: "Disable tiling or set max BSP depth individually for each monitor."
+            icon: "app.dashed",
+            title: "New App Icon",
+            description: "Fresh icon design for HyprMac."
         ),
     ]
 }

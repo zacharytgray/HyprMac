@@ -110,6 +110,7 @@ struct KeybindEditorSheet: View {
         case launchApp = "Launch App"
         case focusMenuBar = "Focus Menu Bar"
         case focusFloating = "Focus Floating"
+        case closeWindow = "Close Window"
     }
 
     var body: some View {
@@ -235,6 +236,8 @@ struct KeybindEditorSheet: View {
             selectedAction = .focusMenuBar
         case .focusFloating:
             selectedAction = .focusFloating
+        case .closeWindow:
+            selectedAction = .closeWindow
         }
     }
 
@@ -259,6 +262,7 @@ struct KeybindEditorSheet: View {
         case .launchApp: action = .launchApp(bundleID: bundleIDParam)
         case .focusMenuBar: action = .focusMenuBar
         case .focusFloating: action = .focusFloating
+        case .closeWindow: action = .closeWindow
         }
 
         let bind = Keybind(keyCode: recordedKeyCode, modifiers: mods, action: action)
@@ -370,6 +374,7 @@ extension Keybind {
         case .launchApp(let b): return "Launch \(b)"
         case .focusMenuBar: return "Focus Menu Bar"
         case .focusFloating: return "Focus Floating"
+        case .closeWindow: return "Close Window"
         }
     }
 }

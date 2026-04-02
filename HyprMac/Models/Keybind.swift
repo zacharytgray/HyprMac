@@ -21,6 +21,7 @@ struct Keybind: Codable, Equatable, Identifiable {
         case launchApp(bundleID: String)
         case focusMenuBar
         case focusFloating
+        case closeWindow
 
         func toAction() -> Action {
             switch self {
@@ -35,6 +36,7 @@ struct Keybind: Codable, Equatable, Identifiable {
             case .launchApp(let b): return .launchApp(bundleID: b)
             case .focusMenuBar: return .focusMenuBar
             case .focusFloating: return .focusFloating
+            case .closeWindow: return .closeWindow
             }
         }
     }
@@ -131,6 +133,10 @@ extension Keybind {
         // hypr + f: focus/raise floating windows
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_F), modifiers: .hypr,
                              action: .focusFloating))
+
+        // hypr + w: close window
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_W), modifiers: .hypr,
+                             action: .closeWindow))
 
         // hypr + enter: launch terminal
         binds.append(Keybind(keyCode: UInt16(kVK_Return), modifiers: .hypr,

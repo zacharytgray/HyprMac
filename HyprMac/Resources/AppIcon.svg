@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0088DD"/>
+      <stop offset="100%" stop-color="#0055AA"/>
+    </linearGradient>
+  </defs>
+
+  <!-- ~824x824 squircle centered with ~100px margin -->
+  <rect x="100" y="100" width="824" height="824" rx="180" ry="180" fill="url(#bg)"/>
+
+  <!-- scale all content to fit within the inset squircle -->
+  <!-- dots -->
+  <circle cx="272" cy="230" r="40" fill="#FF5F57"/>
+  <circle cx="371" cy="230" r="40" fill="#FEBC2E"/>
+  <circle cx="470" cy="230" r="40" fill="#28C840"/>
+
+  <!-- tiles -->
+  <rect x="204" y="322" width="298" height="498" rx="21" fill="white" opacity="0.55"/>
+  <rect x="518" y="322" width="302" height="240" rx="21" fill="white" opacity="0.38"/>
+  <rect x="518" y="578" width="302" height="242" rx="21" fill="white" opacity="0.25"/>
+</svg>

@@ -16,4 +16,5 @@ enum Action: Equatable {
     case launchApp(bundleID: String)
     case focusMenuBar
     case focusFloating
+    case closeWindow
 }
