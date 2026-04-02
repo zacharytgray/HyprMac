@@ -277,14 +277,24 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "app.badge.checkmark",
-            title: "Welcome & What's New Screens",
-            description: "First-launch onboarding slideshow and post-update feature highlights."
+            icon: "rectangle.on.rectangle.angled",
+            title: "Smoother Swap Animations",
+            description: "Window swaps defer resizing to the last phase of animation, reducing stutter on large apps."
         ),
         WhatsNewFeature(
-            icon: "info.circle",
-            title: "Version Display",
-            description: "App version now shown in Settings."
+            icon: "arrow.right.arrow.left.square",
+            title: "Overflow Spill to Next Workspace",
+            description: "Windows beyond max BSP depth spill into the next available workspace instead of auto-floating."
+        ),
+        WhatsNewFeature(
+            icon: "square.dashed",
+            title: "Focus Border",
+            description: "Persistent accent-colored border on the focused window with configurable color."
+        ),
+        WhatsNewFeature(
+            icon: "display.2",
+            title: "Per-Monitor Controls",
+            description: "Disable tiling or set max BSP depth individually for each monitor."
         ),
     ]
 }
