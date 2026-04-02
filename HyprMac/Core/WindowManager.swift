@@ -1207,6 +1207,7 @@ class WindowManager {
     }
 
     func tileAllVisibleSpaces() {
+        guard !animator.isAnimating else { return }
         let allWindows = accessibility.getAllWindows()
 
         for w in allWindows {
