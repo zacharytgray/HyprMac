@@ -46,8 +46,9 @@ class WindowManager {
     private var mouseButtonDown = false
     private var lastMouseFocusedID: CGWindowID = 0
 
-    // suppress FFM while menu bar is open
+    // suppress FFM while menu bar or dock popup is open
     private var menuBarTracking = false
+    private var dockIsActive = false
 
     // suppress focus-follows-mouse briefly after keyboard actions
     private var suppressMouseFocusUntil: Date = .distantPast
@@ -179,7 +180,7 @@ class WindowManager {
             .sink { [weak self] newGap in
                 guard let self = self else { return }
                 self.tilingEngine.gapSize = newGap
-                self.snapshotAndTile()
+                self.animatedRetile()
             }.store(in: &configObservers)
 
         config.$outerPadding
@@ -188,7 +189,7 @@ class WindowManager {
             .sink { [weak self] newPadding in
                 guard let self = self else { return }
                 self.tilingEngine.outerPadding = newPadding
-                self.snapshotAndTile()
+                self.animatedRetile()
             }.store(in: &configObservers)
 
         config.$maxSplitsPerMonitor
@@ -274,6 +275,7 @@ class WindowManager {
         guard config.focusFollowsMouse else { return }
         guard !mouseButtonDown else { return }
         guard !menuBarTracking else { return }
+        guard !dockIsActive else { return }
         guard !animator.isAnimating else { return }
         guard Date() > suppressMouseFocusUntil else { return }
 
@@ -752,22 +754,24 @@ class WindowManager {
             print("[HyprMac] unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
         }
 
-        // remove from current workspace's tiling tree
-        if !isFloating, let cw = currentWorkspace {
-            tilingEngine.removeWindow(focused, fromWorkspace: cw)
+        // animate remaining windows filling the gap
+        animatedRetile(prepare: { [self] in
+            // remove from current workspace's tiling tree
+            if !isFloating, let cw = currentWorkspace {
+                tilingEngine.removeWindow(focused, fromWorkspace: cw)
+            }
+
+            // reassign globally
+            workspaceManager.moveWindow(focused.windowID, toWorkspace: number)
+
+            // hide the window — target workspace may not be visible
+            if isFloating && !onDisabledMonitor {
+                workspaceManager.saveFloatingFrame(focused)
+            }
+            workspaceManager.hideInCorner(focused, on: screen)
+        }) {
+            NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         }
-
-        // reassign globally
-        workspaceManager.moveWindow(focused.windowID, toWorkspace: number)
-
-        // hide the window — target workspace may not be visible
-        if isFloating && !onDisabledMonitor {
-            workspaceManager.saveFloatingFrame(focused)
-        }
-        workspaceManager.hideInCorner(focused, on: screen)
-
-        tileAllVisibleSpaces()
-        NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
     }
 
     // MARK: - move workspace to adjacent monitor
@@ -1063,50 +1067,51 @@ class WindowManager {
         let wasFloating = floatingWindowIDs.contains(focused.windowID)
 
         if wasFloating {
-            floatingWindowIDs.remove(focused.windowID)
-            focused.isFloating = false
+            // floating → tiled: animate surrounding windows making room
+            animatedRetile(prepare: { [self] in
+                floatingWindowIDs.remove(focused.windowID)
+                focused.isFloating = false
 
-            if let evicted = tilingEngine.forceInsertWindow(focused, toWorkspace: workspace, on: screen) {
-                evicted.isFloating = true
-                floatingWindowIDs.insert(evicted.windowID)
-                let screenRect = displayManager.cgRect(for: screen)
-                if let original = originalFrames[evicted.windowID],
-                   isFrameVisible(original, on: screenRect) {
-                    evicted.setFrame(original)
+                if let evicted = tilingEngine.forceInsertWindow(focused, toWorkspace: workspace, on: screen) {
+                    evicted.isFloating = true
+                    floatingWindowIDs.insert(evicted.windowID)
+                    let screenRect = displayManager.cgRect(for: screen)
+                    if let original = originalFrames[evicted.windowID],
+                       isFrameVisible(original, on: screenRect) {
+                        evicted.setFrame(original)
+                    } else {
+                        let sz = evicted.size ?? CGSize(width: 800, height: 600)
+                        evicted.position = CGPoint(x: screenRect.midX - sz.width / 2, y: screenRect.midY - sz.height / 2)
+                    }
+                    print("[HyprMac] tiling '\(focused.title ?? "?")' — bumped '\(evicted.title ?? "?")' to floating")
                 } else {
-                    let sz = evicted.size ?? CGSize(width: 800, height: 600)
-                    evicted.position = CGPoint(x: screenRect.midX - sz.width / 2, y: screenRect.midY - sz.height / 2)
+                    print("[HyprMac] tiling window '\(focused.title ?? "?")'")
                 }
-                print("[HyprMac] tiling '\(focused.title ?? "?")' — bumped '\(evicted.title ?? "?")' to floating")
-            } else {
-                print("[HyprMac] tiling window '\(focused.title ?? "?")'")
-            }
-
-            tileAllVisibleSpaces()
+            })
         } else {
-            floatingWindowIDs.insert(focused.windowID)
-            focused.isFloating = true
-            tilingEngine.removeWindow(focused, fromWorkspace: workspace)
+            // tiled → floating: animate remaining windows filling the gap
+            focusBorder.hide()
+            animatedRetile(prepare: { [self] in
+                floatingWindowIDs.insert(focused.windowID)
+                focused.isFloating = true
+                tilingEngine.removeWindow(focused, fromWorkspace: workspace)
 
-            let screenRect = displayManager.cgRect(for: screen)
-            if let original = originalFrames[focused.windowID],
-               isFrameVisible(original, on: screenRect) {
-                focused.position = original.origin
-                focused.size = original.size
-                print("[HyprMac] floated window '\(focused.title ?? "?")' → restored \(original)")
-            } else {
-                // original frame is off-screen (e.g. from a previous session's hide corner).
-                // center the window on the current screen at a reasonable size.
-                let currentSize = focused.size ?? CGSize(width: 800, height: 600)
-                let centeredOrigin = CGPoint(
-                    x: screenRect.midX - currentSize.width / 2,
-                    y: screenRect.midY - currentSize.height / 2
-                )
-                focused.position = centeredOrigin
-                print("[HyprMac] floated window '\(focused.title ?? "?")' → centered on screen (bad original frame)")
-            }
-
-            tileAllVisibleSpaces()
+                let screenRect = displayManager.cgRect(for: screen)
+                if let original = originalFrames[focused.windowID],
+                   isFrameVisible(original, on: screenRect) {
+                    focused.position = original.origin
+                    focused.size = original.size
+                    print("[HyprMac] floated window '\(focused.title ?? "?")' → restored \(original)")
+                } else {
+                    let currentSize = focused.size ?? CGSize(width: 800, height: 600)
+                    let centeredOrigin = CGPoint(
+                        x: screenRect.midX - currentSize.width / 2,
+                        y: screenRect.midY - currentSize.height / 2
+                    )
+                    focused.position = centeredOrigin
+                    print("[HyprMac] floated window '\(focused.title ?? "?")' → centered on screen (bad original frame)")
+                }
+            })
         }
     }
 
@@ -1234,6 +1239,85 @@ class WindowManager {
         }
 
         updatePositionCache()
+    }
+
+    // animated retile — captures before-frames, runs prepare(), computes new layout,
+    // then animates existing windows sliding from old → new positions.
+    // only animates the surrounding windows — no fade/scale on the window that triggered the change.
+    private func animatedRetile(
+        prepare: (() -> Void)? = nil,
+        completion: (() -> Void)? = nil
+    ) {
+        guard config.animateWindows, !animator.isAnimating else {
+            prepare?()
+            tileAllVisibleSpaces()
+            completion?()
+            return
+        }
+
+        let allWindows = accessibility.getAllWindows()
+
+        // capture before-frames for visible tiled windows
+        var beforeFrames: [CGWindowID: CGRect] = [:]
+        for w in allWindows {
+            guard workspaceManager.isWindowVisible(w.windowID),
+                  !floatingWindowIDs.contains(w.windowID),
+                  let f = w.frame else { continue }
+            beforeFrames[w.windowID] = f
+        }
+
+        // run state changes (e.g. remove from tree, toggle float)
+        prepare?()
+
+        // compute new layout for each screen without applying
+        var newLayouts: [(HyprWindow, CGRect)] = []
+        let refreshedWindows = accessibility.getAllWindows()
+
+        // mark floating flags on refreshed window objects
+        for w in refreshedWindows {
+            if floatingWindowIDs.contains(w.windowID) { w.isFloating = true }
+        }
+        for screen in displayManager.screens {
+            if workspaceManager.isMonitorDisabled(screen) { continue }
+            let workspace = workspaceManager.workspaceForScreen(screen)
+            let widsOnWorkspace = workspaceManager.windowIDs(onWorkspace: workspace)
+
+            var workspaceWindows: [HyprWindow] = []
+            for window in refreshedWindows {
+                if widsOnWorkspace.contains(window.windowID) {
+                    workspaceWindows.append(window)
+                }
+            }
+
+            let layouts = tilingEngine.computeTileLayout(workspaceWindows, onWorkspace: workspace, screen: screen)
+            newLayouts.append(contentsOf: layouts)
+        }
+
+        // build slide transitions for windows that moved
+        var transitions: [WindowAnimator.FrameTransition] = []
+        for (w, toRect) in newLayouts {
+            if let fromRect = beforeFrames[w.windowID], fromRect != toRect {
+                transitions.append(.init(window: w, from: fromRect, to: toRect))
+            }
+        }
+
+        guard !transitions.isEmpty else {
+            tileAllVisibleSpaces()
+            completion?()
+            return
+        }
+
+        animator.animate(transitions, duration: config.animationDuration) { [weak self] in
+            guard let self else { return }
+            // apply final layout with two-pass min-size resolution
+            for screen in self.displayManager.screens {
+                if self.workspaceManager.isMonitorDisabled(screen) { continue }
+                let workspace = self.workspaceManager.workspaceForScreen(screen)
+                self.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+            }
+            self.updatePositionCache()
+            completion?()
+        }
     }
 
     // distribute tiling windows across workspaces, spilling into next workspace when full.
@@ -1508,7 +1592,8 @@ class WindowManager {
         }
 
         if changed {
-            tileAllVisibleSpaces()
+            // animate surrounding windows sliding to fill gaps / make room
+            animatedRetile()
         }
 
         // if the FFM-tracked window disappeared, refocus to whatever tiled window
@@ -1528,6 +1613,11 @@ class WindowManager {
     // MARK: - observers
 
     @objc private func appDidActivate(_ notification: Notification) {
+        // suppress FFM while dock popups (downloads, stacks) are open
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            dockIsActive = (app.bundleIdentifier == "com.apple.dock")
+        }
+
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
         if Date() > suppressActivationSwitchUntil {
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
