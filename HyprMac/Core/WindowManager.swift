@@ -52,11 +52,18 @@ class WindowManager {
     // suppress focus-follows-mouse briefly after keyboard actions
     private var suppressMouseFocusUntil: Date = .distantPast
 
-    // guard against re-entrant appDidActivate during workspace switch
-    private var isSwitchingWorkspace = false
+    // suppress appDidActivate workspace switching (survives async notification delivery)
+    private var suppressActivationSwitchUntil: Date = .distantPast
+
+    // guard against re-entrant raiseFloatingWindows
+    private var isRaisingFloaters = false
+
+    // coalesce rapid polls from overlapping notifications
+    private var pendingPoll = false
 
     // live config reload
     private var configObservers: Set<AnyCancellable> = []
+    private var isRunning = false
 
     init(config: UserConfig) {
         self.config = config
@@ -77,6 +84,21 @@ class WindowManager {
             }
             print("[HyprMac] auto-floated '\(window.title ?? "?")' — screen full (max \(self.tilingEngine.maxDepth) splits)")
         }
+
+        // react to enabled toggling (including mid-flight config rewrites from iCloud sync)
+        config.$enabled
+            .dropFirst() // skip initial value — start() handles that
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                guard let self = self else { return }
+                if enabled && !self.isRunning {
+                    print("[HyprMac] config re-enabled, starting")
+                    self.start()
+                } else if !enabled && self.isRunning {
+                    print("[HyprMac] config disabled, stopping")
+                    self.stop()
+                }
+            }.store(in: &configObservers)
     }
 
     func start() {
@@ -84,6 +106,8 @@ class WindowManager {
             print("[HyprMac] disabled in config")
             return
         }
+        guard !isRunning else { return }
+        isRunning = true
 
         tilingEngine.gapSize = config.gapSize
         tilingEngine.outerPadding = config.outerPadding
@@ -151,6 +175,7 @@ class WindowManager {
     }
 
     func stop() {
+        isRunning = false
         pollTimer?.invalidate()
         pollTimer = nil
         stopMouseTracking()
@@ -229,6 +254,7 @@ class WindowManager {
     // activates the process without reordering windows, then SLPSPostEventRecordTo
     // synthesizes keyboard focus events. z-order is completely untouched.
     private func focusForFFM(_ window: HyprWindow) {
+        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
         window.focusWithoutRaise()
     }
 
@@ -298,6 +324,15 @@ class WindowManager {
         if let target = swapTarget {
             if crossMonitor {
                 print("[HyprMac] cross-monitor swap: '\(dragged.title ?? "?")' ↔ '\(target.title ?? "?")'")
+
+                // update workspace assignments to follow the windows across monitors
+                if let srcScreen = sourceScreen, let tgtScreen = targetScreen {
+                    let srcWs = workspaceManager.workspaceForScreen(srcScreen)
+                    let tgtWs = workspaceManager.workspaceForScreen(tgtScreen)
+                    workspaceManager.moveWindow(dragged.windowID, toWorkspace: tgtWs)
+                    workspaceManager.moveWindow(target.windowID, toWorkspace: srcWs)
+                }
+
                 tilingEngine.crossSwapWindows(dragged, target)
                 updatePositionCache()
             } else if let screen = sourceScreen {
@@ -407,7 +442,8 @@ class WindowManager {
 
     private func focusInDirection(_ direction: Direction) {
         guard let focused = accessibility.getFocusedWindow() else { return }
-        let windows = accessibility.getAllWindows()
+        // only consider windows on visible workspaces — hidden corner windows must be excluded
+        let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
 
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
             target.focusWithoutRaise()
@@ -426,7 +462,7 @@ class WindowManager {
         guard let focused = accessibility.getFocusedWindow() else { return }
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
         let workspace = workspaceManager.workspaceForScreen(screen)
-        let windows = accessibility.getAllWindows()
+        let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
 
         guard let target = accessibility.windowInDirection(direction, from: focused, among: windows) else { return }
 
@@ -470,8 +506,10 @@ class WindowManager {
     }
 
     private func switchWorkspace(_ number: Int) {
-        isSwitchingWorkspace = true
-        defer { isSwitchingWorkspace = false }
+        // suppress FFM and activation-triggered switches during and after this switch.
+        // must outlive the synchronous scope because best.focus() queues async notifications.
+        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+        suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
 
         let currentScreen = screenUnderCursor()
 
@@ -856,6 +894,7 @@ class WindowManager {
 
     private func pollWindowChanges() {
         guard !animator.isAnimating else { return }
+        guard !mouseButtonDown else { return }
         let allWindows = accessibility.getAllWindows()
         let currentIDs = Set(allWindows.map { $0.windowID })
 
@@ -910,16 +949,17 @@ class WindowManager {
                 cachedWindows.removeValue(forKey: id)
 
                 if let pid = windowOwners[id], runningPIDs.contains(pid) {
+                    // app still running — window was minimized, hidden, or closed.
+                    // track as hidden regardless of workspace visibility so un-minimize
+                    // is detected correctly even for windows on hidden workspaces.
+                    knownWindowIDs.remove(id)
+                    hiddenWindowIDs.insert(id)
+                    changed = true
                     if workspaceManager.isWindowVisible(id) {
-                        // window was on a visible workspace → genuinely minimized/hidden
-                        knownWindowIDs.remove(id)
-                        hiddenWindowIDs.insert(id)
-                        changed = true
                         print("[HyprMac] window hidden: \(id)")
+                    } else {
+                        print("[HyprMac] window hidden (inactive ws): \(id)")
                     }
-                    // on inactive workspace → absence is expected, keep tracking it
-                    // don't remove from knownWindowIDs or it'll be "rediscovered" as new
-                    // and reassigned to the wrong workspace
                 } else {
                     // app terminated — full cleanup
                     knownWindowIDs.remove(id)
@@ -941,33 +981,39 @@ class WindowManager {
     // MARK: - observers
 
     @objc private func appDidActivate(_ notification: Notification) {
-        // if we triggered this via our own workspace switch, skip
-        guard !isSwitchingWorkspace else { return }
+        // suppressed during workspace switches, FFM focus, and float raises
+        guard Date() > suppressActivationSwitchUntil else {
+            schedulePoll()
+            return
+        }
 
-        // dock click: switch to workspace containing the activated app's window
+        // dock click: switch to workspace containing the activated app's window.
+        // only when the app has NO windows on any visible workspace — if it does,
+        // this activation is for a visible window (FFM, click, Cmd-Tab), not a dock click.
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
             let pid = app.processIdentifier
             let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
 
-            // find first window for this app on a hidden workspace, preferring lowest workspace number
-            let match = windowOwners
-                .filter { $0.value == pid }
-                .compactMap { (wid, _) -> Int? in workspaceManager.workspaceFor(wid) }
-                .filter { !visibleWorkspaces.contains($0) }
-                .min()
+            // only consider windows still tracked (not hidden/closed)
+            let appWindows = windowOwners
+                .filter { $0.value == pid && knownWindowIDs.contains($0.key) && !hiddenWindowIDs.contains($0.key) }
 
-            if let targetWS = match {
-                switchWorkspace(targetWS)
-                return
+            let appWorkspaces = appWindows.compactMap { (wid, _) in workspaceManager.workspaceFor(wid) }
+            let hasVisibleWindow = appWorkspaces.contains { visibleWorkspaces.contains($0) }
+
+            if !hasVisibleWindow {
+                // app has no visible windows — this is likely a dock click
+                if let targetWS = appWorkspaces.filter({ !visibleWorkspaces.contains($0) }).min() {
+                    switchWorkspace(targetWS)
+                    return
+                }
             }
         }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.pollWindowChanges()
-        }
+        schedulePoll()
+
         // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
         // can't set window level cross-process (needs SIP off), so we re-raise instead.
-        // small delay lets the activation + raise settle before we push floaters back on top.
         if !floatingWindowIDs.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.raiseFloatingWindows()
@@ -975,31 +1021,41 @@ class WindowManager {
         }
     }
 
-    // raise all visible floating windows via kAXRaiseAction
+    // raise all visible floating windows via kAXRaiseAction.
+    // suppress activation switches so raising doesn't cascade.
     private func raiseFloatingWindows() {
+        guard !isRaisingFloaters else { return }
+        isRaisingFloaters = true
+        suppressActivationSwitchUntil = Date().addingTimeInterval(0.3)
         for wid in floatingWindowIDs {
             guard workspaceManager.isWindowVisible(wid),
                   let w = cachedWindows[wid] else { continue }
             AXUIElementPerformAction(w.element, kAXRaiseAction as CFString)
         }
+        isRaisingFloaters = false
+    }
+
+    // coalesced poll scheduling — all notification handlers funnel through here
+    private func schedulePoll(delay: TimeInterval = 0.2) {
+        guard !pendingPoll else { return }
+        pendingPoll = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self = self else { return }
+            self.pendingPoll = false
+            self.pollWindowChanges()
+        }
     }
 
     @objc private func appDidLaunch(_ notification: Notification) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.pollWindowChanges()
-        }
+        schedulePoll(delay: 0.5)
     }
 
     @objc private func appDidTerminate(_ notification: Notification) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-            self?.pollWindowChanges()
-        }
+        schedulePoll()
     }
 
     @objc private func appVisibilityChanged(_ notification: Notification) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            self?.pollWindowChanges()
-        }
+        schedulePoll(delay: 0.3)
     }
 
     @objc private func screenParametersChanged() {

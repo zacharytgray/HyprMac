@@ -65,6 +65,10 @@ class WorkspaceManager {
         for sid in monitorWorkspace.keys where !currentSIDs.contains(sid) {
             monitorWorkspace.removeValue(forKey: sid)
         }
+        // also clean workspaceHomeScreen pointing to nonexistent screens
+        for (ws, sid) in workspaceHomeScreen where !currentSIDs.contains(sid) {
+            workspaceHomeScreen.removeValue(forKey: ws)
+        }
 
         print("[HyprMac] workspace init: monitors=\(monitorWorkspace) homes=\(workspaceHomeScreen)")
     }
@@ -136,10 +140,14 @@ class WorkspaceManager {
         return CGPoint(x: cgRight - 1, y: cgBottom - 1)
     }
 
+    // offset each hidden window by its windowID (mod 200) so no two share the same
+    // corner position. prevents CG-ID matching ambiguity in AccessibilityManager.
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
         let pos = hidePosition(for: screen)
-        window.position = pos
-        print("[HyprMac] hiding '\(window.title ?? "?")' (\(window.windowID)) at (\(Int(pos.x)),\(Int(pos.y)))")
+        let offset = CGFloat(window.windowID % 200)
+        let offsetPos = CGPoint(x: pos.x - offset, y: pos.y)
+        window.position = offsetPos
+        print("[HyprMac] hiding '\(window.title ?? "?")' (\(window.windowID)) at (\(Int(offsetPos.x)),\(Int(offsetPos.y)))")
     }
 
     func saveFloatingFrame(_ window: HyprWindow) {
