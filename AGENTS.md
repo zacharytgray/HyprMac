@@ -80,6 +80,7 @@ Hypr+N pressed:
 ## Key Technical Decisions
 - **Virtual workspaces (AeroSpace approach)**: 9 global workspaces managed in userspace. Windows on inactive workspaces are hidden at the bottom corner of their screen (1px visible — macOS limitation). No CGS private APIs needed for workspace management. Works without SIP.
 - **Workspace home screen tracking**: Each workspace remembers which monitor it was last shown on (`workspaceHomeScreen`). Switching to an invisible workspace returns it to its home screen, NOT the cursor's screen. Prevents workspace drift across monitors.
+- **Multi-monitor window balancing**: On launch (and "Retile Current Space"), `balanceWindowsAcrossMonitors()` redistributes non-floating windows evenly across monitors. Prevents all windows piling onto the primary screen. Focused window stays put; excess windows are moved to underloaded screens' workspaces.
 - **Cursor-based screen detection**: All workspace operations use `screenUnderCursor()` instead of `getFocusedWindow()`. The focused window can be stale after switching to an empty workspace.
 - **Inactive workspace window tracking**: Windows on invisible workspaces stay in `knownWindowIDs` even when they disappear from `getAllWindows()`. Prevents rediscovery as "new" windows and workspace reassignment drift.
 - **Caps Lock -> F18 via `hidutil`**: Caps Lock can't be intercepted by CGEventTap (it's a toggle at the driver level). `hidutil property --set` remaps it to F18 at the IOKit layer. Restored on app quit.

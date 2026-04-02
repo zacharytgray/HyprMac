@@ -925,6 +925,7 @@ class WindowManager {
                 }
             }
         }
+        balanceWindowsAcrossMonitors()
         tileAllVisibleSpaces()
     }
 
@@ -954,6 +955,55 @@ class WindowManager {
         }
 
         updatePositionCache()
+    }
+
+    // redistribute non-floating windows evenly across monitors
+    private func balanceWindowsAcrossMonitors() {
+        let screens = displayManager.screens
+        guard screens.count >= 2 else { return }
+
+        let focusedID = accessibility.getFocusedWindow()?.windowID
+
+        // gather non-floating window IDs per screen's active workspace
+        var screenWindows: [(screen: NSScreen, ws: Int, wids: [CGWindowID])] = []
+        for screen in screens {
+            let ws = workspaceManager.workspaceForScreen(screen)
+            let all = workspaceManager.windowIDs(onWorkspace: ws)
+            let tiling = all.filter { !floatingWindowIDs.contains($0) }
+            screenWindows.append((screen, ws, Array(tiling)))
+        }
+
+        let total = screenWindows.reduce(0) { $0 + $1.wids.count }
+        guard total > screens.count else { return }
+
+        let base = total / screens.count
+        let extra = total % screens.count
+
+        // target counts: first `extra` screens get base+1, rest get base
+        let targets = (0..<screens.count).map { $0 < extra ? base + 1 : base }
+
+        // move windows from overloaded to underloaded
+        var counts = screenWindows.map { $0.wids.count }
+        var movable = screenWindows.map { entry in
+            entry.wids.filter { $0 != focusedID }
+        }
+
+        for _ in 0..<total {
+            // find most overloaded (relative to target)
+            guard let srcIdx = counts.enumerated().max(by: { ($0.element - targets[$0.offset]) < ($1.element - targets[$1.offset]) })?.offset,
+                  counts[srcIdx] > targets[srcIdx],
+                  let dstIdx = counts.enumerated().min(by: { ($0.element - targets[$0.offset]) < ($1.element - targets[$1.offset]) })?.offset,
+                  counts[dstIdx] < targets[dstIdx],
+                  !movable[srcIdx].isEmpty else { break }
+
+            let wid = movable[srcIdx].removeLast()
+            let dstWs = screenWindows[dstIdx].ws
+            workspaceManager.assignWindow(wid, toWorkspace: dstWs)
+            counts[srcIdx] -= 1
+            counts[dstIdx] += 1
+        }
+
+        print("[HyprMac] balanced \(total) windows across \(screens.count) monitors")
     }
 
     // check if at least 25% of the frame is visible on the given screen rect
