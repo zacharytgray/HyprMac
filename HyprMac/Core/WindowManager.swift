@@ -314,6 +314,30 @@ class WindowManager {
         updateFocusBorder(for: window)
     }
 
+    // after a window disappears, re-derive focus from cursor position so
+    // keyboard actions (swap, move-to-workspace) keep working without
+    // requiring the user to jiggle the mouse.
+    private func refocusUnderCursor() {
+        let mouseNS = NSEvent.mouseLocation
+        let cgY = displayManager.primaryScreenHeight - mouseNS.y
+        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+
+        for (wid, rect) in tiledPositions {
+            if rect.contains(cgPoint), let target = cachedWindows[wid] {
+                lastMouseFocusedID = wid
+                if config.focusFollowsMouse {
+                    focusForFFM(target)
+                } else {
+                    updateFocusBorder(for: target)
+                }
+                return
+            }
+        }
+        // cursor not over any tiled window — clear stale state
+        lastMouseFocusedID = 0
+        focusBorder.hide()
+    }
+
     private func updateFocusBorder(for window: HyprWindow) {
         guard config.showFocusBorder, let frame = window.frame else {
             focusBorder.hide()
@@ -483,16 +507,21 @@ class WindowManager {
             focusFloatingWindow()
         case .closeWindow:
             closeWindow()
+        case .cycleWorkspace(let delta):
+            cycleOccupiedWorkspace(delta: delta)
         }
     }
 
     // MARK: - close window
 
     private func closeWindow() {
-        guard let focused = accessibility.getFocusedWindow() else { return }
-        // press the AX close button
+        // prefer the FFM-tracked window (the one under cursor) over AX focused window,
+        // because focusWithoutRaise doesn't update macOS's notion of "focused window"
+        // for multi-window same-app scenarios
+        let target = cachedWindows[lastMouseFocusedID] ?? accessibility.getFocusedWindow()
+        guard let target else { return }
         var closeButton: AnyObject?
-        let err = AXUIElementCopyAttributeValue(focused.element, kAXCloseButtonAttribute as CFString, &closeButton)
+        let err = AXUIElementCopyAttributeValue(target.element, kAXCloseButtonAttribute as CFString, &closeButton)
         if err == .success, let button = closeButton {
             AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
         }
@@ -581,6 +610,34 @@ class WindowManager {
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         return displayManager.screen(at: CGPoint(x: mouseNS.x, y: cgY))
             ?? displayManager.screens.first!
+    }
+
+    // cycle through occupied workspaces on the current monitor (delta: +1 next, -1 prev).
+    // "occupied" = has at least one window assigned to it.
+    private func cycleOccupiedWorkspace(delta: Int) {
+        let screen = screenUnderCursor()
+        let current = workspaceManager.workspaceForScreen(screen)
+        let total = workspaceManager.workspaceCount
+
+        let screenSID = workspaceManager.screenID(for: screen)
+
+        // collect occupied workspaces that belong to this monitor (home screen matches)
+        let occupied = Set((1...total).filter { ws in
+            workspaceManager.workspaceHomeScreen[ws] == screenSID &&
+            !workspaceManager.windowIDs(onWorkspace: ws).isEmpty
+        })
+
+        guard !occupied.isEmpty else { return }
+
+        // walk in the requested direction, wrapping around, until we find an occupied workspace
+        var candidate = current
+        for _ in 1...total {
+            candidate = (candidate - 1 + delta + total) % total + 1
+            if occupied.contains(candidate) {
+                switchWorkspace(candidate)
+                return
+            }
+        }
     }
 
     private func switchWorkspace(_ number: Int) {
@@ -1390,9 +1447,11 @@ class WindowManager {
 
         // detect gone windows
         let gone = knownWindowIDs.subtracting(currentIDs)
+        var focusedWindowGone = false
         if !gone.isEmpty {
             let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
             for id in gone {
+                if id == lastMouseFocusedID { focusedWindowGone = true }
                 tiledPositions.removeValue(forKey: id)
                 cachedWindows.removeValue(forKey: id)
 
@@ -1423,6 +1482,13 @@ class WindowManager {
 
         if changed {
             tileAllVisibleSpaces()
+        }
+
+        // if the FFM-tracked window disappeared, refocus to whatever tiled window
+        // is under the cursor now. without this, focus gets stuck because
+        // handleMouseMove only fires on actual mouse movement.
+        if focusedWindowGone {
+            refocusUnderCursor()
         }
 
         // periodically re-raise floating windows so they don't get stuck

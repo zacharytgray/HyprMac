@@ -111,6 +111,7 @@ struct KeybindEditorSheet: View {
         case focusMenuBar = "Focus Menu Bar"
         case focusFloating = "Focus Floating"
         case closeWindow = "Close Window"
+        case cycleWorkspace = "Cycle Workspace"
     }
 
     var body: some View {
@@ -176,6 +177,12 @@ struct KeybindEditorSheet: View {
                                 Text("\(n)").tag(n)
                             }
                         }
+                    case .cycleWorkspace:
+                        Picker("Direction", selection: $desktopParam) {
+                            Text("Next").tag(1)
+                            Text("Previous").tag(-1)
+                        }
+                        .pickerStyle(.segmented)
                     case .launchApp:
                         TextField("Bundle ID", text: $bundleIDParam)
                             .textFieldStyle(.roundedBorder)
@@ -238,6 +245,8 @@ struct KeybindEditorSheet: View {
             selectedAction = .focusFloating
         case .closeWindow:
             selectedAction = .closeWindow
+        case .cycleWorkspace(let d):
+            selectedAction = .cycleWorkspace; desktopParam = d
         }
     }
 
@@ -263,6 +272,7 @@ struct KeybindEditorSheet: View {
         case .focusMenuBar: action = .focusMenuBar
         case .focusFloating: action = .focusFloating
         case .closeWindow: action = .closeWindow
+        case .cycleWorkspace: action = .cycleWorkspace(desktopParam)
         }
 
         let bind = Keybind(keyCode: recordedKeyCode, modifiers: mods, action: action)
@@ -375,6 +385,7 @@ extension Keybind {
         case .focusMenuBar: return "Focus Menu Bar"
         case .focusFloating: return "Focus Floating"
         case .closeWindow: return "Close Window"
+        case .cycleWorkspace(let d): return d > 0 ? "Next Workspace" : "Prev Workspace"
         }
     }
 }

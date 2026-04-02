@@ -17,4 +17,5 @@ enum Action: Equatable {
     case focusMenuBar
     case focusFloating
     case closeWindow
+    case cycleWorkspace(Int)  // +1 = next occupied, -1 = prev occupied (on current monitor)
 }

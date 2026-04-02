@@ -22,6 +22,7 @@ struct Keybind: Codable, Equatable, Identifiable {
         case focusMenuBar
         case focusFloating
         case closeWindow
+        case cycleWorkspace(Int)
 
         func toAction() -> Action {
             switch self {
@@ -37,6 +38,7 @@ struct Keybind: Codable, Equatable, Identifiable {
             case .focusMenuBar: return .focusMenuBar
             case .focusFloating: return .focusFloating
             case .closeWindow: return .closeWindow
+            case .cycleWorkspace(let d): return .cycleWorkspace(d)
             }
         }
     }
@@ -137,6 +139,12 @@ extension Keybind {
         // hypr + w: close window
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_W), modifiers: .hypr,
                              action: .closeWindow))
+
+        // hypr + tab / hypr + shift + tab: cycle occupied workspaces on current monitor
+        binds.append(Keybind(keyCode: UInt16(kVK_Tab), modifiers: .hypr,
+                             action: .cycleWorkspace(1)))
+        binds.append(Keybind(keyCode: UInt16(kVK_Tab), modifiers: [.hypr, .shift],
+                             action: .cycleWorkspace(-1)))
 
         // hypr + enter: launch terminal
         binds.append(Keybind(keyCode: UInt16(kVK_Return), modifiers: .hypr,
