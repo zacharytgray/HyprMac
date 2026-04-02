@@ -115,6 +115,10 @@ class WorkspaceManager {
         return displayManager.screens.first { screenID(for: $0) == sid }
     }
 
+    func setHomeScreen(for workspace: Int, screenID sid: Int) {
+        workspaceHomeScreen[workspace] = sid
+    }
+
     func isWorkspaceVisible(_ workspace: Int) -> Bool {
         monitorWorkspace.values.contains(workspace)
     }

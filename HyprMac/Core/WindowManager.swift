@@ -1105,7 +1105,7 @@ class WindowManager {
                 }
             }
         }
-        balanceWindowsAcrossMonitors()
+        distributeWindowsAcrossWorkspaces()
         tileAllVisibleSpaces()
     }
 
@@ -1138,53 +1138,93 @@ class WindowManager {
         updatePositionCache()
     }
 
-    // redistribute non-floating windows evenly across enabled monitors
-    private func balanceWindowsAcrossMonitors() {
+    // distribute tiling windows across workspaces, spilling into next workspace when full.
+    // each workspace is tied to one screen. fills visible workspaces first (left-to-right),
+    // then spillover workspaces cycle through screens.
+    private func distributeWindowsAcrossWorkspaces() {
         let screens = displayManager.screens.filter { !workspaceManager.isMonitorDisabled($0) }
-        guard screens.count >= 2 else { return }
+            .sorted { $0.frame.origin.x < $1.frame.origin.x }
+        guard !screens.isEmpty else { return }
 
+        let allWindows = accessibility.getAllWindows()
         let focusedID = accessibility.getFocusedWindow()?.windowID
 
-        // gather non-floating window IDs per screen's active workspace
-        var screenWindows: [(screen: NSScreen, ws: Int, wids: [CGWindowID])] = []
+        // gather all non-floating tiling window IDs
+        var tilingWids: [CGWindowID] = []
         for screen in screens {
             let ws = workspaceManager.workspaceForScreen(screen)
-            let all = workspaceManager.windowIDs(onWorkspace: ws)
-            let tiling = all.filter { !floatingWindowIDs.contains($0) }
-            screenWindows.append((screen, ws, Array(tiling)))
+            for wid in workspaceManager.windowIDs(onWorkspace: ws) where !floatingWindowIDs.contains(wid) {
+                tilingWids.append(wid)
+            }
+        }
+        for w in allWindows where !floatingWindowIDs.contains(w.windowID) {
+            if workspaceManager.workspaceFor(w.windowID) == nil && !tilingWids.contains(w.windowID) {
+                tilingWids.append(w.windowID)
+            }
         }
 
-        let total = screenWindows.reduce(0) { $0 + $1.wids.count }
-        guard total > screens.count else { return }
+        guard !tilingWids.isEmpty else { return }
 
-        let base = total / screens.count
-        let extra = total % screens.count
-
-        // target counts: first `extra` screens get base+1, rest get base
-        let targets = (0..<screens.count).map { $0 < extra ? base + 1 : base }
-
-        // move windows from overloaded to underloaded
-        var counts = screenWindows.map { $0.wids.count }
-        var movable = screenWindows.map { entry in
-            entry.wids.filter { $0 != focusedID }
+        // focused window first so it lands on the first visible workspace
+        if let fid = focusedID, let idx = tilingWids.firstIndex(of: fid), idx != 0 {
+            tilingWids.swapAt(0, idx)
         }
 
-        for _ in 0..<total {
-            // find most overloaded (relative to target)
-            guard let srcIdx = counts.enumerated().max(by: { ($0.element - targets[$0.offset]) < ($1.element - targets[$1.offset]) })?.offset,
-                  counts[srcIdx] > targets[srcIdx],
-                  let dstIdx = counts.enumerated().min(by: { ($0.element - targets[$0.offset]) < ($1.element - targets[$1.offset]) })?.offset,
-                  counts[dstIdx] < targets[dstIdx],
-                  !movable[srcIdx].isEmpty else { break }
+        // build ordered (workspace, screen) slots.
+        // visible workspaces first (left-to-right), then spillover cycling screens.
+        var slots: [(ws: Int, screen: NSScreen)] = []
+        var usedWs = Set<Int>()
 
-            let wid = movable[srcIdx].removeLast()
-            let dstWs = screenWindows[dstIdx].ws
-            workspaceManager.assignWindow(wid, toWorkspace: dstWs)
-            counts[srcIdx] -= 1
-            counts[dstIdx] += 1
+        for screen in screens {
+            let ws = workspaceManager.workspaceForScreen(screen)
+            slots.append((ws, screen))
+            usedWs.insert(ws)
         }
 
-        print("[HyprMac] balanced \(total) windows across \(screens.count) monitors")
+        var spillScreenIdx = 0
+        for ws in 1...workspaceManager.workspaceCount where !usedWs.contains(ws) {
+            let screen = screens[spillScreenIdx % screens.count]
+            slots.append((ws, screen))
+            workspaceManager.setHomeScreen(for: ws, screenID: workspaceManager.screenID(for: screen))
+            spillScreenIdx += 1
+        }
+
+        // fill slots in order — each slot = one workspace on one screen
+        var widIdx = 0
+        var slotsUsed = 0
+        for slot in slots {
+            guard widIdx < tilingWids.count else { break }
+            let cap = tilingEngine.maxDepth(for: slot.screen) + 1
+            for _ in 0..<cap where widIdx < tilingWids.count {
+                workspaceManager.assignWindow(tilingWids[widIdx], toWorkspace: slot.ws)
+                widIdx += 1
+            }
+            slotsUsed += 1
+        }
+
+        // any remaining (all 9 workspaces full) — auto-float
+        while widIdx < tilingWids.count {
+            let wid = tilingWids[widIdx]
+            floatingWindowIDs.insert(wid)
+            if let w = allWindows.first(where: { $0.windowID == wid }) {
+                w.isFloating = true
+                if let original = originalFrames[wid] { w.setFrame(original) }
+                print("[HyprMac] all workspaces full — auto-floating '\(w.title ?? "?")'")
+            }
+            widIdx += 1
+        }
+
+        // hide windows on non-visible workspaces
+        for wid in tilingWids where !floatingWindowIDs.contains(wid) {
+            guard let assignedWs = workspaceManager.workspaceFor(wid),
+                  !workspaceManager.isWorkspaceVisible(assignedWs) else { continue }
+            if let w = allWindows.first(where: { $0.windowID == wid }) {
+                let screen = workspaceManager.homeScreenForWorkspace(assignedWs) ?? screens[0]
+                workspaceManager.hideInCorner(w, on: screen)
+            }
+        }
+
+        print("[HyprMac] distributed \(tilingWids.count) windows across \(slotsUsed) slot(s), \(screens.count) monitor(s)")
     }
 
     // check if at least 25% of the frame is visible on the given screen rect
