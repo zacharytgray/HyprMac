@@ -15,6 +15,9 @@ class WorkspaceManager {
     // saved frames for floating windows before hiding (for restore)
     private var savedFloatingFrames: [CGWindowID: CGRect] = [:]
 
+    // monitors excluded from tiling (keyed by NSScreen.localizedName)
+    var disabledMonitors: Set<String> = []
+
     let workspaceCount = 9
 
     init(displayManager: DisplayManager) {
@@ -26,18 +29,33 @@ class WorkspaceManager {
         Int(screen.frame.origin.x * 10000 + screen.frame.origin.y)
     }
 
+    func isMonitorDisabled(_ screen: NSScreen) -> Bool {
+        disabledMonitors.contains(screen.localizedName)
+    }
+
     // screens sorted left-to-right by CG x origin
     private func screensLeftToRight() -> [NSScreen] {
         displayManager.screens.sorted { $0.frame.origin.x < $1.frame.origin.x }
     }
 
-    // assign workspace N to the Nth monitor left-to-right (startup only).
-    // only fills in screens that don't already have a mapping.
+    // assign workspace N to the Nth enabled monitor left-to-right (startup only).
+    // disabled monitors get no workspace. only fills in screens that don't already have a mapping.
     func initializeMonitors() {
         let sorted = screensLeftToRight()
+
+        // remove workspace assignments for disabled monitors
+        for screen in sorted where isMonitorDisabled(screen) {
+            let sid = screenID(for: screen)
+            if let ws = monitorWorkspace.removeValue(forKey: sid) {
+                // don't remove homeScreen — workspace still exists, just not visible
+                print("[HyprMac] removed workspace \(ws) from disabled monitor \(screen.localizedName)")
+            }
+        }
+
+        let enabledScreens = sorted.filter { !isMonitorDisabled($0) }
         let usedWorkspaces = Set(monitorWorkspace.values)
 
-        for (i, screen) in sorted.enumerated() {
+        for (i, screen) in enabledScreens.enumerated() {
             let sid = screenID(for: screen)
             if monitorWorkspace[sid] != nil { continue }
 
@@ -70,7 +88,7 @@ class WorkspaceManager {
             workspaceHomeScreen.removeValue(forKey: ws)
         }
 
-        print("[HyprMac] workspace init: monitors=\(monitorWorkspace) homes=\(workspaceHomeScreen)")
+        print("[HyprMac] workspace init: monitors=\(monitorWorkspace) homes=\(workspaceHomeScreen) disabled=\(disabledMonitors)")
     }
 
     // which workspace is currently shown on a given screen
@@ -234,12 +252,18 @@ class WorkspaceManager {
         }
 
         // not visible — find where to show it
-        // use home screen if known, otherwise cursor screen
+        // use home screen if known and enabled, otherwise cursor screen (if enabled),
+        // otherwise first enabled screen
         let targetScreen: NSScreen
-        if let home = homeScreenForWorkspace(number) {
+        if let home = homeScreenForWorkspace(number), !isMonitorDisabled(home) {
             targetScreen = home
-        } else {
+        } else if !isMonitorDisabled(cursorScreen) {
             targetScreen = cursorScreen
+        } else if let firstEnabled = displayManager.screens.first(where: { !isMonitorDisabled($0) }) {
+            targetScreen = firstEnabled
+        } else {
+            // all monitors disabled — nothing to do
+            return SwitchResult(toHide: [], toShow: [], screen: cursorScreen, alreadyVisible: false)
         }
 
         let targetSID = screenID(for: targetScreen)

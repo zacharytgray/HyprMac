@@ -38,10 +38,20 @@ struct TilingSettingsView: View {
                 }
             }
 
-            Section("Per-Monitor Max Splits") {
+            Section("Per-Monitor Settings") {
                 ForEach(screens, id: \.localizedName) { screen in
                     MonitorSplitsRow(
                         screen: screen,
+                        tilingEnabled: Binding(
+                            get: { !config.disabledMonitors.contains(screen.localizedName) },
+                            set: { enabled in
+                                if enabled {
+                                    config.disabledMonitors.remove(screen.localizedName)
+                                } else {
+                                    config.disabledMonitors.insert(screen.localizedName)
+                                }
+                            }
+                        ),
                         maxSplits: Binding(
                             get: { config.maxSplitsPerMonitor[screen.localizedName] ?? 3 },
                             set: { newVal in
@@ -70,31 +80,44 @@ struct TilingSettingsView: View {
 
 private struct MonitorSplitsRow: View {
     let screen: NSScreen
+    @Binding var tilingEnabled: Bool
     @Binding var maxSplits: Int
     let gap: CGFloat
     let padding: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // monitor name + resolution
+            // monitor name + resolution + tiling toggle
             let res = screen.frame.size
-            Text("\(screen.localizedName) — \(Int(res.width))×\(Int(res.height))")
-                .font(.headline)
+            HStack {
+                Text("\(screen.localizedName) — \(Int(res.width))×\(Int(res.height))")
+                    .font(.headline)
+                Spacer()
+                Toggle("Tiling", isOn: $tilingEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+            }
 
-            // pill picker
-            MaxSplitsPicker(value: $maxSplits)
+            if tilingEnabled {
+                // pill picker
+                MaxSplitsPicker(value: $maxSplits)
 
-            // dwindle preview matching monitor aspect ratio
-            let aspect = res.width / res.height
-            DwindlePreview(
-                windowCount: maxSplits + 1,
-                aspectRatio: aspect,
-                gap: gap,
-                padding: padding
-            )
-            .frame(height: 120)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .cornerRadius(8)
+                // dwindle preview matching monitor aspect ratio
+                let aspect = res.width / res.height
+                DwindlePreview(
+                    windowCount: maxSplits + 1,
+                    aspectRatio: aspect,
+                    gap: gap,
+                    padding: padding
+                )
+                .frame(height: 120)
+                .background(Color(nsColor: .windowBackgroundColor))
+                .cornerRadius(8)
+            } else {
+                Text("Tiling disabled — windows on this monitor float freely.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.vertical, 4)
     }

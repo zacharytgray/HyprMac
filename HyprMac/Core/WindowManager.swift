@@ -112,6 +112,7 @@ class WindowManager {
         tilingEngine.gapSize = config.gapSize
         tilingEngine.outerPadding = config.outerPadding
         tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
+        workspaceManager.disabledMonitors = config.disabledMonitors
         hotkeyManager.updateKeybinds(config.keybinds)
         hotkeyManager.doubleTapAction = config.doubleTapAction?.toAction()
         hotkeyManager.start()
@@ -198,6 +199,17 @@ class WindowManager {
                 self.tilingEngine.maxSplitsPerMonitor = newSplits
                 self.snapshotAndTile()
                 print("[HyprMac] max splits updated: \(newSplits)")
+            }.store(in: &configObservers)
+
+        config.$disabledMonitors
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] newDisabled in
+                guard let self = self else { return }
+                self.workspaceManager.disabledMonitors = newDisabled
+                // unfloat windows on newly-disabled monitors from their tiling trees
+                self.handleDisabledMonitorChange()
+                print("[HyprMac] disabled monitors updated: \(newDisabled)")
             }.store(in: &configObservers)
 
         print("[HyprMac] started")
@@ -605,34 +617,38 @@ class WindowManager {
     private func moveToWorkspace(_ number: Int) {
         guard let focused = accessibility.getFocusedWindow() else { return }
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
-        let currentWorkspace = workspaceManager.workspaceForScreen(screen)
 
-        if number == currentWorkspace {
+        // window on a disabled monitor — send it to the target workspace as a tiled window
+        let onDisabledMonitor = workspaceManager.isMonitorDisabled(screen)
+
+        let currentWorkspace = onDisabledMonitor ? nil : Optional(workspaceManager.workspaceForScreen(screen))
+
+        if let cw = currentWorkspace, number == cw {
             print("[HyprMac] window already on workspace \(number)")
             return
         }
 
         let isFloating = floatingWindowIDs.contains(focused.windowID)
 
+        // when coming from disabled monitor, unfloat so it enters tiling on target
+        let willTile = onDisabledMonitor || !isFloating
+
         // check capacity on target workspace before moving a tiled window
-        if !isFloating {
+        if willTile {
             let targetScreen = workspaceManager.screenForWorkspace(number)
                 ?? workspaceManager.homeScreenForWorkspace(number)
                 ?? screen
 
             if let visibleScreen = workspaceManager.screenForWorkspace(number) {
-                // target workspace is visible — check BSP tree directly
                 if !tilingEngine.canFitWindow(onWorkspace: number, screen: visibleScreen) {
                     print("[HyprMac] workspace \(number) full on \(visibleScreen.localizedName) — rejected move")
                     NSSound.beep()
                     return
                 }
             } else {
-                // target workspace is hidden — count tiled windows assigned to it
                 let wids = workspaceManager.windowIDs(onWorkspace: number)
                 let tiledCount = wids.filter { !floatingWindowIDs.contains($0) }.count
                 let maxDepth = tilingEngine.maxDepth(for: targetScreen)
-                // maxDepth splits = maxDepth + 1 windows max in dwindle
                 if tiledCount >= maxDepth + 1 {
                     print("[HyprMac] workspace \(number) full (\(tiledCount) tiled, max \(maxDepth + 1)) — rejected move")
                     NSSound.beep()
@@ -641,16 +657,23 @@ class WindowManager {
             }
         }
 
+        // unfloat if coming from disabled monitor
+        if onDisabledMonitor && isFloating {
+            floatingWindowIDs.remove(focused.windowID)
+            focused.isFloating = false
+            print("[HyprMac] unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
+        }
+
         // remove from current workspace's tiling tree
-        if !isFloating {
-            tilingEngine.removeWindow(focused, fromWorkspace: currentWorkspace)
+        if !isFloating, let cw = currentWorkspace {
+            tilingEngine.removeWindow(focused, fromWorkspace: cw)
         }
 
         // reassign globally
         workspaceManager.moveWindow(focused.windowID, toWorkspace: number)
 
         // hide the window — target workspace may not be visible
-        if isFloating {
+        if isFloating && !onDisabledMonitor {
             workspaceManager.saveFloatingFrame(focused)
         }
         workspaceManager.hideInCorner(focused, on: screen)
@@ -664,8 +687,16 @@ class WindowManager {
     private func moveCurrentWorkspaceToMonitor(_ direction: Direction) {
         let currentScreen = screenUnderCursor()
 
-        // find adjacent monitor in the given direction
-        let screens = displayManager.screens.sorted { $0.frame.origin.x < $1.frame.origin.x }
+        // can't move workspaces from/to disabled monitors
+        if workspaceManager.isMonitorDisabled(currentScreen) {
+            print("[HyprMac] moveWorkspaceToMonitor: current monitor is disabled")
+            return
+        }
+
+        // find adjacent enabled monitor in the given direction
+        let screens = displayManager.screens
+            .filter { !workspaceManager.isMonitorDisabled($0) }
+            .sorted { $0.frame.origin.x < $1.frame.origin.x }
         guard let currentIdx = screens.firstIndex(of: currentScreen) else { return }
 
         let targetIdx: Int
@@ -854,7 +885,9 @@ class WindowManager {
     }
 
     func activeWorkspaces() -> [Int] {
-        displayManager.screens.map { workspaceManager.workspaceForScreen($0) }
+        displayManager.screens
+            .filter { !workspaceManager.isMonitorDisabled($0) }
+            .map { workspaceManager.workspaceForScreen($0) }
     }
 
     private func focusFloatingWindow() {
@@ -903,6 +936,13 @@ class WindowManager {
     private func toggleFloating() {
         guard let focused = accessibility.getFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
+
+        // can't toggle tiling on disabled monitors — everything is floating there
+        if workspaceManager.isMonitorDisabled(screen) {
+            print("[HyprMac] toggleFloating: monitor disabled, no tiling available")
+            return
+        }
+
         let workspace = workspaceManager.workspaceForScreen(screen)
 
         let wasFloating = floatingWindowIDs.contains(focused.windowID)
@@ -955,6 +995,47 @@ class WindowManager {
         }
     }
 
+    // MARK: - disabled monitor handling
+
+    // called when disabledMonitors config changes at runtime
+    private func handleDisabledMonitorChange() {
+        let allWindows = accessibility.getAllWindows()
+
+        // windows on newly-disabled monitors: remove from workspace + auto-float
+        for screen in displayManager.screens where workspaceManager.isMonitorDisabled(screen) {
+            for w in allWindows {
+                guard let wScreen = displayManager.screen(for: w),
+                      wScreen == screen else { continue }
+                if let ws = workspaceManager.workspaceFor(w.windowID) {
+                    tilingEngine.removeWindow(w, fromWorkspace: ws)
+                    workspaceManager.removeWindow(w.windowID)
+                }
+                if !floatingWindowIDs.contains(w.windowID) {
+                    floatingWindowIDs.insert(w.windowID)
+                    w.isFloating = true
+                    print("[HyprMac] disabled monitor change: floated '\(w.title ?? "?")'")
+                }
+            }
+        }
+
+        // windows on re-enabled monitors: unfloat and let snapshotAndTile pick them up
+        for screen in displayManager.screens where !workspaceManager.isMonitorDisabled(screen) {
+            for w in allWindows {
+                guard let wScreen = displayManager.screen(for: w),
+                      wScreen == screen else { continue }
+                // only unfloat if it was auto-floated (no workspace assignment = was on disabled monitor)
+                if floatingWindowIDs.contains(w.windowID) && workspaceManager.workspaceFor(w.windowID) == nil {
+                    floatingWindowIDs.remove(w.windowID)
+                    w.isFloating = false
+                    print("[HyprMac] re-enabled monitor: unfloated '\(w.title ?? "?")'")
+                }
+            }
+        }
+
+        workspaceManager.initializeMonitors()
+        snapshotAndTile()
+    }
+
     // MARK: - tiling
 
     // check if a window belongs to an excluded app (auto-float)
@@ -988,6 +1069,16 @@ class WindowManager {
                 print("[HyprMac] auto-float excluded app: '\(w.title ?? "?")'")
             }
 
+            // auto-float windows on disabled monitors — don't assign workspace
+            if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
+                if !floatingWindowIDs.contains(w.windowID) {
+                    floatingWindowIDs.insert(w.windowID)
+                    w.isFloating = true
+                    print("[HyprMac] auto-float on disabled monitor: '\(w.title ?? "?")'")
+                }
+                continue
+            }
+
             // assign to workspace of the monitor it's physically on
             if workspaceManager.workspaceFor(w.windowID) == nil {
                 if let screen = displayManager.screen(for: w) ?? displayManager.screens.first {
@@ -1009,8 +1100,9 @@ class WindowManager {
             }
         }
 
-        // for each monitor, tile the windows that belong to its active workspace
+        // for each enabled monitor, tile the windows that belong to its active workspace
         for screen in displayManager.screens {
+            if workspaceManager.isMonitorDisabled(screen) { continue }
             let workspace = workspaceManager.workspaceForScreen(screen)
             let widsOnWorkspace = workspaceManager.windowIDs(onWorkspace: workspace)
 
@@ -1028,9 +1120,9 @@ class WindowManager {
         updatePositionCache()
     }
 
-    // redistribute non-floating windows evenly across monitors
+    // redistribute non-floating windows evenly across enabled monitors
     private func balanceWindowsAcrossMonitors() {
-        let screens = displayManager.screens
+        let screens = displayManager.screens.filter { !workspaceManager.isMonitorDisabled($0) }
         guard screens.count >= 2 else { return }
 
         let focusedID = accessibility.getFocusedWindow()?.windowID
@@ -1181,6 +1273,18 @@ class WindowManager {
                     floatingWindowIDs.insert(w.windowID)
                     w.isFloating = true
                     print("[HyprMac] auto-float excluded app: '\(w.title ?? "?")'")
+                }
+
+                // auto-float on disabled monitors — skip workspace assignment
+                if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
+                    if !floatingWindowIDs.contains(w.windowID) {
+                        floatingWindowIDs.insert(w.windowID)
+                        w.isFloating = true
+                        print("[HyprMac] auto-float on disabled monitor: '\(w.title ?? "?")'")
+                    }
+                    changed = true
+                    print("[HyprMac] new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
+                    continue
                 }
 
                 // assign to active workspace on the window's screen

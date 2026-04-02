@@ -101,6 +101,7 @@ Hypr+N pressed:
 - **Multi-monitor**: Each (workspace, screen) pair gets its own BSP tree. Coordinate conversion accounts for NSScreen bottom-left origin vs CG top-left origin using primary screen height. `screen(at:)` uses nearest-screen fallback.
 - **Hidden window tracking**: When a window disappears but its app is still running (minimized/hidden), `originalFrames` and `floatingWindowIDs` are preserved. On return, the window re-enters tiling with its state intact.
 - **App exclusions**: Quick Look windows are hard-excluded in AccessibilityManager (not real windows). User-configurable exclusions (`config.excludedBundleIDs`) auto-float windows on discovery — still tracked for workspace assignment but never enter the BSP tree. Default: FaceTime, System Settings. Configurable in Settings → General → "Never Tile" or via config JSON.
+- **Disabled monitors**: `config.disabledMonitors` (keyed by `NSScreen.localizedName`) excludes specific monitors from tiling entirely. Disabled monitors get no workspace assigned, windows on them auto-float, and all tiling operations skip them. Users can drag windows to/from disabled monitors, or use Hypr+Shift+N to send a window to a tiled workspace. When a monitor is re-enabled, its windows auto re-tile. Configurable per-monitor in Settings → Tiling with a toggle switch.
 
 ## File Structure
 ```
@@ -198,7 +199,8 @@ The config is a JSON file with this structure:
   "enabled": true,
   "focusFollowsMouse": true,
   "doubleTapAction": { "focusMenuBar": {} },
-  "excludedBundleIDs": ["com.apple.FaceTime", "com.apple.systempreferences"]
+  "excludedBundleIDs": ["com.apple.FaceTime", "com.apple.systempreferences"],
+  "disabledMonitors": ["DELL U2723QE"]
 }
 ```
 
@@ -224,6 +226,8 @@ The config is a JSON file with this structure:
 **`doubleTapAction`** — the action fired by double-tapping Caps Lock. Uses the same action encoding as keybinds. Set to `null` to disable. Default: `{"focusMenuBar": {}}`.
 
 **`excludedBundleIDs`** — array of bundle IDs for apps that should never be tiled (auto-float on launch). Configurable in Settings → General → "Never Tile" or via config. Default: `["com.apple.FaceTime", "com.apple.systempreferences"]`.
+
+**`disabledMonitors`** — array of monitor names (matching `NSScreen.localizedName`) to exclude from tiling. Windows on disabled monitors float freely. Configurable per-monitor in Settings → Tiling. Default: `[]`.
 
 To add a custom keybind via config, append to the `keybinds` array and restart HyprMac.
 Example — bind Hypr+B to launch Safari:
