@@ -75,6 +75,7 @@ All keybinds are configurable in Settings (menubar icon → Settings → Keybind
 | `⇪ + ⇧ + ←/→/↑/↓` | Swap window in direction |
 | `⇪ + J` | Toggle split direction |
 | `⇪ + ⇧ + T` | Toggle floating/tiling |
+| `⇪ + F` | Cycle focus through floating windows |
 | `⇪ + 1-9` | Switch to workspace N |
 | `⇪ + ⇧ + 1-9` | Move window to workspace N |
 | `⇪ + ⌃ + ←/→` | Move workspace to adjacent monitor |

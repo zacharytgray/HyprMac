@@ -983,18 +983,41 @@ class WindowManager {
     private func updateMenuBarState() {
         let active = Set(activeWorkspaces())
         let occupied = occupiedWorkspaces()
-        let shown = active.union(occupied).sorted()
-        let hasFloaters = hasVisibleFloatingWindows
+        let floatingWs = workspacesWithFloatingWindows()
+        let maxWs = max(active.max() ?? 1, occupied.max() ?? 1)
 
-        let text = shown.map { ws in
-            active.contains(ws) ? "[\(ws)]" : "\(ws)"
-        }.joined(separator: " ") + (hasFloaters ? " ◆" : "")
+        // dots: ● active, ◆ active+floating, ○ occupied, ◇ occupied+floating, · empty
+        var parts: [String] = []
+        for i in 1...maxWs {
+            let hasFloat = floatingWs.contains(i)
+            if active.contains(i) {
+                parts.append(hasFloat ? "◆" : "●")
+            } else if occupied.contains(i) {
+                parts.append(hasFloat ? "◇" : "○")
+            } else {
+                parts.append("·")
+            }
+        }
+        let text = parts.joined(separator: " ")
 
         DispatchQueue.main.async {
             let state = MenuBarState.shared
             state.labelText = text
+            state.occupiedWorkspaces = occupied
+            state.floatingWorkspaces = floatingWs
             state.hasData = true
         }
+    }
+
+    private func workspacesWithFloatingWindows() -> Set<Int> {
+        var result = Set<Int>()
+        for ws in 1...9 {
+            let wsWindows = workspaceManager.windowIDs(onWorkspace: ws)
+            if !wsWindows.isDisjoint(with: floatingWindowIDs) {
+                result.insert(ws)
+            }
+        }
+        return result
     }
 
     // MARK: - poll

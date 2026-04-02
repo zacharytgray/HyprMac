@@ -59,22 +59,41 @@ struct MenuBarView: View {
         let delegate = NSApp.delegate as? AppDelegate
         let wm = delegate?.windowManager
         let ws = wm?.workspaceManager
+        let occupied = MenuBarState.shared.occupiedWorkspaces
+        let floatingWs = MenuBarState.shared.floatingWorkspaces
 
         if let ws = ws {
             ForEach(Array(NSScreen.screens.enumerated()), id: \.offset) { idx, screen in
                 let active = ws.workspaceForScreen(screen)
-                HStack(spacing: 4) {
-                    Text("Screen \(idx + 1):")
-                        .font(.caption)
+                let maxWs = max(active, occupied.max() ?? 1, 3)
+                HStack(spacing: 3) {
+                    Image(systemName: "display")
+                        .font(.system(size: 9))
                         .foregroundColor(.secondary)
-                    ForEach(1...9, id: \.self) { num in
-                        Text("\(num)")
-                            .font(.caption2.monospaced())
-                            .padding(.horizontal, 3)
-                            .padding(.vertical, 1)
-                            .background(num == active ? Color.accentColor : Color.clear)
-                            .foregroundColor(num == active ? .white : .secondary)
-                            .cornerRadius(3)
+                    if NSScreen.screens.count > 1 {
+                        Text("\(idx + 1)")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(.secondary)
+                    }
+                    ForEach(1...maxWs, id: \.self) { num in
+                        let hasFloat = floatingWs.contains(num)
+                        HStack(spacing: 1) {
+                            Text("\(num)")
+                                .font(.system(size: 10, weight: num == active ? .semibold : .regular, design: .rounded))
+                            if hasFloat {
+                                Text("◇")
+                                    .font(.system(size: 7))
+                            }
+                        }
+                        .frame(minWidth: 18, minHeight: 18)
+                        .padding(.horizontal, hasFloat ? 2 : 0)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(num == active ? Color.accentColor :
+                                      occupied.contains(num) ? Color.secondary.opacity(0.12) : Color.clear)
+                        )
+                        .foregroundColor(num == active ? .white :
+                                         occupied.contains(num) ? .primary : .secondary.opacity(0.3))
                     }
                 }
             }
@@ -88,13 +107,13 @@ struct MenuBarView: View {
 class MenuBarState: ObservableObject {
     static let shared = MenuBarState()
     @Published var labelText: String = ""
+    @Published var occupiedWorkspaces: Set<Int> = []
+    @Published var floatingWorkspaces: Set<Int> = []
     @Published var hasData = false
 }
 
-// compact menu bar label showing workspace numbers + floating indicator.
-// MenuBarExtra labels only reliably render Image/Text, so we build a
-// single string: active workspaces are bracketed [2], occupied are plain,
-// trailing ◆ if floating windows exist.
+// compact menu bar label: dots for workspace state, ◇ for floating.
+// position = workspace number, ● active, ○ occupied, · empty.
 struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared
@@ -102,7 +121,7 @@ struct WorkspaceIndicatorLabel: View {
     var body: some View {
         if config.showMenuBarIndicator, state.hasData, !state.labelText.isEmpty {
             Text(state.labelText)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.system(size: 12, weight: .regular))
         } else {
             Image(systemName: "rectangle.split.2x2")
         }
