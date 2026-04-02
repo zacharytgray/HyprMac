@@ -253,6 +253,18 @@ class TilingEngine {
         retile(key: key, screen: screen)
     }
 
+    // toggle split and compute new layout without applying frames (for animation)
+    func computeToggleSplitLayout(_ window: HyprWindow,
+                                  onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)]? {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        let t = tree(for: key)
+        guard t.contains(window) else { return nil }
+        let rect = displayManager.cgRect(for: screen)
+        t.toggleSplit(for: window, in: rect, gap: gapSize, padding: outerPadding)
+        t.root.resetSplitRatios()
+        return t.layout(in: rect, gap: gapSize, padding: outerPadding)
+    }
+
     func canFitWindow(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)

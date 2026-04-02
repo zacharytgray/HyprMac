@@ -951,6 +951,32 @@ class WindowManager {
         let workspace = workspaceManager.workspaceForScreen(screen)
 
         print("[HyprMac] toggleSplit on '\(focused.title ?? "?")'")
+
+        if config.animateWindows {
+            // capture current frames before the toggle
+            let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
+            let currentFrames = Dictionary(uniqueKeysWithValues: windows.compactMap { w -> (CGWindowID, CGRect)? in
+                guard let f = w.frame else { return nil }
+                return (w.windowID, f)
+            })
+
+            if let layouts = tilingEngine.computeToggleSplitLayout(focused, onWorkspace: workspace, screen: screen) {
+                var transitions: [WindowAnimator.FrameTransition] = []
+                for (w, toRect) in layouts {
+                    guard let fromRect = currentFrames[w.windowID], fromRect != toRect else { continue }
+                    transitions.append(.init(window: w, from: fromRect, to: toRect))
+                }
+
+                if !transitions.isEmpty {
+                    animator.animate(transitions, duration: config.animationDuration) { [weak self] in
+                        self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+                        self?.updatePositionCache()
+                    }
+                    return
+                }
+            }
+        }
+
         tilingEngine.toggleSplit(focused, onWorkspace: workspace, screen: screen)
         updatePositionCache()
     }
