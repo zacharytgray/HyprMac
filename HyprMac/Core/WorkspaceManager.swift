@@ -140,14 +140,10 @@ class WorkspaceManager {
         return CGPoint(x: cgRight - 1, y: cgBottom - 1)
     }
 
-    // offset each hidden window by its windowID (mod 200) so no two share the same
-    // corner position. prevents CG-ID matching ambiguity in AccessibilityManager.
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
         let pos = hidePosition(for: screen)
-        let offset = CGFloat(window.windowID % 200)
-        let offsetPos = CGPoint(x: pos.x - offset, y: pos.y)
-        window.position = offsetPos
-        print("[HyprMac] hiding '\(window.title ?? "?")' (\(window.windowID)) at (\(Int(offsetPos.x)),\(Int(offsetPos.y)))")
+        window.position = pos
+        print("[HyprMac] hiding '\(window.title ?? "?")' (\(window.windowID)) at (\(Int(pos.x)),\(Int(pos.y)))")
     }
 
     func saveFloatingFrame(_ window: HyprWindow) {

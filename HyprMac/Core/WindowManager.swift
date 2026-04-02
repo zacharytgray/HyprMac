@@ -981,31 +981,24 @@ class WindowManager {
     // MARK: - observers
 
     @objc private func appDidActivate(_ notification: Notification) {
-        // suppressed during workspace switches, FFM focus, and float raises
-        guard Date() > suppressActivationSwitchUntil else {
-            schedulePoll()
-            return
-        }
+        // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
+        if Date() > suppressActivationSwitchUntil {
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+                let pid = app.processIdentifier
+                let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
 
-        // dock click: switch to workspace containing the activated app's window.
-        // only when the app has NO windows on any visible workspace — if it does,
-        // this activation is for a visible window (FFM, click, Cmd-Tab), not a dock click.
-        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
-            let pid = app.processIdentifier
-            let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
+                // only consider windows still tracked (not hidden/closed)
+                let appWindows = windowOwners
+                    .filter { $0.value == pid && knownWindowIDs.contains($0.key) && !hiddenWindowIDs.contains($0.key) }
 
-            // only consider windows still tracked (not hidden/closed)
-            let appWindows = windowOwners
-                .filter { $0.value == pid && knownWindowIDs.contains($0.key) && !hiddenWindowIDs.contains($0.key) }
+                let appWorkspaces = appWindows.compactMap { (wid, _) in workspaceManager.workspaceFor(wid) }
+                let hasVisibleWindow = appWorkspaces.contains { visibleWorkspaces.contains($0) }
 
-            let appWorkspaces = appWindows.compactMap { (wid, _) in workspaceManager.workspaceFor(wid) }
-            let hasVisibleWindow = appWorkspaces.contains { visibleWorkspaces.contains($0) }
-
-            if !hasVisibleWindow {
-                // app has no visible windows — this is likely a dock click
-                if let targetWS = appWorkspaces.filter({ !visibleWorkspaces.contains($0) }).min() {
-                    switchWorkspace(targetWS)
-                    return
+                if !hasVisibleWindow {
+                    if let targetWS = appWorkspaces.filter({ !visibleWorkspaces.contains($0) }).min() {
+                        switchWorkspace(targetWS)
+                        return
+                    }
                 }
             }
         }
@@ -1013,7 +1006,7 @@ class WindowManager {
         schedulePoll()
 
         // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
-        // can't set window level cross-process (needs SIP off), so we re-raise instead.
+        // must always run — even when activation switch is suppressed — so floaters stay on top.
         if !floatingWindowIDs.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.raiseFloatingWindows()
@@ -1027,6 +1020,8 @@ class WindowManager {
         guard !isRaisingFloaters else { return }
         isRaisingFloaters = true
         suppressActivationSwitchUntil = Date().addingTimeInterval(0.3)
+        // suppress FFM so it doesn't immediately refocus a tiled window and undo the raise
+        suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
         for wid in floatingWindowIDs {
             guard workspaceManager.isWindowVisible(wid),
                   let w = cachedWindows[wid] else { continue }
