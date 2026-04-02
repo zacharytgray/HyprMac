@@ -49,7 +49,7 @@ class FocusBorder {
         }
 
         p.alphaValue = 1.0
-        p.orderFrontRegardless()
+        orderAboveWindow(p, windowID: windowID)
         state = .active
         trackedWindowID = windowID
 
@@ -60,10 +60,12 @@ class FocusBorder {
     }
 
     func updatePosition(_ rect: CGRect) {
-        guard let p = panel, state != .hidden else { return }
+        guard let p = panel, state != .hidden, let wid = trackedWindowID else { return }
         let nsRect = panelRect(for: rect)
         p.setFrame(nsRect, display: false)
         positionGlowView(in: p)
+        // re-order after reposition to maintain z-order relative to focused window
+        orderAboveWindow(p, windowID: wid)
     }
 
     func settle() {
@@ -95,12 +97,18 @@ class FocusBorder {
 
     // MARK: - panel setup
 
+    // place panel just above the focused window in z-order.
+    // floating windows raised above the focused window stay on top.
+    private func orderAboveWindow(_ p: NSPanel, windowID: CGWindowID) {
+        p.order(.above, relativeTo: Int(windowID))
+    }
+
     private func makePanel(frame: NSRect) -> NSPanel {
         let p = NSPanel(contentRect: frame,
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isFloatingPanel = true
-        p.level = .screenSaver
+        p.level = .normal
         p.backgroundColor = .clear
         p.isOpaque = false
         p.hasShadow = false
