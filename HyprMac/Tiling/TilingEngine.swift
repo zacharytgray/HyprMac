@@ -82,6 +82,9 @@ class TilingEngine {
         let removedAny = treeWindows.contains { !currentIDs.contains($0.windowID) }
         for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
 
+        // defensive: prune any empty/orphaned nodes that shouldn't exist
+        t.root.pruneEmptyNodes()
+
         // add new windows via smart insert
         var addedAny = false
         for w in tileWindows where !treeIDs.contains(w.windowID) {

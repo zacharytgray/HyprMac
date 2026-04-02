@@ -100,6 +100,30 @@ class BSPNode {
         return (right?.allLeavesRightToLeft() ?? []) + (left?.allLeavesRightToLeft() ?? [])
     }
 
+    // prune empty leaves and internal nodes with missing children.
+    // returns true if this node is now empty and should be removed by its parent.
+    @discardableResult
+    func pruneEmptyNodes() -> Bool {
+        left?.pruneEmptyNodes() == true ? (left = nil) : ()
+        right?.pruneEmptyNodes() == true ? (right = nil) : ()
+
+        // internal node lost a child — promote the surviving one
+        if !isLeaf {
+            if left == nil, let r = right {
+                window = r.window; left = r.left; right = r.right
+                left?.parent = self; right?.parent = self
+                return pruneEmptyNodes()
+            }
+            if right == nil, let l = left {
+                window = l.window; left = l.left; right = l.right
+                left?.parent = self; right?.parent = self
+                return pruneEmptyNodes()
+            }
+        }
+
+        return isEmpty
+    }
+
     // resolve split direction: override if set, otherwise dwindle (longer axis)
     func direction(for rect: CGRect) -> SplitDirection {
         if let forced = splitOverride { return forced }
