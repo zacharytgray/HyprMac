@@ -879,6 +879,21 @@ class WindowManager {
             target = visibleFloaters[(idx + 1) % visibleFloaters.count]
         }
 
+        // bring offscreen floaters to center of nearest screen
+        if let frame = target.frame {
+            let onScreen = displayManager.screens.contains { screen in
+                isFrameVisible(frame, on: displayManager.cgRect(for: screen))
+            }
+            if !onScreen {
+                let screen = displayManager.screens.first ?? NSScreen.main!
+                let screenRect = displayManager.cgRect(for: screen)
+                let sz = target.size ?? CGSize(width: 800, height: 600)
+                target.position = CGPoint(x: screenRect.midX - sz.width / 2,
+                                          y: screenRect.midY - sz.height / 2)
+                print("[HyprMac] brought offscreen floater '\(target.title ?? "?")' to center")
+            }
+        }
+
         target.focus()
         cursorManager.warpToCenter(of: target)
         lastMouseFocusedID = target.windowID
