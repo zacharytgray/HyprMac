@@ -277,14 +277,24 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "square.grid.3x3.square",
-            title: "Workspace Spillover",
-            description: "Windows automatically spill into the next workspace when a monitor fills up, instead of floating."
+            icon: "tab.forward",
+            title: "Cycle Workspaces",
+            description: "Hypr+Tab / Hypr+Shift+Tab cycles through occupied workspaces on the current monitor, skipping empty ones."
         ),
         WhatsNewFeature(
-            icon: "ladybug",
-            title: "Startup Tiling Fix",
-            description: "Fixed a race condition where windows would incorrectly float on startup instead of being distributed across workspaces."
+            icon: "xmark.square",
+            title: "Smarter Close Window",
+            description: "Hypr+W now closes the window under your cursor, not the last truly-focused window. Fixes wrong window closing with multi-window apps."
+        ),
+        WhatsNewFeature(
+            icon: "target",
+            title: "Focus Recovery",
+            description: "Focus and keyboard navigation no longer get stuck after closing a window — the next tiled window is automatically selected."
+        ),
+        WhatsNewFeature(
+            icon: "square.grid.3x3.topleft.filled",
+            title: "Ghost Gap Fix",
+            description: "Defensive BSP tree pruning prevents phantom empty gaps from appearing in tiling layouts."
         ),
     ]
 }
