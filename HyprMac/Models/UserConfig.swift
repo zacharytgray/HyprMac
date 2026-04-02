@@ -30,6 +30,9 @@ class UserConfig: ObservableObject {
     @Published var animationDuration: Double {
         didSet { if !isReloading { save() } }
     }
+    @Published var showMenuBarIndicator: Bool {
+        didSet { if !isReloading { save() } }
+    }
 
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
@@ -66,7 +69,7 @@ class UserConfig: ObservableObject {
 
         if let data = try? Data(contentsOf: localConfigURL),
            let saved = try? JSONDecoder().decode(SavedConfig.self, from: data) {
-            self.keybinds = saved.keybinds
+            self.keybinds = Self.mergeNewDefaults(saved: saved.keybinds)
             self.gapSize = saved.gapSize
             self.outerPadding = saved.outerPadding
             self.enabled = saved.enabled
@@ -75,6 +78,7 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
             self.animateWindows = saved.animateWindows ?? true
             self.animationDuration = saved.animationDuration ?? 0.15
+            self.showMenuBarIndicator = saved.showMenuBarIndicator ?? true
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
@@ -85,6 +89,7 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             self.animateWindows = true
             self.animationDuration = 0.15
+            self.showMenuBarIndicator = true
         }
 
         // verify symlink integrity if iCloud sync was enabled
@@ -107,6 +112,19 @@ class UserConfig: ObservableObject {
         startFileWatcher()
     }
 
+    // inject any default keybinds whose action doesn't exist in the saved set.
+    // handles upgrades where new actions are added (e.g. focusFloating).
+    private static func mergeNewDefaults(saved: [Keybind]) -> [Keybind] {
+        let savedActions = Set(saved.map { "\($0.action)" })
+        var merged = saved
+        for bind in Keybind.defaults {
+            if !savedActions.contains("\(bind.action)") {
+                merged.append(bind)
+            }
+        }
+        return merged
+    }
+
     static let defaultExcludedBundleIDs: [String] = [
         "com.apple.FaceTime",
         "com.apple.systempreferences",
@@ -119,7 +137,8 @@ class UserConfig: ObservableObject {
                                 doubleTapAction: doubleTapAction,
                                 excludedBundleIDs: Array(excludedBundleIDs),
                                 animateWindows: animateWindows,
-                                animationDuration: animationDuration)
+                                animationDuration: animationDuration,
+                                showMenuBarIndicator: showMenuBarIndicator)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: localConfigURL)
         }
@@ -135,6 +154,7 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         animateWindows = true
         animationDuration = 0.15
+        showMenuBarIndicator = true
     }
 
     // MARK: - iCloud Drive sync
@@ -256,6 +276,7 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
         animateWindows = saved.animateWindows ?? true
         animationDuration = saved.animationDuration ?? 0.15
+        showMenuBarIndicator = saved.showMenuBarIndicator ?? true
         isReloading = false
     }
 }
@@ -270,4 +291,5 @@ private struct SavedConfig: Codable {
     let excludedBundleIDs: [String]?
     let animateWindows: Bool?
     let animationDuration: Double?
+    let showMenuBarIndicator: Bool?
 }

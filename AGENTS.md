@@ -91,7 +91,9 @@ Hypr+N pressed:
 - **Single-pass window ID matching**: AXUIElement->CGWindowID matching uses greedy best-fit across all windows for a PID. Global `usedIDs` set prevents duplicate assignments (critical for Finder).
 - **Focus without activation for same-app**: `HyprWindow.focus()` skips `app.activate()` when already frontmost. Prevents macOS from refocusing the "main" window when switching between windows of the same app.
 - **Focus-without-raise (SkyLight private APIs)**: `HyprWindow.focusWithoutRaise()` uses `_SLPSSetFrontProcessWithOptions` + `SLPSPostEventRecordTo` (same technique as yabai/Amethyst) to give keyboard focus to a window without changing z-order. Used by FFM and `focusInDirection` so floating windows aren't disturbed. Linked via SkyLight.framework, declared with `@_silgen_name`. The original `focus()` with raise is kept for cases that need it (drag-swap, workspace switch).
-- **Floating window z-order**: macOS doesn't allow setting another process's window level without SIP disabled (yabai injects into Dock.app for this). HyprMac uses two strategies: (1) `focusWithoutRaise()` for hover/keyboard focus prevents z-order changes entirely, (2) `appDidActivate` observer re-raises floating windows via `kAXRaiseAction` after any app activation (e.g. user clicks a tiled window). HyprMac's own settings window uses `NSWindow.level = .floating` which is flicker-free since it's in-process.
+- **Floating window z-order**: macOS doesn't allow setting another process's window level without SIP disabled (yabai injects into Dock.app for this). HyprMac uses three strategies: (1) `focusWithoutRaise()` for hover/keyboard focus prevents z-order changes entirely, (2) z-order-aware re-raising — `floatingWindowsBehindTiled()` checks actual z-positions via `CGWindowListCopyWindowInfo` and only raises floaters that are actually behind tiled windows, then immediately restores focus to the tiled window via `focusWithoutRaise()` to break the raise→FFM→refocus feedback loop, (3) FFM exemption — `handleMouseMove()` skips focus changes when cursor is over a floating window's region. Hypr+F explicitly cycles through and raises floating windows. HyprMac's own settings window uses `NSWindow.level = .floating` which is flicker-free since it's in-process.
+- **Menu bar workspace indicator**: Dynamic `MenuBarExtra` label showing workspace state via shared `MenuBarState` observable. Active workspaces shown as `[N]`, occupied as `N`, floating indicator `◆`. Updated by `WindowManager.updateMenuBarState()` after every position cache refresh. Toggleable via `config.showMenuBarIndicator`.
+- **Keybind auto-migration**: `UserConfig.mergeNewDefaults()` injects default keybinds for new actions into existing saved configs on load, so upgrades add new shortcuts without resetting user customizations.
 - **CGS/SLS private APIs with SIP enabled**: Space enumeration uses undocumented CoreGraphics functions declared in `PrivateAPI/CGSPrivate.h`. SkyLight framework linked for `_SLPSSetFrontProcessWithOptions` and `SLPSPostEventRecordTo`. All work without disabling SIP.
 - **NSApp.setActivationPolicy(.accessory)**: Used instead of `LSUIElement=true` in Info.plist to avoid a Sequoia TCC regression that breaks event tap creation.
 - **DEVELOPMENT_TEAM via env var**: `project.yml` references `$(DEVELOPMENT_TEAM)` so no personal team IDs are committed. Set in your shell profile or pass to xcodebuild.
@@ -150,6 +152,7 @@ HyprMac/
 | Hypr + Shift + Arrow | Swap window in direction |
 | Hypr + J | Toggle split direction (transpose) |
 | Hypr + Shift + T | Toggle floating/tiling |
+| Hypr + F | Focus/cycle floating windows |
 | Hypr + 1-9 | Switch to workspace N |
 | Hypr + Shift + 1-9 | Move focused window to workspace N |
 | Hypr + Ctrl + Left/Right | Swap workspace with adjacent monitor |
@@ -214,7 +217,7 @@ The config is a JSON file with this structure:
 - `{"switchDesktop": {"_0": 3}}` — workspace number 1-9
 - `{"moveToDesktop": {"_0": 3}}`
 - `{"moveWorkspaceToMonitor": {"_0": "left"}}` — left/right only
-- `{"toggleFloating": {}}`, `{"toggleSplit": {}}`, `{"showKeybinds": {}}`, `{"focusMenuBar": {}}`
+- `{"toggleFloating": {}}`, `{"toggleSplit": {}}`, `{"showKeybinds": {}}`, `{"focusMenuBar": {}}`, `{"focusFloating": {}}`
 - `{"launchApp": {"bundleID": "com.apple.Terminal"}}`
 
 **`doubleTapAction`** — the action fired by double-tapping Caps Lock. Uses the same action encoding as keybinds. Set to `null` to disable. Default: `{"focusMenuBar": {}}`.
@@ -242,7 +245,7 @@ Common bundle IDs:
 - **1px window sliver**: Hidden workspace windows leave a 1px sliver visible in the screen corner. macOS limitation. Also serves as crash recovery.
 - **macOS Spaces bypassed**: Use 1 macOS Space per monitor. HyprMac's virtual workspaces replace native Spaces.
 - **No animation**: Workspace switches are instant (like Hyprland).
-- **Overflow windows go to background**: When a monitor is full and a new window auto-floats, focus-follows-mouse can immediately push it behind tiled windows. Workaround: Cmd+Tab to the app.
+- **Floating windows may go behind tiled**: macOS doesn't allow setting another process's window level without SIP disabled. Floating windows can end up behind tiled windows, especially with a single full-screen tiled app. Workaround: Hypr+F cycles through and raises floating windows. Smart re-raising also triggers automatically on app activation.
 - **No installer**: Must build from source. DMG/Homebrew distribution planned.
 
 ## Code Style

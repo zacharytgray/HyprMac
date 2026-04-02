@@ -7,8 +7,10 @@ struct HyprMacApp: App {
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
 
     var body: some Scene {
-        MenuBarExtra("HyprMac", systemImage: "rectangle.split.2x2") {
+        MenuBarExtra {
             MenuBarView(updater: updaterController.updater)
+        } label: {
+            WorkspaceIndicatorLabel()
         }
         .menuBarExtraStyle(.window)
 

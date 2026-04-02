@@ -121,6 +121,13 @@ struct GeneralSettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            Section("Menu Bar") {
+                Toggle("Show Workspace Indicator", isOn: $config.showMenuBarIndicator)
+                Text("Display active workspaces and floating window status in the menu bar. When disabled, shows a static icon.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
             Section("Hypr Key") {
                 Text("Caps Lock is remapped to F18 while HyprMac is running. It acts as the Hypr modifier key for all keybinds. Normal Caps Lock is restored when the app quits.")
                     .font(.caption)
@@ -173,6 +180,7 @@ struct GeneralSettingsView: View {
 // choices for the double-tap caps lock action
 enum DoubleTapChoice: String, CaseIterable {
     case focusMenuBar = "Focus Menu Bar"
+    case focusFloating = "Focus Floating Windows"
     case toggleFloating = "Toggle Floating"
     case toggleSplit = "Toggle Split"
     case showKeybinds = "Show Keybinds"
@@ -182,6 +190,7 @@ enum DoubleTapChoice: String, CaseIterable {
         case .toggleFloating: return .toggleFloating
         case .toggleSplit: return .toggleSplit
         case .showKeybinds: return .showKeybinds
+        case .focusFloating: return .focusFloating
         default: return .focusMenuBar
         }
     }
@@ -189,6 +198,7 @@ enum DoubleTapChoice: String, CaseIterable {
     func toDescriptor() -> Keybind.ActionDescriptor {
         switch self {
         case .focusMenuBar: return .focusMenuBar
+        case .focusFloating: return .focusFloating
         case .toggleFloating: return .toggleFloating
         case .toggleSplit: return .toggleSplit
         case .showKeybinds: return .showKeybinds

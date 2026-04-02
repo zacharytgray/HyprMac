@@ -82,6 +82,33 @@ struct MenuBarView: View {
     }
 }
 
+// shared observable for menu bar label — updated by WindowManager,
+// observed by WorkspaceIndicatorLabel. this bridges the gap between
+// WindowManager (not available at app init) and the MenuBarExtra label.
+class MenuBarState: ObservableObject {
+    static let shared = MenuBarState()
+    @Published var labelText: String = ""
+    @Published var hasData = false
+}
+
+// compact menu bar label showing workspace numbers + floating indicator.
+// MenuBarExtra labels only reliably render Image/Text, so we build a
+// single string: active workspaces are bracketed [2], occupied are plain,
+// trailing ◆ if floating windows exist.
+struct WorkspaceIndicatorLabel: View {
+    @ObservedObject private var config = UserConfig.shared
+    @ObservedObject private var state = MenuBarState.shared
+
+    var body: some View {
+        if config.showMenuBarIndicator, state.hasData, !state.labelText.isEmpty {
+            Text(state.labelText)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+        } else {
+            Image(systemName: "rectangle.split.2x2")
+        }
+    }
+}
+
 extension Notification.Name {
     static let hyprMacRetile = Notification.Name("hyprMacRetile")
     static let hyprMacWorkspaceChanged = Notification.Name("hyprMacWorkspaceChanged")

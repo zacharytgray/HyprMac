@@ -20,6 +20,7 @@ struct Keybind: Codable, Equatable, Identifiable {
         case showKeybinds
         case launchApp(bundleID: String)
         case focusMenuBar
+        case focusFloating
 
         func toAction() -> Action {
             switch self {
@@ -33,6 +34,7 @@ struct Keybind: Codable, Equatable, Identifiable {
             case .showKeybinds: return .showKeybinds
             case .launchApp(let b): return .launchApp(bundleID: b)
             case .focusMenuBar: return .focusMenuBar
+            case .focusFloating: return .focusFloating
             }
         }
     }
@@ -125,6 +127,10 @@ extension Keybind {
         // hypr + k: show keybinds
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_K), modifiers: .hypr,
                              action: .showKeybinds))
+
+        // hypr + f: focus/raise floating windows
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_F), modifiers: .hypr,
+                             action: .focusFloating))
 
         // hypr + enter: launch terminal
         binds.append(Keybind(keyCode: UInt16(kVK_Return), modifiers: .hypr,

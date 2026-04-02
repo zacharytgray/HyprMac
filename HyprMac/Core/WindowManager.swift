@@ -237,6 +237,14 @@ class WindowManager {
         // dead zone: menu bar region (~25px in CG top-left coords)
         if cgY < 25 { return }
 
+        // if cursor is over a visible floating window, don't refocus the tiled window underneath.
+        // prevents the raise→FFM→focus-tiled→floater-goes-behind feedback loop.
+        for wid in floatingWindowIDs {
+            guard workspaceManager.isWindowVisible(wid),
+                  let w = cachedWindows[wid], let frame = w.frame else { continue }
+            if frame.contains(cgPoint) { return }
+        }
+
         for (wid, rect) in tiledPositions {
             if rect.contains(cgPoint) {
                 guard wid != lastMouseFocusedID else { return }
@@ -414,6 +422,8 @@ class WindowManager {
             appLauncher.launchOrFocus(bundleID: bundleID)
         case .focusMenuBar:
             warpToMenuBar()
+        case .focusFloating:
+            focusFloatingWindow()
         }
     }
 
@@ -772,6 +782,53 @@ class WindowManager {
 
     // MARK: - floating
 
+    // public accessors for menu bar indicator
+    var hasVisibleFloatingWindows: Bool {
+        floatingWindowIDs.contains { workspaceManager.isWindowVisible($0) }
+    }
+
+    func occupiedWorkspaces() -> Set<Int> {
+        var result = Set<Int>()
+        for ws in 1...9 {
+            if !workspaceManager.windowIDs(onWorkspace: ws).isEmpty {
+                result.insert(ws)
+            }
+        }
+        return result
+    }
+
+    func activeWorkspaces() -> [Int] {
+        displayManager.screens.map { workspaceManager.workspaceForScreen($0) }
+    }
+
+    private func focusFloatingWindow() {
+        suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+
+        // collect visible floating windows, sorted by ID for stable cycle order
+        let visibleFloaters = floatingWindowIDs.sorted().compactMap { wid -> HyprWindow? in
+            guard workspaceManager.isWindowVisible(wid) else { return nil }
+            return cachedWindows[wid] ?? accessibility.getAllWindows().first { $0.windowID == wid }
+        }
+        guard !visibleFloaters.isEmpty else {
+            print("[HyprMac] no visible floating windows")
+            return
+        }
+
+        // cycle: if a floater is already focused, pick the next; wraps around
+        let focused = accessibility.getFocusedWindow()
+        var target = visibleFloaters[0]
+        if let focused = focused,
+           let idx = visibleFloaters.firstIndex(where: { $0.windowID == focused.windowID }) {
+            target = visibleFloaters[(idx + 1) % visibleFloaters.count]
+        }
+
+        target.focus()
+        cursorManager.warpToCenter(of: target)
+        lastMouseFocusedID = target.windowID
+        print("[HyprMac] focused floating window '\(target.title ?? "?")' (\(visibleFloaters.count) total)")
+    }
+
     private func toggleFloating() {
         guard let focused = accessibility.getFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
@@ -786,8 +843,13 @@ class WindowManager {
             if let evicted = tilingEngine.forceInsertWindow(focused, toWorkspace: workspace, on: screen) {
                 evicted.isFloating = true
                 floatingWindowIDs.insert(evicted.windowID)
-                if let original = originalFrames[evicted.windowID] {
+                let screenRect = displayManager.cgRect(for: screen)
+                if let original = originalFrames[evicted.windowID],
+                   isFrameVisible(original, on: screenRect) {
                     evicted.setFrame(original)
+                } else {
+                    let sz = evicted.size ?? CGSize(width: 800, height: 600)
+                    evicted.position = CGPoint(x: screenRect.midX - sz.width / 2, y: screenRect.midY - sz.height / 2)
                 }
                 print("[HyprMac] tiling '\(focused.title ?? "?")' — bumped '\(evicted.title ?? "?")' to floating")
             } else {
@@ -800,12 +862,22 @@ class WindowManager {
             focused.isFloating = true
             tilingEngine.removeWindow(focused, fromWorkspace: workspace)
 
-            if let original = originalFrames[focused.windowID] {
+            let screenRect = displayManager.cgRect(for: screen)
+            if let original = originalFrames[focused.windowID],
+               isFrameVisible(original, on: screenRect) {
                 focused.position = original.origin
                 focused.size = original.size
                 print("[HyprMac] floated window '\(focused.title ?? "?")' → restored \(original)")
             } else {
-                print("[HyprMac] floated window '\(focused.title ?? "?")' (no saved frame)")
+                // original frame is off-screen (e.g. from a previous session's hide corner).
+                // center the window on the current screen at a reasonable size.
+                let currentSize = focused.size ?? CGSize(width: 800, height: 600)
+                let centeredOrigin = CGPoint(
+                    x: screenRect.midX - currentSize.width / 2,
+                    y: screenRect.midY - currentSize.height / 2
+                )
+                focused.position = centeredOrigin
+                print("[HyprMac] floated window '\(focused.title ?? "?")' → centered on screen (bad original frame)")
             }
 
             tileAllVisibleSpaces()
@@ -826,7 +898,14 @@ class WindowManager {
         let allWindows = accessibility.getAllWindows()
         for w in allWindows {
             if let frame = w.frame, originalFrames[w.windowID] == nil {
-                originalFrames[w.windowID] = frame
+                // only save if the frame is actually visible on some screen.
+                // after a restart, windows may still be at the previous session's hide corner.
+                let onScreen = displayManager.screens.contains { screen in
+                    isFrameVisible(frame, on: displayManager.cgRect(for: screen))
+                }
+                if onScreen {
+                    originalFrames[w.windowID] = frame
+                }
             }
             knownWindowIDs.insert(w.windowID)
             windowOwners[w.windowID] = w.ownerPID
@@ -877,6 +956,16 @@ class WindowManager {
         updatePositionCache()
     }
 
+    // check if at least 25% of the frame is visible on the given screen rect
+    private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
+        let overlap = frame.intersection(screenRect)
+        guard !overlap.isNull else { return false }
+        let overlapArea = overlap.width * overlap.height
+        let frameArea = frame.width * frame.height
+        guard frameArea > 0 else { return false }
+        return overlapArea / frameArea > 0.25
+    }
+
     private func updatePositionCache() {
         let allWindows = accessibility.getAllWindows()
         tiledPositions.removeAll()
@@ -887,6 +976,24 @@ class WindowManager {
             if !floatingWindowIDs.contains(w.windowID), let frame = w.frame {
                 tiledPositions[w.windowID] = frame
             }
+        }
+        updateMenuBarState()
+    }
+
+    private func updateMenuBarState() {
+        let active = Set(activeWorkspaces())
+        let occupied = occupiedWorkspaces()
+        let shown = active.union(occupied).sorted()
+        let hasFloaters = hasVisibleFloatingWindows
+
+        let text = shown.map { ws in
+            active.contains(ws) ? "[\(ws)]" : "\(ws)"
+        }.joined(separator: " ") + (hasFloaters ? " ◆" : "")
+
+        DispatchQueue.main.async {
+            let state = MenuBarState.shared
+            state.labelText = text
+            state.hasData = true
         }
     }
 
@@ -915,7 +1022,12 @@ class WindowManager {
         for w in allWindows {
             if !knownWindowIDs.contains(w.windowID) {
                 if let frame = w.frame {
-                    originalFrames[w.windowID] = frame
+                    let onScreen = displayManager.screens.contains { screen in
+                        isFrameVisible(frame, on: displayManager.cgRect(for: screen))
+                    }
+                    if onScreen {
+                        originalFrames[w.windowID] = frame
+                    }
                 }
                 knownWindowIDs.insert(w.windowID)
                 windowOwners[w.windowID] = w.ownerPID
@@ -976,6 +1088,12 @@ class WindowManager {
         if changed {
             tileAllVisibleSpaces()
         }
+
+        // periodically re-raise floating windows so they don't get stuck
+        // behind full-screen tiled windows (no activation event to trigger raise)
+        if !floatingWindowIDs.isEmpty {
+            raiseFloatingWindows()
+        }
     }
 
     // MARK: - observers
@@ -1014,20 +1132,80 @@ class WindowManager {
         }
     }
 
-    // raise all visible floating windows via kAXRaiseAction.
-    // suppress activation switches so raising doesn't cascade.
+    // check if any visible floating window is behind a tiled window using CGWindowListCopyWindowInfo.
+    // returns window IDs of floating windows that need raising.
+    private func floatingWindowsBehindTiled() -> [CGWindowID] {
+        let visibleFloaters = floatingWindowIDs.filter { workspaceManager.isWindowVisible($0) }
+        guard !visibleFloaters.isEmpty else { return [] }
+
+        // get on-screen z-order (front to back)
+        guard let infoList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return Array(visibleFloaters)
+        }
+
+        // build z-index map: lower index = closer to front
+        var zIndex: [CGWindowID: Int] = [:]
+        for (i, info) in infoList.enumerated() {
+            if let wid = info[kCGWindowNumber as String] as? CGWindowID {
+                zIndex[wid] = i
+            }
+        }
+
+        // find the frontmost tiled window z-index per screen
+        var frontTiledZ: [Int: Int] = [:] // screenID -> best z-index
+        for (wid, rect) in tiledPositions {
+            guard let z = zIndex[wid],
+                  let screen = displayManager.screen(at: CGPoint(x: rect.midX, y: rect.midY)) else { continue }
+            let sid = workspaceManager.screenID(for: screen)
+            if frontTiledZ[sid] == nil || z < frontTiledZ[sid]! {
+                frontTiledZ[sid] = z
+            }
+        }
+
+        // floating window needs raising if it's behind the frontmost tiled window on its screen
+        var needsRaise: [CGWindowID] = []
+        for wid in visibleFloaters {
+            guard let fz = zIndex[wid],
+                  let w = cachedWindows[wid], let frame = w.frame else { continue }
+            let screen = displayManager.screen(at: CGPoint(x: frame.midX, y: frame.midY))
+            let sid = screen.map { workspaceManager.screenID(for: $0) } ?? -1
+            if let tz = frontTiledZ[sid], fz > tz {
+                needsRaise.append(wid)
+            }
+        }
+        return needsRaise
+    }
+
+    // raise floating windows that are behind tiled windows, then immediately
+    // restore focus to the previously-active tiled window via focusWithoutRaise.
+    // this breaks the raise→activate→FFM→focus-tiled→floater-goes-behind cycle.
     private func raiseFloatingWindows() {
         guard !isRaisingFloaters else { return }
         isRaisingFloaters = true
-        suppressActivationSwitchUntil = Date().addingTimeInterval(0.3)
-        // suppress FFM so it doesn't immediately refocus a tiled window and undo the raise
-        suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
-        for wid in floatingWindowIDs {
-            guard workspaceManager.isWindowVisible(wid),
-                  let w = cachedWindows[wid] else { continue }
+        defer { isRaisingFloaters = false }
+
+        let toRaise = floatingWindowsBehindTiled()
+        guard !toRaise.isEmpty else { return }
+
+        // remember what the user was focused on before we raise
+        let previousFocusID = lastMouseFocusedID
+        let previousWindow = cachedWindows[previousFocusID]
+
+        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+        suppressMouseFocusUntil = Date().addingTimeInterval(0.15)
+
+        for wid in toRaise {
+            guard let w = cachedWindows[wid] else { continue }
             AXUIElementPerformAction(w.element, kAXRaiseAction as CFString)
         }
-        isRaisingFloaters = false
+
+        // immediately restore focus to the tiled window the user was interacting with.
+        // this prevents the raise from stealing focus and triggering an FFM cascade.
+        if let prev = previousWindow, !floatingWindowIDs.contains(prev.windowID) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                prev.focusWithoutRaise()
+            }
+        }
     }
 
     // coalesced poll scheduling — all notification handlers funnel through here

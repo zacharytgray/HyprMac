@@ -15,4 +15,5 @@ enum Action: Equatable {
     case showKeybinds
     case launchApp(bundleID: String)
     case focusMenuBar
+    case focusFloating
 }
