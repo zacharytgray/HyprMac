@@ -20,12 +20,13 @@ xcodegen generate
 ## Release a New Version
 Run the all-in-one release script. It handles version bump, build, sign, notarize, DMG, GitHub Release, Sparkle appcast, Homebrew cask, commit, and push.
 
+**Important:** The script needs `DEVELOPMENT_TEAM`, `gh`, and `xcodegen` available. These tools live in `/usr/local/bin` which isn't in Claude Code's default PATH. Also `source` alone doesn't export vars to subsequent commands in the same shell invocation. Use this exact pattern:
+
 ```bash
-source ~/OpenClaude/Secrets/.env
-./scripts/release.sh <version>
+export PATH="/usr/local/bin:$PATH" && export DEVELOPMENT_TEAM=WYY8494SWG && source ~/OpenClaude/Secrets/.env && ./scripts/release.sh <version>
 ```
 
-Example: `./scripts/release.sh 0.2.0`
+The script commits and pushes automatically — commit your changes first, then run the release. Check `project.yml` for the current `MARKETING_VERSION` to pick the next version number.
 
 ## Code Style
 - Comments: short lowercase fragments, not narration
