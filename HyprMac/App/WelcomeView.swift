@@ -277,14 +277,14 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "xmark.square",
-            title: "Close Window (Hypr + W)",
-            description: "Close the focused window with Caps Lock + W. Works with focus-follows-mouse for quick cleanup."
+            icon: "square.grid.3x3.square",
+            title: "Workspace Spillover",
+            description: "Windows automatically spill into the next workspace when a monitor fills up, instead of floating."
         ),
         WhatsNewFeature(
-            icon: "app.dashed",
-            title: "New App Icon",
-            description: "Fresh icon design for HyprMac."
+            icon: "ladybug",
+            title: "Startup Tiling Fix",
+            description: "Fixed a race condition where windows would incorrectly float on startup instead of being distributed across workspaces."
         ),
     ]
 }

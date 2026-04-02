@@ -1162,8 +1162,19 @@ class WindowManager {
 
         let allWindows = accessibility.getAllWindows()
         let focusedID = accessibility.getFocusedWindow()?.windowID
+        let allWids = Set(allWindows.map { $0.windowID })
 
-        // gather all non-floating tiling window IDs
+        // full redistribution: un-float everything except excluded apps.
+        // the poll loop may have auto-floated windows before distribute ran.
+        let excludedWids = Set(allWindows.filter { isExcludedApp($0) }.map { $0.windowID })
+        for wid in floatingWindowIDs where !excludedWids.contains(wid) && allWids.contains(wid) {
+            floatingWindowIDs.remove(wid)
+            if let w = allWindows.first(where: { $0.windowID == wid }) {
+                w.isFloating = false
+            }
+        }
+
+        // gather all tiling window IDs (from visible workspaces + unassigned)
         var tilingWids: [CGWindowID] = []
         for screen in screens {
             let ws = workspaceManager.workspaceForScreen(screen)
@@ -1172,7 +1183,7 @@ class WindowManager {
             }
         }
         for w in allWindows where !floatingWindowIDs.contains(w.windowID) {
-            if workspaceManager.workspaceFor(w.windowID) == nil && !tilingWids.contains(w.windowID) {
+            if !tilingWids.contains(w.windowID) {
                 tilingWids.append(w.windowID)
             }
         }
