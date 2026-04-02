@@ -33,6 +33,9 @@ class UserConfig: ObservableObject {
     @Published var showMenuBarIndicator: Bool {
         didSet { if !isReloading { save() } }
     }
+    @Published var maxSplitsPerMonitor: [String: Int] {
+        didSet { if !isReloading { save() } }
+    }
 
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
@@ -79,6 +82,7 @@ class UserConfig: ObservableObject {
             self.animateWindows = saved.animateWindows ?? true
             self.animationDuration = saved.animationDuration ?? 0.15
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? true
+            self.maxSplitsPerMonitor = saved.maxSplitsPerMonitor ?? [:]
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
@@ -90,6 +94,7 @@ class UserConfig: ObservableObject {
             self.animateWindows = true
             self.animationDuration = 0.15
             self.showMenuBarIndicator = true
+            self.maxSplitsPerMonitor = [:]
         }
 
         // verify symlink integrity if iCloud sync was enabled
@@ -138,7 +143,8 @@ class UserConfig: ObservableObject {
                                 excludedBundleIDs: Array(excludedBundleIDs),
                                 animateWindows: animateWindows,
                                 animationDuration: animationDuration,
-                                showMenuBarIndicator: showMenuBarIndicator)
+                                showMenuBarIndicator: showMenuBarIndicator,
+                                maxSplitsPerMonitor: maxSplitsPerMonitor)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: localConfigURL)
         }
@@ -155,6 +161,7 @@ class UserConfig: ObservableObject {
         animateWindows = true
         animationDuration = 0.15
         showMenuBarIndicator = true
+        maxSplitsPerMonitor = [:]
     }
 
     // MARK: - iCloud Drive sync
@@ -277,6 +284,7 @@ class UserConfig: ObservableObject {
         animateWindows = saved.animateWindows ?? true
         animationDuration = saved.animationDuration ?? 0.15
         showMenuBarIndicator = saved.showMenuBarIndicator ?? true
+        maxSplitsPerMonitor = saved.maxSplitsPerMonitor ?? [:]
         isReloading = false
     }
 }
@@ -292,4 +300,5 @@ private struct SavedConfig: Codable {
     let animateWindows: Bool?
     let animationDuration: Double?
     let showMenuBarIndicator: Bool?
+    let maxSplitsPerMonitor: [String: Int]?
 }

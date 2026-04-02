@@ -82,7 +82,7 @@ class WindowManager {
             if let original = self.originalFrames[window.windowID] {
                 window.setFrame(original)
             }
-            print("[HyprMac] auto-floated '\(window.title ?? "?")' — screen full (max \(self.tilingEngine.maxDepth) splits)")
+            print("[HyprMac] auto-floated '\(window.title ?? "?")' — screen full")
         }
 
         // react to enabled toggling (including mid-flight config rewrites from iCloud sync)
@@ -111,6 +111,7 @@ class WindowManager {
 
         tilingEngine.gapSize = config.gapSize
         tilingEngine.outerPadding = config.outerPadding
+        tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
         hotkeyManager.updateKeybinds(config.keybinds)
         hotkeyManager.doubleTapAction = config.doubleTapAction?.toAction()
         hotkeyManager.start()
@@ -170,6 +171,34 @@ class WindowManager {
         config.$doubleTapAction.sink { [weak self] newAction in
             self?.hotkeyManager.doubleTapAction = newAction?.toAction()
         }.store(in: &configObservers)
+
+        config.$gapSize
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] newGap in
+                guard let self = self else { return }
+                self.tilingEngine.gapSize = newGap
+                self.snapshotAndTile()
+            }.store(in: &configObservers)
+
+        config.$outerPadding
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] newPadding in
+                guard let self = self else { return }
+                self.tilingEngine.outerPadding = newPadding
+                self.snapshotAndTile()
+            }.store(in: &configObservers)
+
+        config.$maxSplitsPerMonitor
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] newSplits in
+                guard let self = self else { return }
+                self.tilingEngine.maxSplitsPerMonitor = newSplits
+                self.snapshotAndTile()
+                print("[HyprMac] max splits updated: \(newSplits)")
+            }.store(in: &configObservers)
 
         print("[HyprMac] started")
     }
@@ -584,6 +613,33 @@ class WindowManager {
         }
 
         let isFloating = floatingWindowIDs.contains(focused.windowID)
+
+        // check capacity on target workspace before moving a tiled window
+        if !isFloating {
+            let targetScreen = workspaceManager.screenForWorkspace(number)
+                ?? workspaceManager.homeScreenForWorkspace(number)
+                ?? screen
+
+            if let visibleScreen = workspaceManager.screenForWorkspace(number) {
+                // target workspace is visible — check BSP tree directly
+                if !tilingEngine.canFitWindow(onWorkspace: number, screen: visibleScreen) {
+                    print("[HyprMac] workspace \(number) full on \(visibleScreen.localizedName) — rejected move")
+                    NSSound.beep()
+                    return
+                }
+            } else {
+                // target workspace is hidden — count tiled windows assigned to it
+                let wids = workspaceManager.windowIDs(onWorkspace: number)
+                let tiledCount = wids.filter { !floatingWindowIDs.contains($0) }.count
+                let maxDepth = tilingEngine.maxDepth(for: targetScreen)
+                // maxDepth splits = maxDepth + 1 windows max in dwindle
+                if tiledCount >= maxDepth + 1 {
+                    print("[HyprMac] workspace \(number) full (\(tiledCount) tiled, max \(maxDepth + 1)) — rejected move")
+                    NSSound.beep()
+                    return
+                }
+            }
+        }
 
         // remove from current workspace's tiling tree
         if !isFloating {

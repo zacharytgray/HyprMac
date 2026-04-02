@@ -17,8 +17,13 @@ class TilingEngine {
     var gapSize: CGFloat = 8
     var outerPadding: CGFloat = 8
 
-    // max BSP depth: 3 = eighth screen (full, half, quarter, eighth)
-    var maxDepth: Int = 3
+    // per-screen max BSP depth overrides, keyed by NSScreen.localizedName
+    var maxSplitsPerMonitor: [String: Int] = [:]
+    private let defaultMaxDepth = 3
+
+    func maxDepth(for screen: NSScreen) -> Int {
+        maxSplitsPerMonitor[screen.localizedName] ?? defaultMaxDepth
+    }
 
     // minimum child dimension (px) for smart insert backtracking
     var minSlotDimension: CGFloat = 500
@@ -80,7 +85,7 @@ class TilingEngine {
         // add new windows via smart insert
         var addedAny = false
         for w in tileWindows where !treeIDs.contains(w.windowID) {
-            if !t.smartInsert(w, maxDepth: maxDepth, in: rect, gap: gapSize,
+            if !t.smartInsert(w, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
                               padding: outerPadding, minSlotDimension: minSlotDimension) {
                 print("[HyprMac] max depth exceeded — auto-floating '\(w.title ?? "?")'")
                 onAutoFloat?(w)
@@ -132,7 +137,7 @@ class TilingEngine {
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
         if !t.contains(window) {
-            if !t.smartInsert(window, maxDepth: maxDepth, in: rect, gap: gapSize,
+            if !t.smartInsert(window, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
                               padding: outerPadding, minSlotDimension: minSlotDimension) {
                 print("[HyprMac] max depth exceeded — auto-floating '\(window.title ?? "?")'")
                 onAutoFloat?(window)
@@ -254,7 +259,7 @@ class TilingEngine {
         let leaves = t.root.allLeavesRightToLeft()
 
         for leaf in leaves {
-            guard leaf.depth < maxDepth else { continue }
+            guard leaf.depth < maxDepth(for: screen) else { continue }
             guard let leafRect = t.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
             let dir = leaf.direction(for: leafRect)
             let childMin: CGFloat
@@ -267,7 +272,7 @@ class TilingEngine {
             if childMin >= minSlotDimension { return true }
         }
 
-        return leaves.contains { $0.depth < maxDepth }
+        return leaves.contains { $0.depth < maxDepth(for: screen) }
     }
 
     // force-insert a window on an explicit screen, evicting deepest-right if full
@@ -278,7 +283,7 @@ class TilingEngine {
 
         if t.contains(window) { return nil }
 
-        if t.smartInsert(window, maxDepth: maxDepth, in: rect, gap: gapSize,
+        if t.smartInsert(window, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
                          padding: outerPadding, minSlotDimension: minSlotDimension) {
             retile(key: key, screen: screen)
             return nil
@@ -287,13 +292,13 @@ class TilingEngine {
         guard let evicted = t.deepestRightLeafWindow() else { return nil }
         t.remove(evicted)
 
-        if t.smartInsert(window, maxDepth: maxDepth, in: rect, gap: gapSize,
+        if t.smartInsert(window, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
                          padding: outerPadding, minSlotDimension: minSlotDimension) {
             retile(key: key, screen: screen)
             return evicted
         }
 
-        _ = t.insert(evicted, maxDepth: maxDepth)
+        _ = t.insert(evicted, maxDepth: maxDepth(for: screen))
         retile(key: key, screen: screen)
         return nil
     }
