@@ -1,4 +1,5 @@
 import Foundation
+import Cocoa
 
 class UserConfig: ObservableObject {
     static let shared = UserConfig()
@@ -37,6 +38,13 @@ class UserConfig: ObservableObject {
         didSet { if !isReloading { save() } }
     }
     @Published var disabledMonitors: Set<String> {
+        didSet { if !isReloading { save() } }
+    }
+    @Published var showFocusBorder: Bool {
+        didSet { if !isReloading { save() } }
+    }
+    // hex string like "007AFF" — nil means system accent color
+    @Published var focusBorderColorHex: String? {
         didSet { if !isReloading { save() } }
     }
 
@@ -87,6 +95,8 @@ class UserConfig: ObservableObject {
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? true
             self.maxSplitsPerMonitor = saved.maxSplitsPerMonitor ?? [:]
             self.disabledMonitors = Set(saved.disabledMonitors ?? [])
+            self.showFocusBorder = saved.showFocusBorder ?? true
+            self.focusBorderColorHex = saved.focusBorderColorHex
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
@@ -100,6 +110,8 @@ class UserConfig: ObservableObject {
             self.showMenuBarIndicator = true
             self.maxSplitsPerMonitor = [:]
             self.disabledMonitors = []
+            self.showFocusBorder = true
+            self.focusBorderColorHex = nil
         }
 
         // verify symlink integrity if iCloud sync was enabled
@@ -150,7 +162,9 @@ class UserConfig: ObservableObject {
                                 animationDuration: animationDuration,
                                 showMenuBarIndicator: showMenuBarIndicator,
                                 maxSplitsPerMonitor: maxSplitsPerMonitor,
-                                disabledMonitors: Array(disabledMonitors))
+                                disabledMonitors: Array(disabledMonitors),
+                                showFocusBorder: showFocusBorder,
+                                focusBorderColorHex: focusBorderColorHex)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: localConfigURL)
         }
@@ -169,6 +183,14 @@ class UserConfig: ObservableObject {
         showMenuBarIndicator = true
         maxSplitsPerMonitor = [:]
         disabledMonitors = []
+        showFocusBorder = true
+        focusBorderColorHex = nil
+    }
+
+    // resolve the border color — custom hex or system accent
+    var resolvedFocusBorderColor: NSColor {
+        if let hex = focusBorderColorHex, let c = NSColor.fromHex(hex) { return c }
+        return NSColor.controlAccentColor
     }
 
     // MARK: - iCloud Drive sync
@@ -293,6 +315,8 @@ class UserConfig: ObservableObject {
         showMenuBarIndicator = saved.showMenuBarIndicator ?? true
         maxSplitsPerMonitor = saved.maxSplitsPerMonitor ?? [:]
         disabledMonitors = Set(saved.disabledMonitors ?? [])
+        showFocusBorder = saved.showFocusBorder ?? true
+        focusBorderColorHex = saved.focusBorderColorHex
         isReloading = false
     }
 }
@@ -310,4 +334,24 @@ private struct SavedConfig: Codable {
     let showMenuBarIndicator: Bool?
     let maxSplitsPerMonitor: [String: Int]?
     let disabledMonitors: [String]?
+    let showFocusBorder: Bool?
+    let focusBorderColorHex: String?
+}
+
+extension NSColor {
+    static func fromHex(_ hex: String) -> NSColor? {
+        let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard h.count == 6, let val = UInt64(h, radix: 16) else { return nil }
+        return NSColor(red: CGFloat((val >> 16) & 0xFF) / 255,
+                       green: CGFloat((val >> 8) & 0xFF) / 255,
+                       blue: CGFloat(val & 0xFF) / 255, alpha: 1.0)
+    }
+
+    var hexString: String {
+        guard let c = usingColorSpace(.sRGB) else { return "007AFF" }
+        return String(format: "%02X%02X%02X",
+                      Int(c.redComponent * 255),
+                      Int(c.greenComponent * 255),
+                      Int(c.blueComponent * 255))
+    }
 }

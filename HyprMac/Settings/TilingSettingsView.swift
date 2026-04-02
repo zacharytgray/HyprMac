@@ -38,6 +38,30 @@ struct TilingSettingsView: View {
                 }
             }
 
+            Section("Focus Indicator") {
+                Toggle("Show focus border", isOn: $config.showFocusBorder)
+
+                if config.showFocusBorder {
+                    HStack {
+                        Text("Border Color")
+                        Spacer()
+                        if config.focusBorderColorHex != nil {
+                            Button("Reset") { config.focusBorderColorHex = nil }
+                                .font(.caption)
+                        }
+                        ColorPicker("", selection: Binding(
+                            get: { Color(config.resolvedFocusBorderColor) },
+                            set: { config.focusBorderColorHex = NSColor($0).hexString }
+                        ), supportsOpacity: false)
+                        .labelsHidden()
+                        .frame(width: 36)
+                    }
+                    Text("Tints the window during traversal; shows as an outline when settled.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
             Section("Per-Monitor Settings") {
                 ForEach(screens, id: \.localizedName) { screen in
                     MonitorSplitsRow(

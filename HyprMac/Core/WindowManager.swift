@@ -224,15 +224,21 @@ class WindowManager {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         NotificationCenter.default.removeObserver(self)
         DistributedNotificationCenter.default().removeObserver(self)
+        focusBorder.hide()
         print("[HyprMac] stopped")
     }
 
     @objc private func menuTrackingBegan(_ note: Notification) {
         menuBarTracking = true
+        focusBorder.hide()
     }
 
     @objc private func menuTrackingEnded(_ note: Notification) {
         menuBarTracking = false
+        // restore border on the last focused window
+        if let w = cachedWindows[lastMouseFocusedID] {
+            updateFocusBorder(for: w)
+        }
     }
 
     func restart() {
@@ -305,6 +311,16 @@ class WindowManager {
     private func focusForFFM(_ window: HyprWindow) {
         suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
         window.focusWithoutRaise()
+        updateFocusBorder(for: window)
+    }
+
+    private func updateFocusBorder(for window: HyprWindow) {
+        guard config.showFocusBorder, let frame = window.frame else {
+            focusBorder.hide()
+            return
+        }
+        focusBorder.accentCGColor = config.resolvedFocusBorderColor.cgColor
+        focusBorder.show(around: frame, windowID: window.windowID)
     }
 
     private func handleMouseUp() {
@@ -500,10 +516,7 @@ class WindowManager {
             target.focusWithoutRaise()
             cursorManager.warpToCenter(of: target)
             lastMouseFocusedID = target.windowID
-
-            if config.animateWindows, let frame = target.frame {
-                focusBorder.flash(around: frame)
-            }
+            updateFocusBorder(for: target)
         }
     }
 
@@ -575,9 +588,11 @@ class WindowManager {
                 best.focus()
                 cursorManager.warpToCenter(of: best)
                 lastMouseFocusedID = best.windowID
+                updateFocusBorder(for: best)
             } else {
                 let rect = displayManager.cgRect(for: result.screen)
                 CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
+                focusBorder.hide()
             }
             return
         }
@@ -606,9 +621,11 @@ class WindowManager {
             best.focus()
             cursorManager.warpToCenter(of: best)
             lastMouseFocusedID = best.windowID
+            updateFocusBorder(for: best)
         } else {
             let rect = displayManager.cgRect(for: result.screen)
             CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
+            focusBorder.hide()
         }
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
@@ -930,6 +947,7 @@ class WindowManager {
         target.focus()
         cursorManager.warpToCenter(of: target)
         lastMouseFocusedID = target.windowID
+        updateFocusBorder(for: target)
         print("[HyprMac] focused floating window '\(target.title ?? "?")' (\(visibleFloaters.count) total)")
     }
 
@@ -1191,6 +1209,11 @@ class WindowManager {
             }
         }
         updateMenuBarState()
+
+        // keep focus border tracking window position (retile, resize, etc.)
+        if let tid = focusBorder.trackedWindowID, let w = cachedWindows[tid], let frame = w.frame {
+            focusBorder.updatePosition(frame)
+        }
     }
 
     private func updateMenuBarState() {
@@ -1450,8 +1473,9 @@ class WindowManager {
         // immediately restore focus to the tiled window the user was interacting with.
         // this prevents the raise from stealing focus and triggering an FFM cascade.
         if let prev = previousWindow, !floatingWindowIDs.contains(prev.windowID) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
                 prev.focusWithoutRaise()
+                self?.updateFocusBorder(for: prev)
             }
         }
     }
