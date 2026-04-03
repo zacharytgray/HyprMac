@@ -467,9 +467,14 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "keyboard.fill",
+            title: "Caps+` Replaces Double-Tap",
+            description: "Menu bar focus is now Caps+Backtick — a regular keybind you can see and customize in Settings."
+        ),
+        WhatsNewFeature(
             icon: "graduationcap.fill",
             title: "Getting Started Tutorial",
-            description: "New first-launch onboarding walks you through the basics. Reopen anytime from the menu bar."
+            description: "New first-launch onboarding walks you through the basics. Reopen anytime from Settings → General."
         ),
         WhatsNewFeature(
             icon: "arrow.rectanglepath",
