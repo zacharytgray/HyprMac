@@ -467,29 +467,14 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.2.swap",
-            title: "Smooth Swap Animations",
-            description: "Window swaps now animate smoothly with proxy windows instead of snapping instantly."
+            icon: "graduationcap.fill",
+            title: "Getting Started Tutorial",
+            description: "New first-launch onboarding walks you through the basics. Reopen anytime from the menu bar."
         ),
         WhatsNewFeature(
-            icon: "arrow.triangle.swap",
-            title: "Animated Transpose",
-            description: "Toggling split direction (Caps+J) now animates the layout change in the same smooth style as window swaps."
-        ),
-        WhatsNewFeature(
-            icon: "keyboard",
-            title: "Keybind Overlay Redesign",
-            description: "The Caps+K keybind overlay now shows grouped categories with icons and styled shortcut badges."
-        ),
-        WhatsNewFeature(
-            icon: "gearshape",
-            title: "Settings UI Overhaul",
-            description: "Refreshed Settings with cleaner layout, improved tiling controls, and a clarified max splits picker."
-        ),
-        WhatsNewFeature(
-            icon: "cursorarrow.motionlines",
-            title: "Focus-Follows-Mouse Fixes",
-            description: "FFM no longer interferes with Dock popups, and the focus border correctly clears when floating windows are retiled."
+            icon: "arrow.rectanglepath",
+            title: "Single-Monitor Focus Fix",
+            description: "Fixed a bug where focus could get stuck after switching workspaces on a single-monitor setup."
         ),
     ]
 }
