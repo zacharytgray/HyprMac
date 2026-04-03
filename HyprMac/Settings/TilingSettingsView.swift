@@ -25,7 +25,7 @@ struct TilingSettingsView: View {
             }
 
             Section("Animation") {
-                Toggle("Animate window swaps", isOn: $config.animateWindows)
+                Toggle("Animate window transitions", isOn: $config.animateWindows)
 
                 if config.animateWindows {
                     HStack {
@@ -169,10 +169,13 @@ private struct MaxSplitsPicker: View {
                 }
                 .buttonStyle(.plain)
             }
-            Text("splits")
+            Text("max splits")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
+        Text("Maximum number of tiled windows on this display. Additional windows auto-float.")
+            .font(.caption)
+            .foregroundColor(.secondary)
     }
 }
 
