@@ -4,19 +4,6 @@ struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
 
-    private var doubleTapEnabled: Binding<Bool> {
-        Binding(
-            get: { config.doubleTapAction != nil },
-            set: { config.doubleTapAction = $0 ? .focusMenuBar : nil }
-        )
-    }
-    private var doubleTapChoice: Binding<DoubleTapChoice> {
-        Binding(
-            get: { DoubleTapChoice.from(config.doubleTapAction) },
-            set: { config.doubleTapAction = $0.toDescriptor() }
-        )
-    }
-
     var body: some View {
         Form {
             // status
@@ -57,21 +44,6 @@ struct GeneralSettingsView: View {
             Section("Mouse") {
                 Toggle("Focus Follows Mouse", isOn: $config.focusFollowsMouse)
                 Text("Hovering over a tiled window focuses it. Drag-swap works regardless of this setting.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // double-tap caps lock
-            Section("Double-Tap Caps Lock") {
-                Toggle("Enabled", isOn: doubleTapEnabled)
-                if config.doubleTapAction != nil {
-                    Picker("Action", selection: doubleTapChoice) {
-                        ForEach(DoubleTapChoice.allCases, id: \.self) { c in
-                            Text(c.rawValue).tag(c)
-                        }
-                    }
-                }
-                Text("Double-tap Caps Lock to trigger the action. Won't fire if Caps Lock was used as a modifier between taps.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -204,34 +176,3 @@ struct GeneralSettingsView: View {
     }
 }
 
-// choices for the double-tap caps lock action
-enum DoubleTapChoice: String, CaseIterable {
-    case focusMenuBar  = "Focus Menu Bar"
-    case focusFloating = "Focus Floating Windows"
-    case toggleFloating = "Toggle Floating"
-    case toggleSplit   = "Toggle Split"
-    case showKeybinds  = "Show Keybinds"
-    case closeWindow   = "Close Window"
-
-    static func from(_ desc: Keybind.ActionDescriptor?) -> DoubleTapChoice {
-        switch desc {
-        case .toggleFloating: return .toggleFloating
-        case .toggleSplit:    return .toggleSplit
-        case .showKeybinds:   return .showKeybinds
-        case .focusFloating:  return .focusFloating
-        case .closeWindow:    return .closeWindow
-        default:              return .focusMenuBar
-        }
-    }
-
-    func toDescriptor() -> Keybind.ActionDescriptor {
-        switch self {
-        case .focusMenuBar:   return .focusMenuBar
-        case .focusFloating:  return .focusFloating
-        case .toggleFloating: return .toggleFloating
-        case .toggleSplit:    return .toggleSplit
-        case .showKeybinds:   return .showKeybinds
-        case .closeWindow:    return .closeWindow
-        }
-    }
-}

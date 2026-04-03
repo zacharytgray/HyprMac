@@ -157,6 +157,10 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_Tab), modifiers: [.hypr, .shift],
                              action: .cycleWorkspace(-1)))
 
+        // hypr + ` (backtick): focus menu bar
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_Grave), modifiers: .hypr,
+                             action: .focusMenuBar))
+
         // hypr + enter: launch terminal
         binds.append(Keybind(keyCode: UInt16(kVK_Return), modifiers: .hypr,
                              action: .launchApp(bundleID: "com.apple.Terminal")))

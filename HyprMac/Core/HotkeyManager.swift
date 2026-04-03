@@ -11,12 +11,6 @@ class HotkeyManager {
     fileprivate var hyprKeyDown = false
     private static let f18KeyCode: UInt16 = 79 // 0x4F
 
-    // double-tap caps lock detection
-    private var lastF18DownTime: Date = .distantPast
-    private var f18WasUsedAsModifier = false
-    private let doubleTapThreshold: TimeInterval = 0.3
-    var doubleTapAction: Action? = .focusMenuBar
-
     private var keybinds: [Keybind] = Keybind.defaults
 
     func updateKeybinds(_ binds: [Keybind]) {
@@ -67,29 +61,9 @@ class HotkeyManager {
         // track F18 (remapped Caps Lock) as our Hypr modifier
         if keyCode == HotkeyManager.f18KeyCode {
             if type == .keyDown {
-                // check for double-tap before any combo
-                let now = Date()
-                let elapsed = now.timeIntervalSince(lastF18DownTime)
-                var isDoubleTap = false
-                if elapsed < doubleTapThreshold && !f18WasUsedAsModifier,
-                   let action = doubleTapAction {
-                    // double-tap detected
-                    isDoubleTap = true
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onAction?(action)
-                    }
-                    lastF18DownTime = .distantPast // reset so triple-tap doesn't re-fire
-                } else {
-                    lastF18DownTime = now
-                }
-                f18WasUsedAsModifier = false
                 hyprKeyDown = true
-                // skip focus recapture on double-tap — the action (e.g. focusMenuBar)
-                // handles focus itself, and SkyLight activation would interfere
-                if !isDoubleTap {
-                    DispatchQueue.main.async { [weak self] in
-                        self?.onHyprKeyDown?()
-                    }
+                DispatchQueue.main.async { [weak self] in
+                    self?.onHyprKeyDown?()
                 }
             } else if type == .keyUp {
                 hyprKeyDown = false
@@ -99,11 +73,6 @@ class HotkeyManager {
 
         // only check keybinds on keyDown
         guard type == .keyDown else { return event }
-
-        // mark that caps was used as a modifier (not a standalone tap)
-        if hyprKeyDown {
-            f18WasUsedAsModifier = true
-        }
 
         let flags = ModifierFlags.from(event.flags, hyprDown: hyprKeyDown)
 

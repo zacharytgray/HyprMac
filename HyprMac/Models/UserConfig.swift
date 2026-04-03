@@ -19,9 +19,6 @@ class UserConfig: ObservableObject {
     @Published var focusFollowsMouse: Bool {
         didSet { if !isReloading { save() } }
     }
-    @Published var doubleTapAction: Keybind.ActionDescriptor? {
-        didSet { if !isReloading { save() } }
-    }
     @Published var excludedBundleIDs: Set<String> {
         didSet { if !isReloading { save() } }
     }
@@ -89,7 +86,6 @@ class UserConfig: ObservableObject {
             self.outerPadding = saved.outerPadding
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? true
-            self.doubleTapAction = saved.doubleTapAction ?? .focusMenuBar
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
             self.animateWindows = saved.animateWindows ?? true
             self.animationDuration = saved.animationDuration ?? 0.15
@@ -104,7 +100,6 @@ class UserConfig: ObservableObject {
             self.outerPadding = 8
             self.enabled = true
             self.focusFollowsMouse = true
-            self.doubleTapAction = .focusMenuBar
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             self.animateWindows = true
             self.animationDuration = 0.15
@@ -157,7 +152,6 @@ class UserConfig: ObservableObject {
         let saved = SavedConfig(keybinds: keybinds, gapSize: gapSize,
                                 outerPadding: outerPadding, enabled: enabled,
                                 focusFollowsMouse: focusFollowsMouse,
-                                doubleTapAction: doubleTapAction,
                                 excludedBundleIDs: Array(excludedBundleIDs),
                                 animateWindows: animateWindows,
                                 animationDuration: animationDuration,
@@ -177,7 +171,6 @@ class UserConfig: ObservableObject {
         outerPadding = 8
         enabled = true
         focusFollowsMouse = true
-        doubleTapAction = .focusMenuBar
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         animateWindows = true
         animationDuration = 0.15
@@ -309,7 +302,6 @@ class UserConfig: ObservableObject {
         outerPadding = saved.outerPadding
         enabled = saved.enabled
         focusFollowsMouse = saved.focusFollowsMouse ?? true
-        doubleTapAction = saved.doubleTapAction ?? .focusMenuBar
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
         animateWindows = saved.animateWindows ?? true
         animationDuration = saved.animationDuration ?? 0.15
@@ -328,7 +320,6 @@ private struct SavedConfig: Codable {
     let outerPadding: CGFloat
     let enabled: Bool
     let focusFollowsMouse: Bool?
-    let doubleTapAction: Keybind.ActionDescriptor?
     let excludedBundleIDs: [String]?
     let animateWindows: Bool?
     let animationDuration: Double?

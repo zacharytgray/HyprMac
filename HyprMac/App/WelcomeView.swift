@@ -182,7 +182,7 @@ struct WelcomeView: View {
             VStack(alignment: .leading, spacing: 8) {
                 tipRow(icon: "macwindow.on.rectangle", text: "Float or unfloat a window with Caps+Shift+T")
                 tipRow(icon: "arrow.triangle.2.circlepath", text: "Cycle through floating windows with Caps+F")
-                tipRow(icon: "cursorarrow.click", text: "Double-tap Caps Lock to warp the cursor to the menu bar")
+                tipRow(icon: "cursorarrow.click", text: "Press Caps+` (backtick) to warp the cursor to the menu bar")
                 tipRow(icon: "hand.draw", text: "Drag a window onto another to swap their positions")
                 tipRow(icon: "arrow.left.arrow.right", text: "Caps+J flips a window split from side-by-side to stacked")
             }

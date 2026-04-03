@@ -136,7 +136,6 @@ class WindowManager {
         tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
         workspaceManager.disabledMonitors = config.disabledMonitors
         hotkeyManager.updateKeybinds(config.keybinds)
-        hotkeyManager.doubleTapAction = config.doubleTapAction?.toAction()
         hotkeyManager.start()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
@@ -189,10 +188,6 @@ class WindowManager {
             guard let self = self else { return }
             self.hotkeyManager.updateKeybinds(newBinds)
             print("[HyprMac] keybinds reloaded (\(newBinds.count) binds)")
-        }.store(in: &configObservers)
-
-        config.$doubleTapAction.sink { [weak self] newAction in
-            self?.hotkeyManager.doubleTapAction = newAction?.toAction()
         }.store(in: &configObservers)
 
         config.$gapSize
