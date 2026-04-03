@@ -133,6 +133,43 @@ class TilingEngine {
         }
     }
 
+    // same as tileWindows but returns layouts WITHOUT applying frames.
+    // caller animates from old→new, then calls applyComputedLayout() on completion.
+    func computeTileLayout(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)] {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        let t = tree(for: key)
+        let rect = displayManager.cgRect(for: screen)
+
+        let tileWindows = windows.filter { !$0.isFloating }
+        let treeWindows = t.allWindows
+        let currentIDs = Set(tileWindows.map { $0.windowID })
+        let treeIDs = Set(treeWindows.map { $0.windowID })
+
+        // remove gone windows
+        let removedAny = treeWindows.contains { !currentIDs.contains($0.windowID) }
+        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
+
+        t.root.pruneEmptyNodes()
+
+        // add new windows via smart insert
+        var addedAny = false
+        for w in tileWindows where !treeIDs.contains(w.windowID) {
+            if !t.smartInsert(w, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
+                              padding: outerPadding, minSlotDimension: minSlotDimension) {
+                onAutoFloat?(w)
+            } else {
+                addedAny = true
+            }
+        }
+
+        if removedAny || addedAny {
+            t.root.clearUserSetRatios()
+        }
+
+        t.root.resetSplitRatios()
+        return t.layout(in: rect, gap: gapSize, padding: outerPadding)
+    }
+
     // add a single window to the tree for its workspace+screen and retile
     func addWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen) {
         guard !window.isFloating else { return }
