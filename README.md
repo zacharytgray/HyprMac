@@ -4,6 +4,8 @@ A keyboard-driven tiling window manager for macOS, inspired by [Hyprland](https:
 
 Caps Lock becomes a **Hypr** modifier key. BSP dwindle tiling, virtual workspaces, directional focus, window swapping, drag-swap, focus-follows-mouse — no SIP required.
 
+![HyprMac workspace demo](docs/screenshots/workspace-demo.png)
+
 > [!NOTE]
 > HyprMac is in active development. Contributions and bug reports welcome.
 

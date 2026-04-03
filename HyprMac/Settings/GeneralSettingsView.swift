@@ -4,7 +4,6 @@ struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
 
-    // double-tap action UI state
     private var doubleTapEnabled: Binding<Bool> {
         Binding(
             get: { config.doubleTapAction != nil },
@@ -20,34 +19,49 @@ struct GeneralSettingsView: View {
 
     var body: some View {
         Form {
-            Section("Status") {
-                Toggle("HyprMac Enabled", isOn: $config.enabled)
+            // status
+            Section {
+                HStack {
+                    Label("HyprMac", systemImage: "bolt.fill")
+                        .foregroundStyle(.primary)
+                    Spacer()
+                    Toggle("", isOn: $config.enabled)
+                        .labelsHidden()
+                }
 
                 HStack {
-                    Text("Accessibility Permission")
+                    Label("Accessibility", systemImage: accessibilityGranted ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                        .foregroundStyle(accessibilityGranted ? .green : .orange)
                     Spacer()
                     if accessibilityGranted {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
                         Text("Granted")
-                            .foregroundColor(.green)
+                            .foregroundStyle(.secondary)
                     } else {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(.red)
                         Button("Grant Access") {
                             AccessibilityManager.promptForAccessibility()
                         }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(Color.accentColor)
                     }
+                }
+            } header: {
+                Text("Status")
+            } footer: {
+                if !accessibilityGranted {
+                    Text("Accessibility permission is required for HyprMac to function. Open System Settings to grant it.")
+                        .foregroundStyle(.secondary)
                 }
             }
 
+            // mouse behavior
             Section("Mouse") {
                 Toggle("Focus Follows Mouse", isOn: $config.focusFollowsMouse)
-                Text("Hovering over a tiled window focuses it. Drag-swap still works regardless of this setting.")
+                Text("Hovering over a tiled window focuses it. Drag-swap works regardless of this setting.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
+            // double-tap caps lock
             Section("Double-Tap Caps Lock") {
                 Toggle("Enabled", isOn: doubleTapEnabled)
                 if config.doubleTapAction != nil {
@@ -57,16 +71,17 @@ struct GeneralSettingsView: View {
                         }
                     }
                 }
-                Text("Tap Caps Lock twice quickly to trigger the action. Won't fire if Caps Lock is used as a modifier between taps.")
+                Text("Double-tap Caps Lock to trigger the action. Won't fire if Caps Lock was used as a modifier between taps.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("Never Tile") {
+            // never tile
+            Section {
                 if config.excludedBundleIDs.isEmpty {
-                    Text("No excluded apps. All windows will be tiled.")
-                        .foregroundColor(.secondary)
-                        .font(.caption)
+                    Text("No apps excluded — all windows will be tiled.")
+                        .foregroundStyle(.secondary)
+                        .font(.callout)
                 } else {
                     ForEach(Array(config.excludedBundleIDs).sorted(), id: \.self) { bundleID in
                         HStack(spacing: 10) {
@@ -75,91 +90,96 @@ struct GeneralSettingsView: View {
                                     .resizable()
                                     .frame(width: 20, height: 20)
                             }
-                            Text(appName(for: bundleID))
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(appName(for: bundleID))
+                                Text(bundleID)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                             Spacer()
-                            Text(bundleID)
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
                             Button(role: .destructive) {
                                 config.excludedBundleIDs.remove(bundleID)
                             } label: {
-                                Image(systemName: "minus.circle")
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.red.opacity(0.8))
                             }
                             .buttonStyle(.borderless)
                         }
                     }
                 }
-                Button("Add App...") { pickExcludedApp() }
-                Text("These apps will always float and never be placed in the tiling layout.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Button("Add App…") { pickExcludedApp() }
+            } header: {
+                Text("Never Tile")
+            } footer: {
+                Text("These apps always float and are never placed in the tiling layout.")
+                    .foregroundStyle(.secondary)
             }
 
-            Section("iCloud Sync") {
-                if config.isICloudDriveAvailable {
-                    Toggle("Sync Settings via iCloud Drive", isOn: $config.iCloudSyncEnabled)
-                    if config.iCloudSyncEnabled {
-                        HStack {
-                            Image(systemName: "checkmark.icloud.fill")
-                                .foregroundColor(.blue)
-                            Text("Syncing via iCloud Drive")
-                                .foregroundColor(.secondary)
-                                .font(.caption)
-                        }
-                    }
-                } else {
-                    HStack {
-                        Image(systemName: "xmark.icloud")
-                            .foregroundColor(.secondary)
-                        Text("iCloud Drive not available")
-                            .foregroundColor(.secondary)
-                    }
-                }
-                Text("Sync keybinds, tiling settings, and preferences across Macs via iCloud Drive. Requires iCloud Drive enabled in System Settings.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
+            // menu bar
             Section("Menu Bar") {
                 Toggle("Show Workspace Indicator", isOn: $config.showMenuBarIndicator)
-                Text("Display active workspaces and floating window status in the menu bar. When disabled, shows a static icon.")
+                Text("Displays active workspaces and floating window status. When disabled, shows a static icon.")
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("Hypr Key") {
-                Text("Caps Lock is remapped to F18 while HyprMac is running. It acts as the Hypr modifier key for all keybinds. Normal Caps Lock is restored when the app quits.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Section("Startup") {
-                Text("Add HyprMac to Login Items in System Settings to launch at startup.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
+            // iCloud sync
             Section {
-                Button("Reset All Settings to Defaults") {
-                    config.resetToDefaults()
+                if config.isICloudDriveAvailable {
+                    Toggle("Sync via iCloud Drive", isOn: $config.iCloudSyncEnabled)
+                    if config.iCloudSyncEnabled {
+                        Label("Syncing via iCloud Drive", systemImage: "checkmark.icloud.fill")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                    }
+                } else {
+                    Label("iCloud Drive not available", systemImage: "xmark.icloud")
+                        .foregroundStyle(.secondary)
                 }
-                .foregroundColor(.red)
+                Text("Syncs keybinds, tiling settings, and preferences across Macs. Requires iCloud Drive in System Settings.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("iCloud Sync")
             }
 
-            Section("About") {
+            // hypr key info
+            Section("Hypr Key") {
+                Label("Caps Lock → F18 (while HyprMac is running)", systemImage: "capslock.fill")
+                    .font(.callout)
+                Text("Caps Lock is remapped at the driver level via hidutil and acts as the Hypr modifier. Normal behavior is restored when the app quits.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // startup
+            Section("Startup") {
+                Label("Launch at Login", systemImage: "power")
+                    .font(.callout)
+                Text("Add HyprMac to Login Items in System Settings → General → Login Items to launch at startup.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // about + reset
+            Section {
                 HStack {
                     Text("Version")
                     Spacer()
                     Text(appVersion)
-                        .foregroundColor(.secondary)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                 }
+                Button("Reset All Settings to Defaults") {
+                    config.resetToDefaults()
+                }
+                .foregroundStyle(.red)
+            } header: {
+                Text("About")
             }
         }
         .formStyle(.grouped)
-        .padding()
         .onAppear {
-            // refresh permission status
             accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
         }
     }
@@ -192,32 +212,32 @@ struct GeneralSettingsView: View {
 
 // choices for the double-tap caps lock action
 enum DoubleTapChoice: String, CaseIterable {
-    case focusMenuBar = "Focus Menu Bar"
+    case focusMenuBar  = "Focus Menu Bar"
     case focusFloating = "Focus Floating Windows"
     case toggleFloating = "Toggle Floating"
-    case toggleSplit = "Toggle Split"
-    case showKeybinds = "Show Keybinds"
-    case closeWindow = "Close Window"
+    case toggleSplit   = "Toggle Split"
+    case showKeybinds  = "Show Keybinds"
+    case closeWindow   = "Close Window"
 
     static func from(_ desc: Keybind.ActionDescriptor?) -> DoubleTapChoice {
         switch desc {
         case .toggleFloating: return .toggleFloating
-        case .toggleSplit: return .toggleSplit
-        case .showKeybinds: return .showKeybinds
-        case .focusFloating: return .focusFloating
-        case .closeWindow: return .closeWindow
-        default: return .focusMenuBar
+        case .toggleSplit:    return .toggleSplit
+        case .showKeybinds:   return .showKeybinds
+        case .focusFloating:  return .focusFloating
+        case .closeWindow:    return .closeWindow
+        default:              return .focusMenuBar
         }
     }
 
     func toDescriptor() -> Keybind.ActionDescriptor {
         switch self {
-        case .focusMenuBar: return .focusMenuBar
-        case .focusFloating: return .focusFloating
+        case .focusMenuBar:   return .focusMenuBar
+        case .focusFloating:  return .focusFloating
         case .toggleFloating: return .toggleFloating
-        case .toggleSplit: return .toggleSplit
-        case .showKeybinds: return .showKeybinds
-        case .closeWindow: return .closeWindow
+        case .toggleSplit:    return .toggleSplit
+        case .showKeybinds:   return .showKeybinds
+        case .closeWindow:    return .closeWindow
         }
     }
 }
