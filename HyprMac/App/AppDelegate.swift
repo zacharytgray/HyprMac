@@ -43,16 +43,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkFirstLaunchOrUpdate() {
+        let hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
         let lastVersion = UserDefaults.standard.string(forKey: "lastSeenVersion")
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 
-        if lastVersion == nil {
+        if !hasSeenOnboarding {
+            // first time ever — show onboarding tutorial
+            showWelcome(mode: .onboarding)
+            UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
+        } else if lastVersion == nil {
+            // existing user who never had version tracking — show welcome
             showWelcome(mode: .welcome)
         } else if lastVersion != currentVersion {
             showWelcome(mode: .whatsNew)
         }
 
         UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
+    }
+
+    func showOnboarding() {
+        showWelcome(mode: .onboarding)
     }
 
     private func showWelcome(mode: WelcomeMode) {
