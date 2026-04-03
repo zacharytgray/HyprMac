@@ -142,6 +142,9 @@ struct GeneralSettingsView: View {
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
                 }
+                Button("Show Getting Started") {
+                    (NSApp.delegate as? AppDelegate)?.showOnboarding()
+                }
                 Button("Reset All Settings to Defaults") {
                     config.resetToDefaults()
                 }

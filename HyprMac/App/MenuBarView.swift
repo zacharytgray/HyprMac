@@ -36,10 +36,6 @@ struct MenuBarView: View {
                 NotificationCenter.default.post(name: .hyprMacRetile, object: nil)
             }
 
-            Button("Show Getting Started") {
-                (NSApp.delegate as? AppDelegate)?.showOnboarding()
-            }
-
             Button("Check for Updates...") {
                 updater.checkForUpdates()
             }
