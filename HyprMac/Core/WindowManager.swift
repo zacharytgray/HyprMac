@@ -72,6 +72,10 @@ class WindowManager {
             self?.handleAction(action)
         }
 
+        hotkeyManager.onHyprKeyDown = { [weak self] in
+            self?.ensureFocus()
+        }
+
         // wire up mouse tracker dependencies
         mouseTracker.isFocusFollowsMouseEnabled = { [weak self] in self?.config.focusFollowsMouse ?? false }
         mouseTracker.isMouseButtonDown = { [weak self] in self?.mouseButtonDown ?? false }
@@ -296,6 +300,48 @@ class WindowManager {
         }
         focusBorder.accentCGColor = config.resolvedFocusBorderColor.cgColor
         focusBorder.show(around: frame, windowID: window.windowID)
+    }
+
+    // recapture focus on bare hypr keydown — ensures border + keyboard focus
+    // are on a valid tiled window even if mouse drifted or user clicked outside
+    private func ensureFocus() {
+        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+
+        let screen = screenUnderCursor()
+        let workspace = workspaceManager.workspaceForScreen(screen)
+        let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
+
+        // convert mouse to CG coords
+        let mouseNS = NSEvent.mouseLocation
+        let cgY = displayManager.primaryScreenHeight - mouseNS.y
+        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+
+        // tier 1: tiled window under cursor
+        for (wid, rect) in tiledPositions {
+            if wsWindows.contains(wid), rect.contains(cgPoint),
+               let w = cachedWindows[wid] {
+                w.focusWithoutRaise()
+                mouseTracker.lastMouseFocusedID = wid
+                updateFocusBorder(for: w)
+                return
+            }
+        }
+
+        // tier 2: any tiled window on this workspace
+        for (wid, _) in tiledPositions {
+            if wsWindows.contains(wid), let w = cachedWindows[wid] {
+                w.focusWithoutRaise()
+                mouseTracker.lastMouseFocusedID = wid
+                updateFocusBorder(for: w)
+                return
+            }
+        }
+
+        // tier 3: whatever AX says is focused — just show the border
+        if let focused = accessibility.getFocusedWindow(),
+           workspaceManager.isWindowVisible(focused.windowID) {
+            updateFocusBorder(for: focused)
+        }
     }
 
     private func handleMouseUp() {

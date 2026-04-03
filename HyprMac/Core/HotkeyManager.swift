@@ -5,6 +5,7 @@ class HotkeyManager {
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     var onAction: ((Action) -> Void)?
+    var onHyprKeyDown: (() -> Void)?
 
     // F18 = our Hypr key (Caps Lock is remapped to F18 at the driver level)
     fileprivate var hyprKeyDown = false
@@ -69,9 +70,11 @@ class HotkeyManager {
                 // check for double-tap before any combo
                 let now = Date()
                 let elapsed = now.timeIntervalSince(lastF18DownTime)
+                var isDoubleTap = false
                 if elapsed < doubleTapThreshold && !f18WasUsedAsModifier,
                    let action = doubleTapAction {
                     // double-tap detected
+                    isDoubleTap = true
                     DispatchQueue.main.async { [weak self] in
                         self?.onAction?(action)
                     }
@@ -81,6 +84,13 @@ class HotkeyManager {
                 }
                 f18WasUsedAsModifier = false
                 hyprKeyDown = true
+                // skip focus recapture on double-tap — the action (e.g. focusMenuBar)
+                // handles focus itself, and SkyLight activation would interfere
+                if !isDoubleTap {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onHyprKeyDown?()
+                    }
+                }
             } else if type == .keyUp {
                 hyprKeyDown = false
             }
