@@ -277,24 +277,29 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "tab.forward",
-            title: "Cycle Workspaces",
-            description: "Hypr+Tab / Hypr+Shift+Tab cycles through occupied workspaces on the current monitor, skipping empty ones."
+            icon: "rectangle.2.swap",
+            title: "Smooth Swap Animations",
+            description: "Window swaps now animate smoothly with proxy windows instead of snapping instantly."
         ),
         WhatsNewFeature(
-            icon: "xmark.square",
-            title: "Smarter Close Window",
-            description: "Hypr+W now closes the window under your cursor, not the last truly-focused window. Fixes wrong window closing with multi-window apps."
+            icon: "arrow.triangle.swap",
+            title: "Animated Transpose",
+            description: "Toggling split direction (Caps+J) now animates the layout change in the same smooth style as window swaps."
         ),
         WhatsNewFeature(
-            icon: "target",
-            title: "Focus Recovery",
-            description: "Focus and keyboard navigation no longer get stuck after closing a window — the next tiled window is automatically selected."
+            icon: "keyboard",
+            title: "Keybind Overlay Redesign",
+            description: "The Caps+K keybind overlay now shows grouped categories with icons and styled shortcut badges."
         ),
         WhatsNewFeature(
-            icon: "square.grid.3x3.topleft.filled",
-            title: "Ghost Gap Fix",
-            description: "Defensive BSP tree pruning prevents phantom empty gaps from appearing in tiling layouts."
+            icon: "gearshape",
+            title: "Settings UI Overhaul",
+            description: "Refreshed Settings with cleaner layout, improved tiling controls, and a clarified max splits picker."
+        ),
+        WhatsNewFeature(
+            icon: "cursorarrow.motionlines",
+            title: "Focus-Follows-Mouse Fixes",
+            description: "FFM no longer interferes with Dock popups, and the focus border correctly clears when floating windows are retiled."
         ),
     ]
 }
