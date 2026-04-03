@@ -467,19 +467,14 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "keyboard.fill",
-            title: "Caps+` Replaces Double-Tap",
-            description: "Menu bar focus is now Caps+Backtick — a regular keybind you can see and customize in Settings."
+            icon: "macwindow.on.rectangle",
+            title: "Floating Window Focus Fix",
+            description: "Pressing Caps no longer steals focus from floating windows — Caps+Shift+T to re-tile works reliably again."
         ),
         WhatsNewFeature(
-            icon: "graduationcap.fill",
-            title: "Getting Started Tutorial",
-            description: "New first-launch onboarding walks you through the basics. Reopen anytime from Settings → General."
-        ),
-        WhatsNewFeature(
-            icon: "arrow.rectanglepath",
-            title: "Single-Monitor Focus Fix",
-            description: "Fixed a bug where focus could get stuck after switching workspaces on a single-monitor setup."
+            icon: "rectangle.dashed",
+            title: "Focus Border on Floating Windows",
+            description: "Floating windows now show the blue focus border just like tiled windows."
         ),
     ]
 }

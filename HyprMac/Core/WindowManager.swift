@@ -298,9 +298,19 @@ class WindowManager {
     }
 
     // recapture focus on bare hypr keydown — ensures border + keyboard focus
-    // are on a valid tiled window even if mouse drifted or user clicked outside
+    // are on a valid tiled window even if mouse drifted or user clicked outside.
+    // if a floating window already has focus, leave it alone so hypr combos
+    // (like hypr+shift+T to re-tile) work on the floating window.
     private func ensureFocus() {
         mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+
+        // if a visible floating window already has focus, keep it
+        if let focused = accessibility.getFocusedWindow(),
+           floatingWindowIDs.contains(focused.windowID),
+           workspaceManager.isWindowVisible(focused.windowID) {
+            updateFocusBorder(for: focused)
+            return
+        }
 
         let screen = screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
@@ -677,6 +687,9 @@ class WindowManager {
                 if !tilingEngine.canFitWindow(onWorkspace: number, screen: visibleScreen) {
                     print("[HyprMac] workspace \(number) full on \(visibleScreen.localizedName) — rejected move")
                     NSSound.beep()
+                    if let frame = focused.frame {
+                        focusBorder.flashError(around: frame, windowID: focused.windowID)
+                    }
                     return
                 }
             } else {
@@ -686,6 +699,9 @@ class WindowManager {
                 if tiledCount >= maxDepth + 1 {
                     print("[HyprMac] workspace \(number) full (\(tiledCount) tiled, max \(maxDepth + 1)) — rejected move")
                     NSSound.beep()
+                    if let frame = focused.frame {
+                        focusBorder.flashError(around: frame, windowID: focused.windowID)
+                    }
                     return
                 }
             }

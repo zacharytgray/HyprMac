@@ -9,6 +9,7 @@ class FocusBorder {
     private var panel: NSPanel?
     private var glowView: NSView?
     private var settleWork: DispatchWorkItem?
+    private var shakeTimer: DispatchSourceTimer?
     private var state: State = .hidden
 
     private enum State { case active, settled, hidden }
@@ -93,6 +94,67 @@ class FocusBorder {
         }, completionHandler: {
             p.orderOut(nil)
         })
+    }
+
+    // brief red flash + shake to indicate a rejected operation
+    func flashError(around rect: CGRect, windowID: CGWindowID) {
+        settleWork?.cancel()
+        shakeTimer?.cancel()
+
+        let nsRect = panelRect(for: rect)
+        let p: NSPanel
+        if let existing = panel {
+            p = existing
+            p.setFrame(nsRect, display: false)
+            positionGlowView(in: p)
+        } else {
+            p = makePanel(frame: nsRect)
+            panel = p
+        }
+
+        let red = NSColor.systemRed.cgColor
+        if let layer = glowView?.layer {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            layer.borderColor = red
+            layer.borderWidth = 2.5
+            layer.cornerRadius = borderRadius
+            layer.backgroundColor = red.copy(alpha: 0.12)
+            CATransaction.commit()
+        }
+
+        p.alphaValue = 1.0
+        orderAboveWindow(p, windowID: windowID)
+        state = .active
+        trackedWindowID = windowID
+
+        // shake: oscillate panel x position
+        let baseX = nsRect.origin.x
+        let offsets: [CGFloat] = [10, -10, 7, -7, 3, -3, 0]
+        let stepDuration: TimeInterval = 0.04
+        var step = 0
+
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now(), repeating: .milliseconds(Int(stepDuration * 1000)))
+        shakeTimer = timer
+
+        timer.setEventHandler { [weak self] in
+            guard let self, let p = self.panel else { return }
+            if step < offsets.count {
+                var frame = p.frame
+                frame.origin.x = baseX + offsets[step]
+                p.setFrame(frame, display: false)
+                step += 1
+            } else {
+                self.shakeTimer?.cancel()
+                self.shakeTimer = nil
+                // fade out after shake
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                    self?.hide()
+                }
+            }
+        }
+        timer.resume()
     }
 
     // MARK: - panel setup
