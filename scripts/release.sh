@@ -54,9 +54,11 @@ if [ -n "$KEYCHAIN_PASSWORD" ]; then
 else
     read -s -p "       Keychain password: " KC_PASS; echo
 fi
-security unlock-keychain -p "$KC_PASS" ~/Library/Keychains/login.keychain-db
-security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KC_PASS" \
-    ~/Library/Keychains/login.keychain-db >/dev/null 2>&1
+KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+security unlock-keychain -p "$KC_PASS" "$KEYCHAIN"
+# grant codesign + productbuild + timestamp access to all signing keys
+security set-key-partition-list -S apple-tool:,apple:,codesign:,productbuild:,timestamp: \
+    -s -k "$KC_PASS" "$KEYCHAIN" >/dev/null 2>&1
 unset KC_PASS
 
 xcodebuild \
@@ -68,7 +70,7 @@ xcodebuild \
     CODE_SIGN_IDENTITY="Developer ID Application" \
     CODE_SIGN_STYLE=Manual \
     ENABLE_HARDENED_RUNTIME=YES \
-    OTHER_CODE_SIGN_FLAGS="--timestamp" \
+    OTHER_CODE_SIGN_FLAGS="--timestamp --keychain $KEYCHAIN" \
     CODE_SIGN_ENTITLEMENTS="$PROJECT_DIR/HyprMac/HyprMac-Release.entitlements" \
     build 2>&1 | grep -E '(error:|BUILD)' || true
 
@@ -81,18 +83,18 @@ fi
 echo "       Re-signing nested frameworks"
 SIGN_ID="Developer ID Application: Zachary Gray (WYY8494SWG)"
 find "$APP_PATH/Contents/Frameworks" -type f -perm +111 -o -name "*.dylib" | while read bin; do
-    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$bin" 2>/dev/null || true
+    codesign --force --sign "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp --options runtime "$bin" 2>/dev/null || true
 done
 # re-sign XPC services and .app bundles inside frameworks
 find "$APP_PATH/Contents/Frameworks" -name "*.xpc" -o -name "*.app" | while read bundle; do
-    codesign --force --deep --sign "$SIGN_ID" --timestamp --options runtime "$bundle" 2>/dev/null || true
+    codesign --force --deep --sign "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp --options runtime "$bundle" 2>/dev/null || true
 done
 # re-sign the framework itself
 find "$APP_PATH/Contents/Frameworks" -name "*.framework" | while read fw; do
-    codesign --force --sign "$SIGN_ID" --timestamp --options runtime "$fw" 2>/dev/null || true
+    codesign --force --sign "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp --options runtime "$fw" 2>/dev/null || true
 done
 # re-sign the main app last
-codesign --force --sign "$SIGN_ID" --timestamp --options runtime \
+codesign --force --sign "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp --options runtime \
     --entitlements "$PROJECT_DIR/HyprMac/HyprMac-Release.entitlements" \
     "$APP_PATH"
 
