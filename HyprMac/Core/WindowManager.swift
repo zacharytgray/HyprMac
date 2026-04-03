@@ -11,6 +11,10 @@ class WindowManager {
     let config: UserConfig
     let animator = WindowAnimator()
     let focusBorder = FocusBorder()
+    let mouseTracker = MouseTrackingManager()
+    let dragManager = DragManager()
+    let floatingController = FloatingWindowController()
+    let keybindOverlay = KeybindOverlayController()
 
     private(set) var workspaceManager: WorkspaceManager!
     private(set) var tilingEngine: TilingEngine!
@@ -44,19 +48,11 @@ class WindowManager {
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
     private var mouseButtonDown = false
-    private var lastMouseFocusedID: CGWindowID = 0
-
-    // suppress FFM while menu bar or dock popup is open
-    private var menuBarTracking = false
-    private var dockIsActive = false
-
-    // suppress focus-follows-mouse briefly after keyboard actions
-    private var suppressMouseFocusUntil: Date = .distantPast
 
     // suppress appDidActivate workspace switching (survives async notification delivery)
     private var suppressActivationSwitchUntil: Date = .distantPast
 
-    // guard against re-entrant raiseFloatingWindows
+    // guard against re-entrant raiseFloatingWindows (also used by suppressions)
     private var isRaisingFloaters = false
 
     // coalesce rapid polls from overlapping notifications
@@ -72,9 +68,30 @@ class WindowManager {
         self.tilingEngine = TilingEngine(displayManager: displayManager)
 
         hotkeyManager.onAction = { [weak self] action in
-            self?.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+            self?.mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
             self?.handleAction(action)
         }
+
+        // wire up mouse tracker dependencies
+        mouseTracker.isFocusFollowsMouseEnabled = { [weak self] in self?.config.focusFollowsMouse ?? false }
+        mouseTracker.isMouseButtonDown = { [weak self] in self?.mouseButtonDown ?? false }
+        mouseTracker.isAnimating = { [weak self] in self?.animator.isAnimating ?? false }
+        mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
+        mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
+        mouseTracker.floatingWindowIDs = { [weak self] in self?.floatingWindowIDs ?? [] }
+        mouseTracker.isWindowVisible = { [weak self] wid in self?.workspaceManager.isWindowVisible(wid) ?? false }
+        mouseTracker.cachedWindow = { [weak self] wid in self?.cachedWindows[wid] }
+        mouseTracker.tiledPositions = { [weak self] in self?.tiledPositions ?? [:] }
+        mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
+        mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+        mouseTracker.onHideFocusBorder = { [weak self] in self?.focusBorder.hide() }
+
+        // wire up floating controller
+        floatingController.isWindowVisible = { [weak self] wid in self?.workspaceManager.isWindowVisible(wid) ?? false }
+        floatingController.cachedWindow = { [weak self] wid in self?.cachedWindows[wid] }
+        floatingController.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
+        floatingController.screenID = { [weak self] s in self?.workspaceManager.screenID(for: s) ?? 0 }
+        floatingController.screens = { [weak self] in self?.displayManager.screens ?? [] }
 
         tilingEngine.onAutoFloat = { [weak self] window in
             guard let self = self else { return }
@@ -230,16 +247,11 @@ class WindowManager {
     }
 
     @objc private func menuTrackingBegan(_ note: Notification) {
-        menuBarTracking = true
-        focusBorder.hide()
+        mouseTracker.menuTrackingBegan()
     }
 
     @objc private func menuTrackingEnded(_ note: Notification) {
-        menuBarTracking = false
-        // restore border on the last focused window
-        if let w = cachedWindows[lastMouseFocusedID] {
-            updateFocusBorder(for: w)
-        }
+        mouseTracker.menuTrackingEnded()
     }
 
     func restart() {
@@ -251,7 +263,7 @@ class WindowManager {
 
     private func startMouseTracking() {
         mouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
-            self?.handleMouseMove()
+            self?.mouseTracker.handleMouseMove()
         }
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
             self?.mouseButtonDown = true
@@ -271,73 +283,10 @@ class WindowManager {
         mouseUpMonitor = nil
     }
 
-    private func handleMouseMove() {
-        guard config.focusFollowsMouse else { return }
-        guard !mouseButtonDown else { return }
-        guard !menuBarTracking else { return }
-        guard !dockIsActive else { return }
-        guard !animator.isAnimating else { return }
-        guard Date() > suppressMouseFocusUntil else { return }
-
-        let mouseNS = NSEvent.mouseLocation
-        let cgY = displayManager.primaryScreenHeight - mouseNS.y
-        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
-
-        // dead zone: menu bar region (~25px in CG top-left coords)
-        if cgY < 25 { return }
-
-        // if cursor is over a visible floating window, don't refocus the tiled window underneath.
-        // prevents the raise→FFM→focus-tiled→floater-goes-behind feedback loop.
-        for wid in floatingWindowIDs {
-            guard workspaceManager.isWindowVisible(wid),
-                  let w = cachedWindows[wid], let frame = w.frame else { continue }
-            if frame.contains(cgPoint) { return }
-        }
-
-        for (wid, rect) in tiledPositions {
-            if rect.contains(cgPoint) {
-                guard wid != lastMouseFocusedID else { return }
-                lastMouseFocusedID = wid
-                if let target = cachedWindows[wid] {
-                    focusForFFM(target)
-                }
-                return
-            }
-        }
-    }
-
-    // focus a tiled window for FFM without disrupting floating window z-order.
-    // uses yabai's focus_without_raise technique: _SLPSSetFrontProcessWithOptions
-    // activates the process without reordering windows, then SLPSPostEventRecordTo
-    // synthesizes keyboard focus events. z-order is completely untouched.
     private func focusForFFM(_ window: HyprWindow) {
         suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
         window.focusWithoutRaise()
         updateFocusBorder(for: window)
-    }
-
-    // after a window disappears, re-derive focus from cursor position so
-    // keyboard actions (swap, move-to-workspace) keep working without
-    // requiring the user to jiggle the mouse.
-    private func refocusUnderCursor() {
-        let mouseNS = NSEvent.mouseLocation
-        let cgY = displayManager.primaryScreenHeight - mouseNS.y
-        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
-
-        for (wid, rect) in tiledPositions {
-            if rect.contains(cgPoint), let target = cachedWindows[wid] {
-                lastMouseFocusedID = wid
-                if config.focusFollowsMouse {
-                    focusForFFM(target)
-                } else {
-                    updateFocusBorder(for: target)
-                }
-                return
-            }
-        }
-        // cursor not over any tiled window — clear stale state
-        lastMouseFocusedID = 0
-        focusBorder.hide()
     }
 
     private func updateFocusBorder(for window: HyprWindow) {
@@ -359,86 +308,46 @@ class WindowManager {
         guard !animator.isAnimating else { return }
         let allWindows = accessibility.getAllWindows()
 
-        // check for manual resize first: size changed on any axis.
-        // corner drags move the origin too (e.g. top-left), so don't require position to stay put.
-        for w in allWindows {
-            guard !floatingWindowIDs.contains(w.windowID),
-                  let current = w.frame,
-                  let expected = tiledPositions[w.windowID] else { continue }
+        dragManager.floatingWindowIDs = floatingWindowIDs
+        dragManager.tiledPositions = tiledPositions
 
-            let widthDelta = abs(current.width - expected.width)
-            let heightDelta = abs(current.height - expected.height)
+        let result = dragManager.detect(
+            allWindows: allWindows,
+            cachedWindows: cachedWindows,
+            screenAt: { [weak self] pt in self?.displayManager.screen(at: pt) },
+            workspaceForScreen: { [weak self] s in self?.workspaceManager.workspaceForScreen(s) ?? 1 }
+        )
 
-            if widthDelta > 20 || heightDelta > 20 {
-                // manual resize detected — map to split ratio change
-                guard let screen = displayManager.screen(at: CGPoint(x: expected.midX, y: expected.midY)) else { continue }
-                let workspace = workspaceManager.workspaceForScreen(screen)
-                print("[HyprMac] manual resize detected: '\(w.title ?? "?")' \(Int(expected.width))x\(Int(expected.height)) → \(Int(current.width))x\(Int(current.height))")
-                tilingEngine.applyResize(w, newFrame: current, onWorkspace: workspace, screen: screen)
-                updatePositionCache()
-                return
-            }
-        }
+        switch result {
+        case .resize(let r):
+            print("[HyprMac] manual resize detected: '\(r.window.title ?? "?")'")
+            tilingEngine.applyResize(r.window, newFrame: r.newFrame, onWorkspace: r.workspace, screen: r.screen)
+            updatePositionCache()
 
-        // drag-swap: position changed but size stayed roughly the same
-        var draggedWindow: HyprWindow?
-        for w in allWindows {
-            guard !floatingWindowIDs.contains(w.windowID),
-                  let current = w.frame,
-                  let expected = tiledPositions[w.windowID] else { continue }
-
-            let dist = abs(current.origin.x - expected.origin.x) + abs(current.origin.y - expected.origin.y)
-            let sizeDist = abs(current.width - expected.width) + abs(current.height - expected.height)
-            if dist > 50 && sizeDist < 40 {
-                draggedWindow = w
-                break
-            }
-        }
-
-        guard let dragged = draggedWindow, let dragCenter = dragged.center else { return }
-
-        let expectedRect = tiledPositions[dragged.windowID]!
-        let expectedCenter = CGPoint(x: expectedRect.midX, y: expectedRect.midY)
-        let sourceScreen = displayManager.screen(at: expectedCenter)
-        let targetScreen = displayManager.screen(at: dragCenter)
-        let crossMonitor = (sourceScreen != targetScreen)
-
-        var swapTarget: HyprWindow?
-        for (wid, rect) in tiledPositions {
-            guard wid != dragged.windowID else { continue }
-            if rect.contains(dragCenter) {
-                swapTarget = allWindows.first { $0.windowID == wid } ?? cachedWindows[wid]
-                break
-            }
-        }
-
-        if let target = swapTarget {
-            if crossMonitor {
-                print("[HyprMac] cross-monitor swap: '\(dragged.title ?? "?")' ↔ '\(target.title ?? "?")'")
-
-                // update workspace assignments to follow the windows across monitors
-                if let srcScreen = sourceScreen, let tgtScreen = targetScreen {
+        case .swap(let s):
+            if s.crossMonitor {
+                print("[HyprMac] cross-monitor swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
+                if let srcScreen = s.sourceScreen, let tgtScreen = s.targetScreen {
                     let srcWs = workspaceManager.workspaceForScreen(srcScreen)
                     let tgtWs = workspaceManager.workspaceForScreen(tgtScreen)
-                    workspaceManager.moveWindow(dragged.windowID, toWorkspace: tgtWs)
-                    workspaceManager.moveWindow(target.windowID, toWorkspace: srcWs)
+                    workspaceManager.moveWindow(s.dragged.windowID, toWorkspace: tgtWs)
+                    workspaceManager.moveWindow(s.target.windowID, toWorkspace: srcWs)
                 }
-
-                tilingEngine.crossSwapWindows(dragged, target)
+                tilingEngine.crossSwapWindows(s.dragged, s.target)
                 updatePositionCache()
-            } else if let screen = sourceScreen {
+            } else if let screen = s.sourceScreen {
                 let workspace = workspaceManager.workspaceForScreen(screen)
-                print("[HyprMac] drag swap: '\(dragged.title ?? "?")' ↔ '\(target.title ?? "?")'")
+                print("[HyprMac] drag swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
 
                 if config.animateWindows,
-                   let draggedFrame = dragged.frame,
-                   let targetFrame = target.frame,
-                   let layouts = tilingEngine.computeSwapLayout(dragged, target, onWorkspace: workspace, screen: screen) {
+                   let draggedFrame = s.dragged.frame,
+                   let targetFrame = s.target.frame,
+                   let layouts = tilingEngine.computeSwapLayout(s.dragged, s.target, onWorkspace: workspace, screen: screen) {
                     var transitions: [WindowAnimator.FrameTransition] = []
                     for (w, toRect) in layouts {
                         let fromRect: CGRect
-                        if w.windowID == dragged.windowID { fromRect = draggedFrame }
-                        else if w.windowID == target.windowID { fromRect = targetFrame }
+                        if w.windowID == s.dragged.windowID { fromRect = draggedFrame }
+                        else if w.windowID == s.target.windowID { fromRect = targetFrame }
                         else { continue }
                         transitions.append(.init(window: w, from: fromRect, to: toRect))
                     }
@@ -447,38 +356,31 @@ class WindowManager {
                         self?.updatePositionCache()
                     }
                 } else {
-                    tilingEngine.swapWindows(dragged, target, onWorkspace: workspace, screen: screen)
+                    tilingEngine.swapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen)
                     updatePositionCache()
                 }
             }
-            return
-        }
 
-        if crossMonitor {
-            let targetHasWindows = tiledPositions.contains { (wid, rect) in
-                guard wid != dragged.windowID else { return false }
-                let center = CGPoint(x: rect.midX, y: rect.midY)
-                return displayManager.screen(at: center) == targetScreen
+        case .dragToEmpty(let d):
+            print("[HyprMac] cross-monitor move to empty desktop")
+            let r = displayManager.cgRect(for: d.targetScreen)
+            d.dragged.setFrame(CGRect(
+                x: r.midX - r.width / 4,
+                y: r.midY - r.height / 4,
+                width: r.width / 2,
+                height: r.height / 2
+            ))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.tileAllVisibleSpaces()
             }
 
-            if !targetHasWindows, let targetScreen = targetScreen {
-                print("[HyprMac] cross-monitor move to empty desktop")
-                let r = displayManager.cgRect(for: targetScreen)
-                dragged.setFrame(CGRect(
-                    x: r.midX - r.width / 4,
-                    y: r.midY - r.height / 4,
-                    width: r.width / 2,
-                    height: r.height / 2
-                ))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    self?.tileAllVisibleSpaces()
-                }
-                return
-            }
-        }
+        case .snapBack:
+            print("[HyprMac] drag snap-back")
+            tileAllVisibleSpaces()
 
-        print("[HyprMac] drag snap-back")
-        tileAllVisibleSpaces()
+        case .none:
+            break
+        }
     }
 
     // MARK: - action dispatch
@@ -520,11 +422,11 @@ class WindowManager {
         // prefer the FFM-tracked window (the one under cursor) over AX focused window,
         // because focusWithoutRaise doesn't update macOS's notion of "focused window"
         // for multi-window same-app scenarios
-        let target = cachedWindows[lastMouseFocusedID] ?? accessibility.getFocusedWindow()
+        let target = cachedWindows[mouseTracker.lastMouseFocusedID] ?? accessibility.getFocusedWindow()
         guard let target else { return }
         var closeButton: AnyObject?
         let err = AXUIElementCopyAttributeValue(target.element, kAXCloseButtonAttribute as CFString, &closeButton)
-        if err == .success, let button = closeButton {
+        if err == .success, let button = closeButton, CFGetTypeID(button) == AXUIElementGetTypeID() {
             AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
         }
     }
@@ -560,7 +462,7 @@ class WindowManager {
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
             target.focusWithoutRaise()
             cursorManager.warpToCenter(of: target)
-            lastMouseFocusedID = target.windowID
+            mouseTracker.lastMouseFocusedID = target.windowID
             updateFocusBorder(for: target)
         }
     }
@@ -611,7 +513,8 @@ class WindowManager {
         let mouseNS = NSEvent.mouseLocation
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         return displayManager.screen(at: CGPoint(x: mouseNS.x, y: cgY))
-            ?? displayManager.screens.first!
+            ?? displayManager.screens.first
+            ?? NSScreen.main!
     }
 
     // cycle through occupied workspaces on the current monitor (delta: +1 next, -1 prev).
@@ -646,7 +549,7 @@ class WindowManager {
         // suppress FFM and activation-triggered switches during and after this switch.
         // must outlive the synchronous scope because best.focus() queues async notifications.
         suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
-        suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
 
         let currentScreen = screenUnderCursor()
 
@@ -660,7 +563,7 @@ class WindowManager {
                 ?? visibleWindows.first {
                 best.focus()
                 cursorManager.warpToCenter(of: best)
-                lastMouseFocusedID = best.windowID
+                mouseTracker.lastMouseFocusedID = best.windowID
                 updateFocusBorder(for: best)
             } else {
                 let rect = displayManager.cgRect(for: result.screen)
@@ -672,13 +575,13 @@ class WindowManager {
 
         // batch: hide old + restore floating new in one tight pass
         for wid in result.toHide {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+            if let w = findWindow(wid, in: allWindows) {
                 if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: result.screen)
             }
         }
         for wid in result.toShow where floatingWindowIDs.contains(wid) {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+            if let w = findWindow(wid, in: allWindows) {
                 workspaceManager.restoreFloatingFrame(w)
             }
         }
@@ -693,7 +596,7 @@ class WindowManager {
         if let best = newWorkspaceWindows.first {
             best.focus()
             cursorManager.warpToCenter(of: best)
-            lastMouseFocusedID = best.windowID
+            mouseTracker.lastMouseFocusedID = best.windowID
             updateFocusBorder(for: best)
         } else {
             let rect = displayManager.cgRect(for: result.screen)
@@ -818,7 +721,7 @@ class WindowManager {
         // moved workspace windows: currently on source screen, moving to target
         let movedWindows = workspaceManager.windowIDs(onWorkspace: result.movedWs)
         for wid in movedWindows {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+            if let w = findWindow(wid, in: allWindows) {
                 if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: targetScreen)
             }
@@ -828,7 +731,7 @@ class WindowManager {
         let displacedWindows = workspaceManager.windowIDs(onWorkspace: result.targetOldWs)
         if !workspaceManager.isWorkspaceVisible(result.targetOldWs) {
             for wid in displacedWindows {
-                if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+                if let w = findWindow(wid, in: allWindows) {
                     if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                     workspaceManager.hideInCorner(w, on: targetScreen)
                 }
@@ -838,7 +741,7 @@ class WindowManager {
         // fallback workspace windows: need to appear on source screen
         let fallbackWindows = workspaceManager.windowIDs(onWorkspace: result.fallbackWs)
         for wid in fallbackWindows where floatingWindowIDs.contains(wid) {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+            if let w = findWindow(wid, in: allWindows) {
                 workspaceManager.restoreFloatingFrame(w)
             }
         }
@@ -847,7 +750,7 @@ class WindowManager {
 
         // restore floating windows on moved workspace (now on target screen)
         for wid in movedWindows where floatingWindowIDs.contains(wid) {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? cachedWindows[wid] {
+            if let w = findWindow(wid, in: allWindows) {
                 workspaceManager.restoreFloatingFrame(w)
             }
         }
@@ -855,96 +758,8 @@ class WindowManager {
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
     }
 
-    // MARK: - keybind overlay
-
-    private var keybindPanel: NSPanel?
-
     private func showKeybindOverlay() {
-        // toggle off if already showing
-        if let panel = keybindPanel {
-            panel.close()
-            keybindPanel = nil
-            return
-        }
-
-        let binds = config.keybinds
-        var lines: [(String, String)] = []  // (shortcut, description)
-
-        for bind in binds {
-            var mods: [String] = []
-            if bind.modifiers.contains(.hypr) { mods.append("Caps") }
-            if bind.modifiers.contains(.shift) { mods.append("Shift") }
-            if bind.modifiers.contains(.control) { mods.append("Ctrl") }
-            if bind.modifiers.contains(.option) { mods.append("Opt") }
-            if bind.modifiers.contains(.command) { mods.append("Cmd") }
-
-            let keyName = bind.keyCodeName
-            let shortcut = (mods + [keyName]).joined(separator: " + ")
-            let desc = bind.actionDescription
-            lines.append((shortcut, desc))
-        }
-
-        // build the overlay
-        guard let screen = NSScreen.main else { return }
-        let padding: CGFloat = 24
-        let lineHeight: CGFloat = 22
-        let headerHeight: CGFloat = 36
-        let contentHeight = headerHeight + CGFloat(lines.count) * lineHeight + padding * 2
-        let panelWidth: CGFloat = 400
-        let panelHeight = min(contentHeight, screen.visibleFrame.height * 0.8)
-
-        let panelX = screen.frame.midX - panelWidth / 2
-        let panelY = screen.frame.midY - panelHeight / 2
-        let frame = NSRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight)
-
-        let panel = NSPanel(contentRect: frame,
-                            styleMask: [.titled, .closable, .nonactivatingPanel, .hudWindow],
-                            backing: .buffered, defer: false)
-        panel.title = "HyprMac Keybinds"
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.hidesOnDeactivate = false
-
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight - 28))
-        scroll.hasVerticalScroller = true
-        scroll.autoresizingMask = [.width, .height]
-
-        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: panelWidth - 20, height: 0))
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.backgroundColor = .clear
-        textView.textContainerInset = NSSize(width: padding, height: padding)
-
-        let attrStr = NSMutableAttributedString()
-        let headerAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.boldSystemFont(ofSize: 14),
-            .foregroundColor: NSColor.labelColor
-        ]
-        let shortcutAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: NSColor.systemBlue
-        ]
-        let descAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12),
-            .foregroundColor: NSColor.secondaryLabelColor
-        ]
-
-        attrStr.append(NSAttributedString(string: "Keybinds\n\n", attributes: headerAttrs))
-
-        for (shortcut, desc) in lines {
-            attrStr.append(NSAttributedString(string: shortcut, attributes: shortcutAttrs))
-            attrStr.append(NSAttributedString(string: "  →  ", attributes: descAttrs))
-            attrStr.append(NSAttributedString(string: desc + "\n", attributes: descAttrs))
-        }
-
-        textView.textStorage?.setAttributedString(attrStr)
-        textView.sizeToFit()
-
-        scroll.documentView = textView
-        panel.contentView = scroll
-
-        panel.makeKeyAndOrderFront(nil)
-        keybindPanel = panel
+        keybindOverlay.toggle(keybinds: config.keybinds)
     }
 
     // MARK: - split toggle
@@ -1009,47 +824,24 @@ class WindowManager {
     }
 
     private func focusFloatingWindow() {
-        suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
         suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
 
-        // collect visible floating windows, sorted by ID for stable cycle order
-        let visibleFloaters = floatingWindowIDs.sorted().compactMap { wid -> HyprWindow? in
-            guard workspaceManager.isWindowVisible(wid) else { return nil }
-            return cachedWindows[wid] ?? accessibility.getAllWindows().first { $0.windowID == wid }
-        }
-        guard !visibleFloaters.isEmpty else {
+        guard let target = floatingController.focusFloating(
+            floatingWindowIDs: floatingWindowIDs,
+            getAllWindows: { [weak self] in self?.accessibility.getAllWindows() ?? [] },
+            getFocusedWindow: { [weak self] in self?.accessibility.getFocusedWindow() },
+            displayManager: displayManager,
+            isFrameVisible: { [weak self] frame, screenRect in self?.isFrameVisible(frame, on: screenRect) ?? false }
+        ) else {
             print("[HyprMac] no visible floating windows")
             return
         }
 
-        // cycle: if a floater is already focused, pick the next; wraps around
-        let focused = accessibility.getFocusedWindow()
-        var target = visibleFloaters[0]
-        if let focused = focused,
-           let idx = visibleFloaters.firstIndex(where: { $0.windowID == focused.windowID }) {
-            target = visibleFloaters[(idx + 1) % visibleFloaters.count]
-        }
-
-        // bring offscreen floaters to center of nearest screen
-        if let frame = target.frame {
-            let onScreen = displayManager.screens.contains { screen in
-                isFrameVisible(frame, on: displayManager.cgRect(for: screen))
-            }
-            if !onScreen {
-                let screen = displayManager.screens.first ?? NSScreen.main!
-                let screenRect = displayManager.cgRect(for: screen)
-                let sz = target.size ?? CGSize(width: 800, height: 600)
-                target.position = CGPoint(x: screenRect.midX - sz.width / 2,
-                                          y: screenRect.midY - sz.height / 2)
-                print("[HyprMac] brought offscreen floater '\(target.title ?? "?")' to center")
-            }
-        }
-
         target.focus()
         cursorManager.warpToCenter(of: target)
-        lastMouseFocusedID = target.windowID
+        mouseTracker.lastMouseFocusedID = target.windowID
         updateFocusBorder(for: target)
-        print("[HyprMac] focused floating window '\(target.title ?? "?")' (\(visibleFloaters.count) total)")
     }
 
     private func toggleFloating() {
@@ -1199,13 +991,7 @@ class WindowManager {
                 continue
             }
 
-            // assign to workspace of the monitor it's physically on
-            if workspaceManager.workspaceFor(w.windowID) == nil {
-                if let screen = displayManager.screen(for: w) ?? displayManager.screens.first {
-                    let ws = workspaceManager.workspaceForScreen(screen)
-                    workspaceManager.assignWindow(w.windowID, toWorkspace: ws)
-                }
-            }
+            assignToScreenWorkspace(w)
         }
         distributeWindowsAcrossWorkspaces()
         tileAllVisibleSpaces()
@@ -1420,6 +1206,20 @@ class WindowManager {
         print("[HyprMac] distributed \(tilingWids.count) windows across \(slotsUsed) slot(s), \(screens.count) monitor(s)")
     }
 
+    // find a window by ID — checks live list first, falls back to cache
+    private func findWindow(_ wid: CGWindowID, in allWindows: [HyprWindow]) -> HyprWindow? {
+        allWindows.first { $0.windowID == wid } ?? cachedWindows[wid]
+    }
+
+    // assign window to the active workspace on its screen if not already assigned
+    private func assignToScreenWorkspace(_ window: HyprWindow) {
+        guard workspaceManager.workspaceFor(window.windowID) == nil else { return }
+        if let screen = displayManager.screen(for: window) ?? displayManager.screens.first {
+            let ws = workspaceManager.workspaceForScreen(screen)
+            workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
+        }
+    }
+
     // check if at least 25% of the frame is visible on the given screen rect
     private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
         let overlap = frame.intersection(screenRect)
@@ -1543,13 +1343,7 @@ class WindowManager {
                     continue
                 }
 
-                // assign to active workspace on the window's screen
-                if workspaceManager.workspaceFor(w.windowID) == nil {
-                    if let screen = displayManager.screen(for: w) ?? displayManager.screens.first {
-                        let ws = workspaceManager.workspaceForScreen(screen)
-                        workspaceManager.assignWindow(w.windowID, toWorkspace: ws)
-                    }
-                }
+                assignToScreenWorkspace(w)
 
                 changed = true
                 print("[HyprMac] new window: '\(w.title ?? "?")' (\(w.windowID))")
@@ -1562,7 +1356,7 @@ class WindowManager {
         if !gone.isEmpty {
             let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
             for id in gone {
-                if id == lastMouseFocusedID { focusedWindowGone = true }
+                if id == mouseTracker.lastMouseFocusedID { focusedWindowGone = true }
                 tiledPositions.removeValue(forKey: id)
                 cachedWindows.removeValue(forKey: id)
 
@@ -1600,7 +1394,7 @@ class WindowManager {
         // is under the cursor now. without this, focus gets stuck because
         // handleMouseMove only fires on actual mouse movement.
         if focusedWindowGone {
-            refocusUnderCursor()
+            mouseTracker.refocusUnderCursor()
         }
 
         // periodically re-raise floating windows so they don't get stuck
@@ -1615,7 +1409,7 @@ class WindowManager {
     @objc private func appDidActivate(_ notification: Notification) {
         // suppress FFM while dock popups (downloads, stacks) are open
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
-            dockIsActive = (app.bundleIdentifier == "com.apple.dock")
+            mouseTracker.dockIsActive = (app.bundleIdentifier == "com.apple.dock")
         }
 
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
@@ -1651,67 +1445,22 @@ class WindowManager {
         }
     }
 
-    // check if any visible floating window is behind a tiled window using CGWindowListCopyWindowInfo.
-    // returns window IDs of floating windows that need raising.
-    private func floatingWindowsBehindTiled() -> [CGWindowID] {
-        let visibleFloaters = floatingWindowIDs.filter { workspaceManager.isWindowVisible($0) }
-        guard !visibleFloaters.isEmpty else { return [] }
-
-        // get on-screen z-order (front to back)
-        guard let infoList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
-            return Array(visibleFloaters)
-        }
-
-        // build z-index map: lower index = closer to front
-        var zIndex: [CGWindowID: Int] = [:]
-        for (i, info) in infoList.enumerated() {
-            if let wid = info[kCGWindowNumber as String] as? CGWindowID {
-                zIndex[wid] = i
-            }
-        }
-
-        // find the frontmost tiled window z-index per screen
-        var frontTiledZ: [Int: Int] = [:] // screenID -> best z-index
-        for (wid, rect) in tiledPositions {
-            guard let z = zIndex[wid],
-                  let screen = displayManager.screen(at: CGPoint(x: rect.midX, y: rect.midY)) else { continue }
-            let sid = workspaceManager.screenID(for: screen)
-            if frontTiledZ[sid] == nil || z < frontTiledZ[sid]! {
-                frontTiledZ[sid] = z
-            }
-        }
-
-        // floating window needs raising if it's behind the frontmost tiled window on its screen
-        var needsRaise: [CGWindowID] = []
-        for wid in visibleFloaters {
-            guard let fz = zIndex[wid],
-                  let w = cachedWindows[wid], let frame = w.frame else { continue }
-            let screen = displayManager.screen(at: CGPoint(x: frame.midX, y: frame.midY))
-            let sid = screen.map { workspaceManager.screenID(for: $0) } ?? -1
-            if let tz = frontTiledZ[sid], fz > tz {
-                needsRaise.append(wid)
-            }
-        }
-        return needsRaise
-    }
-
-    // raise floating windows that are behind tiled windows, then immediately
-    // restore focus to the previously-active tiled window via focusWithoutRaise.
-    // this breaks the raise→activate→FFM→focus-tiled→floater-goes-behind cycle.
     private func raiseFloatingWindows() {
         guard !isRaisingFloaters else { return }
         isRaisingFloaters = true
         defer { isRaisingFloaters = false }
 
-        let toRaise = floatingWindowsBehindTiled()
+        let toRaise = floatingController.floatingWindowsBehindTiled(
+            floatingWindowIDs: floatingWindowIDs,
+            tiledPositions: tiledPositions
+        )
         guard !toRaise.isEmpty else { return }
 
-        // remember what the user was focused on before we raise
-        let previousFocusID = lastMouseFocusedID
+        let previousFocusID = mouseTracker.lastMouseFocusedID
         let previousWindow = cachedWindows[previousFocusID]
 
         suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
-        suppressMouseFocusUntil = Date().addingTimeInterval(0.15)
+        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.15)
 
         for wid in toRaise {
             guard let w = cachedWindows[wid] else { continue }

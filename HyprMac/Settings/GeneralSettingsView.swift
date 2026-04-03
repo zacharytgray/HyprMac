@@ -91,7 +91,7 @@ struct GeneralSettingsView: View {
                                     .frame(width: 20, height: 20)
                             }
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(appName(for: bundleID))
+                                Text(appDisplayName(for: bundleID))
                                 Text(bundleID)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
@@ -184,12 +184,6 @@ struct GeneralSettingsView: View {
         }
     }
 
-    private func appName(for bundleID: String) -> String {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return url.deletingPathExtension().lastPathComponent
-        }
-        return bundleID
-    }
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"

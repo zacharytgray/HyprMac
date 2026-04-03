@@ -62,6 +62,7 @@ class UserConfig: ObservableObject {
 
     // local config path (may become a symlink when iCloud sync is on)
     private let localConfigURL: URL = {
+        // .userDomainMask always returns at least one URL
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("HyprMac", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

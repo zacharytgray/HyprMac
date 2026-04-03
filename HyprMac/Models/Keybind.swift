@@ -53,6 +53,17 @@ struct ModifierFlags: OptionSet, Codable, Equatable, Hashable {
     static let control = ModifierFlags(rawValue: 1 << 3)
     static let command = ModifierFlags(rawValue: 1 << 4)
 
+    // build from individual booleans (settings UI)
+    static func from(hypr: Bool = false, shift: Bool = false, control: Bool = false, option: Bool = false, command: Bool = false) -> ModifierFlags {
+        var flags = ModifierFlags()
+        if hypr    { flags.insert(.hypr) }
+        if shift   { flags.insert(.shift) }
+        if control { flags.insert(.control) }
+        if option  { flags.insert(.option) }
+        if command { flags.insert(.command) }
+        return flags
+    }
+
     // build from CGEventFlags + our custom hypr tracking
     static func from(_ flags: CGEventFlags, hyprDown: Bool) -> ModifierFlags {
         var result = ModifierFlags()

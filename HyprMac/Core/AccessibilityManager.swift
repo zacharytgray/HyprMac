@@ -42,13 +42,15 @@ class AccessibilityManager {
         var posValue: AnyObject?
         var sizeValue: AnyObject?
         guard AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posValue) == .success,
-              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success else {
+              AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
+              let posVal = posValue, let sizeVal = sizeValue else {
             return nil
         }
         var pos = CGPoint.zero
         var size = CGSize.zero
-        AXValueGetValue(posValue as! AXValue, .cgPoint, &pos)
-        AXValueGetValue(sizeValue as! AXValue, .cgSize, &size)
+        // AXValue is a CF type — as? always succeeds, so cast directly after nil check
+        AXValueGetValue(posVal as! AXValue, .cgPoint, &pos)
+        AXValueGetValue(sizeVal as! AXValue, .cgSize, &size)
         return CGRect(origin: pos, size: size)
     }
 
@@ -151,9 +153,11 @@ class AccessibilityManager {
 
         var value: AnyObject?
         let result = AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &value)
-        guard result == .success, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        guard result == .success,
+              let val = value,
+              CFGetTypeID(val) == AXUIElementGetTypeID() else { return nil }
 
-        let axWin = value as! AXUIElement
+        let axWin = val as! AXUIElement
         guard let frame = axFrame(for: axWin) else { return nil }
 
         let cgWindows = cgWindowsByPID()

@@ -42,14 +42,15 @@ class HyprWindow: Equatable, Hashable {
         get {
             var value: AnyObject?
             AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &value)
-            guard let val = value else { return nil }
+            guard let value else { return nil }
             var point = CGPoint.zero
-            AXValueGetValue(val as! AXValue, .cgPoint, &point)
+            // AXValue is a CF type — as? always succeeds, so cast directly after nil check
+            AXValueGetValue(value as! AXValue, .cgPoint, &point)
             return point
         }
         set {
-            guard var point = newValue else { return }
-            let val = AXValueCreate(.cgPoint, &point)!
+            guard var point = newValue,
+                  let val = AXValueCreate(.cgPoint, &point) else { return }
             AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, val)
         }
     }
@@ -58,14 +59,14 @@ class HyprWindow: Equatable, Hashable {
         get {
             var value: AnyObject?
             AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &value)
-            guard let val = value else { return nil }
+            guard let value else { return nil }
             var size = CGSize.zero
-            AXValueGetValue(val as! AXValue, .cgSize, &size)
+            AXValueGetValue(value as! AXValue, .cgSize, &size)
             return size
         }
         set {
-            guard var size = newValue else { return }
-            let val = AXValueCreate(.cgSize, &size)!
+            guard var size = newValue,
+                  let val = AXValueCreate(.cgSize, &size) else { return }
             AXUIElementSetAttributeValue(element, kAXSizeAttribute as CFString, val)
         }
     }
