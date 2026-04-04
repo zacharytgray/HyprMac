@@ -1,6 +1,6 @@
 # HyprMac
 
-A keyboard-driven tiling window manager for macOS. No SIP required.
+A keyboard-driven tiling window manager for macOS.
 
 Caps Lock becomes a **Hypr** modifier key. From there: BSP dwindle tiling, 9 virtual workspaces, directional focus and window swapping, drag-to-swap, and focus-follows-mouse — all without touching System Integrity Protection.
 
