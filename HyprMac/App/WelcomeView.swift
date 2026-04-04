@@ -467,14 +467,19 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "macwindow.on.rectangle",
-            title: "Floating Window Focus Fix",
-            description: "Pressing Caps no longer steals focus from floating windows — Caps+Shift+T to re-tile works reliably again."
+            icon: "macwindow.badge.plus",
+            title: "Child Windows No Longer Tile",
+            description: "Quick Look previews, Teams screen sharing overlays, save dialogs, and other popup windows now stay floating instead of disrupting your layout."
         ),
         WhatsNewFeature(
             icon: "rectangle.dashed",
-            title: "Focus Border on Floating Windows",
-            description: "Floating windows now show the blue focus border just like tiled windows."
+            title: "Separate Floating Border Color",
+            description: "Floating windows show their own focus border color (default orange), configurable separately from the tiled window border in Settings → Tiling."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.on.rectangle.angled",
+            title: "Re-tile Fix After Dragging",
+            description: "Caps+Shift+T now correctly re-tiles a floating window even after you've dragged it to a different monitor."
         ),
     ]
 }
