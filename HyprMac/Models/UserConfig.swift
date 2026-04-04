@@ -61,14 +61,20 @@ class UserConfig: ObservableObject {
     private var fileWatcherSource: DispatchSourceFileSystemObject?
     private var fileWatcherFD: Int32 = -1
 
-    // local config path (may become a symlink when iCloud sync is on)
-    private let localConfigURL: URL = {
-        // .userDomainMask always returns at least one URL
+    private static let configDir: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("HyprMac", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("config.json")
+        return dir
     }()
+
+    // main config (may become a symlink when iCloud sync is on)
+    private static let configPath = configDir.appendingPathComponent("config.json")
+    private var localConfigURL: URL { Self.configPath }
+
+    // monitor-specific settings — always local, never synced via iCloud
+    static let monitorConfigPath = configDir.appendingPathComponent("monitor-config.json")
+    private var monitorConfigURL: URL { Self.monitorConfigPath }
 
     // iCloud Drive path — no entitlements needed
     private var iCloudConfigURL: URL {
@@ -83,7 +89,14 @@ class UserConfig: ObservableObject {
     init() {
         self.iCloudSyncEnabled = UserDefaults.standard.bool(forKey: "iCloudSyncEnabled")
 
-        if let data = try? Data(contentsOf: localConfigURL),
+        // load monitor-specific settings from local-only file
+        let monitorConfigPath = Self.monitorConfigPath
+        let monitorConfig: SavedMonitorConfig? = {
+            guard let data = try? Data(contentsOf: monitorConfigPath) else { return nil }
+            return try? JSONDecoder().decode(SavedMonitorConfig.self, from: data)
+        }()
+
+        if let data = try? Data(contentsOf: Self.configPath),
            let saved = try? JSONDecoder().decode(SavedConfig.self, from: data) {
             self.keybinds = Self.mergeNewDefaults(saved: saved.keybinds)
             self.gapSize = saved.gapSize
@@ -94,11 +107,19 @@ class UserConfig: ObservableObject {
             self.animateWindows = saved.animateWindows ?? true
             self.animationDuration = saved.animationDuration ?? 0.15
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? true
-            self.maxSplitsPerMonitor = saved.maxSplitsPerMonitor ?? [:]
-            self.disabledMonitors = Set(saved.disabledMonitors ?? [])
             self.showFocusBorder = saved.showFocusBorder ?? true
             self.focusBorderColorHex = saved.focusBorderColorHex
             self.floatingBorderColorHex = saved.floatingBorderColorHex
+
+            // monitor settings: prefer local file, migrate from main config if needed
+            if let mc = monitorConfig {
+                self.maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
+                self.disabledMonitors = Set(mc.disabledMonitors ?? [])
+            } else {
+                // migrate from old synced config
+                self.maxSplitsPerMonitor = saved.maxSplitsPerMonitor ?? [:]
+                self.disabledMonitors = Set(saved.disabledMonitors ?? [])
+            }
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
@@ -109,11 +130,17 @@ class UserConfig: ObservableObject {
             self.animateWindows = true
             self.animationDuration = 0.15
             self.showMenuBarIndicator = true
-            self.maxSplitsPerMonitor = [:]
-            self.disabledMonitors = []
             self.showFocusBorder = true
             self.focusBorderColorHex = nil
             self.floatingBorderColorHex = nil
+
+            if let mc = monitorConfig {
+                self.maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
+                self.disabledMonitors = Set(mc.disabledMonitors ?? [])
+            } else {
+                self.maxSplitsPerMonitor = [:]
+                self.disabledMonitors = []
+            }
         }
 
         // verify symlink integrity if iCloud sync was enabled
@@ -130,6 +157,15 @@ class UserConfig: ObservableObject {
                     // iCloud file doesn't exist — set up fresh
                     enableICloudSync()
                 }
+            }
+        }
+
+        // migrate: if monitor settings came from old config, persist to local file
+        if monitorConfig == nil && (!disabledMonitors.isEmpty || !maxSplitsPerMonitor.isEmpty) {
+            let mc = SavedMonitorConfig(maxSplitsPerMonitor: maxSplitsPerMonitor,
+                                        disabledMonitors: Array(disabledMonitors))
+            if let data = try? JSONEncoder().encode(mc) {
+                try? data.write(to: Self.monitorConfigPath)
             }
         }
 
@@ -155,6 +191,7 @@ class UserConfig: ObservableObject {
     ]
 
     func save() {
+        // main config (synced via iCloud if enabled)
         let saved = SavedConfig(keybinds: keybinds, gapSize: gapSize,
                                 outerPadding: outerPadding, enabled: enabled,
                                 focusFollowsMouse: focusFollowsMouse,
@@ -162,13 +199,21 @@ class UserConfig: ObservableObject {
                                 animateWindows: animateWindows,
                                 animationDuration: animationDuration,
                                 showMenuBarIndicator: showMenuBarIndicator,
-                                maxSplitsPerMonitor: maxSplitsPerMonitor,
-                                disabledMonitors: Array(disabledMonitors),
+                                maxSplitsPerMonitor: nil,
+                                disabledMonitors: nil,
                                 showFocusBorder: showFocusBorder,
                                 focusBorderColorHex: focusBorderColorHex,
                                 floatingBorderColorHex: floatingBorderColorHex)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: localConfigURL)
+        }
+
+        // monitor-specific config (always local)
+        let monitorSaved = SavedMonitorConfig(
+            maxSplitsPerMonitor: maxSplitsPerMonitor,
+            disabledMonitors: Array(disabledMonitors))
+        if let data = try? JSONEncoder().encode(monitorSaved) {
+            try? data.write(to: monitorConfigURL)
         }
     }
 
@@ -320,13 +365,26 @@ class UserConfig: ObservableObject {
         animateWindows = saved.animateWindows ?? true
         animationDuration = saved.animationDuration ?? 0.15
         showMenuBarIndicator = saved.showMenuBarIndicator ?? true
-        maxSplitsPerMonitor = saved.maxSplitsPerMonitor ?? [:]
-        disabledMonitors = Set(saved.disabledMonitors ?? [])
         showFocusBorder = saved.showFocusBorder ?? true
         focusBorderColorHex = saved.focusBorderColorHex
         floatingBorderColorHex = saved.floatingBorderColorHex
+
+        // monitor settings come from local file, not the synced config
+        if let monitorData = try? Data(contentsOf: monitorConfigURL),
+           let mc = try? JSONDecoder().decode(SavedMonitorConfig.self, from: monitorData) {
+            maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
+            disabledMonitors = Set(mc.disabledMonitors ?? [])
+        }
+        // else keep current values — don't overwrite local monitor settings from synced config
+
         isReloading = false
     }
+}
+
+// monitor-specific settings — stored locally, never synced via iCloud
+private struct SavedMonitorConfig: Codable {
+    let maxSplitsPerMonitor: [String: Int]?
+    let disabledMonitors: [String]?
 }
 
 private struct SavedConfig: Codable {
