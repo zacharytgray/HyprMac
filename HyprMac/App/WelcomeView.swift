@@ -472,6 +472,11 @@ struct WhatsNewFeatures {
             description: "Fixed a bug where smart insert couldn't fill all BSP slots — e.g. 4 windows with 2 allowed splits now works correctly on single-monitor setups."
         ),
         WhatsNewFeature(
+            icon: "display.2",
+            title: "Correct Multi-Monitor Placement",
+            description: "New windows now open on the workspace under your cursor instead of wherever macOS placed them — no more wrong-monitor surprises."
+        ),
+        WhatsNewFeature(
             icon: "arrow.uturn.backward",
             title: "Clean Exit",
             description: "Quitting HyprMac or toggling it off now restores all hidden workspace windows to visible positions so nothing gets stranded off-screen."
