@@ -56,7 +56,21 @@ struct TilingSettingsView: View {
                         .labelsHidden()
                         .frame(width: 36)
                     }
-                    Text("Tints the window during traversal; shows as an outline when settled.")
+                    HStack {
+                        Text("Floating Border Color")
+                        Spacer()
+                        if config.floatingBorderColorHex != nil {
+                            Button("Reset") { config.floatingBorderColorHex = nil }
+                                .font(.caption)
+                        }
+                        ColorPicker("", selection: Binding(
+                            get: { Color(config.resolvedFloatingBorderColor) },
+                            set: { config.floatingBorderColorHex = NSColor($0).hexString }
+                        ), supportsOpacity: false)
+                        .labelsHidden()
+                        .frame(width: 36)
+                    }
+                    Text("Tints the window during traversal; shows as an outline when settled. Floating windows use a separate color.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

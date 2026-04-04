@@ -44,6 +44,10 @@ class UserConfig: ObservableObject {
     @Published var focusBorderColorHex: String? {
         didSet { if !isReloading { save() } }
     }
+    // hex string for floating window border — nil means default orange
+    @Published var floatingBorderColorHex: String? {
+        didSet { if !isReloading { save() } }
+    }
 
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
@@ -94,6 +98,7 @@ class UserConfig: ObservableObject {
             self.disabledMonitors = Set(saved.disabledMonitors ?? [])
             self.showFocusBorder = saved.showFocusBorder ?? true
             self.focusBorderColorHex = saved.focusBorderColorHex
+            self.floatingBorderColorHex = saved.floatingBorderColorHex
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = 8
@@ -108,6 +113,7 @@ class UserConfig: ObservableObject {
             self.disabledMonitors = []
             self.showFocusBorder = true
             self.focusBorderColorHex = nil
+            self.floatingBorderColorHex = nil
         }
 
         // verify symlink integrity if iCloud sync was enabled
@@ -159,7 +165,8 @@ class UserConfig: ObservableObject {
                                 maxSplitsPerMonitor: maxSplitsPerMonitor,
                                 disabledMonitors: Array(disabledMonitors),
                                 showFocusBorder: showFocusBorder,
-                                focusBorderColorHex: focusBorderColorHex)
+                                focusBorderColorHex: focusBorderColorHex,
+                                floatingBorderColorHex: floatingBorderColorHex)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: localConfigURL)
         }
@@ -179,12 +186,19 @@ class UserConfig: ObservableObject {
         disabledMonitors = []
         showFocusBorder = true
         focusBorderColorHex = nil
+        floatingBorderColorHex = nil
     }
 
     // resolve the border color — custom hex or system accent
     var resolvedFocusBorderColor: NSColor {
         if let hex = focusBorderColorHex, let c = NSColor.fromHex(hex) { return c }
         return NSColor.controlAccentColor
+    }
+
+    // resolve floating border color — custom hex or default orange
+    var resolvedFloatingBorderColor: NSColor {
+        if let hex = floatingBorderColorHex, let c = NSColor.fromHex(hex) { return c }
+        return NSColor.systemOrange
     }
 
     // MARK: - iCloud Drive sync
@@ -310,6 +324,7 @@ class UserConfig: ObservableObject {
         disabledMonitors = Set(saved.disabledMonitors ?? [])
         showFocusBorder = saved.showFocusBorder ?? true
         focusBorderColorHex = saved.focusBorderColorHex
+        floatingBorderColorHex = saved.floatingBorderColorHex
         isReloading = false
     }
 }
@@ -328,6 +343,7 @@ private struct SavedConfig: Codable {
     let disabledMonitors: [String]?
     let showFocusBorder: Bool?
     let focusBorderColorHex: String?
+    let floatingBorderColorHex: String?
 }
 
 extension NSColor {

@@ -124,10 +124,6 @@ class WindowManager {
     }
 
     func start() {
-        guard config.enabled else {
-            print("[HyprMac] disabled in config")
-            return
-        }
         guard !isRunning else { return }
         isRunning = true
 
@@ -175,8 +171,8 @@ class WindowManager {
         )
 
         NotificationCenter.default.addObserver(
-            self, selector: #selector(retileRequested),
-            name: .hyprMacRetile, object: nil
+            self, selector: #selector(retileAllRequested),
+            name: .hyprMacRetileAll, object: nil
         )
         NotificationCenter.default.addObserver(
             self, selector: #selector(screenParametersChanged),
@@ -293,7 +289,10 @@ class WindowManager {
             focusBorder.hide()
             return
         }
-        focusBorder.accentCGColor = config.resolvedFocusBorderColor.cgColor
+        let isFloating = floatingWindowIDs.contains(window.windowID)
+        focusBorder.accentCGColor = isFloating
+            ? config.resolvedFloatingBorderColor.cgColor
+            : config.resolvedFocusBorderColor.cgColor
         focusBorder.show(around: frame, windowID: window.windowID)
     }
 
@@ -357,6 +356,15 @@ class WindowManager {
 
     private func detectDragSwap() {
         guard !animator.isAnimating else { return }
+
+        // skip drag detection if the user was dragging a floating window —
+        // floating windows can nudge tiled windows slightly, causing false
+        // snapBack retiles that disrupt the layout
+        if let focused = accessibility.getFocusedWindow(),
+           floatingWindowIDs.contains(focused.windowID) {
+            return
+        }
+
         let allWindows = accessibility.getAllWindows()
 
         dragManager.floatingWindowIDs = floatingWindowIDs
@@ -693,7 +701,8 @@ class WindowManager {
                     return
                 }
             } else {
-                let wids = workspaceManager.windowIDs(onWorkspace: number)
+                // exclude hidden windows (minimized/closed but app still running) from count
+                let wids = workspaceManager.windowIDs(onWorkspace: number).subtracting(hiddenWindowIDs)
                 let tiledCount = wids.filter { !floatingWindowIDs.contains($0) }.count
                 let maxDepth = tilingEngine.maxDepth(for: targetScreen)
                 if tiledCount >= maxDepth + 1 {
@@ -867,7 +876,9 @@ class WindowManager {
     func occupiedWorkspaces() -> Set<Int> {
         var result = Set<Int>()
         for ws in 1...9 {
-            if !workspaceManager.windowIDs(onWorkspace: ws).isEmpty {
+            // exclude hidden windows (minimized/closed but app still running)
+            let live = workspaceManager.windowIDs(onWorkspace: ws).subtracting(hiddenWindowIDs)
+            if !live.isEmpty {
                 result.insert(ws)
             }
         }
@@ -917,6 +928,8 @@ class WindowManager {
 
         if wasFloating {
             // floating → tiled: animate surrounding windows making room
+            // reassign workspace in case the window was dragged to a different monitor
+            workspaceManager.moveWindow(focused.windowID, toWorkspace: workspace)
             animatedRetile(prepare: { [self] in
                 floatingWindowIDs.remove(focused.windowID)
                 focused.isFloating = false
@@ -1175,10 +1188,10 @@ class WindowManager {
         let focusedID = accessibility.getFocusedWindow()?.windowID
         let allWids = Set(allWindows.map { $0.windowID })
 
-        // full redistribution: un-float everything except excluded apps.
-        // the poll loop may have auto-floated windows before distribute ran.
-        let excludedWids = Set(allWindows.filter { isExcludedApp($0) }.map { $0.windowID })
-        for wid in floatingWindowIDs where !excludedWids.contains(wid) && allWids.contains(wid) {
+        // full redistribution: un-float everything except excluded apps and
+        // non-standard windows (dialogs, sheets, floating panels).
+        let keepFloating = Set(allWindows.filter { isExcludedApp($0) }.map { $0.windowID })
+        for wid in floatingWindowIDs where !keepFloating.contains(wid) && allWids.contains(wid) {
             floatingWindowIDs.remove(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = false
@@ -1337,9 +1350,11 @@ class WindowManager {
 
     private func workspacesWithFloatingWindows() -> Set<Int> {
         var result = Set<Int>()
+        // only count live (non-hidden) floating windows
+        let liveFloating = floatingWindowIDs.subtracting(hiddenWindowIDs)
         for ws in 1...9 {
             let wsWindows = workspaceManager.windowIDs(onWorkspace: ws)
-            if !wsWindows.isDisjoint(with: floatingWindowIDs) {
+            if !wsWindows.isDisjoint(with: liveFloating) {
                 result.insert(ws)
             }
         }
@@ -1362,6 +1377,7 @@ class WindowManager {
                 hiddenWindowIDs.remove(w.windowID)
                 knownWindowIDs.insert(w.windowID)
                 windowOwners[w.windowID] = w.ownerPID
+
                 changed = true
                 print("[HyprMac] window returned: '\(w.title ?? "?")' (\(w.windowID))")
             }
@@ -1565,8 +1581,8 @@ class WindowManager {
         }
     }
 
-    @objc private func retileRequested() {
-        print("[HyprMac] retile requested")
+    @objc private func retileAllRequested() {
+        print("[HyprMac] retile all spaces requested")
         snapshotAndTile()
     }
 }

@@ -15,6 +15,8 @@ class AccessibilityManager {
     private struct CGWindowInfo {
         let windowID: CGWindowID
         let bounds: CGRect
+        let alpha: CGFloat
+        let name: String?
     }
 
     private func cgWindowsByPID() -> [pid_t: [CGWindowInfo]] {
@@ -28,11 +30,14 @@ class AccessibilityManager {
                   let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
                   let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
 
+            let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
+            let name = info[kCGWindowName as String] as? String
+
             let bounds = CGRect(
                 x: boundsDict["X"] ?? 0, y: boundsDict["Y"] ?? 0,
                 width: boundsDict["Width"] ?? 0, height: boundsDict["Height"] ?? 0
             )
-            result[pid, default: []].append(CGWindowInfo(windowID: wid, bounds: bounds))
+            result[pid, default: []].append(CGWindowInfo(windowID: wid, bounds: bounds, alpha: alpha, name: name))
         }
         return result
     }
@@ -83,7 +88,11 @@ class AccessibilityManager {
 
             guard let candidates = cgWindows[pid], !candidates.isEmpty else { continue }
 
-            // collect all AX windows with their frames for batch matching
+            // collect all AX windows with their frames for batch matching.
+            // modal/non-standard windows are excluded from CG matching entirely
+            // to prevent them from stealing CG window IDs from real app windows
+            // (e.g. Quick Look hosted by Finder creates 2 AX windows but may
+            // only have 1 CG window at layer 0, causing ID confusion).
             var axEntries: [(element: AXUIElement, frame: CGRect)] = []
             for axWin in axWindows {
                 // skip minimized
@@ -96,13 +105,32 @@ class AccessibilityManager {
                 AXUIElementCopyAttributeValue(axWin, kAXRoleAttribute as CFString, &role)
                 guard let roleStr = role as? String, roleStr == kAXWindowRole as String else { continue }
 
+                // check subrole — dialogs, sheets, floating panels, etc.
+                var subrole: AnyObject?
+                AXUIElementCopyAttributeValue(axWin, kAXSubroleAttribute as CFString, &subrole)
+                let subroleStr = subrole as? String
+                let subroleNonStandard = subroleStr != nil && subroleStr != (kAXStandardWindowSubrole as String)
+
+                // check modal attribute
+                var modalValue: AnyObject?
+                AXUIElementCopyAttributeValue(axWin, kAXModalAttribute as CFString, &modalValue)
+                let isModal = (modalValue as? Bool) ?? false
+
+                // skip modal and non-standard windows — they're transient child windows
+                // (Quick Look, save dialogs, sheets, floating panels) that should never
+                // enter the tiling system or participate in CG window ID matching
+                if subroleNonStandard || isModal { continue }
+
                 guard let frame = axFrame(for: axWin) else { continue }
                 axEntries.append((element: axWin, frame: frame))
             }
 
+            // filter out nearly-invisible CG windows (overlays, borders, etc.)
+            let visibleCandidates = candidates.filter { $0.alpha > 0.01 }
+
             // single window for this PID — trivial match
-            if candidates.count == 1 && axEntries.count == 1 {
-                let wid = candidates[0].windowID
+            if visibleCandidates.count == 1 && axEntries.count == 1 {
+                let wid = visibleCandidates[0].windowID
                 if !usedIDs.contains(wid) {
                     usedIDs.insert(wid)
                     windows.append(HyprWindow(element: axEntries[0].element, windowID: wid, ownerPID: pid))
@@ -112,14 +140,14 @@ class AccessibilityManager {
 
             // multiple windows — match by best position+size fit, ensuring unique assignment
             // build a score matrix and greedily assign best matches
-            var availableCG = Set(candidates.map { $0.windowID })
+            var availableCG = Set(visibleCandidates.map { $0.windowID })
 
             // sort AX entries so we process them deterministically
             for entry in axEntries {
                 var bestWID: CGWindowID?
                 var bestDist = CGFloat.infinity
 
-                for cg in candidates {
+                for cg in visibleCandidates {
                     guard availableCG.contains(cg.windowID) && !usedIDs.contains(cg.windowID) else { continue }
 
                     let dx = abs(entry.frame.origin.x - cg.bounds.origin.x)

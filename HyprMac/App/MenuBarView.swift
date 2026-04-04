@@ -32,8 +32,8 @@ struct MenuBarView: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
 
-            Button("Retile Current Space") {
-                NotificationCenter.default.post(name: .hyprMacRetile, object: nil)
+            Button("Retile All Spaces") {
+                NotificationCenter.default.post(name: .hyprMacRetileAll, object: nil)
             }
 
             Button("Check for Updates...") {
@@ -129,6 +129,6 @@ struct WorkspaceIndicatorLabel: View {
 }
 
 extension Notification.Name {
-    static let hyprMacRetile = Notification.Name("hyprMacRetile")
+    static let hyprMacRetileAll = Notification.Name("hyprMacRetileAll")
     static let hyprMacWorkspaceChanged = Notification.Name("hyprMacWorkspaceChanged")
 }

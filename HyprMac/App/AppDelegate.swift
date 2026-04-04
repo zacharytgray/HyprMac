@@ -38,7 +38,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func startWindowManager() {
         let config = UserConfig.shared
         windowManager = WindowManager(config: config)
-        windowManager?.start()
+        if config.enabled {
+            windowManager?.start()
+        }
         checkFirstLaunchOrUpdate()
     }
 
