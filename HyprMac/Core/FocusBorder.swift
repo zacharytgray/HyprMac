@@ -97,7 +97,7 @@ class FocusBorder {
     }
 
     // brief red flash + shake to indicate a rejected operation
-    func flashError(around rect: CGRect, windowID: CGWindowID) {
+    func flashError(around rect: CGRect, windowID: CGWindowID, window: HyprWindow? = nil) {
         settleWork?.cancel()
         shakeTimer?.cancel()
 
@@ -128,8 +128,9 @@ class FocusBorder {
         state = .active
         trackedWindowID = windowID
 
-        // shake: oscillate panel x position
-        let baseX = nsRect.origin.x
+        // shake: oscillate both the overlay panel and the actual window
+        let panelBaseX = nsRect.origin.x
+        let windowBaseX = rect.origin.x
         let offsets: [CGFloat] = [10, -10, 7, -7, 3, -3, 0]
         let stepDuration: TimeInterval = 0.04
         var step = 0
@@ -141,13 +142,17 @@ class FocusBorder {
         timer.setEventHandler { [weak self] in
             guard let self, let p = self.panel else { return }
             if step < offsets.count {
+                let offset = offsets[step]
                 var frame = p.frame
-                frame.origin.x = baseX + offsets[step]
+                frame.origin.x = panelBaseX + offset
                 p.setFrame(frame, display: false)
+                window?.position = CGPoint(x: windowBaseX + offset, y: rect.origin.y)
                 step += 1
             } else {
                 self.shakeTimer?.cancel()
                 self.shakeTimer = nil
+                // restore window to exact original position
+                window?.position = CGPoint(x: windowBaseX, y: rect.origin.y)
                 // fade out after shake
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
                     self?.hide()

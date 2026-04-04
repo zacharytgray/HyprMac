@@ -727,7 +727,7 @@ class WindowManager {
                     print("[HyprMac] workspace \(number) full on \(visibleScreen.localizedName) — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
-                        focusBorder.flashError(around: frame, windowID: focused.windowID)
+                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
                     }
                     return
                 }
@@ -741,7 +741,7 @@ class WindowManager {
                     print("[HyprMac] workspace \(number) full (\(tiledCount) tiled, max \(maxWindows)) — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
-                        focusBorder.flashError(around: frame, windowID: focused.windowID)
+                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
                     }
                     return
                 }
