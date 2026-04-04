@@ -144,6 +144,10 @@ class WorkspaceManager {
         return result
     }
 
+    func allWindowWorkspaces() -> [CGWindowID: Int] {
+        windowWorkspaces
+    }
+
     func moveWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
         windowWorkspaces[windowID] = workspace
     }

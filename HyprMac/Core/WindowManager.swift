@@ -229,6 +229,7 @@ class WindowManager {
     }
 
     func stop() {
+        restoreAllWindows()
         isRunning = false
         pollTimer?.invalidate()
         pollTimer = nil
@@ -239,6 +240,36 @@ class WindowManager {
         DistributedNotificationCenter.default().removeObserver(self)
         focusBorder.hide()
         print("[HyprMac] stopped")
+    }
+
+    // bring all hidden workspace windows back on-screen so they're not stranded
+    // in corners after quit or disable
+    private func restoreAllWindows() {
+        let allWindows = accessibility.getAllWindows()
+        let mainScreen = displayManager.screens.first
+        let screenRect = mainScreen.map { displayManager.cgRect(for: $0) }
+            ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+
+        // unhide windows on invisible workspaces
+        for (wid, ws) in workspaceManager.allWindowWorkspaces() {
+            guard !workspaceManager.isWorkspaceVisible(ws) else { continue }
+            guard let window = allWindows.first(where: { $0.windowID == wid }) else { continue }
+
+            if let original = originalFrames[wid] {
+                window.setFrame(original)
+                print("[HyprMac] restored '\(window.title ?? "?")' to original frame")
+            } else {
+                // cascade onto main screen
+                let x = screenRect.origin.x + 50
+                let y = screenRect.origin.y + 50
+                let w = min(screenRect.width * 0.6, 1200)
+                let h = min(screenRect.height * 0.6, 800)
+                window.setFrame(CGRect(x: x, y: y, width: w, height: h))
+                print("[HyprMac] restored '\(window.title ?? "?")' to main screen")
+            }
+        }
+
+        print("[HyprMac] all windows restored to visible positions")
     }
 
     @objc private func menuTrackingBegan(_ note: Notification) {
@@ -705,8 +736,9 @@ class WindowManager {
                 let wids = workspaceManager.windowIDs(onWorkspace: number).subtracting(hiddenWindowIDs)
                 let tiledCount = wids.filter { !floatingWindowIDs.contains($0) }.count
                 let maxDepth = tilingEngine.maxDepth(for: targetScreen)
-                if tiledCount >= maxDepth + 1 {
-                    print("[HyprMac] workspace \(number) full (\(tiledCount) tiled, max \(maxDepth + 1)) — rejected move")
+                let maxWindows = 1 << maxDepth // 2^maxDepth — smart insert backtracks to fill all slots
+                if tiledCount >= maxWindows {
+                    print("[HyprMac] workspace \(number) full (\(tiledCount) tiled, max \(maxWindows)) — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
                         focusBorder.flashError(around: frame, windowID: focused.windowID)
@@ -1243,7 +1275,7 @@ class WindowManager {
         var slotsUsed = 0
         for slot in slots {
             guard widIdx < tilingWids.count else { break }
-            let cap = tilingEngine.maxDepth(for: slot.screen) + 1
+            let cap = 1 << tilingEngine.maxDepth(for: slot.screen) // 2^maxDepth
             for _ in 0..<cap where widIdx < tilingWids.count {
                 workspaceManager.assignWindow(tilingWids[widIdx], toWorkspace: slot.ws)
                 widIdx += 1
