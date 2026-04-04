@@ -1275,7 +1275,7 @@ class WindowManager {
         var slotsUsed = 0
         for slot in slots {
             guard widIdx < tilingWids.count else { break }
-            let cap = 1 << tilingEngine.maxDepth(for: slot.screen) // 2^maxDepth
+            let cap = tilingEngine.maxDepth(for: slot.screen) + 1 // dwindle depth, no backtracking on distribute
             for _ in 0..<cap where widIdx < tilingWids.count {
                 workspaceManager.assignWindow(tilingWids[widIdx], toWorkspace: slot.ws)
                 widIdx += 1
@@ -1313,13 +1313,21 @@ class WindowManager {
         allWindows.first { $0.windowID == wid } ?? cachedWindows[wid]
     }
 
-    // assign window to the active workspace on its screen if not already assigned
+    // assign window to the active workspace on its physical screen (for startup/snapshot)
     private func assignToScreenWorkspace(_ window: HyprWindow) {
         guard workspaceManager.workspaceFor(window.windowID) == nil else { return }
         if let screen = displayManager.screen(for: window) ?? displayManager.screens.first {
             let ws = workspaceManager.workspaceForScreen(screen)
             workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
         }
+    }
+
+    // assign new window to the workspace under the cursor (for runtime detection)
+    private func assignToCursorWorkspace(_ window: HyprWindow) {
+        guard workspaceManager.workspaceFor(window.windowID) == nil else { return }
+        let screen = screenUnderCursor()
+        let ws = workspaceManager.workspaceForScreen(screen)
+        workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
     }
 
     // check if at least 25% of the frame is visible on the given screen rect
@@ -1448,7 +1456,9 @@ class WindowManager {
                     continue
                 }
 
-                assignToScreenWorkspace(w)
+                // assign to cursor's workspace — matches hyprland behavior where new
+                // windows open on the focused workspace, not wherever macOS placed them
+                assignToCursorWorkspace(w)
 
                 changed = true
                 print("[HyprMac] new window: '\(w.title ?? "?")' (\(w.windowID))")
