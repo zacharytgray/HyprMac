@@ -13,7 +13,7 @@ xcuserdata/
 *.xccheckout
 *.xcscmblueprint
 
-# macOS
+# macOS junk
 .DS_Store
 ._*
 .Spotlight-V100
