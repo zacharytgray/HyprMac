@@ -467,19 +467,14 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "macwindow.badge.plus",
-            title: "Child Windows No Longer Tile",
-            description: "Quick Look previews, Teams screen sharing overlays, save dialogs, and other popup windows now stay floating instead of disrupting your layout."
+            icon: "square.grid.2x2",
+            title: "More Windows Per Screen",
+            description: "Fixed a bug where smart insert couldn't fill all BSP slots — e.g. 4 windows with 2 allowed splits now works correctly on single-monitor setups."
         ),
         WhatsNewFeature(
-            icon: "rectangle.dashed",
-            title: "Separate Floating Border Color",
-            description: "Floating windows show their own focus border color (default orange), configurable separately from the tiled window border in Settings → Tiling."
-        ),
-        WhatsNewFeature(
-            icon: "rectangle.on.rectangle.angled",
-            title: "Re-tile Fix After Dragging",
-            description: "Caps+Shift+T now correctly re-tiles a floating window even after you've dragged it to a different monitor."
+            icon: "arrow.uturn.backward",
+            title: "Clean Exit",
+            description: "Quitting HyprMac or toggling it off now restores all hidden workspace windows to visible positions so nothing gets stranded off-screen."
         ),
     ]
 }
