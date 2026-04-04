@@ -467,19 +467,19 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "square.grid.2x2",
-            title: "More Windows Per Screen",
-            description: "Fixed a bug where smart insert couldn't fill all BSP slots — e.g. 4 windows with 2 allowed splits now works correctly on single-monitor setups."
+            icon: "rectangle.on.rectangle.slash",
+            title: "Startup Layout Fixed",
+            description: "Windows now correctly distribute across all monitors on launch instead of piling onto a single screen."
         ),
         WhatsNewFeature(
-            icon: "display.2",
-            title: "Correct Multi-Monitor Placement",
-            description: "New windows now open on the workspace under your cursor instead of wherever macOS placed them — no more wrong-monitor surprises."
+            icon: "hand.raised.slash",
+            title: "Shake on Rejected Move",
+            description: "When a directional swap or focus has nowhere to go, the window shakes to give you clear visual feedback."
         ),
         WhatsNewFeature(
-            icon: "arrow.uturn.backward",
-            title: "Clean Exit",
-            description: "Quitting HyprMac or toggling it off now restores all hidden workspace windows to visible positions so nothing gets stranded off-screen."
+            icon: "icloud.slash",
+            title: "iCloud Sync Conflicts Fixed",
+            description: "Per-monitor settings are now stored locally so iCloud no longer overwrites them when switching between machines."
         ),
     ]
 }

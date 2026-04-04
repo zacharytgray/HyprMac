@@ -135,13 +135,16 @@ class WindowManager {
         hotkeyManager.start()
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            self?.spaceManager.setup()
-            self?.workspaceManager.initializeMonitors()
-            self?.snapshotAndTile()
-        }
-
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.pollWindowChanges()
+            guard let self, self.isRunning else { return }
+            self.spaceManager.setup()
+            self.workspaceManager.initializeMonitors()
+            self.snapshotAndTile()
+            // start polling only after the initial tile so pollWindowChanges can't
+            // race against snapshotAndTile, claim all windows as new, and trigger
+            // an animation that blocks the correct initial distribution
+            self.pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                self?.pollWindowChanges()
+            }
         }
 
         startMouseTracking()
