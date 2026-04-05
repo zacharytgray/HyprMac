@@ -85,6 +85,12 @@ class TilingEngine {
         // defensive: prune any empty/orphaned nodes that shouldn't exist
         t.root.pruneEmptyNodes()
 
+        // rebuild tree so backtracked windows settle into freed slots
+        if removedAny {
+            t.compact(maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
+                      padding: outerPadding, minSlotDimension: minSlotDimension)
+        }
+
         // add new windows via smart insert
         var addedAny = false
         for w in tileWindows where !treeIDs.contains(w.windowID) {
@@ -151,6 +157,12 @@ class TilingEngine {
 
         t.root.pruneEmptyNodes()
 
+        // rebuild tree so backtracked windows settle into freed slots
+        if removedAny {
+            t.compact(maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
+                      padding: outerPadding, minSlotDimension: minSlotDimension)
+        }
+
         // add new windows via smart insert
         var addedAny = false
         for w in tileWindows where !treeIDs.contains(w.windowID) {
@@ -192,9 +204,13 @@ class TilingEngine {
         for (key, t) in trees where key.workspace == workspace {
             if t.contains(window) {
                 t.remove(window)
+                t.root.pruneEmptyNodes()
                 if let screen = displayManager.screens.first(where: {
                     TilingKey(workspace: workspace, screen: $0) == key
                 }) {
+                    let rect = displayManager.cgRect(for: screen)
+                    t.compact(maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
+                              padding: outerPadding, minSlotDimension: minSlotDimension)
                     retile(key: key, screen: screen)
                 }
                 return

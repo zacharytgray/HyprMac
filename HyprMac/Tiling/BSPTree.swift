@@ -78,6 +78,19 @@ class BSPTree {
         node.remove()
     }
 
+    // rebuild tree so windows settle into deepest-possible dwindle positions.
+    // called after removals — backtracked windows move deeper when slots free up.
+    func compact(maxDepth: Int, in rect: CGRect, gap: CGFloat, padding: CGFloat, minSlotDimension: CGFloat) {
+        let windows = allWindows // left-to-right preserves insertion order
+        guard windows.count > 1 else { return }
+
+        root = BSPNode()
+        for w in windows {
+            smartInsert(w, maxDepth: maxDepth, in: rect, gap: gap,
+                        padding: padding, minSlotDimension: minSlotDimension)
+        }
+    }
+
     func contains(_ window: HyprWindow) -> Bool {
         root.find(window) != nil
     }

@@ -467,19 +467,9 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.on.rectangle.slash",
-            title: "Startup Layout Fixed",
-            description: "Windows now correctly distribute across all monitors on launch instead of piling onto a single screen."
-        ),
-        WhatsNewFeature(
-            icon: "hand.raised.slash",
-            title: "Shake on Rejected Move",
-            description: "When a directional swap or focus has nowhere to go, the window shakes to give you clear visual feedback."
-        ),
-        WhatsNewFeature(
-            icon: "icloud.slash",
-            title: "iCloud Sync Conflicts Fixed",
-            description: "Per-monitor settings are now stored locally so iCloud no longer overwrites them when switching between machines."
+            icon: "arrow.down.to.line",
+            title: "Smarter Window Compaction",
+            description: "When a window closes, remaining windows now settle into the deepest available tiling slots instead of staying at their backtracked positions."
         ),
     ]
 }
