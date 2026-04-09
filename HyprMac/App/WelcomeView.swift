@@ -467,9 +467,19 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "arrow.down.to.line",
-            title: "Smarter Window Compaction",
-            description: "When a window closes, remaining windows now settle into the deepest available tiling slots instead of staying at their backtracked positions."
+            icon: "bolt.heart.fill",
+            title: "Smoother Tiling",
+            description: "Eliminated redundant system calls across the tiling pipeline — window operations, focus-follows-mouse, and workspace switching are all noticeably snappier."
+        ),
+        WhatsNewFeature(
+            icon: "cursorarrow.click.badge.clock",
+            title: "Smarter Focus-Follows-Mouse",
+            description: "FFM now suppresses when the cursor is over unmanaged windows like emoji pickers and autocomplete popups."
+        ),
+        WhatsNewFeature(
+            icon: "app.badge.checkmark",
+            title: "App Launcher Fix",
+            description: "App launcher shortcuts now work correctly when the app is running but has no open windows."
         ),
     ]
 }
