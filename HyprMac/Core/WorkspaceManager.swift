@@ -11,6 +11,8 @@ class WorkspaceManager {
 
     // windowID → workspace number
     private var windowWorkspaces: [CGWindowID: Int] = [:]
+    // reverse index: workspace → window IDs (kept in sync with windowWorkspaces)
+    private var workspaceWindowSets: [Int: Set<CGWindowID>] = [:]
 
     // saved frames for floating windows before hiding (for restore)
     private var savedFloatingFrames: [CGWindowID: CGRect] = [:]
@@ -48,7 +50,7 @@ class WorkspaceManager {
             let sid = screenID(for: screen)
             if let ws = monitorWorkspace.removeValue(forKey: sid) {
                 // don't remove homeScreen — workspace still exists, just not visible
-                print("[HyprMac] removed workspace \(ws) from disabled monitor \(screen.localizedName)")
+                hyprLog("removed workspace \(ws) from disabled monitor \(screen.localizedName)")
             }
         }
 
@@ -88,7 +90,7 @@ class WorkspaceManager {
             workspaceHomeScreen.removeValue(forKey: ws)
         }
 
-        print("[HyprMac] workspace init: monitors=\(monitorWorkspace) homes=\(workspaceHomeScreen) disabled=\(disabledMonitors)")
+        hyprLog("workspace init: monitors=\(monitorWorkspace) homes=\(workspaceHomeScreen) disabled=\(disabledMonitors)")
     }
 
     // which workspace is currently shown on a given screen
@@ -97,7 +99,7 @@ class WorkspaceManager {
         if let ws = monitorWorkspace[sid] {
             return ws
         }
-        print("[HyprMac] WARNING: screen \(sid) had no workspace, reinitializing")
+        hyprLog("WARNING: screen \(sid) had no workspace, reinitializing")
         initializeMonitors()
         return monitorWorkspace[sid] ?? 1
     }
@@ -124,7 +126,11 @@ class WorkspaceManager {
     }
 
     func assignWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
+        if let old = windowWorkspaces[windowID] {
+            workspaceWindowSets[old]?.remove(windowID)
+        }
         windowWorkspaces[windowID] = workspace
+        workspaceWindowSets[workspace, default: []].insert(windowID)
     }
 
     func workspaceFor(_ windowID: CGWindowID) -> Int? {
@@ -137,11 +143,7 @@ class WorkspaceManager {
     }
 
     func windowIDs(onWorkspace workspace: Int) -> Set<CGWindowID> {
-        var result: Set<CGWindowID> = []
-        for (wid, ws) in windowWorkspaces where ws == workspace {
-            result.insert(wid)
-        }
-        return result
+        workspaceWindowSets[workspace] ?? []
     }
 
     func allWindowWorkspaces() -> [CGWindowID: Int] {
@@ -149,10 +151,17 @@ class WorkspaceManager {
     }
 
     func moveWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
+        if let old = windowWorkspaces[windowID] {
+            workspaceWindowSets[old]?.remove(windowID)
+        }
         windowWorkspaces[windowID] = workspace
+        workspaceWindowSets[workspace, default: []].insert(windowID)
     }
 
     func removeWindow(_ windowID: CGWindowID) {
+        if let old = windowWorkspaces[windowID] {
+            workspaceWindowSets[old]?.remove(windowID)
+        }
         windowWorkspaces.removeValue(forKey: windowID)
         savedFloatingFrames.removeValue(forKey: windowID)
     }
@@ -169,7 +178,7 @@ class WorkspaceManager {
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
         let pos = hidePosition(for: screen)
         window.position = pos
-        print("[HyprMac] hiding '\(window.title ?? "?")' (\(window.windowID)) at (\(Int(pos.x)),\(Int(pos.y)))")
+        hyprLog("hiding '\(window.title ?? "?")' (\(window.windowID)) at (\(Int(pos.x)),\(Int(pos.y)))")
     }
 
     func saveFloatingFrame(_ window: HyprWindow) {
@@ -203,7 +212,7 @@ class WorkspaceManager {
 
         // can't move pinned workspaces
         if srcWs <= monitorCount {
-            print("[HyprMac] moveWorkspace: ws\(srcWs) is pinned, can't move")
+            hyprLog("moveWorkspace: ws\(srcWs) is pinned, can't move")
             return nil
         }
 
@@ -215,7 +224,7 @@ class WorkspaceManager {
         // if fallback is already visible on another screen, this gets complicated — block it
         if isWorkspaceVisible(fallbackWs) && screenForWorkspace(fallbackWs) != sourceScreen {
             // fallback ws is showing elsewhere, can't use it
-            print("[HyprMac] moveWorkspace: fallback ws\(fallbackWs) already visible elsewhere")
+            hyprLog("moveWorkspace: fallback ws\(fallbackWs) already visible elsewhere")
             return nil
         }
 
@@ -227,7 +236,7 @@ class WorkspaceManager {
         // displaced workspace from target remembers target as home
         workspaceHomeScreen[tgtWs] = tgtSID
 
-        print("[HyprMac] moveWorkspace: ws\(srcWs) → screen \(tgtSID), screen \(srcSID) → ws\(fallbackWs) (target had ws\(tgtWs))")
+        hyprLog("moveWorkspace: ws\(srcWs) → screen \(tgtSID), screen \(srcSID) → ws\(fallbackWs) (target had ws\(tgtWs))")
         return MoveResult(movedWs: srcWs, fallbackWs: fallbackWs, targetOldWs: tgtWs)
     }
 
@@ -251,9 +260,9 @@ class WorkspaceManager {
         if let existingScreen = screenForWorkspace(number) {
             let sid = screenID(for: cursorScreen)
             if screenID(for: existingScreen) == sid {
-                print("[HyprMac] workspace \(number) already active on this screen")
+                hyprLog("workspace \(number) already active on this screen")
             } else {
-                print("[HyprMac] workspace \(number) visible on another screen — focusing")
+                hyprLog("workspace \(number) visible on another screen — focusing")
             }
             return SwitchResult(toHide: [], toShow: windowIDs(onWorkspace: number),
                                 screen: existingScreen, alreadyVisible: true)
@@ -284,7 +293,7 @@ class WorkspaceManager {
         workspaceHomeScreen[oldWorkspace] = targetSID  // displaced ws remembers this screen
         workspaceHomeScreen[number] = targetSID         // new ws is now on this screen
 
-        print("[HyprMac] screen \(targetSID): workspace \(oldWorkspace) → \(number) (hide \(toHide.count), show \(toShow.count))")
+        hyprLog("screen \(targetSID): workspace \(oldWorkspace) → \(number) (hide \(toHide.count), show \(toShow.count))")
 
         return SwitchResult(toHide: toHide, toShow: toShow, screen: targetScreen, alreadyVisible: false)
     }

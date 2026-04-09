@@ -19,7 +19,17 @@ class AccessibilityManager {
         let name: String?
     }
 
+    // short-lived cache for CGWindowListCopyWindowInfo — avoids duplicate
+    // system calls when getAllWindows() and getFocusedWindow() run in the same cycle
+    private var cgWindowCacheTime: CFAbsoluteTime = 0
+    private var cgWindowCacheData: [pid_t: [CGWindowInfo]] = [:]
+    private let cgWindowCacheTTL: CFAbsoluteTime = 0.05  // 50ms
+
     private func cgWindowsByPID() -> [pid_t: [CGWindowInfo]] {
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - cgWindowCacheTime < cgWindowCacheTTL && !cgWindowCacheData.isEmpty {
+            return cgWindowCacheData
+        }
         var result: [pid_t: [CGWindowInfo]] = [:]
         guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return result
@@ -39,6 +49,8 @@ class AccessibilityManager {
             )
             result[pid, default: []].append(CGWindowInfo(windowID: wid, bounds: bounds, alpha: alpha, name: name))
         }
+        cgWindowCacheData = result
+        cgWindowCacheTime = now
         return result
     }
 
@@ -133,7 +145,9 @@ class AccessibilityManager {
                 let wid = visibleCandidates[0].windowID
                 if !usedIDs.contains(wid) {
                     usedIDs.insert(wid)
-                    windows.append(HyprWindow(element: axEntries[0].element, windowID: wid, ownerPID: pid))
+                    let hw = HyprWindow(element: axEntries[0].element, windowID: wid, ownerPID: pid)
+                    hw.cachedFrame = axEntries[0].frame
+                    windows.append(hw)
                 }
                 continue
             }
@@ -165,7 +179,9 @@ class AccessibilityManager {
                 if let wid = bestWID {
                     availableCG.remove(wid)
                     usedIDs.insert(wid)
-                    windows.append(HyprWindow(element: entry.element, windowID: wid, ownerPID: pid))
+                    let hw = HyprWindow(element: entry.element, windowID: wid, ownerPID: pid)
+                    hw.cachedFrame = entry.frame
+                    windows.append(hw)
                 }
             }
         }

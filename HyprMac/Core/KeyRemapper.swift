@@ -19,7 +19,7 @@ class KeyRemapper {
             ]
         ]
         applyMapping(mapping)
-        print("[HyprMac] remapped Caps Lock → F18")
+        hyprLog("remapped Caps Lock → F18")
     }
 
     // remove Modifier Keys panel overrides for Caps Lock
@@ -39,13 +39,13 @@ class KeyRemapper {
             task.arguments = ["-currentHost", "delete", "-g", key]
             try? task.run()
             task.waitUntilExit()
-            print("[HyprMac] cleared system modifier override: \(key)")
+            hyprLog("cleared system modifier override: \(key)")
         }
     }
 
     static func restoreCapsLock() {
         applyMapping([])
-        print("[HyprMac] restored Caps Lock to default")
+        hyprLog("restored Caps Lock to default")
     }
 
     private static func applyMapping(_ mapping: [[String: UInt]]) {

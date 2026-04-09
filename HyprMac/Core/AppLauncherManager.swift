@@ -38,13 +38,13 @@ class AppLauncherManager {
 
         // otherwise launch it
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else {
-            print("[HyprMac] app not found: \(bundleID)")
+            hyprLog("app not found: \(bundleID)")
             return
         }
 
         NSWorkspace.shared.openApplication(at: url, configuration: .init()) { _, error in
             if let error = error {
-                print("[HyprMac] failed to launch \(bundleID): \(error)")
+                hyprLog("failed to launch \(bundleID): \(error)")
             }
         }
     }

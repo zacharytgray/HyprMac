@@ -202,8 +202,10 @@ class FocusBorder {
 
     // MARK: - coordinate conversion
 
+    var primaryScreenHeight: CGFloat = 0
+
     private func panelRect(for cgRect: CGRect) -> NSRect {
-        let primaryH = NSScreen.screens.first?.frame.height ?? 0
+        let primaryH = primaryScreenHeight
         let nsY = primaryH - cgRect.origin.y - cgRect.height
         return NSRect(x: cgRect.origin.x - margin,
                       y: nsY - margin,

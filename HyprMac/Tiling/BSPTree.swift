@@ -52,7 +52,7 @@ class BSPTree {
 
             if childMin >= minSlotDimension {
                 leaf.insert(window)
-                print("[HyprMac] smart insert at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
+                hyprLog("smart insert at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
                 return true
             }
         }
@@ -60,7 +60,7 @@ class BSPTree {
         // no leaf meets the minimum — fall back to deepest-right anyway
         if let fallback = leaves.first(where: { $0.depth < maxDepth }) {
             fallback.insert(window)
-            print("[HyprMac] smart insert fallback — no slot met \(Int(minSlotDimension))px minimum")
+            hyprLog("smart insert fallback — no slot met \(Int(minSlotDimension))px minimum")
             return true
         }
 
@@ -214,7 +214,7 @@ class BSPTree {
                     let clamped = min(needed, 0.85)
                     if clamped > parent.splitRatio {
                         parent.splitRatio = clamped
-                        print("[HyprMac] adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
                     }
                 } else {
                     // right child needs more width → decrease ratio
@@ -222,7 +222,7 @@ class BSPTree {
                     let clamped = max(needed, 0.15)
                     if clamped < parent.splitRatio {
                         parent.splitRatio = clamped
-                        print("[HyprMac] adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
                     }
                 }
 
@@ -233,14 +233,14 @@ class BSPTree {
                     let clamped = min(needed, 0.85)
                     if clamped > parent.splitRatio {
                         parent.splitRatio = clamped
-                        print("[HyprMac] adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
                     }
                 } else {
                     let needed = 1.0 - (neededHeight + halfGap) / parentRect.height
                     let clamped = max(needed, 0.15)
                     if clamped < parent.splitRatio {
                         parent.splitRatio = clamped
-                        print("[HyprMac] adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
                     }
                 }
             }
@@ -281,7 +281,7 @@ class BSPTree {
                 if abs(clamped - parent.splitRatio) > 0.01 {
                     parent.splitRatio = clamped
                     parent.userSetRatio = true
-                    print("[HyprMac] manual resize: horizontal ratio → \(String(format: "%.2f", clamped))")
+                    hyprLog("manual resize: horizontal ratio → \(String(format: "%.2f", clamped))")
                 }
 
             case .vertical:
@@ -296,7 +296,7 @@ class BSPTree {
                 if abs(clamped - parent.splitRatio) > 0.01 {
                     parent.splitRatio = clamped
                     parent.userSetRatio = true
-                    print("[HyprMac] manual resize: vertical ratio → \(String(format: "%.2f", clamped))")
+                    hyprLog("manual resize: vertical ratio → \(String(format: "%.2f", clamped))")
                 }
             }
 

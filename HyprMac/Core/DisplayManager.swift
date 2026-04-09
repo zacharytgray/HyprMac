@@ -2,6 +2,8 @@ import Cocoa
 
 class DisplayManager {
     private(set) var screens: [NSScreen] = []
+    // cached to avoid hitting NSScreen.screens on every coordinate conversion
+    private(set) var primaryScreenHeight: CGFloat = 0
 
     init() {
         refresh()
@@ -13,19 +15,14 @@ class DisplayManager {
 
     @objc func refresh() {
         screens = NSScreen.screens
-        print("[HyprMac] displays: \(screens.count)")
+        primaryScreenHeight = screens.first?.frame.height ?? 0
+        hyprLog("displays: \(screens.count)")
         for (i, screen) in screens.enumerated() {
             let frame = screen.frame
             let visible = screen.visibleFrame
             let cg = cgRect(for: screen)
-            print("[HyprMac]   display \(i): frame=\(frame) visible=\(visible) cg=\(cg)")
+            hyprLog("  display \(i): frame=\(frame) visible=\(visible) cg=\(cg)")
         }
-    }
-
-    // the primary screen height (needed for coordinate conversion)
-    // primary screen = the one at NSScreen origin (0,0) with the menu bar
-    var primaryScreenHeight: CGFloat {
-        NSScreen.screens.first?.frame.height ?? 0
     }
 
     // convert NSScreen's visibleFrame (bottom-left origin) to CG coordinates (top-left origin)

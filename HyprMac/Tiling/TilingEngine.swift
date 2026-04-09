@@ -53,7 +53,7 @@ class TilingEngine {
         for (window, frame) in layouts {
             let actual = window.setFrameWithReadback(frame)
             if actual.width > frame.width + 20 || actual.height > frame.height + 20 {
-                print("[HyprMac] min-size conflict: '\(window.title ?? "?")' wanted \(Int(frame.width))x\(Int(frame.height)), got \(Int(actual.width))x\(Int(actual.height))")
+                hyprLog("min-size conflict: '\(window.title ?? "?")' wanted \(Int(frame.width))x\(Int(frame.height)), got \(Int(actual.width))x\(Int(actual.height))")
                 conflicts.append(MinSizeConflict(window: window, allocated: frame, actual: actual.size))
             }
         }
@@ -62,7 +62,7 @@ class TilingEngine {
 
     private func applyLayoutFinal(_ layouts: [(HyprWindow, CGRect)]) {
         for (window, frame) in layouts {
-            window.setFrame(frame)
+            window.setFrame(frame, crossMonitor: false)
         }
     }
 
@@ -96,7 +96,7 @@ class TilingEngine {
         for w in tileWindows where !treeIDs.contains(w.windowID) {
             if !t.smartInsert(w, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
                               padding: outerPadding, minSlotDimension: minSlotDimension) {
-                print("[HyprMac] max depth exceeded — auto-floating '\(w.title ?? "?")'")
+                hyprLog("max depth exceeded — auto-floating '\(w.title ?? "?")'")
                 onAutoFloat?(w)
             } else {
                 addedAny = true
@@ -112,7 +112,7 @@ class TilingEngine {
 
         // pass 1: layout + readback
         let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
-        print("[HyprMac] tiling \(layouts.count) windows on workspace \(workspace) screen \(Int(screen.frame.width))x\(Int(screen.frame.height))")
+        hyprLog("tiling \(layouts.count) windows on workspace \(workspace) screen \(Int(screen.frame.width))x\(Int(screen.frame.height))")
         let conflicts = applyLayout(layouts)
 
         if !conflicts.isEmpty {
@@ -121,12 +121,12 @@ class TilingEngine {
             t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
             let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
             for (window, frame) in adjusted {
-                print("[HyprMac]   '\(window.title ?? "?")' → \(frame)")
+                hyprLog("  '\(window.title ?? "?")' → \(frame)")
             }
             applyLayoutFinal(adjusted)
         } else {
             for (window, frame) in layouts {
-                print("[HyprMac]   '\(window.title ?? "?")' → \(frame)")
+                hyprLog("  '\(window.title ?? "?")' → \(frame)")
             }
         }
 
@@ -191,7 +191,7 @@ class TilingEngine {
         if !t.contains(window) {
             if !t.smartInsert(window, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
                               padding: outerPadding, minSlotDimension: minSlotDimension) {
-                print("[HyprMac] max depth exceeded — auto-floating '\(window.title ?? "?")'")
+                hyprLog("max depth exceeded — auto-floating '\(window.title ?? "?")'")
                 onAutoFloat?(window)
                 return
             }

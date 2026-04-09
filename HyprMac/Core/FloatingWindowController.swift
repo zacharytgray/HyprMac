@@ -89,11 +89,11 @@ class FloatingWindowController {
                 let sz = target.size ?? CGSize(width: 800, height: 600)
                 target.position = CGPoint(x: screenRect.midX - sz.width / 2,
                                           y: screenRect.midY - sz.height / 2)
-                print("[HyprMac] brought offscreen floater '\(target.title ?? "?")' to center")
+                hyprLog("brought offscreen floater '\(target.title ?? "?")' to center")
             }
         }
 
-        print("[HyprMac] focused floating window '\(target.title ?? "?")' (\(visibleFloaters.count) total)")
+        hyprLog("focused floating window '\(target.title ?? "?")' (\(visibleFloaters.count) total)")
         return target
     }
 }

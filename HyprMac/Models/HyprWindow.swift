@@ -20,6 +20,9 @@ class HyprWindow: Equatable, Hashable {
     let windowID: CGWindowID
     let ownerPID: pid_t
     var isFloating: Bool = false
+    // cached from getAllWindows() — avoids redundant AX reads in updatePositionCache.
+    // cleared on setFrame/setFrameWithReadback so stale values aren't used.
+    var cachedFrame: CGRect?
 
     init(element: AXUIElement, windowID: CGWindowID, ownerPID: pid_t) {
         self.element = element
@@ -76,10 +79,12 @@ class HyprWindow: Equatable, Hashable {
     // 1. resize to target (may be clamped by source screen)
     // 2. move to target position (now on destination screen)
     // 3. resize again (now unclamped by destination screen bounds)
-    func setFrame(_ rect: CGRect) {
+    // crossMonitor=false skips step 3 for same-screen tiling (saves 1 AX call per window)
+    func setFrame(_ rect: CGRect, crossMonitor: Bool = true) {
+        cachedFrame = nil
         size = rect.size
         position = rect.origin
-        size = rect.size
+        if crossMonitor { size = rect.size }
     }
 
     // set frame and read back actual size — returns what the app actually accepted.
@@ -91,7 +96,9 @@ class HyprWindow: Equatable, Hashable {
         // read back what actually happened
         let actualSize = size ?? rect.size
         let actualPos = position ?? rect.origin
-        return CGRect(origin: actualPos, size: actualSize)
+        let actual = CGRect(origin: actualPos, size: actualSize)
+        cachedFrame = actual
+        return actual
     }
 
     var center: CGPoint? {

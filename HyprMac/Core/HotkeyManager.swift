@@ -12,9 +12,18 @@ class HotkeyManager {
     private static let f18KeyCode: UInt16 = 79 // 0x4F
 
     private var keybinds: [Keybind] = Keybind.defaults
+    // O(1) lookup: packed key = (keyCode << 16) | modifiers.rawValue
+    private var keybindMap: [UInt32: Keybind] = [:]
+
+    private static func packKey(_ keyCode: UInt16, _ modifiers: ModifierFlags) -> UInt32 {
+        UInt32(keyCode) << 16 | UInt32(modifiers.rawValue & 0xFFFF)
+    }
 
     func updateKeybinds(_ binds: [Keybind]) {
         keybinds = binds
+        keybindMap = Dictionary(uniqueKeysWithValues: binds.map {
+            (Self.packKey($0.keyCode, $0.modifiers), $0)
+        })
     }
 
     func start() {
@@ -32,8 +41,8 @@ class HotkeyManager {
             callback: hotkeyCallback,
             userInfo: refcon
         ) else {
-            print("[HyprMac] event tap creation failed")
-            print("[HyprMac] AXIsProcessTrusted=\(AXIsProcessTrusted())")
+            hyprLog("event tap creation failed")
+            hyprLog("AXIsProcessTrusted=\(AXIsProcessTrusted())")
             return
         }
 
@@ -41,7 +50,7 @@ class HotkeyManager {
         runLoopSource = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        print("[HyprMac] event tap started, \(keybinds.count) keybinds (Caps Lock → F18 = Hypr key)")
+        hyprLog("event tap started, \(keybinds.count) keybinds (Caps Lock → F18 = Hypr key)")
     }
 
     func stop() {
@@ -76,15 +85,14 @@ class HotkeyManager {
 
         let flags = ModifierFlags.from(event.flags, hyprDown: hyprKeyDown)
 
-        for bind in keybinds {
-            if bind.keyCode == keyCode && bind.modifiers == flags {
-                let action = bind.action.toAction()
-                print("[HyprMac] matched: \(action)")
-                DispatchQueue.main.async { [weak self] in
-                    self?.onAction?(action)
-                }
-                return nil
+        let packed = HotkeyManager.packKey(keyCode, flags)
+        if let bind = keybindMap[packed] {
+            let action = bind.action.toAction()
+            hyprLog("matched: \(action)")
+            DispatchQueue.main.async { [weak self] in
+                self?.onAction?(action)
             }
+            return nil
         }
 
         return event

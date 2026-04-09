@@ -90,14 +90,28 @@ class BSPNode {
     }
 
     func allWindows() -> [HyprWindow] {
-        if let w = window { return [w] }
-        return (left?.allWindows() ?? []) + (right?.allWindows() ?? [])
+        var result: [HyprWindow] = []
+        collectWindows(into: &result)
+        return result
+    }
+
+    private func collectWindows(into result: inout [HyprWindow]) {
+        if let w = window { result.append(w); return }
+        left?.collectWindows(into: &result)
+        right?.collectWindows(into: &result)
     }
 
     // collect leaf nodes right-to-left (deepest-right first, for backtrack order)
     func allLeavesRightToLeft() -> [BSPNode] {
-        if isLeaf && window != nil { return [self] }
-        return (right?.allLeavesRightToLeft() ?? []) + (left?.allLeavesRightToLeft() ?? [])
+        var result: [BSPNode] = []
+        collectLeavesRightToLeft(into: &result)
+        return result
+    }
+
+    private func collectLeavesRightToLeft(into result: inout [BSPNode]) {
+        if isLeaf && window != nil { result.append(self); return }
+        right?.collectLeavesRightToLeft(into: &result)
+        left?.collectLeavesRightToLeft(into: &result)
     }
 
     // prune empty leaves and internal nodes with missing children.

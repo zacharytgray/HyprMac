@@ -7,8 +7,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        print("[HyprMac] bundle: \(Bundle.main.bundleIdentifier ?? "?")")
-        print("[HyprMac] AXIsProcessTrusted=\(AXIsProcessTrusted())")
+        hyprLog("bundle: \(Bundle.main.bundleIdentifier ?? "?")")
+        hyprLog("AXIsProcessTrusted=\(AXIsProcessTrusted())")
 
         if AXIsProcessTrusted() {
             // remap caps lock → F18 at driver level

@@ -8,8 +8,16 @@ class SpaceManager {
     // ordered display UUIDs (matches CGSCopyManagedDisplaySpaces order)
     private(set) var displayOrder: [String] = []
 
+    private var lastRefreshTime: CFAbsoluteTime = 0
+    private let refreshCooldown: CFAbsoluteTime = 0.5
+
     // refresh the display/space mapping
-    func refreshSpaceMap() {
+    func refreshSpaceMap(force: Bool = false) {
+        let now = CFAbsoluteTimeGetCurrent()
+        if !force && now - lastRefreshTime < refreshCooldown && !spacesByDisplay.isEmpty {
+            return
+        }
+        lastRefreshTime = now
         let conn = _CGSDefaultConnection()
         guard let cfArray = CGSCopyManagedDisplaySpaces(conn),
               let displaySpaces = cfArray as? [[String: Any]] else { return }
@@ -38,10 +46,10 @@ class SpaceManager {
             spacesByDisplay[displayID] = ids
         }
 
-        print("[HyprMac] space map: \(displayOrder.count) displays")
+        hyprLog("space map: \(displayOrder.count) displays")
         for displayID in displayOrder {
             let spaces = spacesByDisplay[displayID] ?? []
-            print("[HyprMac]   display '\(displayID)': spaces \(spaces)")
+            hyprLog("  display '\(displayID)': spaces \(spaces)")
         }
     }
 
@@ -53,7 +61,7 @@ class SpaceManager {
         for displayID in displayOrder {
             result.append(contentsOf: spacesByDisplay[displayID] ?? [])
         }
-        print("[HyprMac] all space IDs: \(result)")
+        hyprLog("all space IDs: \(result)")
         return result
     }
 
@@ -131,7 +139,7 @@ class SpaceManager {
         // log current spaces before move
         if let cfBefore = CGSCopySpacesForWindows(conn, kCGSAllSpacesMask, winArray),
            let before = cfBefore as? [NSNumber] {
-            print("[HyprMac] moveWindow \(windowID): before spaces=\(before.map { $0.uint64Value })")
+            hyprLog("moveWindow \(windowID): before spaces=\(before.map { $0.uint64Value })")
         }
 
         // use atomic move API — removes from all current spaces and adds to target in one call
@@ -140,29 +148,29 @@ class SpaceManager {
         // verify
         if let cfAfter = CGSCopySpacesForWindows(conn, kCGSAllSpacesMask, winArray),
            let after = cfAfter as? [NSNumber] {
-            print("[HyprMac] moveWindow \(windowID): after spaces=\(after.map { $0.uint64Value })")
+            hyprLog("moveWindow \(windowID): after spaces=\(after.map { $0.uint64Value })")
         }
 
-        print("[HyprMac] moved window \(windowID) to space \(spaceID)")
+        hyprLog("moved window \(windowID) to space \(spaceID)")
     }
 
     // initialize space tracking (call on startup)
     func setup() {
-        refreshSpaceMap()
-        print("[HyprMac] space manager ready: \(displayOrder.count) displays, \(displayForSpace.count) spaces")
+        refreshSpaceMap(force: true)
+        hyprLog("space manager ready: \(displayOrder.count) displays, \(displayForSpace.count) spaces")
     }
 
     // switch to a desktop using the private CGS API (direct, no sentinels needed)
     func switchToDesktop(_ number: Int) -> Bool {
-        refreshSpaceMap()
+        refreshSpaceMap(force: true)
 
         guard let targetSpaceID = spaceID(forDesktop: number) else {
-            print("[HyprMac] switchToDesktop: desktop \(number) doesn't exist")
+            hyprLog("switchToDesktop: desktop \(number) doesn't exist")
             return false
         }
 
         guard let targetDisplay = displayForSpace[targetSpaceID] else {
-            print("[HyprMac] switchToDesktop: no display for space \(targetSpaceID)")
+            hyprLog("switchToDesktop: no display for space \(targetSpaceID)")
             return false
         }
 
@@ -170,7 +178,7 @@ class SpaceManager {
         let displayStr = targetDisplay as CFString
         CGSManagedDisplaySetCurrentSpace(conn, displayStr, targetSpaceID)
 
-        print("[HyprMac] switchToDesktop \(number): space=\(targetSpaceID) display=\(targetDisplay)")
+        hyprLog("switchToDesktop \(number): space=\(targetSpaceID) display=\(targetDisplay)")
         return true
     }
 
