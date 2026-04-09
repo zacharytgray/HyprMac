@@ -48,6 +48,10 @@ class MouseTrackingManager {
         for (wid, rect) in tiledPositions() {
             if rect.contains(cgPoint) {
                 guard wid != lastMouseFocusedID else { return }
+
+                // check if an unmanaged window (emoji picker, autocomplete, etc.) is above this point
+                if unmanagedWindowAtPoint(cgPoint) { return }
+
                 lastMouseFocusedID = wid
                 if let target = cachedWindow(wid) {
                     onFocusForFFM(target)
@@ -77,6 +81,33 @@ class MouseTrackingManager {
         // cursor not over any tiled window
         lastMouseFocusedID = 0
         onHideFocusBorder()
+    }
+
+    // check if an unmanaged window (emoji picker, popup, autocomplete) is the topmost at this point
+    private func unmanagedWindowAtPoint(_ point: CGPoint) -> Bool {
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+        let managed = tiledPositions()
+        let floating = floatingWindowIDs()
+
+        // walk front-to-back, find the first window whose bounds contain the point
+        for info in windowList {
+            guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                  let x = bounds["X"], let y = bounds["Y"],
+                  let w = bounds["Width"], let h = bounds["Height"] else { continue }
+            let frame = CGRect(x: x, y: y, width: w, height: h)
+            guard frame.contains(point) else { continue }
+            guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
+
+            // found the topmost normal-layer window at this point
+            let wid = (info[kCGWindowNumber as String] as? Int).map { CGWindowID($0) } ?? 0
+            if managed[wid] != nil || floating.contains(wid) {
+                return false // it's one of ours, FFM is fine
+            }
+            return true // unmanaged window on top, suppress FFM
+        }
+        return false
     }
 
     func menuTrackingBegan() {
