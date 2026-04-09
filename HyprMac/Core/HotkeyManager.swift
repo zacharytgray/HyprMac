@@ -21,9 +21,11 @@ class HotkeyManager {
 
     func updateKeybinds(_ binds: [Keybind]) {
         keybinds = binds
-        keybindMap = Dictionary(uniqueKeysWithValues: binds.map {
-            (Self.packKey($0.keyCode, $0.modifiers), $0)
-        })
+        // last-wins for duplicate key combos (matches old linear scan behavior)
+        keybindMap = [:]
+        for bind in binds {
+            keybindMap[Self.packKey(bind.keyCode, bind.modifiers)] = bind
+        }
     }
 
     func start() {
