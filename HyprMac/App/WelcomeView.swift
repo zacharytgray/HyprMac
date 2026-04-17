@@ -467,19 +467,29 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "bolt.heart.fill",
-            title: "Smoother Tiling",
-            description: "Eliminated redundant system calls across the tiling pipeline — window operations, focus-follows-mouse, and workspace switching are all noticeably snappier."
+            icon: "rectangle.on.rectangle.angled",
+            title: "Multi-Window App Fix",
+            description: "Swap, move, and close now reliably target the window you're actually pointing at — even with two Finder, Teams, or Chrome windows on the same screen."
         ),
         WhatsNewFeature(
-            icon: "cursorarrow.click.badge.clock",
-            title: "Smarter Focus-Follows-Mouse",
-            description: "FFM now suppresses when the cursor is over unmanaged windows like emoji pickers and autocomplete popups."
+            icon: "scope",
+            title: "No More Lost Focus",
+            description: "The blue focus border no longer disappears when you're between windows or on a workspace with only floating apps. Keyboard nav always has a target."
         ),
         WhatsNewFeature(
-            icon: "app.badge.checkmark",
-            title: "App Launcher Fix",
-            description: "App launcher shortcuts now work correctly when the app is running but has no open windows."
+            icon: "rectangle.3.group",
+            title: "Workspace Drift Fixes",
+            description: "New windows land on the right workspace based on where they actually opened — no more random jumps to workspace 7 or 8. Cross-screen drags reassign automatically."
+        ),
+        WhatsNewFeature(
+            icon: "speedometer",
+            title: "No More Slowdown Over Time",
+            description: "Plugged state leaks for terminated apps and hidden windows that built up over hours of use. Mouse tracking is throttled and short-circuits when the cursor stays in one window."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.compress.vertical",
+            title: "No More Bloated Windows",
+            description: "Fixed a race in the tiling readback where slow apps (Electron, Spotify, Teams) would falsely trigger a min-size conflict and stay oversized forever."
         ),
     ]
 }

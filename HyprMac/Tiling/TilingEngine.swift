@@ -48,10 +48,25 @@ class TilingEngine {
         let actual: CGSize
     }
 
+    // write all frames first, then wait briefly for slow apps (Electron, Spotify,
+    // Teams) to actually process the AX size change before reading back.
+    // without this gap, the readback returns the *previous* size, we falsely
+    // flag a min-size conflict, and pass 2 inflates the slot. on the next tile
+    // we reset, set the smaller size again, the app is still mid-resize, we
+    // read the inflated size again, and the window stays bloated forever.
+    // batching also makes one wait cover N windows instead of N waits.
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)]) -> [MinSizeConflict] {
+        for (window, frame) in layouts {
+            window.setFrame(frame)
+        }
+        // ~3 frames @ 60Hz — enough for slow apps to commit the resize
+        Thread.sleep(forTimeInterval: 0.05)
         var conflicts: [MinSizeConflict] = []
         for (window, frame) in layouts {
-            let actual = window.setFrameWithReadback(frame)
+            let actualSize = window.size ?? frame.size
+            let actualPos = window.position ?? frame.origin
+            let actual = CGRect(origin: actualPos, size: actualSize)
+            window.cachedFrame = actual
             if actual.width > frame.width + 20 || actual.height > frame.height + 20 {
                 hyprLog("min-size conflict: '\(window.title ?? "?")' wanted \(Int(frame.width))x\(Int(frame.height)), got \(Int(actual.width))x\(Int(actual.height))")
                 conflicts.append(MinSizeConflict(window: window, allocated: frame, actual: actual.size))

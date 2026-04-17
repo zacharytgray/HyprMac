@@ -9,6 +9,12 @@ class MouseTrackingManager {
     var menuBarTracking = false
     var dockIsActive = false
 
+    // throttle mouse-move processing to ~60Hz — the OS can fire hundreds of
+    // mouseMoved events per second and each one walks every visible window.
+    // with many windows open this became the dominant over-time perf hit.
+    private var lastHandleTime: CFAbsoluteTime = 0
+    private let handleMinInterval: CFAbsoluteTime = 0.016
+
     // dependencies injected by WindowManager
     var isFocusFollowsMouseEnabled: () -> Bool = { false }
     var isMouseButtonDown: () -> Bool = { false }
@@ -31,6 +37,13 @@ class MouseTrackingManager {
         guard !isAnimating() else { return }
         guard Date() > suppressMouseFocusUntil else { return }
 
+        // throttle: ~60Hz cap. mouseMoved fires hundreds of times per second
+        // and the work below scales with window count, so unthrottled it's
+        // the dominant cost when many windows are open.
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastHandleTime < handleMinInterval { return }
+        lastHandleTime = now
+
         let mouseNS = NSEvent.mouseLocation
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
@@ -41,6 +54,15 @@ class MouseTrackingManager {
         // snapshot closures once per move event
         let floating = floatingWindowIDs()
         let managed = tiledPositions()
+
+        // fast path: cursor still inside the last-focused window's rect → done.
+        // O(1) check that short-circuits before walking every floater + tile.
+        // huge win during normal mouse movement (cursor stays in one window).
+        if lastMouseFocusedID != 0,
+           let lastRect = managed[lastMouseFocusedID],
+           lastRect.contains(cgPoint) {
+            return
+        }
 
         // if cursor is over a visible floating window, don't refocus the tiled window underneath
         for wid in floating {
@@ -65,7 +87,10 @@ class MouseTrackingManager {
         }
     }
 
-    // re-derive focus from cursor position after a window disappears
+    // re-derive focus from cursor position after a window disappears.
+    // when cursor isn't over any tiled window we *don't* hide the border —
+    // WindowManager.ensureFocusInvariant runs after every poll and will pick
+    // a fallback so the user never ends up with nothing focused.
     func refocusUnderCursor() {
         let mouseNS = NSEvent.mouseLocation
         let cgY = primaryScreenHeight() - mouseNS.y
@@ -82,9 +107,9 @@ class MouseTrackingManager {
                 return
             }
         }
-        // cursor not over any tiled window
+        // cursor not over any tiled window — clear FFM state but leave the
+        // border alone so the invariant check can put it on a sensible target
         lastMouseFocusedID = 0
-        onHideFocusBorder()
     }
 
     // CGWindowListCopyWindowInfo is expensive — cache result with short TTL

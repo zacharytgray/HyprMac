@@ -47,7 +47,13 @@ class WindowManager {
     private var mouseMoveMonitor: Any?
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
+    private var mouseDragMonitor: Any?
     private var mouseButtonDown = false
+
+    // window whose focus border was hidden when a drag started — re-shown on mouseUp.
+    // we hide rather than try to follow, because we'd need 60Hz AX polling per window
+    // and that's prohibitively expensive.
+    private var preDragFocusedID: CGWindowID = 0
 
     // suppress appDidActivate workspace switching (survives async notification delivery)
     private var suppressActivationSwitchUntil: Date = .distantPast
@@ -297,19 +303,45 @@ class WindowManager {
         }
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
             self?.mouseButtonDown = true
+            // sync our focus tracker with the click — without this, manual clicks
+            // leave lastMouseFocusedID stale and currentFocusedWindow() routes
+            // commands to whatever was previously hovered, not what the user clicked
+            self?.syncFocusTrackerToCursor()
+        }
+        // when the user drags a floating window, its frame changes 60Hz but our
+        // border only repositions on poll (1Hz) — so it lags behind ugly. hide
+        // the border for the duration of the drag and restore it on mouseUp.
+        mouseDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
+            guard let self = self, self.preDragFocusedID == 0 else { return }
+            guard let tid = self.focusBorder.trackedWindowID else { return }
+            // only hide for floating windows — tiled windows can't be free-dragged
+            guard self.floatingWindowIDs.contains(tid) else { return }
+            self.preDragFocusedID = tid
+            self.focusBorder.hide()
         }
         mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
             self?.mouseButtonDown = false
             self?.handleMouseUp()
+            // restore the focus border on whatever floating window we hid it for,
+            // after a brief settle delay so we read its final position
+            if let id = self?.preDragFocusedID, id != 0 {
+                self?.preDragFocusedID = 0
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                    guard let self = self, let w = self.cachedWindows[id] else { return }
+                    self.updateFocusBorder(for: w)
+                }
+            }
         }
     }
 
     private func stopMouseTracking() {
         if let m = mouseMoveMonitor { NSEvent.removeMonitor(m) }
         if let m = mouseDownMonitor { NSEvent.removeMonitor(m) }
+        if let m = mouseDragMonitor { NSEvent.removeMonitor(m) }
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m) }
         mouseMoveMonitor = nil
         mouseDownMonitor = nil
+        mouseDragMonitor = nil
         mouseUpMonitor = nil
     }
 
@@ -513,11 +545,7 @@ class WindowManager {
     // MARK: - close window
 
     private func closeWindow() {
-        // prefer the FFM-tracked window (the one under cursor) over AX focused window,
-        // because focusWithoutRaise doesn't update macOS's notion of "focused window"
-        // for multi-window same-app scenarios
-        let target = cachedWindows[mouseTracker.lastMouseFocusedID] ?? accessibility.getFocusedWindow()
-        guard let target else { return }
+        guard let target = currentFocusedWindow() else { return }
         var closeButton: AnyObject?
         let err = AXUIElementCopyAttributeValue(target.element, kAXCloseButtonAttribute as CFString, &closeButton)
         if err == .success, let button = closeButton, CFGetTypeID(button) == AXUIElementGetTypeID() {
@@ -549,7 +577,7 @@ class WindowManager {
     // MARK: - focus
 
     private func focusInDirection(_ direction: Direction) {
-        guard let focused = accessibility.getFocusedWindow() else { return }
+        guard let focused = currentFocusedWindow() else { return }
         // only consider windows on visible workspaces — hidden corner windows must be excluded
         let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
 
@@ -564,7 +592,7 @@ class WindowManager {
     // MARK: - swap
 
     private func swapInDirection(_ direction: Direction) {
-        guard let focused = accessibility.getFocusedWindow() else { return }
+        guard let focused = currentFocusedWindow() else { return }
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
         let workspace = workspaceManager.workspaceForScreen(screen)
         let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
@@ -683,11 +711,11 @@ class WindowManager {
         // retile immediately — no delay between hide and show
         tileAllVisibleSpaces()
 
-        // focus best tiled window on the new workspace, or warp cursor
-        let newWorkspaceWindows = allWindows.filter {
-            result.toShow.contains($0.windowID) && !floatingWindowIDs.contains($0.windowID)
-        }
-        if let best = newWorkspaceWindows.first {
+        // focus best tiled window on the new workspace; if none, fall back to
+        // any floating window before giving up. only warp+hide if truly empty.
+        let newWorkspaceWindows = allWindows.filter { result.toShow.contains($0.windowID) }
+        let tiled = newWorkspaceWindows.first { !floatingWindowIDs.contains($0.windowID) }
+        if let best = tiled ?? newWorkspaceWindows.first {
             best.focus()
             cursorManager.warpToCenter(of: best)
             mouseTracker.lastMouseFocusedID = best.windowID
@@ -702,7 +730,7 @@ class WindowManager {
     }
 
     private func moveToWorkspace(_ number: Int) {
-        guard let focused = accessibility.getFocusedWindow() else { return }
+        guard let focused = currentFocusedWindow() else { return }
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
 
         // window on a disabled monitor — send it to the target workspace as a tiled window
@@ -867,7 +895,7 @@ class WindowManager {
     // MARK: - split toggle
 
     private func toggleSplit() {
-        guard let focused = accessibility.getFocusedWindow(),
+        guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
         let workspace = workspaceManager.workspaceForScreen(screen)
 
@@ -949,7 +977,7 @@ class WindowManager {
     }
 
     private func toggleFloating() {
-        guard let focused = accessibility.getFocusedWindow(),
+        guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
 
         // can't toggle tiling on disabled monitors — everything is floating there
@@ -1330,12 +1358,178 @@ class WindowManager {
         }
     }
 
-    // assign new window to the workspace under the cursor (for runtime detection)
-    private func assignToCursorWorkspace(_ window: HyprWindow) {
-        guard workspaceManager.workspaceFor(window.windowID) == nil else { return }
-        let screen = screenUnderCursor()
+    // assign new window to a workspace based on where it physically opened.
+    // prefer the window's own screen (where macOS actually placed it) — falls
+    // back to cursor screen only when the window has no usable frame yet.
+    // never trusts a stale prior assignment: a recycled CGWindowID could carry
+    // a leftover entry pointing at a workspace the user hasn't used in days.
+    private func assignNewWindow(_ window: HyprWindow) {
+        let physical = displayManager.screen(for: window)
+        let screen = physical ?? screenUnderCursor()
+        guard !workspaceManager.isMonitorDisabled(screen) else { return }
         let ws = workspaceManager.workspaceForScreen(screen)
+        // overwrite any stale entry — assignWindow handles old-set cleanup
         workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
+    }
+
+    // returns the window the user actually intends to control. AX's notion of
+    // "focused window" can lag or flat-out diverge from reality for multi-window
+    // apps (Finder, Teams) — focusWithoutRaise (used by FFM and Hypr+Arrow) does
+    // not reliably update kAXFocusedWindowAttribute. our own lastMouseFocusedID
+    // tracker is updated on every focus action *and* on manual clicks, so it
+    // stays in sync with what the user actually pointed at last.
+    private func currentFocusedWindow() -> HyprWindow? {
+        if mouseTracker.lastMouseFocusedID != 0,
+           let w = cachedWindows[mouseTracker.lastMouseFocusedID] {
+            return w
+        }
+        return accessibility.getFocusedWindow()
+    }
+
+    // hit-test the cursor against tiled and floating windows, update tracker.
+    // called from leftMouseDown so a manual click immediately wins over any
+    // stale FFM tracker state.
+    private func syncFocusTrackerToCursor() {
+        let mouseNS = NSEvent.mouseLocation
+        let cgY = displayManager.primaryScreenHeight - mouseNS.y
+        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+
+        // floating windows take precedence (drawn on top)
+        for wid in floatingWindowIDs {
+            guard workspaceManager.isWindowVisible(wid),
+                  let w = cachedWindows[wid], let frame = w.frame else { continue }
+            if frame.contains(cgPoint) {
+                mouseTracker.lastMouseFocusedID = wid
+                return
+            }
+        }
+        for (wid, rect) in tiledPositions where rect.contains(cgPoint) {
+            mouseTracker.lastMouseFocusedID = wid
+            return
+        }
+    }
+
+    // central per-window cleanup — prune every dict that keys on windowID.
+    // safe to call on already-forgotten IDs (idempotent).
+    private func forgetWindow(_ id: CGWindowID) {
+        knownWindowIDs.remove(id)
+        hiddenWindowIDs.remove(id)
+        originalFrames.removeValue(forKey: id)
+        floatingWindowIDs.remove(id)
+        windowOwners.removeValue(forKey: id)
+        tiledPositions.removeValue(forKey: id)
+        cachedWindows.removeValue(forKey: id)
+        workspaceManager.removeWindow(id)
+        if mouseTracker.lastMouseFocusedID == id {
+            mouseTracker.lastMouseFocusedID = 0
+        }
+        if focusBorder.trackedWindowID == id {
+            focusBorder.hide()
+        }
+    }
+
+    // forget every window we knew about for a given pid. handles the case where
+    // an app terminates while some of its windows are hidden/minimized — those
+    // ids would otherwise leak in hiddenWindowIDs/windowOwners/etc forever.
+    private func forgetApp(_ pid: pid_t) {
+        let ids = windowOwners.compactMap { $0.value == pid ? $0.key : nil }
+        for id in ids { forgetWindow(id) }
+    }
+
+    // detect tiled windows that physically drifted to a different screen than
+    // their recorded workspace lives on (e.g. user dragged across monitors,
+    // macOS dock-clicked an app and raised a window on the wrong screen, etc.)
+    // and reassign so state matches reality. without this, the window renders
+    // on screen B but tiling treats it as belonging to screen A's workspace —
+    // any operation on either side desyncs further.
+    private func reconcileWindowScreens(_ allWindows: [HyprWindow]) -> Bool {
+        guard !animator.isAnimating else { return false }
+        let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
+        var reassigned = false
+        for w in allWindows {
+            guard let recordedWs = workspaceManager.workspaceFor(w.windowID) else { continue }
+            // only check windows whose recorded workspace is currently on screen
+            guard visibleWorkspaces.contains(recordedWs) else { continue }
+            // floating windows can be anywhere by design — skip
+            guard !floatingWindowIDs.contains(w.windowID) else { continue }
+            guard let physicalScreen = displayManager.screen(for: w) else { continue }
+            // skip if the window sits on a disabled monitor — handled elsewhere
+            guard !workspaceManager.isMonitorDisabled(physicalScreen) else { continue }
+            let physicalWs = workspaceManager.workspaceForScreen(physicalScreen)
+            guard physicalWs != recordedWs else { continue }
+            // also ignore windows whose recorded screen and physical screen are
+            // the same — guards against transient frame reads during retile
+            if let recordedScreen = workspaceManager.screenForWorkspace(recordedWs),
+               recordedScreen == physicalScreen { continue }
+            workspaceManager.moveWindow(w.windowID, toWorkspace: physicalWs)
+            hyprLog("drift reconcile: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
+            reassigned = true
+        }
+        return reassigned
+    }
+
+    // if the focus border is hidden but the cursor's screen's workspace has any
+    // visible window, focus one. prevents getting stuck with no focus target —
+    // the user shouldn't have to click a window to get keyboard focus back.
+    private func ensureFocusInvariant() {
+        guard config.showFocusBorder else { return }
+        // border is already showing on a live window — nothing to do
+        if let tid = focusBorder.trackedWindowID, cachedWindows[tid] != nil {
+            return
+        }
+        let screen = screenUnderCursor()
+        guard !workspaceManager.isMonitorDisabled(screen) else { return }
+        let workspace = workspaceManager.workspaceForScreen(screen)
+        let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
+            .subtracting(hiddenWindowIDs)
+        guard !wsWindows.isEmpty else { return }
+
+        // prefer whatever AX says is focused if it's on this workspace
+        if let focused = accessibility.getFocusedWindow(),
+           wsWindows.contains(focused.windowID) {
+            mouseTracker.lastMouseFocusedID = focused.windowID
+            updateFocusBorder(for: focused)
+            return
+        }
+        // any tiled window on this workspace
+        for (wid, _) in tiledPositions where wsWindows.contains(wid) {
+            if let w = cachedWindows[wid] {
+                w.focusWithoutRaise()
+                mouseTracker.lastMouseFocusedID = wid
+                updateFocusBorder(for: w)
+                return
+            }
+        }
+        // fall back to any visible window on this workspace (floating, etc.)
+        for wid in wsWindows {
+            if let w = cachedWindows[wid] {
+                w.focusWithoutRaise()
+                mouseTracker.lastMouseFocusedID = wid
+                updateFocusBorder(for: w)
+                return
+            }
+        }
+    }
+
+    // sweep state for ids that are no longer alive anywhere. catches drift from
+    // edge cases (race conditions, terminated apps whose windows weren't seen
+    // disappearing first, hidden windows whose owners died).
+    private func reconcileWindowState(runningPIDs: Set<pid_t>) {
+        // hidden windows whose owner pid died — fully forget
+        for id in hiddenWindowIDs {
+            if let pid = windowOwners[id], !runningPIDs.contains(pid) {
+                forgetWindow(id)
+            }
+        }
+        // workspace assignments for ids we no longer track at all
+        let live = knownWindowIDs.union(hiddenWindowIDs)
+        for (id, _) in workspaceManager.allWindowWorkspaces() where !live.contains(id) {
+            forgetWindow(id)
+        }
+        // floating set / originalFrames / windowOwners shouldn't outlive known+hidden either
+        for id in floatingWindowIDs where !live.contains(id) { forgetWindow(id) }
+        for (id, _) in originalFrames where !live.contains(id) { forgetWindow(id) }
+        for (id, _) in windowOwners where !live.contains(id) { forgetWindow(id) }
     }
 
     // check if at least 25% of the frame is visible on the given screen rect
@@ -1464,9 +1658,11 @@ class WindowManager {
                     continue
                 }
 
-                // assign to cursor's workspace — matches hyprland behavior where new
-                // windows open on the focused workspace, not wherever macOS placed them
-                assignToCursorWorkspace(w)
+                // assign by physical screen — using cursor was unreliable: with
+                // multi-monitor + display-reconfig churn, screenUnderCursor could
+                // return a screen with a high workspace number the user wasn't
+                // even on, dropping the new window into ws 7/8 unexpectedly
+                assignNewWindow(w)
 
                 changed = true
                 hyprLog("new window: '\(w.title ?? "?")' (\(w.windowID))")
@@ -1476,8 +1672,8 @@ class WindowManager {
         // detect gone windows
         let gone = knownWindowIDs.subtracting(currentIDs)
         var focusedWindowGone = false
+        let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
         if !gone.isEmpty {
-            let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
             for id in gone {
                 if id == mouseTracker.lastMouseFocusedID { focusedWindowGone = true }
                 tiledPositions.removeValue(forKey: id)
@@ -1497,16 +1693,20 @@ class WindowManager {
                     }
                 } else {
                     // app terminated — full cleanup
-                    knownWindowIDs.remove(id)
-                    originalFrames.removeValue(forKey: id)
-                    floatingWindowIDs.remove(id)
-                    windowOwners.removeValue(forKey: id)
-                    workspaceManager.removeWindow(id)
+                    forgetWindow(id)
                     changed = true
                     hyprLog("window gone: \(id)")
                 }
             }
         }
+
+        // sweep stale entries — catches leaks from terminated apps whose hidden
+        // windows never showed up in the gone set, and any other drift
+        reconcileWindowState(runningPIDs: runningPIDs)
+
+        // detect cross-screen drift: a window's recorded workspace no longer
+        // matches the screen it physically sits on (manual drag, errant click)
+        if reconcileWindowScreens(allWindows) { changed = true }
 
         if changed {
             // animate surrounding windows sliding to fill gaps / make room
@@ -1519,6 +1719,9 @@ class WindowManager {
         if focusedWindowGone {
             mouseTracker.refocusUnderCursor()
         }
+
+        // catch-all: ensure something on the active workspace has focus + border
+        ensureFocusInvariant()
 
         // periodically re-raise floating windows so they don't get stuck
         // behind full-screen tiled windows (no activation event to trigger raise)
@@ -1616,6 +1819,12 @@ class WindowManager {
     }
 
     @objc private func appDidTerminate(_ notification: Notification) {
+        // proactively prune state for the dead pid — without this, hidden/minimized
+        // windows owned by the app would leak in windowOwners/hiddenWindowIDs/etc
+        // (they're not in knownWindowIDs anymore so the gone-detect path skips them).
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            forgetApp(app.processIdentifier)
+        }
         schedulePoll()
     }
 

@@ -33,8 +33,10 @@ extern CFArrayRef _Nullable CGSCopySpacesForWindows(CGSConnectionID cid, CGSSpac
 // switch a display to a specific space (direct space switching)
 extern void CGSManagedDisplaySetCurrentSpace(CGSConnectionID cid, CFStringRef _Nonnull displayUUID, CGSSpaceID spaceID);
 
-// get CGWindowID from AXUIElement
-extern CGWindowID _AXUIElementGetWindow(AXUIElementRef _Nonnull element);
+// get CGWindowID from AXUIElement — deterministic, no position guessing.
+// returns kAXErrorSuccess on success and writes the window id into *wid.
+// same private SPI used by yabai, AeroSpace, Amethyst, etc.
+extern AXError _AXUIElementGetWindow(AXUIElementRef _Nonnull element, uint32_t * _Nonnull wid);
 
 // apply a visual transform to a window in the compositor (no app re-render).
 // used for smooth animation — content stretches/moves without triggering redraws.
