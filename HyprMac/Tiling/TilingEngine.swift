@@ -170,6 +170,10 @@ class TilingEngine {
             actual.width > target.width + 20 || actual.height > target.height + 20
         }
 
+        func undershoots(_ actual: CGRect, _ target: CGRect) -> Bool {
+            actual.width < target.width - 20 || actual.height < target.height - 20
+        }
+
         let interval: TimeInterval = 0.03
         let maxWait: TimeInterval = 0.36
         let minConflictSettle: TimeInterval = 0.24
@@ -188,11 +192,14 @@ class TilingEngine {
 
         // accepted layouts exit fast. over-target readings must settle for two
         // consecutive samples after a longer floor before they can adjust ratios.
-        while readings.contains(where: { exceeds($0.actual, $0.frame) }) && elapsed < maxWait {
+        // under-target readings are usually a cross-screen clamp/race; reapply
+        // until the destination screen accepts the requested size.
+        while readings.contains(where: { exceeds($0.actual, $0.frame) || undershoots($0.actual, $0.frame) }) && elapsed < maxWait {
             Thread.sleep(forTimeInterval: interval)
             elapsed += interval
 
             var anyUnsettledConflict = false
+            var anyUndersizedFrame = false
             for i in readings.indices {
                 let next = read(readings[i].window, target: readings[i].frame)
                 let stable = abs(next.width - readings[i].actual.width) <= stableTolerance
@@ -201,19 +208,27 @@ class TilingEngine {
                 readings[i].elapsed = elapsed
                 readings[i].stableSamples = stable ? readings[i].stableSamples + 1 : 0
 
+                if undershoots(next, readings[i].frame) {
+                    readings[i].window.setFrame(readings[i].frame)
+                    anyUndersizedFrame = true
+                    continue
+                }
+
                 if exceeds(next, readings[i].frame),
                    elapsed < minConflictSettle || readings[i].stableSamples < 2 {
                     anyUnsettledConflict = true
                 }
             }
 
-            if !anyUnsettledConflict { break }
+            if !anyUnsettledConflict && !anyUndersizedFrame { break }
         }
 
         var conflicts: [MinSizeConflict] = []
         for r in readings {
             let widthConflict = r.actual.width > r.frame.width + 20
             let heightConflict = r.actual.height > r.frame.height + 20
+            let widthUndershot = r.actual.width < r.frame.width - 20
+            let heightUndershot = r.actual.height < r.frame.height - 20
             if widthConflict || heightConflict {
                 let settled = r.elapsed >= minConflictSettle && r.stableSamples >= 2
                 if !settled {
@@ -227,6 +242,11 @@ class TilingEngine {
                 recordObservedMinimumSize(r.window, actual: r.actual.size,
                                           widthConflict: widthConflict,
                                           heightConflict: heightConflict)
+            } else if widthUndershot || heightUndershot {
+                hyprLog("undersized readback: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
+                r.window.setFrame(r.frame)
+                r.window.cachedFrame = r.frame
+                continue
             } else {
                 lowerMinimumSizeIfAccepted(r.window, actual: r.actual.size)
             }
@@ -243,7 +263,7 @@ class TilingEngine {
 
     private func applyLayoutFinal(_ layouts: [(HyprWindow, CGRect)]) {
         for (window, frame) in layouts {
-            window.setFrame(frame, crossMonitor: false)
+            window.setFrame(frame)
         }
     }
 
