@@ -76,6 +76,7 @@ class HyprWindow: Equatable, Hashable {
         "com.google.Chrome": CGSize(width: 500, height: 340),
         "com.apple.finder": CGSize(width: 420, height: 300),
         "com.apple.Terminal": CGSize(width: 400, height: 260),
+        "com.anthropic.claudefordesktop": CGSize(width: 600, height: 420),
         "com.apple.MobileSMS": CGSize(width: 520, height: 360),
         "com.apple.FaceTime": CGSize(width: 620, height: 460),
         "com.spotify.client": CGSize(width: 640, height: 420),

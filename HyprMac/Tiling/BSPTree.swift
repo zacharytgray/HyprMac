@@ -193,61 +193,63 @@ class BSPTree {
 
     // adjust split ratios to accommodate windows that can't shrink to their allocated size.
     // conflicts: [(window, actualSize)] where actualSize is what the app accepted after setFrame.
+    // width and height are handled independently by walking to the nearest
+    // matching-axis ancestor; the immediate parent may split the wrong axis.
     func adjustForMinSizes(_ conflicts: [(window: HyprWindow, actual: CGSize)],
                            in rect: CGRect, gap: CGFloat, padding: CGFloat) {
         let padded = rect.insetBy(dx: padding, dy: padding)
-        let halfGap = gap / 2
 
         for (window, actualSize) in conflicts {
-            guard let leaf = root.find(window), let parent = leaf.parent else { continue }
-            // respect explicit user resizes — don't clobber a ratio the user set.
-            // without this, a stale readback right after a manual resize permanently
-            // snaps the window back to its pre-resize width.
+            guard let leaf = root.find(window) else { continue }
+            guard let leafRect = rectForNodeHelper(node: root, target: leaf, rect: padded, gap: gap) else { continue }
+
+            if actualSize.width > leafRect.width + 5 {
+                adjustAxisRatio(from: leaf, needed: actualSize.width,
+                                axis: .horizontal, rect: padded, gap: gap,
+                                windowTitle: window.title)
+            }
+
+            if actualSize.height > leafRect.height + 5 {
+                adjustAxisRatio(from: leaf, needed: actualSize.height,
+                                axis: .vertical, rect: padded, gap: gap,
+                                windowTitle: window.title)
+            }
+        }
+    }
+
+    private func adjustAxisRatio(from leaf: BSPNode, needed: CGFloat,
+                                 axis: SplitDirection, rect: CGRect, gap: CGFloat,
+                                 windowTitle: String?) {
+        let halfGap = gap / 2
+        var node: BSPNode = leaf
+
+        while let parent = node.parent {
+            defer { node = parent }
             if parent.userSetRatio { continue }
-            guard let parentRect = rectForNodeHelper(node: root, target: parent, rect: padded, gap: gap) else { continue }
+            guard let parentRect = rectForNodeHelper(node: root, target: parent, rect: rect, gap: gap) else { continue }
+            guard parent.direction(for: parentRect) == axis else { continue }
 
-            let isLeft = parent.left === leaf
-            let dir = parent.direction(for: parentRect)
+            let isLeft = parent.left === node
+            let extent = axis == .horizontal ? parentRect.width : parentRect.height
+            guard extent > 0 else { continue }
 
-            switch dir {
-            case .horizontal:
-                let neededWidth = actualSize.width
-                if isLeft {
-                    // left child needs more width → increase ratio
-                    let needed = (neededWidth + halfGap) / parentRect.width
-                    let clamped = min(needed, 0.85)
-                    if clamped > parent.splitRatio {
-                        parent.splitRatio = clamped
-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
-                    }
-                } else {
-                    // right child needs more width → decrease ratio
-                    let needed = 1.0 - (neededWidth + halfGap) / parentRect.width
-                    let clamped = max(needed, 0.15)
-                    if clamped < parent.splitRatio {
-                        parent.splitRatio = clamped
-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
-                    }
+            let raw = (needed + halfGap) / extent
+            let clamped: CGFloat
+            if isLeft {
+                clamped = min(raw, 0.85)
+                if clamped > parent.splitRatio {
+                    parent.splitRatio = clamped
+                    hyprLog("adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
                 }
-
-            case .vertical:
-                let neededHeight = actualSize.height
-                if isLeft {
-                    let needed = (neededHeight + halfGap) / parentRect.height
-                    let clamped = min(needed, 0.85)
-                    if clamped > parent.splitRatio {
-                        parent.splitRatio = clamped
-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
-                    }
-                } else {
-                    let needed = 1.0 - (neededHeight + halfGap) / parentRect.height
-                    let clamped = max(needed, 0.15)
-                    if clamped < parent.splitRatio {
-                        parent.splitRatio = clamped
-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
-                    }
+            } else {
+                clamped = max(1.0 - raw, 0.15)
+                if clamped < parent.splitRatio {
+                    parent.splitRatio = clamped
+                    hyprLog("adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
                 }
             }
+
+            if raw <= 0.85 { return }
         }
     }
 

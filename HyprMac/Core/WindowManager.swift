@@ -502,6 +502,12 @@ class WindowManager {
                 let workspace = workspaceManager.workspaceForScreen(screen)
                 hyprLog("drag swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
 
+                guard tilingEngine.canSwapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen) else {
+                    rejectSwap(s.dragged, reason: "drag swap would violate min-size constraints")
+                    updatePositionCache(windows: allWindows)
+                    return
+                }
+
                 if config.animateWindows,
                    let draggedFrame = s.dragged.frame,
                    let targetFrame = s.target.frame,
@@ -635,6 +641,10 @@ class WindowManager {
         let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
 
         guard let target = accessibility.windowInDirection(direction, from: focused, among: windows) else { return }
+        guard tilingEngine.canSwapWindows(focused, target, onWorkspace: workspace, screen: screen) else {
+            rejectSwap(focused, reason: "swap would violate min-size constraints")
+            return
+        }
 
         if config.animateWindows,
            let focusedFrame = focused.frame,
@@ -660,6 +670,14 @@ class WindowManager {
             tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
             cursorManager.warpToCenter(of: focused)
             updatePositionCache()
+        }
+    }
+
+    private func rejectSwap(_ window: HyprWindow, reason: String) {
+        hyprLog("\(reason) — rejected swap")
+        NSSound.beep()
+        if let frame = window.frame {
+            focusBorder.flashError(around: frame, windowID: window.windowID, window: window)
         }
     }
 

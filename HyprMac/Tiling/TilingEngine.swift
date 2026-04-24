@@ -103,17 +103,46 @@ class TilingEngine {
         let actual: CGSize
     }
 
-    // write all frames first, then wait briefly for slow apps (Electron, Spotify,
-    // Teams) to actually process the AX size change before reading back.
-    // without this gap, the readback returns the *previous* size, we falsely
-    // flag a min-size conflict, and pass 2 inflates the slot. on the next tile
-    // we reset, set the smaller size again, the app is still mid-resize, we
-    // read the inflated size again, and the window stays bloated forever.
-    // batching also makes one wait cover N windows instead of N waits.
+    private struct NodeState {
+        let node: BSPNode
+        let splitRatio: CGFloat
+        let userSetRatio: Bool
+        let splitOverride: SplitDirection?
+        let window: HyprWindow?
+    }
+
+    private func snapshotTree(_ tree: BSPTree) -> [NodeState] {
+        var states: [NodeState] = []
+        func walk(_ node: BSPNode) {
+            states.append(NodeState(node: node,
+                                    splitRatio: node.splitRatio,
+                                    userSetRatio: node.userSetRatio,
+                                    splitOverride: node.splitOverride,
+                                    window: node.window))
+            if let left = node.left { walk(left) }
+            if let right = node.right { walk(right) }
+        }
+        walk(tree.root)
+        return states
+    }
+
+    private func restoreTree(_ states: [NodeState]) {
+        for state in states {
+            state.node.splitRatio = state.splitRatio
+            state.node.userSetRatio = state.userSetRatio
+            state.node.splitOverride = state.splitOverride
+            state.node.window = state.window
+        }
+    }
+
+    // write all frames first, then wait only as long as AX needs to settle.
+    // fast windows exit after one read; suspected min-size conflicts require
+    // consecutive stable readings so transient AX sizes don't inflate ratios.
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)]) -> [MinSizeConflict] {
-        // snapshot previous frames so we can detect stale readbacks — if a
-        // window's "actual" size matches its prior frame AND exceeds target,
-        // the app hasn't committed the setFrame yet (not a real min-size conflict).
+        guard !layouts.isEmpty else { return [] }
+
+        // previous frames are only diagnostic now; conflicts come from settled
+        // readings, not from matching or not matching the previous frame.
         var prev: [CGWindowID: CGRect] = [:]
         for (w, _) in layouts {
             if let cached = w.cachedFrame { prev[w.windowID] = cached }
@@ -122,56 +151,91 @@ class TilingEngine {
         for (window, frame) in layouts {
             window.setFrame(frame)
         }
-        // ~3 frames @ 60Hz — enough for slow apps to commit the resize
-        Thread.sleep(forTimeInterval: 0.05)
 
-        // first pass: read current sizes. flag anything that looks stale.
-        struct Reading { let window: HyprWindow; let frame: CGRect; var actual: CGRect; var stale: Bool }
-        var readings: [Reading] = []
-        var anyStale = false
-        for (window, frame) in layouts {
-            let actualSize = window.size ?? frame.size
-            let actualPos = window.position ?? frame.origin
-            let actual = CGRect(origin: actualPos, size: actualSize)
-            let exceeds = actual.width > frame.width + 20 || actual.height > frame.height + 20
-            var stale = false
-            if exceeds, let p = prev[window.windowID],
-               abs(actual.width - p.width) < 5 && abs(actual.height - p.height) < 5 {
-                stale = true
-                anyStale = true
-            }
-            readings.append(Reading(window: window, frame: frame, actual: actual, stale: stale))
+        struct Reading {
+            let window: HyprWindow
+            let frame: CGRect
+            var actual: CGRect
+            var stableSamples: Int
+            var elapsed: TimeInterval
         }
 
-        // stale pass: give slow apps more time, then re-read just the suspects.
-        // distinguishes "app refuses to shrink" (stays at min-size, != prev if
-        // prev was the target size from last tile) from "app mid-resize"
-        // (still reporting prev frame). only pays the extra 100ms when needed.
-        if anyStale {
-            Thread.sleep(forTimeInterval: 0.1)
-            for i in readings.indices where readings[i].stale {
-                let w = readings[i].window
-                let newSize = w.size ?? readings[i].actual.size
-                let newPos = w.position ?? readings[i].actual.origin
-                readings[i].actual = CGRect(origin: newPos, size: newSize)
+        func read(_ window: HyprWindow, target: CGRect) -> CGRect {
+            let actualSize = window.size ?? target.size
+            let actualPos = window.position ?? target.origin
+            return CGRect(origin: actualPos, size: actualSize)
+        }
+
+        func exceeds(_ actual: CGRect, _ target: CGRect) -> Bool {
+            actual.width > target.width + 20 || actual.height > target.height + 20
+        }
+
+        let interval: TimeInterval = 0.03
+        let maxWait: TimeInterval = 0.36
+        let minConflictSettle: TimeInterval = 0.24
+        let stableTolerance: CGFloat = 2
+        var elapsed: TimeInterval = 0
+        var readings: [Reading] = []
+
+        Thread.sleep(forTimeInterval: interval)
+        elapsed += interval
+        for (window, frame) in layouts {
+            readings.append(Reading(window: window, frame: frame,
+                                    actual: read(window, target: frame),
+                                    stableSamples: 0,
+                                    elapsed: elapsed))
+        }
+
+        // accepted layouts exit fast. over-target readings must settle for two
+        // consecutive samples after a longer floor before they can adjust ratios.
+        while readings.contains(where: { exceeds($0.actual, $0.frame) }) && elapsed < maxWait {
+            Thread.sleep(forTimeInterval: interval)
+            elapsed += interval
+
+            var anyUnsettledConflict = false
+            for i in readings.indices {
+                let next = read(readings[i].window, target: readings[i].frame)
+                let stable = abs(next.width - readings[i].actual.width) <= stableTolerance
+                    && abs(next.height - readings[i].actual.height) <= stableTolerance
+                readings[i].actual = next
+                readings[i].elapsed = elapsed
+                readings[i].stableSamples = stable ? readings[i].stableSamples + 1 : 0
+
+                if exceeds(next, readings[i].frame),
+                   elapsed < minConflictSettle || readings[i].stableSamples < 2 {
+                    anyUnsettledConflict = true
+                }
             }
+
+            if !anyUnsettledConflict { break }
         }
 
         var conflicts: [MinSizeConflict] = []
         for r in readings {
-            r.window.cachedFrame = r.actual
             let widthConflict = r.actual.width > r.frame.width + 20
             let heightConflict = r.actual.height > r.frame.height + 20
             if widthConflict || heightConflict {
+                let settled = r.elapsed >= minConflictSettle && r.stableSamples >= 2
+                if !settled {
+                    hyprLog("unsettled readback ignored: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
+                    r.window.cachedFrame = r.frame
+                    continue
+                }
+
                 hyprLog("min-size conflict: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), got \(Int(r.actual.width))x\(Int(r.actual.height))")
                 conflicts.append(MinSizeConflict(window: r.window, allocated: r.frame, actual: r.actual.size))
                 recordObservedMinimumSize(r.window, actual: r.actual.size,
                                           widthConflict: widthConflict,
                                           heightConflict: heightConflict)
-            } else if r.stale {
-                hyprLog("stale readback resolved for '\(r.window.title ?? "?")' — no conflict after resettle")
             } else {
                 lowerMinimumSizeIfAccepted(r.window, actual: r.actual.size)
+            }
+            r.window.cachedFrame = r.actual
+
+            if let previous = prev[r.window.windowID], widthConflict || heightConflict {
+                let deltaW = abs(r.actual.width - previous.width)
+                let deltaH = abs(r.actual.height - previous.height)
+                hyprLog("readback settled in \(Int(r.elapsed * 1000))ms for '\(r.window.title ?? "?")' (delta \(Int(deltaW))x\(Int(deltaH)))")
             }
         }
         return conflicts
@@ -181,6 +245,52 @@ class TilingEngine {
         for (window, frame) in layouts {
             window.setFrame(frame, crossMonitor: false)
         }
+    }
+
+    private func overflowingWindows(in layouts: [(HyprWindow, CGRect)]) -> [HyprWindow] {
+        layouts.compactMap { window, frame in
+            let minSize = minimumSize(for: window)
+            if minSize.width > frame.width + 20 || minSize.height > frame.height + 20 {
+                return window
+            }
+            return nil
+        }
+    }
+
+    private func layoutCanAccommodateKnownMinimums(_ tree: BSPTree, rect: CGRect) -> Bool {
+        let initial = tree.layout(in: rect, gap: gapSize, padding: outerPadding)
+        let conflicts = initial.compactMap { window, frame -> (window: HyprWindow, actual: CGSize)? in
+            let minSize = minimumSize(for: window)
+            if minSize.width > frame.width + 20 || minSize.height > frame.height + 20 {
+                return (window: window, actual: minSize)
+            }
+            return nil
+        }
+
+        guard !conflicts.isEmpty else { return true }
+
+        tree.adjustForMinSizes(conflicts, in: rect, gap: gapSize, padding: outerPadding)
+        let adjusted = tree.layout(in: rect, gap: gapSize, padding: outerPadding)
+        return overflowingWindows(in: adjusted).isEmpty
+    }
+
+    private func autoFloatOverflow(_ overflow: [HyprWindow],
+                                   inserted: [HyprWindow],
+                                   tree: BSPTree,
+                                   key: TilingKey,
+                                   screen: NSScreen) -> Bool {
+        guard !overflow.isEmpty, !inserted.isEmpty else { return false }
+        let overflowIDs = Set(overflow.map { $0.windowID })
+        let target = inserted.reversed().first { overflowIDs.contains($0.windowID) }
+            ?? inserted.last
+        guard let target else { return false }
+
+        hyprLog("overflow after min-size adjustment — auto-floating '\(target.title ?? "?")'")
+        tree.remove(target)
+        tree.root.pruneEmptyNodes()
+        onAutoFloat?(target)
+        retile(key: key, screen: screen)
+        return true
     }
 
     @discardableResult
@@ -254,18 +364,18 @@ class TilingEngine {
         }
 
         // add new windows via smart insert
-        var addedAny = false
+        var insertedWindows: [HyprWindow] = []
         for w in tileWindows where !treeIDs.contains(w.windowID) {
             if !smartInsertFitting(w, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
                 hyprLog("no fitting tile slot — auto-floating '\(w.title ?? "?")'")
                 onAutoFloat?(w)
             } else {
-                addedAny = true
+                insertedWindows.append(w)
             }
         }
 
         // structural change — clear user-set ratios so layout resets to even splits
-        if removedAny || addedAny {
+        if removedAny || !insertedWindows.isEmpty {
             t.root.clearUserSetRatios()
         }
 
@@ -281,6 +391,11 @@ class TilingEngine {
             let mapped = conflicts.map { (window: $0.window, actual: $0.actual) }
             t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
             let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+            let overflow = overflowingWindows(in: adjusted)
+            if autoFloatOverflow(overflow, inserted: insertedWindows,
+                                 tree: t, key: key, screen: screen) {
+                return
+            }
             for (window, frame) in adjusted {
                 hyprLog("  '\(window.title ?? "?")' → \(frame)")
             }
@@ -393,6 +508,11 @@ class TilingEngine {
             let mapped = conflicts.map { (window: $0.window, actual: $0.actual) }
             t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
             let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+            let overflow = overflowingWindows(in: adjusted)
+            if autoFloatOverflow(overflow, inserted: [],
+                                 tree: t, key: key, screen: screen) {
+                return
+            }
             applyLayoutFinal(adjusted)
         }
     }
@@ -407,21 +527,37 @@ class TilingEngine {
         retile(key: key, screen: screen)
     }
 
-    func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {
+    func canSwapWindows(_ a: HyprWindow, _ b: HyprWindow,
+                        onWorkspace workspace: Int, screen: NSScreen) -> Bool {
         primeMinimumSizes([a, b])
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
-        if t.contains(a) && t.contains(b) {
-            t.swap(a, b)
-            retile(key: key, screen: screen)
-        }
+        guard t.contains(a) && t.contains(b) else { return false }
+
+        let snapshot = snapshotTree(t)
+        defer { restoreTree(snapshot) }
+
+        let rect = displayManager.cgRect(for: screen)
+        t.swap(a, b)
+        t.root.resetSplitRatios()
+        return layoutCanAccommodateKnownMinimums(t, rect: rect)
+    }
+
+    @discardableResult
+    func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+        guard canSwapWindows(a, b, onWorkspace: workspace, screen: screen) else { return false }
+        let key = TilingKey(workspace: workspace, screen: screen)
+        let t = tree(for: key)
+        t.swap(a, b)
+        retile(key: key, screen: screen)
+        return true
     }
 
     // swap in the tree and return target layouts WITHOUT applying frames.
     // caller is responsible for animating or applying the result.
     func computeSwapLayout(_ a: HyprWindow, _ b: HyprWindow,
                            onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)]? {
-        primeMinimumSizes([a, b])
+        guard canSwapWindows(a, b, onWorkspace: workspace, screen: screen) else { return nil }
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         guard t.contains(a) && t.contains(b) else { return nil }
