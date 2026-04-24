@@ -467,29 +467,29 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.on.rectangle.angled",
-            title: "Multi-Window App Fix",
-            description: "Swap, move, and close now reliably target the window you're actually pointing at — even with two Finder, Teams, or Chrome windows on the same screen."
-        ),
-        WhatsNewFeature(
-            icon: "scope",
-            title: "No More Lost Focus",
-            description: "The blue focus border no longer disappears when you're between windows or on a workspace with only floating apps. Keyboard nav always has a target."
-        ),
-        WhatsNewFeature(
-            icon: "rectangle.3.group",
-            title: "Workspace Drift Fixes",
-            description: "New windows land on the right workspace based on where they actually opened — no more random jumps to workspace 7 or 8. Cross-screen drags reassign automatically."
-        ),
-        WhatsNewFeature(
-            icon: "speedometer",
-            title: "No More Slowdown Over Time",
-            description: "Plugged state leaks for terminated apps and hidden windows that built up over hours of use. Mouse tracking is throttled and short-circuits when the cursor stays in one window."
+            icon: "rectangle.split.2x2",
+            title: "Smarter Layout Rejection",
+            description: "HyprMac now rejects moves and swaps that would force stubborn apps into slots smaller than they can actually use."
         ),
         WhatsNewFeature(
             icon: "rectangle.compress.vertical",
-            title: "No More Bloated Windows",
-            description: "Fixed a race in the tiling readback where slow apps (Electron, Spotify, Teams) would falsely trigger a min-size conflict and stay oversized forever."
+            title: "No More Crammed Windows",
+            description: "Fixed a tiling race that could make one large window grow to dominate the screen while sibling windows were squeezed down."
+        ),
+        WhatsNewFeature(
+            icon: "display.2",
+            title: "Better Cross-Monitor Moves",
+            description: "Moving windows between monitors now catches resize limits before the move, avoiding visible overlap and bounce-back."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.portrait",
+            title: "Vertical Monitor Fill Fix",
+            description: "Windows moved onto portrait displays now retry undersized readbacks so they fill the full tiled area immediately."
+        ),
+        WhatsNewFeature(
+            icon: "circle.lefthalf.filled",
+            title: "Dim Inactive Windows",
+            description: "A new dimming overlay makes the focused window easier to track without changing normal window z-order."
         ),
     ]
 }
