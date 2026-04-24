@@ -48,6 +48,13 @@ class UserConfig: ObservableObject {
     @Published var floatingBorderColorHex: String? {
         didSet { if !isReloading { save() } }
     }
+    @Published var dimInactiveWindows: Bool {
+        didSet { if !isReloading { save() } }
+    }
+    // 0..1 alpha of the dimming overlay; 0.2 is subtle, 0.4 is strong
+    @Published var dimIntensity: Double {
+        didSet { if !isReloading { save() } }
+    }
 
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
@@ -110,6 +117,8 @@ class UserConfig: ObservableObject {
             self.showFocusBorder = saved.showFocusBorder ?? true
             self.focusBorderColorHex = saved.focusBorderColorHex
             self.floatingBorderColorHex = saved.floatingBorderColorHex
+            self.dimInactiveWindows = saved.dimInactiveWindows ?? false
+            self.dimIntensity = saved.dimIntensity ?? 0.2
 
             // monitor settings: prefer local file, migrate from main config if needed
             if let mc = monitorConfig {
@@ -133,6 +142,8 @@ class UserConfig: ObservableObject {
             self.showFocusBorder = true
             self.focusBorderColorHex = nil
             self.floatingBorderColorHex = nil
+            self.dimInactiveWindows = false
+            self.dimIntensity = 0.2
 
             if let mc = monitorConfig {
                 self.maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
@@ -203,7 +214,9 @@ class UserConfig: ObservableObject {
                                 disabledMonitors: nil,
                                 showFocusBorder: showFocusBorder,
                                 focusBorderColorHex: focusBorderColorHex,
-                                floatingBorderColorHex: floatingBorderColorHex)
+                                floatingBorderColorHex: floatingBorderColorHex,
+                                dimInactiveWindows: dimInactiveWindows,
+                                dimIntensity: dimIntensity)
         if let data = try? JSONEncoder().encode(saved) {
             try? data.write(to: localConfigURL)
         }
@@ -232,6 +245,8 @@ class UserConfig: ObservableObject {
         showFocusBorder = true
         focusBorderColorHex = nil
         floatingBorderColorHex = nil
+        dimInactiveWindows = false
+        dimIntensity = 0.2
     }
 
     // resolve the border color — custom hex or system accent
@@ -368,6 +383,8 @@ class UserConfig: ObservableObject {
         showFocusBorder = saved.showFocusBorder ?? true
         focusBorderColorHex = saved.focusBorderColorHex
         floatingBorderColorHex = saved.floatingBorderColorHex
+        dimInactiveWindows = saved.dimInactiveWindows ?? false
+        dimIntensity = saved.dimIntensity ?? 0.2
 
         // monitor settings come from local file, not the synced config
         if let monitorData = try? Data(contentsOf: monitorConfigURL),
@@ -402,6 +419,8 @@ private struct SavedConfig: Codable {
     let showFocusBorder: Bool?
     let focusBorderColorHex: String?
     let floatingBorderColorHex: String?
+    let dimInactiveWindows: Bool?
+    let dimIntensity: Double?
 }
 
 extension NSColor {

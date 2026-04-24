@@ -1,0 +1,1310 @@
+diff --git a/HyprMac.xcodeproj/project.pbxproj b/HyprMac.xcodeproj/project.pbxproj
+index 84a0763..286448e 100644
+--- a/HyprMac.xcodeproj/project.pbxproj
++++ b/HyprMac.xcodeproj/project.pbxproj
+@@ -11,6 +11,7 @@
+ 		0D4C6B4D33142A677A590C35 /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593D96A7340421A4588DE5D5 /* DisplayManager.swift */; };
+ 		188EAF405D36CBFCDAB54014 /* Keybind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E656D3CA021B130775CC3 /* Keybind.swift */; };
+ 		1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */; };
++		249B0AE228874626C66745EF /* DimmingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84FD66866CE44F180CAA03C7 /* DimmingOverlay.swift */; };
+ 		296757D9248494D15BF7EB67 /* CursorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB92BD985DAC4292DE1C57F /* CursorManager.swift */; };
+ 		29E2FA4EAB3E1C5BD02A9F1E /* WindowAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B114061648788BA337754F2 /* WindowAnimator.swift */; };
+ 		29EF01F22534CC2B51FE0390 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EA610EADBFADA21DC625C3 /* AppDelegate.swift */; };
+@@ -64,6 +65,7 @@
+ 		63E30549B7EABECD4FCDBC0F /* BundleIDUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleIDUtils.swift; sourceTree = "<group>"; };
+ 		6E4E656D3CA021B130775CC3 /* Keybind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keybind.swift; sourceTree = "<group>"; };
+ 		772FFAF897AAC136F605737C /* TilingSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingSettingsView.swift; sourceTree = "<group>"; };
++		84FD66866CE44F180CAA03C7 /* DimmingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimmingOverlay.swift; sourceTree = "<group>"; };
+ 		8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManager.swift; sourceTree = "<group>"; };
+ 		8B20DF87F29CD5B1164F1E80 /* Action.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Action.swift; sourceTree = "<group>"; };
+ 		8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
+@@ -150,6 +152,7 @@
+ 				8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */,
+ 				A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */,
+ 				1BB92BD985DAC4292DE1C57F /* CursorManager.swift */,
++				84FD66866CE44F180CAA03C7 /* DimmingOverlay.swift */,
+ 				593D96A7340421A4588DE5D5 /* DisplayManager.swift */,
+ 				02E56F3B2C9834C78368323D /* DragManager.swift */,
+ 				984C8889680F5B0CDD449061 /* FloatingWindowController.swift */,
+@@ -320,6 +323,7 @@
+ 				F2B3AC04608B7F92C811A44A /* BSPTree.swift in Sources */,
+ 				F2EFDD2E3E1E512D63BCCE74 /* BundleIDUtils.swift in Sources */,
+ 				296757D9248494D15BF7EB67 /* CursorManager.swift in Sources */,
++				249B0AE228874626C66745EF /* DimmingOverlay.swift in Sources */,
+ 				0D4C6B4D33142A677A590C35 /* DisplayManager.swift in Sources */,
+ 				0B9D198B68374BB6E0D0FA1F /* DragManager.swift in Sources */,
+ 				531ACE79FC3FD6C76D047281 /* FloatingWindowController.swift in Sources */,
+diff --git a/HyprMac/Core/DragManager.swift b/HyprMac/Core/DragManager.swift
+index 31988be..f0cc257 100644
+--- a/HyprMac/Core/DragManager.swift
++++ b/HyprMac/Core/DragManager.swift
+@@ -52,6 +52,15 @@ class DragManager {
+             let heightDelta = abs(current.height - expected.height)
+ 
+             if widthDelta > 20 || heightDelta > 20 {
++                // skip: if the current size matches the observed min-size, the
++                // delta is the app refusing to shrink below its min — not a
++                // manual drag-resize gesture. treating it as a resize locks
++                // the oversized split ratio via applyResizeDelta (userSetRatio),
++                // which makes the cram state permanent.
++                if let obs = w.observedMinSize,
++                   abs(current.width - obs.width) < 10 && abs(current.height - obs.height) < 10 {
++                    continue
++                }
+                 guard let screen = screenAt(CGPoint(x: expected.midX, y: expected.midY)) else { continue }
+                 let workspace = workspaceForScreen(screen)
+                 return .resize(ResizeResult(window: w, newFrame: current, screen: screen, workspace: workspace))
+diff --git a/HyprMac/Core/FocusBorder.swift b/HyprMac/Core/FocusBorder.swift
+index 3921440..7e16bd6 100644
+--- a/HyprMac/Core/FocusBorder.swift
++++ b/HyprMac/Core/FocusBorder.swift
+@@ -14,7 +14,9 @@ class FocusBorder {
+ 
+     private enum State { case active, settled, hidden }
+ 
+-    private let margin: CGFloat = 6
++    // margin is sized to give the outer glow room to render — shadowPath
++    // draws outside the glowView and would be clipped at the panel edge.
++    private let margin: CGFloat = 18
+     // match OS window corner radius. Tahoe (macOS 26) uses noticeably rounder
+     // corners than Sequoia (15); using Sequoia's radius on Tahoe leaves visible
+     // gaps at the corners where the border arcs tighter than the window.
+@@ -28,66 +30,124 @@ class FocusBorder {
+ 
+     // resolved from config — call updateColor() when config changes
+     var accentCGColor: CGColor = NSColor.controlAccentColor.cgColor
++    // 0..1 scalar for the focus-change flash amplitude. 0 = no pulse.
++    var flashIntensity: CGFloat = 0.5
++
++    // coalesce rapid-fire show() for the same window (poll, FFM, cursor-warp
++    // handlers all fire updateFocusBorder after a focus change). without this
++    // the second show replaces the running animation before it peaks, and
++    // the pulse looks subtle on keyboard traversal while clicking — which
++    // triggers fewer follow-up updates — shows the full peak.
++    private var lastFlashWindowID: CGWindowID = 0
++    private var lastFlashTime: CFAbsoluteTime = 0
+ 
+     // MARK: - public API
+ 
+     func show(around rect: CGRect, windowID: CGWindowID) {
+         settleWork?.cancel()
+ 
+-        let nsRect = panelRect(for: rect)
++        let requested = panelRect(for: rect)
+ 
+         let p: NSPanel
+         if let existing = panel {
+             p = existing
+-            p.setFrame(nsRect, display: false)
+-            positionGlowView(in: p)
++            p.setFrame(requested, display: false)
+         } else {
+-            p = makePanel(frame: nsRect)
++            p = makePanel(frame: requested)
+             panel = p
+         }
++        positionGlowView(requested: requested, actual: p.frame)
+ 
+-        // active state: tint fill + border
+-        if let layer = glowView?.layer {
+-            CATransaction.begin()
+-            CATransaction.setDisableActions(true)
+-            layer.borderColor = accentCGColor
+-            layer.borderWidth = 2
+-            layer.cornerRadius = borderRadius
+-            layer.backgroundColor = accentCGColor.copy(alpha: 0.08)
+-            CATransaction.commit()
+-        }
++        applyStyle()
+ 
+         p.alphaValue = 1.0
+         orderAboveWindow(p, windowID: windowID)
+         state = .active
+         trackedWindowID = windowID
+ 
+-        // schedule transition to settled (outline only)
++        flashGlow()
++
+         let work = DispatchWorkItem { [weak self] in self?.settle() }
+         settleWork = work
+         DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay, execute: work)
+     }
+ 
++    // paint persistent look (thin accent border, no permanent shadow).
++    // called every show() since accent color may have changed via config.
++    private func applyStyle() {
++        guard let layer = glowView?.layer else { return }
++        CATransaction.begin()
++        CATransaction.setDisableActions(true)
++        layer.cornerRadius = borderRadius
++        layer.backgroundColor = CGColor.clear
++        layer.shadowOffset = .zero
++        layer.borderColor = accentCGColor
++        layer.borderWidth = 1.5
++        layer.shadowColor = accentCGColor
++        layer.shadowOpacity = 0
++        layer.shadowRadius = 0
++        CATransaction.commit()
++    }
++
++    // brief accent-colored glow pulse on focus change.
++    private func flashGlow() {
++        guard let layer = glowView?.layer else { return }
++        let path = CGPath(roundedRect: layer.bounds,
++                          cornerWidth: borderRadius, cornerHeight: borderRadius,
++                          transform: nil)
++        CATransaction.begin()
++        CATransaction.setDisableActions(true)
++        layer.shadowPath = path
++        CATransaction.commit()
++
++        // no pulse when intensity is zeroed
++        guard flashIntensity > 0.01 else { return }
++
++        // skip restart if we just flashed for this same window — let the
++        // running animation play to completion instead of getting truncated.
++        let now = CFAbsoluteTimeGetCurrent()
++        let currentID = trackedWindowID ?? 0
++        if currentID == lastFlashWindowID && (now - lastFlashTime) < 0.4 { return }
++        lastFlashWindowID = currentID
++        lastFlashTime = now
++
++        // smoother fade-in: ease-in on the up-ramp, ease-out on the way
++        // down. keyTime 0.4 puts the peak at ~40% of the duration so the
++        // rise is gradual rather than snapping to peak instantly.
++        let peakOpacity: CGFloat = 0.7 * flashIntensity
++        let opacity = CAKeyframeAnimation(keyPath: "shadowOpacity")
++        opacity.values = [0, peakOpacity, 0]
++        opacity.keyTimes = [0, 0.4, 1.0]
++        opacity.duration = 0.34
++        opacity.timingFunctions = [
++            CAMediaTimingFunction(name: .easeIn),
++            CAMediaTimingFunction(name: .easeOut)
++        ]
++        opacity.calculationMode = .linear
++        layer.add(opacity, forKey: "glowFade")
++
++        let maxRadius: CGFloat = 6 + 8 * flashIntensity
++        let radius = CAKeyframeAnimation(keyPath: "shadowRadius")
++        radius.values = [6, maxRadius]
++        radius.keyTimes = [0, 1.0]
++        radius.duration = 0.34
++        radius.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
++        layer.add(radius, forKey: "glowRadius")
++    }
++
+     func updatePosition(_ rect: CGRect) {
+         guard let p = panel, state != .hidden, let wid = trackedWindowID else { return }
+-        let nsRect = panelRect(for: rect)
+-        p.setFrame(nsRect, display: false)
+-        positionGlowView(in: p)
++        let requested = panelRect(for: rect)
++        p.setFrame(requested, display: false)
++        positionGlowView(requested: requested, actual: p.frame)
+         // re-order after reposition to maintain z-order relative to focused window
+         orderAboveWindow(p, windowID: wid)
+     }
+ 
+     func settle() {
+-        guard state == .active, let layer = glowView?.layer else { return }
++        guard state == .active else { return }
+         state = .settled
+-
+-        // animate to outline-only
+-        CATransaction.begin()
+-        CATransaction.setAnimationDuration(0.3)
+-        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
+-        layer.backgroundColor = CGColor.clear
+-        layer.borderWidth = 1.5
+-        CATransaction.commit()
++        // border already at settled width in show(); nothing to animate.
+     }
+ 
+     func hide() {
+@@ -109,16 +169,16 @@ class FocusBorder {
+         settleWork?.cancel()
+         shakeTimer?.cancel()
+ 
+-        let nsRect = panelRect(for: rect)
++        let requested = panelRect(for: rect)
+         let p: NSPanel
+         if let existing = panel {
+             p = existing
+-            p.setFrame(nsRect, display: false)
+-            positionGlowView(in: p)
++            p.setFrame(requested, display: false)
+         } else {
+-            p = makePanel(frame: nsRect)
++            p = makePanel(frame: requested)
+             panel = p
+         }
++        positionGlowView(requested: requested, actual: p.frame)
+ 
+         let red = NSColor.systemRed.cgColor
+         if let layer = glowView?.layer {
+@@ -137,7 +197,7 @@ class FocusBorder {
+         trackedWindowID = windowID
+ 
+         // shake: oscillate both the overlay panel and the actual window
+-        let panelBaseX = nsRect.origin.x
++        let panelBaseX = requested.origin.x
+         let windowBaseX = rect.origin.x
+         let offsets: [CGFloat] = [10, -10, 7, -7, 3, -3, 0]
+         let stepDuration: TimeInterval = 0.04
+@@ -192,20 +252,29 @@ class FocusBorder {
+ 
+         let glow = NSView()
+         glow.wantsLayer = true
+-        glow.layer?.masksToBounds = true
++        // masksToBounds=false lets the layer's shadow render outside its
++        // bounds (for flashGlow). cornerRadius still clips the border trace
++        // and backgroundColor fill (used by flashError) correctly.
++        glow.layer?.masksToBounds = false
+         p.contentView?.addSubview(glow)
+         glowView = glow
+-        positionGlowView(in: p)
+-
++        // glowView gets positioned by the caller via positionGlowView(requested:actual:)
+         return p
+     }
+ 
+-    private func positionGlowView(in panel: NSPanel) {
+-        guard let content = panel.contentView, let glow = glowView else { return }
+-        let bounds = content.bounds
+-        glow.frame = NSRect(x: margin, y: margin,
+-                            width: bounds.width - margin * 2,
+-                            height: bounds.height - margin * 2)
++    // position glowView to trace the actual window — not just inset by margin
++    // from the panel. macOS clamps panel frames that would extend above the
++    // menu bar (or past the screen edge), shifting the panel origin; without
++    // compensating, the border drifts off the window. map the window's NS
++    // rect (requested-inset-by-margin) into the panel's actual local coords.
++    private func positionGlowView(requested: NSRect, actual: NSRect) {
++        guard let glow = glowView else { return }
++        let windowNS = requested.insetBy(dx: margin, dy: margin)
++        glow.frame = NSRect(
++            x: windowNS.origin.x - actual.origin.x,
++            y: windowNS.origin.y - actual.origin.y,
++            width: windowNS.width,
++            height: windowNS.height)
+     }
+ 
+     // MARK: - coordinate conversion
+diff --git a/HyprMac/Core/WindowManager.swift b/HyprMac/Core/WindowManager.swift
+index 9e32d5b..9e4c476 100644
+--- a/HyprMac/Core/WindowManager.swift
++++ b/HyprMac/Core/WindowManager.swift
+@@ -11,6 +11,7 @@ class WindowManager {
+     let config: UserConfig
+     let animator = WindowAnimator()
+     let focusBorder = FocusBorder()
++    let dimmingOverlay = DimmingOverlay()
+     let mouseTracker = MouseTrackingManager()
+     let dragManager = DragManager()
+     let floatingController = FloatingWindowController()
+@@ -94,7 +95,10 @@ class WindowManager {
+         mouseTracker.tiledPositions = { [weak self] in self?.tiledPositions ?? [:] }
+         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
+         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+-        mouseTracker.onHideFocusBorder = { [weak self] in self?.focusBorder.hide() }
++        mouseTracker.onHideFocusBorder = { [weak self] in
++            self?.focusBorder.hide()
++            self?.dimmingOverlay.hideAll()
++        }
+ 
+         // wire up floating controller
+         floatingController.isWindowVisible = { [weak self] wid in self?.workspaceManager.isWindowVisible(wid) ?? false }
+@@ -214,6 +218,26 @@ class WindowManager {
+                 self.animatedRetile()
+             }.store(in: &configObservers)
+ 
++        config.$dimInactiveWindows
++            .dropFirst()
++            .removeDuplicates()
++            .sink { [weak self] enabled in
++                guard let self = self else { return }
++                if !enabled {
++                    self.dimmingOverlay.enabled = false
++                    self.dimmingOverlay.hideAll()
++                } else {
++                    self.refreshDimming()
++                }
++            }.store(in: &configObservers)
++
++        config.$dimIntensity
++            .dropFirst()
++            .removeDuplicates()
++            .sink { [weak self] _ in
++                self?.refreshDimming()
++            }.store(in: &configObservers)
++
+         config.$maxSplitsPerMonitor
+             .dropFirst()
+             .removeDuplicates()
+@@ -248,7 +272,7 @@ class WindowManager {
+         NSWorkspace.shared.notificationCenter.removeObserver(self)
+         NotificationCenter.default.removeObserver(self)
+         DistributedNotificationCenter.default().removeObserver(self)
+-        focusBorder.hide()
++        focusBorder.hide(); dimmingOverlay.hideAll()
+         hyprLog("stopped")
+     }
+ 
+@@ -317,7 +341,7 @@ class WindowManager {
+             // only hide for floating windows — tiled windows can't be free-dragged
+             guard self.floatingWindowIDs.contains(tid) else { return }
+             self.preDragFocusedID = tid
+-            self.focusBorder.hide()
++            self.focusBorder.hide(); dimmingOverlay.hideAll()
+         }
+         mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+             self?.mouseButtonDown = false
+@@ -347,20 +371,36 @@ class WindowManager {
+ 
+     private func focusForFFM(_ window: HyprWindow) {
+         suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+-        window.focusWithoutRaise()
++        let prev = cachedWindows[mouseTracker.lastMouseFocusedID]
++        window.focusWithoutRaise(previousFocused: prev)
+         updateFocusBorder(for: window)
+     }
+ 
+     private func updateFocusBorder(for window: HyprWindow) {
+         guard config.showFocusBorder, let frame = window.frame else {
+             focusBorder.hide()
++            dimmingOverlay.hideAll()
+             return
+         }
+         let isFloating = floatingWindowIDs.contains(window.windowID)
++        focusBorder.flashIntensity = CGFloat(config.focusFlashIntensity)
+         focusBorder.accentCGColor = isFloating
+             ? config.resolvedFloatingBorderColor.cgColor
+             : config.resolvedFocusBorderColor.cgColor
+         focusBorder.show(around: frame, windowID: window.windowID)
++
++        refreshDimming(focusedID: window.windowID)
++    }
++
++    // recompute the dim mask from current tiled positions. called on focus
++    // change and after any tile update so the shape stays accurate when
++    // windows move, resize, or a workspace switch changes what's visible.
++    private func refreshDimming(focusedID: CGWindowID? = nil) {
++        dimmingOverlay.enabled = config.dimInactiveWindows
++        dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
++        dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
++        let fid = focusedID ?? focusBorder.trackedWindowID ?? mouseTracker.lastMouseFocusedID
++        dimmingOverlay.update(focusedID: fid, tiledRects: tiledPositions, screens: displayManager.screens)
+     }
+ 
+     // recapture focus on bare hypr keydown — ensures border + keyboard focus
+@@ -387,11 +427,13 @@ class WindowManager {
+         let cgY = displayManager.primaryScreenHeight - mouseNS.y
+         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+ 
++        let prev = accessibility.getFocusedWindow()
++
+         // tier 1: tiled window under cursor
+         for (wid, rect) in tiledPositions {
+             if wsWindows.contains(wid), rect.contains(cgPoint),
+                let w = cachedWindows[wid] {
+-                w.focusWithoutRaise()
++                w.focusWithoutRaise(previousFocused: prev)
+                 mouseTracker.lastMouseFocusedID = wid
+                 updateFocusBorder(for: w)
+                 return
+@@ -401,7 +443,7 @@ class WindowManager {
+         // tier 2: any tiled window on this workspace
+         for (wid, _) in tiledPositions {
+             if wsWindows.contains(wid), let w = cachedWindows[wid] {
+-                w.focusWithoutRaise()
++                w.focusWithoutRaise(previousFocused: prev)
+                 mouseTracker.lastMouseFocusedID = wid
+                 updateFocusBorder(for: w)
+                 return
+@@ -582,7 +624,7 @@ class WindowManager {
+         let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
+ 
+         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
+-            target.focusWithoutRaise()
++            target.focusWithoutRaise(previousFocused: focused)
+             cursorManager.warpToCenter(of: target)
+             mouseTracker.lastMouseFocusedID = target.windowID
+             updateFocusBorder(for: target)
+@@ -614,15 +656,29 @@ class WindowManager {
+             }
+ 
+             animator.animate(transitions, duration: config.animationDuration) { [weak self] in
+-                // snap final state with two-pass min-size resolution
+-                self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+-                self?.cursorManager.warpToCenter(of: focused)
+-                self?.updatePositionCache()
++                guard let self = self else { return }
++                self.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
++                self.cursorManager.warpToCenter(of: focused)
++                self.updatePositionCache()
++                self.revertSwapIfOverflow(focused, target, onWorkspace: workspace, screen: screen)
+             }
+         } else {
+             tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
+             cursorManager.warpToCenter(of: focused)
+             updatePositionCache()
++            revertSwapIfOverflow(focused, target, onWorkspace: workspace, screen: screen)
++        }
++    }
++
++    private func revertSwapIfOverflow(_ a: HyprWindow, _ b: HyprWindow,
++                                       onWorkspace workspace: Int, screen: NSScreen) {
++        guard tilingEngine.treeHasOverflow(onWorkspace: workspace, screen: screen) else { return }
++        hyprLog("reverting swap — observed overflow on workspace \(workspace)")
++        tilingEngine.swapWindows(a, b, onWorkspace: workspace, screen: screen)
++        updatePositionCache()
++        NSSound.beep()
++        if let frame = a.frame {
++            focusBorder.flashError(around: frame, windowID: a.windowID, window: a)
+         }
+     }
+ 
+@@ -690,7 +746,7 @@ class WindowManager {
+             } else {
+                 let rect = displayManager.cgRect(for: result.screen)
+                 CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
+-                focusBorder.hide()
++                focusBorder.hide(); dimmingOverlay.hideAll()
+             }
+             return
+         }
+@@ -723,7 +779,7 @@ class WindowManager {
+         } else {
+             let rect = displayManager.cgRect(for: result.screen)
+             CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
+-            focusBorder.hide()
++            focusBorder.hide(); dimmingOverlay.hideAll()
+         }
+ 
+         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
+@@ -754,29 +810,16 @@ class WindowManager {
+                 ?? workspaceManager.homeScreenForWorkspace(number)
+                 ?? screen
+ 
+-            if let visibleScreen = workspaceManager.screenForWorkspace(number) {
+-                if !tilingEngine.canFitWindow(onWorkspace: number, screen: visibleScreen) {
+-                    hyprLog("workspace \(number) full on \(visibleScreen.localizedName) — rejected move")
+-                    NSSound.beep()
+-                    if let frame = focused.frame {
+-                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
+-                    }
+-                    return
+-                }
+-            } else {
+-                // exclude hidden windows (minimized/closed but app still running) from count
+-                let wids = workspaceManager.windowIDs(onWorkspace: number).subtracting(hiddenWindowIDs)
+-                let tiledCount = wids.filter { !floatingWindowIDs.contains($0) }.count
+-                let maxDepth = tilingEngine.maxDepth(for: targetScreen)
+-                let maxWindows = 1 << maxDepth // 2^maxDepth — smart insert backtracks to fill all slots
+-                if tiledCount >= maxWindows {
+-                    hyprLog("workspace \(number) full (\(tiledCount) tiled, max \(maxWindows)) — rejected move")
+-                    NSSound.beep()
+-                    if let frame = focused.frame {
+-                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
+-                    }
+-                    return
++            // unified check: walks every leaf looking for a slot that fits
++            // both the existing occupant and the incoming window given
++            // max-depth + min-size constraints. reject only if NO slot works.
++            if !tilingEngine.canFitWindow(focused, onWorkspace: number, screen: targetScreen) {
++                hyprLog("workspace \(number) can't fit '\(focused.title ?? "?")' on \(targetScreen.localizedName) — rejected move")
++                NSSound.beep()
++                if let frame = focused.frame {
++                    focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
+                 }
++                return
+             }
+         }
+ 
+@@ -787,23 +830,61 @@ class WindowManager {
+             hyprLog("unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
+         }
+ 
+-        // animate remaining windows filling the gap
++        let targetScreen = workspaceManager.screenForWorkspace(number)
++            ?? workspaceManager.homeScreenForWorkspace(number)
++            ?? screen
++
+         animatedRetile(prepare: { [self] in
+-            // remove from current workspace's tiling tree
+             if !isFloating, let cw = currentWorkspace {
+                 tilingEngine.removeWindow(focused, fromWorkspace: cw)
+             }
+-
+-            // reassign globally
+             workspaceManager.moveWindow(focused.windowID, toWorkspace: number)
+-
+-            // hide the window — target workspace may not be visible
+             if isFloating && !onDisabledMonitor {
+                 workspaceManager.saveFloatingFrame(focused)
+             }
+             workspaceManager.hideInCorner(focused, on: screen)
+-        }) {
++        }) { [weak self] in
++            guard let self = self else { return }
+             NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
++            // post-op overflow check: the pre-check catches rejections when
++            // observedMinSize is already populated, but a window without prior
++            // observations can still land in a too-small slot. if applyLayout
++            // observed a refusal that adjustForMinSizes couldn't resolve,
++            // revert the move, flash error, and keep the observation so the
++            // next attempt's pre-check rejects instantly.
++            guard willTile else { return }
++            if self.tilingEngine.treeHasOverflow(onWorkspace: number, screen: targetScreen) {
++                self.revertMoveToWorkspace(window: focused,
++                                           fromTargetWorkspace: number,
++                                           toSourceWorkspace: currentWorkspace,
++                                           wasFloating: isFloating,
++                                           sourceScreen: screen)
++            }
++        }
++    }
++
++    private func revertMoveToWorkspace(window: HyprWindow,
++                                        fromTargetWorkspace targetWs: Int,
++                                        toSourceWorkspace sourceWs: Int?,
++                                        wasFloating: Bool,
++                                        sourceScreen: NSScreen) {
++        hyprLog("reverting move — observed overflow on workspace \(targetWs)")
++        tilingEngine.removeWindow(window, fromWorkspace: targetWs)
++        if let sws = sourceWs {
++            workspaceManager.moveWindow(window.windowID, toWorkspace: sws)
++            if !wasFloating {
++                tilingEngine.addWindow(window, toWorkspace: sws, on: sourceScreen)
++            }
++        }
++        if wasFloating {
++            floatingWindowIDs.insert(window.windowID)
++            window.isFloating = true
++        }
++        tileAllVisibleSpaces()
++        updatePositionCache()
++        NSSound.beep()
++        if let frame = window.frame {
++            focusBorder.flashError(around: frame, windowID: window.windowID, window: window)
+         }
+     }
+ 
+@@ -1016,7 +1097,7 @@ class WindowManager {
+             })
+         } else {
+             // tiled → floating: animate remaining windows filling the gap
+-            focusBorder.hide()
++            focusBorder.hide(); dimmingOverlay.hideAll()
+             animatedRetile(prepare: { [self] in
+                 floatingWindowIDs.insert(focused.windowID)
+                 focused.isFloating = true
+@@ -1424,7 +1505,7 @@ class WindowManager {
+             mouseTracker.lastMouseFocusedID = 0
+         }
+         if focusBorder.trackedWindowID == id {
+-            focusBorder.hide()
++            focusBorder.hide(); dimmingOverlay.hideAll()
+         }
+     }
+ 
+@@ -1448,17 +1529,19 @@ class WindowManager {
+         var reassigned = false
+         for w in allWindows {
+             guard let recordedWs = workspaceManager.workspaceFor(w.windowID) else { continue }
+-            // only check windows whose recorded workspace is currently on screen
+             guard visibleWorkspaces.contains(recordedWs) else { continue }
+-            // floating windows can be anywhere by design — skip
+             guard !floatingWindowIDs.contains(w.windowID) else { continue }
+-            guard let physicalScreen = displayManager.screen(for: w) else { continue }
+-            // skip if the window sits on a disabled monitor — handled elsewhere
++            guard let frame = w.frame else { continue }
++
++            // use majority-area overlap, not center point. a crammed window
++            // whose app refused to shrink may extend well past its assigned
++            // monitor's bounds — its center can shift onto the neighbor
++            // monitor even though the window legitimately belongs where we
++            // put it. reassigning on center would bounce the user's move.
++            guard let physicalScreen = majorityOverlapScreen(for: frame) else { continue }
+             guard !workspaceManager.isMonitorDisabled(physicalScreen) else { continue }
+             let physicalWs = workspaceManager.workspaceForScreen(physicalScreen)
+             guard physicalWs != recordedWs else { continue }
+-            // also ignore windows whose recorded screen and physical screen are
+-            // the same — guards against transient frame reads during retile
+             if let recordedScreen = workspaceManager.screenForWorkspace(recordedWs),
+                recordedScreen == physicalScreen { continue }
+             workspaceManager.moveWindow(w.windowID, toWorkspace: physicalWs)
+@@ -1468,6 +1551,26 @@ class WindowManager {
+         return reassigned
+     }
+ 
++    // pick the screen where most of the window's area sits. top-left CG coords.
++    private func majorityOverlapScreen(for cgFrame: CGRect) -> NSScreen? {
++        let primaryH = displayManager.primaryScreenHeight
++        // convert CG (top-left) to NS (bottom-left) for NSScreen intersection
++        let nsFrame = NSRect(x: cgFrame.origin.x,
++                             y: primaryH - cgFrame.origin.y - cgFrame.height,
++                             width: cgFrame.width, height: cgFrame.height)
++        var best: NSScreen?
++        var bestArea: CGFloat = 0
++        for s in displayManager.screens {
++            let inter = nsFrame.intersection(s.frame)
++            let area = inter.width * inter.height
++            if area > bestArea {
++                bestArea = area
++                best = s
++            }
++        }
++        return best
++    }
++
+     // if the focus border is hidden but the cursor's screen's workspace has any
+     // visible window, focus one. prevents getting stuck with no focus target —
+     // the user shouldn't have to click a window to get keyboard focus back.
+@@ -1494,10 +1597,11 @@ class WindowManager {
+             updateFocusBorder(for: focused)
+             return
+         }
++        let prev = accessibility.getFocusedWindow()
+         // any tiled window on this workspace
+         for (wid, _) in tiledPositions where wsWindows.contains(wid) {
+             if let w = cachedWindows[wid] {
+-                w.focusWithoutRaise()
++                w.focusWithoutRaise(previousFocused: prev)
+                 mouseTracker.lastMouseFocusedID = wid
+                 updateFocusBorder(for: w)
+                 return
+@@ -1506,7 +1610,7 @@ class WindowManager {
+         // fall back to any visible window on this workspace (floating, etc.)
+         for wid in wsWindows {
+             if let w = cachedWindows[wid] {
+-                w.focusWithoutRaise()
++                w.focusWithoutRaise(previousFocused: prev)
+                 mouseTracker.lastMouseFocusedID = wid
+                 updateFocusBorder(for: w)
+                 return
+@@ -1562,6 +1666,9 @@ class WindowManager {
+         if let tid = focusBorder.trackedWindowID, let w = cachedWindows[tid], let frame = w.frame {
+             focusBorder.updatePosition(frame)
+         }
++
++        // keep dim mask in sync with current tile positions
++        refreshDimming()
+     }
+ 
+     private func updateMenuBarState() {
+diff --git a/HyprMac/Models/HyprWindow.swift b/HyprMac/Models/HyprWindow.swift
+index e05cfca..c01d88a 100644
+--- a/HyprMac/Models/HyprWindow.swift
++++ b/HyprMac/Models/HyprWindow.swift
+@@ -23,6 +23,11 @@ class HyprWindow: Equatable, Hashable {
+     // cached from getAllWindows() — avoids redundant AX reads in updatePositionCache.
+     // cleared on setFrame/setFrameWithReadback so stale values aren't used.
+     var cachedFrame: CGRect?
++    // observed lower bound on what the app will shrink to. set only when
++    // applyLayout witnessed a real refusal (actual >> target). nil means
++    // "min is unknown" — caller should assume zero, NOT cachedFrame, because
++    // cachedFrame is the latest full-size state for never-shrunk windows.
++    var observedMinSize: CGSize?
+ 
+     init(element: AXUIElement, windowID: CGWindowID, ownerPID: pid_t) {
+         self.element = element
+@@ -127,24 +132,76 @@ class HyprWindow: Equatable, Hashable {
+ 
+     // focus this window without changing z-order (yabai's focus_without_raise).
+     // uses _SLPSSetFrontProcessWithOptions to activate the process without
+-    // reordering windows, then SLPSPostEventRecordTo to synthesize keyboard
+-    // focus events. floating windows stay exactly where they are.
+-    func focusWithoutRaise() {
++    // reordering windows, then make_key_window to synthesize keyboard focus
++    // events. floating windows stay exactly where they are.
++    //
++    // previousFocused: the window that currently has focus (before this call).
++    // within a same-app switch, macOS won't automatically deactivate the old
++    // window chrome — we must post a deactivate event to the old wid and an
++    // activate event to the new wid. cross-app transitions repaint via the
++    // normal process-activation path.
++    func focusWithoutRaise(previousFocused: HyprWindow? = nil) {
+         var psn = ProcessSerialNumber()
+         guard GetProcessForPID(ownerPID, &psn) == noErr else { return }
+ 
++        // same-app window switch: manually post window deactivate/activate
++        // events. yabai's exact byte pattern (event kind 0x0d, subtype at 0x8a).
++        // yabai uses a 40ms usleep between the two events, but blocking the
++        // main thread on every keyboard-nav/FFM-hover makes hyprmac feel
++        // sluggish. modern macOS appears tolerant of skipping the delay.
++        if let prev = previousFocused,
++           prev.ownerPID == ownerPID,
++           prev.windowID != windowID {
++            var prevPSN = ProcessSerialNumber()
++            if GetProcessForPID(prev.ownerPID, &prevPSN) == noErr {
++                var deact = [UInt8](repeating: 0, count: 0xf8)
++                deact[0x04] = 0xF8
++                deact[0x08] = 0x0D
++                deact[0x8a] = 0x02
++                writeWindowID(prev.windowID, into: &deact, at: 0x3c)
++                SLPSPostEventRecordTo(&prevPSN, &deact[0])
++            }
++
++            var act = [UInt8](repeating: 0, count: 0xf8)
++            act[0x04] = 0xF8
++            act[0x08] = 0x0D
++            act[0x8a] = 0x01
++            writeWindowID(windowID, into: &act, at: 0x3c)
++            SLPSPostEventRecordTo(&psn, &act[0])
++        }
++
+         // activate process without reordering windows
+         _SLPSSetFrontProcessWithOptions(&psn, UInt32(windowID), kCPSUserGenerated)
+ 
+-        // synthesize keyboard focus events to make this the key window
+-        var bytes = [UInt8](repeating: 0, count: 0xf8)
+-        bytes[0x04] = 0xF8  // event type
+-        bytes[0x08] = 0x01  // key focus event
+-        bytes[0x8a] = 0x02  // window focus
+-        SLPSPostEventRecordTo(&psn, &bytes[0])
++        // make_key_window: tell the target app's event system this is the key
++        // window. two messages with subtype 0x01 then 0x02 at offset 0x08.
++        makeKeyWindow(psn: &psn)
+ 
+-        bytes[0x08] = 0x02  // second focus event
+-        SLPSPostEventRecordTo(&psn, &bytes[0])
++        // flip AX flags too — some apps key chrome off of AX, not only SkyLight
++        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
++        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
++    }
++
++    private func makeKeyWindow(psn: inout ProcessSerialNumber) {
++        var bytes1 = [UInt8](repeating: 0, count: 0xf8)
++        bytes1[0x04] = 0xF8
++        bytes1[0x08] = 0x01
++        bytes1[0x3a] = 0x10
++        writeWindowID(windowID, into: &bytes1, at: 0x3c)
++        for i in 0..<0x10 { bytes1[0x20 + i] = 0xFF }
++
++        var bytes2 = bytes1
++        bytes2[0x08] = 0x02
++
++        SLPSPostEventRecordTo(&psn, &bytes1[0])
++        SLPSPostEventRecordTo(&psn, &bytes2[0])
++    }
++
++    private func writeWindowID(_ wid: CGWindowID, into buf: inout [UInt8], at offset: Int) {
++        var v = UInt32(wid).littleEndian
++        withUnsafeBytes(of: &v) { src in
++            for i in 0..<4 { buf[offset + i] = src[i] }
++        }
+     }
+ 
+     static func == (lhs: HyprWindow, rhs: HyprWindow) -> Bool {
+diff --git a/HyprMac/Models/UserConfig.swift b/HyprMac/Models/UserConfig.swift
+index 30283e9..bd8d12e 100644
+--- a/HyprMac/Models/UserConfig.swift
++++ b/HyprMac/Models/UserConfig.swift
+@@ -48,6 +48,17 @@ class UserConfig: ObservableObject {
+     @Published var floatingBorderColorHex: String? {
+         didSet { if !isReloading { save() } }
+     }
++    @Published var dimInactiveWindows: Bool {
++        didSet { if !isReloading { save() } }
++    }
++    // 0..1 alpha of the dimming overlay; 0.2 is subtle, 0.4 is strong
++    @Published var dimIntensity: Double {
++        didSet { if !isReloading { save() } }
++    }
++    // 0..1 multiplier on the focus-change flash amplitude. 0 disables the pulse.
++    @Published var focusFlashIntensity: Double {
++        didSet { if !isReloading { save() } }
++    }
+ 
+     // iCloud sync state — stored in UserDefaults, not config.json
+     @Published var iCloudSyncEnabled: Bool {
+@@ -110,6 +121,9 @@ class UserConfig: ObservableObject {
+             self.showFocusBorder = saved.showFocusBorder ?? true
+             self.focusBorderColorHex = saved.focusBorderColorHex
+             self.floatingBorderColorHex = saved.floatingBorderColorHex
++            self.dimInactiveWindows = saved.dimInactiveWindows ?? false
++            self.dimIntensity = saved.dimIntensity ?? 0.2
++            self.focusFlashIntensity = saved.focusFlashIntensity ?? 0.5
+ 
+             // monitor settings: prefer local file, migrate from main config if needed
+             if let mc = monitorConfig {
+@@ -133,6 +147,9 @@ class UserConfig: ObservableObject {
+             self.showFocusBorder = true
+             self.focusBorderColorHex = nil
+             self.floatingBorderColorHex = nil
++            self.dimInactiveWindows = false
++            self.dimIntensity = 0.2
++            self.focusFlashIntensity = 0.5
+ 
+             if let mc = monitorConfig {
+                 self.maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
+@@ -203,7 +220,11 @@ class UserConfig: ObservableObject {
+                                 disabledMonitors: nil,
+                                 showFocusBorder: showFocusBorder,
+                                 focusBorderColorHex: focusBorderColorHex,
+-                                floatingBorderColorHex: floatingBorderColorHex)
++                                floatingBorderColorHex: floatingBorderColorHex,
++                                dimInactiveWindows: dimInactiveWindows,
++                                dimIntensity: dimIntensity,
++                                focusIndicatorStyle: nil,
++                                focusFlashIntensity: focusFlashIntensity)
+         if let data = try? JSONEncoder().encode(saved) {
+             try? data.write(to: localConfigURL)
+         }
+@@ -232,6 +253,9 @@ class UserConfig: ObservableObject {
+         showFocusBorder = true
+         focusBorderColorHex = nil
+         floatingBorderColorHex = nil
++        dimInactiveWindows = false
++        dimIntensity = 0.2
++        focusFlashIntensity = 0.5
+     }
+ 
+     // resolve the border color — custom hex or system accent
+@@ -368,6 +392,9 @@ class UserConfig: ObservableObject {
+         showFocusBorder = saved.showFocusBorder ?? true
+         focusBorderColorHex = saved.focusBorderColorHex
+         floatingBorderColorHex = saved.floatingBorderColorHex
++        dimInactiveWindows = saved.dimInactiveWindows ?? false
++        dimIntensity = saved.dimIntensity ?? 0.2
++        focusFlashIntensity = saved.focusFlashIntensity ?? 0.5
+ 
+         // monitor settings come from local file, not the synced config
+         if let monitorData = try? Data(contentsOf: monitorConfigURL),
+@@ -402,6 +429,10 @@ private struct SavedConfig: Codable {
+     let showFocusBorder: Bool?
+     let focusBorderColorHex: String?
+     let floatingBorderColorHex: String?
++    let dimInactiveWindows: Bool?
++    let dimIntensity: Double?
++    let focusIndicatorStyle: String?
++    let focusFlashIntensity: Double?
+ }
+ 
+ extension NSColor {
+diff --git a/HyprMac/Settings/TilingSettingsView.swift b/HyprMac/Settings/TilingSettingsView.swift
+index 60dc827..32a9ce0 100644
+--- a/HyprMac/Settings/TilingSettingsView.swift
++++ b/HyprMac/Settings/TilingSettingsView.swift
+@@ -39,9 +39,21 @@ struct TilingSettingsView: View {
+             }
+ 
+             Section("Focus Indicator") {
+-                Toggle("Show focus border", isOn: $config.showFocusBorder)
++                Toggle("Show focus indicator", isOn: $config.showFocusBorder)
+ 
+                 if config.showFocusBorder {
++                    HStack {
++                        Text("Flash intensity")
++                        Slider(value: $config.focusFlashIntensity, in: 0...1)
++                        Text(String(format: "%.0f%%", config.focusFlashIntensity * 100))
++                            .font(.caption.monospacedDigit())
++                            .foregroundColor(.secondary)
++                            .frame(width: 40, alignment: .trailing)
++                    }
++                    Text("Brightness of the pulse on focus change. 0% disables the pulse entirely — only the persistent indicator remains.")
++                        .font(.caption)
++                        .foregroundColor(.secondary)
++
+                     HStack {
+                         Text("Border Color")
+                         Spacer()
+@@ -70,10 +82,27 @@ struct TilingSettingsView: View {
+                         .labelsHidden()
+                         .frame(width: 36)
+                     }
+-                    Text("Tints the window during traversal; shows as an outline when settled. Floating windows use a separate color.")
++                    Text("A thin accent outline with a brief glow pulse on focus change.")
+                         .font(.caption)
+                         .foregroundColor(.secondary)
+                 }
++
++                Divider().padding(.vertical, 4)
++
++                Toggle("Dim inactive windows", isOn: $config.dimInactiveWindows)
++                if config.dimInactiveWindows {
++                    HStack {
++                        Text("Dim intensity")
++                        Slider(value: $config.dimIntensity, in: 0.05...0.6)
++                        Text(String(format: "%.0f%%", config.dimIntensity * 100))
++                            .font(.caption.monospacedDigit())
++                            .foregroundColor(.secondary)
++                            .frame(width: 40, alignment: .trailing)
++                    }
++                }
++                Text("Darkens everything except the focused window. Uses an overlay panel ordered below the focused window — no SIP required.")
++                    .font(.caption)
++                    .foregroundColor(.secondary)
+             }
+ 
+             Section("Per-Monitor Settings") {
+diff --git a/HyprMac/Tiling/BSPTree.swift b/HyprMac/Tiling/BSPTree.swift
+index 0734870..8333268 100644
+--- a/HyprMac/Tiling/BSPTree.swift
++++ b/HyprMac/Tiling/BSPTree.swift
+@@ -193,61 +193,72 @@ class BSPTree {
+ 
+     // adjust split ratios to accommodate windows that can't shrink to their allocated size.
+     // conflicts: [(window, actualSize)] where actualSize is what the app accepted after setFrame.
++    // width and height are handled independently: each axis walks up the tree
++    // to the first matching-direction ancestor and adjusts that ratio. without
++    // this, a width-constrained window under a vertical split (tall tree)
++    // stays at its min size visually overlapping siblings — because the
++    // immediate vertical parent can only shift heights, not widths.
+     func adjustForMinSizes(_ conflicts: [(window: HyprWindow, actual: CGSize)],
+                            in rect: CGRect, gap: CGFloat, padding: CGFloat) {
+         let padded = rect.insetBy(dx: padding, dy: padding)
+-        let halfGap = gap / 2
+ 
+         for (window, actualSize) in conflicts {
+-            guard let leaf = root.find(window), let parent = leaf.parent else { continue }
+-            // respect explicit user resizes — don't clobber a ratio the user set.
+-            // without this, a stale readback right after a manual resize permanently
+-            // snaps the window back to its pre-resize width.
+-            if parent.userSetRatio { continue }
+-            guard let parentRect = rectForNodeHelper(node: root, target: parent, rect: padded, gap: gap) else { continue }
++            guard let leaf = root.find(window) else { continue }
++            guard let leafRect = rectForNodeHelper(node: root, target: leaf, rect: padded, gap: gap) else { continue }
+ 
+-            let isLeft = parent.left === leaf
++            if actualSize.width > leafRect.width + 5 {
++                adjustAxisRatio(from: leaf, needed: actualSize.width,
++                                axis: .horizontal, rect: padded, gap: gap,
++                                windowTitle: window.title)
++            }
++            if actualSize.height > leafRect.height + 5 {
++                adjustAxisRatio(from: leaf, needed: actualSize.height,
++                                axis: .vertical, rect: padded, gap: gap,
++                                windowTitle: window.title)
++            }
++        }
++    }
++
++    // walk leaf→root looking for an ancestor whose split direction matches
++    // the conflict axis. adjust that ancestor's ratio to give the leaf's
++    // subtree more extent on that axis. if the matching ancestor clamps at
++    // 0.85/0.15 without fully satisfying the need, continue to the next
++    // matching ancestor up — the larger parent rect makes the same absolute
++    // need a smaller ratio fraction, which can succeed where the inner
++    // ancestor couldn't.
++    private func adjustAxisRatio(from leaf: BSPNode, needed: CGFloat,
++                                  axis: SplitDirection, rect: CGRect, gap: CGFloat,
++                                  windowTitle: String?) {
++        let halfGap = gap / 2
++        var node: BSPNode = leaf
++        while let parent = node.parent {
++            defer { node = parent }
++            // respect user-set ratios from manual resize
++            if parent.userSetRatio { continue }
++            guard let parentRect = rectForNodeHelper(node: root, target: parent, rect: rect, gap: gap) else { continue }
+             let dir = parent.direction(for: parentRect)
++            guard dir == axis else { continue }
+ 
+-            switch dir {
+-            case .horizontal:
+-                let neededWidth = actualSize.width
+-                if isLeft {
+-                    // left child needs more width → increase ratio
+-                    let needed = (neededWidth + halfGap) / parentRect.width
+-                    let clamped = min(needed, 0.85)
+-                    if clamped > parent.splitRatio {
+-                        parent.splitRatio = clamped
+-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+-                    }
+-                } else {
+-                    // right child needs more width → decrease ratio
+-                    let needed = 1.0 - (neededWidth + halfGap) / parentRect.width
+-                    let clamped = max(needed, 0.15)
+-                    if clamped < parent.splitRatio {
+-                        parent.splitRatio = clamped
+-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+-                    }
++            let isLeft = parent.left === node
++            let extent = (axis == .horizontal) ? parentRect.width : parentRect.height
++            let raw = (needed + halfGap) / extent
++            let fullySatisfied: Bool
++            if isLeft {
++                let clamped = min(raw, 0.85)
++                if clamped > parent.splitRatio {
++                    parent.splitRatio = clamped
++                    hyprLog("adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
+                 }
+-
+-            case .vertical:
+-                let neededHeight = actualSize.height
+-                if isLeft {
+-                    let needed = (neededHeight + halfGap) / parentRect.height
+-                    let clamped = min(needed, 0.85)
+-                    if clamped > parent.splitRatio {
+-                        parent.splitRatio = clamped
+-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+-                    }
+-                } else {
+-                    let needed = 1.0 - (neededHeight + halfGap) / parentRect.height
+-                    let clamped = max(needed, 0.15)
+-                    if clamped < parent.splitRatio {
+-                        parent.splitRatio = clamped
+-                        hyprLog("adjusted split ratio → \(String(format: "%.2f", clamped)) for '\(window.title ?? "?")'")
+-                    }
++                fullySatisfied = raw <= 0.85
++            } else {
++                let clamped = max(1.0 - raw, 0.15)
++                if clamped < parent.splitRatio {
++                    parent.splitRatio = clamped
++                    hyprLog("adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
+                 }
++                fullySatisfied = raw <= 0.85
+             }
++            if fullySatisfied { return }
+         }
+     }
+ 
+diff --git a/HyprMac/Tiling/TilingEngine.swift b/HyprMac/Tiling/TilingEngine.swift
+index 23d600d..cb70197 100644
+--- a/HyprMac/Tiling/TilingEngine.swift
++++ b/HyprMac/Tiling/TilingEngine.swift
+@@ -70,31 +70,41 @@ class TilingEngine {
+         // ~3 frames @ 60Hz — enough for slow apps to commit the resize
+         Thread.sleep(forTimeInterval: 0.05)
+ 
+-        // first pass: read current sizes. flag anything that looks stale.
+-        struct Reading { let window: HyprWindow; let frame: CGRect; var actual: CGRect; var stale: Bool }
++        // first pass: read current sizes. flag staleness PER AXIS — a move
++        // can resize both axes where one commits instantly and the other
++        // lags. the old "match both dims" AND gate missed cases where
++        // e.g. height updated fine but width was still stuck at prev,
++        // committing a false width conflict and permanently inflating that
++        // split ratio.
++        struct Reading {
++            let window: HyprWindow
++            let frame: CGRect
++            var actual: CGRect
++            var wStale: Bool
++            var hStale: Bool
++        }
+         var readings: [Reading] = []
+         var anyStale = false
+         for (window, frame) in layouts {
+             let actualSize = window.size ?? frame.size
+             let actualPos = window.position ?? frame.origin
+             let actual = CGRect(origin: actualPos, size: actualSize)
+-            let exceeds = actual.width > frame.width + 20 || actual.height > frame.height + 20
+-            var stale = false
+-            if exceeds, let p = prev[window.windowID],
+-               abs(actual.width - p.width) < 5 && abs(actual.height - p.height) < 5 {
+-                stale = true
+-                anyStale = true
++            let wExceeds = actual.width > frame.width + 20
++            let hExceeds = actual.height > frame.height + 20
++            var wStale = false
++            var hStale = false
++            if let p = prev[window.windowID] {
++                if wExceeds && abs(actual.width - p.width) < 5 { wStale = true; anyStale = true }
++                if hExceeds && abs(actual.height - p.height) < 5 { hStale = true; anyStale = true }
+             }
+-            readings.append(Reading(window: window, frame: frame, actual: actual, stale: stale))
++            readings.append(Reading(window: window, frame: frame, actual: actual,
++                                    wStale: wStale, hStale: hStale))
+         }
+ 
+         // stale pass: give slow apps more time, then re-read just the suspects.
+-        // distinguishes "app refuses to shrink" (stays at min-size, != prev if
+-        // prev was the target size from last tile) from "app mid-resize"
+-        // (still reporting prev frame). only pays the extra 100ms when needed.
+         if anyStale {
+             Thread.sleep(forTimeInterval: 0.1)
+-            for i in readings.indices where readings[i].stale {
++            for i in readings.indices where readings[i].wStale || readings[i].hStale {
+                 let w = readings[i].window
+                 let newSize = w.size ?? readings[i].actual.size
+                 let newPos = w.position ?? readings[i].actual.origin
+@@ -105,11 +115,28 @@ class TilingEngine {
+         var conflicts: [MinSizeConflict] = []
+         for r in readings {
+             r.window.cachedFrame = r.actual
+-            if r.actual.width > r.frame.width + 20 || r.actual.height > r.frame.height + 20 {
++            let wConflict = r.actual.width > r.frame.width + 20
++            let hConflict = r.actual.height > r.frame.height + 20
++            if wConflict || hConflict {
+                 hyprLog("min-size conflict: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), got \(Int(r.actual.width))x\(Int(r.actual.height))")
+                 conflicts.append(MinSizeConflict(window: r.window, allocated: r.frame, actual: r.actual.size))
+-            } else if r.stale {
+-                hyprLog("stale readback resolved for '\(r.window.title ?? "?")' — no conflict after resettle")
++                // record observation: the app refused to go below this size
++                r.window.observedMinSize = r.actual.size
++            } else {
++                if r.wStale || r.hStale {
++                    hyprLog("stale readback resolved for '\(r.window.title ?? "?")' — no conflict after resettle")
++                }
++                // self-heal stale observations: if the window's ACTUAL size
++                // is smaller than a prior observedMinSize, the prior value was
++                // wrong (stale readback from a slow app). clear so the next
++                // tile pass can re-observe accurately. without this, a single
++                // inflated observation locks the ratio permanently because
++                // adjustForMinSizes never asks for smaller than observed.
++                if let obs = r.window.observedMinSize,
++                   r.actual.width < obs.width - 10 || r.actual.height < obs.height - 10 {
++                    hyprLog("cleared stale observedMinSize for '\(r.window.title ?? "?")' — actual \(Int(r.actual.width))x\(Int(r.actual.height)) < observed \(Int(obs.width))x\(Int(obs.height))")
++                    r.window.observedMinSize = nil
++                }
+             }
+         }
+         return conflicts
+@@ -158,7 +185,11 @@ class TilingEngine {
+             }
+         }
+ 
+-        // structural change — clear user-set ratios so layout resets to even splits
++        // structural change — clear user-set ratios so layout resets to even
++        // splits. also clear observedMinSize on every window in the tree:
++        // prior observations were tied to the old slot geometry, and a stale
++        // inflated reading from a previous cycle would otherwise persist and
++        // force adjustForMinSizes to re-inflate every subsequent retile.
+         if removedAny || addedAny {
+             t.root.clearUserSetRatios()
+         }
+@@ -194,7 +225,7 @@ class TilingEngine {
+         }
+     }
+ 
+-    // same as tileWindows but returns layouts WITHOUT applying frames.
++// same as tileWindows but returns layouts WITHOUT applying frames.
+     // caller animates from old→new, then calls applyComputedLayout() on completion.
+     func computeTileLayout(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)] {
+         let key = TilingKey(workspace: workspace, screen: screen)
+@@ -373,29 +404,121 @@ class TilingEngine {
+         return t.layout(in: rect, gap: gapSize, padding: outerPadding)
+     }
+ 
+-    func canFitWindow(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
++    // does the target tree have a slot where `window` can land without
++    // forcing its new sibling to physically overlap? walks every leaf in
++    // the tree (smart-insert order first, then fallback to any leaf under
++    // maxDepth). a slot is viable if BOTH the existing occupant and the
++    // incoming window fit within their projected child rects, with the
++    // two-pass ratio adjustment's 0.85/0.15 flex accounted for.
++    //
++    // uses HyprWindow.observedMinSize — a lower bound set only when we've
++    // actually witnessed the app refusing to shrink past a size. windows
++    // without an observation are treated as zero-min so moves always succeed
++    // for never-constrained windows (including lone windows whose cachedFrame
++    // equals their current full-screen size but whose TRUE min is unknown).
++    func canFitWindow(_ window: HyprWindow? = nil,
++                      onWorkspace workspace: Int,
++                      screen: NSScreen) -> Bool {
+         let key = TilingKey(workspace: workspace, screen: screen)
+         let t = tree(for: key)
+         if t.root.isEmpty { return true }
+ 
+         let rect = displayManager.cgRect(for: screen)
+         let leaves = t.root.allLeavesRightToLeft()
++        let md = maxDepth(for: screen)
++
++        // prefer leaves whose child geometry is above minSlotDimension
++        // (matches smartInsert's preference). fallback to any leaf under
++        // maxDepth if that fails.
++        for pass in 0...1 {
++            for leaf in leaves {
++                guard leaf.depth < md else { continue }
++                guard let leafRect = t.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
++
++                let dir = leaf.direction(for: leafRect)
++                let (childA, childB) = splitRects(leafRect, dir: dir, gap: gapSize)
++
++                if pass == 0 {
++                    let childMin = min(childA.width, childA.height, childB.width, childB.height)
++                    if childMin < minSlotDimension { continue }
++                }
++
++                let existingMin = leaf.window?.observedMinSize ?? .zero
++                let newMin = window?.observedMinSize ?? .zero
++                if pairFits(existingMin, newMin, in: leafRect, dir: dir) {
++                    return true
++                }
++            }
++        }
+ 
+-        for leaf in leaves {
+-            guard leaf.depth < maxDepth(for: screen) else { continue }
+-            guard let leafRect = t.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
+-            let dir = leaf.direction(for: leafRect)
+-            let childMin: CGFloat
+-            switch dir {
+-            case .horizontal:
+-                childMin = min((leafRect.width - gapSize) / 2, leafRect.height)
+-            case .vertical:
+-                childMin = min(leafRect.width, (leafRect.height - gapSize) / 2)
++        return false
++    }
++
++    // does any window in the tree have an observedMinSize that exceeds its
++    // currently-allocated rect? this is the post-operation check: after any
++    // tiling action (move, swap, insert) applyLayout may record refusals and
++    // try to fix them via adjustForMinSizes. if ratios clamp out of room, the
++    // overflow persists — the window physically overlaps siblings. callers
++    // use this signal to revert the operation.
++    func treeHasOverflow(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
++        let key = TilingKey(workspace: workspace, screen: screen)
++        guard let t = trees[key] else { return false }
++        let rect = displayManager.cgRect(for: screen)
++        for leaf in t.root.allLeavesRightToLeft() {
++            guard let w = leaf.window, let obs = w.observedMinSize else { continue }
++            guard let lr = t.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
++            if obs.width > lr.width + 20 || obs.height > lr.height + 20 {
++                return true
+             }
+-            if childMin >= minSlotDimension { return true }
+         }
++        return false
++    }
+ 
+-        return leaves.contains { $0.depth < maxDepth(for: screen) }
++    // compute the two child rects of a 50/50 split.
++    private func splitRects(_ rect: CGRect, dir: SplitDirection, gap: CGFloat) -> (CGRect, CGRect) {
++        let halfGap = gap / 2
++        switch dir {
++        case .horizontal:
++            let mid = rect.origin.x + rect.width * 0.5
++            let a = CGRect(x: rect.origin.x, y: rect.origin.y,
++                           width: mid - rect.origin.x - halfGap, height: rect.height)
++            let b = CGRect(x: mid + halfGap, y: rect.origin.y,
++                           width: rect.maxX - mid - halfGap, height: rect.height)
++            return (a, b)
++        case .vertical:
++            let mid = rect.origin.y + rect.height * 0.5
++            let a = CGRect(x: rect.origin.x, y: rect.origin.y,
++                           width: rect.width, height: mid - rect.origin.y - halfGap)
++            let b = CGRect(x: rect.origin.x, y: mid + halfGap,
++                           width: rect.width, height: rect.maxY - mid - halfGap)
++            return (a, b)
++        }
++    }
++
++    // do two windows with given min sizes both fit within a parent rect
++    // split into two children, considering the two-pass ratio adjustment
++    // can flex each side from 50% up to 85% of the parent extent?
++    private func pairFits(_ aMin: CGSize, _ bMin: CGSize,
++                          in parentRect: CGRect, dir: SplitDirection) -> Bool {
++        switch dir {
++        case .horizontal:
++            // split axis (width): sum of mins + gap must fit parent width.
++            // cross axis (height): each must fit parent height.
++            let sumOk = aMin.width + bMin.width + gapSize <= parentRect.width + 1
++            let aCross = aMin.height <= parentRect.height + 1
++            let bCross = bMin.height <= parentRect.height + 1
++            // individual cap: neither can exceed 85% of parent width
++            let aInd = aMin.width <= parentRect.width * 0.85 + 1
++            let bInd = bMin.width <= parentRect.width * 0.85 + 1
++            return sumOk && aCross && bCross && aInd && bInd
++        case .vertical:
++            let sumOk = aMin.height + bMin.height + gapSize <= parentRect.height + 1
++            let aCross = aMin.width <= parentRect.width + 1
++            let bCross = bMin.width <= parentRect.width + 1
++            let aInd = aMin.height <= parentRect.height * 0.85 + 1
++            let bInd = bMin.height <= parentRect.height * 0.85 + 1
++            return sumOk && aCross && bCross && aInd && bInd
++        }
+     }
+ 
+     // force-insert a window on an explicit screen, evicting deepest-right if full

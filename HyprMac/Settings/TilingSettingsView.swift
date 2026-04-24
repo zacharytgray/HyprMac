@@ -74,6 +74,23 @@ struct TilingSettingsView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                Divider().padding(.vertical, 4)
+
+                Toggle("Dim inactive windows", isOn: $config.dimInactiveWindows)
+                if config.dimInactiveWindows {
+                    HStack {
+                        Text("Dim intensity")
+                        Slider(value: $config.dimIntensity, in: 0.05...0.6)
+                        Text(String(format: "%.0f%%", config.dimIntensity * 100))
+                            .font(.caption.monospacedDigit())
+                            .foregroundColor(.secondary)
+                            .frame(width: 40, alignment: .trailing)
+                    }
+                }
+                Text("Darkens everything except the focused window. Uses an overlay panel ordered below the focused window — no SIP required.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
 
             Section("Per-Monitor Settings") {

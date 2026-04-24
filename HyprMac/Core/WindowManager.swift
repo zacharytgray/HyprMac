@@ -11,6 +11,7 @@ class WindowManager {
     let config: UserConfig
     let animator = WindowAnimator()
     let focusBorder = FocusBorder()
+    let dimmingOverlay = DimmingOverlay()
     let mouseTracker = MouseTrackingManager()
     let dragManager = DragManager()
     let floatingController = FloatingWindowController()
@@ -94,7 +95,10 @@ class WindowManager {
         mouseTracker.tiledPositions = { [weak self] in self?.tiledPositions ?? [:] }
         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
-        mouseTracker.onHideFocusBorder = { [weak self] in self?.focusBorder.hide() }
+        mouseTracker.onHideFocusBorder = { [weak self] in
+            self?.focusBorder.hide()
+            self?.dimmingOverlay.hideAll()
+        }
 
         // wire up floating controller
         floatingController.isWindowVisible = { [weak self] wid in self?.workspaceManager.isWindowVisible(wid) ?? false }
@@ -235,6 +239,26 @@ class WindowManager {
                 hyprLog("disabled monitors updated: \(newDisabled)")
             }.store(in: &configObservers)
 
+        config.$dimInactiveWindows
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                guard let self = self else { return }
+                if !enabled {
+                    self.dimmingOverlay.enabled = false
+                    self.dimmingOverlay.hideAll()
+                } else {
+                    self.refreshDimming()
+                }
+            }.store(in: &configObservers)
+
+        config.$dimIntensity
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.refreshDimming()
+            }.store(in: &configObservers)
+
         hyprLog("started")
     }
 
@@ -248,7 +272,7 @@ class WindowManager {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         NotificationCenter.default.removeObserver(self)
         DistributedNotificationCenter.default().removeObserver(self)
-        focusBorder.hide()
+        focusBorder.hide(); dimmingOverlay.hideAll()
         hyprLog("stopped")
     }
 
@@ -317,7 +341,7 @@ class WindowManager {
             // only hide for floating windows — tiled windows can't be free-dragged
             guard self.floatingWindowIDs.contains(tid) else { return }
             self.preDragFocusedID = tid
-            self.focusBorder.hide()
+            self.focusBorder.hide(); self.dimmingOverlay.hideAll()
         }
         mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
             self?.mouseButtonDown = false
@@ -353,7 +377,8 @@ class WindowManager {
 
     private func updateFocusBorder(for window: HyprWindow) {
         guard config.showFocusBorder, let frame = window.frame else {
-            focusBorder.hide()
+            focusBorder.hide(); dimmingOverlay.hideAll()
+            dimmingOverlay.hideAll()
             return
         }
         let isFloating = floatingWindowIDs.contains(window.windowID)
@@ -361,6 +386,18 @@ class WindowManager {
             ? config.resolvedFloatingBorderColor.cgColor
             : config.resolvedFocusBorderColor.cgColor
         focusBorder.show(around: frame, windowID: window.windowID)
+        refreshDimming(focusedID: window.windowID)
+    }
+
+    // recompute the dim mask from current tiled positions. called on focus
+    // change and after any tile update so the shape stays accurate when
+    // windows move, resize, or a workspace switch changes what's visible.
+    private func refreshDimming(focusedID: CGWindowID? = nil) {
+        dimmingOverlay.enabled = config.dimInactiveWindows
+        dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
+        dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
+        let fid = focusedID ?? focusBorder.trackedWindowID ?? mouseTracker.lastMouseFocusedID
+        dimmingOverlay.update(focusedID: fid, tiledRects: tiledPositions, screens: displayManager.screens)
     }
 
     // recapture focus on bare hypr keydown — ensures border + keyboard focus
@@ -690,7 +727,7 @@ class WindowManager {
             } else {
                 let rect = displayManager.cgRect(for: result.screen)
                 CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
-                focusBorder.hide()
+                focusBorder.hide(); dimmingOverlay.hideAll()
             }
             return
         }
@@ -723,7 +760,7 @@ class WindowManager {
         } else {
             let rect = displayManager.cgRect(for: result.screen)
             CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
-            focusBorder.hide()
+            focusBorder.hide(); dimmingOverlay.hideAll()
         }
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
@@ -1016,7 +1053,7 @@ class WindowManager {
             })
         } else {
             // tiled → floating: animate remaining windows filling the gap
-            focusBorder.hide()
+            focusBorder.hide(); dimmingOverlay.hideAll()
             animatedRetile(prepare: { [self] in
                 floatingWindowIDs.insert(focused.windowID)
                 focused.isFloating = true
@@ -1424,7 +1461,7 @@ class WindowManager {
             mouseTracker.lastMouseFocusedID = 0
         }
         if focusBorder.trackedWindowID == id {
-            focusBorder.hide()
+            focusBorder.hide(); dimmingOverlay.hideAll()
         }
     }
 
@@ -1562,6 +1599,7 @@ class WindowManager {
         if let tid = focusBorder.trackedWindowID, let w = cachedWindows[tid], let frame = w.frame {
             focusBorder.updatePosition(frame)
         }
+        refreshDimming()
     }
 
     private func updateMenuBarState() {
