@@ -154,6 +154,7 @@ class AccessibilityManager {
                 usedIDs.insert(wid)
                 let hw = HyprWindow(element: entry.element, windowID: wid, ownerPID: pid)
                 hw.cachedFrame = entry.frame
+                hw.seedMinimumSize(bundleIdentifier: app.bundleIdentifier)
                 windows.append(hw)
             }
 
@@ -177,6 +178,7 @@ class AccessibilityManager {
                     usedIDs.insert(wid)
                     let hw = HyprWindow(element: entry.element, windowID: wid, ownerPID: pid)
                     hw.cachedFrame = entry.frame
+                    hw.seedMinimumSize(bundleIdentifier: app.bundleIdentifier)
                     windows.append(hw)
                 }
             }

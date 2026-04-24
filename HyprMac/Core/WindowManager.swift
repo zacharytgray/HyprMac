@@ -768,6 +768,7 @@ class WindowManager {
 
     private func moveToWorkspace(_ number: Int) {
         guard let focused = currentFocusedWindow() else { return }
+        tilingEngine.primeMinimumSizes([focused])
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
 
         // window on a disabled monitor — send it to the target workspace as a tiled window
@@ -792,8 +793,8 @@ class WindowManager {
                 ?? screen
 
             if let visibleScreen = workspaceManager.screenForWorkspace(number) {
-                if !tilingEngine.canFitWindow(onWorkspace: number, screen: visibleScreen) {
-                    hyprLog("workspace \(number) full on \(visibleScreen.localizedName) — rejected move")
+                if !tilingEngine.canFitWindow(focused, onWorkspace: number, screen: visibleScreen) {
+                    hyprLog("workspace \(number) can't fit '\(focused.title ?? "?")' on \(visibleScreen.localizedName) — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
                         focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
@@ -1131,6 +1132,7 @@ class WindowManager {
 
     func snapshotAndTile() {
         let allWindows = accessibility.getAllWindows()
+        tilingEngine.primeMinimumSizes(allWindows)
         for w in allWindows {
             if let frame = w.frame, originalFrames[w.windowID] == nil {
                 // only save if the frame is actually visible on some screen.
@@ -1171,6 +1173,7 @@ class WindowManager {
     func tileAllVisibleSpaces(windows: [HyprWindow]? = nil) {
         guard !animator.isAnimating else { return }
         let allWindows = windows ?? accessibility.getAllWindows()
+        tilingEngine.primeMinimumSizes(allWindows)
 
         for w in allWindows {
             if floatingWindowIDs.contains(w.windowID) {
@@ -1214,6 +1217,7 @@ class WindowManager {
         }
 
         let allWindows = windows ?? accessibility.getAllWindows()
+        tilingEngine.primeMinimumSizes(allWindows)
 
         // capture before-frames for visible tiled windows
         var beforeFrames: [CGWindowID: CGRect] = [:]
@@ -1230,6 +1234,7 @@ class WindowManager {
         // re-fetch after prepare() — window list may have changed (add/remove/float toggle).
         // only re-fetch if prepare actually ran; otherwise reuse existing list.
         let refreshedWindows = prepare != nil ? accessibility.getAllWindows() : allWindows
+        tilingEngine.primeMinimumSizes(refreshedWindows)
 
         // compute new layout for each screen without applying
         var newLayouts: [(HyprWindow, CGRect)] = []
@@ -1456,6 +1461,7 @@ class WindowManager {
         windowOwners.removeValue(forKey: id)
         tiledPositions.removeValue(forKey: id)
         cachedWindows.removeValue(forKey: id)
+        tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
         if mouseTracker.lastMouseFocusedID == id {
             mouseTracker.lastMouseFocusedID = 0
@@ -1584,6 +1590,7 @@ class WindowManager {
 
     private func updatePositionCache(windows: [HyprWindow]? = nil) {
         let allWindows = windows ?? accessibility.getAllWindows()
+        tilingEngine.primeMinimumSizes(allWindows)
         tiledPositions.removeAll()
         cachedWindows.removeAll()
         for w in allWindows {
@@ -1650,6 +1657,7 @@ class WindowManager {
         guard !animator.isAnimating else { return }
         guard !mouseButtonDown else { return }
         let allWindows = accessibility.getAllWindows()
+        tilingEngine.primeMinimumSizes(allWindows)
         let currentIDs = Set(allWindows.map { $0.windowID })
 
         var changed = false

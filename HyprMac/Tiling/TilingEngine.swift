@@ -31,8 +31,63 @@ class TilingEngine {
     // callback when a window can't fit (exceeds max depth)
     var onAutoFloat: ((HyprWindow) -> Void)?
 
+    private var knownMinSizes: [CGWindowID: CGSize] = [:]
+
     init(displayManager: DisplayManager) {
         self.displayManager = displayManager
+    }
+
+    func primeMinimumSizes(_ windows: [HyprWindow]) {
+        for window in windows {
+            if let known = knownMinSizes[window.windowID] {
+                window.observedMinSize = known
+            } else if let seeded = window.observedMinSize, isUsableMinimumSize(seeded) {
+                knownMinSizes[window.windowID] = seeded
+            }
+        }
+    }
+
+    func forgetMinimumSize(windowID: CGWindowID) {
+        knownMinSizes.removeValue(forKey: windowID)
+    }
+
+    private func minimumSize(for window: HyprWindow?) -> CGSize {
+        guard let window else { return .zero }
+        return knownMinSizes[window.windowID] ?? window.observedMinSize ?? .zero
+    }
+
+    private func recordObservedMinimumSize(_ window: HyprWindow,
+                                           actual: CGSize,
+                                           widthConflict: Bool,
+                                           heightConflict: Bool) {
+        let existing = minimumSize(for: window)
+        let updated = CGSize(
+            width: widthConflict ? max(existing.width, actual.width) : existing.width,
+            height: heightConflict ? max(existing.height, actual.height) : existing.height
+        )
+        guard isUsableMinimumSize(updated) else { return }
+        knownMinSizes[window.windowID] = updated
+        window.observedMinSize = updated
+    }
+
+    private func lowerMinimumSizeIfAccepted(_ window: HyprWindow, actual: CGSize) {
+        guard let known = knownMinSizes[window.windowID] else { return }
+        guard actual.width < known.width - 10 || actual.height < known.height - 10 else { return }
+        let updated = CGSize(width: min(known.width, actual.width),
+                             height: min(known.height, actual.height))
+        if isUsableMinimumSize(updated) {
+            knownMinSizes[window.windowID] = updated
+            window.observedMinSize = updated
+        } else {
+            knownMinSizes.removeValue(forKey: window.windowID)
+            window.observedMinSize = nil
+        }
+        hyprLog("lowered min-size for '\(window.title ?? "?")' → \(Int(updated.width))x\(Int(updated.height))")
+    }
+
+    private func isUsableMinimumSize(_ size: CGSize) -> Bool {
+        size.width.isFinite && size.height.isFinite && (size.width > 0 || size.height > 0)
+            && size.width < 10000 && size.height < 10000
     }
 
     private func tree(for key: TilingKey) -> BSPTree {
@@ -105,11 +160,18 @@ class TilingEngine {
         var conflicts: [MinSizeConflict] = []
         for r in readings {
             r.window.cachedFrame = r.actual
-            if r.actual.width > r.frame.width + 20 || r.actual.height > r.frame.height + 20 {
+            let widthConflict = r.actual.width > r.frame.width + 20
+            let heightConflict = r.actual.height > r.frame.height + 20
+            if widthConflict || heightConflict {
                 hyprLog("min-size conflict: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), got \(Int(r.actual.width))x\(Int(r.actual.height))")
                 conflicts.append(MinSizeConflict(window: r.window, allocated: r.frame, actual: r.actual.size))
+                recordObservedMinimumSize(r.window, actual: r.actual.size,
+                                          widthConflict: widthConflict,
+                                          heightConflict: heightConflict)
             } else if r.stale {
                 hyprLog("stale readback resolved for '\(r.window.title ?? "?")' — no conflict after resettle")
+            } else {
+                lowerMinimumSizeIfAccepted(r.window, actual: r.actual.size)
             }
         }
         return conflicts
@@ -121,9 +183,54 @@ class TilingEngine {
         }
     }
 
+    @discardableResult
+    private func smartInsertFitting(_ window: HyprWindow, into tree: BSPTree,
+                                    maxDepth: Int, rect: CGRect) -> Bool {
+        if tree.root.isEmpty {
+            tree.root.window = window
+            return true
+        }
+
+        guard let leaf = fittingLeaf(for: window, in: tree, maxDepth: maxDepth, rect: rect) else {
+            return false
+        }
+
+        leaf.insert(window)
+        if let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) {
+            hyprLog("smart insert fit at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
+        }
+        return true
+    }
+
+    private func fittingLeaf(for window: HyprWindow?, in tree: BSPTree,
+                             maxDepth: Int, rect: CGRect) -> BSPNode? {
+        let leaves = tree.root.allLeavesRightToLeft()
+        for pass in 0...1 {
+            for leaf in leaves {
+                guard leaf.depth < maxDepth else { continue }
+                guard let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
+                let dir = leaf.direction(for: leafRect)
+
+                if pass == 0 {
+                    let (a, b) = splitRects(leafRect, dir: dir, gap: gapSize)
+                    let childMin = min(min(a.width, a.height), min(b.width, b.height))
+                    if childMin < minSlotDimension { continue }
+                }
+
+                let existingMin = minimumSize(for: leaf.window)
+                let incomingMin = minimumSize(for: window)
+                if pairFits(existingMin, incomingMin, in: leafRect, dir: dir) {
+                    return leaf
+                }
+            }
+        }
+        return nil
+    }
+
     // tile windows for a workspace on a specific screen.
     // screen is provided explicitly — don't trust window physical position (may be hidden in corner)
     func tileWindows(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) {
+        primeMinimumSizes(windows)
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
@@ -149,9 +256,8 @@ class TilingEngine {
         // add new windows via smart insert
         var addedAny = false
         for w in tileWindows where !treeIDs.contains(w.windowID) {
-            if !t.smartInsert(w, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                              padding: outerPadding, minSlotDimension: minSlotDimension) {
-                hyprLog("max depth exceeded — auto-floating '\(w.title ?? "?")'")
+            if !smartInsertFitting(w, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
+                hyprLog("no fitting tile slot — auto-floating '\(w.title ?? "?")'")
                 onAutoFloat?(w)
             } else {
                 addedAny = true
@@ -197,6 +303,7 @@ class TilingEngine {
     // same as tileWindows but returns layouts WITHOUT applying frames.
     // caller animates from old→new, then calls applyComputedLayout() on completion.
     func computeTileLayout(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)] {
+        primeMinimumSizes(windows)
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
@@ -221,8 +328,7 @@ class TilingEngine {
         // add new windows via smart insert
         var addedAny = false
         for w in tileWindows where !treeIDs.contains(w.windowID) {
-            if !t.smartInsert(w, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                              padding: outerPadding, minSlotDimension: minSlotDimension) {
+            if !smartInsertFitting(w, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
                 onAutoFloat?(w)
             } else {
                 addedAny = true
@@ -240,13 +346,13 @@ class TilingEngine {
     // add a single window to the tree for its workspace+screen and retile
     func addWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen) {
         guard !window.isFloating else { return }
+        primeMinimumSizes([window])
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
         if !t.contains(window) {
-            if !t.smartInsert(window, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                              padding: outerPadding, minSlotDimension: minSlotDimension) {
-                hyprLog("max depth exceeded — auto-floating '\(window.title ?? "?")'")
+            if !smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
+                hyprLog("no fitting tile slot — auto-floating '\(window.title ?? "?")'")
                 onAutoFloat?(window)
                 return
             }
@@ -275,6 +381,7 @@ class TilingEngine {
 
     private func retile(key: TilingKey, screen: NSScreen) {
         let t = tree(for: key)
+        primeMinimumSizes(t.allWindows)
         let rect = displayManager.cgRect(for: screen)
 
         t.root.resetSplitRatios()
@@ -301,6 +408,7 @@ class TilingEngine {
     }
 
     func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {
+        primeMinimumSizes([a, b])
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         if t.contains(a) && t.contains(b) {
@@ -313,6 +421,7 @@ class TilingEngine {
     // caller is responsible for animating or applying the result.
     func computeSwapLayout(_ a: HyprWindow, _ b: HyprWindow,
                            onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)]? {
+        primeMinimumSizes([a, b])
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         guard t.contains(a) && t.contains(b) else { return nil }
@@ -331,6 +440,7 @@ class TilingEngine {
     }
 
     func crossSwapWindows(_ a: HyprWindow, _ b: HyprWindow) {
+        primeMinimumSizes([a, b])
         var keyA: TilingKey?
         var keyB: TilingKey?
         var treeA: BSPTree?
@@ -373,41 +483,73 @@ class TilingEngine {
         return t.layout(in: rect, gap: gapSize, padding: outerPadding)
     }
 
-    func canFitWindow(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+    func canFitWindow(_ window: HyprWindow? = nil,
+                      onWorkspace workspace: Int,
+                      screen: NSScreen) -> Bool {
+        if let window { primeMinimumSizes([window]) }
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         if t.root.isEmpty { return true }
 
         let rect = displayManager.cgRect(for: screen)
-        let leaves = t.root.allLeavesRightToLeft()
+        return fittingLeaf(for: window,
+                           in: t,
+                           maxDepth: maxDepth(for: screen),
+                           rect: rect) != nil
+    }
 
-        for leaf in leaves {
-            guard leaf.depth < maxDepth(for: screen) else { continue }
-            guard let leafRect = t.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
-            let dir = leaf.direction(for: leafRect)
-            let childMin: CGFloat
-            switch dir {
-            case .horizontal:
-                childMin = min((leafRect.width - gapSize) / 2, leafRect.height)
-            case .vertical:
-                childMin = min(leafRect.width, (leafRect.height - gapSize) / 2)
-            }
-            if childMin >= minSlotDimension { return true }
+    private func splitRects(_ rect: CGRect, dir: SplitDirection, gap: CGFloat) -> (CGRect, CGRect) {
+        let halfGap = gap / 2
+        switch dir {
+        case .horizontal:
+            let mid = rect.origin.x + rect.width * 0.5
+            return (
+                CGRect(x: rect.origin.x, y: rect.origin.y,
+                       width: mid - rect.origin.x - halfGap, height: rect.height),
+                CGRect(x: mid + halfGap, y: rect.origin.y,
+                       width: rect.maxX - mid - halfGap, height: rect.height)
+            )
+        case .vertical:
+            let mid = rect.origin.y + rect.height * 0.5
+            return (
+                CGRect(x: rect.origin.x, y: rect.origin.y,
+                       width: rect.width, height: mid - rect.origin.y - halfGap),
+                CGRect(x: rect.origin.x, y: mid + halfGap,
+                       width: rect.width, height: rect.maxY - mid - halfGap)
+            )
         }
+    }
 
-        return leaves.contains { $0.depth < maxDepth(for: screen) }
+    private func pairFits(_ aMin: CGSize, _ bMin: CGSize,
+                          in parentRect: CGRect, dir: SplitDirection) -> Bool {
+        switch dir {
+        case .horizontal:
+            let sumOk = aMin.width + bMin.width + gapSize <= parentRect.width + 1
+            let aCross = aMin.height <= parentRect.height + 1
+            let bCross = bMin.height <= parentRect.height + 1
+            let aInd = aMin.width <= parentRect.width * 0.85 + 1
+            let bInd = bMin.width <= parentRect.width * 0.85 + 1
+            return sumOk && aCross && bCross && aInd && bInd
+        case .vertical:
+            let sumOk = aMin.height + bMin.height + gapSize <= parentRect.height + 1
+            let aCross = aMin.width <= parentRect.width + 1
+            let bCross = bMin.width <= parentRect.width + 1
+            let aInd = aMin.height <= parentRect.height * 0.85 + 1
+            let bInd = bMin.height <= parentRect.height * 0.85 + 1
+            return sumOk && aCross && bCross && aInd && bInd
+        }
     }
 
     // force-insert a window on an explicit screen, evicting deepest-right if full
     func forceInsertWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen) -> HyprWindow? {
+        primeMinimumSizes([window])
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
 
         if t.contains(window) { return nil }
 
-        if t.smartInsert(window, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                         padding: outerPadding, minSlotDimension: minSlotDimension) {
+        if smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
             retile(key: key, screen: screen)
             return nil
         }
@@ -415,8 +557,7 @@ class TilingEngine {
         guard let evicted = t.deepestRightLeafWindow() else { return nil }
         t.remove(evicted)
 
-        if t.smartInsert(window, maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                         padding: outerPadding, minSlotDimension: minSlotDimension) {
+        if smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
             retile(key: key, screen: screen)
             return evicted
         }

@@ -23,6 +23,9 @@ class HyprWindow: Equatable, Hashable {
     // cached from getAllWindows() — avoids redundant AX reads in updatePositionCache.
     // cleared on setFrame/setFrameWithReadback so stale values aren't used.
     var cachedFrame: CGRect?
+    // known lower bound for app resizing. seeded from AXMinimumSize/heuristics
+    // when available, then refined when layout readback witnesses a refusal.
+    var observedMinSize: CGSize?
 
     init(element: AXUIElement, windowID: CGWindowID, ownerPID: pid_t) {
         self.element = element
@@ -35,6 +38,50 @@ class HyprWindow: Equatable, Hashable {
         AXUIElementCopyAttributeValue(element, kAXTitleAttribute as CFString, &value)
         return value as? String
     }
+
+    func seedMinimumSize(bundleIdentifier: String?) {
+        if let axSize = axMinimumSize() {
+            observedMinSize = axSize
+            return
+        }
+
+        if let bundleIdentifier,
+           let heuristic = Self.heuristicMinimumSizes[bundleIdentifier] {
+            observedMinSize = heuristic
+        }
+    }
+
+    private func axMinimumSize() -> CGSize? {
+        for attribute in ["AXMinimumSize", "AXMinSize"] {
+            var value: AnyObject?
+            guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success,
+                  let value,
+                  CFGetTypeID(value) == AXValueGetTypeID() else { continue }
+
+            let axValue = value as! AXValue
+            guard AXValueGetType(axValue) == .cgSize else { continue }
+
+            var size = CGSize.zero
+            guard AXValueGetValue(axValue, .cgSize, &size) else { continue }
+            guard size.width > 0, size.height > 0,
+                  size.width.isFinite, size.height.isFinite else { continue }
+            return size
+        }
+
+        return nil
+    }
+
+    private static let heuristicMinimumSizes: [String: CGSize] = [
+        "com.apple.Safari": CGSize(width: 420, height: 300),
+        "com.google.Chrome": CGSize(width: 500, height: 340),
+        "com.apple.finder": CGSize(width: 420, height: 300),
+        "com.apple.Terminal": CGSize(width: 400, height: 260),
+        "com.apple.MobileSMS": CGSize(width: 520, height: 360),
+        "com.apple.FaceTime": CGSize(width: 620, height: 460),
+        "com.spotify.client": CGSize(width: 640, height: 420),
+        "com.tinyspeck.slackmacgap": CGSize(width: 560, height: 380),
+        "com.apple.dt.Xcode": CGSize(width: 700, height: 450),
+    ]
 
     var frame: CGRect? {
         guard let pos = position, let sz = size else { return nil }
