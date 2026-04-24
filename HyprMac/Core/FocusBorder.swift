@@ -15,7 +15,15 @@ class FocusBorder {
     private enum State { case active, settled, hidden }
 
     private let margin: CGFloat = 6
-    private let borderRadius: CGFloat = 10
+    // match OS window corner radius. Tahoe (macOS 26) uses noticeably rounder
+    // corners than Sequoia (15); using Sequoia's radius on Tahoe leaves visible
+    // gaps at the corners where the border arcs tighter than the window.
+    private let borderRadius: CGFloat = {
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 {
+            return 12
+        }
+        return 10
+    }()
     private let settleDelay: TimeInterval = 0.5
 
     // resolved from config — call updateColor() when config changes

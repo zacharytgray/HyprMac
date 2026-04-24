@@ -200,6 +200,10 @@ class BSPTree {
 
         for (window, actualSize) in conflicts {
             guard let leaf = root.find(window), let parent = leaf.parent else { continue }
+            // respect explicit user resizes — don't clobber a ratio the user set.
+            // without this, a stale readback right after a manual resize permanently
+            // snaps the window back to its pre-resize width.
+            if parent.userSetRatio { continue }
             guard let parentRect = rectForNodeHelper(node: root, target: parent, rect: padded, gap: gap) else { continue }
 
             let isLeft = parent.left === leaf

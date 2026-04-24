@@ -6,7 +6,10 @@ class MouseTrackingManager {
     // state
     var lastMouseFocusedID: CGWindowID = 0
     var suppressMouseFocusUntil: Date = .distantPast
-    var menuBarTracking = false
+    // set by HIToolbox begin/end notifications — true for both menu bar menus
+    // and native right-click context menus (NSMenu). other code paths read this
+    // to skip focus-stealing operations while a menu is open.
+    var menuTracking = false
     var dockIsActive = false
 
     // throttle mouse-move processing to ~60Hz — the OS can fire hundreds of
@@ -32,7 +35,7 @@ class MouseTrackingManager {
     func handleMouseMove() {
         guard isFocusFollowsMouseEnabled() else { return }
         guard !isMouseButtonDown() else { return }
-        guard !menuBarTracking else { return }
+        guard !menuTracking else { return }
         guard !dockIsActive else { return }
         guard !isAnimating() else { return }
         guard Date() > suppressMouseFocusUntil else { return }
@@ -154,12 +157,15 @@ class MouseTrackingManager {
     }
 
     func menuTrackingBegan() {
-        menuBarTracking = true
-        onHideFocusBorder()
+        menuTracking = true
+        // leave the focus border intact — hiding it clears trackedWindowID,
+        // which causes ensureFocusInvariant to re-assert focus during menu
+        // tracking and dismiss the context menu. the border drawing on top
+        // while a menu is open is harmless; menu is at a higher window level.
     }
 
     func menuTrackingEnded() {
-        menuBarTracking = false
+        menuTracking = false
         if let w = cachedWindow(lastMouseFocusedID) {
             onUpdateFocusBorder(w)
         }

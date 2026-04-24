@@ -56,20 +56,60 @@ class TilingEngine {
     // read the inflated size again, and the window stays bloated forever.
     // batching also makes one wait cover N windows instead of N waits.
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)]) -> [MinSizeConflict] {
+        // snapshot previous frames so we can detect stale readbacks — if a
+        // window's "actual" size matches its prior frame AND exceeds target,
+        // the app hasn't committed the setFrame yet (not a real min-size conflict).
+        var prev: [CGWindowID: CGRect] = [:]
+        for (w, _) in layouts {
+            if let cached = w.cachedFrame { prev[w.windowID] = cached }
+        }
+
         for (window, frame) in layouts {
             window.setFrame(frame)
         }
         // ~3 frames @ 60Hz — enough for slow apps to commit the resize
         Thread.sleep(forTimeInterval: 0.05)
-        var conflicts: [MinSizeConflict] = []
+
+        // first pass: read current sizes. flag anything that looks stale.
+        struct Reading { let window: HyprWindow; let frame: CGRect; var actual: CGRect; var stale: Bool }
+        var readings: [Reading] = []
+        var anyStale = false
         for (window, frame) in layouts {
             let actualSize = window.size ?? frame.size
             let actualPos = window.position ?? frame.origin
             let actual = CGRect(origin: actualPos, size: actualSize)
-            window.cachedFrame = actual
-            if actual.width > frame.width + 20 || actual.height > frame.height + 20 {
-                hyprLog("min-size conflict: '\(window.title ?? "?")' wanted \(Int(frame.width))x\(Int(frame.height)), got \(Int(actual.width))x\(Int(actual.height))")
-                conflicts.append(MinSizeConflict(window: window, allocated: frame, actual: actual.size))
+            let exceeds = actual.width > frame.width + 20 || actual.height > frame.height + 20
+            var stale = false
+            if exceeds, let p = prev[window.windowID],
+               abs(actual.width - p.width) < 5 && abs(actual.height - p.height) < 5 {
+                stale = true
+                anyStale = true
+            }
+            readings.append(Reading(window: window, frame: frame, actual: actual, stale: stale))
+        }
+
+        // stale pass: give slow apps more time, then re-read just the suspects.
+        // distinguishes "app refuses to shrink" (stays at min-size, != prev if
+        // prev was the target size from last tile) from "app mid-resize"
+        // (still reporting prev frame). only pays the extra 100ms when needed.
+        if anyStale {
+            Thread.sleep(forTimeInterval: 0.1)
+            for i in readings.indices where readings[i].stale {
+                let w = readings[i].window
+                let newSize = w.size ?? readings[i].actual.size
+                let newPos = w.position ?? readings[i].actual.origin
+                readings[i].actual = CGRect(origin: newPos, size: newSize)
+            }
+        }
+
+        var conflicts: [MinSizeConflict] = []
+        for r in readings {
+            r.window.cachedFrame = r.actual
+            if r.actual.width > r.frame.width + 20 || r.actual.height > r.frame.height + 20 {
+                hyprLog("min-size conflict: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), got \(Int(r.actual.width))x\(Int(r.actual.height))")
+                conflicts.append(MinSizeConflict(window: r.window, allocated: r.frame, actual: r.actual.size))
+            } else if r.stale {
+                hyprLog("stale readback resolved for '\(r.window.title ?? "?")' — no conflict after resettle")
             }
         }
         return conflicts

@@ -1473,6 +1473,9 @@ class WindowManager {
     // the user shouldn't have to click a window to get keyboard focus back.
     private func ensureFocusInvariant() {
         guard config.showFocusBorder else { return }
+        // don't steal focus from a native menu that's currently tracking —
+        // SLPSPostEventRecordTo + panel reordering both dismiss menus
+        guard !mouseTracker.menuTracking else { return }
         // border is already showing on a live window — nothing to do
         if let tid = focusBorder.trackedWindowID, cachedWindows[tid] != nil {
             return
@@ -1773,6 +1776,9 @@ class WindowManager {
 
     private func raiseFloatingWindows() {
         guard !isRaisingFloaters else { return }
+        // skip while a native menu is tracking — the post-raise focusWithoutRaise
+        // below synthesizes key-focus events that dismiss context menus
+        guard !mouseTracker.menuTracking else { return }
         isRaisingFloaters = true
         defer { isRaisingFloaters = false }
 
