@@ -50,6 +50,8 @@ class WindowManager {
     private var mouseUpMonitor: Any?
     private var mouseDragMonitor: Any?
     private var mouseButtonDown = false
+    private var mouseDraggedSinceDown = false
+    private var mouseDownTiledFrames: [CGWindowID: CGRect] = [:]
 
     // window whose focus border was hidden when a drag started — re-shown on mouseUp.
     // we hide rather than try to follow, because we'd need 60Hz AX polling per window
@@ -335,17 +337,22 @@ class WindowManager {
             self?.mouseTracker.handleMouseMove()
         }
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
-            self?.mouseButtonDown = true
+            guard let self else { return }
+            self.mouseButtonDown = true
+            self.mouseDraggedSinceDown = false
+            self.captureMouseDownTiledFrames()
             // sync our focus tracker with the click — without this, manual clicks
             // leave lastMouseFocusedID stale and currentFocusedWindow() routes
             // commands to whatever was previously hovered, not what the user clicked
-            self?.syncFocusTrackerToCursor()
+            self.syncFocusTrackerToCursor()
         }
         // when the user drags a floating window, its frame changes 60Hz but our
         // border only repositions on poll (1Hz) — so it lags behind ugly. hide
         // the border for the duration of the drag and restore it on mouseUp.
         mouseDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
-            guard let self = self, self.preDragFocusedID == 0 else { return }
+            guard let self = self else { return }
+            self.mouseDraggedSinceDown = true
+            guard self.preDragFocusedID == 0 else { return }
             guard let tid = self.focusBorder.trackedWindowID else { return }
             // only hide for floating windows — tiled windows can't be free-dragged
             guard self.floatingWindowIDs.contains(tid) else { return }
@@ -353,8 +360,14 @@ class WindowManager {
             self.focusBorder.hide(); self.dimmingOverlay.hideAll()
         }
         mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
+            let shouldDetectDrag = self?.mouseDraggedSinceDown ?? false
+            let startFrames = self?.mouseDownTiledFrames ?? [:]
             self?.mouseButtonDown = false
-            self?.handleMouseUp()
+            self?.mouseDraggedSinceDown = false
+            self?.mouseDownTiledFrames.removeAll()
+            if shouldDetectDrag {
+                self?.handleMouseUp(startFrames: startFrames)
+            }
             // restore the focus border on whatever floating window we hid it for,
             // after a brief settle delay so we read its final position
             if let id = self?.preDragFocusedID, id != 0 {
@@ -376,6 +389,7 @@ class WindowManager {
         mouseDownMonitor = nil
         mouseDragMonitor = nil
         mouseUpMonitor = nil
+        mouseDownTiledFrames.removeAll()
     }
 
     private func focusForFFM(_ window: HyprWindow) {
@@ -461,13 +475,13 @@ class WindowManager {
         }
     }
 
-    private func handleMouseUp() {
+    private func handleMouseUp(startFrames: [CGWindowID: CGRect]) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.detectDragSwap()
+            self?.detectDragSwap(startFrames: startFrames)
         }
     }
 
-    private func detectDragSwap() {
+    private func detectDragSwap(startFrames: [CGWindowID: CGRect]) {
         guard !animator.isAnimating else { return }
 
         // skip drag detection if the user was dragging a floating window —
@@ -486,6 +500,7 @@ class WindowManager {
         let result = dragManager.detect(
             allWindows: allWindows,
             cachedWindows: cachedWindows,
+            startFrames: startFrames,
             screenAt: { [weak self] pt in self?.displayManager.screen(at: pt) },
             workspaceForScreen: { [weak self] s in self?.workspaceManager.workspaceForScreen(s) ?? 1 }
         )
@@ -1458,6 +1473,16 @@ class WindowManager {
     // hit-test the cursor against tiled and floating windows, update tracker.
     // called from leftMouseDown so a manual click immediately wins over any
     // stale FFM tracker state.
+    private func captureMouseDownTiledFrames() {
+        mouseDownTiledFrames.removeAll()
+        for w in accessibility.getAllWindows() {
+            guard workspaceManager.isWindowVisible(w.windowID),
+                  !floatingWindowIDs.contains(w.windowID),
+                  let frame = w.frame else { continue }
+            mouseDownTiledFrames[w.windowID] = frame
+        }
+    }
+
     private func syncFocusTrackerToCursor() {
         let mouseNS = NSEvent.mouseLocation
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
