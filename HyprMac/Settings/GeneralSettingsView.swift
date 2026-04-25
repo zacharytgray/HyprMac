@@ -116,12 +116,18 @@ struct GeneralSettingsView: View {
             }
 
             // hypr key info
-            Section("Hypr Key") {
-                Label("Caps Lock → F18 (while HyprMac is running)", systemImage: "capslock.fill")
-                    .font(.callout)
-                Text("Caps Lock is remapped at the driver level via hidutil and acts as the Hypr modifier. Normal behavior is restored when the app quits.")
+            Section {
+                Picker("Physical Key", selection: $config.hyprKey) {
+                    ForEach(HyprKey.allCases) { key in
+                        Label(key.displayName, systemImage: key.pickerIcon)
+                            .tag(key)
+                    }
+                }
+                Text(hyprKeyDescription)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            } header: {
+                Text("Hypr Key")
             }
 
             // startup
@@ -164,6 +170,16 @@ struct GeneralSettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
 
+    private var hyprKeyDescription: String {
+        if config.hyprKey.usesCapsLockRemap {
+            return "Caps Lock is remapped to F18 via hidutil while HyprMac is running, then restored when the app quits."
+        }
+        if config.hyprKey.nativeModifierFlag != nil {
+            return "\(config.hyprKey.displayName) acts as a dedicated Hypr key while HyprMac is running and is swallowed before apps see it."
+        }
+        return "\(config.hyprKey.displayName) acts as the Hypr key while HyprMac is running and is swallowed before apps see it."
+    }
+
     private func pickExcludedApp() {
         let panel = NSOpenPanel()
         panel.title = "Select Application to Exclude"
@@ -178,4 +194,3 @@ struct GeneralSettingsView: View {
         }
     }
 }
-

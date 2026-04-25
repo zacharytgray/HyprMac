@@ -2,6 +2,7 @@ import SwiftUI
 
 // reusable shortcut recorder: modifier toggles + key capture button + live preview badge
 struct KeyRecorderView: View {
+    @ObservedObject var config = UserConfig.shared
     @Binding var keyCode: UInt16
     @Binding var useHypr: Bool
     @Binding var useShift: Bool
@@ -21,7 +22,7 @@ struct KeyRecorderView: View {
 
             // modifier toggles
             HStack(spacing: 6) {
-                ModifierToggle("⇪ Caps",  isOn: $useHypr)
+                ModifierToggle("\(config.hyprKey.badgeLabel) Hypr", isOn: $useHypr)
                 ModifierToggle("⌃ Ctrl",  isOn: $useControl)
                 ModifierToggle("⌥ Opt",   isOn: $useOption)
                 ModifierToggle("⇧ Shift", isOn: $useShift)

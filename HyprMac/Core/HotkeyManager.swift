@@ -7,9 +7,10 @@ class HotkeyManager {
     var onAction: ((Action) -> Void)?
     var onHyprKeyDown: (() -> Void)?
 
-    // F18 = our Hypr key (Caps Lock is remapped to F18 at the driver level)
+    // physical key currently acting as the logical Hypr modifier
     fileprivate var hyprKeyDown = false
-    private static let f18KeyCode: UInt16 = 79 // 0x4F
+    private var hyprKey: HyprKey = .capsLock
+    private var pressedModifierKeyCodes: Set<UInt16> = []
 
     private var keybinds: [Keybind] = Keybind.defaults
     // O(1) lookup: packed key = (keyCode << 16) | modifiers.rawValue
@@ -26,6 +27,13 @@ class HotkeyManager {
         for bind in binds {
             keybindMap[Self.packKey(bind.keyCode, bind.modifiers)] = bind
         }
+    }
+
+    func updateHyprKey(_ key: HyprKey) {
+        hyprKey = key
+        hyprKeyDown = false
+        pressedModifierKeyCodes.removeAll()
+        hyprLog("hypr key set to \(key.displayName)")
     }
 
     func start() {
@@ -52,7 +60,7 @@ class HotkeyManager {
         runLoopSource = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        hyprLog("event tap started, \(keybinds.count) keybinds (Caps Lock → F18 = Hypr key)")
+        hyprLog("event tap started, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
     }
 
     func stop() {
@@ -64,28 +72,30 @@ class HotkeyManager {
         }
         eventTap = nil
         runLoopSource = nil
+        hyprKeyDown = false
+        pressedModifierKeyCodes.removeAll()
     }
 
     fileprivate func handleEvent(_ type: CGEventType, _ event: CGEvent) -> CGEvent? {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
+        trackModifierState(type, keyCode)
 
-        // track F18 (remapped Caps Lock) as our Hypr modifier
-        if keyCode == HotkeyManager.f18KeyCode {
+        // track the configured physical key as our logical Hypr modifier
+        if keyCode == hyprKey.keyCode {
             if type == .keyDown {
-                hyprKeyDown = true
-                DispatchQueue.main.async { [weak self] in
-                    self?.onHyprKeyDown?()
-                }
+                setHyprKeyDown(true)
             } else if type == .keyUp {
-                hyprKeyDown = false
+                setHyprKeyDown(false)
+            } else if type == .flagsChanged, hyprKey.isNativeModifier {
+                setHyprKeyDown(pressedModifierKeyCodes.contains(keyCode))
             }
-            return nil // always swallow F18 — it's our internal modifier
+            return nil // always swallow the Hypr key — it's our internal modifier
         }
 
         // only check keybinds on keyDown
         guard type == .keyDown else { return event }
 
-        let flags = ModifierFlags.from(event.flags, hyprDown: hyprKeyDown)
+        let flags = ModifierFlags.from(eventFlags(for: event), hyprDown: hyprKeyDown)
 
         let packed = HotkeyManager.packKey(keyCode, flags)
         if let bind = keybindMap[packed] {
@@ -98,6 +108,40 @@ class HotkeyManager {
         }
 
         return event
+    }
+
+    private func setHyprKeyDown(_ isDown: Bool) {
+        let wasDown = hyprKeyDown
+        hyprKeyDown = isDown
+        if isDown && !wasDown {
+            DispatchQueue.main.async { [weak self] in
+                self?.onHyprKeyDown?()
+            }
+        }
+    }
+
+    private func eventFlags(for event: CGEvent) -> CGEventFlags {
+        var flags = event.flags
+        if hyprKeyDown, let nativeFlag = hyprKey.nativeModifierFlag {
+            let sameNativeModifierIsDown = pressedModifierKeyCodes.contains { keyCode in
+                HyprKey.isKeyCode(keyCode, sameNativeModifierAs: nativeFlag, excluding: hyprKey.keyCode)
+            }
+            if !sameNativeModifierIsDown {
+                flags.remove(nativeFlag)
+            }
+        }
+        return flags
+    }
+
+    private func trackModifierState(_ type: CGEventType, _ keyCode: UInt16) {
+        guard type == .flagsChanged,
+              HyprKey.isNativeModifierKeyCode(keyCode) else { return }
+
+        if pressedModifierKeyCodes.contains(keyCode) {
+            pressedModifierKeyCodes.remove(keyCode)
+        } else {
+            pressedModifierKeyCodes.insert(keyCode)
+        }
     }
 }
 
@@ -117,7 +161,7 @@ private func hotkeyCallback(
         return Unmanaged.passRetained(event)
     }
 
-    guard (type == .keyDown || type == .keyUp), let refcon = refcon else {
+    guard (type == .keyDown || type == .keyUp || type == .flagsChanged), let refcon = refcon else {
         return Unmanaged.passRetained(event)
     }
 

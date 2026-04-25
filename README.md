@@ -2,7 +2,7 @@
 
 A keyboard-driven tiling window manager for macOS.
 
-Caps Lock becomes a **Hypr** modifier key. From there: BSP dwindle tiling, 9 virtual workspaces, directional focus and window swapping, drag-to-swap, and focus-follows-mouse — all without touching System Integrity Protection.
+Caps Lock becomes a **Hypr** modifier key by default, and the physical Hypr key can be changed in Settings. From there: BSP dwindle tiling, 9 virtual workspaces, directional focus and window swapping, drag-to-swap, and focus-follows-mouse — all without touching System Integrity Protection.
 
 [![HyprMac demo](docs/screenshots/demo-thumb.png)](https://github.com/user-attachments/assets/1f6f12ff-8e89-49ab-8be9-f2996025763a)
 
@@ -12,7 +12,7 @@ Caps Lock becomes a **Hypr** modifier key. From there: BSP dwindle tiling, 9 vir
 
 ## What It Solves
 
-macOS doesn't ship with a tiling window manager. Third-party options either require disabling SIP, rely on AppleScript hacks, or bolt tiling on top of macOS Spaces in ways that feel fragile. HyprMac takes a different approach: it manages its own virtual workspaces in userspace, uses Accessibility APIs only, and treats Caps Lock as a dedicated modifier — giving you a clean, Hyprland-style workflow that works within macOS's constraints.
+macOS doesn't ship with a tiling window manager. Third-party options either require disabling SIP, rely on AppleScript hacks, or bolt tiling on top of macOS Spaces in ways that feel fragile. HyprMac takes a different approach: it manages its own virtual workspaces in userspace, uses Accessibility APIs only, and provides a dedicated Hypr modifier for a clean, Hyprland-style workflow that works within macOS's constraints.
 
 ---
 
@@ -27,7 +27,7 @@ macOS doesn't ship with a tiling window manager. Third-party options either requ
 | 🔄 **Drag-to-Swap** | Drag any window onto another to exchange positions |
 | 🔲 **Floating Toggle** | Pop windows in and out of the tiling layout on demand |
 | 🖥 **Multi-Monitor** | Per-monitor workspace assignment with directional cross-monitor navigation |
-| ⌨️ **Fully Configurable** | Edit keybinds, app launchers, gaps, and padding in-app or via JSON |
+| ⌨️ **Fully Configurable** | Edit the Hypr key, keybinds, app launchers, gaps, and padding in-app or via JSON |
 | 📋 **Keybind Overlay** | `Hypr+K` shows all active shortcuts at a glance |
 
 ---
@@ -36,7 +36,7 @@ macOS doesn't ship with a tiling window manager. Third-party options either requ
 
 - macOS 13 (Ventura) or later
 - Accessibility permission — System Settings → Privacy & Security → Accessibility
-- Caps Lock set to **"⇪ Caps Lock"** in Modifier Keys (not "No Action")
+- For the default Caps Lock Hypr key: Caps Lock set to **"⇪ Caps Lock"** in Modifier Keys (not "No Action")
 
 ---
 
@@ -73,6 +73,7 @@ cp -r build/Build/Products/Debug/HyprMac.app /Applications/
 ## Keybinds
 
 All keybinds are configurable in Settings (menubar icon → Settings → Keybinds).
+The physical Hypr key is configurable in Settings → General. Options include Caps Lock, Tab, backtick, backslash, F13-F20, and left/right variants of Shift, Control, Option, and Command.
 
 ### Defaults
 
@@ -104,7 +105,7 @@ All keybinds are configurable in Settings (menubar icon → Settings → Keybind
 Focus-follows-mouse and the macOS menu bar don't always play nicely together — mousing up to the menu bar can accidentally shift focus to a window underneath. HyprMac handles this two ways:
 
 1. **Menu tracking detection** — FFM is automatically suppressed while any app's menu is open, so focus won't shift once you've clicked a menu item.
-2. **`⇪ + \`` (Caps + backtick)** — Instantly warps the cursor to the menu bar on the current monitor. It's faster than mousing there manually and sidesteps the focus-switching problem entirely. The action and shortcut are both configurable in Settings → General.
+2. **`Hypr + \``** — Instantly warps the cursor to the menu bar on the current monitor. It's faster than mousing there manually and sidesteps the focus-switching problem entirely. The action, shortcut, and physical Hypr key are configurable in Settings.
 
 ---
 

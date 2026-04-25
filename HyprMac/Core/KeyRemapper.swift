@@ -7,6 +7,14 @@ class KeyRemapper {
     private static let capsLockHID: UInt = 0x700000039
     private static let f18HID: UInt = 0x70000006D
 
+    static func applyHyprKey(_ key: HyprKey) {
+        if key.usesCapsLockRemap {
+            remapCapsLockToF18()
+        } else {
+            restoreCapsLock()
+        }
+    }
+
     static func remapCapsLockToF18() {
         // first, clear any system-level Caps Lock overrides from Modifier Keys settings
         // these take priority over hidutil and eat caps lock events
@@ -25,7 +33,6 @@ class KeyRemapper {
     // remove Modifier Keys panel overrides for Caps Lock
     // (System Settings → Keyboard → Modifier Keys → "No Action" blocks hidutil)
     private static func clearSystemModifierOverrides() {
-        let defaults = UserDefaults.standard
         // find all per-keyboard modifier mappings
         let globalDefaults = UserDefaults(suiteName: UserDefaults.globalDomain)
         let keys = globalDefaults?.dictionaryRepresentation().keys.filter {

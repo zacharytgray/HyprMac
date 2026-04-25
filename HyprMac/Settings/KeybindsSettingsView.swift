@@ -4,11 +4,12 @@ import Carbon
 // MARK: - key badge components
 
 struct KeybadgeView: View {
+    @ObservedObject var config = UserConfig.shared
     let bind: Keybind
 
     var body: some View {
         HStack(spacing: 3) {
-            if bind.modifiers.contains(.hypr)    { KeyChip("⇪") }
+            if bind.modifiers.contains(.hypr)    { KeyChip(config.hyprKey.badgeLabel) }
             if bind.modifiers.contains(.control) { KeyChip("⌃") }
             if bind.modifiers.contains(.option)  { KeyChip("⌥") }
             if bind.modifiers.contains(.shift)   { KeyChip("⇧") }
@@ -349,7 +350,7 @@ extension Keybind {
 
     var displayString: String {
         var parts: [String] = []
-        if modifiers.contains(.hypr)    { parts.append("⇪") }
+        if modifiers.contains(.hypr)    { parts.append(UserConfig.shared.hyprKey.badgeLabel) }
         if modifiers.contains(.command) { parts.append("⌘") }
         if modifiers.contains(.shift)   { parts.append("⇧") }
         if modifiers.contains(.option)  { parts.append("⌥") }

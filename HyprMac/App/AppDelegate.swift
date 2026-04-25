@@ -11,8 +11,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         hyprLog("AXIsProcessTrusted=\(AXIsProcessTrusted())")
 
         if AXIsProcessTrusted() {
-            // remap caps lock → F18 at driver level
-            KeyRemapper.remapCapsLockToF18()
+            KeyRemapper.applyHyprKey(UserConfig.shared.hyprKey)
             startWindowManager()
         } else {
             let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
@@ -27,7 +26,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let response = alert.runModal()
 
             if response == .alertSecondButtonReturn && AXIsProcessTrusted() {
-                KeyRemapper.remapCapsLockToF18()
+                KeyRemapper.applyHyprKey(UserConfig.shared.hyprKey)
                 startWindowManager()
             } else {
                 NSApp.terminate(nil)

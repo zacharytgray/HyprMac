@@ -131,6 +131,14 @@ class WindowManager {
                     self.stop()
                 }
             }.store(in: &configObservers)
+
+        config.$hyprKey
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] key in
+                KeyRemapper.applyHyprKey(key)
+                self?.hotkeyManager.updateHyprKey(key)
+            }.store(in: &configObservers)
     }
 
     func start() {
@@ -142,6 +150,7 @@ class WindowManager {
         tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
         workspaceManager.disabledMonitors = config.disabledMonitors
+        hotkeyManager.updateHyprKey(config.hyprKey)
         hotkeyManager.updateKeybinds(config.keybinds)
         hotkeyManager.start()
 
