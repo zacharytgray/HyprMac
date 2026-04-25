@@ -467,29 +467,19 @@ struct WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "keyboard",
+            title: "Configurable Hypr Key",
+            description: "Choose Caps Lock, Tab, backtick, backslash, F13-F20, or left/right modifier keys as your Hypr key."
+        ),
+        WhatsNewFeature(
             icon: "rectangle.split.2x2",
-            title: "Smarter Layout Rejection",
-            description: "HyprMac now rejects moves and swaps that would force stubborn apps into slots smaller than they can actually use."
+            title: "Split-Limit Layout Fix",
+            description: "Fixed an edge case near max split depth that could stretch one window and squeeze sibling tiles too small."
         ),
         WhatsNewFeature(
-            icon: "rectangle.compress.vertical",
-            title: "No More Crammed Windows",
-            description: "Fixed a tiling race that could make one large window grow to dominate the screen while sibling windows were squeezed down."
-        ),
-        WhatsNewFeature(
-            icon: "display.2",
-            title: "Better Cross-Monitor Moves",
-            description: "Moving windows between monitors now catches resize limits before the move, avoiding visible overlap and bounce-back."
-        ),
-        WhatsNewFeature(
-            icon: "rectangle.portrait",
-            title: "Vertical Monitor Fill Fix",
-            description: "Windows moved onto portrait displays now retry undersized readbacks so they fill the full tiled area immediately."
-        ),
-        WhatsNewFeature(
-            icon: "circle.lefthalf.filled",
-            title: "Dim Inactive Windows",
-            description: "A new dimming overlay makes the focused window easier to track without changing normal window z-order."
+            icon: "slider.horizontal.3",
+            title: "Better Keybind Labels",
+            description: "Shortcut badges now reflect your selected physical Hypr key throughout Settings."
         ),
     ]
 }
