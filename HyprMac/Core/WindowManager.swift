@@ -52,6 +52,7 @@ class WindowManager {
     private var mouseButtonDown = false
     private var mouseDraggedSinceDown = false
     private var mouseDownTiledFrames: [CGWindowID: CGRect] = [:]
+    private var mouseDownFloatingWindowID: CGWindowID = 0
 
     // window whose focus border was hidden when a drag started — re-shown on mouseUp.
     // we hide rather than try to follow, because we'd need 60Hz AX polling per window
@@ -83,6 +84,9 @@ class WindowManager {
 
         hotkeyManager.onHyprKeyDown = { [weak self] in
             self?.ensureFocus()
+        }
+        hotkeyManager.onHyprKeyUp = { [weak self] in
+            self?.reassertFocusBorderAfterHyprRelease()
         }
 
         // wire up mouse tracker dependencies
@@ -270,6 +274,27 @@ class WindowManager {
                 self?.refreshDimming()
             }.store(in: &configObservers)
 
+        config.$showFocusBorder
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] enabled in
+                guard let self else { return }
+                if enabled {
+                    self.updatePositionCache()
+                } else {
+                    self.focusBorder.hide()
+                    self.focusBorder.hideFloatingBorders()
+                    self.dimmingOverlay.hideAll()
+                }
+            }.store(in: &configObservers)
+
+        config.$floatingBorderColorHex
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                self?.updatePositionCache()
+            }.store(in: &configObservers)
+
         hyprLog("started")
     }
 
@@ -283,7 +308,9 @@ class WindowManager {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         NotificationCenter.default.removeObserver(self)
         DistributedNotificationCenter.default().removeObserver(self)
-        focusBorder.hide(); dimmingOverlay.hideAll()
+        focusBorder.hide()
+        focusBorder.hideFloatingBorders()
+        dimmingOverlay.hideAll()
         hyprLog("stopped")
     }
 
@@ -340,7 +367,7 @@ class WindowManager {
             guard let self else { return }
             self.mouseButtonDown = true
             self.mouseDraggedSinceDown = false
-            self.captureMouseDownTiledFrames()
+            self.captureMouseDownFrames()
             // sync our focus tracker with the click — without this, manual clicks
             // leave lastMouseFocusedID stale and currentFocusedWindow() routes
             // commands to whatever was previously hovered, not what the user clicked
@@ -352,6 +379,9 @@ class WindowManager {
         mouseDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
             guard let self = self else { return }
             self.mouseDraggedSinceDown = true
+            if self.mouseDownFloatingWindowID != 0 {
+                self.focusBorder.hideFloatingBorder(for: self.mouseDownFloatingWindowID)
+            }
             guard self.preDragFocusedID == 0 else { return }
             guard let tid = self.focusBorder.trackedWindowID else { return }
             // only hide for floating windows — tiled windows can't be free-dragged
@@ -362,11 +392,18 @@ class WindowManager {
         mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] _ in
             let shouldDetectDrag = self?.mouseDraggedSinceDown ?? false
             let startFrames = self?.mouseDownTiledFrames ?? [:]
+            let draggedFloatingID = self?.mouseDownFloatingWindowID ?? 0
             self?.mouseButtonDown = false
             self?.mouseDraggedSinceDown = false
             self?.mouseDownTiledFrames.removeAll()
+            self?.mouseDownFloatingWindowID = 0
             if shouldDetectDrag {
                 self?.handleMouseUp(startFrames: startFrames)
+            }
+            if draggedFloatingID != 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
+                    self?.updatePositionCache()
+                }
             }
             // restore the focus border on whatever floating window we hid it for,
             // after a brief settle delay so we read its final position
@@ -375,6 +412,7 @@ class WindowManager {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
                     guard let self = self, let w = self.cachedWindows[id] else { return }
                     self.updateFocusBorder(for: w)
+                    self.refreshFloatingBorders()
                 }
             }
         }
@@ -390,6 +428,7 @@ class WindowManager {
         mouseDragMonitor = nil
         mouseUpMonitor = nil
         mouseDownTiledFrames.removeAll()
+        mouseDownFloatingWindowID = 0
     }
 
     private func focusForFFM(_ window: HyprWindow) {
@@ -399,17 +438,52 @@ class WindowManager {
     }
 
     private func updateFocusBorder(for window: HyprWindow) {
-        guard config.showFocusBorder, let frame = window.frame else {
-            focusBorder.hide(); dimmingOverlay.hideAll()
+        guard config.showFocusBorder else {
+            focusBorder.hide()
+            focusBorder.hideFloatingBorders()
             dimmingOverlay.hideAll()
             return
         }
-        let isFloating = floatingWindowIDs.contains(window.windowID)
-        focusBorder.accentCGColor = isFloating
+        guard let frame = window.frame else {
+            focusBorder.hide()
+            dimmingOverlay.hideAll()
+            return
+        }
+        focusBorder.accentCGColor = floatingWindowIDs.contains(window.windowID)
             ? config.resolvedFloatingBorderColor.cgColor
             : config.resolvedFocusBorderColor.cgColor
         focusBorder.show(around: frame, windowID: window.windowID)
+        if floatingWindowIDs.contains(window.windowID) {
+            refreshFloatingBorders(windows: accessibility.getAllWindows())
+        } else {
+            refreshFloatingBorders()
+        }
         refreshDimming(focusedID: window.windowID)
+    }
+
+    private func reassertFocusBorderAfterHyprRelease() {
+        guard config.showFocusBorder else { return }
+        refreshFloatingBorders(windows: accessibility.getAllWindows())
+
+        guard let tid = focusBorder.trackedWindowID,
+              floatingWindowIDs.contains(tid) else { return }
+
+        func reassert() {
+            let windows = accessibility.getAllWindows()
+            if let window = windows.first(where: { $0.windowID == tid }) ?? cachedWindows[tid] {
+                window.isFloating = true
+                cachedWindows[tid] = window
+                updateFocusBorder(for: window)
+                refreshFloatingBorders(windows: windows)
+            }
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            reassert()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            reassert()
+        }
     }
 
     // recompute the dim mask from current tiled positions. called on focus
@@ -420,34 +494,58 @@ class WindowManager {
         dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
         dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
         let fid = focusedID ?? focusBorder.trackedWindowID ?? mouseTracker.lastMouseFocusedID
-        dimmingOverlay.update(focusedID: fid, tiledRects: tiledPositions, screens: displayManager.screens)
+        dimmingOverlay.update(
+            focusedID: fid,
+            tiledRects: tiledPositions,
+            floatingRects: floatingFrames(from: Array(cachedWindows.values), expandedBy: 8),
+            screens: displayManager.screens
+        )
     }
 
-    // recapture focus on bare hypr keydown — ensures border + keyboard focus
-    // are on a valid tiled window even if mouse drifted or user clicked outside.
-    // if a floating window already has focus, leave it alone so hypr combos
-    // (like hypr+shift+T to re-tile) work on the floating window.
+    // recapture focus on bare hypr keydown — the visible border is the source
+    // of truth for intent, as long as that window belongs to the cursor's
+    // current workspace. fallbacks are only for stale/missing border state.
     private func ensureFocus() {
         mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
-
-        // if a visible floating window already has focus, keep it
-        if let focused = accessibility.getFocusedWindow(),
-           floatingWindowIDs.contains(focused.windowID),
-           workspaceManager.isWindowVisible(focused.windowID) {
-            updateFocusBorder(for: focused)
-            return
-        }
 
         let screen = screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
         let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
+
+        if let tid = focusBorder.trackedWindowID,
+           isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
+           let w = cachedWindows[tid] {
+            w.focusWithoutRaise()
+            mouseTracker.lastMouseFocusedID = tid
+            updateFocusBorder(for: w)
+            return
+        }
+
+        if mouseTracker.lastMouseFocusedID != 0,
+           isSelectableInCurrentContext(mouseTracker.lastMouseFocusedID, workspaceWindows: wsWindows),
+           let w = cachedWindows[mouseTracker.lastMouseFocusedID] {
+            w.focusWithoutRaise()
+            updateFocusBorder(for: w)
+            return
+        }
 
         // convert mouse to CG coords
         let mouseNS = NSEvent.mouseLocation
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
-        // tier 1: tiled window under cursor
+        // floating windows are visually above tiled windows
+        for wid in floatingWindowIDs where wsWindows.contains(wid) {
+            guard let w = cachedWindows[wid], let frame = w.frame else { continue }
+            if frame.contains(cgPoint) {
+                w.focusWithoutRaise()
+                mouseTracker.lastMouseFocusedID = wid
+                updateFocusBorder(for: w)
+                return
+            }
+        }
+
+        // tiled window under cursor
         for (wid, rect) in tiledPositions {
             if wsWindows.contains(wid), rect.contains(cgPoint),
                let w = cachedWindows[wid] {
@@ -458,20 +556,26 @@ class WindowManager {
             }
         }
 
-        // tier 2: any tiled window on this workspace
-        for (wid, _) in tiledPositions {
-            if wsWindows.contains(wid), let w = cachedWindows[wid] {
-                w.focusWithoutRaise()
-                mouseTracker.lastMouseFocusedID = wid
-                updateFocusBorder(for: w)
-                return
-            }
+        // whatever AX says is focused, if it is on this workspace
+        if let focused = accessibility.getFocusedWindow(),
+           isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
+            mouseTracker.lastMouseFocusedID = focused.windowID
+            updateFocusBorder(for: focused)
+            return
         }
 
-        // tier 3: whatever AX says is focused — just show the border
-        if let focused = accessibility.getFocusedWindow(),
-           workspaceManager.isWindowVisible(focused.windowID) {
-            updateFocusBorder(for: focused)
+        // deterministic fallback: nearest tiled window center on this workspace
+        let fallback = tiledPositions
+            .filter { wsWindows.contains($0.key) }
+            .min { lhs, rhs in
+                let lhsCenter = CGPoint(x: lhs.value.midX, y: lhs.value.midY)
+                let rhsCenter = CGPoint(x: rhs.value.midX, y: rhs.value.midY)
+                return distanceSquared(lhsCenter, cgPoint) < distanceSquared(rhsCenter, cgPoint)
+            }
+        if let (wid, _) = fallback, let w = cachedWindows[wid] {
+            w.focusWithoutRaise()
+            mouseTracker.lastMouseFocusedID = wid
+            updateFocusBorder(for: w)
         }
     }
 
@@ -646,7 +750,9 @@ class WindowManager {
     private func focusInDirection(_ direction: Direction) {
         guard let focused = currentFocusedWindow() else { return }
         // only consider windows on visible workspaces — hidden corner windows must be excluded
-        let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
+        let windows = accessibility.getAllWindows().filter {
+            workspaceManager.isWindowVisible($0.windowID) && !floatingWindowIDs.contains($0.windowID)
+        }
 
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
             target.focusWithoutRaise()
@@ -660,9 +766,12 @@ class WindowManager {
 
     private func swapInDirection(_ direction: Direction) {
         guard let focused = currentFocusedWindow() else { return }
+        guard !floatingWindowIDs.contains(focused.windowID) else { return }
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
         let workspace = workspaceManager.workspaceForScreen(screen)
-        let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
+        let windows = accessibility.getAllWindows().filter {
+            workspaceManager.isWindowVisible($0.windowID) && !floatingWindowIDs.contains($0.windowID)
+        }
 
         guard let target = accessibility.windowInDirection(direction, from: focused, among: windows) else { return }
         guard tilingEngine.canSwapWindows(focused, target, onWorkspace: workspace, screen: screen) else {
@@ -1053,7 +1162,12 @@ class WindowManager {
         target.focus()
         cursorManager.warpToCenter(of: target)
         mouseTracker.lastMouseFocusedID = target.windowID
+        target.isFloating = true
+        cachedWindows[target.windowID] = target
         updateFocusBorder(for: target)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+            self?.updatePositionCache()
+        }
     }
 
     private func toggleFloating() {
@@ -1463,22 +1577,54 @@ class WindowManager {
     // tracker is updated on every focus action *and* on manual clicks, so it
     // stays in sync with what the user actually pointed at last.
     private func currentFocusedWindow() -> HyprWindow? {
+        let workspace = workspaceManager.workspaceForScreen(screenUnderCursor())
+        let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
+
+        if let tid = focusBorder.trackedWindowID,
+           isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
+           let w = cachedWindows[tid] {
+            return w
+        }
+
         if mouseTracker.lastMouseFocusedID != 0,
+           isSelectableInCurrentContext(mouseTracker.lastMouseFocusedID, workspaceWindows: wsWindows),
            let w = cachedWindows[mouseTracker.lastMouseFocusedID] {
             return w
         }
-        return accessibility.getFocusedWindow()
+
+        if let focused = accessibility.getFocusedWindow(),
+           isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
+            return focused
+        }
+
+        return nil
+    }
+
+    private func isSelectableInCurrentContext(_ windowID: CGWindowID, workspaceWindows: Set<CGWindowID>) -> Bool {
+        if workspaceWindows.contains(windowID) { return true }
+        return floatingWindowIDs.contains(windowID) && workspaceManager.isWindowVisible(windowID)
     }
 
     // hit-test the cursor against tiled and floating windows, update tracker.
     // called from leftMouseDown so a manual click immediately wins over any
     // stale FFM tracker state.
-    private func captureMouseDownTiledFrames() {
+    private func captureMouseDownFrames() {
         mouseDownTiledFrames.removeAll()
+        mouseDownFloatingWindowID = 0
+
+        let mouseNS = NSEvent.mouseLocation
+        let cgY = displayManager.primaryScreenHeight - mouseNS.y
+        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+
         for w in accessibility.getAllWindows() {
             guard workspaceManager.isWindowVisible(w.windowID),
-                  !floatingWindowIDs.contains(w.windowID),
                   let frame = w.frame else { continue }
+            if floatingWindowIDs.contains(w.windowID) {
+                if mouseDownFloatingWindowID == 0, frame.contains(cgPoint) {
+                    mouseDownFloatingWindowID = w.windowID
+                }
+                continue
+            }
             mouseDownTiledFrames[w.windowID] = frame
         }
     }
@@ -1521,6 +1667,7 @@ class WindowManager {
         if focusBorder.trackedWindowID == id {
             focusBorder.hide(); dimmingOverlay.hideAll()
         }
+        focusBorder.hideFloatingBorder(for: id)
     }
 
     // forget every window we knew about for a given pid. handles the case where
@@ -1640,6 +1787,23 @@ class WindowManager {
         return overlapArea / frameArea > 0.25
     }
 
+    private func distanceSquared(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = a.x - b.x
+        let dy = a.y - b.y
+        return dx * dx + dy * dy
+    }
+
+    private func floatingFrames(from source: [HyprWindow], expandedBy padding: CGFloat = 0) -> [CGWindowID: CGRect] {
+        var frames: [CGWindowID: CGRect] = [:]
+        for w in source {
+            guard floatingWindowIDs.contains(w.windowID),
+                  workspaceManager.isWindowVisible(w.windowID),
+                  let frame = w.frame ?? w.cachedFrame else { continue }
+            frames[w.windowID] = padding == 0 ? frame : frame.insetBy(dx: -padding, dy: -padding)
+        }
+        return frames
+    }
+
     private func updatePositionCache(windows: [HyprWindow]? = nil) {
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
@@ -1648,17 +1812,34 @@ class WindowManager {
         for w in allWindows {
             guard workspaceManager.isWindowVisible(w.windowID) else { continue }
             cachedWindows[w.windowID] = w
-            if !floatingWindowIDs.contains(w.windowID), let frame = w.cachedFrame ?? w.frame {
+            guard let frame = w.cachedFrame ?? w.frame else { continue }
+            if floatingWindowIDs.contains(w.windowID) {
+                continue
+            } else {
                 tiledPositions[w.windowID] = frame
             }
         }
+        refreshFloatingBorders(windows: allWindows)
         updateMenuBarState()
 
         // keep focus border tracking window position (retile, resize, etc.)
         if let tid = focusBorder.trackedWindowID, let w = cachedWindows[tid], let frame = w.frame {
             focusBorder.updatePosition(frame)
+            refreshFloatingBorders(windows: allWindows)
         }
         refreshDimming()
+    }
+
+    private func refreshFloatingBorders(windows: [HyprWindow]? = nil) {
+        if config.showFocusBorder {
+            let source = windows ?? Array(cachedWindows.values)
+            focusBorder.updateFloatingBorders(
+                floatingFrames(from: source),
+                color: config.resolvedFloatingBorderColor.cgColor
+            )
+        } else {
+            focusBorder.hideFloatingBorders()
+        }
     }
 
     private func updateMenuBarState() {

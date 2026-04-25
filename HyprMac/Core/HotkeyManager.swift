@@ -6,6 +6,7 @@ class HotkeyManager {
     private var runLoopSource: CFRunLoopSource?
     var onAction: ((Action) -> Void)?
     var onHyprKeyDown: (() -> Void)?
+    var onHyprKeyUp: (() -> Void)?
 
     // physical key currently acting as the logical Hypr modifier
     fileprivate var hyprKeyDown = false
@@ -116,6 +117,10 @@ class HotkeyManager {
         if isDown && !wasDown {
             DispatchQueue.main.async { [weak self] in
                 self?.onHyprKeyDown?()
+            }
+        } else if !isDown && wasDown {
+            DispatchQueue.main.async { [weak self] in
+                self?.onHyprKeyUp?()
             }
         }
     }

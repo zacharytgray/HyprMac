@@ -3,16 +3,22 @@ import Cocoa
 // persistent focus indicator around the active window. two states:
 // - active (traversal): accent-colored tint overlay + border
 // - settled: outline border only, no fill
+// floating windows also get persistent outline-only panels keyed by window id
 class FocusBorder {
     private(set) var trackedWindowID: CGWindowID?
 
     private var panel: NSPanel?
     private var glowView: NSView?
+    private var floatingPanels: [CGWindowID: BorderPanel] = [:]
     private var settleWork: DispatchWorkItem?
     private var shakeTimer: DispatchSourceTimer?
     private var state: State = .hidden
 
     private enum State { case active, settled, hidden }
+    private struct BorderPanel {
+        let panel: NSPanel
+        let glowView: NSView
+    }
 
     private let margin: CGFloat = 6
     // match OS window corner radius. Tahoe (macOS 26) uses noticeably rounder
@@ -75,6 +81,50 @@ class FocusBorder {
         positionGlowView(in: p)
         // re-order after reposition to maintain z-order relative to focused window
         orderAboveWindow(p, windowID: wid)
+    }
+
+    func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
+        let visibleIDs = Set(frames.keys)
+        let staleIDs = floatingPanels.keys.filter { !visibleIDs.contains($0) }
+        for windowID in staleIDs { hideFloatingBorder(for: windowID) }
+
+        for (windowID, frame) in frames {
+            let nsRect = panelRect(for: frame)
+            let border: BorderPanel
+            if let existing = floatingPanels[windowID] {
+                border = existing
+                border.panel.setFrame(nsRect, display: false)
+                positionGlowView(border.glowView, in: border.panel)
+            } else {
+                border = makeFloatingPanel(frame: nsRect)
+                floatingPanels[windowID] = border
+            }
+
+            if let layer = border.glowView.layer {
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                layer.borderColor = color
+                layer.borderWidth = 1.5
+                layer.cornerRadius = borderRadius
+                layer.backgroundColor = CGColor.clear
+                CATransaction.commit()
+            }
+
+            border.panel.alphaValue = 1.0
+            orderAboveWindow(border.panel, windowID: windowID)
+        }
+    }
+
+    func hideFloatingBorders() {
+        for (_, border) in floatingPanels {
+            border.panel.orderOut(nil)
+        }
+        floatingPanels.removeAll()
+    }
+
+    func hideFloatingBorder(for windowID: CGWindowID) {
+        guard let border = floatingPanels.removeValue(forKey: windowID) else { return }
+        border.panel.orderOut(nil)
     }
 
     func settle() {
@@ -179,17 +229,7 @@ class FocusBorder {
     }
 
     private func makePanel(frame: NSRect) -> NSPanel {
-        let p = NSPanel(contentRect: frame,
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
-        p.isFloatingPanel = true
-        p.level = .normal
-        p.backgroundColor = .clear
-        p.isOpaque = false
-        p.hasShadow = false
-        p.ignoresMouseEvents = true
-        p.collectionBehavior = [.canJoinAllSpaces, .stationary]
-
+        let p = makeBasePanel(frame: frame)
         let glow = NSView()
         glow.wantsLayer = true
         glow.layer?.masksToBounds = true
@@ -200,8 +240,37 @@ class FocusBorder {
         return p
     }
 
+    private func makeFloatingPanel(frame: NSRect) -> BorderPanel {
+        let p = makeBasePanel(frame: frame)
+        let glow = NSView()
+        glow.wantsLayer = true
+        glow.layer?.masksToBounds = true
+        p.contentView?.addSubview(glow)
+        positionGlowView(glow, in: p)
+        return BorderPanel(panel: p, glowView: glow)
+    }
+
+    private func makeBasePanel(frame: NSRect) -> NSPanel {
+        let p = NSPanel(contentRect: frame,
+                        styleMask: [.borderless, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        p.isFloatingPanel = true
+        p.level = .normal
+        p.backgroundColor = .clear
+        p.isOpaque = false
+        p.hasShadow = false
+        p.ignoresMouseEvents = true
+        p.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        return p
+    }
+
     private func positionGlowView(in panel: NSPanel) {
-        guard let content = panel.contentView, let glow = glowView else { return }
+        guard let glow = glowView else { return }
+        positionGlowView(glow, in: panel)
+    }
+
+    private func positionGlowView(_ glow: NSView, in panel: NSPanel) {
+        guard let content = panel.contentView else { return }
         let bounds = content.bounds
         glow.frame = NSRect(x: margin, y: margin,
                             width: bounds.width - margin * 2,

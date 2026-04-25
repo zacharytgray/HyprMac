@@ -1,7 +1,7 @@
 import Cocoa
 
 // dims non-focused tiled windows by drawing a shape mask per screen.
-// one NSPanel per screen sits at .floating level covering the whole screen;
+// one NSPanel per screen covers the whole screen;
 // a CAShapeLayer inside fills *only* the rects of non-focused tiled windows.
 // focused window and floating windows render bright because the path skips them.
 //
@@ -32,7 +32,12 @@ class DimmingOverlay {
     var enabled: Bool = false
     var primaryScreenHeight: CGFloat = 0
 
-    func update(focusedID: CGWindowID, tiledRects: [CGWindowID: CGRect], screens: [NSScreen]) {
+    func update(
+        focusedID: CGWindowID,
+        tiledRects: [CGWindowID: CGRect],
+        floatingRects: [CGWindowID: CGRect],
+        screens: [NSScreen]
+    ) {
         guard enabled, focusedID != 0 else { hideAll(); return }
         visible = true
 
@@ -53,11 +58,18 @@ class DimmingOverlay {
             let focusedLocal: NSRect? = tiledRects[focusedID].flatMap {
                 localRect(cgRect: $0, screenNS: screenNS)
             }
+            let floatingLocals = floatingRects.values.compactMap {
+                localRect(cgRect: $0, screenNS: screenNS)
+            }
 
             let path = CGMutablePath()
             for (wid, cgRect) in tiledRects where wid != focusedID {
                 guard let local = localRect(cgRect: cgRect, screenNS: screenNS) else { continue }
-                for piece in subtract(focusedLocal, from: local) {
+                var pieces = subtract(focusedLocal, from: local)
+                for floater in floatingLocals {
+                    pieces = pieces.flatMap { subtract(floater, from: $0) }
+                }
+                for piece in pieces {
                     path.addRect(piece)
                 }
             }
@@ -141,7 +153,7 @@ class DimmingOverlay {
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isFloatingPanel = true
-        p.level = .floating
+        p.level = .normal
         p.backgroundColor = .clear
         p.isOpaque = false
         p.hasShadow = false
