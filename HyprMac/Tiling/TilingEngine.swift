@@ -12,6 +12,7 @@ private struct TilingKey: Hashable {
 
 class TilingEngine {
     private var trees: [TilingKey: BSPTree] = [:]
+    private var pendingInsertedWindowIDs: [TilingKey: [CGWindowID]] = [:]
     let displayManager: DisplayManager
 
     var gapSize: CGFloat = 8
@@ -313,6 +314,34 @@ class TilingEngine {
         return true
     }
 
+    private func rememberPendingInserted(_ windows: [HyprWindow], for key: TilingKey) {
+        guard !windows.isEmpty else { return }
+        pendingInsertedWindowIDs[key, default: []].append(contentsOf: windows.map(\.windowID))
+    }
+
+    private func consumePendingInserted(for key: TilingKey, in tree: BSPTree) -> [HyprWindow] {
+        guard let ids = pendingInsertedWindowIDs.removeValue(forKey: key), !ids.isEmpty else { return [] }
+        let windowsByID = Dictionary(uniqueKeysWithValues: tree.allWindows.map { ($0.windowID, $0) })
+        return ids.compactMap { windowsByID[$0] }
+    }
+
+    private func mergedInserted(_ inserted: [HyprWindow], pending: [HyprWindow]) -> [HyprWindow] {
+        var seen: Set<CGWindowID> = []
+        var result: [HyprWindow] = []
+        for window in inserted + pending where !seen.contains(window.windowID) {
+            seen.insert(window.windowID)
+            result.append(window)
+        }
+        return result
+    }
+
+    private func clearKnownMinimumSizes(for windows: [HyprWindow]) {
+        for window in windows {
+            knownMinSizes.removeValue(forKey: window.windowID)
+            window.observedMinSize = nil
+        }
+    }
+
     @discardableResult
     private func smartInsertFitting(_ window: HyprWindow, into tree: BSPTree,
                                     maxDepth: Int, rect: CGRect) -> Bool {
@@ -405,6 +434,7 @@ class TilingEngine {
         let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
         hyprLog("tiling \(layouts.count) windows on workspace \(workspace) screen \(Int(screen.frame.width))x\(Int(screen.frame.height))")
         let conflicts = applyLayout(layouts)
+        let insertedForOverflow = mergedInserted(insertedWindows, pending: consumePendingInserted(for: key, in: t))
 
         if !conflicts.isEmpty {
             // pass 2: adjust ratios and re-layout
@@ -412,8 +442,15 @@ class TilingEngine {
             t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
             let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
             let overflow = overflowingWindows(in: adjusted)
-            if autoFloatOverflow(overflow, inserted: insertedWindows,
+            if autoFloatOverflow(overflow, inserted: insertedForOverflow,
                                  tree: t, key: key, screen: screen) {
+                return
+            }
+            if !overflow.isEmpty {
+                hyprLog("overflow persisted with no inserted target — discarding min-size adjustment")
+                clearKnownMinimumSizes(for: overflow)
+                t.root.resetSplitRatios()
+                applyLayoutFinal(layouts)
                 return
             }
             for (window, frame) in adjusted {
@@ -462,13 +499,17 @@ class TilingEngine {
 
         // add new windows via smart insert
         var addedAny = false
+        var insertedWindows: [HyprWindow] = []
         for w in tileWindows where !treeIDs.contains(w.windowID) {
             if !smartInsertFitting(w, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
                 onAutoFloat?(w)
             } else {
                 addedAny = true
+                insertedWindows.append(w)
             }
         }
+
+        rememberPendingInserted(insertedWindows, for: key)
 
         if removedAny || addedAny {
             t.root.clearUserSetRatios()
@@ -485,14 +526,16 @@ class TilingEngine {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = displayManager.cgRect(for: screen)
+        var inserted: [HyprWindow] = []
         if !t.contains(window) {
             if !smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
                 hyprLog("no fitting tile slot — auto-floating '\(window.title ?? "?")'")
                 onAutoFloat?(window)
                 return
             }
+            inserted.append(window)
         }
-        retile(key: key, screen: screen)
+        retile(key: key, screen: screen, inserted: inserted)
     }
 
     func removeWindow(_ window: HyprWindow, fromWorkspace workspace: Int) {
@@ -514,10 +557,11 @@ class TilingEngine {
         }
     }
 
-    private func retile(key: TilingKey, screen: NSScreen) {
+    private func retile(key: TilingKey, screen: NSScreen, inserted: [HyprWindow] = []) {
         let t = tree(for: key)
         primeMinimumSizes(t.allWindows)
         let rect = displayManager.cgRect(for: screen)
+        let insertedForOverflow = mergedInserted(inserted, pending: consumePendingInserted(for: key, in: t))
 
         t.root.resetSplitRatios()
 
@@ -529,8 +573,15 @@ class TilingEngine {
             t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
             let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
             let overflow = overflowingWindows(in: adjusted)
-            if autoFloatOverflow(overflow, inserted: [],
+            if autoFloatOverflow(overflow, inserted: insertedForOverflow,
                                  tree: t, key: key, screen: screen) {
+                return
+            }
+            if !overflow.isEmpty {
+                hyprLog("overflow persisted with no inserted target — discarding min-size adjustment")
+                clearKnownMinimumSizes(for: overflow)
+                t.root.resetSplitRatios()
+                applyLayoutFinal(layouts)
                 return
             }
             applyLayoutFinal(adjusted)
@@ -706,7 +757,7 @@ class TilingEngine {
         if t.contains(window) { return nil }
 
         if smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
-            retile(key: key, screen: screen)
+            retile(key: key, screen: screen, inserted: [window])
             return nil
         }
 
@@ -714,7 +765,7 @@ class TilingEngine {
         t.remove(evicted)
 
         if smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
-            retile(key: key, screen: screen)
+            retile(key: key, screen: screen, inserted: [window])
             return evicted
         }
 

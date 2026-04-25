@@ -249,7 +249,10 @@ class BSPTree {
                 }
             }
 
-            if raw <= 0.85 { return }
+            // one min-size conflict should not cascade ratio changes through
+            // multiple ancestors on the same axis. stacked 0.15/0.85 ratios can
+            // create effective 1/16 slots even when max depth is respected.
+            return
         }
     }
 
