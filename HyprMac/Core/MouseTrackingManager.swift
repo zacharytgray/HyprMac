@@ -1,7 +1,39 @@
 import Cocoa
 
-// handles focus-follows-mouse, refocus-under-cursor, and menu bar tracking suppression
+// handles focus-follows-mouse, refocus-under-cursor, and menu bar tracking
+// suppression.
+//
+// FFM pipeline: handleMouseMove() runs on every NSMouseMoved event, but
+// most events bail out — the work is throttled to ~60Hz, gated on a stack
+// of eligibility predicates (isFFMEligible), and short-circuited when the
+// cursor is outside the focus-relevant region (isInMenuBarDeadZone) or
+// resolves to "no change" (determineFocusTarget returning nil).
+//
+// the throttle is the load-bearing piece on heavy displays — mouseMoved
+// can fire hundreds of times per second, and each event used to walk every
+// visible window. the gate plus the topmost-window cache (TTL + spatial
+// tolerance) keep this off the hot path.
 class MouseTrackingManager {
+
+    // tunables. origin: empirical timing measured on M1 Air with ~30
+    // visible windows; raising throttleInterval beyond ~24ms produces
+    // visible focus lag during fast cursor sweeps, lowering below ~16ms
+    // wastes work on no-op resolves between display refreshes.
+    private enum Tuning {
+        // 60Hz cap on FFM resolve work. raising = slower focus, lowering =
+        // wasted CG window-list queries between display frames.
+        static let throttleInterval: CFAbsoluteTime = 0.016
+        // dedupe burst of NSMouseMoved events on a single frame; short
+        // enough that windows reshuffling under a stationary cursor still
+        // re-resolve within ~80ms.
+        static let topmostCacheTTL: CFAbsoluteTime = 0.08
+        // cursor jitter within this radius reuses the cached hit-test result
+        // without re-querying CGWindowListCopyWindowInfo.
+        static let topmostCacheSpatialTolerance: CGFloat = 10
+        // menu bar dead zone in CG (top-left) coords. focus changes inside
+        // this band would compete with menu-bar interaction.
+        static let menuBarDeadZonePx: CGFloat = 25
+    }
 
     // state
     // set by HIToolbox begin/end notifications — true for both menu bar menus
@@ -10,11 +42,7 @@ class MouseTrackingManager {
     var menuTracking = false
     var dockIsActive = false
 
-    // throttle mouse-move processing to ~60Hz — the OS can fire hundreds of
-    // mouseMoved events per second and each one walks every visible window.
-    // with many windows open this became the dominant over-time perf hit.
     private var lastHandleTime: CFAbsoluteTime = 0
-    private let handleMinInterval: CFAbsoluteTime = 0.016
 
     // dependencies injected by WindowManager
     var isFocusFollowsMouseEnabled: () -> Bool = { false }
@@ -35,79 +63,111 @@ class MouseTrackingManager {
     var lastFocusedID: () -> CGWindowID = { 0 }
     var recordFocus: (CGWindowID, String) -> Void = { _, _ in }
 
+    private struct FocusTarget {
+        let windowID: CGWindowID
+        let window: HyprWindow
+        let reason: String
+    }
+
     func handleMouseMove() {
         mainThreadOnly()
-        guard isFocusFollowsMouseEnabled() else { return }
-        guard !isMouseButtonDown() else { return }
-        guard !menuTracking else { return }
-        guard !dockIsActive else { return }
-        guard !isAnimating() else { return }
-        guard !isMouseFocusSuppressed() else { return }
+        guard isFFMEligible() else { return }
 
-        // throttle: ~60Hz cap. mouseMoved fires hundreds of times per second
-        // and the work below scales with window count, so unthrottled it's
-        // the dominant cost when many windows are open.
+        // throttle: cap the resolve rate. note this records lastHandleTime
+        // even when we end up bailing on the dead-zone check below — that
+        // matches the prior behavior, where any pass through the eligibility
+        // gate consumes the throttle window.
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastHandleTime < handleMinInterval { return }
+        if now - lastHandleTime < Tuning.throttleInterval { return }
         lastHandleTime = now
 
         let mouseNS = NSEvent.mouseLocation
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
-        // dead zone: menu bar region (~25px in CG top-left coords)
-        if cgY < 25 { return }
+        if isInMenuBarDeadZone(cgPoint) { return }
 
+        guard let target = determineFocusTarget(at: cgPoint) else { return }
+        recordFocus(target.windowID, target.reason)
+        onFocusForFFM(target.window)
+    }
+
+    // FFM eligibility: every gate that determines whether we should react to
+    // mouse movement at all. each guard exists for a specific reason —
+    // isMouseButtonDown skips drags (DragManager owns those), menuTracking
+    // and dockIsActive skip transient OS UI that would race with focus
+    // changes, isAnimating skips during WindowAnimator transitions where
+    // the visual frames don't match underlying AX positions, and
+    // isMouseFocusSuppressed honors the post-action quiet window owned by
+    // SuppressionRegistry["mouse-focus"].
+    private func isFFMEligible() -> Bool {
+        guard isFocusFollowsMouseEnabled() else { return false }
+        guard !isMouseButtonDown() else { return false }
+        guard !menuTracking else { return false }
+        guard !dockIsActive else { return false }
+        guard !isAnimating() else { return false }
+        guard !isMouseFocusSuppressed() else { return false }
+        return true
+    }
+
+    private func isInMenuBarDeadZone(_ cgPoint: CGPoint) -> Bool {
+        cgPoint.y < Tuning.menuBarDeadZonePx
+    }
+
+    // resolve which window (if any) should receive focus for the given
+    // cursor position. returns nil for "no change" cases: cursor over a
+    // floater (leave focus alone), cursor over the already-focused tile,
+    // cursor over an unmanaged normal-layer overlay (popovers etc.), or
+    // no managed window at all.
+    private func determineFocusTarget(at cgPoint: CGPoint) -> FocusTarget? {
         // snapshot closures once per move event
         let floating = floatingWindowIDs()
         let managed = tiledPositions()
 
         if let topmostID = topmostWindowID(at: cgPoint) {
+            // cursor is over a visible floater — leave focus alone
             if floating.contains(topmostID), isWindowVisible(topmostID) {
-                return
+                return nil
             }
 
-
             if managed[topmostID] != nil {
-                guard topmostID != lastFocusedID() else { return }
-                guard let target = cachedWindow(topmostID) else { return }
-                recordFocus(topmostID, "ffm-topmost")
-                onFocusForFFM(target)
-                return
+                guard topmostID != lastFocusedID() else { return nil }
+                guard let target = cachedWindow(topmostID) else { return nil }
+                return FocusTarget(windowID: topmostID, window: target, reason: "ffm-topmost")
             }
 
             // an unmanaged normal-layer window is above the tiled window
             // here, such as a popover or autocomplete panel.
-            return
+            return nil
         }
 
-        // fast path: cursor still inside the last-focused window's rect → done.
+        // fast path: cursor still inside the last-focused window's rect.
         // O(1) check that short-circuits before walking every floater + tile.
         // huge win during normal mouse movement (cursor stays in one window).
         let lastID = lastFocusedID()
         if lastID != 0,
            let lastRect = managed[lastID],
            lastRect.contains(cgPoint) {
-            return
+            return nil
         }
 
-        // if cursor is over a visible floating window, don't refocus the tiled window underneath
+        // CG topmost returned nothing but a floater may still cover the
+        // point at the AX-frame level (e.g. transparent regions where CG
+        // hit-test passes through). don't refocus the tile underneath.
         for wid in floating {
             guard isWindowVisible(wid),
                   let w = cachedWindow(wid), let frame = w.frame else { continue }
-            if frame.contains(cgPoint) { return }
+            if frame.contains(cgPoint) { return nil }
         }
 
         for (wid, rect) in managed {
             if rect.contains(cgPoint) {
-                guard wid != lastFocusedID() else { return }
-
-                guard let target = cachedWindow(wid) else { return }
-                recordFocus(wid, "ffm-managed")
-                onFocusForFFM(target)
-                return
+                guard wid != lastFocusedID() else { return nil }
+                guard let target = cachedWindow(wid) else { return nil }
+                return FocusTarget(windowID: wid, window: target, reason: "ffm-managed")
             }
         }
+        return nil
     }
 
     // re-derive focus from cursor position after a window disappears.
@@ -138,15 +198,15 @@ class MouseTrackingManager {
 
     // CGWindowListCopyWindowInfo is expensive — cache result with short TTL
     private var topmostCache: (windowID: CGWindowID, time: CFAbsoluteTime, point: CGPoint)?
-    private let topmostCacheTTL: CFAbsoluteTime = 0.08
 
     // front-to-back CG hit-test for the real window under the cursor.
     // returns 0 when no normal visible window is at the point.
     private func topmostWindowID(at point: CGPoint) -> CGWindowID? {
         let now = CFAbsoluteTimeGetCurrent()
         if let cache = topmostCache,
-           now - cache.time < topmostCacheTTL,
-           abs(point.x - cache.point.x) < 10, abs(point.y - cache.point.y) < 10 {
+           now - cache.time < Tuning.topmostCacheTTL,
+           abs(point.x - cache.point.x) < Tuning.topmostCacheSpatialTolerance,
+           abs(point.y - cache.point.y) < Tuning.topmostCacheSpatialTolerance {
             return cache.windowID == 0 ? nil : cache.windowID
         }
 
