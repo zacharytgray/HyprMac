@@ -1199,13 +1199,62 @@ class WindowManager {
     private func refreshFloatingBorders(windows: [HyprWindow]? = nil) {
         if config.showFocusBorder {
             let source = windows ?? Array(stateCache.cachedWindows.values)
+            let frames = floatingFrames(from: source)
             focusBorder.updateFloatingBorders(
-                floatingFrames(from: source),
+                frames,
                 color: config.resolvedFloatingBorderColor.cgColor
             )
+            refreshBorderOcclusion(floaterFrames: frames)
         } else {
             focusBorder.hideFloatingBorders()
         }
+    }
+
+    // compute per-border occluders (rects of higher-z tracked windows that
+    // overlap the bordered window) and push them into FocusBorder so the
+    // border layer is masked to the bordered window's visible region.
+    // z-order via CGWindowListCopyWindowInfo (front-to-back).
+    private func refreshBorderOcclusion(floaterFrames: [CGWindowID: CGRect]) {
+        guard config.showFocusBorder else { return }
+        guard let info = CGWindowListCopyWindowInfo(
+                [.optionOnScreenOnly, .excludeDesktopElements],
+                kCGNullWindowID) as? [[String: Any]] else { return }
+
+        var zIndex: [CGWindowID: Int] = [:]
+        for (i, dict) in info.enumerated() {
+            guard let num = dict[kCGWindowNumber as String] as? Int else { continue }
+            zIndex[CGWindowID(num)] = i
+        }
+
+        var trackedRects: [CGWindowID: CGRect] = [:]
+        for (id, rect) in stateCache.tiledPositions { trackedRects[id] = rect }
+        for (id, rect) in floaterFrames { trackedRects[id] = rect }
+
+        let focusedID = focusBorder.trackedWindowID ?? 0
+        var focusedOccluders: [CGRect] = []
+        if focusedID != 0,
+           let focusedRect = trackedRects[focusedID],
+           let focusedZ = zIndex[focusedID] {
+            for (id, rect) in trackedRects where id != focusedID {
+                guard let z = zIndex[id], z < focusedZ else { continue }
+                if rect.intersects(focusedRect) { focusedOccluders.append(rect) }
+            }
+        }
+
+        var floaterOccluders: [CGWindowID: [CGRect]] = [:]
+        for (fid, frect) in floaterFrames {
+            guard let fz = zIndex[fid] else { continue }
+            var list: [CGRect] = []
+            for (id, rect) in trackedRects where id != fid {
+                guard let z = zIndex[id], z < fz else { continue }
+                if rect.intersects(frect) { list.append(rect) }
+            }
+            if !list.isEmpty { floaterOccluders[fid] = list }
+        }
+
+        focusBorder.applyOcclusion(
+            focusedOccluders: focusedOccluders,
+            floaterOccluders: floaterOccluders)
     }
 
     private func updateMenuBarState() {

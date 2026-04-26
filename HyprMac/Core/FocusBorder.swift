@@ -27,6 +27,11 @@ class FocusBorder {
     private var shakeTimer: DispatchSourceTimer?
     private var state: State = .hidden
 
+    // remembered CG frames — used by applyOcclusion to translate occluder
+    // CG rects into glow-local NS coords. kept in sync with panel positions.
+    private var trackedWindowFrame: CGRect?
+    private var floaterFrames: [CGWindowID: CGRect] = [:]
+
     private enum State { case active, settled, hidden }
     private struct BorderPanel {
         let panel: NSPanel
@@ -114,6 +119,7 @@ class FocusBorder {
         p.orderFront(nil)
         state = .active
         trackedWindowID = windowID
+        trackedWindowFrame = rect
 
         // schedule transition to settled (outline only)
         let work = DispatchWorkItem { [weak self] in self?.settle() }
@@ -127,6 +133,7 @@ class FocusBorder {
         let nsRect = panelRect(for: rect)
         p.setFrame(nsRect, display: false)
         positionGlowView(in: p)
+        trackedWindowFrame = rect
     }
 
     func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
@@ -135,6 +142,7 @@ class FocusBorder {
         let staleIDs = floatingPanels.keys.filter { !visibleIDs.contains($0) }
         for windowID in staleIDs { hideFloatingBorder(for: windowID) }
 
+        floaterFrames = frames
         for (windowID, frame) in frames {
             let nsRect = panelRect(for: frame)
             let border: BorderPanel
@@ -168,12 +176,14 @@ class FocusBorder {
             border.panel.orderOut(nil)
         }
         floatingPanels.removeAll()
+        floaterFrames.removeAll()
     }
 
     func hideFloatingBorder(for windowID: CGWindowID) {
         mainThreadOnly()
         guard let border = floatingPanels.removeValue(forKey: windowID) else { return }
         border.panel.orderOut(nil)
+        floaterFrames.removeValue(forKey: windowID)
     }
 
     func settle() {
@@ -196,6 +206,7 @@ class FocusBorder {
         shakeTimer?.cancel()
         shakeTimer = nil
         trackedWindowID = nil
+        trackedWindowFrame = nil
         guard let p = panel, state != .hidden else { return }
         state = .hidden
 
@@ -245,6 +256,7 @@ class FocusBorder {
         p.orderFront(nil)
         state = .active
         trackedWindowID = windowID
+        trackedWindowFrame = rect
 
         // shake: oscillate both the overlay panel and the actual window
         let panelBaseX = nsRect.origin.x
@@ -278,6 +290,92 @@ class FocusBorder {
             }
         }
         timer.resume()
+    }
+
+    // MARK: - occlusion masking
+
+    // Apply CALayer masks so each border's portion that overlaps a higher-z
+    // tracked window is hidden. Without this, a floater behind a tile draws
+    // its border across the visible tile, and a focused tile partly covered
+    // by a floater draws its border across the visible floater. Both
+    // borders sit at the same .floating tier, so OS layering can't fix it
+    // — we explicitly clip the lower-z border to the visible region.
+    //
+    // occluder rects are in CG (top-left) screen coords. caller decides
+    // z-order via CGWindowListCopyWindowInfo or equivalent.
+    func applyOcclusion(focusedOccluders: [CGRect], floaterOccluders: [CGWindowID: [CGRect]]) {
+        mainThreadOnly()
+        if let frame = trackedWindowFrame, let glow = glowView {
+            applyMask(to: glow, windowCGRect: frame, occluders: focusedOccluders)
+        }
+        for (wid, border) in floatingPanels {
+            guard let frame = floaterFrames[wid] else { continue }
+            let occluders = floaterOccluders[wid] ?? []
+            applyMask(to: border.glowView, windowCGRect: frame, occluders: occluders)
+        }
+    }
+
+    private func applyMask(to glow: NSView, windowCGRect: CGRect, occluders: [CGRect]) {
+        guard let layer = glow.layer else { return }
+        if occluders.isEmpty {
+            layer.mask = nil
+            return
+        }
+
+        // visible region in glow-local NS coords (lower-left origin).
+        // glow.bounds origin is (0,0); size matches the bordered window's
+        // CG rect. translate each occluder into the same local space:
+        //   x_local = occCG.minX - windowCG.minX
+        //   y_local = windowCG.maxY - occCG.maxY   (CG is top-down; NS is bottom-up)
+        var pieces: [NSRect] = [layer.bounds]
+        for occCG in occluders {
+            let occLocal = NSRect(
+                x: occCG.origin.x - windowCGRect.origin.x,
+                y: windowCGRect.maxY - occCG.maxY,
+                width: occCG.width,
+                height: occCG.height)
+            pieces = pieces.flatMap { subtract(occLocal, from: $0) }
+        }
+
+        let path = CGMutablePath()
+        for piece in pieces { path.addRect(piece) }
+
+        let mask = CAShapeLayer()
+        mask.frame = layer.bounds
+        mask.path = path
+        mask.fillColor = NSColor.white.cgColor
+        // disable implicit animations — mask updates can flicker otherwise
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.mask = mask
+        CATransaction.commit()
+    }
+
+    // returns up to 4 strips representing `rect` minus `hole`.
+    // mirrors DimmingOverlay.subtract — same algorithm, kept local to avoid
+    // crossing the FocusBorder/DimmingOverlay file boundary for a 25-line helper.
+    private func subtract(_ hole: NSRect, from rect: NSRect) -> [NSRect] {
+        guard rect.intersects(hole) else { return [rect] }
+        let clipped = rect.intersection(hole)
+        if clipped == rect { return [] }
+        var pieces: [NSRect] = []
+        if rect.maxY > clipped.maxY {
+            pieces.append(NSRect(x: rect.minX, y: clipped.maxY,
+                                 width: rect.width, height: rect.maxY - clipped.maxY))
+        }
+        if clipped.minY > rect.minY {
+            pieces.append(NSRect(x: rect.minX, y: rect.minY,
+                                 width: rect.width, height: clipped.minY - rect.minY))
+        }
+        if clipped.minX > rect.minX {
+            pieces.append(NSRect(x: rect.minX, y: clipped.minY,
+                                 width: clipped.minX - rect.minX, height: clipped.height))
+        }
+        if rect.maxX > clipped.maxX {
+            pieces.append(NSRect(x: clipped.maxX, y: clipped.minY,
+                                 width: rect.maxX - clipped.maxX, height: clipped.height))
+        }
+        return pieces
     }
 
     // MARK: - panel setup
