@@ -118,6 +118,12 @@ class WindowManager {
         self.pollingScheduler = PollingScheduler { [weak self] in
             self?.pollWindowChanges()
         }
+        // hold polling off while a cross-monitor drag-swap is in flight (Phase 4 step 5).
+        // DragSwapHandler.applySwap registers the "cross-swap-in-flight" key for ~800ms;
+        // both the 1Hz timer and notification-driven schedule() calls drop until it expires.
+        pollingScheduler.isSuppressed = { [weak self] in
+            self?.suppressions.isSuppressed("cross-swap-in-flight") ?? false
+        }
 
         hotkeyManager.onAction = { [weak self] action in
             self?.suppressions.suppress("mouse-focus", for: 0.3)
@@ -168,7 +174,8 @@ class WindowManager {
             workspaceManager: workspaceManager,
             tilingEngine: tilingEngine,
             animator: animator,
-            config: config
+            config: config,
+            suppressions: suppressions
         )
         dragSwapHandler.updatePositionCache = { [weak self] windows in self?.updatePositionCache(windows: windows) }
         dragSwapHandler.tileAllVisibleSpaces = { [weak self] windows in self?.tileAllVisibleSpaces(windows: windows) }

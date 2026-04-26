@@ -24,11 +24,21 @@ final class DragSwapHandler {
     private let tilingEngine: TilingEngine
     private let animator: WindowAnimator
     private let config: UserConfig
+    private let suppressions: SuppressionRegistry
 
     // closure handles for WM-side helpers
     var updatePositionCache: (([HyprWindow]?) -> Void)?
     var rejectSwap: ((HyprWindow, String) -> Void)?
     var tileAllVisibleSpaces: (([HyprWindow]?) -> Void)?
+
+    // empirical bound on TilingEngine.crossSwapWindows wall-clock cost: two
+    // back-to-back retile passes, each containing up to ~360ms of Thread.sleep
+    // readback polling. 0.8s gives headroom for slow apps + post-swap settling.
+    // PollingScheduler honors this via SuppressionRegistry["cross-swap-in-flight"]
+    // so 1Hz timer ticks and notification-driven schedule() calls don't race
+    // the swap mid-flight (the bug Phase 4 step 5 fixes).
+    private static let crossSwapSuppressionSec: TimeInterval = 0.8
+    private static let crossSwapKey = "cross-swap-in-flight"
 
     init(stateCache: WindowStateCache,
          dragManager: DragManager,
@@ -37,7 +47,8 @@ final class DragSwapHandler {
          workspaceManager: WorkspaceManager,
          tilingEngine: TilingEngine,
          animator: WindowAnimator,
-         config: UserConfig) {
+         config: UserConfig,
+         suppressions: SuppressionRegistry) {
         self.stateCache = stateCache
         self.dragManager = dragManager
         self.accessibility = accessibility
@@ -46,6 +57,7 @@ final class DragSwapHandler {
         self.tilingEngine = tilingEngine
         self.animator = animator
         self.config = config
+        self.suppressions = suppressions
     }
 
     // entry point: called from WindowManager's mouseUp handler.
@@ -116,6 +128,11 @@ final class DragSwapHandler {
     private func applySwap(_ s: DragManager.DragSwapResult, allWindows: [HyprWindow]) {
         if s.crossMonitor {
             hyprLog(.debug, .drag, "cross-monitor swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
+            // hold polling off for the duration of the swap. crossSwapWindows runs
+            // two synchronous retile passes back-to-back; without this guard, the
+            // 1Hz timer or NSWorkspace notifications can fire mid-swap and observe
+            // the windows in an inconsistent state (Phase 4 step 5 fix).
+            suppressions.suppress(Self.crossSwapKey, for: Self.crossSwapSuppressionSec)
             if let srcScreen = s.sourceScreen, let tgtScreen = s.targetScreen {
                 let srcWs = workspaceManager.workspaceForScreen(srcScreen)
                 let tgtWs = workspaceManager.workspaceForScreen(tgtScreen)

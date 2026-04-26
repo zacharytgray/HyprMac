@@ -126,6 +126,59 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(fireCount, 2)
     }
 
+    // MARK: - suppression (Phase 4 step 5)
+
+    func testSuppressedScheduleIsDropped() {
+        var fireCount = 0
+        let scheduler = PollingScheduler { fireCount += 1 }
+        scheduler.isSuppressed = { true }
+
+        let exp = expectation(description: "no fire")
+        scheduler.schedule(after: 0.05)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) { exp.fulfill() }
+        wait(for: [exp], timeout: 1.0)
+        XCTAssertEqual(fireCount, 0, "suppressed schedule must not fire")
+    }
+
+    func testSuppressionStartedAfterScheduleStillBlocksFire() {
+        var fireCount = 0
+        var suppressed = false
+        let scheduler = PollingScheduler { fireCount += 1 }
+        scheduler.isSuppressed = { suppressed }
+
+        let exp = expectation(description: "no fire")
+        // schedule with no suppression, then suppress before the asyncAfter resolves.
+        // the fire-time re-check must drop the call — this is the cross-swap path:
+        // a 1Hz poll could land just as DragSwapHandler enters its critical section.
+        scheduler.schedule(after: 0.10)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { suppressed = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { exp.fulfill() }
+        wait(for: [exp], timeout: 1.0)
+        XCTAssertEqual(fireCount, 0, "suppression starting mid-flight must drop the fire")
+    }
+
+    func testTimerTickHonoursSuppression() {
+        var fireCount = 0
+        var suppressed = true
+        let scheduler = PollingScheduler { fireCount += 1 }
+        scheduler.isSuppressed = { suppressed }
+
+        scheduler.start()
+        // wait long enough for ~one tick. while suppressed, ticks must drop.
+        let exp1 = expectation(description: "first window")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exp1.fulfill() }
+        wait(for: [exp1], timeout: 3.0)
+        XCTAssertEqual(fireCount, 0, "suppressed timer must not fire onPoll")
+
+        // lift suppression and confirm subsequent ticks fire.
+        suppressed = false
+        let exp2 = expectation(description: "second window")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exp2.fulfill() }
+        wait(for: [exp2], timeout: 3.0)
+        scheduler.stop()
+        XCTAssertGreaterThanOrEqual(fireCount, 1, "post-suppression timer must resume firing")
+    }
+
     func testDoubleStartIsIdempotent() {
         var fireCount = 0
         let scheduler = PollingScheduler { fireCount += 1 }
