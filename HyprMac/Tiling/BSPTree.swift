@@ -1,9 +1,30 @@
+// BSPTree — owning container for one binary space partition tree.
+//
+// the tiling engine keeps one tree per (workspace, screen) pair; this type is
+// agnostic to that mapping. every public method is pure with respect to the
+// tree (no AX, no AppKit) so it's directly unit-testable. layout math runs
+// entirely through CGRect / CGSize.
+//
+// dwindle layout: each split picks the longer axis of the parent rect; the new
+// window goes on the right/bottom by default. smartInsert refines this by
+// backtracking to shallower leaves when slots would fall below
+// TilingConfig.minSlotDimension on constrained monitors.
+//
+// see also: BSPNode (per-node invariants), TilingConfig (bounds + tolerances),
+// docs/tiling-algorithm.md (long-form, lands in Phase 8).
 import Foundation
 
 class BSPTree {
     var root: BSPNode = BSPNode()
 
-    // insert a window. returns false if maxDepth would be exceeded.
+    /// Insert a window via plain dwindle: split the deepest-right leaf.
+    ///
+    /// Used as a fallback path when smart-insert isn't applicable (empty tree,
+    /// forceInsertWindow path-B reinsert) or when the caller has already
+    /// validated geometry. Most production callers should use ``smartInsert``.
+    ///
+    /// - Returns: `false` if splitting the deepest-right leaf would exceed
+    ///   `maxDepth`; `true` otherwise. On false, the tree is unchanged.
     @discardableResult
     func insert(_ window: HyprWindow, maxDepth: Int = Int.max) -> Bool {
         if root.isEmpty {
@@ -23,9 +44,18 @@ class BSPTree {
         return true
     }
 
-    // smart dwindle insert: tries deepest-right first, backtracks to shallower
-    // leaves if splitting would create children below minSlotDimension.
-    // produces balanced layouts on constrained monitors (e.g. 2x2 grid on vertical).
+    /// Dwindle insert with backtracking on constrained monitors.
+    ///
+    /// Walks leaves deepest-right first; the first leaf whose split would
+    /// produce children at or above `minSlotDimension` on both axes wins.
+    /// If no leaf meets the minimum, falls back to the deepest-right leaf
+    /// regardless — the new window will be smaller than the floor, but no
+    /// window is dropped. Backtracking is what produces balanced 2×2 grids
+    /// on vertical monitors instead of dwindle's deeper spiral.
+    ///
+    /// - Returns: `true` if the window was inserted (always succeeds when
+    ///   any leaf has `depth < maxDepth`); `false` only if every leaf is
+    ///   already at the depth ceiling.
     @discardableResult
     func smartInsert(_ window: HyprWindow, maxDepth: Int, in rect: CGRect,
                      gap: CGFloat, padding: CGFloat, minSlotDimension: CGFloat) -> Bool {
@@ -67,6 +97,9 @@ class BSPTree {
         return false
     }
 
+    /// Remove `window` from the tree. No-op if `window` isn't present.
+    /// Replaces the root with a fresh empty node when removing the last
+    /// window — callers don't need to special-case the empty case.
     func remove(_ window: HyprWindow) {
         guard let node = root.find(window) else { return }
 
@@ -78,8 +111,14 @@ class BSPTree {
         node.remove()
     }
 
-    // rebuild tree so windows settle into deepest-possible dwindle positions.
-    // called after removals — backtracked windows move deeper when slots free up.
+    /// Rebuild the tree from scratch in left-to-right window order.
+    ///
+    /// Called after a removal where the surviving windows might now fit at
+    /// deeper dwindle positions than they currently occupy (e.g., a 2×2 grid
+    /// produced by smart-insert backtracking can collapse back to a normal
+    /// dwindle spiral once the constraint is gone). All split overrides and
+    /// user-set ratios are dropped — this is intentional, since a structural
+    /// rebuild voids both.
     func compact(maxDepth: Int, in rect: CGRect, gap: CGFloat, padding: CGFloat, minSlotDimension: CGFloat) {
         let windows = allWindows // left-to-right preserves insertion order
         guard windows.count > 1 else { return }
@@ -95,15 +134,19 @@ class BSPTree {
         root.find(window) != nil
     }
 
-    // swap two windows' positions in the tree (just swap refs, then retile)
+    /// Swap the windows occupying two leaves. Topology and ratios are
+    /// preserved — only the window references change. No-op if either window
+    /// isn't in the tree (callers handle cross-tree swaps separately).
     func swap(_ a: HyprWindow, _ b: HyprWindow) {
         guard let nodeA = root.find(a), let nodeB = root.find(b) else { return }
         nodeA.window = b
         nodeB.window = a
     }
 
-    // toggle the split direction of the focused window's parent node
-    // this is hyprland's "togglesplit" — flips the axis of the containing split
+    /// Hyprland-style togglesplit. Flips the parent node's split direction
+    /// (horizontal ↔ vertical) regardless of what dwindle would have picked
+    /// from rect aspect ratio. Sets `splitOverride` so the choice survives
+    /// retiles. No-op if `window` is the root (no parent to flip).
     func toggleSplit(for window: HyprWindow, in rect: CGRect, gap: CGFloat, padding: CGFloat) {
         guard let leaf = root.find(window), let parent = leaf.parent else { return }
 
@@ -157,7 +200,10 @@ class BSPTree {
         }
     }
 
-    // compute the rect a given node occupies in the layout
+    /// Locate the rect that `target` occupies in the laid-out tree.
+    /// Returns nil if `target` isn't reachable from `root`. Used by smart-insert
+    /// backtracking and adjustForMinSizes to query post-layout geometry without
+    /// re-running the full layout pass.
     func rectForNode(_ target: BSPNode, in rect: CGRect, gap: CGFloat, padding: CGFloat) -> CGRect? {
         let padded = rect.insetBy(dx: padding, dy: padding)
         return rectForNodeHelper(node: root, target: target, rect: padded, gap: gap)
@@ -191,10 +237,22 @@ class BSPTree {
         }
     }
 
-    // adjust split ratios to accommodate windows that can't shrink to their allocated size.
-    // conflicts: [(window, actualSize)] where actualSize is what the app accepted after setFrame.
-    // width and height are handled independently by walking to the nearest
-    // matching-axis ancestor; the immediate parent may split the wrong axis.
+    /// Pass-2 ratio redistribution after a min-size conflict.
+    ///
+    /// Each `(window, actualSize)` describes a leaf where the app refused to
+    /// shrink to its allocated rect — `actualSize` is what setFrame readback
+    /// observed. For each conflict the algorithm walks up from the leaf to
+    /// the nearest matching-axis ancestor and biases its splitRatio toward
+    /// the conflicted child (clamped to [minRatio, maxRatio]).
+    ///
+    /// Width and height conflicts are processed independently because the
+    /// immediate parent often splits the wrong axis.
+    ///
+    /// - Important: Adjustment is bounded to **one** ancestor per axis. This
+    ///   is intentional (see `adjustAxisRatio`): cascading 0.85/0.15 ratios
+    ///   through multiple ancestors produces effective 1/16 slots that defeat
+    ///   the depth ceiling. One window's min-size conflict will not push
+    ///   another window outside its slot.
     func adjustForMinSizes(_ conflicts: [(window: HyprWindow, actual: CGSize)],
                            in rect: CGRect, gap: CGFloat, padding: CGFloat) {
         let padded = rect.insetBy(dx: padding, dy: padding)
@@ -249,16 +307,20 @@ class BSPTree {
                 }
             }
 
-            // one min-size conflict should not cascade ratio changes through
-            // multiple ancestors on the same axis. stacked 0.15/0.85 ratios can
-            // create effective 1/16 slots even when max depth is respected.
+            // see adjustForMinSizes doc comment: one conflict tunes one
+            // ancestor on this axis. stacking 0.15/0.85 across multiple
+            // ancestors creates effective 1/16 slots even with depth respected.
             return
         }
     }
 
-    // map a manual resize back to split ratio changes.
-    // walks from the resized window's leaf up to root, adjusting each ancestor's
-    // split ratio based on the new frame's edge position.
+    /// Convert a manual user resize back into split-ratio updates.
+    ///
+    /// Walks from the resized leaf upward, recomputing each ancestor's
+    /// splitRatio from the new frame's edge position. Touched ancestors are
+    /// flagged `userSetRatio = true` so subsequent retiles preserve them.
+    /// Sub-pixel changes below `TilingConfig.manualResizeRatioTolerance` are
+    /// skipped to avoid AX writes from drag jitter.
     func applyResizeDelta(for window: HyprWindow, newFrame: CGRect,
                           in rect: CGRect, gap: CGFloat, padding: CGFloat) {
         let padded = rect.insetBy(dx: padding, dy: padding)
@@ -313,6 +375,9 @@ class BSPTree {
         }
     }
 
+    /// Compute layout rects for every window in the tree, with outer padding
+    /// applied. Output is in tree iteration order (left-to-right). Pure
+    /// function — no side effects on the tree.
     func layout(in rect: CGRect, gap: CGFloat, padding: CGFloat) -> [(HyprWindow, CGRect)] {
         let padded = rect.insetBy(dx: padding, dy: padding)
         return root.layout(in: padded, gap: gap)
@@ -322,7 +387,8 @@ class BSPTree {
         root.allWindows()
     }
 
-    // the most recently inserted window (deepest-right leaf)
+    /// The most recently inserted window — i.e., the dwindle spiral's tip.
+    /// Used by forceInsertWindow for eviction selection.
     func deepestRightLeafWindow() -> HyprWindow? {
         return deepestRightLeaf(root)?.window
     }

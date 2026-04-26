@@ -1,3 +1,15 @@
+// BSPNode — a single node in the binary space partition tree used for tiling.
+//
+// invariants (enforced by construction; tests pin them in BSPNodeTests):
+//   - leaf      = window != nil  ||  (left == nil && right == nil)
+//   - internal  = left != nil    &&  right != nil
+//   - empty leaf is a transient state used during compact/prune; outside those
+//     paths every populated tree has window-bearing leaves.
+//   - splitRatio is clamped to [TilingConfig.minRatio, TilingConfig.maxRatio]
+//     by the property setter — direct writes can't escape these bounds.
+//
+// the file is intentionally Foundation-only — no AppKit, no AX. all geometry
+// flows in via parameters (rect, gap) so layout is unit-testable in isolation.
 import Foundation
 
 enum SplitDirection {
@@ -7,29 +19,35 @@ enum SplitDirection {
 
 class BSPNode {
     var parent: BSPNode?
-    // ratio is clamped on assignment so no caller can produce an out-of-bounds
-    // value, even by direct property write. shared bounds with pairFits and
-    // adjustForMinSizes — see TilingConfig.minRatio / .maxRatio.
+
+    // clamped to [TilingConfig.minRatio, TilingConfig.maxRatio] on every write.
+    // shared bounds with pairFits and adjustForMinSizes; out-of-bounds ratios
+    // would put the layout math into states it isn't designed for.
     private var _splitRatio: CGFloat = TilingConfig.defaultRatio
     var splitRatio: CGFloat {
         get { _splitRatio }
         set { _splitRatio = max(TilingConfig.minRatio, min(TilingConfig.maxRatio, newValue)) }
     }
+
+    // sticky once set — preserved across resetSplitRatios so user-driven manual
+    // resizes survive a retile (cleared explicitly by clearUserSetRatios on
+    // structural changes).
     var userSetRatio: Bool = false
 
-    // nil = compute from rect aspect ratio (dwindle default)
-    // set = forced direction (from togglesplit)
+    // nil = compute from rect aspect ratio (dwindle default).
+    // set = forced direction from togglesplit; survives until a sibling
+    // restructure (insert/remove on this node, which resets all three knobs).
     var splitOverride: SplitDirection?
 
-    // leaf = has a window (or is empty), split = has children
     var window: HyprWindow?
     var left: BSPNode?
     var right: BSPNode?
 
+    // see invariants at top of file.
     var isLeaf: Bool { window != nil || (left == nil && right == nil) }
     var isEmpty: Bool { window == nil && left == nil && right == nil }
 
-    // depth from root (0 = root)
+    // depth from root (0 = root).
     var depth: Int {
         var d = 0
         var node = parent
@@ -41,7 +59,10 @@ class BSPNode {
         self.window = window
     }
 
-    // split this leaf, existing window goes left, new goes right
+    // split this leaf into two children. the existing window (if any) goes
+    // left, the new window goes right. resets splitRatio / splitOverride /
+    // userSetRatio to defaults so a freshly-inserted parent doesn't inherit
+    // stale knobs from before. no-op on internal nodes.
     func insert(_ newWindow: HyprWindow) {
         guard isLeaf else { return }
 
@@ -58,7 +79,10 @@ class BSPNode {
         self.right?.parent = self
     }
 
-    // remove this leaf, promote sibling into parent
+    // remove this leaf and promote its sibling into the parent slot. the
+    // sibling's subtree, ratio, splitOverride, and userSetRatio all carry
+    // upward — the parent effectively becomes the sibling. no-op on root
+    // (parent is nil); BSPTree.remove handles root replacement separately.
     func remove() {
         guard let parent = parent else { return }
 
@@ -75,12 +99,16 @@ class BSPNode {
         parent.right?.parent = parent
     }
 
+    // recursive lookup — returns the leaf carrying `target` or nil if absent.
     func find(_ target: HyprWindow) -> BSPNode? {
         if window == target { return self }
         return left?.find(target) ?? right?.find(target)
     }
 
-    // reset split ratios to default, preserving user-set ratios from manual resize
+    // reset every internal node's splitRatio to TilingConfig.defaultRatio,
+    // skipping nodes flagged userSetRatio. called between layout passes so
+    // transient ratio adjustments (from a previous min-size conflict) don't
+    // accumulate, while genuine user resizes are preserved.
     func resetSplitRatios() {
         if !isLeaf && !userSetRatio {
             splitRatio = TilingConfig.defaultRatio
@@ -108,7 +136,10 @@ class BSPNode {
         right?.collectWindows(into: &result)
     }
 
-    // collect leaf nodes right-to-left (deepest-right first, for backtrack order)
+    // leaves in deepest-right-first order. used by smart insert backtracking:
+    // the dwindle default is to split the deepest-right leaf, but on
+    // constrained monitors the algorithm walks back through this list to find
+    // a shallower leaf with enough room (see BSPTree.smartInsert).
     func allLeavesRightToLeft() -> [BSPNode] {
         var result: [BSPNode] = []
         collectLeavesRightToLeft(into: &result)
@@ -145,12 +176,18 @@ class BSPNode {
         return isEmpty
     }
 
-    // resolve split direction: override if set, otherwise dwindle (longer axis)
+    // splitOverride wins when set; otherwise dwindle picks the longer axis
+    // (>= biases to horizontal on exact squares, matching pre-refactor behavior).
     func direction(for rect: CGRect) -> SplitDirection {
         if let forced = splitOverride { return forced }
         return rect.width >= rect.height ? .horizontal : .vertical
     }
 
+    // recursively layout this subtree into `rect`, returning [(window, frame)]
+    // pairs ready to be applied. gaps are split equally on both sides of every
+    // boundary so two adjacent slots see exactly `gap` of empty space between
+    // them. caller is responsible for outer padding (already applied by
+    // BSPTree.layout before recursing).
     func layout(in rect: CGRect, gap: CGFloat) -> [(HyprWindow, CGRect)] {
         if let w = window {
             return [(w, rect)]
