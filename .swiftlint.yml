@@ -1,0 +1,56 @@
+# SwiftLint config — Phase 0 baseline.
+# warnings only; nothing here fails the build yet. Phase 8 will tighten and
+# promote selected rules from warning → error.
+# REFACTOR_PLAN.md §8.4
+
+included:
+  - HyprMac
+  - HyprMacTests
+
+excluded:
+  - build
+  - HyprMac.xcodeproj
+  - HyprMac/PrivateAPI
+  - HyprMac/Resources
+
+# severity escalations are deferred to Phase 8. for now everything is a warning.
+strict: false
+
+# rule selection — start permissive, tighten over time.
+disabled_rules:
+  - identifier_name        # we use short names like w, l, r, b in BSP code by design
+  - todo                   # we have legitimate TODOs tracked in REFACTOR_PLAN.md
+  - trailing_whitespace
+  - line_length            # tightened in Phase 8
+
+opt_in_rules:
+  - empty_count
+  - explicit_init
+  - first_where
+  - last_where
+  - reduce_into
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - toggle_bool
+  - unused_import
+
+# tunables — relaxed for Phase 0; tightened in Phase 8.
+function_body_length:
+  warning: 120
+  error: 250
+
+type_body_length:
+  warning: 600
+  error: 1500
+
+file_length:
+  warning: 800
+  error: 2500
+  ignore_comment_only_lines: true
+
+cyclomatic_complexity:
+  warning: 15
+  error: 30
+
+nesting:
+  type_level: 2
