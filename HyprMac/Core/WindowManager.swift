@@ -23,9 +23,6 @@ class WindowManager {
     // tracks known window IDs so we can detect new/closed ones
     private var knownWindowIDs: Set<CGWindowID> = []
 
-    // stores original frames before tiling (for float toggle restore)
-    private var originalFrames: [CGWindowID: CGRect] = [:]
-
     // tracks which windows are floating
     private var floatingWindowIDs: Set<CGWindowID> = []
 
@@ -33,7 +30,8 @@ class WindowManager {
     private var windowOwners: [CGWindowID: pid_t] = [:]
 
     // window-keyed state cache. fields migrate in over Phase 2 — currently owns
-    // cachedWindows + tiledPositions + hiddenWindowIDs; four more move in subsequent commits.
+    // cachedWindows + tiledPositions + hiddenWindowIDs + originalFrames; three more move
+    // in subsequent commits.
     let stateCache = WindowStateCache()
 
     // polling timer
@@ -115,7 +113,7 @@ class WindowManager {
             guard let self = self else { return }
             window.isFloating = true
             self.floatingWindowIDs.insert(window.windowID)
-            if let original = self.originalFrames[window.windowID] {
+            if let original = self.stateCache.originalFrames[window.windowID] {
                 window.setFrame(original)
             }
             hyprLog(.debug, .lifecycle, "auto-floated '\(window.title ?? "?")' — screen full")
@@ -325,7 +323,7 @@ class WindowManager {
             guard !workspaceManager.isWorkspaceVisible(ws) else { continue }
             guard let window = allWindows.first(where: { $0.windowID == wid }) else { continue }
 
-            if let original = originalFrames[wid] {
+            if let original = stateCache.originalFrames[wid] {
                 window.setFrame(original)
                 hyprLog(.debug, .lifecycle, "restored '\(window.title ?? "?")' to original frame")
             } else {
@@ -1202,7 +1200,7 @@ class WindowManager {
                     evicted.isFloating = true
                     floatingWindowIDs.insert(evicted.windowID)
                     let screenRect = displayManager.cgRect(for: screen)
-                    if let original = originalFrames[evicted.windowID],
+                    if let original = stateCache.originalFrames[evicted.windowID],
                        isFrameVisible(original, on: screenRect) {
                         evicted.setFrame(original)
                     } else {
@@ -1223,7 +1221,7 @@ class WindowManager {
                 tilingEngine.removeWindow(focused, fromWorkspace: workspace)
 
                 let screenRect = displayManager.cgRect(for: screen)
-                if let original = originalFrames[focused.windowID],
+                if let original = stateCache.originalFrames[focused.windowID],
                    isFrameVisible(original, on: screenRect) {
                     focused.position = original.origin
                     focused.size = original.size
@@ -1296,14 +1294,14 @@ class WindowManager {
         let allWindows = accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
         for w in allWindows {
-            if let frame = w.frame, originalFrames[w.windowID] == nil {
+            if let frame = w.frame, stateCache.originalFrames[w.windowID] == nil {
                 // only save if the frame is actually visible on some screen.
                 // after a restart, windows may still be at the previous session's hide corner.
                 let onScreen = displayManager.screens.contains { screen in
                     isFrameVisible(frame, on: displayManager.cgRect(for: screen))
                 }
                 if onScreen {
-                    originalFrames[w.windowID] = frame
+                    stateCache.originalFrames[w.windowID] = frame
                 }
             }
             knownWindowIDs.insert(w.windowID)
@@ -1529,7 +1527,7 @@ class WindowManager {
             floatingWindowIDs.insert(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = true
-                if let original = originalFrames[wid] { w.setFrame(original) }
+                if let original = stateCache.originalFrames[wid] { w.setFrame(original) }
                 hyprLog(.debug, .lifecycle, "all workspaces full — auto-floating '\(w.title ?? "?")'")
             }
             widIdx += 1
@@ -1660,7 +1658,7 @@ class WindowManager {
     private func forgetWindow(_ id: CGWindowID) {
         knownWindowIDs.remove(id)
         stateCache.hiddenWindowIDs.remove(id)
-        originalFrames.removeValue(forKey: id)
+        stateCache.originalFrames.removeValue(forKey: id)
         floatingWindowIDs.remove(id)
         windowOwners.removeValue(forKey: id)
         stateCache.tiledPositions.removeValue(forKey: id)
@@ -1779,7 +1777,7 @@ class WindowManager {
         }
         // floating set / originalFrames / windowOwners shouldn't outlive known+hidden either
         for id in floatingWindowIDs where !live.contains(id) { forgetWindow(id) }
-        for (id, _) in originalFrames where !live.contains(id) { forgetWindow(id) }
+        for (id, _) in stateCache.originalFrames where !live.contains(id) { forgetWindow(id) }
         for (id, _) in windowOwners where !live.contains(id) { forgetWindow(id) }
     }
 
@@ -1921,7 +1919,7 @@ class WindowManager {
                         isFrameVisible(frame, on: displayManager.cgRect(for: screen))
                     }
                     if onScreen {
-                        originalFrames[w.windowID] = frame
+                        stateCache.originalFrames[w.windowID] = frame
                     }
                 }
                 knownWindowIDs.insert(w.windowID)

@@ -36,11 +36,17 @@ final class WindowStateCache {
     // state stays so they can re-tile cleanly when they return.
     var hiddenWindowIDs: Set<CGWindowID> = []
 
+    // pre-tile frames captured the first time we see a window. used to restore
+    // a window's user-chosen size on float-toggle and on workspace eviction
+    // (when a window leaves the BSP tree, it pops back to its original size).
+    var originalFrames: [CGWindowID: CGRect] = [:]
+
     // remove this window from every tracked dict.
     // used when a window is permanently gone (closed, app exited).
     func forget(_ id: CGWindowID) {
         cachedWindows.removeValue(forKey: id)
         tiledPositions.removeValue(forKey: id)
         hiddenWindowIDs.remove(id)
+        originalFrames.removeValue(forKey: id)
     }
 }
