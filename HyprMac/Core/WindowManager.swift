@@ -14,7 +14,6 @@ class WindowManager {
     let dimmingOverlay = DimmingOverlay()
     let mouseTracker = MouseTrackingManager()
     let dragManager = DragManager()
-    let floatingController = FloatingWindowController()
     let keybindOverlay = KeybindOverlayController()
 
     private(set) var workspaceManager: WorkspaceManager!
@@ -32,6 +31,9 @@ class WindowManager {
     // window discovery (poll-cycle diff). owns its half of cache mutations
     // and surfaces the rest as a WindowChanges struct that this class applies.
     private var discovery: WindowDiscoveryService!
+
+    // floating-window lifecycle: float/tile toggle, cycle-focus, raise-behind, auto-float predicate.
+    private(set) var floatingController: FloatingWindowController!
 
     // workspace switch / move / move-to-monitor workflows.
     // delegates to workspaceManager + tilingEngine; no new policy lives there.
@@ -61,9 +63,6 @@ class WindowManager {
     // "mouse-focus" (will migrate from MouseTrackingManager in a follow-up commit).
     let suppressions = SuppressionRegistry()
 
-    // guard against re-entrant raiseFloatingWindows (also used by suppressions)
-    private var isRaisingFloaters = false
-
     // live config reload
     private var configObservers: Set<AnyCancellable> = []
     private var isRunning = false
@@ -78,6 +77,18 @@ class WindowManager {
             accessibility: accessibility,
             displayManager: displayManager,
             workspaceManager: workspaceManager
+        )
+        self.floatingController = FloatingWindowController(
+            stateCache: stateCache,
+            suppressions: suppressions,
+            workspaceManager: workspaceManager,
+            tilingEngine: tilingEngine,
+            displayManager: displayManager,
+            accessibility: accessibility,
+            cursorManager: cursorManager,
+            focusController: focusController,
+            focusBorder: focusBorder,
+            dimmingOverlay: dimmingOverlay
         )
         self.workspaceOrchestrator = WorkspaceOrchestrator(
             workspaceManager: workspaceManager,
@@ -134,12 +145,13 @@ class WindowManager {
             self?.dimmingOverlay.hideAll()
         }
 
-        // wire up floating controller
-        floatingController.isWindowVisible = { [weak self] wid in self?.workspaceManager.isWindowVisible(wid) ?? false }
-        floatingController.cachedWindow = { [weak self] wid in self?.stateCache.cachedWindows[wid] }
-        floatingController.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
-        floatingController.screenID = { [weak self] s in self?.workspaceManager.screenID(for: s) ?? 0 }
-        floatingController.screens = { [weak self] in self?.displayManager.screens ?? [] }
+        // wire up floating controller — closure handles for WM-side helpers.
+        floatingController.animatedRetile = { [weak self] prepare in
+            self?.animatedRetile(prepare: prepare)
+        }
+        floatingController.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+        floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
+        floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
 
         tilingEngine.onAutoFloat = { [weak self] window in
             guard let self = self else { return }
@@ -730,7 +742,7 @@ class WindowManager {
         case .focusMenuBar:
             warpToMenuBar()
         case .focusFloating:
-            focusFloatingWindow()
+            floatingController.cycleFocus()
         case .closeWindow:
             closeWindow()
         case .cycleWorkspace(let delta):
@@ -955,95 +967,12 @@ class WindowManager {
             .map { workspaceManager.workspaceForScreen($0) }
     }
 
-    private func focusFloatingWindow() {
-        suppressions.suppress("mouse-focus", for: 0.3)
-        suppressions.suppress("activation-switch", for: 0.5)
-
-        guard let target = floatingController.focusFloating(
-            floatingWindowIDs: stateCache.floatingWindowIDs,
-            getAllWindows: { [weak self] in self?.accessibility.getAllWindows() ?? [] },
-            getFocusedWindow: { [weak self] in self?.accessibility.getFocusedWindow() },
-            displayManager: displayManager,
-            isFrameVisible: { [weak self] frame, screenRect in self?.isFrameVisible(frame, on: screenRect) ?? false }
-        ) else {
-            hyprLog(.debug, .lifecycle, "no visible floating windows")
-            return
-        }
-
-        target.focus()
-        cursorManager.warpToCenter(of: target)
-        focusController.recordFocus(target.windowID, reason: "focusFloating")
-        target.isFloating = true
-        stateCache.cachedWindows[target.windowID] = target
-        updateFocusBorder(for: target)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
-            self?.updatePositionCache()
-        }
-    }
-
+    // resolves focused window + screen + workspace, then forwards to FloatingWindowController.
     private func toggleFloating() {
         guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
-
-        // can't toggle tiling on disabled monitors — everything is floating there
-        if workspaceManager.isMonitorDisabled(screen) {
-            hyprLog(.debug, .lifecycle, "toggleFloating: monitor disabled, no tiling available")
-            return
-        }
-
         let workspace = workspaceManager.workspaceForScreen(screen)
-
-        let wasFloating = stateCache.floatingWindowIDs.contains(focused.windowID)
-
-        if wasFloating {
-            // floating → tiled: animate surrounding windows making room
-            // reassign workspace in case the window was dragged to a different monitor
-            workspaceManager.moveWindow(focused.windowID, toWorkspace: workspace)
-            animatedRetile(prepare: { [self] in
-                stateCache.floatingWindowIDs.remove(focused.windowID)
-                focused.isFloating = false
-
-                if let evicted = tilingEngine.forceInsertWindow(focused, toWorkspace: workspace, on: screen) {
-                    evicted.isFloating = true
-                    stateCache.floatingWindowIDs.insert(evicted.windowID)
-                    let screenRect = displayManager.cgRect(for: screen)
-                    if let original = stateCache.originalFrames[evicted.windowID],
-                       isFrameVisible(original, on: screenRect) {
-                        evicted.setFrame(original)
-                    } else {
-                        let sz = evicted.size ?? CGSize(width: 800, height: 600)
-                        evicted.position = CGPoint(x: screenRect.midX - sz.width / 2, y: screenRect.midY - sz.height / 2)
-                    }
-                    hyprLog(.debug, .lifecycle, "tiling '\(focused.title ?? "?")' — bumped '\(evicted.title ?? "?")' to floating")
-                } else {
-                    hyprLog(.debug, .lifecycle, "tiling window '\(focused.title ?? "?")'")
-                }
-            })
-        } else {
-            // tiled → floating: animate remaining windows filling the gap
-            focusBorder.hide(); dimmingOverlay.hideAll()
-            animatedRetile(prepare: { [self] in
-                stateCache.floatingWindowIDs.insert(focused.windowID)
-                focused.isFloating = true
-                tilingEngine.removeWindow(focused, fromWorkspace: workspace)
-
-                let screenRect = displayManager.cgRect(for: screen)
-                if let original = stateCache.originalFrames[focused.windowID],
-                   isFrameVisible(original, on: screenRect) {
-                    focused.position = original.origin
-                    focused.size = original.size
-                    hyprLog(.debug, .lifecycle, "floated window '\(focused.title ?? "?")' → restored \(original)")
-                } else {
-                    let currentSize = focused.size ?? CGSize(width: 800, height: 600)
-                    let centeredOrigin = CGPoint(
-                        x: screenRect.midX - currentSize.width / 2,
-                        y: screenRect.midY - currentSize.height / 2
-                    )
-                    focused.position = centeredOrigin
-                    hyprLog(.debug, .lifecycle, "floated window '\(focused.title ?? "?")' → centered on screen (bad original frame)")
-                }
-            })
-        }
+        floatingController.toggle(focused, on: screen, in: workspace)
     }
 
     // MARK: - disabled monitor handling
@@ -1089,14 +1018,6 @@ class WindowManager {
 
     // MARK: - tiling
 
-    // check if a window belongs to an excluded app (auto-float)
-    private func isExcludedApp(_ window: HyprWindow) -> Bool {
-        guard let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier else {
-            return false
-        }
-        return config.excludedBundleIDs.contains(bundleID)
-    }
-
     func snapshotAndTile() {
         let allWindows = accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
@@ -1115,7 +1036,8 @@ class WindowManager {
             stateCache.windowOwners[w.windowID] = w.ownerPID
 
             // auto-float excluded apps
-            if isExcludedApp(w) && !stateCache.floatingWindowIDs.contains(w.windowID) {
+            if floatingController.shouldAutoFloat(w, excludedBundleIDs: Set(config.excludedBundleIDs))
+                && !stateCache.floatingWindowIDs.contains(w.windowID) {
                 stateCache.floatingWindowIDs.insert(w.windowID)
                 w.isFloating = true
                 hyprLog(.debug, .lifecycle, "auto-float excluded app: '\(w.title ?? "?")'")
@@ -1267,7 +1189,8 @@ class WindowManager {
 
         // full redistribution: un-float everything except excluded apps and
         // non-standard windows (dialogs, sheets, floating panels).
-        let keepFloating = Set(allWindows.filter { isExcludedApp($0) }.map { $0.windowID })
+        let excluded = Set(config.excludedBundleIDs)
+        let keepFloating = Set(allWindows.filter { floatingController.shouldAutoFloat($0, excludedBundleIDs: excluded) }.map { $0.windowID })
         for wid in stateCache.floatingWindowIDs where !keepFloating.contains(wid) && allWids.contains(wid) {
             stateCache.floatingWindowIDs.remove(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
@@ -1696,7 +1619,7 @@ class WindowManager {
         // periodically re-raise floating windows so they don't get stuck
         // behind full-screen tiled windows (no activation event to trigger raise)
         if !stateCache.floatingWindowIDs.isEmpty {
-            raiseFloatingWindows()
+            floatingController.raiseBehind()
         }
     }
 
@@ -1736,45 +1659,11 @@ class WindowManager {
         // must always run — even when activation switch is suppressed — so floaters stay on top.
         if !stateCache.floatingWindowIDs.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.raiseFloatingWindows()
+                self?.floatingController.raiseBehind()
             }
         }
     }
 
-    private func raiseFloatingWindows() {
-        guard !isRaisingFloaters else { return }
-        // skip while a native menu is tracking — the post-raise focusWithoutRaise
-        // below synthesizes key-focus events that dismiss context menus
-        guard !mouseTracker.menuTracking else { return }
-        isRaisingFloaters = true
-        defer { isRaisingFloaters = false }
-
-        let toRaise = floatingController.floatingWindowsBehindTiled(
-            floatingWindowIDs: stateCache.floatingWindowIDs,
-            tiledPositions: stateCache.tiledPositions
-        )
-        guard !toRaise.isEmpty else { return }
-
-        let previousFocusID = focusController.lastFocusedID
-        let previousWindow = stateCache.cachedWindows[previousFocusID]
-
-        suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.15)
-
-        for wid in toRaise {
-            guard let w = stateCache.cachedWindows[wid] else { continue }
-            AXUIElementPerformAction(w.element, kAXRaiseAction as CFString)
-        }
-
-        // immediately restore focus to the tiled window the user was interacting with.
-        // this prevents the raise from stealing focus and triggering an FFM cascade.
-        if let prev = previousWindow, !stateCache.floatingWindowIDs.contains(prev.windowID) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
-                prev.focusWithoutRaise()
-                self?.updateFocusBorder(for: prev)
-            }
-        }
-    }
 
     @objc private func appDidLaunch(_ notification: Notification) {
         pollingScheduler.schedule(after: 0.5)
