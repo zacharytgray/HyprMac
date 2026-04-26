@@ -1,9 +1,22 @@
 import Cocoa
 
-// persistent focus indicator around the active window. two states:
-// - active (traversal): accent-colored tint overlay + border
-// - settled: outline border only, no fill
+// persistent focus indicator around the active window.
+//
+// state machine:
+//   hidden  --show()-->  active   (tint fill + border, ~settleDelay)
+//   active  --settle()-> settled  (outline only, no fill)
+//   any     --hide()-->  hidden   (fade out + orderOut + nil-out)
+//   any     --flashError()--> active (red shake; hides itself when done)
+//
 // floating windows also get persistent outline-only panels keyed by window id
+// (managed via updateFloatingBorders / hideFloatingBorder(s)).
+//
+// lifecycle: every public mutation cancels in-flight work (settleWork,
+// shakeTimer) before reassigning. hide() nils the panel + glowView so a
+// long-lived FocusBorder doesn't accumulate orphaned panels across
+// app/workspace transitions. deinit guarantees cleanup if the FocusBorder
+// itself is dropped (currently it isn't — WindowManager owns it for the
+// lifetime of the app — but the contract holds for tests + future swaps).
 class FocusBorder {
     private(set) var trackedWindowID: CGWindowID?
 
@@ -20,26 +33,59 @@ class FocusBorder {
         let glowView: NSView
     }
 
-    private let margin: CGFloat = 6
-    // match OS window corner radius. Tahoe (macOS 26) uses noticeably rounder
-    // corners than Sequoia (15); using Sequoia's radius on Tahoe leaves visible
-    // gaps at the corners where the border arcs tighter than the window.
+    // tunables. origin: empirical (settleDelay, shake timing) and OS-imposed
+    // (corner radius needs to track the actual window corner radius per macOS
+    // version or the border arcs tighter and leaves visible gaps at corners).
+    private enum Tuning {
+        static let margin: CGFloat = 6
+        static let settleDelaySec: TimeInterval = 0.5
+        static let settleAnimationDurationSec: TimeInterval = 0.3
+        static let hideAnimationDurationSec: TimeInterval = 0.15
+        static let shakeStepDurationSec: TimeInterval = 0.04
+        static let shakeOffsets: [CGFloat] = [10, -10, 7, -7, 3, -3, 0]
+        static let shakeFadeDelaySec: TimeInterval = 0.15
+        static let activeBorderWidth: CGFloat = 2
+        static let settledBorderWidth: CGFloat = 1.5
+        static let floatingBorderWidth: CGFloat = 1.5
+        static let errorBorderWidth: CGFloat = 2.5
+        static let activeFillAlpha: CGFloat = 0.08
+        static let errorFillAlpha: CGFloat = 0.12
+        // Tahoe (macOS 26) uses noticeably rounder window corners than
+        // Sequoia (15); using Sequoia's radius on Tahoe leaves visible
+        // gaps where the border arcs tighter than the window.
+        static let macOSSequoiaCornerRadius: CGFloat = 10
+        static let macOSTahoeCornerRadius: CGFloat = 12
+    }
+
     private let borderRadius: CGFloat = {
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 {
-            return 12
+            return Tuning.macOSTahoeCornerRadius
         }
-        return 10
+        return Tuning.macOSSequoiaCornerRadius
     }()
-    private let settleDelay: TimeInterval = 0.5
 
     // resolved from config — call updateColor() when config changes
     var accentCGColor: CGColor = NSColor.controlAccentColor.cgColor
+
+    deinit {
+        // tests and future ownership swaps may drop a FocusBorder mid-life;
+        // ensure we don't leak NSPanels or live timers in those cases.
+        settleWork?.cancel()
+        shakeTimer?.cancel()
+        panel?.orderOut(nil)
+        for (_, border) in floatingPanels { border.panel.orderOut(nil) }
+    }
 
     // MARK: - public API
 
     func show(around rect: CGRect, windowID: CGWindowID) {
         mainThreadOnly()
+        // cancel any in-flight transition (settle, shake) before re-asserting.
+        // without this, a pending shake or settle can mutate the panel after
+        // show() returns and undo the new frame/state.
         settleWork?.cancel()
+        shakeTimer?.cancel()
+        shakeTimer = nil
 
         let nsRect = panelRect(for: rect)
 
@@ -58,9 +104,9 @@ class FocusBorder {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.borderColor = accentCGColor
-            layer.borderWidth = 2
+            layer.borderWidth = Tuning.activeBorderWidth
             layer.cornerRadius = borderRadius
-            layer.backgroundColor = accentCGColor.copy(alpha: 0.08)
+            layer.backgroundColor = accentCGColor.copy(alpha: Tuning.activeFillAlpha)
             CATransaction.commit()
         }
 
@@ -72,7 +118,7 @@ class FocusBorder {
         // schedule transition to settled (outline only)
         let work = DispatchWorkItem { [weak self] in self?.settle() }
         settleWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + settleDelay, execute: work)
+        DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.settleDelaySec, execute: work)
     }
 
     func updatePosition(_ rect: CGRect) {
@@ -107,7 +153,7 @@ class FocusBorder {
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
                 layer.borderColor = color
-                layer.borderWidth = 1.5
+                layer.borderWidth = Tuning.floatingBorderWidth
                 layer.cornerRadius = borderRadius
                 layer.backgroundColor = CGColor.clear
                 CATransaction.commit()
@@ -139,22 +185,30 @@ class FocusBorder {
 
         // animate to outline-only
         CATransaction.begin()
-        CATransaction.setAnimationDuration(0.3)
+        CATransaction.setAnimationDuration(Tuning.settleAnimationDurationSec)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeInEaseOut))
         layer.backgroundColor = CGColor.clear
-        layer.borderWidth = 1.5
+        layer.borderWidth = Tuning.settledBorderWidth
         CATransaction.commit()
     }
 
     func hide() {
         mainThreadOnly()
         settleWork?.cancel()
+        shakeTimer?.cancel()
+        shakeTimer = nil
         trackedWindowID = nil
         guard let p = panel, state != .hidden else { return }
         state = .hidden
 
+        // detach panel + glowView synchronously so a subsequent show()
+        // builds a fresh panel rather than reusing the one we're fading out.
+        // the captured `p` keeps the old panel alive through the animation.
+        panel = nil
+        glowView = nil
+
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.15
+            ctx.duration = Tuning.hideAnimationDurationSec
             p.animator().alphaValue = 0
         }, completionHandler: {
             p.orderOut(nil)
@@ -183,9 +237,9 @@ class FocusBorder {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.borderColor = red
-            layer.borderWidth = 2.5
+            layer.borderWidth = Tuning.errorBorderWidth
             layer.cornerRadius = borderRadius
-            layer.backgroundColor = red.copy(alpha: 0.12)
+            layer.backgroundColor = red.copy(alpha: Tuning.errorFillAlpha)
             CATransaction.commit()
         }
 
@@ -197,8 +251,8 @@ class FocusBorder {
         // shake: oscillate both the overlay panel and the actual window
         let panelBaseX = nsRect.origin.x
         let windowBaseX = rect.origin.x
-        let offsets: [CGFloat] = [10, -10, 7, -7, 3, -3, 0]
-        let stepDuration: TimeInterval = 0.04
+        let offsets = Tuning.shakeOffsets
+        let stepDuration = Tuning.shakeStepDurationSec
         var step = 0
 
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -220,7 +274,7 @@ class FocusBorder {
                 // restore window to exact original position
                 window?.position = CGPoint(x: windowBaseX, y: rect.origin.y)
                 // fade out after shake
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.shakeFadeDelaySec) { [weak self] in
                     self?.hide()
                 }
             }
@@ -280,9 +334,9 @@ class FocusBorder {
     private func positionGlowView(_ glow: NSView, in panel: NSPanel) {
         guard let content = panel.contentView else { return }
         let bounds = content.bounds
-        glow.frame = NSRect(x: margin, y: margin,
-                            width: bounds.width - margin * 2,
-                            height: bounds.height - margin * 2)
+        glow.frame = NSRect(x: Tuning.margin, y: Tuning.margin,
+                            width: bounds.width - Tuning.margin * 2,
+                            height: bounds.height - Tuning.margin * 2)
     }
 
     // MARK: - coordinate conversion
@@ -292,9 +346,9 @@ class FocusBorder {
     private func panelRect(for cgRect: CGRect) -> NSRect {
         let primaryH = primaryScreenHeight
         let nsY = primaryH - cgRect.origin.y - cgRect.height
-        return NSRect(x: cgRect.origin.x - margin,
-                      y: nsY - margin,
-                      width: cgRect.width + margin * 2,
-                      height: cgRect.height + margin * 2)
+        return NSRect(x: cgRect.origin.x - Tuning.margin,
+                      y: nsY - Tuning.margin,
+                      width: cgRect.width + Tuning.margin * 2,
+                      height: cgRect.height + Tuning.margin * 2)
     }
 }
