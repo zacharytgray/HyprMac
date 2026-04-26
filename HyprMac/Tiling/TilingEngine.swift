@@ -31,65 +31,15 @@ class TilingEngine {
     // callback when a window can't fit (exceeds max depth)
     var onAutoFloat: ((HyprWindow) -> Void)?
 
-    private var knownMinSizes: [CGWindowID: CGSize] = [:]
+    private let minSizes = MinSizeMemory()
 
     init(displayManager: DisplayManager) {
         self.displayManager = displayManager
     }
 
-    func primeMinimumSizes(_ windows: [HyprWindow]) {
-        for window in windows {
-            if let known = knownMinSizes[window.windowID] {
-                window.observedMinSize = known
-            } else if let seeded = window.observedMinSize, isUsableMinimumSize(seeded) {
-                knownMinSizes[window.windowID] = seeded
-            }
-        }
-    }
-
-    func forgetMinimumSize(windowID: CGWindowID) {
-        knownMinSizes.removeValue(forKey: windowID)
-    }
-
-    private func minimumSize(for window: HyprWindow?) -> CGSize {
-        guard let window else { return .zero }
-        return knownMinSizes[window.windowID] ?? window.observedMinSize ?? .zero
-    }
-
-    private func recordObservedMinimumSize(_ window: HyprWindow,
-                                           actual: CGSize,
-                                           widthConflict: Bool,
-                                           heightConflict: Bool) {
-        let existing = minimumSize(for: window)
-        let updated = CGSize(
-            width: widthConflict ? max(existing.width, actual.width) : existing.width,
-            height: heightConflict ? max(existing.height, actual.height) : existing.height
-        )
-        guard isUsableMinimumSize(updated) else { return }
-        knownMinSizes[window.windowID] = updated
-        window.observedMinSize = updated
-    }
-
-    private func lowerMinimumSizeIfAccepted(_ window: HyprWindow, actual: CGSize) {
-        guard let known = knownMinSizes[window.windowID] else { return }
-        guard actual.width < known.width - TilingConfig.lowerMinSizeAcceptedDeltaPx
-            || actual.height < known.height - TilingConfig.lowerMinSizeAcceptedDeltaPx else { return }
-        let updated = CGSize(width: min(known.width, actual.width),
-                             height: min(known.height, actual.height))
-        if isUsableMinimumSize(updated) {
-            knownMinSizes[window.windowID] = updated
-            window.observedMinSize = updated
-        } else {
-            knownMinSizes.removeValue(forKey: window.windowID)
-            window.observedMinSize = nil
-        }
-        hyprLog(.debug, .lifecycle, "lowered min-size for '\(window.title ?? "?")' → \(Int(updated.width))x\(Int(updated.height))")
-    }
-
-    private func isUsableMinimumSize(_ size: CGSize) -> Bool {
-        size.width.isFinite && size.height.isFinite && (size.width > 0 || size.height > 0)
-            && size.width < TilingConfig.usableMinSizeMaxPx && size.height < TilingConfig.usableMinSizeMaxPx
-    }
+    func primeMinimumSizes(_ windows: [HyprWindow]) { minSizes.prime(windows) }
+    func forgetMinimumSize(windowID: CGWindowID) { minSizes.forget(windowID: windowID) }
+    private func minimumSize(for window: HyprWindow?) -> CGSize { minSizes.minimumSize(for: window) }
 
     private func tree(for key: TilingKey) -> BSPTree {
         if let existing = trees[key] { return existing }
@@ -174,12 +124,12 @@ class TilingEngine {
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)]) -> [FrameReadbackPoller.Conflict] {
         let result = readbackPoller.applyLayout(layouts)
         for obs in result.observations {
-            recordObservedMinimumSize(obs.window, actual: obs.actual,
-                                      widthConflict: obs.widthConflict,
-                                      heightConflict: obs.heightConflict)
+            minSizes.recordObserved(obs.window, actual: obs.actual,
+                                    widthConflict: obs.widthConflict,
+                                    heightConflict: obs.heightConflict)
         }
         for (window, size) in result.accepted {
-            lowerMinimumSizeIfAccepted(window, actual: size)
+            minSizes.lowerIfAccepted(window, actual: size)
         }
         return result.conflicts
     }
@@ -255,12 +205,6 @@ class TilingEngine {
         return result
     }
 
-    private func clearKnownMinimumSizes(for windows: [HyprWindow]) {
-        for window in windows {
-            knownMinSizes.removeValue(forKey: window.windowID)
-            window.observedMinSize = nil
-        }
-    }
 
     @discardableResult
     private func smartInsertFitting(_ window: HyprWindow, into tree: BSPTree,
@@ -354,7 +298,7 @@ class TilingEngine {
             }
             if !overflow.isEmpty {
                 hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — discarding min-size adjustment")
-                clearKnownMinimumSizes(for: overflow)
+                minSizes.clear(for: overflow)
                 t.root.resetSplitRatios()
                 applyLayoutFinal(layouts)
                 return
@@ -457,7 +401,7 @@ class TilingEngine {
             }
             if !overflow.isEmpty {
                 hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — discarding min-size adjustment")
-                clearKnownMinimumSizes(for: overflow)
+                minSizes.clear(for: overflow)
                 t.root.resetSplitRatios()
                 applyLayoutFinal(layouts)
                 return
