@@ -39,7 +39,9 @@
 		5986B98949D5F866D27EADEC /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF93D6331BC4826814BB7007 /* Constants.swift */; };
 		7DFABB5348197A0B951CFD6D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
 		83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C7530C4625DFB387DEB0CF /* SuppressionRegistry.swift */; };
+		87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */; };
 		94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD84800A82DD5466833975C /* MouseTrackingManager.swift */; };
+		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
 		9C6752FADA9267F639122F68 /* AppLauncherSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
@@ -85,6 +87,7 @@
 		0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindsSettingsView.swift; sourceTree = "<group>"; };
 		12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrepareLayoutMutationTests.swift; sourceTree = "<group>"; };
 		16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNodeTests.swift; sourceTree = "<group>"; };
+		18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingSchedulerTests.swift; sourceTree = "<group>"; };
 		1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserConfig.swift; sourceTree = "<group>"; };
 		1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTestSupport.swift; sourceTree = "<group>"; };
 		1AA39AE261654BF110E66771 /* WindowStateCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCache.swift; sourceTree = "<group>"; };
@@ -127,6 +130,7 @@
 		BB697B2619BEB7E2434E157E /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherSettingsView.swift; sourceTree = "<group>"; };
 		C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceInsertWindowFallbackTests.swift; sourceTree = "<group>"; };
+		C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingScheduler.swift; sourceTree = "<group>"; };
 		CB845A902D1A884872996805 /* FocusStateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusStateController.swift; sourceTree = "<group>"; };
 		D14B540996EBFC8839339556 /* BSPNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNode.swift; sourceTree = "<group>"; };
 		DBF9449D559067A61BBA8394 /* BSPTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTree.swift; sourceTree = "<group>"; };
@@ -176,6 +180,14 @@
 			path = HyprMac;
 			sourceTree = "<group>";
 		};
+		069AB81CC5E4E1E85EC89AD2 /* Orchestration */ = {
+			isa = PBXGroup;
+			children = (
+				C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */,
+			);
+			path = Orchestration;
+			sourceTree = "<group>";
+		};
 		0DB24E3CFF95BEA5778E455E /* Shared */ = {
 			isa = PBXGroup;
 			children = (
@@ -218,6 +230,7 @@
 				9B114061648788BA337754F2 /* WindowAnimator.swift */,
 				2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */,
 				8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */,
+				069AB81CC5E4E1E85EC89AD2 /* Orchestration */,
 				6AE3D8602BB4C99734673A60 /* State */,
 			);
 			path = Core;
@@ -286,6 +299,7 @@
 				C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */,
 				43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */,
 				298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */,
+				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
 				901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */,
@@ -458,6 +472,7 @@
 				1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */,
 				C59F755D984292EB1E5B57CD /* MinSizeMemory.swift in Sources */,
 				94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */,
+				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
 				B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */,
 				3D84219CDFABCE2B2019F0DC /* SpaceManager.swift in Sources */,
 				83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */,
@@ -484,6 +499,7 @@
 				EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */,
 				C1CCA6C07D0B273CF3AB3D6C /* HandleDisplayChangeTests.swift in Sources */,
 				15AB8B9331E6A03CDD991F3C /* LayoutEngineTests.swift in Sources */,
+				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,
 				EA8FC0F77CB146BAD8B35CBE /* WindowStateCacheTests.swift in Sources */,

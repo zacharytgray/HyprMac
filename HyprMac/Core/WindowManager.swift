@@ -29,8 +29,9 @@ class WindowManager {
     // from FocusBorder. constructed in init() since it depends on focusBorder.
     let focusController: FocusStateController
 
-    // polling timer
-    private var pollTimer: Timer?
+    // periodic discovery timer + coalesced notification-driven polls.
+    // constructed in init() so the closure can capture self weakly.
+    private var pollingScheduler: PollingScheduler!
 
     // mouse tracking
     private var mouseMoveMonitor: Any?
@@ -55,9 +56,6 @@ class WindowManager {
     // guard against re-entrant raiseFloatingWindows (also used by suppressions)
     private var isRaisingFloaters = false
 
-    // coalesce rapid polls from overlapping notifications
-    private var pendingPoll = false
-
     // live config reload
     private var configObservers: Set<AnyCancellable> = []
     private var isRunning = false
@@ -67,6 +65,9 @@ class WindowManager {
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
         self.tilingEngine = TilingEngine(displayManager: displayManager)
+        self.pollingScheduler = PollingScheduler { [weak self] in
+            self?.pollWindowChanges()
+        }
 
         hotkeyManager.onAction = { [weak self] action in
             self?.suppressions.suppress("mouse-focus", for: 0.3)
@@ -162,9 +163,7 @@ class WindowManager {
             // start polling only after the initial tile so pollWindowChanges can't
             // race against snapshotAndTile, claim all windows as new, and trigger
             // an animation that blocks the correct initial distribution
-            self.pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                self?.pollWindowChanges()
-            }
+            self.pollingScheduler.start()
         }
 
         startMouseTracking()
@@ -295,8 +294,7 @@ class WindowManager {
     func stop() {
         restoreAllWindows()
         isRunning = false
-        pollTimer?.invalidate()
-        pollTimer = nil
+        pollingScheduler.stop()
         stopMouseTracking()
         hotkeyManager.stop()
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -2044,7 +2042,7 @@ class WindowManager {
             }
         }
 
-        schedulePoll()
+        pollingScheduler.schedule()
 
         // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
         // must always run — even when activation switch is suppressed — so floaters stay on top.
@@ -2090,19 +2088,8 @@ class WindowManager {
         }
     }
 
-    // coalesced poll scheduling — all notification handlers funnel through here
-    private func schedulePoll(delay: TimeInterval = 0.2) {
-        guard !pendingPoll else { return }
-        pendingPoll = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self = self else { return }
-            self.pendingPoll = false
-            self.pollWindowChanges()
-        }
-    }
-
     @objc private func appDidLaunch(_ notification: Notification) {
-        schedulePoll(delay: 0.5)
+        pollingScheduler.schedule(after: 0.5)
     }
 
     @objc private func appDidTerminate(_ notification: Notification) {
@@ -2112,11 +2099,11 @@ class WindowManager {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
             forgetApp(app.processIdentifier)
         }
-        schedulePoll()
+        pollingScheduler.schedule()
     }
 
     @objc private func appVisibilityChanged(_ notification: Notification) {
-        schedulePoll(delay: 0.3)
+        pollingScheduler.schedule(after: 0.3)
     }
 
     @objc private func screenParametersChanged() {
