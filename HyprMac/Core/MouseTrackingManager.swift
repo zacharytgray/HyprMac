@@ -5,7 +5,6 @@ class MouseTrackingManager {
 
     // state
     var lastMouseFocusedID: CGWindowID = 0
-    var suppressMouseFocusUntil: Date = .distantPast
     // set by HIToolbox begin/end notifications — true for both menu bar menus
     // and native right-click context menus (NSMenu). other code paths read this
     // to skip focus-stealing operations while a menu is open.
@@ -31,6 +30,8 @@ class MouseTrackingManager {
     var onFocusForFFM: (HyprWindow) -> Void = { _ in }
     var onUpdateFocusBorder: (HyprWindow) -> Void = { _ in }
     var onHideFocusBorder: () -> Void = {}
+    // routed to SuppressionRegistry["mouse-focus"] by WindowManager
+    var isMouseFocusSuppressed: () -> Bool = { false }
 
     func handleMouseMove() {
         guard isFocusFollowsMouseEnabled() else { return }
@@ -38,7 +39,7 @@ class MouseTrackingManager {
         guard !menuTracking else { return }
         guard !dockIsActive else { return }
         guard !isAnimating() else { return }
-        guard Date() > suppressMouseFocusUntil else { return }
+        guard !isMouseFocusSuppressed() else { return }
 
         // throttle: ~60Hz cap. mouseMoved fires hundreds of times per second
         // and the work below scales with window count, so unthrottled it's

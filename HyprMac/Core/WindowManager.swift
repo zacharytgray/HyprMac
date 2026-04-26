@@ -80,7 +80,7 @@ class WindowManager {
         self.tilingEngine = TilingEngine(displayManager: displayManager)
 
         hotkeyManager.onAction = { [weak self] action in
-            self?.mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+            self?.suppressions.suppress("mouse-focus", for: 0.3)
             self?.handleAction(action)
         }
 
@@ -103,6 +103,7 @@ class WindowManager {
         mouseTracker.tiledPositions = { [weak self] in self?.tiledPositions ?? [:] }
         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+        mouseTracker.isMouseFocusSuppressed = { [weak self] in self?.suppressions.isSuppressed("mouse-focus") ?? false }
         mouseTracker.onHideFocusBorder = { [weak self] in
             self?.focusBorder.hide()
             self?.dimmingOverlay.hideAll()
@@ -508,7 +509,7 @@ class WindowManager {
     // of truth for intent, as long as that window belongs to the cursor's
     // current workspace. fallbacks are only for stale/missing border state.
     private func ensureFocus() {
-        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+        suppressions.suppress("mouse-focus", for: 0.3)
 
         let screen = screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
@@ -861,7 +862,7 @@ class WindowManager {
         // suppress FFM and activation-triggered switches during and after this switch.
         // must outlive the synchronous scope because best.focus() queues async notifications.
         suppressions.suppress("activation-switch", for: 0.5)
-        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+        suppressions.suppress("mouse-focus", for: 0.3)
 
         let currentScreen = screenUnderCursor()
 
@@ -1155,7 +1156,7 @@ class WindowManager {
     }
 
     private func focusFloatingWindow() {
-        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
+        suppressions.suppress("mouse-focus", for: 0.3)
         suppressions.suppress("activation-switch", for: 0.5)
 
         guard let target = floatingController.focusFloating(
@@ -2081,7 +2082,7 @@ class WindowManager {
         let previousWindow = cachedWindows[previousFocusID]
 
         suppressions.suppress("activation-switch", for: 0.5)
-        mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.15)
+        suppressions.suppress("mouse-focus", for: 0.15)
 
         for wid in toRaise {
             guard let w = cachedWindows[wid] else { continue }
