@@ -22,8 +22,13 @@ schemes:
     build:
       targets:
         HyprMac: all
+        HyprMacTests: [test]
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - HyprMacTests
 
 targets:
   HyprMac:
@@ -48,3 +53,19 @@ targets:
           - "-F/System/Library/PrivateFrameworks"
           - "-framework"
           - "SkyLight"
+
+  HyprMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - HyprMacTests
+    dependencies:
+      - target: HyprMac
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zachgray.HyprMacTests
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGNING_ALLOWED: "YES"
+        ENABLE_HARDENED_RUNTIME: false
+        SWIFT_OBJC_BRIDGING_HEADER: HyprMac/PrivateAPI/HyprMac-Bridging-Header.h

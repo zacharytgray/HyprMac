@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */; };
+		0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */; };
 		0B9D198B68374BB6E0D0FA1F /* DragManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E56F3B2C9834C78368323D /* DragManager.swift */; };
 		0D4C6B4D33142A677A590C35 /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593D96A7340421A4588DE5D5 /* DisplayManager.swift */; };
 		188EAF405D36CBFCDAB54014 /* Keybind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E656D3CA021B130775CC3 /* Keybind.swift */; };
@@ -25,6 +27,7 @@
 		42778D615628483A357572DF /* WorkspaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */; };
 		440732216A02AA6BC39588CC /* AppLauncherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */; };
 		498931AB0DE01FD760A0C1DC /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */; };
+		4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */; };
 		531ACE79FC3FD6C76D047281 /* FloatingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984C8889680F5B0CDD449061 /* FloatingWindowController.swift */; };
 		577FBDB77676F37630FAF0FE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D52156D6AEACDCE26A6370BF /* Sparkle */; };
 		5986B98949D5F866D27EADEC /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF93D6331BC4826814BB7007 /* Constants.swift */; };
@@ -51,13 +54,26 @@
 		F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772FFAF897AAC136F605737C /* TilingSettingsView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		D73C8709633F66F7A69CD5C6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ED0E463BAEA904F2D2E552E1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B21C837222925403D932E64;
+			remoteInfo = HyprMac;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		02E56F3B2C9834C78368323D /* DragManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragManager.swift; sourceTree = "<group>"; };
 		05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngine.swift; sourceTree = "<group>"; };
 		0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindsSettingsView.swift; sourceTree = "<group>"; };
+		16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNodeTests.swift; sourceTree = "<group>"; };
 		1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserConfig.swift; sourceTree = "<group>"; };
+		1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTestSupport.swift; sourceTree = "<group>"; };
 		1BB92BD985DAC4292DE1C57F /* CursorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorManager.swift; sourceTree = "<group>"; };
 		23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTreeTests.swift; sourceTree = "<group>"; };
 		2CD84800A82DD5466833975C /* MouseTrackingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseTrackingManager.swift; sourceTree = "<group>"; };
 		2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManager.swift; sourceTree = "<group>"; };
 		3F5155705392561940307378 /* HyprMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HyprMac.entitlements; sourceTree = "<group>"; };
@@ -90,6 +106,7 @@
 		DE5C2D5C6BE675D940B28364 /* HyprMac-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HyprMac-Release.entitlements"; sourceTree = "<group>"; };
 		E219E876B1BDF912185B8C69 /* HyprMac-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "HyprMac-Bridging-Header.h"; sourceTree = "<group>"; };
 		E33C1B4E40A4FC68DD601FA8 /* HyprMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HyprMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E402467C270ED2039D610DC0 /* HyprMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HyprMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5557F0D5040AE48CF5031E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EC19E9DB53B109940984B5D5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCodeUtils.swift; sourceTree = "<group>"; };
@@ -215,8 +232,19 @@
 			isa = PBXGroup;
 			children = (
 				0111D90166A539E25441210C /* HyprMac */,
+				B0A0AB76785D9D6DA70BB530 /* HyprMacTests */,
 				F96C1F1C8629A12425EBE5C6 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		B0A0AB76785D9D6DA70BB530 /* HyprMacTests */ = {
+			isa = PBXGroup;
+			children = (
+				16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */,
+				1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */,
+				2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */,
+			);
+			path = HyprMacTests;
 			sourceTree = "<group>";
 		};
 		C08E85E4319B0783B900E493 /* PrivateAPI */ = {
@@ -242,6 +270,7 @@
 			isa = PBXGroup;
 			children = (
 				E33C1B4E40A4FC68DD601FA8 /* HyprMac.app */,
+				E402467C270ED2039D610DC0 /* HyprMacTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -269,6 +298,24 @@
 			productReference = E33C1B4E40A4FC68DD601FA8 /* HyprMac.app */;
 			productType = "com.apple.product-type.application";
 		};
+		CD25E0B6DAB296F4334EFC3E /* HyprMacTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 457BE11452CE21CE204DD157 /* Build configuration list for PBXNativeTarget "HyprMacTests" */;
+			buildPhases = (
+				CB274290635D3A97B1C518EF /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				39EB039FBF6103CBD54085FA /* PBXTargetDependency */,
+			);
+			name = HyprMacTests;
+			packageProductDependencies = (
+			);
+			productName = HyprMacTests;
+			productReference = E402467C270ED2039D610DC0 /* HyprMacTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -280,6 +327,9 @@
 				TargetAttributes = {
 					7B21C837222925403D932E64 = {
 						DevelopmentTeam = "$(DEVELOPMENT_TEAM)";
+						ProvisioningStyle = Automatic;
+					};
+					CD25E0B6DAB296F4334EFC3E = {
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -302,6 +352,7 @@
 			projectRoot = "";
 			targets = (
 				7B21C837222925403D932E64 /* HyprMac */,
+				CD25E0B6DAB296F4334EFC3E /* HyprMacTests */,
 			);
 		};
 /* End PBXProject section */
@@ -365,9 +416,48 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CB274290635D3A97B1C518EF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */,
+				0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */,
+				4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		39EB039FBF6103CBD54085FA /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7B21C837222925403D932E64 /* HyprMac */;
+			targetProxy = D73C8709633F66F7A69CD5C6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		12657B3B1CEC150F45C969F2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.zachgray.HyprMacTests;
+				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "HyprMac/PrivateAPI/HyprMac-Bridging-Header.h";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HyprMac.app/Contents/MacOS/HyprMac";
+			};
+			name = Debug;
+		};
 		583D3ECD78803FB91535722E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -489,6 +579,27 @@
 			};
 			name = Debug;
 		};
+		BAB7C52A0D834FCF629747FE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.zachgray.HyprMacTests;
+				SDKROOT = macosx;
+				SWIFT_OBJC_BRIDGING_HEADER = "HyprMac/PrivateAPI/HyprMac-Bridging-Header.h";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HyprMac.app/Contents/MacOS/HyprMac";
+			};
+			name = Release;
+		};
 		D1E0D06228E10F6EBBAC07F5 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -546,6 +657,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		457BE11452CE21CE204DD157 /* Build configuration list for PBXNativeTarget "HyprMacTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				12657B3B1CEC150F45C969F2 /* Debug */,
+				BAB7C52A0D834FCF629747FE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		8367B90EBF8EE3F79B18A95A /* Build configuration list for PBXNativeTarget "HyprMac" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
