@@ -52,7 +52,7 @@ class BSPTree {
 
             if childMin >= minSlotDimension {
                 leaf.insert(window)
-                hyprLog("smart insert at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
+                hyprLog(.debug, .lifecycle, "smart insert at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
                 return true
             }
         }
@@ -60,7 +60,7 @@ class BSPTree {
         // no leaf meets the minimum — fall back to deepest-right anyway
         if let fallback = leaves.first(where: { $0.depth < maxDepth }) {
             fallback.insert(window)
-            hyprLog("smart insert fallback — no slot met \(Int(minSlotDimension))px minimum")
+            hyprLog(.debug, .lifecycle, "smart insert fallback — no slot met \(Int(minSlotDimension))px minimum")
             return true
         }
 
@@ -239,13 +239,13 @@ class BSPTree {
                 clamped = min(raw, 0.85)
                 if clamped > parent.splitRatio {
                     parent.splitRatio = clamped
-                    hyprLog("adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
+                    hyprLog(.debug, .lifecycle, "adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
                 }
             } else {
                 clamped = max(1.0 - raw, 0.15)
                 if clamped < parent.splitRatio {
                     parent.splitRatio = clamped
-                    hyprLog("adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
+                    hyprLog(.debug, .lifecycle, "adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
                 }
             }
 
@@ -290,7 +290,7 @@ class BSPTree {
                 if abs(clamped - parent.splitRatio) > 0.01 {
                     parent.splitRatio = clamped
                     parent.userSetRatio = true
-                    hyprLog("manual resize: horizontal ratio → \(String(format: "%.2f", clamped))")
+                    hyprLog(.debug, .lifecycle, "manual resize: horizontal ratio → \(String(format: "%.2f", clamped))")
                 }
 
             case .vertical:
@@ -305,7 +305,7 @@ class BSPTree {
                 if abs(clamped - parent.splitRatio) > 0.01 {
                     parent.splitRatio = clamped
                     parent.userSetRatio = true
-                    hyprLog("manual resize: vertical ratio → \(String(format: "%.2f", clamped))")
+                    hyprLog(.debug, .lifecycle, "manual resize: vertical ratio → \(String(format: "%.2f", clamped))")
                 }
             }
 

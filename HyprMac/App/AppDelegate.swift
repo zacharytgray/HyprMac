@@ -7,8 +7,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        hyprLog("bundle: \(Bundle.main.bundleIdentifier ?? "?")")
-        hyprLog("AXIsProcessTrusted=\(AXIsProcessTrusted())")
+        hyprLog(.debug, .lifecycle, "bundle: \(Bundle.main.bundleIdentifier ?? "?")")
+        hyprLog(.debug, .lifecycle, "AXIsProcessTrusted=\(AXIsProcessTrusted())")
 
         if AXIsProcessTrusted() {
             KeyRemapper.applyHyprKey(UserConfig.shared.hyprKey)

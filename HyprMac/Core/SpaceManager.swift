@@ -46,10 +46,10 @@ class SpaceManager {
             spacesByDisplay[displayID] = ids
         }
 
-        hyprLog("space map: \(displayOrder.count) displays")
+        hyprLog(.debug, .lifecycle, "space map: \(displayOrder.count) displays")
         for displayID in displayOrder {
             let spaces = spacesByDisplay[displayID] ?? []
-            hyprLog("  display '\(displayID)': spaces \(spaces)")
+            hyprLog(.debug, .lifecycle, "  display '\(displayID)': spaces \(spaces)")
         }
     }
 
@@ -61,7 +61,7 @@ class SpaceManager {
         for displayID in displayOrder {
             result.append(contentsOf: spacesByDisplay[displayID] ?? [])
         }
-        hyprLog("all space IDs: \(result)")
+        hyprLog(.debug, .lifecycle, "all space IDs: \(result)")
         return result
     }
 
@@ -139,7 +139,7 @@ class SpaceManager {
         // log current spaces before move
         if let cfBefore = CGSCopySpacesForWindows(conn, kCGSAllSpacesMask, winArray),
            let before = cfBefore as? [NSNumber] {
-            hyprLog("moveWindow \(windowID): before spaces=\(before.map { $0.uint64Value })")
+            hyprLog(.debug, .lifecycle, "moveWindow \(windowID): before spaces=\(before.map { $0.uint64Value })")
         }
 
         // use atomic move API — removes from all current spaces and adds to target in one call
@@ -148,16 +148,16 @@ class SpaceManager {
         // verify
         if let cfAfter = CGSCopySpacesForWindows(conn, kCGSAllSpacesMask, winArray),
            let after = cfAfter as? [NSNumber] {
-            hyprLog("moveWindow \(windowID): after spaces=\(after.map { $0.uint64Value })")
+            hyprLog(.debug, .lifecycle, "moveWindow \(windowID): after spaces=\(after.map { $0.uint64Value })")
         }
 
-        hyprLog("moved window \(windowID) to space \(spaceID)")
+        hyprLog(.debug, .lifecycle, "moved window \(windowID) to space \(spaceID)")
     }
 
     // initialize space tracking (call on startup)
     func setup() {
         refreshSpaceMap(force: true)
-        hyprLog("space manager ready: \(displayOrder.count) displays, \(displayForSpace.count) spaces")
+        hyprLog(.debug, .lifecycle, "space manager ready: \(displayOrder.count) displays, \(displayForSpace.count) spaces")
     }
 
     // switch to a desktop using the private CGS API (direct, no sentinels needed)
@@ -165,12 +165,12 @@ class SpaceManager {
         refreshSpaceMap(force: true)
 
         guard let targetSpaceID = spaceID(forDesktop: number) else {
-            hyprLog("switchToDesktop: desktop \(number) doesn't exist")
+            hyprLog(.debug, .lifecycle, "switchToDesktop: desktop \(number) doesn't exist")
             return false
         }
 
         guard let targetDisplay = displayForSpace[targetSpaceID] else {
-            hyprLog("switchToDesktop: no display for space \(targetSpaceID)")
+            hyprLog(.debug, .lifecycle, "switchToDesktop: no display for space \(targetSpaceID)")
             return false
         }
 
@@ -178,7 +178,7 @@ class SpaceManager {
         let displayStr = targetDisplay as CFString
         CGSManagedDisplaySetCurrentSpace(conn, displayStr, targetSpaceID)
 
-        hyprLog("switchToDesktop \(number): space=\(targetSpaceID) display=\(targetDisplay)")
+        hyprLog(.debug, .lifecycle, "switchToDesktop \(number): space=\(targetSpaceID) display=\(targetDisplay)")
         return true
     }
 

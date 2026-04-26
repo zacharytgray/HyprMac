@@ -34,7 +34,7 @@ class HotkeyManager {
         hyprKey = key
         hyprKeyDown = false
         pressedModifierKeyCodes.removeAll()
-        hyprLog("hypr key set to \(key.displayName)")
+        hyprLog(.debug, .lifecycle, "hypr key set to \(key.displayName)")
     }
 
     func start() {
@@ -52,8 +52,8 @@ class HotkeyManager {
             callback: hotkeyCallback,
             userInfo: refcon
         ) else {
-            hyprLog("event tap creation failed")
-            hyprLog("AXIsProcessTrusted=\(AXIsProcessTrusted())")
+            hyprLog(.debug, .lifecycle, "event tap creation failed")
+            hyprLog(.debug, .lifecycle, "AXIsProcessTrusted=\(AXIsProcessTrusted())")
             return
         }
 
@@ -61,7 +61,7 @@ class HotkeyManager {
         runLoopSource = CFMachPortCreateRunLoopSource(nil, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        hyprLog("event tap started, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
+        hyprLog(.debug, .lifecycle, "event tap started, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
     }
 
     func stop() {
@@ -101,7 +101,7 @@ class HotkeyManager {
         let packed = HotkeyManager.packKey(keyCode, flags)
         if let bind = keybindMap[packed] {
             let action = bind.action.toAction()
-            hyprLog("matched: \(action)")
+            hyprLog(.debug, .lifecycle, "matched: \(action)")
             DispatchQueue.main.async { [weak self] in
                 self?.onAction?(action)
             }

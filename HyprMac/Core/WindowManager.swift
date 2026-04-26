@@ -120,7 +120,7 @@ class WindowManager {
             if let original = self.originalFrames[window.windowID] {
                 window.setFrame(original)
             }
-            hyprLog("auto-floated '\(window.title ?? "?")' — screen full")
+            hyprLog(.debug, .lifecycle, "auto-floated '\(window.title ?? "?")' — screen full")
         }
 
         // react to enabled toggling (including mid-flight config rewrites from iCloud sync)
@@ -130,10 +130,10 @@ class WindowManager {
             .sink { [weak self] enabled in
                 guard let self = self else { return }
                 if enabled && !self.isRunning {
-                    hyprLog("config re-enabled, starting")
+                    hyprLog(.debug, .lifecycle, "config re-enabled, starting")
                     self.start()
                 } else if !enabled && self.isRunning {
-                    hyprLog("config disabled, stopping")
+                    hyprLog(.debug, .lifecycle, "config disabled, stopping")
                     self.stop()
                 }
             }.store(in: &configObservers)
@@ -212,7 +212,7 @@ class WindowManager {
         config.$keybinds.sink { [weak self] newBinds in
             guard let self = self else { return }
             self.hotkeyManager.updateKeybinds(newBinds)
-            hyprLog("keybinds reloaded (\(newBinds.count) binds)")
+            hyprLog(.debug, .lifecycle, "keybinds reloaded (\(newBinds.count) binds)")
         }.store(in: &configObservers)
 
         config.$gapSize
@@ -240,7 +240,7 @@ class WindowManager {
                 guard let self = self else { return }
                 self.tilingEngine.maxSplitsPerMonitor = newSplits
                 self.snapshotAndTile()
-                hyprLog("max splits updated: \(newSplits)")
+                hyprLog(.debug, .lifecycle, "max splits updated: \(newSplits)")
             }.store(in: &configObservers)
 
         config.$disabledMonitors
@@ -251,7 +251,7 @@ class WindowManager {
                 self.workspaceManager.disabledMonitors = newDisabled
                 // unfloat windows on newly-disabled monitors from their tiling trees
                 self.handleDisabledMonitorChange()
-                hyprLog("disabled monitors updated: \(newDisabled)")
+                hyprLog(.debug, .lifecycle, "disabled monitors updated: \(newDisabled)")
             }.store(in: &configObservers)
 
         config.$dimInactiveWindows
@@ -295,7 +295,7 @@ class WindowManager {
                 self?.updatePositionCache()
             }.store(in: &configObservers)
 
-        hyprLog("started")
+        hyprLog(.debug, .lifecycle, "started")
     }
 
     func stop() {
@@ -311,7 +311,7 @@ class WindowManager {
         focusBorder.hide()
         focusBorder.hideFloatingBorders()
         dimmingOverlay.hideAll()
-        hyprLog("stopped")
+        hyprLog(.debug, .lifecycle, "stopped")
     }
 
     // bring all hidden workspace windows back on-screen so they're not stranded
@@ -329,7 +329,7 @@ class WindowManager {
 
             if let original = originalFrames[wid] {
                 window.setFrame(original)
-                hyprLog("restored '\(window.title ?? "?")' to original frame")
+                hyprLog(.debug, .lifecycle, "restored '\(window.title ?? "?")' to original frame")
             } else {
                 // cascade onto main screen
                 let x = screenRect.origin.x + 50
@@ -337,11 +337,11 @@ class WindowManager {
                 let w = min(screenRect.width * 0.6, 1200)
                 let h = min(screenRect.height * 0.6, 800)
                 window.setFrame(CGRect(x: x, y: y, width: w, height: h))
-                hyprLog("restored '\(window.title ?? "?")' to main screen")
+                hyprLog(.debug, .lifecycle, "restored '\(window.title ?? "?")' to main screen")
             }
         }
 
-        hyprLog("all windows restored to visible positions")
+        hyprLog(.debug, .lifecycle, "all windows restored to visible positions")
     }
 
     @objc private func menuTrackingBegan(_ note: Notification) {
@@ -611,13 +611,13 @@ class WindowManager {
 
         switch result {
         case .resize(let r):
-            hyprLog("manual resize detected: '\(r.window.title ?? "?")'")
+            hyprLog(.debug, .lifecycle, "manual resize detected: '\(r.window.title ?? "?")'")
             tilingEngine.applyResize(r.window, newFrame: r.newFrame, onWorkspace: r.workspace, screen: r.screen)
             updatePositionCache(windows: allWindows)
 
         case .swap(let s):
             if s.crossMonitor {
-                hyprLog("cross-monitor swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
+                hyprLog(.debug, .lifecycle, "cross-monitor swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
                 if let srcScreen = s.sourceScreen, let tgtScreen = s.targetScreen {
                     let srcWs = workspaceManager.workspaceForScreen(srcScreen)
                     let tgtWs = workspaceManager.workspaceForScreen(tgtScreen)
@@ -628,7 +628,7 @@ class WindowManager {
                 updatePositionCache(windows: allWindows)
             } else if let screen = s.sourceScreen {
                 let workspace = workspaceManager.workspaceForScreen(screen)
-                hyprLog("drag swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
+                hyprLog(.debug, .lifecycle, "drag swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
 
                 guard tilingEngine.canSwapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen) else {
                     rejectSwap(s.dragged, reason: "drag swap would violate min-size constraints")
@@ -659,7 +659,7 @@ class WindowManager {
             }
 
         case .dragToEmpty(let d):
-            hyprLog("cross-monitor move to empty desktop")
+            hyprLog(.debug, .lifecycle, "cross-monitor move to empty desktop")
             let r = displayManager.cgRect(for: d.targetScreen)
             d.dragged.setFrame(CGRect(
                 x: r.midX - r.width / 4,
@@ -672,7 +672,7 @@ class WindowManager {
             }
 
         case .snapBack:
-            hyprLog("drag snap-back")
+            hyprLog(.debug, .lifecycle, "drag snap-back")
             tileAllVisibleSpaces(windows: allWindows)
 
         case .none:
@@ -807,7 +807,7 @@ class WindowManager {
     }
 
     private func rejectSwap(_ window: HyprWindow, reason: String) {
-        hyprLog("\(reason) — rejected swap")
+        hyprLog(.debug, .lifecycle, "\(reason) — rejected swap")
         NSSound.beep()
         if let frame = window.frame {
             focusBorder.flashError(around: frame, windowID: window.windowID, window: window)
@@ -928,7 +928,7 @@ class WindowManager {
         let currentWorkspace = onDisabledMonitor ? nil : Optional(workspaceManager.workspaceForScreen(screen))
 
         if let cw = currentWorkspace, number == cw {
-            hyprLog("window already on workspace \(number)")
+            hyprLog(.debug, .lifecycle, "window already on workspace \(number)")
             return
         }
 
@@ -945,7 +945,7 @@ class WindowManager {
 
             if let visibleScreen = workspaceManager.screenForWorkspace(number) {
                 if !tilingEngine.canFitWindow(focused, onWorkspace: number, screen: visibleScreen) {
-                    hyprLog("workspace \(number) can't fit '\(focused.title ?? "?")' on \(visibleScreen.localizedName) — rejected move")
+                    hyprLog(.debug, .lifecycle, "workspace \(number) can't fit '\(focused.title ?? "?")' on \(visibleScreen.localizedName) — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
                         focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
@@ -959,7 +959,7 @@ class WindowManager {
                 let maxDepth = tilingEngine.maxDepth(for: targetScreen)
                 let maxWindows = 1 << maxDepth // 2^maxDepth — smart insert backtracks to fill all slots
                 if tiledCount >= maxWindows {
-                    hyprLog("workspace \(number) full (\(tiledCount) tiled, max \(maxWindows)) — rejected move")
+                    hyprLog(.debug, .lifecycle, "workspace \(number) full (\(tiledCount) tiled, max \(maxWindows)) — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
                         focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
@@ -973,7 +973,7 @@ class WindowManager {
         if onDisabledMonitor && isFloating {
             floatingWindowIDs.remove(focused.windowID)
             focused.isFloating = false
-            hyprLog("unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
+            hyprLog(.debug, .lifecycle, "unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
         }
 
         // animate remaining windows filling the gap
@@ -1003,7 +1003,7 @@ class WindowManager {
 
         // can't move workspaces from/to disabled monitors
         if workspaceManager.isMonitorDisabled(currentScreen) {
-            hyprLog("moveWorkspaceToMonitor: current monitor is disabled")
+            hyprLog(.debug, .lifecycle, "moveWorkspaceToMonitor: current monitor is disabled")
             return
         }
 
@@ -1018,12 +1018,12 @@ class WindowManager {
         case .left:  targetIdx = currentIdx - 1
         case .right: targetIdx = currentIdx + 1
         default:
-            hyprLog("moveWorkspaceToMonitor: only left/right supported")
+            hyprLog(.debug, .lifecycle, "moveWorkspaceToMonitor: only left/right supported")
             return
         }
 
         guard targetIdx >= 0 && targetIdx < screens.count else {
-            hyprLog("moveWorkspaceToMonitor: no monitor in that direction")
+            hyprLog(.debug, .lifecycle, "moveWorkspaceToMonitor: no monitor in that direction")
             return
         }
 
@@ -1088,7 +1088,7 @@ class WindowManager {
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
         let workspace = workspaceManager.workspaceForScreen(screen)
 
-        hyprLog("toggleSplit on '\(focused.title ?? "?")'")
+        hyprLog(.debug, .lifecycle, "toggleSplit on '\(focused.title ?? "?")'")
 
         if config.animateWindows {
             // capture current frames before the toggle
@@ -1155,7 +1155,7 @@ class WindowManager {
             displayManager: displayManager,
             isFrameVisible: { [weak self] frame, screenRect in self?.isFrameVisible(frame, on: screenRect) ?? false }
         ) else {
-            hyprLog("no visible floating windows")
+            hyprLog(.debug, .lifecycle, "no visible floating windows")
             return
         }
 
@@ -1176,7 +1176,7 @@ class WindowManager {
 
         // can't toggle tiling on disabled monitors — everything is floating there
         if workspaceManager.isMonitorDisabled(screen) {
-            hyprLog("toggleFloating: monitor disabled, no tiling available")
+            hyprLog(.debug, .lifecycle, "toggleFloating: monitor disabled, no tiling available")
             return
         }
 
@@ -1203,9 +1203,9 @@ class WindowManager {
                         let sz = evicted.size ?? CGSize(width: 800, height: 600)
                         evicted.position = CGPoint(x: screenRect.midX - sz.width / 2, y: screenRect.midY - sz.height / 2)
                     }
-                    hyprLog("tiling '\(focused.title ?? "?")' — bumped '\(evicted.title ?? "?")' to floating")
+                    hyprLog(.debug, .lifecycle, "tiling '\(focused.title ?? "?")' — bumped '\(evicted.title ?? "?")' to floating")
                 } else {
-                    hyprLog("tiling window '\(focused.title ?? "?")'")
+                    hyprLog(.debug, .lifecycle, "tiling window '\(focused.title ?? "?")'")
                 }
             })
         } else {
@@ -1221,7 +1221,7 @@ class WindowManager {
                    isFrameVisible(original, on: screenRect) {
                     focused.position = original.origin
                     focused.size = original.size
-                    hyprLog("floated window '\(focused.title ?? "?")' → restored \(original)")
+                    hyprLog(.debug, .lifecycle, "floated window '\(focused.title ?? "?")' → restored \(original)")
                 } else {
                     let currentSize = focused.size ?? CGSize(width: 800, height: 600)
                     let centeredOrigin = CGPoint(
@@ -1229,7 +1229,7 @@ class WindowManager {
                         y: screenRect.midY - currentSize.height / 2
                     )
                     focused.position = centeredOrigin
-                    hyprLog("floated window '\(focused.title ?? "?")' → centered on screen (bad original frame)")
+                    hyprLog(.debug, .lifecycle, "floated window '\(focused.title ?? "?")' → centered on screen (bad original frame)")
                 }
             })
         }
@@ -1253,7 +1253,7 @@ class WindowManager {
                 if !floatingWindowIDs.contains(w.windowID) {
                     floatingWindowIDs.insert(w.windowID)
                     w.isFloating = true
-                    hyprLog("disabled monitor change: floated '\(w.title ?? "?")'")
+                    hyprLog(.debug, .lifecycle, "disabled monitor change: floated '\(w.title ?? "?")'")
                 }
             }
         }
@@ -1267,7 +1267,7 @@ class WindowManager {
                 if floatingWindowIDs.contains(w.windowID) && workspaceManager.workspaceFor(w.windowID) == nil {
                     floatingWindowIDs.remove(w.windowID)
                     w.isFloating = false
-                    hyprLog("re-enabled monitor: unfloated '\(w.title ?? "?")'")
+                    hyprLog(.debug, .lifecycle, "re-enabled monitor: unfloated '\(w.title ?? "?")'")
                 }
             }
         }
@@ -1307,7 +1307,7 @@ class WindowManager {
             if isExcludedApp(w) && !floatingWindowIDs.contains(w.windowID) {
                 floatingWindowIDs.insert(w.windowID)
                 w.isFloating = true
-                hyprLog("auto-float excluded app: '\(w.title ?? "?")'")
+                hyprLog(.debug, .lifecycle, "auto-float excluded app: '\(w.title ?? "?")'")
             }
 
             // auto-float windows on disabled monitors — don't assign workspace
@@ -1315,7 +1315,7 @@ class WindowManager {
                 if !floatingWindowIDs.contains(w.windowID) {
                     floatingWindowIDs.insert(w.windowID)
                     w.isFloating = true
-                    hyprLog("auto-float on disabled monitor: '\(w.title ?? "?")'")
+                    hyprLog(.debug, .lifecycle, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                 }
                 continue
             }
@@ -1350,7 +1350,7 @@ class WindowManager {
                 }
             }
 
-            hyprLog("retile: workspace=\(workspace) screen=\(workspaceManager.screenID(for: screen)), \(workspaceWindows.count) windows")
+            hyprLog(.debug, .lifecycle, "retile: workspace=\(workspace) screen=\(workspaceManager.screenID(for: screen)), \(workspaceWindows.count) windows")
             tilingEngine.tileWindows(workspaceWindows, onWorkspace: workspace, screen: screen)
         }
 
@@ -1524,7 +1524,7 @@ class WindowManager {
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = true
                 if let original = originalFrames[wid] { w.setFrame(original) }
-                hyprLog("all workspaces full — auto-floating '\(w.title ?? "?")'")
+                hyprLog(.debug, .lifecycle, "all workspaces full — auto-floating '\(w.title ?? "?")'")
             }
             widIdx += 1
         }
@@ -1539,7 +1539,7 @@ class WindowManager {
             }
         }
 
-        hyprLog("distributed \(tilingWids.count) windows across \(slotsUsed) slot(s), \(screens.count) monitor(s)")
+        hyprLog(.debug, .lifecycle, "distributed \(tilingWids.count) windows across \(slotsUsed) slot(s), \(screens.count) monitor(s)")
     }
 
     // find a window by ID — checks live list first, falls back to cache
@@ -1704,7 +1704,7 @@ class WindowManager {
             if let recordedScreen = workspaceManager.screenForWorkspace(recordedWs),
                recordedScreen == physicalScreen { continue }
             workspaceManager.moveWindow(w.windowID, toWorkspace: physicalWs)
-            hyprLog("drift reconcile: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
+            hyprLog(.debug, .lifecycle, "drift reconcile: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
             reassigned = true
         }
         return reassigned
@@ -1903,7 +1903,7 @@ class WindowManager {
                 windowOwners[w.windowID] = w.ownerPID
 
                 changed = true
-                hyprLog("window returned: '\(w.title ?? "?")' (\(w.windowID))")
+                hyprLog(.debug, .lifecycle, "window returned: '\(w.title ?? "?")' (\(w.windowID))")
             }
         }
 
@@ -1925,7 +1925,7 @@ class WindowManager {
                 if isExcludedApp(w) {
                     floatingWindowIDs.insert(w.windowID)
                     w.isFloating = true
-                    hyprLog("auto-float excluded app: '\(w.title ?? "?")'")
+                    hyprLog(.debug, .lifecycle, "auto-float excluded app: '\(w.title ?? "?")'")
                 }
 
                 // auto-float on disabled monitors — skip workspace assignment
@@ -1933,10 +1933,10 @@ class WindowManager {
                     if !floatingWindowIDs.contains(w.windowID) {
                         floatingWindowIDs.insert(w.windowID)
                         w.isFloating = true
-                        hyprLog("auto-float on disabled monitor: '\(w.title ?? "?")'")
+                        hyprLog(.debug, .lifecycle, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                     }
                     changed = true
-                    hyprLog("new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
+                    hyprLog(.debug, .lifecycle, "new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
                     continue
                 }
 
@@ -1947,7 +1947,7 @@ class WindowManager {
                 assignNewWindow(w)
 
                 changed = true
-                hyprLog("new window: '\(w.title ?? "?")' (\(w.windowID))")
+                hyprLog(.debug, .lifecycle, "new window: '\(w.title ?? "?")' (\(w.windowID))")
             }
         }
 
@@ -1969,15 +1969,15 @@ class WindowManager {
                     hiddenWindowIDs.insert(id)
                     changed = true
                     if workspaceManager.isWindowVisible(id) {
-                        hyprLog("window hidden: \(id)")
+                        hyprLog(.debug, .lifecycle, "window hidden: \(id)")
                     } else {
-                        hyprLog("window hidden (inactive ws): \(id)")
+                        hyprLog(.debug, .lifecycle, "window hidden (inactive ws): \(id)")
                     }
                 } else {
                     // app terminated — full cleanup
                     forgetWindow(id)
                     changed = true
-                    hyprLog("window gone: \(id)")
+                    hyprLog(.debug, .lifecycle, "window gone: \(id)")
                 }
             }
         }
@@ -2118,7 +2118,7 @@ class WindowManager {
     }
 
     @objc private func screenParametersChanged() {
-        hyprLog("screen parameters changed — reinitializing workspaces")
+        hyprLog(.debug, .lifecycle, "screen parameters changed — reinitializing workspaces")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             self.focusBorder.primaryScreenHeight = self.displayManager.primaryScreenHeight
@@ -2128,7 +2128,7 @@ class WindowManager {
     }
 
     @objc private func retileAllRequested() {
-        hyprLog("retile all spaces requested")
+        hyprLog(.debug, .lifecycle, "retile all spaces requested")
         snapshotAndTile()
     }
 }

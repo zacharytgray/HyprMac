@@ -83,7 +83,7 @@ class TilingEngine {
             knownMinSizes.removeValue(forKey: window.windowID)
             window.observedMinSize = nil
         }
-        hyprLog("lowered min-size for '\(window.title ?? "?")' → \(Int(updated.width))x\(Int(updated.height))")
+        hyprLog(.debug, .lifecycle, "lowered min-size for '\(window.title ?? "?")' → \(Int(updated.width))x\(Int(updated.height))")
     }
 
     private func isUsableMinimumSize(_ size: CGSize) -> Bool {
@@ -233,18 +233,18 @@ class TilingEngine {
             if widthConflict || heightConflict {
                 let settled = r.elapsed >= minConflictSettle && r.stableSamples >= 2
                 if !settled {
-                    hyprLog("unsettled readback ignored: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
+                    hyprLog(.debug, .lifecycle, "unsettled readback ignored: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
                     r.window.cachedFrame = r.frame
                     continue
                 }
 
-                hyprLog("min-size conflict: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), got \(Int(r.actual.width))x\(Int(r.actual.height))")
+                hyprLog(.debug, .lifecycle, "min-size conflict: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), got \(Int(r.actual.width))x\(Int(r.actual.height))")
                 conflicts.append(MinSizeConflict(window: r.window, allocated: r.frame, actual: r.actual.size))
                 recordObservedMinimumSize(r.window, actual: r.actual.size,
                                           widthConflict: widthConflict,
                                           heightConflict: heightConflict)
             } else if widthUndershot || heightUndershot {
-                hyprLog("undersized readback: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
+                hyprLog(.debug, .lifecycle, "undersized readback: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
                 r.window.setFrame(r.frame)
                 r.window.cachedFrame = r.frame
                 continue
@@ -256,7 +256,7 @@ class TilingEngine {
             if let previous = prev[r.window.windowID], widthConflict || heightConflict {
                 let deltaW = abs(r.actual.width - previous.width)
                 let deltaH = abs(r.actual.height - previous.height)
-                hyprLog("readback settled in \(Int(r.elapsed * 1000))ms for '\(r.window.title ?? "?")' (delta \(Int(deltaW))x\(Int(deltaH)))")
+                hyprLog(.debug, .lifecycle, "readback settled in \(Int(r.elapsed * 1000))ms for '\(r.window.title ?? "?")' (delta \(Int(deltaW))x\(Int(deltaH)))")
             }
         }
         return conflicts
@@ -306,7 +306,7 @@ class TilingEngine {
             ?? inserted.last
         guard let target else { return false }
 
-        hyprLog("overflow after min-size adjustment — auto-floating '\(target.title ?? "?")'")
+        hyprLog(.debug, .lifecycle, "overflow after min-size adjustment — auto-floating '\(target.title ?? "?")'")
         tree.remove(target)
         tree.root.pruneEmptyNodes()
         onAutoFloat?(target)
@@ -356,7 +356,7 @@ class TilingEngine {
 
         leaf.insert(window)
         if let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) {
-            hyprLog("smart insert fit at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
+            hyprLog(.debug, .lifecycle, "smart insert fit at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
         }
         return true
     }
@@ -416,7 +416,7 @@ class TilingEngine {
         var insertedWindows: [HyprWindow] = []
         for w in tileWindows where !treeIDs.contains(w.windowID) {
             if !smartInsertFitting(w, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
-                hyprLog("no fitting tile slot — auto-floating '\(w.title ?? "?")'")
+                hyprLog(.debug, .lifecycle, "no fitting tile slot — auto-floating '\(w.title ?? "?")'")
                 onAutoFloat?(w)
             } else {
                 insertedWindows.append(w)
@@ -432,7 +432,7 @@ class TilingEngine {
 
         // pass 1: layout + readback
         let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
-        hyprLog("tiling \(layouts.count) windows on workspace \(workspace) screen \(Int(screen.frame.width))x\(Int(screen.frame.height))")
+        hyprLog(.debug, .lifecycle, "tiling \(layouts.count) windows on workspace \(workspace) screen \(Int(screen.frame.width))x\(Int(screen.frame.height))")
         let conflicts = applyLayout(layouts)
         let insertedForOverflow = mergedInserted(insertedWindows, pending: consumePendingInserted(for: key, in: t))
 
@@ -447,19 +447,19 @@ class TilingEngine {
                 return
             }
             if !overflow.isEmpty {
-                hyprLog("overflow persisted with no inserted target — discarding min-size adjustment")
+                hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — discarding min-size adjustment")
                 clearKnownMinimumSizes(for: overflow)
                 t.root.resetSplitRatios()
                 applyLayoutFinal(layouts)
                 return
             }
             for (window, frame) in adjusted {
-                hyprLog("  '\(window.title ?? "?")' → \(frame)")
+                hyprLog(.debug, .lifecycle, "  '\(window.title ?? "?")' → \(frame)")
             }
             applyLayoutFinal(adjusted)
         } else {
             for (window, frame) in layouts {
-                hyprLog("  '\(window.title ?? "?")' → \(frame)")
+                hyprLog(.debug, .lifecycle, "  '\(window.title ?? "?")' → \(frame)")
             }
         }
 
@@ -529,7 +529,7 @@ class TilingEngine {
         var inserted: [HyprWindow] = []
         if !t.contains(window) {
             if !smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
-                hyprLog("no fitting tile slot — auto-floating '\(window.title ?? "?")'")
+                hyprLog(.debug, .lifecycle, "no fitting tile slot — auto-floating '\(window.title ?? "?")'")
                 onAutoFloat?(window)
                 return
             }
@@ -578,7 +578,7 @@ class TilingEngine {
                 return
             }
             if !overflow.isEmpty {
-                hyprLog("overflow persisted with no inserted target — discarding min-size adjustment")
+                hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — discarding min-size adjustment")
                 clearKnownMinimumSizes(for: overflow)
                 t.root.resetSplitRatios()
                 applyLayoutFinal(layouts)

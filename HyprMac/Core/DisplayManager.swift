@@ -16,12 +16,12 @@ class DisplayManager {
     @objc func refresh() {
         screens = NSScreen.screens
         primaryScreenHeight = screens.first?.frame.height ?? 0
-        hyprLog("displays: \(screens.count)")
+        hyprLog(.debug, .lifecycle, "displays: \(screens.count)")
         for (i, screen) in screens.enumerated() {
             let frame = screen.frame
             let visible = screen.visibleFrame
             let cg = cgRect(for: screen)
-            hyprLog("  display \(i): frame=\(frame) visible=\(visible) cg=\(cg)")
+            hyprLog(.debug, .lifecycle, "  display \(i): frame=\(frame) visible=\(visible) cg=\(cg)")
         }
     }
 
