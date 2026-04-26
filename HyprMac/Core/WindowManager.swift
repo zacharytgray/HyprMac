@@ -20,12 +20,9 @@ class WindowManager {
     private(set) var workspaceManager: WorkspaceManager!
     private(set) var tilingEngine: TilingEngine!
 
-    // tracks known window IDs so we can detect new/closed ones
-    private var knownWindowIDs: Set<CGWindowID> = []
-
-    // window-keyed state cache. fields migrate in over Phase 2 — currently owns
-    // cachedWindows + tiledPositions + hiddenWindowIDs + originalFrames + windowOwners +
-    // floatingWindowIDs; knownWindowIDs moves in the next commit.
+    // window-keyed state cache. owns all seven lifecycle/classification dicts:
+    // knownWindowIDs, floatingWindowIDs, originalFrames, windowOwners, hiddenWindowIDs,
+    // tiledPositions, cachedWindows.
     let stateCache = WindowStateCache()
 
     // polling timer
@@ -1298,7 +1295,7 @@ class WindowManager {
                     stateCache.originalFrames[w.windowID] = frame
                 }
             }
-            knownWindowIDs.insert(w.windowID)
+            stateCache.knownWindowIDs.insert(w.windowID)
             stateCache.windowOwners[w.windowID] = w.ownerPID
 
             // auto-float excluded apps
@@ -1650,7 +1647,7 @@ class WindowManager {
     // central per-window cleanup — prune every dict that keys on windowID.
     // safe to call on already-forgotten IDs (idempotent).
     private func forgetWindow(_ id: CGWindowID) {
-        knownWindowIDs.remove(id)
+        stateCache.knownWindowIDs.remove(id)
         stateCache.hiddenWindowIDs.remove(id)
         stateCache.originalFrames.removeValue(forKey: id)
         stateCache.floatingWindowIDs.remove(id)
@@ -1765,7 +1762,7 @@ class WindowManager {
             }
         }
         // workspace assignments for ids we no longer track at all
-        let live = knownWindowIDs.union(stateCache.hiddenWindowIDs)
+        let live = stateCache.knownWindowIDs.union(stateCache.hiddenWindowIDs)
         for (id, _) in workspaceManager.allWindowWorkspaces() where !live.contains(id) {
             forgetWindow(id)
         }
@@ -1897,7 +1894,7 @@ class WindowManager {
         for w in allWindows {
             if stateCache.hiddenWindowIDs.contains(w.windowID) {
                 stateCache.hiddenWindowIDs.remove(w.windowID)
-                knownWindowIDs.insert(w.windowID)
+                stateCache.knownWindowIDs.insert(w.windowID)
                 stateCache.windowOwners[w.windowID] = w.ownerPID
 
                 changed = true
@@ -1907,7 +1904,7 @@ class WindowManager {
 
         // detect new windows
         for w in allWindows {
-            if !knownWindowIDs.contains(w.windowID) {
+            if !stateCache.knownWindowIDs.contains(w.windowID) {
                 if let frame = w.frame {
                     let onScreen = displayManager.screens.contains { screen in
                         isFrameVisible(frame, on: displayManager.cgRect(for: screen))
@@ -1916,7 +1913,7 @@ class WindowManager {
                         stateCache.originalFrames[w.windowID] = frame
                     }
                 }
-                knownWindowIDs.insert(w.windowID)
+                stateCache.knownWindowIDs.insert(w.windowID)
                 stateCache.windowOwners[w.windowID] = w.ownerPID
 
                 // auto-float excluded apps
@@ -1950,7 +1947,7 @@ class WindowManager {
         }
 
         // detect gone windows
-        let gone = knownWindowIDs.subtracting(currentIDs)
+        let gone = stateCache.knownWindowIDs.subtracting(currentIDs)
         var focusedWindowGone = false
         let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
         if !gone.isEmpty {
@@ -1963,7 +1960,7 @@ class WindowManager {
                     // app still running — window was minimized, hidden, or closed.
                     // track as hidden regardless of workspace visibility so un-minimize
                     // is detected correctly even for windows on hidden workspaces.
-                    knownWindowIDs.remove(id)
+                    stateCache.knownWindowIDs.remove(id)
                     stateCache.hiddenWindowIDs.insert(id)
                     changed = true
                     if workspaceManager.isWindowVisible(id) {
@@ -2026,7 +2023,7 @@ class WindowManager {
 
                 // only consider windows still tracked (not hidden/closed)
                 let appWindows = stateCache.windowOwners
-                    .filter { $0.value == pid && knownWindowIDs.contains($0.key) && !stateCache.hiddenWindowIDs.contains($0.key) }
+                    .filter { $0.value == pid && stateCache.knownWindowIDs.contains($0.key) && !stateCache.hiddenWindowIDs.contains($0.key) }
 
                 let appWorkspaces = appWindows.compactMap { (wid, _) in workspaceManager.workspaceFor(wid) }
                 let hasVisibleWindow = appWorkspaces.contains { visibleWorkspaces.contains($0) }

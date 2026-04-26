@@ -1,7 +1,7 @@
 import Cocoa
 
 // single source of truth for window-keyed lifecycle and classification state.
-// fields migrate in over Phase 2 — one dict per commit.
+// owns the seven dicts that used to live as private fields on WindowManager.
 //
 // what lives here (per §3.3):
 //   - knownWindowIDs       — windows we've seen since launch
@@ -51,6 +51,11 @@ final class WindowStateCache {
     // BSP membership is computed; floating membership is the negation.
     var floatingWindowIDs: Set<CGWindowID> = []
 
+    // every wid we've seen since launch. populated by discovery, pruned by forget.
+    // intentionally retains hidden windows so they don't re-enter as "new" when
+    // the user un-hides them (which would trigger workspace reassignment drift).
+    var knownWindowIDs: Set<CGWindowID> = []
+
     // remove this window from every tracked dict.
     // used when a window is permanently gone (closed, app exited).
     func forget(_ id: CGWindowID) {
@@ -60,5 +65,6 @@ final class WindowStateCache {
         originalFrames.removeValue(forKey: id)
         windowOwners.removeValue(forKey: id)
         floatingWindowIDs.remove(id)
+        knownWindowIDs.remove(id)
     }
 }
