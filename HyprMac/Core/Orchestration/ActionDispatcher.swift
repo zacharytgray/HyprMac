@@ -243,8 +243,16 @@ final class ActionDispatcher {
         guard !stateCache.floatingWindowIDs.contains(focused.windowID) else { return }
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
         let workspace = workspaceManager.workspaceForScreen(screen)
+        // restrict swap candidates to focused's (workspace, screen) tree.
+        // canSwapWindows already requires both windows in the same tree, so
+        // a cross-monitor candidate would be rejected anyway — but having
+        // the picker pre-filter means it can't drift into a cross-monitor
+        // pick when same-monitor candidates are tied (e.g., a full-width
+        // source with two adjacent windows directly below).
         let windows = accessibility.getAllWindows().filter {
-            workspaceManager.isWindowVisible($0.windowID) && !stateCache.floatingWindowIDs.contains($0.windowID)
+            workspaceManager.isWindowVisible($0.windowID)
+                && !stateCache.floatingWindowIDs.contains($0.windowID)
+                && displayManager.screen(for: $0) == screen
         }
 
         guard let target = accessibility.windowInDirection(direction, from: focused, among: windows) else { return }
@@ -268,13 +276,25 @@ final class ActionDispatcher {
             }
 
             animator.animate(transitions, duration: config.animationDuration) { [weak self] in
-                // snap final state with two-pass min-size resolution
-                self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-                self?.cursorManager.warpToCenter(of: focused)
-                self?.updatePositionCache()
+                guard let self = self else { return }
+                // snap final state with two-pass min-size resolution. returns
+                // false if the post-readback layout overflows recorded mins
+                // — applyComputedLayout has already reverted to the pre-swap
+                // tree state and retiled. surface as flashError so the user
+                // sees the rejection rather than a silent revert.
+                let ok = self.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+                if !ok {
+                    self.rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
+                }
+                self.cursorManager.warpToCenter(of: focused)
+                self.updatePositionCache()
             }
         } else {
-            tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
+            // swapWindows handles its own snapshot/revert. flashError on false.
+            let ok = tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
+            if !ok {
+                rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
+            }
             cursorManager.warpToCenter(of: focused)
             updatePositionCache()
         }

@@ -489,13 +489,21 @@ class TilingEngine {
         return true
     }
 
+    /// Pending pre-swap snapshot for the animated swap path. Set by
+    /// `prepareSwapLayout`, consumed (or cleared) by `applyComputedLayout`.
+    /// Defensively cleared by `prepareToggleSplitLayout` to prevent leakage
+    /// across consecutive prepare-then-apply cycles when the user triggers
+    /// a non-swap action between the two halves.
+    private var pendingSwapRevert: (key: TilingKey, snapshot: BSPTree.Snapshot)?
+
     /// Swap two windows' positions in the tree and return post-swap layout
     /// rects without applying frames.
     ///
     /// - Important: **Mutates the tree** before returning — `BSPTree.swap`
     ///   exchanges leaf window references and `resetSplitRatios` runs. If the
     ///   caller does nothing with the returned layout, the tree is still in
-    ///   its post-swap state.
+    ///   its post-swap state. Captures a pre-swap snapshot for revert; the
+    ///   matching `applyComputedLayout` call consumes it.
     /// - Returns: `nil` if either window is missing from the tree or the
     ///   pair fails the cross-axis fit check; otherwise the new layout.
     func prepareSwapLayout(_ a: HyprWindow, _ b: HyprWindow,
@@ -506,7 +514,18 @@ class TilingEngine {
         guard t.contains(a) && t.contains(b) else { return nil }
         let rect = displayManager.cgRect(for: screen)
 
+        // capture snapshot for post-readback overflow revert (animated swap
+        // path). canSwapWindows uses the recorded min size which can be
+        // seeded rather than confirmed via readback — for windows like
+        // Spotify whose actual min depends on UI state, the seed lies and
+        // canSwapWindows false-accepts. The real readback during retile
+        // (triggered by applyComputedLayout) is the ground truth, and
+        // applyComputedLayout reverts via this snapshot if overflow persists.
+        pendingSwapRevert = (key: key, snapshot: t.snapshot())
         t.swap(a, b)
+        // clear userSetRatio + reset to 50/50 so the test layout matches
+        // canSwapWindows's evaluation baseline (see canSwapWindows).
+        t.root.clearUserSetRatios()
         t.root.resetSplitRatios()
         return t.layout(in: rect, gap: gapSize, padding: outerPadding)
     }
@@ -515,9 +534,33 @@ class TilingEngine {
     /// min-size resolution. Pairs with `prepare*Layout`: caller mutates the
     /// tree (via prepare), drives an animation against the returned rects,
     /// then calls `applyComputedLayout` on completion to settle frames.
-    func applyComputedLayout(onWorkspace workspace: Int, screen: NSScreen) {
+    ///
+    /// If the prepare call was `prepareSwapLayout` (which captures a
+    /// pre-swap snapshot), the post-retile layout is checked for overflow
+    /// against the freshly-recorded min sizes; on overflow the snapshot is
+    /// restored and a clean retile applied. Returns `false` in that case so
+    /// the caller can `flashError`. For non-swap callers (toggleSplit etc.)
+    /// the return is always `true`.
+    @discardableResult
+    func applyComputedLayout(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
         let key = TilingKey(workspace: workspace, screen: screen)
+        let t = tree(for: key)
         retile(key: key, screen: screen)
+
+        // consume any pending swap snapshot for this key. only the swap
+        // path sets this — toggleSplit etc. leave it nil.
+        guard let pending = pendingSwapRevert, pending.key == key else { return true }
+        pendingSwapRevert = nil
+
+        let rect = displayManager.cgRect(for: screen)
+        let postLayout = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+        if !overflowingWindows(in: postLayout).isEmpty {
+            hyprLog(.debug, .lifecycle, "animated swap overflow detected post-readback — reverting")
+            t.restore(pending.snapshot)
+            retile(key: key, screen: screen)
+            return false
+        }
+        return true
     }
 
     func crossSwapWindows(_ a: HyprWindow, _ b: HyprWindow) {
@@ -567,6 +610,9 @@ class TilingEngine {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         guard t.contains(window) else { return nil }
+        // defensive: clear any stale pending swap snapshot so the next
+        // applyComputedLayout doesn't try to revert this toggleSplit.
+        pendingSwapRevert = nil
         let rect = displayManager.cgRect(for: screen)
         t.toggleSplit(for: window, in: rect, gap: gapSize, padding: outerPadding)
         t.root.resetSplitRatios()

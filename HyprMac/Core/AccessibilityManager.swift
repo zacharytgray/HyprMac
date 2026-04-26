@@ -207,51 +207,111 @@ class AccessibilityManager {
         return getAllWindows().first { CFEqual($0.element, focusedAX) }
     }
 
-    // find the nearest window in a direction from a given window
-    // uses weighted scoring: strongly prefers windows directly along the axis
+    // find the nearest window in a direction from a given window.
+    //
+    // edge-based scoring (not center-based): measures the gap between the
+    // source's leading edge and each candidate's trailing edge along the
+    // movement axis, then perpendicular overlap. center-based scoring
+    // produced non-deterministic ties when the source spanned multiple
+    // candidates (e.g., a full-width window going down with two
+    // half-width windows directly below — both have identical center
+    // distance, and AX ordering chose between them arbitrarily).
+    //
+    // ranking, lexicographic:
+    //   1. smaller edge-to-edge axial gap (closer along the movement axis)
+    //   2. containsRay first — candidate whose perpendicular span contains
+    //      the source's center coord on the perpendicular axis (i.e., the
+    //      candidate the user "naturally falls into" extending the source)
+    //   3. larger perpendicular overlap
+    //   4. stable reading order — for vertical moves choose lowest minX,
+    //      for horizontal moves choose lowest minY. used only when source
+    //      spans the perpendicular gap between two candidates so that
+    //      neither uniquely contains the ray; ensures the same arrow
+    //      always picks the same target.
     func windowInDirection(_ direction: Direction, from window: HyprWindow, among windows: [HyprWindow]) -> HyprWindow? {
-        guard let origin = window.center else { return nil }
+        guard let sourceFrame = window.frame else { return nil }
 
-        var best: HyprWindow?
-        var bestScore = CGFloat.infinity
+        struct Scored {
+            let window: HyprWindow
+            let edgeGap: CGFloat
+            let perpOverlap: CGFloat
+            let containsRay: Bool
+            let perpReadingOrder: CGFloat
+        }
 
-        for candidate in windows {
-            guard candidate != window, let cc = candidate.center else { continue }
+        var candidates: [Scored] = []
 
-            let dx = cc.x - origin.x
-            let dy = cc.y - origin.y
+        for candidate in windows where candidate != window {
+            guard let cf = candidate.frame else { continue }
 
-            let axial: CGFloat
-            let cross: CGFloat
+            let edgeGap: CGFloat
+            let perpOverlap: CGFloat
+            let containsRay: Bool
+            let perpReadingOrder: CGFloat
 
+            // CG coords throughout: y grows downward (minY = top edge).
             switch direction {
             case .left:
-                guard dx < -1 else { continue }
-                axial = -dx
-                cross = abs(dy)
+                guard cf.maxX <= sourceFrame.minX + 1 else { continue }
+                edgeGap = sourceFrame.minX - cf.maxX
+                perpOverlap = max(0, min(cf.maxY, sourceFrame.maxY) - max(cf.minY, sourceFrame.minY))
+                let centerY = sourceFrame.midY
+                containsRay = cf.minY <= centerY && centerY <= cf.maxY
+                perpReadingOrder = cf.minY
             case .right:
-                guard dx > 1 else { continue }
-                axial = dx
-                cross = abs(dy)
+                guard cf.minX >= sourceFrame.maxX - 1 else { continue }
+                edgeGap = cf.minX - sourceFrame.maxX
+                perpOverlap = max(0, min(cf.maxY, sourceFrame.maxY) - max(cf.minY, sourceFrame.minY))
+                let centerY = sourceFrame.midY
+                containsRay = cf.minY <= centerY && centerY <= cf.maxY
+                perpReadingOrder = cf.minY
             case .up:
-                guard dy < -1 else { continue }
-                axial = -dy
-                cross = abs(dx)
+                guard cf.maxY <= sourceFrame.minY + 1 else { continue }
+                edgeGap = sourceFrame.minY - cf.maxY
+                perpOverlap = max(0, min(cf.maxX, sourceFrame.maxX) - max(cf.minX, sourceFrame.minX))
+                let centerX = sourceFrame.midX
+                containsRay = cf.minX <= centerX && centerX <= cf.maxX
+                perpReadingOrder = cf.minX
             case .down:
-                guard dy > 1 else { continue }
-                axial = dy
-                cross = abs(dx)
+                guard cf.minY >= sourceFrame.maxY - 1 else { continue }
+                edgeGap = cf.minY - sourceFrame.maxY
+                perpOverlap = max(0, min(cf.maxX, sourceFrame.maxX) - max(cf.minX, sourceFrame.minX))
+                let centerX = sourceFrame.midX
+                containsRay = cf.minX <= centerX && centerX <= cf.maxX
+                perpReadingOrder = cf.minX
             }
 
-            // reject if more perpendicular than along-axis (> 60 degree cone)
-            guard axial > cross * 0.5 else { continue }
+            // require some perpendicular alignment — either rect overlap or
+            // the source's center ray hits the candidate's perp span.
+            // filters diagonal-only neighbors that aren't "in line."
+            guard perpOverlap > 0 || containsRay else { continue }
 
-            let score = axial + cross * 3.0
-            if score < bestScore {
-                bestScore = score
-                best = candidate
-            }
+            candidates.append(Scored(
+                window: candidate,
+                edgeGap: edgeGap,
+                perpOverlap: perpOverlap,
+                containsRay: containsRay,
+                perpReadingOrder: perpReadingOrder
+            ))
         }
-        return best
+
+        guard !candidates.isEmpty else { return nil }
+
+        // 0.5px slack on float comparisons absorbs sub-pixel rounding so
+        // visually-equivalent layouts produce the same picker output.
+        candidates.sort { a, b in
+            if abs(a.edgeGap - b.edgeGap) > 0.5 {
+                return a.edgeGap < b.edgeGap
+            }
+            if a.containsRay != b.containsRay {
+                return a.containsRay && !b.containsRay
+            }
+            if abs(a.perpOverlap - b.perpOverlap) > 0.5 {
+                return a.perpOverlap > b.perpOverlap
+            }
+            return a.perpReadingOrder < b.perpReadingOrder
+        }
+
+        return candidates.first?.window
     }
 }
