@@ -11,6 +11,7 @@
 		0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */; };
 		0B9D198B68374BB6E0D0FA1F /* DragManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E56F3B2C9834C78368323D /* DragManager.swift */; };
 		0D4C6B4D33142A677A590C35 /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593D96A7340421A4588DE5D5 /* DisplayManager.swift */; };
+		15AB8B9331E6A03CDD991F3C /* LayoutEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */; };
 		188EAF405D36CBFCDAB54014 /* Keybind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E656D3CA021B130775CC3 /* Keybind.swift */; };
 		1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */; };
 		1DEA79CA749DC72D381082D3 /* LayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9927DB9594D281BB5179CA3 /* LayoutEngine.swift */; };
@@ -80,6 +81,7 @@
 		1BB92BD985DAC4292DE1C57F /* CursorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorManager.swift; sourceTree = "<group>"; };
 		23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTreeTests.swift; sourceTree = "<group>"; };
+		298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngineTests.swift; sourceTree = "<group>"; };
 		2CD84800A82DD5466833975C /* MouseTrackingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseTrackingManager.swift; sourceTree = "<group>"; };
 		2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManager.swift; sourceTree = "<group>"; };
 		3F5155705392561940307378 /* HyprMac.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HyprMac.entitlements; sourceTree = "<group>"; };
@@ -254,6 +256,7 @@
 				1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */,
 				2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */,
 				C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */,
+				298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */,
 				12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */,
 			);
 			path = HyprMacTests;
@@ -442,6 +445,7 @@
 				0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */,
 				4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */,
 				EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */,
+				15AB8B9331E6A03CDD991F3C /* LayoutEngineTests.swift in Sources */,
 				CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
