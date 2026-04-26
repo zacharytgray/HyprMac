@@ -1098,6 +1098,9 @@ class WindowManager {
                 return (w.windowID, f)
             })
 
+            // computeToggleSplitLayout mutates the tree. once it returns non-nil we're
+            // committed — falling through to tilingEngine.toggleSplit() would toggle
+            // the tree a second time and revert the user's action.
             if let layouts = tilingEngine.computeToggleSplitLayout(focused, onWorkspace: workspace, screen: screen) {
                 var transitions: [WindowAnimator.FrameTransition] = []
                 for (w, toRect) in layouts {
@@ -1110,11 +1113,16 @@ class WindowManager {
                         self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
                         self?.updatePositionCache()
                     }
-                    return
+                } else {
+                    // tree was mutated but no frames need to move — apply layout and exit.
+                    tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+                    updatePositionCache()
                 }
+                return
             }
         }
 
+        // animation disabled, or computeToggleSplitLayout returned nil (window not in tree)
         tilingEngine.toggleSplit(focused, onWorkspace: workspace, screen: screen)
         updatePositionCache()
     }
