@@ -589,10 +589,32 @@ class WindowManager {
         let fid = focusedID ?? focusBorder.trackedWindowID ?? focusController.lastFocusedID
         dimmingOverlay.update(
             focusedID: fid,
-            tiledRects: stateCache.tiledPositions,
+            tiledRects: currentTiledRects(),
             floatingRects: floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 8),
             screens: displayManager.screens
         )
+    }
+
+    // re-read tile frames from live AX before dim/border computations.
+    // stateCache.tiledPositions only refreshes on poll/retile (1Hz timer +
+    // activation/launch notifications). between those events a window can
+    // resize or move — app self-resize, AX min-size kick-in, manual drag,
+    // pass-2 layout responding to a constraint — and the cache stays stale.
+    // without this re-read, refreshDimming triggered by FFM/click during the
+    // gap computes the cutout against the old rect, leaving the new rect
+    // partly bright and partly covered by stale dim ("half-dim" artifact).
+    // cost is one AX query per visible tile, bounded by the visible-window
+    // count, only paid on focus change / retile / poll completion.
+    private func currentTiledRects() -> [CGWindowID: CGRect] {
+        var rects: [CGWindowID: CGRect] = [:]
+        for id in stateCache.tiledPositions.keys {
+            if let w = stateCache.cachedWindows[id], let live = w.frame ?? w.cachedFrame {
+                rects[id] = live
+            } else if let fallback = stateCache.tiledPositions[id] {
+                rects[id] = fallback
+            }
+        }
+        return rects
     }
 
     // recapture focus on bare hypr keydown — the visible border is the source
@@ -1227,7 +1249,8 @@ class WindowManager {
         }
 
         var trackedRects: [CGWindowID: CGRect] = [:]
-        for (id, rect) in stateCache.tiledPositions { trackedRects[id] = rect }
+        // live tile frames — same staleness rationale as refreshDimming
+        for (id, rect) in currentTiledRects() { trackedRects[id] = rect }
         for (id, rect) in floaterFrames { trackedRects[id] = rect }
 
         let focusedID = focusBorder.trackedWindowID ?? 0
