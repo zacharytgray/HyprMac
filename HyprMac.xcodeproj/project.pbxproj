@@ -43,6 +43,7 @@
 		696EB6B8B6A4A823B6DBBCD0 /* WindowDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */; };
 		7DFABB5348197A0B951CFD6D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
 		83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C7530C4625DFB387DEB0CF /* SuppressionRegistry.swift */; };
+		860959AD6A92DB57753D655E /* ToggleSplitFallthroughRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC08AAC03ABC15E772214598 /* ToggleSplitFallthroughRegressionTests.swift */; };
 		87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */; };
 		94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD84800A82DD5466833975C /* MouseTrackingManager.swift */; };
 		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
@@ -143,6 +144,7 @@
 		D14B540996EBFC8839339556 /* BSPNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNode.swift; sourceTree = "<group>"; };
 		D2B096217238208C5F5BCA3E /* ActionDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionDispatcher.swift; sourceTree = "<group>"; };
 		DBF9449D559067A61BBA8394 /* BSPTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTree.swift; sourceTree = "<group>"; };
+		DC08AAC03ABC15E772214598 /* ToggleSplitFallthroughRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToggleSplitFallthroughRegressionTests.swift; sourceTree = "<group>"; };
 		DC47A2DE51571E5A9EEBE362 /* TilingConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingConfig.swift; sourceTree = "<group>"; };
 		DE5C2D5C6BE675D940B28364 /* HyprMac-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HyprMac-Release.entitlements"; sourceTree = "<group>"; };
 		E219E876B1BDF912185B8C69 /* HyprMac-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "HyprMac-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -332,6 +334,7 @@
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
+				DC08AAC03ABC15E772214598 /* ToggleSplitFallthroughRegressionTests.swift */,
 				857FCC6A226AFEECD7A199FC /* WindowDiscoveryServiceTests.swift */,
 				901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */,
 			);
@@ -545,6 +548,7 @@
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,
+				860959AD6A92DB57753D655E /* ToggleSplitFallthroughRegressionTests.swift in Sources */,
 				00B50053F139D098B090709F /* WindowDiscoveryServiceTests.swift in Sources */,
 				EA8FC0F77CB146BAD8B35CBE /* WindowStateCacheTests.swift in Sources */,
 			);
