@@ -1652,13 +1652,7 @@ class WindowManager {
     // central per-window cleanup — prune every dict that keys on windowID.
     // safe to call on already-forgotten IDs (idempotent).
     private func forgetWindow(_ id: CGWindowID) {
-        stateCache.knownWindowIDs.remove(id)
-        stateCache.hiddenWindowIDs.remove(id)
-        stateCache.originalFrames.removeValue(forKey: id)
-        stateCache.floatingWindowIDs.remove(id)
-        stateCache.windowOwners.removeValue(forKey: id)
-        stateCache.tiledPositions.removeValue(forKey: id)
-        stateCache.cachedWindows.removeValue(forKey: id)
+        stateCache.forget(id)
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
         if focusController.lastFocusedID == id {
