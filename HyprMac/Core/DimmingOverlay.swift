@@ -212,10 +212,13 @@ class DimmingOverlay {
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isFloatingPanel = true
-        // Phase 5b's gated decision moves this back to .floating to fix the
-        // ccfa26f-introduced regression where dim panels can be pushed behind
-        // other apps' tiled windows. unchanged in Phase 5 — keep .normal.
-        p.level = .normal
+        // Phase 5b: pin one tier below FocusBorder panels (.floating). this
+        // keeps the dim layer above all .normal-level app windows (fixing the
+        // ccfa26f regression where the panel could be pushed behind other
+        // apps' tiled windows) while still letting FocusBorder render above
+        // it without orderFront-recency fights. .floating - 1 is integer 2
+        // — above .normal (0) and below .floating (3).
+        p.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
         p.backgroundColor = .clear
         p.isOpaque = false
         p.hasShadow = false

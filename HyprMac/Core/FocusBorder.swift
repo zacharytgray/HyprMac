@@ -111,7 +111,7 @@ class FocusBorder {
         }
 
         p.alphaValue = 1.0
-        orderAboveWindow(p, windowID: windowID)
+        p.orderFront(nil)
         state = .active
         trackedWindowID = windowID
 
@@ -123,12 +123,10 @@ class FocusBorder {
 
     func updatePosition(_ rect: CGRect) {
         mainThreadOnly()
-        guard let p = panel, state != .hidden, let wid = trackedWindowID else { return }
+        guard let p = panel, state != .hidden, trackedWindowID != nil else { return }
         let nsRect = panelRect(for: rect)
         p.setFrame(nsRect, display: false)
         positionGlowView(in: p)
-        // re-order after reposition to maintain z-order relative to focused window
-        orderAboveWindow(p, windowID: wid)
     }
 
     func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
@@ -160,7 +158,7 @@ class FocusBorder {
             }
 
             border.panel.alphaValue = 1.0
-            orderAboveWindow(border.panel, windowID: windowID)
+            border.panel.orderFront(nil)
         }
     }
 
@@ -244,7 +242,7 @@ class FocusBorder {
         }
 
         p.alphaValue = 1.0
-        orderAboveWindow(p, windowID: windowID)
+        p.orderFront(nil)
         state = .active
         trackedWindowID = windowID
 
@@ -284,12 +282,6 @@ class FocusBorder {
 
     // MARK: - panel setup
 
-    // place panel just above the focused window in z-order.
-    // floating windows raised above the focused window stay on top.
-    private func orderAboveWindow(_ p: NSPanel, windowID: CGWindowID) {
-        p.order(.above, relativeTo: Int(windowID))
-    }
-
     private func makePanel(frame: NSRect) -> NSPanel {
         let p = makeBasePanel(frame: frame)
         let glow = NSView()
@@ -317,7 +309,11 @@ class FocusBorder {
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isFloatingPanel = true
-        p.level = .normal
+        // Phase 5b: .floating tier guarantees borders sit above the dim panel
+        // (one tier below at .floating - 1) and above all .normal-level app
+        // windows. previously .normal + order(.above, relativeTo: windowID),
+        // which became undefined when the focused window closed.
+        p.level = .floating
         p.backgroundColor = .clear
         p.isOpaque = false
         p.hasShadow = false
