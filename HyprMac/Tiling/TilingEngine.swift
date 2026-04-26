@@ -104,6 +104,63 @@ class TilingEngine {
         trees[TilingKey(workspace: workspace, screen: screen)]
     }
 
+    /// Reconcile `trees` with the current monitor topology.
+    ///
+    /// When a screen is disconnected (e.g., laptop lid close, dock unplug), every
+    /// `(workspace, screen)` tree keyed to the vanished screen must either move
+    /// to the workspace's new home screen or be pruned. Without this, vanished
+    /// trees linger forever, leaking memory and producing stale layouts when the
+    /// monitor reconnects with the same physical position.
+    ///
+    /// - Parameters:
+    ///   - currentScreens: the live screens (after `DisplayManager.refresh()`).
+    ///   - homeScreenForWorkspace: closure that returns a workspace's current
+    ///     home screen, or nil if the workspace has no live home. Caller is
+    ///     responsible for running `WorkspaceManager.initializeMonitors()`
+    ///     **before** calling this — otherwise the home-screen map is stale and
+    ///     migrations target vanished destinations.
+    ///
+    /// - Note: TilingKey currently keys on screen-origin coordinates. If two
+    ///   monitors swap positions during a reconnect, trees follow the position,
+    ///   not the physical display. Migrating to `displayID` keying is a future
+    ///   change (see plan §4.2 — deferred for risk reasons).
+    func handleDisplayChange(currentScreens: [NSScreen],
+                             homeScreenForWorkspace: (Int) -> NSScreen?) {
+        let currentKeys = Set(currentScreens.map { TilingKey(workspace: 0, screen: $0).screenID })
+
+        var migrations: [(old: TilingKey, dest: NSScreen)] = []
+        var orphans: [TilingKey] = []
+
+        for key in trees.keys {
+            if currentKeys.contains(key.screenID) { continue }
+            if let dest = homeScreenForWorkspace(key.workspace) {
+                migrations.append((key, dest))
+            } else {
+                orphans.append(key)
+            }
+        }
+
+        for (oldKey, newScreen) in migrations {
+            guard let tree = trees.removeValue(forKey: oldKey) else { continue }
+            let newKey = TilingKey(workspace: oldKey.workspace, screen: newScreen)
+            // a tree may already exist on the destination if the workspace had
+            // been visited there before. prefer the larger one — it's most
+            // likely the active one the user expects to keep.
+            if let existing = trees[newKey], existing.allWindows.count >= tree.allWindows.count {
+                hyprLog(.debug, .lifecycle, "display change: kept existing tree for ws \(oldKey.workspace) on dest screen, dropped vanished tree (\(tree.allWindows.count) windows)")
+                continue
+            }
+            trees[newKey] = tree
+            hyprLog(.debug, .lifecycle, "display change: migrated tree for ws \(oldKey.workspace) (\(tree.allWindows.count) windows)")
+        }
+
+        for key in orphans {
+            let count = trees[key]?.allWindows.count ?? 0
+            trees.removeValue(forKey: key)
+            hyprLog(.debug, .lifecycle, "display change: pruned orphaned tree for ws \(key.workspace) (\(count) windows)")
+        }
+    }
+
     private var layoutEngine: LayoutEngine {
         LayoutEngine(gapSize: gapSize, outerPadding: outerPadding,
                      minSlotDimension: minSlotDimension)

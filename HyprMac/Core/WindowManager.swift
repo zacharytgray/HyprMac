@@ -2130,7 +2130,17 @@ class WindowManager {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             self.focusBorder.primaryScreenHeight = self.displayManager.primaryScreenHeight
+            // ordering: DisplayManager.refresh runs automatically via the same
+            // notification; WorkspaceManager.initializeMonitors must run before
+            // TilingEngine.handleDisplayChange so the home-screen lookup is
+            // current. see plan §4.2.
             self.workspaceManager.initializeMonitors()
+            self.tilingEngine.handleDisplayChange(
+                currentScreens: self.displayManager.screens,
+                homeScreenForWorkspace: { [weak self] ws in
+                    self?.workspaceManager.homeScreenForWorkspace(ws)
+                }
+            )
             self.snapshotAndTile()
         }
     }
