@@ -47,6 +47,7 @@
 		E5F10E452CCBF25881BFBF54 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */; };
 		E6B34B59205F9ED0E806F291 /* CoordinateSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0116BE6F796AC619B0BD6B /* CoordinateSpace.swift */; };
 		E75F4991C42DA20A1A207121 /* HyprMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A034E555A586C182E187021F /* HyprMacApp.swift */; };
+		EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */; };
 		EE46ED338F7A2FDCC86D94D5 /* KeyRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F24369A83C38C9C3757A23FB /* KeyRemapper.swift */; };
 		F085027AE374E48959DEEB48 /* BSPNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14B540996EBFC8839339556 /* BSPNode.swift */; };
 		F2B3AC04608B7F92C811A44A /* BSPTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF9449D559067A61BBA8394 /* BSPTree.swift */; };
@@ -101,6 +102,7 @@
 		B38E1F4DBD1DB2807610AB4E /* FocusBorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusBorder.swift; sourceTree = "<group>"; };
 		BB697B2619BEB7E2434E157E /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherSettingsView.swift; sourceTree = "<group>"; };
+		C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceInsertWindowFallbackTests.swift; sourceTree = "<group>"; };
 		D14B540996EBFC8839339556 /* BSPNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNode.swift; sourceTree = "<group>"; };
 		DBF9449D559067A61BBA8394 /* BSPTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTree.swift; sourceTree = "<group>"; };
 		DE5C2D5C6BE675D940B28364 /* HyprMac-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HyprMac-Release.entitlements"; sourceTree = "<group>"; };
@@ -243,6 +245,7 @@
 				16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */,
 				1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */,
 				2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */,
+				C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */,
 			);
 			path = HyprMacTests;
 			sourceTree = "<group>";
@@ -423,6 +426,7 @@
 				049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */,
 				0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */,
 				4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */,
+				EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

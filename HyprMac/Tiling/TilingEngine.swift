@@ -98,6 +98,12 @@ class TilingEngine {
         return tree
     }
 
+    // non-creating accessor for tests — returns the live tree if one exists for
+    // (workspace, screen), nil otherwise. production callers go through tree(for:).
+    internal func existingTree(forWorkspace workspace: Int, screen: NSScreen) -> BSPTree? {
+        trees[TilingKey(workspace: workspace, screen: screen)]
+    }
+
     private struct MinSizeConflict {
         let window: HyprWindow
         let allocated: CGRect
