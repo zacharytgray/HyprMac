@@ -8,6 +8,12 @@ import Cocoa
 // deterministic — doesn't depend on relative z-order of other apps' windows.
 // that's why v1 (order relative to focused window) was flaky: macOS reshuffles
 // the global z-stack constantly on app activation, window open/close, etc.
+//
+// internal panel identity keys by CGDirectDisplayID. user-facing per-monitor
+// config (gap overrides, disabledMonitors, settings UI) keys by
+// NSScreen.localizedName per the §6 monitor identity contract — panels are an
+// internal-only state, so we use the OS-stable numeric ID and don't have to
+// worry about two physical monitors with identical localized names.
 class DimmingOverlay {
 
     private class DimView: NSView {
@@ -25,12 +31,37 @@ class DimmingOverlay {
         }
     }
 
-    private var panels: [String: (panel: NSPanel, view: DimView)] = [:]
+    // per-display panel + last inputs for path memoization. boxed in a class so
+    // we can update lastInputs in place without round-tripping the dict.
+    private final class PanelEntry {
+        let panel: NSPanel
+        let view: DimView
+        var lastInputs: Inputs?
+
+        struct Inputs: Equatable {
+            let focusedID: CGWindowID
+            let tiledRects: [CGWindowID: CGRect]
+            let floatingRects: [CGWindowID: CGRect]
+            let screenFrame: NSRect
+            let intensity: CGFloat
+        }
+
+        init(panel: NSPanel, view: DimView) {
+            self.panel = panel
+            self.view = view
+        }
+    }
+
+    private var panels: [CGDirectDisplayID: PanelEntry] = [:]
     private var visible = false
 
     var intensity: CGFloat = 0.2
     var enabled: Bool = false
     var primaryScreenHeight: CGFloat = 0
+
+    deinit {
+        for (_, entry) in panels { entry.panel.orderOut(nil) }
+    }
 
     func update(
         focusedID: CGWindowID,
@@ -42,6 +73,15 @@ class DimmingOverlay {
         guard enabled, focusedID != 0 else { hideAll(); return }
         visible = true
 
+        // prune entries for displays that have been unplugged. otherwise the
+        // panels dict accumulates orphaned NSPanels across monitor reconfigs.
+        let currentDisplayIDs = Set(screens.compactMap { $0.displayID })
+        let stale = panels.keys.filter { !currentDisplayIDs.contains($0) }
+        for id in stale {
+            panels[id]?.panel.orderOut(nil)
+            panels.removeValue(forKey: id)
+        }
+
         let fill = NSColor.black.withAlphaComponent(intensity).cgColor
 
         for screen in screens {
@@ -51,36 +91,52 @@ class DimmingOverlay {
                 entry.panel.setFrame(screenNS, display: false)
             }
 
-            // build path in panel-local coords — fill rects of non-focused tiles
-            // that land on this screen, clipped against the focused rect so
-            // the dim doesn't bleed onto the focused window where slots
-            // physically overlap (apps with min-size constraints expanding
-            // past their allocated rect).
-            let focusedLocal: NSRect? = tiledRects[focusedID].flatMap {
-                localRect(cgRect: $0, screenNS: screenNS)
-            }
-            let floatingLocals = floatingRects.values.compactMap {
-                localRect(cgRect: $0, screenNS: screenNS)
-            }
+            // memo: skip path rebuild when inputs are byte-equal to the prior
+            // call. the path computation is O(tiled * floating); update() runs
+            // after every poll/focus/retile so unchanged frames are common.
+            let inputs = PanelEntry.Inputs(
+                focusedID: focusedID,
+                tiledRects: tiledRects,
+                floatingRects: floatingRects,
+                screenFrame: screenNS,
+                intensity: intensity
+            )
+            let inputsUnchanged = entry.lastInputs == inputs
 
-            let path = CGMutablePath()
-            for (wid, cgRect) in tiledRects where wid != focusedID {
-                guard let local = localRect(cgRect: cgRect, screenNS: screenNS) else { continue }
-                var pieces = subtract(focusedLocal, from: local)
-                for floater in floatingLocals {
-                    pieces = pieces.flatMap { subtract(floater, from: $0) }
+            if !inputsUnchanged {
+                // build path in panel-local coords — fill rects of non-focused
+                // tiles that land on this screen, clipped against the focused
+                // rect so the dim doesn't bleed onto the focused window where
+                // slots physically overlap (apps with min-size constraints
+                // expanding past their allocated rect).
+                let focusedLocal: NSRect? = tiledRects[focusedID].flatMap {
+                    localRect(cgRect: $0, screenNS: screenNS)
                 }
-                for piece in pieces {
-                    path.addRect(piece)
+                let floatingLocals = floatingRects.values.compactMap {
+                    localRect(cgRect: $0, screenNS: screenNS)
                 }
-            }
 
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            entry.view.shape.fillRule = .nonZero
-            entry.view.shape.path = path
-            entry.view.shape.fillColor = fill
-            CATransaction.commit()
+                let path = CGMutablePath()
+                for (wid, cgRect) in tiledRects where wid != focusedID {
+                    guard let local = localRect(cgRect: cgRect, screenNS: screenNS) else { continue }
+                    var pieces = subtract(focusedLocal, from: local)
+                    for floater in floatingLocals {
+                        pieces = pieces.flatMap { subtract(floater, from: $0) }
+                    }
+                    for piece in pieces {
+                        path.addRect(piece)
+                    }
+                }
+
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                entry.view.shape.fillRule = .nonZero
+                entry.view.shape.path = path
+                entry.view.shape.fillColor = fill
+                CATransaction.commit()
+
+                entry.lastInputs = inputs
+            }
 
             if !entry.panel.isVisible {
                 entry.panel.alphaValue = 1
@@ -148,14 +204,17 @@ class DimmingOverlay {
                       height: clipped.height)
     }
 
-    private func ensurePanel(for screen: NSScreen) -> (panel: NSPanel, view: DimView) {
-        let key = screen.localizedName
+    private func ensurePanel(for screen: NSScreen) -> PanelEntry {
+        let key = screen.displayID
         if let existing = panels[key] { return existing }
 
         let p = NSPanel(contentRect: screen.frame,
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isFloatingPanel = true
+        // Phase 5b's gated decision moves this back to .floating to fix the
+        // ccfa26f-introduced regression where dim panels can be pushed behind
+        // other apps' tiled windows. unchanged in Phase 5 — keep .normal.
         p.level = .normal
         p.backgroundColor = .clear
         p.isOpaque = false
@@ -167,8 +226,16 @@ class DimmingOverlay {
         view.autoresizingMask = [.width, .height]
         p.contentView?.addSubview(view)
 
-        let entry = (panel: p, view: view)
+        let entry = PanelEntry(panel: p, view: view)
         panels[key] = entry
         return entry
+    }
+}
+
+private extension NSScreen {
+    // CGDirectDisplayID — stable across plug/unplug for the same physical
+    // display, unlike localizedName which can collide across identical models.
+    var displayID: CGDirectDisplayID {
+        (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }
 }
