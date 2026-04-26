@@ -23,12 +23,9 @@ class WindowManager {
     // tracks known window IDs so we can detect new/closed ones
     private var knownWindowIDs: Set<CGWindowID> = []
 
-    // tracks which windows are floating
-    private var floatingWindowIDs: Set<CGWindowID> = []
-
     // window-keyed state cache. fields migrate in over Phase 2 — currently owns
-    // cachedWindows + tiledPositions + hiddenWindowIDs + originalFrames + windowOwners;
-    // floatingWindowIDs + knownWindowIDs move in subsequent commits.
+    // cachedWindows + tiledPositions + hiddenWindowIDs + originalFrames + windowOwners +
+    // floatingWindowIDs; knownWindowIDs moves in the next commit.
     let stateCache = WindowStateCache()
 
     // polling timer
@@ -87,7 +84,7 @@ class WindowManager {
         mouseTracker.isAnimating = { [weak self] in self?.animator.isAnimating ?? false }
         mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
         mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
-        mouseTracker.floatingWindowIDs = { [weak self] in self?.floatingWindowIDs ?? [] }
+        mouseTracker.floatingWindowIDs = { [weak self] in self?.stateCache.floatingWindowIDs ?? [] }
         mouseTracker.isWindowVisible = { [weak self] wid in self?.workspaceManager.isWindowVisible(wid) ?? false }
         mouseTracker.cachedWindow = { [weak self] wid in self?.stateCache.cachedWindows[wid] }
         mouseTracker.tiledPositions = { [weak self] in self?.stateCache.tiledPositions ?? [:] }
@@ -109,7 +106,7 @@ class WindowManager {
         tilingEngine.onAutoFloat = { [weak self] window in
             guard let self = self else { return }
             window.isFloating = true
-            self.floatingWindowIDs.insert(window.windowID)
+            self.stateCache.floatingWindowIDs.insert(window.windowID)
             if let original = self.stateCache.originalFrames[window.windowID] {
                 window.setFrame(original)
             }
@@ -378,7 +375,7 @@ class WindowManager {
             guard self.preDragFocusedID == 0 else { return }
             guard let tid = self.focusBorder.trackedWindowID else { return }
             // only hide for floating windows — tiled windows can't be free-dragged
-            guard self.floatingWindowIDs.contains(tid) else { return }
+            guard self.stateCache.floatingWindowIDs.contains(tid) else { return }
             self.preDragFocusedID = tid
             self.focusBorder.hide(); self.dimmingOverlay.hideAll()
         }
@@ -442,11 +439,11 @@ class WindowManager {
             dimmingOverlay.hideAll()
             return
         }
-        focusBorder.accentCGColor = floatingWindowIDs.contains(window.windowID)
+        focusBorder.accentCGColor = stateCache.floatingWindowIDs.contains(window.windowID)
             ? config.resolvedFloatingBorderColor.cgColor
             : config.resolvedFocusBorderColor.cgColor
         focusBorder.show(around: frame, windowID: window.windowID)
-        if floatingWindowIDs.contains(window.windowID) {
+        if stateCache.floatingWindowIDs.contains(window.windowID) {
             refreshFloatingBorders(windows: accessibility.getAllWindows())
         } else {
             refreshFloatingBorders()
@@ -459,7 +456,7 @@ class WindowManager {
         refreshFloatingBorders(windows: accessibility.getAllWindows())
 
         guard let tid = focusBorder.trackedWindowID,
-              floatingWindowIDs.contains(tid) else { return }
+              stateCache.floatingWindowIDs.contains(tid) else { return }
 
         func reassert() {
             let windows = accessibility.getAllWindows()
@@ -528,7 +525,7 @@ class WindowManager {
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
         // floating windows are visually above tiled windows
-        for wid in floatingWindowIDs where wsWindows.contains(wid) {
+        for wid in stateCache.floatingWindowIDs where wsWindows.contains(wid) {
             guard let w = stateCache.cachedWindows[wid], let frame = w.frame else { continue }
             if frame.contains(cgPoint) {
                 w.focusWithoutRaise()
@@ -585,13 +582,13 @@ class WindowManager {
         // floating windows can nudge tiled windows slightly, causing false
         // snapBack retiles that disrupt the layout
         if let focused = accessibility.getFocusedWindow(),
-           floatingWindowIDs.contains(focused.windowID) {
+           stateCache.floatingWindowIDs.contains(focused.windowID) {
             return
         }
 
         let allWindows = accessibility.getAllWindows()
 
-        dragManager.floatingWindowIDs = floatingWindowIDs
+        dragManager.floatingWindowIDs = stateCache.floatingWindowIDs
         dragManager.tiledPositions = stateCache.tiledPositions
 
         let result = dragManager.detect(
@@ -744,7 +741,7 @@ class WindowManager {
         guard let focused = currentFocusedWindow() else { return }
         // only consider windows on visible workspaces — hidden corner windows must be excluded
         let windows = accessibility.getAllWindows().filter {
-            workspaceManager.isWindowVisible($0.windowID) && !floatingWindowIDs.contains($0.windowID)
+            workspaceManager.isWindowVisible($0.windowID) && !stateCache.floatingWindowIDs.contains($0.windowID)
         }
 
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
@@ -759,11 +756,11 @@ class WindowManager {
 
     private func swapInDirection(_ direction: Direction) {
         guard let focused = currentFocusedWindow() else { return }
-        guard !floatingWindowIDs.contains(focused.windowID) else { return }
+        guard !stateCache.floatingWindowIDs.contains(focused.windowID) else { return }
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
         let workspace = workspaceManager.workspaceForScreen(screen)
         let windows = accessibility.getAllWindows().filter {
-            workspaceManager.isWindowVisible($0.windowID) && !floatingWindowIDs.contains($0.windowID)
+            workspaceManager.isWindowVisible($0.windowID) && !stateCache.floatingWindowIDs.contains($0.windowID)
         }
 
         guard let target = accessibility.windowInDirection(direction, from: focused, among: windows) else { return }
@@ -862,7 +859,7 @@ class WindowManager {
         if result.alreadyVisible {
             // workspace is showing on result.screen — just focus it
             let visibleWindows = allWindows.filter { result.toShow.contains($0.windowID) }
-            if let best = visibleWindows.first(where: { !floatingWindowIDs.contains($0.windowID) })
+            if let best = visibleWindows.first(where: { !stateCache.floatingWindowIDs.contains($0.windowID) })
                 ?? visibleWindows.first {
                 best.focus()
                 cursorManager.warpToCenter(of: best)
@@ -879,11 +876,11 @@ class WindowManager {
         // batch: hide old + restore floating new in one tight pass
         for wid in result.toHide {
             if let w = findWindow(wid, in: allWindows) {
-                if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
+                if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: result.screen)
             }
         }
-        for wid in result.toShow where floatingWindowIDs.contains(wid) {
+        for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
             if let w = findWindow(wid, in: allWindows) {
                 workspaceManager.restoreFloatingFrame(w)
             }
@@ -895,7 +892,7 @@ class WindowManager {
         // focus best tiled window on the new workspace; if none, fall back to
         // any floating window before giving up. only warp+hide if truly empty.
         let newWorkspaceWindows = allWindows.filter { result.toShow.contains($0.windowID) }
-        let tiled = newWorkspaceWindows.first { !floatingWindowIDs.contains($0.windowID) }
+        let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }
         if let best = tiled ?? newWorkspaceWindows.first {
             best.focus()
             cursorManager.warpToCenter(of: best)
@@ -925,7 +922,7 @@ class WindowManager {
             return
         }
 
-        let isFloating = floatingWindowIDs.contains(focused.windowID)
+        let isFloating = stateCache.floatingWindowIDs.contains(focused.windowID)
 
         // when coming from disabled monitor, unfloat so it enters tiling on target
         let willTile = onDisabledMonitor || !isFloating
@@ -948,7 +945,7 @@ class WindowManager {
             } else {
                 // exclude hidden windows (minimized/closed but app still running) from count
                 let wids = workspaceManager.windowIDs(onWorkspace: number).subtracting(stateCache.hiddenWindowIDs)
-                let tiledCount = wids.filter { !floatingWindowIDs.contains($0) }.count
+                let tiledCount = wids.filter { !stateCache.floatingWindowIDs.contains($0) }.count
                 let maxDepth = tilingEngine.maxDepth(for: targetScreen)
                 let maxWindows = 1 << maxDepth // 2^maxDepth — smart insert backtracks to fill all slots
                 if tiledCount >= maxWindows {
@@ -964,7 +961,7 @@ class WindowManager {
 
         // unfloat if coming from disabled monitor
         if onDisabledMonitor && isFloating {
-            floatingWindowIDs.remove(focused.windowID)
+            stateCache.floatingWindowIDs.remove(focused.windowID)
             focused.isFloating = false
             hyprLog(.debug, .lifecycle, "unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
         }
@@ -1034,7 +1031,7 @@ class WindowManager {
         let movedWindows = workspaceManager.windowIDs(onWorkspace: result.movedWs)
         for wid in movedWindows {
             if let w = findWindow(wid, in: allWindows) {
-                if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
+                if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: targetScreen)
             }
         }
@@ -1044,7 +1041,7 @@ class WindowManager {
         if !workspaceManager.isWorkspaceVisible(result.targetOldWs) {
             for wid in displacedWindows {
                 if let w = findWindow(wid, in: allWindows) {
-                    if floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
+                    if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                     workspaceManager.hideInCorner(w, on: targetScreen)
                 }
             }
@@ -1052,7 +1049,7 @@ class WindowManager {
 
         // fallback workspace windows: need to appear on source screen
         let fallbackWindows = workspaceManager.windowIDs(onWorkspace: result.fallbackWs)
-        for wid in fallbackWindows where floatingWindowIDs.contains(wid) {
+        for wid in fallbackWindows where stateCache.floatingWindowIDs.contains(wid) {
             if let w = findWindow(wid, in: allWindows) {
                 workspaceManager.restoreFloatingFrame(w)
             }
@@ -1061,7 +1058,7 @@ class WindowManager {
         tileAllVisibleSpaces()
 
         // restore floating windows on moved workspace (now on target screen)
-        for wid in movedWindows where floatingWindowIDs.contains(wid) {
+        for wid in movedWindows where stateCache.floatingWindowIDs.contains(wid) {
             if let w = findWindow(wid, in: allWindows) {
                 workspaceManager.restoreFloatingFrame(w)
             }
@@ -1124,7 +1121,7 @@ class WindowManager {
 
     // public accessors for menu bar indicator
     var hasVisibleFloatingWindows: Bool {
-        floatingWindowIDs.contains { workspaceManager.isWindowVisible($0) }
+        stateCache.floatingWindowIDs.contains { workspaceManager.isWindowVisible($0) }
     }
 
     func occupiedWorkspaces() -> Set<Int> {
@@ -1150,7 +1147,7 @@ class WindowManager {
         suppressions.suppress("activation-switch", for: 0.5)
 
         guard let target = floatingController.focusFloating(
-            floatingWindowIDs: floatingWindowIDs,
+            floatingWindowIDs: stateCache.floatingWindowIDs,
             getAllWindows: { [weak self] in self?.accessibility.getAllWindows() ?? [] },
             getFocusedWindow: { [weak self] in self?.accessibility.getFocusedWindow() },
             displayManager: displayManager,
@@ -1183,19 +1180,19 @@ class WindowManager {
 
         let workspace = workspaceManager.workspaceForScreen(screen)
 
-        let wasFloating = floatingWindowIDs.contains(focused.windowID)
+        let wasFloating = stateCache.floatingWindowIDs.contains(focused.windowID)
 
         if wasFloating {
             // floating → tiled: animate surrounding windows making room
             // reassign workspace in case the window was dragged to a different monitor
             workspaceManager.moveWindow(focused.windowID, toWorkspace: workspace)
             animatedRetile(prepare: { [self] in
-                floatingWindowIDs.remove(focused.windowID)
+                stateCache.floatingWindowIDs.remove(focused.windowID)
                 focused.isFloating = false
 
                 if let evicted = tilingEngine.forceInsertWindow(focused, toWorkspace: workspace, on: screen) {
                     evicted.isFloating = true
-                    floatingWindowIDs.insert(evicted.windowID)
+                    stateCache.floatingWindowIDs.insert(evicted.windowID)
                     let screenRect = displayManager.cgRect(for: screen)
                     if let original = stateCache.originalFrames[evicted.windowID],
                        isFrameVisible(original, on: screenRect) {
@@ -1213,7 +1210,7 @@ class WindowManager {
             // tiled → floating: animate remaining windows filling the gap
             focusBorder.hide(); dimmingOverlay.hideAll()
             animatedRetile(prepare: { [self] in
-                floatingWindowIDs.insert(focused.windowID)
+                stateCache.floatingWindowIDs.insert(focused.windowID)
                 focused.isFloating = true
                 tilingEngine.removeWindow(focused, fromWorkspace: workspace)
 
@@ -1251,8 +1248,8 @@ class WindowManager {
                     tilingEngine.removeWindow(w, fromWorkspace: ws)
                     workspaceManager.removeWindow(w.windowID)
                 }
-                if !floatingWindowIDs.contains(w.windowID) {
-                    floatingWindowIDs.insert(w.windowID)
+                if !stateCache.floatingWindowIDs.contains(w.windowID) {
+                    stateCache.floatingWindowIDs.insert(w.windowID)
                     w.isFloating = true
                     hyprLog(.debug, .lifecycle, "disabled monitor change: floated '\(w.title ?? "?")'")
                 }
@@ -1265,8 +1262,8 @@ class WindowManager {
                 guard let wScreen = displayManager.screen(for: w),
                       wScreen == screen else { continue }
                 // only unfloat if it was auto-floated (no workspace assignment = was on disabled monitor)
-                if floatingWindowIDs.contains(w.windowID) && workspaceManager.workspaceFor(w.windowID) == nil {
-                    floatingWindowIDs.remove(w.windowID)
+                if stateCache.floatingWindowIDs.contains(w.windowID) && workspaceManager.workspaceFor(w.windowID) == nil {
+                    stateCache.floatingWindowIDs.remove(w.windowID)
                     w.isFloating = false
                     hyprLog(.debug, .lifecycle, "re-enabled monitor: unfloated '\(w.title ?? "?")'")
                 }
@@ -1305,16 +1302,16 @@ class WindowManager {
             stateCache.windowOwners[w.windowID] = w.ownerPID
 
             // auto-float excluded apps
-            if isExcludedApp(w) && !floatingWindowIDs.contains(w.windowID) {
-                floatingWindowIDs.insert(w.windowID)
+            if isExcludedApp(w) && !stateCache.floatingWindowIDs.contains(w.windowID) {
+                stateCache.floatingWindowIDs.insert(w.windowID)
                 w.isFloating = true
                 hyprLog(.debug, .lifecycle, "auto-float excluded app: '\(w.title ?? "?")'")
             }
 
             // auto-float windows on disabled monitors — don't assign workspace
             if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
-                if !floatingWindowIDs.contains(w.windowID) {
-                    floatingWindowIDs.insert(w.windowID)
+                if !stateCache.floatingWindowIDs.contains(w.windowID) {
+                    stateCache.floatingWindowIDs.insert(w.windowID)
                     w.isFloating = true
                     hyprLog(.debug, .lifecycle, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                 }
@@ -1333,7 +1330,7 @@ class WindowManager {
         tilingEngine.primeMinimumSizes(allWindows)
 
         for w in allWindows {
-            if floatingWindowIDs.contains(w.windowID) {
+            if stateCache.floatingWindowIDs.contains(w.windowID) {
                 w.isFloating = true
             }
         }
@@ -1380,7 +1377,7 @@ class WindowManager {
         var beforeFrames: [CGWindowID: CGRect] = [:]
         for w in allWindows {
             guard workspaceManager.isWindowVisible(w.windowID),
-                  !floatingWindowIDs.contains(w.windowID),
+                  !stateCache.floatingWindowIDs.contains(w.windowID),
                   let f = w.frame else { continue }
             beforeFrames[w.windowID] = f
         }
@@ -1398,7 +1395,7 @@ class WindowManager {
 
         // mark floating flags on refreshed window objects
         for w in refreshedWindows {
-            if floatingWindowIDs.contains(w.windowID) { w.isFloating = true }
+            if stateCache.floatingWindowIDs.contains(w.windowID) { w.isFloating = true }
         }
         for screen in displayManager.screens {
             if workspaceManager.isMonitorDisabled(screen) { continue }
@@ -1458,8 +1455,8 @@ class WindowManager {
         // full redistribution: un-float everything except excluded apps and
         // non-standard windows (dialogs, sheets, floating panels).
         let keepFloating = Set(allWindows.filter { isExcludedApp($0) }.map { $0.windowID })
-        for wid in floatingWindowIDs where !keepFloating.contains(wid) && allWids.contains(wid) {
-            floatingWindowIDs.remove(wid)
+        for wid in stateCache.floatingWindowIDs where !keepFloating.contains(wid) && allWids.contains(wid) {
+            stateCache.floatingWindowIDs.remove(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = false
             }
@@ -1469,11 +1466,11 @@ class WindowManager {
         var tilingWids: [CGWindowID] = []
         for screen in screens {
             let ws = workspaceManager.workspaceForScreen(screen)
-            for wid in workspaceManager.windowIDs(onWorkspace: ws) where !floatingWindowIDs.contains(wid) {
+            for wid in workspaceManager.windowIDs(onWorkspace: ws) where !stateCache.floatingWindowIDs.contains(wid) {
                 tilingWids.append(wid)
             }
         }
-        for w in allWindows where !floatingWindowIDs.contains(w.windowID) {
+        for w in allWindows where !stateCache.floatingWindowIDs.contains(w.windowID) {
             if !tilingWids.contains(w.windowID) {
                 tilingWids.append(w.windowID)
             }
@@ -1521,7 +1518,7 @@ class WindowManager {
         // any remaining (all 9 workspaces full) — auto-float
         while widIdx < tilingWids.count {
             let wid = tilingWids[widIdx]
-            floatingWindowIDs.insert(wid)
+            stateCache.floatingWindowIDs.insert(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = true
                 if let original = stateCache.originalFrames[wid] { w.setFrame(original) }
@@ -1531,7 +1528,7 @@ class WindowManager {
         }
 
         // hide windows on non-visible workspaces
-        for wid in tilingWids where !floatingWindowIDs.contains(wid) {
+        for wid in tilingWids where !stateCache.floatingWindowIDs.contains(wid) {
             guard let assignedWs = workspaceManager.workspaceFor(wid),
                   !workspaceManager.isWorkspaceVisible(assignedWs) else { continue }
             if let w = allWindows.first(where: { $0.windowID == wid }) {
@@ -1603,7 +1600,7 @@ class WindowManager {
 
     private func isSelectableInCurrentContext(_ windowID: CGWindowID, workspaceWindows: Set<CGWindowID>) -> Bool {
         if workspaceWindows.contains(windowID) { return true }
-        return floatingWindowIDs.contains(windowID) && workspaceManager.isWindowVisible(windowID)
+        return stateCache.floatingWindowIDs.contains(windowID) && workspaceManager.isWindowVisible(windowID)
     }
 
     // hit-test the cursor against tiled and floating windows, update tracker.
@@ -1620,7 +1617,7 @@ class WindowManager {
         for w in accessibility.getAllWindows() {
             guard workspaceManager.isWindowVisible(w.windowID),
                   let frame = w.frame else { continue }
-            if floatingWindowIDs.contains(w.windowID) {
+            if stateCache.floatingWindowIDs.contains(w.windowID) {
                 if mouseDownFloatingWindowID == 0, frame.contains(cgPoint) {
                     mouseDownFloatingWindowID = w.windowID
                 }
@@ -1636,7 +1633,7 @@ class WindowManager {
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
         // floating windows take precedence (drawn on top)
-        for wid in floatingWindowIDs {
+        for wid in stateCache.floatingWindowIDs {
             guard workspaceManager.isWindowVisible(wid),
                   let w = stateCache.cachedWindows[wid], let frame = w.frame else { continue }
             if frame.contains(cgPoint) {
@@ -1656,7 +1653,7 @@ class WindowManager {
         knownWindowIDs.remove(id)
         stateCache.hiddenWindowIDs.remove(id)
         stateCache.originalFrames.removeValue(forKey: id)
-        floatingWindowIDs.remove(id)
+        stateCache.floatingWindowIDs.remove(id)
         stateCache.windowOwners.removeValue(forKey: id)
         stateCache.tiledPositions.removeValue(forKey: id)
         stateCache.cachedWindows.removeValue(forKey: id)
@@ -1694,7 +1691,7 @@ class WindowManager {
             // only check windows whose recorded workspace is currently on screen
             guard visibleWorkspaces.contains(recordedWs) else { continue }
             // floating windows can be anywhere by design — skip
-            guard !floatingWindowIDs.contains(w.windowID) else { continue }
+            guard !stateCache.floatingWindowIDs.contains(w.windowID) else { continue }
             guard let physicalScreen = displayManager.screen(for: w) else { continue }
             // skip if the window sits on a disabled monitor — handled elsewhere
             guard !workspaceManager.isMonitorDisabled(physicalScreen) else { continue }
@@ -1773,7 +1770,7 @@ class WindowManager {
             forgetWindow(id)
         }
         // floating set / originalFrames / windowOwners shouldn't outlive known+hidden either
-        for id in floatingWindowIDs where !live.contains(id) { forgetWindow(id) }
+        for id in stateCache.floatingWindowIDs where !live.contains(id) { forgetWindow(id) }
         for (id, _) in stateCache.originalFrames where !live.contains(id) { forgetWindow(id) }
         for (id, _) in stateCache.windowOwners where !live.contains(id) { forgetWindow(id) }
     }
@@ -1797,7 +1794,7 @@ class WindowManager {
     private func floatingFrames(from source: [HyprWindow], expandedBy padding: CGFloat = 0) -> [CGWindowID: CGRect] {
         var frames: [CGWindowID: CGRect] = [:]
         for w in source {
-            guard floatingWindowIDs.contains(w.windowID),
+            guard stateCache.floatingWindowIDs.contains(w.windowID),
                   workspaceManager.isWindowVisible(w.windowID),
                   let frame = w.frame ?? w.cachedFrame else { continue }
             frames[w.windowID] = padding == 0 ? frame : frame.insetBy(dx: -padding, dy: -padding)
@@ -1814,7 +1811,7 @@ class WindowManager {
             guard workspaceManager.isWindowVisible(w.windowID) else { continue }
             stateCache.cachedWindows[w.windowID] = w
             guard let frame = w.cachedFrame ?? w.frame else { continue }
-            if floatingWindowIDs.contains(w.windowID) {
+            if stateCache.floatingWindowIDs.contains(w.windowID) {
                 continue
             } else {
                 stateCache.tiledPositions[w.windowID] = frame
@@ -1875,7 +1872,7 @@ class WindowManager {
     private func workspacesWithFloatingWindows() -> Set<Int> {
         var result = Set<Int>()
         // only count live (non-hidden) floating windows
-        let liveFloating = floatingWindowIDs.subtracting(stateCache.hiddenWindowIDs)
+        let liveFloating = stateCache.floatingWindowIDs.subtracting(stateCache.hiddenWindowIDs)
         for ws in 1...9 {
             let wsWindows = workspaceManager.windowIDs(onWorkspace: ws)
             if !wsWindows.isDisjoint(with: liveFloating) {
@@ -1924,15 +1921,15 @@ class WindowManager {
 
                 // auto-float excluded apps
                 if isExcludedApp(w) {
-                    floatingWindowIDs.insert(w.windowID)
+                    stateCache.floatingWindowIDs.insert(w.windowID)
                     w.isFloating = true
                     hyprLog(.debug, .lifecycle, "auto-float excluded app: '\(w.title ?? "?")'")
                 }
 
                 // auto-float on disabled monitors — skip workspace assignment
                 if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
-                    if !floatingWindowIDs.contains(w.windowID) {
-                        floatingWindowIDs.insert(w.windowID)
+                    if !stateCache.floatingWindowIDs.contains(w.windowID) {
+                        stateCache.floatingWindowIDs.insert(w.windowID)
                         w.isFloating = true
                         hyprLog(.debug, .lifecycle, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                     }
@@ -2008,7 +2005,7 @@ class WindowManager {
 
         // periodically re-raise floating windows so they don't get stuck
         // behind full-screen tiled windows (no activation event to trigger raise)
-        if !floatingWindowIDs.isEmpty {
+        if !stateCache.floatingWindowIDs.isEmpty {
             raiseFloatingWindows()
         }
     }
@@ -2047,7 +2044,7 @@ class WindowManager {
 
         // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
         // must always run — even when activation switch is suppressed — so floaters stay on top.
-        if !floatingWindowIDs.isEmpty {
+        if !stateCache.floatingWindowIDs.isEmpty {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 self?.raiseFloatingWindows()
             }
@@ -2063,7 +2060,7 @@ class WindowManager {
         defer { isRaisingFloaters = false }
 
         let toRaise = floatingController.floatingWindowsBehindTiled(
-            floatingWindowIDs: floatingWindowIDs,
+            floatingWindowIDs: stateCache.floatingWindowIDs,
             tiledPositions: stateCache.tiledPositions
         )
         guard !toRaise.isEmpty else { return }
@@ -2081,7 +2078,7 @@ class WindowManager {
 
         // immediately restore focus to the tiled window the user was interacting with.
         // this prevents the raise from stealing focus and triggering an FFM cascade.
-        if let prev = previousWindow, !floatingWindowIDs.contains(prev.windowID) {
+        if let prev = previousWindow, !stateCache.floatingWindowIDs.contains(prev.windowID) {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self] in
                 prev.focusWithoutRaise()
                 self?.updateFocusBorder(for: prev)

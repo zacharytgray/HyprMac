@@ -46,6 +46,11 @@ final class WindowStateCache {
     // we mark hidden and keep state; if dead, we forget.
     var windowOwners: [CGWindowID: pid_t] = [:]
 
+    // windows that are floating (excluded from tiling). user-toggled via
+    // Hypr+Shift+T or auto-floated by depth/min-size/excluded-app rules.
+    // BSP membership is computed; floating membership is the negation.
+    var floatingWindowIDs: Set<CGWindowID> = []
+
     // remove this window from every tracked dict.
     // used when a window is permanently gone (closed, app exited).
     func forget(_ id: CGWindowID) {
@@ -54,5 +59,6 @@ final class WindowStateCache {
         hiddenWindowIDs.remove(id)
         originalFrames.removeValue(forKey: id)
         windowOwners.removeValue(forKey: id)
+        floatingWindowIDs.remove(id)
     }
 }
