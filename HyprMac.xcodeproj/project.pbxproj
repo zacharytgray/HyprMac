@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00B50053F139D098B090709F /* WindowDiscoveryServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 857FCC6A226AFEECD7A199FC /* WindowDiscoveryServiceTests.swift */; };
 		049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */; };
 		0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */; };
 		0B9D198B68374BB6E0D0FA1F /* DragManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02E56F3B2C9834C78368323D /* DragManager.swift */; };
@@ -37,6 +38,7 @@
 		557EC1265B83BD0ACFB2564C /* FrameReadbackPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */; };
 		577FBDB77676F37630FAF0FE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D52156D6AEACDCE26A6370BF /* Sparkle */; };
 		5986B98949D5F866D27EADEC /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF93D6331BC4826814BB7007 /* Constants.swift */; };
+		696EB6B8B6A4A823B6DBBCD0 /* WindowDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */; };
 		7DFABB5348197A0B951CFD6D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
 		83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C7530C4625DFB387DEB0CF /* SuppressionRegistry.swift */; };
 		87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */; };
@@ -111,11 +113,13 @@
 		772FFAF897AAC136F605737C /* TilingSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingSettingsView.swift; sourceTree = "<group>"; };
 		80DEDE87B2D877B2B57C6767 /* MinSizeMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinSizeMemory.swift; sourceTree = "<group>"; };
 		84FD66866CE44F180CAA03C7 /* DimmingOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimmingOverlay.swift; sourceTree = "<group>"; };
+		857FCC6A226AFEECD7A199FC /* WindowDiscoveryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDiscoveryServiceTests.swift; sourceTree = "<group>"; };
 		85E2687861DA70718C132100 /* HyprKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprKey.swift; sourceTree = "<group>"; };
 		8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceManager.swift; sourceTree = "<group>"; };
 		8B20DF87F29CD5B1164F1E80 /* Action.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Action.swift; sourceTree = "<group>"; };
 		8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityManager.swift; sourceTree = "<group>"; };
+		8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDiscoveryService.swift; sourceTree = "<group>"; };
 		901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCacheTests.swift; sourceTree = "<group>"; };
 		913F7521CBE5FF04365D18D8 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
 		984C8889680F5B0CDD449061 /* FloatingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingWindowController.swift; sourceTree = "<group>"; };
@@ -230,10 +234,19 @@
 				9B114061648788BA337754F2 /* WindowAnimator.swift */,
 				2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */,
 				8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */,
+				46404E9F47AD026DEE8E5EB3 /* Discovery */,
 				069AB81CC5E4E1E85EC89AD2 /* Orchestration */,
 				6AE3D8602BB4C99734673A60 /* State */,
 			);
 			path = Core;
+			sourceTree = "<group>";
+		};
+		46404E9F47AD026DEE8E5EB3 /* Discovery */ = {
+			isa = PBXGroup;
+			children = (
+				8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */,
+			);
+			path = Discovery;
 			sourceTree = "<group>";
 		};
 		6965D30F948AA5DD339D279F /* Resources */ = {
@@ -302,6 +315,7 @@
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
+				857FCC6A226AFEECD7A199FC /* WindowDiscoveryServiceTests.swift */,
 				901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */,
 			);
 			path = HyprMacTests;
@@ -482,6 +496,7 @@
 				9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */,
 				A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */,
 				29E2FA4EAB3E1C5BD02A9F1E /* WindowAnimator.swift in Sources */,
+				696EB6B8B6A4A823B6DBBCD0 /* WindowDiscoveryService.swift in Sources */,
 				DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */,
 				1276120B1D8BE4DEEDCF8EF3 /* WindowStateCache.swift in Sources */,
 				42778D615628483A357572DF /* WorkspaceManager.swift in Sources */,
@@ -502,6 +517,7 @@
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,
+				00B50053F139D098B090709F /* WindowDiscoveryServiceTests.swift in Sources */,
 				EA8FC0F77CB146BAD8B35CBE /* WindowStateCacheTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

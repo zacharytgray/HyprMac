@@ -29,6 +29,10 @@ class WindowManager {
     // from FocusBorder. constructed in init() since it depends on focusBorder.
     let focusController: FocusStateController
 
+    // window discovery (poll-cycle diff). owns its half of cache mutations
+    // and surfaces the rest as a WindowChanges struct that this class applies.
+    private var discovery: WindowDiscoveryService!
+
     // periodic discovery timer + coalesced notification-driven polls.
     // constructed in init() so the closure can capture self weakly.
     private var pollingScheduler: PollingScheduler!
@@ -65,6 +69,12 @@ class WindowManager {
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
         self.tilingEngine = TilingEngine(displayManager: displayManager)
+        self.discovery = WindowDiscoveryService(
+            stateCache: stateCache,
+            accessibility: accessibility,
+            displayManager: displayManager,
+            workspaceManager: workspaceManager
+        )
         self.pollingScheduler = PollingScheduler { [weak self] in
             self?.pollWindowChanges()
         }
@@ -1653,6 +1663,13 @@ class WindowManager {
     // safe to call on already-forgotten IDs (idempotent).
     private func forgetWindow(_ id: CGWindowID) {
         stateCache.forget(id)
+        applyForgottenIDExternalCleanup(id)
+    }
+
+    // run the engine/workspace/focus cleanup half of forgetting an id. used
+    // both by forgetWindow (one-shot) and by the discovery apply-loop, where
+    // the service has already cleared cache state for a batch of ids.
+    private func applyForgottenIDExternalCleanup(_ id: CGWindowID) {
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
         if focusController.lastFocusedID == id {
@@ -1668,40 +1685,8 @@ class WindowManager {
     // an app terminates while some of its windows are hidden/minimized — those
     // ids would otherwise leak in hiddenWindowIDs/windowOwners/etc forever.
     private func forgetApp(_ pid: pid_t) {
-        let ids = stateCache.windowOwners.compactMap { $0.value == pid ? $0.key : nil }
-        for id in ids { forgetWindow(id) }
-    }
-
-    // detect tiled windows that physically drifted to a different screen than
-    // their recorded workspace lives on (e.g. user dragged across monitors,
-    // macOS dock-clicked an app and raised a window on the wrong screen, etc.)
-    // and reassign so state matches reality. without this, the window renders
-    // on screen B but tiling treats it as belonging to screen A's workspace —
-    // any operation on either side desyncs further.
-    private func reconcileWindowScreens(_ allWindows: [HyprWindow]) -> Bool {
-        guard !animator.isAnimating else { return false }
-        let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
-        var reassigned = false
-        for w in allWindows {
-            guard let recordedWs = workspaceManager.workspaceFor(w.windowID) else { continue }
-            // only check windows whose recorded workspace is currently on screen
-            guard visibleWorkspaces.contains(recordedWs) else { continue }
-            // floating windows can be anywhere by design — skip
-            guard !stateCache.floatingWindowIDs.contains(w.windowID) else { continue }
-            guard let physicalScreen = displayManager.screen(for: w) else { continue }
-            // skip if the window sits on a disabled monitor — handled elsewhere
-            guard !workspaceManager.isMonitorDisabled(physicalScreen) else { continue }
-            let physicalWs = workspaceManager.workspaceForScreen(physicalScreen)
-            guard physicalWs != recordedWs else { continue }
-            // also ignore windows whose recorded screen and physical screen are
-            // the same — guards against transient frame reads during retile
-            if let recordedScreen = workspaceManager.screenForWorkspace(recordedWs),
-               recordedScreen == physicalScreen { continue }
-            workspaceManager.moveWindow(w.windowID, toWorkspace: physicalWs)
-            hyprLog(.debug, .lifecycle, "drift reconcile: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
-            reassigned = true
-        }
-        return reassigned
+        let ids = discovery.forgetApp(pid)
+        for id in ids { applyForgottenIDExternalCleanup(id) }
     }
 
     // if the focus border is hidden but the cursor's screen's workspace has any
@@ -1748,27 +1733,6 @@ class WindowManager {
                 return
             }
         }
-    }
-
-    // sweep state for ids that are no longer alive anywhere. catches drift from
-    // edge cases (race conditions, terminated apps whose windows weren't seen
-    // disappearing first, hidden windows whose owners died).
-    private func reconcileWindowState(runningPIDs: Set<pid_t>) {
-        // hidden windows whose owner pid died — fully forget
-        for id in stateCache.hiddenWindowIDs {
-            if let pid = stateCache.windowOwners[id], !runningPIDs.contains(pid) {
-                forgetWindow(id)
-            }
-        }
-        // workspace assignments for ids we no longer track at all
-        let live = stateCache.knownWindowIDs.union(stateCache.hiddenWindowIDs)
-        for (id, _) in workspaceManager.allWindowWorkspaces() where !live.contains(id) {
-            forgetWindow(id)
-        }
-        // floating set / originalFrames / windowOwners shouldn't outlive known+hidden either
-        for id in stateCache.floatingWindowIDs where !live.contains(id) { forgetWindow(id) }
-        for (id, _) in stateCache.originalFrames where !live.contains(id) { forgetWindow(id) }
-        for (id, _) in stateCache.windowOwners where !live.contains(id) { forgetWindow(id) }
     }
 
     // check if at least 25% of the frame is visible on the given screen rect
@@ -1883,108 +1847,37 @@ class WindowManager {
     private func pollWindowChanges() {
         guard !animator.isAnimating else { return }
         guard !mouseButtonDown else { return }
+
         let allWindows = accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
-        let currentIDs = Set(allWindows.map { $0.windowID })
-
-        var changed = false
-
-        // check for returning hidden windows
-        for w in allWindows {
-            if stateCache.hiddenWindowIDs.contains(w.windowID) {
-                stateCache.hiddenWindowIDs.remove(w.windowID)
-                stateCache.knownWindowIDs.insert(w.windowID)
-                stateCache.windowOwners[w.windowID] = w.ownerPID
-
-                changed = true
-                hyprLog(.debug, .lifecycle, "window returned: '\(w.title ?? "?")' (\(w.windowID))")
-            }
-        }
-
-        // detect new windows
-        for w in allWindows {
-            if !stateCache.knownWindowIDs.contains(w.windowID) {
-                if let frame = w.frame {
-                    let onScreen = displayManager.screens.contains { screen in
-                        isFrameVisible(frame, on: displayManager.cgRect(for: screen))
-                    }
-                    if onScreen {
-                        stateCache.originalFrames[w.windowID] = frame
-                    }
-                }
-                stateCache.knownWindowIDs.insert(w.windowID)
-                stateCache.windowOwners[w.windowID] = w.ownerPID
-
-                // auto-float excluded apps
-                if isExcludedApp(w) {
-                    stateCache.floatingWindowIDs.insert(w.windowID)
-                    w.isFloating = true
-                    hyprLog(.debug, .lifecycle, "auto-float excluded app: '\(w.title ?? "?")'")
-                }
-
-                // auto-float on disabled monitors — skip workspace assignment
-                if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
-                    if !stateCache.floatingWindowIDs.contains(w.windowID) {
-                        stateCache.floatingWindowIDs.insert(w.windowID)
-                        w.isFloating = true
-                        hyprLog(.debug, .lifecycle, "auto-float on disabled monitor: '\(w.title ?? "?")'")
-                    }
-                    changed = true
-                    hyprLog(.debug, .lifecycle, "new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
-                    continue
-                }
-
-                // assign by physical screen — using cursor was unreliable: with
-                // multi-monitor + display-reconfig churn, screenUnderCursor could
-                // return a screen with a high workspace number the user wasn't
-                // even on, dropping the new window into ws 7/8 unexpectedly
-                assignNewWindow(w)
-
-                changed = true
-                hyprLog(.debug, .lifecycle, "new window: '\(w.title ?? "?")' (\(w.windowID))")
-            }
-        }
-
-        // detect gone windows
-        let gone = stateCache.knownWindowIDs.subtracting(currentIDs)
-        var focusedWindowGone = false
         let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
-        if !gone.isEmpty {
-            for id in gone {
-                if id == focusController.lastFocusedID { focusedWindowGone = true }
-                stateCache.tiledPositions.removeValue(forKey: id)
-                stateCache.cachedWindows.removeValue(forKey: id)
 
-                if let pid = stateCache.windowOwners[id], runningPIDs.contains(pid) {
-                    // app still running — window was minimized, hidden, or closed.
-                    // track as hidden regardless of workspace visibility so un-minimize
-                    // is detected correctly even for windows on hidden workspaces.
-                    stateCache.knownWindowIDs.remove(id)
-                    stateCache.hiddenWindowIDs.insert(id)
-                    changed = true
-                    if workspaceManager.isWindowVisible(id) {
-                        hyprLog(.debug, .lifecycle, "window hidden: \(id)")
-                    } else {
-                        hyprLog(.debug, .lifecycle, "window hidden (inactive ws): \(id)")
-                    }
-                } else {
-                    // app terminated — full cleanup
-                    forgetWindow(id)
-                    changed = true
-                    hyprLog(.debug, .lifecycle, "window gone: \(id)")
-                }
-            }
+        let changes = discovery.computeChanges(
+            snapshot: allWindows,
+            runningPIDs: runningPIDs,
+            excludedBundleIDs: Set(config.excludedBundleIDs),
+            focusedWindowID: focusController.lastFocusedID,
+            animationInProgress: false  // guarded above
+        )
+
+        // workspace assignment for new windows that didn't auto-float onto a
+        // disabled monitor. assigning by physical screen — cursor-based was
+        // unreliable under multi-monitor + display-reconfig churn.
+        for w in changes.newWindows where !changes.newOnDisabledMonitor.contains(w.windowID) {
+            assignNewWindow(w)
         }
 
-        // sweep stale entries — catches leaks from terminated apps whose hidden
-        // windows never showed up in the gone set, and any other drift
-        reconcileWindowState(runningPIDs: runningPIDs)
+        // engine/workspace/focus cleanup for ids the service forgot
+        for id in changes.fullyForgottenIDs {
+            applyForgottenIDExternalCleanup(id)
+        }
 
-        // detect cross-screen drift: a window's recorded workspace no longer
-        // matches the screen it physically sits on (manual drag, errant click)
-        if reconcileWindowScreens(allWindows) { changed = true }
+        // apply cross-screen drift reassignments
+        for drift in changes.screenDrift {
+            workspaceManager.moveWindow(drift.windowID, toWorkspace: drift.toWorkspace)
+        }
 
-        if changed {
+        if changes.needsRetile {
             // animate surrounding windows sliding to fill gaps / make room
             animatedRetile(windows: allWindows)
         }
@@ -1992,7 +1885,7 @@ class WindowManager {
         // if the FFM-tracked window disappeared, refocus to whatever tiled window
         // is under the cursor now. without this, focus gets stuck because
         // handleMouseMove only fires on actual mouse movement.
-        if focusedWindowGone {
+        if changes.focusedWindowGone {
             mouseTracker.refocusUnderCursor()
         }
 
