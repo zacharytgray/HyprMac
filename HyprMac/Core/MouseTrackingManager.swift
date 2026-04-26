@@ -36,6 +36,7 @@ class MouseTrackingManager {
     var recordFocus: (CGWindowID, String) -> Void = { _, _ in }
 
     func handleMouseMove() {
+        mainThreadOnly()
         guard isFocusFollowsMouseEnabled() else { return }
         guard !isMouseButtonDown() else { return }
         guard !menuTracking else { return }
@@ -114,6 +115,7 @@ class MouseTrackingManager {
     // WindowManager.ensureFocusInvariant runs after every poll and will pick
     // a fallback so the user never ends up with nothing focused.
     func refocusUnderCursor() {
+        mainThreadOnly()
         let mouseNS = NSEvent.mouseLocation
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
@@ -177,6 +179,7 @@ class MouseTrackingManager {
     }
 
     func menuTrackingBegan() {
+        mainThreadOnly()
         menuTracking = true
         // leave the focus border intact — hiding it clears trackedWindowID,
         // which causes ensureFocusInvariant to re-assert focus during menu
@@ -185,6 +188,7 @@ class MouseTrackingManager {
     }
 
     func menuTrackingEnded() {
+        mainThreadOnly()
         menuTracking = false
         if let w = cachedWindow(lastFocusedID()) {
             onUpdateFocusBorder(w)

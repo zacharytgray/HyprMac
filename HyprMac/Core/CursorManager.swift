@@ -2,6 +2,7 @@ import Cocoa
 
 class CursorManager {
     func warpToCenter(of window: HyprWindow) {
+        mainThreadOnly()
         guard let center = window.center else { return }
         CGWarpMouseCursorPosition(center)
         // briefly disassociate mouse to prevent delta accumulation

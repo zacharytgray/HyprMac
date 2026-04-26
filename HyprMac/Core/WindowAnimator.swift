@@ -15,6 +15,7 @@ class WindowAnimator {
     }
 
     func animate(_ transitions: [FrameTransition], duration: TimeInterval, completion: @escaping () -> Void) {
+        mainThreadOnly()
         guard !transitions.isEmpty else { completion(); return }
         cancelAndSnap()
 
@@ -27,6 +28,7 @@ class WindowAnimator {
     }
 
     func cancelAndSnap() {
+        mainThreadOnly()
         timer?.cancel()
         timer = nil
         for proxy in activeProxies { proxy.close() }

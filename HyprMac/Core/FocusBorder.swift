@@ -38,6 +38,7 @@ class FocusBorder {
     // MARK: - public API
 
     func show(around rect: CGRect, windowID: CGWindowID) {
+        mainThreadOnly()
         settleWork?.cancel()
 
         let nsRect = panelRect(for: rect)
@@ -75,6 +76,7 @@ class FocusBorder {
     }
 
     func updatePosition(_ rect: CGRect) {
+        mainThreadOnly()
         guard let p = panel, state != .hidden, let wid = trackedWindowID else { return }
         let nsRect = panelRect(for: rect)
         p.setFrame(nsRect, display: false)
@@ -84,6 +86,7 @@ class FocusBorder {
     }
 
     func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
+        mainThreadOnly()
         let visibleIDs = Set(frames.keys)
         let staleIDs = floatingPanels.keys.filter { !visibleIDs.contains($0) }
         for windowID in staleIDs { hideFloatingBorder(for: windowID) }
@@ -116,6 +119,7 @@ class FocusBorder {
     }
 
     func hideFloatingBorders() {
+        mainThreadOnly()
         for (_, border) in floatingPanels {
             border.panel.orderOut(nil)
         }
@@ -123,11 +127,13 @@ class FocusBorder {
     }
 
     func hideFloatingBorder(for windowID: CGWindowID) {
+        mainThreadOnly()
         guard let border = floatingPanels.removeValue(forKey: windowID) else { return }
         border.panel.orderOut(nil)
     }
 
     func settle() {
+        mainThreadOnly()
         guard state == .active, let layer = glowView?.layer else { return }
         state = .settled
 
@@ -141,6 +147,7 @@ class FocusBorder {
     }
 
     func hide() {
+        mainThreadOnly()
         settleWork?.cancel()
         trackedWindowID = nil
         guard let p = panel, state != .hidden else { return }
@@ -156,6 +163,7 @@ class FocusBorder {
 
     // brief red flash + shake to indicate a rejected operation
     func flashError(around rect: CGRect, windowID: CGWindowID, window: HyprWindow? = nil) {
+        mainThreadOnly()
         settleWork?.cancel()
         shakeTimer?.cancel()
 

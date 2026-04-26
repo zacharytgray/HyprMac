@@ -9,6 +9,7 @@ class KeybindOverlayController {
     var isShowing: Bool { panel != nil }
 
     func toggle(keybinds: [Keybind]) {
+        mainThreadOnly()
         if let panel = panel {
             panel.close()
             self.panel = nil
@@ -18,6 +19,7 @@ class KeybindOverlayController {
     }
 
     func close() {
+        mainThreadOnly()
         panel?.close()
         panel = nil
     }

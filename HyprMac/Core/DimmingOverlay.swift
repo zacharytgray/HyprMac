@@ -38,6 +38,7 @@ class DimmingOverlay {
         floatingRects: [CGWindowID: CGRect],
         screens: [NSScreen]
     ) {
+        mainThreadOnly()
         guard enabled, focusedID != 0 else { hideAll(); return }
         visible = true
 
@@ -89,6 +90,7 @@ class DimmingOverlay {
     }
 
     func hideAll() {
+        mainThreadOnly()
         guard visible else { return }
         visible = false
         for (_, entry) in panels {
@@ -97,6 +99,7 @@ class DimmingOverlay {
     }
 
     func setIntensity(_ value: CGFloat) {
+        mainThreadOnly()
         intensity = max(0, min(1, value))
     }
 
