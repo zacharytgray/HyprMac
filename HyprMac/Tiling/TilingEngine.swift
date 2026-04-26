@@ -480,9 +480,20 @@ class TilingEngine {
         }
     }
 
-    // same as tileWindows but returns layouts WITHOUT applying frames.
-    // caller animates from old→new, then calls applyComputedLayout() on completion.
-    func computeTileLayout(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)] {
+    /// Mutate the (workspace, screen) tree to reflect `windows` and return
+    /// the resulting per-window layout rects WITHOUT applying frames.
+    ///
+    /// - Important: This call **mutates the tree** before returning — windows
+    ///   missing from the input are removed (with `compact`), new windows are
+    ///   added via `smartInsertFitting`, structural-change ratio flags are
+    ///   cleared, and `resetSplitRatios` is run. The caller is committed to
+    ///   either applying the returned layout (via `applyComputedLayout`) or
+    ///   accepting that the tree is now in its post-tile state regardless of
+    ///   what the caller does with the returned rects. This is intentional —
+    ///   animation paths need post-mutation geometry to interpolate toward.
+    /// - Returns: `[(window, frame)]` pairs in tree iteration order. Empty
+    ///   array if the tree ends up empty.
+    func prepareTileLayout(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)] {
         primeMinimumSizes(windows)
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
@@ -632,9 +643,16 @@ class TilingEngine {
         return true
     }
 
-    // swap in the tree and return target layouts WITHOUT applying frames.
-    // caller is responsible for animating or applying the result.
-    func computeSwapLayout(_ a: HyprWindow, _ b: HyprWindow,
+    /// Swap two windows' positions in the tree and return post-swap layout
+    /// rects without applying frames.
+    ///
+    /// - Important: **Mutates the tree** before returning — `BSPTree.swap`
+    ///   exchanges leaf window references and `resetSplitRatios` runs. If the
+    ///   caller does nothing with the returned layout, the tree is still in
+    ///   its post-swap state.
+    /// - Returns: `nil` if either window is missing from the tree or the
+    ///   pair fails the cross-axis fit check; otherwise the new layout.
+    func prepareSwapLayout(_ a: HyprWindow, _ b: HyprWindow,
                            onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)]? {
         guard canSwapWindows(a, b, onWorkspace: workspace, screen: screen) else { return nil }
         let key = TilingKey(workspace: workspace, screen: screen)
@@ -647,8 +665,10 @@ class TilingEngine {
         return t.layout(in: rect, gap: gapSize, padding: outerPadding)
     }
 
-    // apply layouts that were previously computed (e.g. after animation).
-    // runs the two-pass min-size resolution.
+    /// Re-apply the current tree state to AX frames using the two-pass
+    /// min-size resolution. Pairs with `prepare*Layout`: caller mutates the
+    /// tree (via prepare), drives an animation against the returned rects,
+    /// then calls `applyComputedLayout` on completion to settle frames.
     func applyComputedLayout(onWorkspace workspace: Int, screen: NSScreen) {
         let key = TilingKey(workspace: workspace, screen: screen)
         retile(key: key, screen: screen)
@@ -686,8 +706,17 @@ class TilingEngine {
         retile(key: key, screen: screen)
     }
 
-    // toggle split and compute new layout without applying frames (for animation)
-    func computeToggleSplitLayout(_ window: HyprWindow,
+    /// Toggle the split direction of `window`'s parent and return post-toggle
+    /// layout rects without applying frames.
+    ///
+    /// - Important: **Mutates the tree** before returning. `splitOverride`
+    ///   flips on the parent and `resetSplitRatios` runs. Calling this twice
+    ///   in succession reverts the toggle — that footgun is exactly what the
+    ///   `WindowManager.toggleSplit()` fallthrough fix prevents (see plan
+    ///   §4.2 + commit ee9e2df).
+    /// - Returns: `nil` if `window` isn't in the tree (no toggle performed);
+    ///   otherwise the post-toggle layout.
+    func prepareToggleSplitLayout(_ window: HyprWindow,
                                   onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)]? {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)

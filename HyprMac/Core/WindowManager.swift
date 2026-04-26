@@ -639,7 +639,7 @@ class WindowManager {
                 if config.animateWindows,
                    let draggedFrame = s.dragged.frame,
                    let targetFrame = s.target.frame,
-                   let layouts = tilingEngine.computeSwapLayout(s.dragged, s.target, onWorkspace: workspace, screen: screen) {
+                   let layouts = tilingEngine.prepareSwapLayout(s.dragged, s.target, onWorkspace: workspace, screen: screen) {
                     var transitions: [WindowAnimator.FrameTransition] = []
                     for (w, toRect) in layouts {
                         let fromRect: CGRect
@@ -782,7 +782,7 @@ class WindowManager {
         if config.animateWindows,
            let focusedFrame = focused.frame,
            let targetFrame = target.frame,
-           let layouts = tilingEngine.computeSwapLayout(focused, target, onWorkspace: workspace, screen: screen) {
+           let layouts = tilingEngine.prepareSwapLayout(focused, target, onWorkspace: workspace, screen: screen) {
             // build transitions from current positions to computed targets
             var transitions: [WindowAnimator.FrameTransition] = []
             for (w, toRect) in layouts {
@@ -1098,10 +1098,10 @@ class WindowManager {
                 return (w.windowID, f)
             })
 
-            // computeToggleSplitLayout mutates the tree. once it returns non-nil we're
+            // prepareToggleSplitLayout mutates the tree. once it returns non-nil we're
             // committed — falling through to tilingEngine.toggleSplit() would toggle
             // the tree a second time and revert the user's action.
-            if let layouts = tilingEngine.computeToggleSplitLayout(focused, onWorkspace: workspace, screen: screen) {
+            if let layouts = tilingEngine.prepareToggleSplitLayout(focused, onWorkspace: workspace, screen: screen) {
                 var transitions: [WindowAnimator.FrameTransition] = []
                 for (w, toRect) in layouts {
                     guard let fromRect = currentFrames[w.windowID], fromRect != toRect else { continue }
@@ -1122,7 +1122,7 @@ class WindowManager {
             }
         }
 
-        // animation disabled, or computeToggleSplitLayout returned nil (window not in tree)
+        // animation disabled, or prepareToggleSplitLayout returned nil (window not in tree)
         tilingEngine.toggleSplit(focused, onWorkspace: workspace, screen: screen)
         updatePositionCache()
     }
@@ -1419,7 +1419,7 @@ class WindowManager {
                 }
             }
 
-            let layouts = tilingEngine.computeTileLayout(workspaceWindows, onWorkspace: workspace, screen: screen)
+            let layouts = tilingEngine.prepareTileLayout(workspaceWindows, onWorkspace: workspace, screen: screen)
             newLayouts.append(contentsOf: layouts)
         }
 
