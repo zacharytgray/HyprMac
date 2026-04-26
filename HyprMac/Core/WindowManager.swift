@@ -35,11 +35,8 @@ class WindowManager {
     // windows that disappeared but app is still running (minimized/hidden)
     private var hiddenWindowIDs: Set<CGWindowID> = []
 
-    // expected tiled positions — for drag detection and focus-follows-mouse
-    private var tiledPositions: [CGWindowID: CGRect] = [:]
-
     // window-keyed state cache. fields migrate in over Phase 2 — currently owns
-    // cachedWindows; remaining six dicts move in subsequent commits.
+    // cachedWindows + tiledPositions; remaining five dicts move in subsequent commits.
     let stateCache = WindowStateCache()
 
     // polling timer
@@ -101,7 +98,7 @@ class WindowManager {
         mouseTracker.floatingWindowIDs = { [weak self] in self?.floatingWindowIDs ?? [] }
         mouseTracker.isWindowVisible = { [weak self] wid in self?.workspaceManager.isWindowVisible(wid) ?? false }
         mouseTracker.cachedWindow = { [weak self] wid in self?.stateCache.cachedWindows[wid] }
-        mouseTracker.tiledPositions = { [weak self] in self?.tiledPositions ?? [:] }
+        mouseTracker.tiledPositions = { [weak self] in self?.stateCache.tiledPositions ?? [:] }
         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         mouseTracker.isMouseFocusSuppressed = { [weak self] in self?.suppressions.isSuppressed("mouse-focus") ?? false }
@@ -500,7 +497,7 @@ class WindowManager {
         let fid = focusedID ?? focusBorder.trackedWindowID ?? mouseTracker.lastMouseFocusedID
         dimmingOverlay.update(
             focusedID: fid,
-            tiledRects: tiledPositions,
+            tiledRects: stateCache.tiledPositions,
             floatingRects: floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 8),
             screens: displayManager.screens
         )
@@ -550,7 +547,7 @@ class WindowManager {
         }
 
         // tiled window under cursor
-        for (wid, rect) in tiledPositions {
+        for (wid, rect) in stateCache.tiledPositions {
             if wsWindows.contains(wid), rect.contains(cgPoint),
                let w = stateCache.cachedWindows[wid] {
                 w.focusWithoutRaise()
@@ -569,7 +566,7 @@ class WindowManager {
         }
 
         // deterministic fallback: nearest tiled window center on this workspace
-        let fallback = tiledPositions
+        let fallback = stateCache.tiledPositions
             .filter { wsWindows.contains($0.key) }
             .min { lhs, rhs in
                 let lhsCenter = CGPoint(x: lhs.value.midX, y: lhs.value.midY)
@@ -603,7 +600,7 @@ class WindowManager {
         let allWindows = accessibility.getAllWindows()
 
         dragManager.floatingWindowIDs = floatingWindowIDs
-        dragManager.tiledPositions = tiledPositions
+        dragManager.tiledPositions = stateCache.tiledPositions
 
         let result = dragManager.detect(
             allWindows: allWindows,
@@ -1655,7 +1652,7 @@ class WindowManager {
                 return
             }
         }
-        for (wid, rect) in tiledPositions where rect.contains(cgPoint) {
+        for (wid, rect) in stateCache.tiledPositions where rect.contains(cgPoint) {
             mouseTracker.lastMouseFocusedID = wid
             return
         }
@@ -1669,7 +1666,7 @@ class WindowManager {
         originalFrames.removeValue(forKey: id)
         floatingWindowIDs.remove(id)
         windowOwners.removeValue(forKey: id)
-        tiledPositions.removeValue(forKey: id)
+        stateCache.tiledPositions.removeValue(forKey: id)
         stateCache.cachedWindows.removeValue(forKey: id)
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
@@ -1749,7 +1746,7 @@ class WindowManager {
             return
         }
         // any tiled window on this workspace
-        for (wid, _) in tiledPositions where wsWindows.contains(wid) {
+        for (wid, _) in stateCache.tiledPositions where wsWindows.contains(wid) {
             if let w = stateCache.cachedWindows[wid] {
                 w.focusWithoutRaise()
                 mouseTracker.lastMouseFocusedID = wid
@@ -1819,7 +1816,7 @@ class WindowManager {
     private func updatePositionCache(windows: [HyprWindow]? = nil) {
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
-        tiledPositions.removeAll()
+        stateCache.tiledPositions.removeAll()
         stateCache.cachedWindows.removeAll()
         for w in allWindows {
             guard workspaceManager.isWindowVisible(w.windowID) else { continue }
@@ -1828,7 +1825,7 @@ class WindowManager {
             if floatingWindowIDs.contains(w.windowID) {
                 continue
             } else {
-                tiledPositions[w.windowID] = frame
+                stateCache.tiledPositions[w.windowID] = frame
             }
         }
         refreshFloatingBorders(windows: allWindows)
@@ -1970,7 +1967,7 @@ class WindowManager {
         if !gone.isEmpty {
             for id in gone {
                 if id == mouseTracker.lastMouseFocusedID { focusedWindowGone = true }
-                tiledPositions.removeValue(forKey: id)
+                stateCache.tiledPositions.removeValue(forKey: id)
                 stateCache.cachedWindows.removeValue(forKey: id)
 
                 if let pid = windowOwners[id], runningPIDs.contains(pid) {
@@ -2075,7 +2072,7 @@ class WindowManager {
 
         let toRaise = floatingController.floatingWindowsBehindTiled(
             floatingWindowIDs: floatingWindowIDs,
-            tiledPositions: tiledPositions
+            tiledPositions: stateCache.tiledPositions
         )
         guard !toRaise.isEmpty else { return }
 
