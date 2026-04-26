@@ -35,6 +35,7 @@
 		446BF26414F6821D08738E80 /* WorkspaceOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCF579F05A2DFBB28DF945A /* WorkspaceOrchestrator.swift */; };
 		498931AB0DE01FD760A0C1DC /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */; };
 		4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */; };
+		4F7E79CBC44F654BDF24C05B /* ActionDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B096217238208C5F5BCA3E /* ActionDispatcher.swift */; };
 		531ACE79FC3FD6C76D047281 /* FloatingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 984C8889680F5B0CDD449061 /* FloatingWindowController.swift */; };
 		557EC1265B83BD0ACFB2564C /* FrameReadbackPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */; };
 		577FBDB77676F37630FAF0FE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D52156D6AEACDCE26A6370BF /* Sparkle */; };
@@ -140,6 +141,7 @@
 		C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingScheduler.swift; sourceTree = "<group>"; };
 		CB845A902D1A884872996805 /* FocusStateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusStateController.swift; sourceTree = "<group>"; };
 		D14B540996EBFC8839339556 /* BSPNode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNode.swift; sourceTree = "<group>"; };
+		D2B096217238208C5F5BCA3E /* ActionDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionDispatcher.swift; sourceTree = "<group>"; };
 		DBF9449D559067A61BBA8394 /* BSPTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTree.swift; sourceTree = "<group>"; };
 		DC47A2DE51571E5A9EEBE362 /* TilingConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingConfig.swift; sourceTree = "<group>"; };
 		DE5C2D5C6BE675D940B28364 /* HyprMac-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HyprMac-Release.entitlements"; sourceTree = "<group>"; };
@@ -191,6 +193,7 @@
 		069AB81CC5E4E1E85EC89AD2 /* Orchestration */ = {
 			isa = PBXGroup;
 			children = (
+				D2B096217238208C5F5BCA3E /* ActionDispatcher.swift */,
 				C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */,
 			);
 			path = Orchestration;
@@ -476,6 +479,7 @@
 			files = (
 				498931AB0DE01FD760A0C1DC /* AccessibilityManager.swift in Sources */,
 				2F7C20004633B3B6A8CCF6D6 /* Action.swift in Sources */,
+				4F7E79CBC44F654BDF24C05B /* ActionDispatcher.swift in Sources */,
 				29EF01F22534CC2B51FE0390 /* AppDelegate.swift in Sources */,
 				440732216A02AA6BC39588CC /* AppLauncherManager.swift in Sources */,
 				9C6752FADA9267F639122F68 /* AppLauncherSettingsView.swift in Sources */,
