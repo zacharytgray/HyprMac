@@ -58,6 +58,24 @@ class MouseTrackingManager {
         let floating = floatingWindowIDs()
         let managed = tiledPositions()
 
+        if let topmostID = topmostWindowID(at: cgPoint) {
+            if floating.contains(topmostID), isWindowVisible(topmostID) {
+                return
+            }
+
+            if managed[topmostID] != nil {
+                guard topmostID != lastMouseFocusedID else { return }
+                guard let target = cachedWindow(topmostID) else { return }
+                lastMouseFocusedID = topmostID
+                onFocusForFFM(target)
+                return
+            }
+
+            // an unmanaged normal-layer window is above the tiled window
+            // here, such as a popover or autocomplete panel.
+            return
+        }
+
         // fast path: cursor still inside the last-focused window's rect → done.
         // O(1) check that short-circuits before walking every floater + tile.
         // huge win during normal mouse movement (cursor stays in one window).
@@ -78,13 +96,9 @@ class MouseTrackingManager {
             if rect.contains(cgPoint) {
                 guard wid != lastMouseFocusedID else { return }
 
-                // check if an unmanaged window (emoji picker, autocomplete, etc.) is above this point
-                if unmanagedWindowAtPoint(cgPoint, managed: managed, floating: floating) { return }
-
+                guard let target = cachedWindow(wid) else { return }
                 lastMouseFocusedID = wid
-                if let target = cachedWindow(wid) {
-                    onFocusForFFM(target)
-                }
+                onFocusForFFM(target)
                 return
             }
         }
@@ -116,44 +130,45 @@ class MouseTrackingManager {
     }
 
     // CGWindowListCopyWindowInfo is expensive — cache result with short TTL
-    private var unmanagedCache: (result: Bool, time: CFAbsoluteTime, point: CGPoint)?
-    private let unmanagedCacheTTL: CFAbsoluteTime = 0.15  // 150ms
+    private var topmostCache: (windowID: CGWindowID, time: CFAbsoluteTime, point: CGPoint)?
+    private let topmostCacheTTL: CFAbsoluteTime = 0.08
 
-    // check if an unmanaged window (emoji picker, popup, autocomplete) is the topmost at this point
-    private func unmanagedWindowAtPoint(_ point: CGPoint, managed: [CGWindowID: CGRect], floating: Set<CGWindowID>) -> Bool {
+    // front-to-back CG hit-test for the real window under the cursor.
+    // returns 0 when no normal visible window is at the point.
+    private func topmostWindowID(at point: CGPoint) -> CGWindowID? {
         let now = CFAbsoluteTimeGetCurrent()
-        if let cache = unmanagedCache,
-           now - cache.time < unmanagedCacheTTL,
+        if let cache = topmostCache,
+           now - cache.time < topmostCacheTTL,
            abs(point.x - cache.point.x) < 10, abs(point.y - cache.point.y) < 10 {
-            return cache.result
+            return cache.windowID == 0 ? nil : cache.windowID
         }
 
         guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
-            return false
+            return nil
         }
 
         // walk front-to-back, find the first window whose bounds contain the point
-        var result = false
         for info in windowList {
+            if let pid = info[kCGWindowOwnerPID as String] as? pid_t, pid == getpid() {
+                continue
+            }
+
             guard let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
                   let x = bounds["X"], let y = bounds["Y"],
                   let w = bounds["Width"], let h = bounds["Height"] else { continue }
             let frame = CGRect(x: x, y: y, width: w, height: h)
             guard frame.contains(point) else { continue }
             guard let layer = info[kCGWindowLayer as String] as? Int, layer == 0 else { continue }
+            let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
+            guard alpha > 0.01 else { continue }
 
-            // found the topmost normal-layer window at this point
             let wid = (info[kCGWindowNumber as String] as? Int).map { CGWindowID($0) } ?? 0
-            if managed[wid] != nil || floating.contains(wid) {
-                result = false // it's one of ours, FFM is fine
-            } else {
-                result = true // unmanaged window on top, suppress FFM
-            }
-            break
+            topmostCache = (windowID: wid, time: now, point: point)
+            return wid == 0 ? nil : wid
         }
 
-        unmanagedCache = (result: result, time: now, point: point)
-        return result
+        topmostCache = (windowID: 0, time: now, point: point)
+        return nil
     }
 
     func menuTrackingBegan() {
