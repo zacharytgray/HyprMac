@@ -7,7 +7,7 @@ enum SplitDirection {
 
 class BSPNode {
     var parent: BSPNode?
-    var splitRatio: CGFloat = 0.5
+    var splitRatio: CGFloat = TilingConfig.defaultRatio
     var userSetRatio: Bool = false
 
     // nil = compute from rect aspect ratio (dwindle default)
@@ -40,7 +40,7 @@ class BSPNode {
 
         let existing = self.window
         self.window = nil
-        self.splitRatio = 0.5
+        self.splitRatio = TilingConfig.defaultRatio
         self.userSetRatio = false
         self.splitOverride = nil
 
@@ -60,7 +60,7 @@ class BSPNode {
         parent.window = sibling?.window
         parent.left = sibling?.left
         parent.right = sibling?.right
-        parent.splitRatio = sibling?.splitRatio ?? 0.5
+        parent.splitRatio = sibling?.splitRatio ?? TilingConfig.defaultRatio
         parent.userSetRatio = sibling?.userSetRatio ?? false
         parent.splitOverride = sibling?.splitOverride
 
@@ -76,7 +76,7 @@ class BSPNode {
     // reset split ratios to default, preserving user-set ratios from manual resize
     func resetSplitRatios() {
         if !isLeaf && !userSetRatio {
-            splitRatio = 0.5
+            splitRatio = TilingConfig.defaultRatio
         }
         left?.resetSplitRatios()
         right?.resetSplitRatios()

@@ -203,13 +203,13 @@ class BSPTree {
             guard let leaf = root.find(window) else { continue }
             guard let leafRect = rectForNodeHelper(node: root, target: leaf, rect: padded, gap: gap) else { continue }
 
-            if actualSize.width > leafRect.width + 5 {
+            if actualSize.width > leafRect.width + TilingConfig.minSizeConflictSlackPx {
                 adjustAxisRatio(from: leaf, needed: actualSize.width,
                                 axis: .horizontal, rect: padded, gap: gap,
                                 windowTitle: window.title)
             }
 
-            if actualSize.height > leafRect.height + 5 {
+            if actualSize.height > leafRect.height + TilingConfig.minSizeConflictSlackPx {
                 adjustAxisRatio(from: leaf, needed: actualSize.height,
                                 axis: .vertical, rect: padded, gap: gap,
                                 windowTitle: window.title)
@@ -236,13 +236,13 @@ class BSPTree {
             let raw = (needed + halfGap) / extent
             let clamped: CGFloat
             if isLeft {
-                clamped = min(raw, 0.85)
+                clamped = min(raw, TilingConfig.maxRatio)
                 if clamped > parent.splitRatio {
                     parent.splitRatio = clamped
                     hyprLog(.debug, .lifecycle, "adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
                 }
             } else {
-                clamped = max(1.0 - raw, 0.15)
+                clamped = max(1.0 - raw, TilingConfig.minRatio)
                 if clamped < parent.splitRatio {
                     parent.splitRatio = clamped
                     hyprLog(.debug, .lifecycle, "adjusted \(axis == .horizontal ? "H" : "V") ratio → \(String(format: "%.2f", clamped)) for '\(windowTitle ?? "?")'")
@@ -286,8 +286,8 @@ class BSPTree {
                     splitX = newFrame.origin.x - gap / 2
                 }
                 let newRatio = (splitX - parentRect.origin.x) / parentRect.width
-                let clamped = min(max(newRatio, 0.15), 0.85)
-                if abs(clamped - parent.splitRatio) > 0.01 {
+                let clamped = min(max(newRatio, TilingConfig.minRatio), TilingConfig.maxRatio)
+                if abs(clamped - parent.splitRatio) > TilingConfig.manualResizeRatioTolerance {
                     parent.splitRatio = clamped
                     parent.userSetRatio = true
                     hyprLog(.debug, .lifecycle, "manual resize: horizontal ratio → \(String(format: "%.2f", clamped))")
@@ -301,8 +301,8 @@ class BSPTree {
                     splitY = newFrame.origin.y - gap / 2
                 }
                 let newRatio = (splitY - parentRect.origin.y) / parentRect.height
-                let clamped = min(max(newRatio, 0.15), 0.85)
-                if abs(clamped - parent.splitRatio) > 0.01 {
+                let clamped = min(max(newRatio, TilingConfig.minRatio), TilingConfig.maxRatio)
+                if abs(clamped - parent.splitRatio) > TilingConfig.manualResizeRatioTolerance {
                     parent.splitRatio = clamped
                     parent.userSetRatio = true
                     hyprLog(.debug, .lifecycle, "manual resize: vertical ratio → \(String(format: "%.2f", clamped))")

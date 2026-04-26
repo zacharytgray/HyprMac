@@ -15,19 +15,18 @@ class TilingEngine {
     private var pendingInsertedWindowIDs: [TilingKey: [CGWindowID]] = [:]
     let displayManager: DisplayManager
 
-    var gapSize: CGFloat = 8
-    var outerPadding: CGFloat = 8
+    var gapSize: CGFloat = TilingConfig.defaultGap
+    var outerPadding: CGFloat = TilingConfig.defaultOuterPadding
 
     // per-screen max BSP depth overrides, keyed by NSScreen.localizedName
     var maxSplitsPerMonitor: [String: Int] = [:]
-    private let defaultMaxDepth = 3
 
     func maxDepth(for screen: NSScreen) -> Int {
-        maxSplitsPerMonitor[screen.localizedName] ?? defaultMaxDepth
+        maxSplitsPerMonitor[screen.localizedName] ?? TilingConfig.defaultMaxDepth
     }
 
     // minimum child dimension (px) for smart insert backtracking
-    var minSlotDimension: CGFloat = 500
+    var minSlotDimension: CGFloat = TilingConfig.minSlotDimension
 
     // callback when a window can't fit (exceeds max depth)
     var onAutoFloat: ((HyprWindow) -> Void)?
@@ -73,7 +72,8 @@ class TilingEngine {
 
     private func lowerMinimumSizeIfAccepted(_ window: HyprWindow, actual: CGSize) {
         guard let known = knownMinSizes[window.windowID] else { return }
-        guard actual.width < known.width - 10 || actual.height < known.height - 10 else { return }
+        guard actual.width < known.width - TilingConfig.lowerMinSizeAcceptedDeltaPx
+            || actual.height < known.height - TilingConfig.lowerMinSizeAcceptedDeltaPx else { return }
         let updated = CGSize(width: min(known.width, actual.width),
                              height: min(known.height, actual.height))
         if isUsableMinimumSize(updated) {
@@ -88,7 +88,7 @@ class TilingEngine {
 
     private func isUsableMinimumSize(_ size: CGSize) -> Bool {
         size.width.isFinite && size.height.isFinite && (size.width > 0 || size.height > 0)
-            && size.width < 10000 && size.height < 10000
+            && size.width < TilingConfig.usableMinSizeMaxPx && size.height < TilingConfig.usableMinSizeMaxPx
     }
 
     private func tree(for key: TilingKey) -> BSPTree {
@@ -174,17 +174,19 @@ class TilingEngine {
         }
 
         func exceeds(_ actual: CGRect, _ target: CGRect) -> Bool {
-            actual.width > target.width + 20 || actual.height > target.height + 20
+            actual.width > target.width + TilingConfig.frameToleranceXPx
+                || actual.height > target.height + TilingConfig.frameToleranceXPx
         }
 
         func undershoots(_ actual: CGRect, _ target: CGRect) -> Bool {
-            actual.width < target.width - 20 || actual.height < target.height - 20
+            actual.width < target.width - TilingConfig.frameToleranceXPx
+                || actual.height < target.height - TilingConfig.frameToleranceXPx
         }
 
-        let interval: TimeInterval = 0.03
-        let maxWait: TimeInterval = 0.36
-        let minConflictSettle: TimeInterval = 0.24
-        let stableTolerance: CGFloat = 2
+        let interval: TimeInterval = TilingConfig.readbackPollInterval
+        let maxWait: TimeInterval = TilingConfig.readbackMaxWait
+        let minConflictSettle: TimeInterval = TilingConfig.readbackMinConflictSettle
+        let stableTolerance: CGFloat = TilingConfig.readbackStableTolerancePx
         var elapsed: TimeInterval = 0
         var readings: [Reading] = []
 
@@ -222,7 +224,7 @@ class TilingEngine {
                 }
 
                 if exceeds(next, readings[i].frame),
-                   elapsed < minConflictSettle || readings[i].stableSamples < 2 {
+                   elapsed < minConflictSettle || readings[i].stableSamples < TilingConfig.readbackStableSamples {
                     anyUnsettledConflict = true
                 }
             }
@@ -232,12 +234,12 @@ class TilingEngine {
 
         var conflicts: [MinSizeConflict] = []
         for r in readings {
-            let widthConflict = r.actual.width > r.frame.width + 20
-            let heightConflict = r.actual.height > r.frame.height + 20
-            let widthUndershot = r.actual.width < r.frame.width - 20
-            let heightUndershot = r.actual.height < r.frame.height - 20
+            let widthConflict = r.actual.width > r.frame.width + TilingConfig.frameToleranceXPx
+            let heightConflict = r.actual.height > r.frame.height + TilingConfig.frameToleranceXPx
+            let widthUndershot = r.actual.width < r.frame.width - TilingConfig.frameToleranceXPx
+            let heightUndershot = r.actual.height < r.frame.height - TilingConfig.frameToleranceXPx
             if widthConflict || heightConflict {
-                let settled = r.elapsed >= minConflictSettle && r.stableSamples >= 2
+                let settled = r.elapsed >= minConflictSettle && r.stableSamples >= TilingConfig.readbackStableSamples
                 if !settled {
                     hyprLog(.debug, .lifecycle, "unsettled readback ignored: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
                     r.window.cachedFrame = r.frame
@@ -277,7 +279,7 @@ class TilingEngine {
     private func overflowingWindows(in layouts: [(HyprWindow, CGRect)]) -> [HyprWindow] {
         layouts.compactMap { window, frame in
             let minSize = minimumSize(for: window)
-            if minSize.width > frame.width + 20 || minSize.height > frame.height + 20 {
+            if minSize.width > frame.width + TilingConfig.frameToleranceXPx || minSize.height > frame.height + TilingConfig.frameToleranceXPx {
                 return window
             }
             return nil
@@ -288,7 +290,7 @@ class TilingEngine {
         let initial = tree.layout(in: rect, gap: gapSize, padding: outerPadding)
         let conflicts = initial.compactMap { window, frame -> (window: HyprWindow, actual: CGSize)? in
             let minSize = minimumSize(for: window)
-            if minSize.width > frame.width + 20 || minSize.height > frame.height + 20 {
+            if minSize.width > frame.width + TilingConfig.frameToleranceXPx || minSize.height > frame.height + TilingConfig.frameToleranceXPx {
                 return (window: window, actual: minSize)
             }
             return nil
@@ -735,20 +737,22 @@ class TilingEngine {
 
     private func pairFits(_ aMin: CGSize, _ bMin: CGSize,
                           in parentRect: CGRect, dir: SplitDirection) -> Bool {
+        let slack = TilingConfig.rectComparisonSlackPx
+        let indCap = TilingConfig.maxRatio
         switch dir {
         case .horizontal:
-            let sumOk = aMin.width + bMin.width + gapSize <= parentRect.width + 1
-            let aCross = aMin.height <= parentRect.height + 1
-            let bCross = bMin.height <= parentRect.height + 1
-            let aInd = aMin.width <= parentRect.width * 0.85 + 1
-            let bInd = bMin.width <= parentRect.width * 0.85 + 1
+            let sumOk = aMin.width + bMin.width + gapSize <= parentRect.width + slack
+            let aCross = aMin.height <= parentRect.height + slack
+            let bCross = bMin.height <= parentRect.height + slack
+            let aInd = aMin.width <= parentRect.width * indCap + slack
+            let bInd = bMin.width <= parentRect.width * indCap + slack
             return sumOk && aCross && bCross && aInd && bInd
         case .vertical:
-            let sumOk = aMin.height + bMin.height + gapSize <= parentRect.height + 1
-            let aCross = aMin.width <= parentRect.width + 1
-            let bCross = bMin.width <= parentRect.width + 1
-            let aInd = aMin.height <= parentRect.height * 0.85 + 1
-            let bInd = bMin.height <= parentRect.height * 0.85 + 1
+            let sumOk = aMin.height + bMin.height + gapSize <= parentRect.height + slack
+            let aCross = aMin.width <= parentRect.width + slack
+            let bCross = bMin.width <= parentRect.width + slack
+            let aInd = aMin.height <= parentRect.height * indCap + slack
+            let bInd = bMin.height <= parentRect.height * indCap + slack
             return sumOk && aCross && bCross && aInd && bInd
         }
     }
