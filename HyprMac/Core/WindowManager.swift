@@ -59,8 +59,10 @@ class WindowManager {
     // and that's prohibitively expensive.
     private var preDragFocusedID: CGWindowID = 0
 
-    // suppress appDidActivate workspace switching (survives async notification delivery)
-    private var suppressActivationSwitchUntil: Date = .distantPast
+    // date-gated suppression flags. owned here, shared with subsystems via closures.
+    // keys in use: "activation-switch" (gates appDidActivate workspace switch),
+    // "mouse-focus" (will migrate from MouseTrackingManager in a follow-up commit).
+    let suppressions = SuppressionRegistry()
 
     // guard against re-entrant raiseFloatingWindows (also used by suppressions)
     private var isRaisingFloaters = false
@@ -432,7 +434,7 @@ class WindowManager {
     }
 
     private func focusForFFM(_ window: HyprWindow) {
-        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+        suppressions.suppress("activation-switch", for: 0.5)
         window.focusWithoutRaise()
         updateFocusBorder(for: window)
     }
@@ -858,7 +860,7 @@ class WindowManager {
     private func switchWorkspace(_ number: Int) {
         // suppress FFM and activation-triggered switches during and after this switch.
         // must outlive the synchronous scope because best.focus() queues async notifications.
-        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+        suppressions.suppress("activation-switch", for: 0.5)
         mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
 
         let currentScreen = screenUnderCursor()
@@ -1154,7 +1156,7 @@ class WindowManager {
 
     private func focusFloatingWindow() {
         mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.3)
-        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+        suppressions.suppress("activation-switch", for: 0.5)
 
         guard let target = floatingController.focusFloating(
             floatingWindowIDs: floatingWindowIDs,
@@ -2029,7 +2031,7 @@ class WindowManager {
         }
 
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
-        if Date() > suppressActivationSwitchUntil {
+        if !suppressions.isSuppressed("activation-switch") {
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
                 let pid = app.processIdentifier
                 let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
@@ -2078,7 +2080,7 @@ class WindowManager {
         let previousFocusID = mouseTracker.lastMouseFocusedID
         let previousWindow = cachedWindows[previousFocusID]
 
-        suppressActivationSwitchUntil = Date().addingTimeInterval(0.5)
+        suppressions.suppress("activation-switch", for: 0.5)
         mouseTracker.suppressMouseFocusUntil = Date().addingTimeInterval(0.15)
 
         for wid in toRaise {
