@@ -30,10 +30,17 @@ final class WindowStateCache {
     // hit-rects so it can match windows without an AX poll.
     var tiledPositions: [CGWindowID: CGRect] = [:]
 
+    // windows whose owning app is still alive but whose AXUIElement is gone
+    // (minimized, hidden, in another macOS Space). kept out of tiling so the
+    // tree doesn't try to re-insert them, but their owner/frame/floating
+    // state stays so they can re-tile cleanly when they return.
+    var hiddenWindowIDs: Set<CGWindowID> = []
+
     // remove this window from every tracked dict.
     // used when a window is permanently gone (closed, app exited).
     func forget(_ id: CGWindowID) {
         cachedWindows.removeValue(forKey: id)
         tiledPositions.removeValue(forKey: id)
+        hiddenWindowIDs.remove(id)
     }
 }
