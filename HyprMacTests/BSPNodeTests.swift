@@ -105,16 +105,32 @@ final class BSPNodeTests: XCTestCase {
         XCTAssertEqual(root.right?.right?.depth, 2)
     }
 
-    // MARK: - ratio (current behavior — uncapped via direct assignment)
+    // MARK: - ratio bounds (Phase 1: clamped on assignment)
 
-    func testSplitRatioAcceptsValuesAsAssigned() {
-        // pin current behavior: splitRatio is a plain stored property, NOT clamped.
-        // Phase 1 will introduce property-setter clamping; that test belongs there.
+    func testSplitRatioClampsAboveMax() {
         let node = BSPNode()
-        node.splitRatio = 0.9
-        XCTAssertEqual(node.splitRatio, 0.9)
+        node.splitRatio = 0.95
+        XCTAssertEqual(node.splitRatio, TilingConfig.maxRatio)
+        node.splitRatio = 100
+        XCTAssertEqual(node.splitRatio, TilingConfig.maxRatio)
+    }
+
+    func testSplitRatioClampsBelowMin() {
+        let node = BSPNode()
+        node.splitRatio = 0.05
+        XCTAssertEqual(node.splitRatio, TilingConfig.minRatio)
         node.splitRatio = -0.5
-        XCTAssertEqual(node.splitRatio, -0.5)
+        XCTAssertEqual(node.splitRatio, TilingConfig.minRatio)
+    }
+
+    func testSplitRatioPassesThroughInsideBounds() {
+        let node = BSPNode()
+        node.splitRatio = 0.7
+        XCTAssertEqual(node.splitRatio, 0.7)
+        node.splitRatio = TilingConfig.minRatio
+        XCTAssertEqual(node.splitRatio, TilingConfig.minRatio)
+        node.splitRatio = TilingConfig.maxRatio
+        XCTAssertEqual(node.splitRatio, TilingConfig.maxRatio)
     }
 
     // MARK: - direction

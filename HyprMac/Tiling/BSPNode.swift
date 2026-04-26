@@ -7,7 +7,14 @@ enum SplitDirection {
 
 class BSPNode {
     var parent: BSPNode?
-    var splitRatio: CGFloat = TilingConfig.defaultRatio
+    // ratio is clamped on assignment so no caller can produce an out-of-bounds
+    // value, even by direct property write. shared bounds with pairFits and
+    // adjustForMinSizes — see TilingConfig.minRatio / .maxRatio.
+    private var _splitRatio: CGFloat = TilingConfig.defaultRatio
+    var splitRatio: CGFloat {
+        get { _splitRatio }
+        set { _splitRatio = max(TilingConfig.minRatio, min(TilingConfig.maxRatio, newValue)) }
+    }
     var userSetRatio: Bool = false
 
     // nil = compute from rect aspect ratio (dwindle default)
