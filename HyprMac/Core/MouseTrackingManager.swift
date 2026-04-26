@@ -4,7 +4,6 @@ import Cocoa
 class MouseTrackingManager {
 
     // state
-    var lastMouseFocusedID: CGWindowID = 0
     // set by HIToolbox begin/end notifications — true for both menu bar menus
     // and native right-click context menus (NSMenu). other code paths read this
     // to skip focus-stealing operations while a menu is open.
@@ -32,6 +31,9 @@ class MouseTrackingManager {
     var onHideFocusBorder: () -> Void = {}
     // routed to SuppressionRegistry["mouse-focus"] by WindowManager
     var isMouseFocusSuppressed: () -> Bool = { false }
+    // routed to FocusStateController by WindowManager (canonical "last focused" id)
+    var lastFocusedID: () -> CGWindowID = { 0 }
+    var recordFocus: (CGWindowID, String) -> Void = { _, _ in }
 
     func handleMouseMove() {
         guard isFocusFollowsMouseEnabled() else { return }
@@ -64,10 +66,11 @@ class MouseTrackingManager {
                 return
             }
 
+
             if managed[topmostID] != nil {
-                guard topmostID != lastMouseFocusedID else { return }
+                guard topmostID != lastFocusedID() else { return }
                 guard let target = cachedWindow(topmostID) else { return }
-                lastMouseFocusedID = topmostID
+                recordFocus(topmostID, "ffm-topmost")
                 onFocusForFFM(target)
                 return
             }
@@ -80,8 +83,9 @@ class MouseTrackingManager {
         // fast path: cursor still inside the last-focused window's rect → done.
         // O(1) check that short-circuits before walking every floater + tile.
         // huge win during normal mouse movement (cursor stays in one window).
-        if lastMouseFocusedID != 0,
-           let lastRect = managed[lastMouseFocusedID],
+        let lastID = lastFocusedID()
+        if lastID != 0,
+           let lastRect = managed[lastID],
            lastRect.contains(cgPoint) {
             return
         }
@@ -95,10 +99,10 @@ class MouseTrackingManager {
 
         for (wid, rect) in managed {
             if rect.contains(cgPoint) {
-                guard wid != lastMouseFocusedID else { return }
+                guard wid != lastFocusedID() else { return }
 
                 guard let target = cachedWindow(wid) else { return }
-                lastMouseFocusedID = wid
+                recordFocus(wid, "ffm-managed")
                 onFocusForFFM(target)
                 return
             }
@@ -116,7 +120,7 @@ class MouseTrackingManager {
 
         for (wid, rect) in tiledPositions() {
             if rect.contains(cgPoint), let target = cachedWindow(wid) {
-                lastMouseFocusedID = wid
+                recordFocus(wid, "refocus-under-cursor")
                 if isFocusFollowsMouseEnabled() {
                     onFocusForFFM(target)
                 } else {
@@ -127,7 +131,7 @@ class MouseTrackingManager {
         }
         // cursor not over any tiled window — clear FFM state but leave the
         // border alone so the invariant check can put it on a sensible target
-        lastMouseFocusedID = 0
+        recordFocus(0, "refocus-under-cursor-clear")
     }
 
     // CGWindowListCopyWindowInfo is expensive — cache result with short TTL
@@ -182,7 +186,7 @@ class MouseTrackingManager {
 
     func menuTrackingEnded() {
         menuTracking = false
-        if let w = cachedWindow(lastMouseFocusedID) {
+        if let w = cachedWindow(lastFocusedID()) {
             onUpdateFocusBorder(w)
         }
     }

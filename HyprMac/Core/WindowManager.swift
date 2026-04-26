@@ -25,6 +25,10 @@ class WindowManager {
     // tiledPositions, cachedWindows.
     let stateCache = WindowStateCache()
 
+    // canonical focus state. owns lastFocusedID; passes through borderTrackedID
+    // from FocusBorder. constructed in init() since it depends on focusBorder.
+    let focusController: FocusStateController
+
     // polling timer
     private var pollTimer: Timer?
 
@@ -60,6 +64,7 @@ class WindowManager {
 
     init(config: UserConfig) {
         self.config = config
+        self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
         self.tilingEngine = TilingEngine(displayManager: displayManager)
 
@@ -88,6 +93,8 @@ class WindowManager {
         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         mouseTracker.isMouseFocusSuppressed = { [weak self] in self?.suppressions.isSuppressed("mouse-focus") ?? false }
+        mouseTracker.lastFocusedID = { [weak self] in self?.focusController.lastFocusedID ?? 0 }
+        mouseTracker.recordFocus = { [weak self] id, reason in self?.focusController.recordFocus(id, reason: reason) }
         mouseTracker.onHideFocusBorder = { [weak self] in
             self?.focusBorder.hide()
             self?.dimmingOverlay.hideAll()
@@ -356,7 +363,7 @@ class WindowManager {
             self.mouseDraggedSinceDown = false
             self.captureMouseDownFrames()
             // sync our focus tracker with the click — without this, manual clicks
-            // leave lastMouseFocusedID stale and currentFocusedWindow() routes
+            // leave focusController.lastFocusedID stale and currentFocusedWindow() routes
             // commands to whatever was previously hovered, not what the user clicked
             self.syncFocusTrackerToCursor()
         }
@@ -480,7 +487,7 @@ class WindowManager {
         dimmingOverlay.enabled = config.dimInactiveWindows
         dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
         dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
-        let fid = focusedID ?? focusBorder.trackedWindowID ?? mouseTracker.lastMouseFocusedID
+        let fid = focusedID ?? focusBorder.trackedWindowID ?? focusController.lastFocusedID
         dimmingOverlay.update(
             focusedID: fid,
             tiledRects: stateCache.tiledPositions,
@@ -503,14 +510,14 @@ class WindowManager {
            isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[tid] {
             w.focusWithoutRaise()
-            mouseTracker.lastMouseFocusedID = tid
+            focusController.recordFocus(tid, reason: "ensureFocus-trackedID")
             updateFocusBorder(for: w)
             return
         }
 
-        if mouseTracker.lastMouseFocusedID != 0,
-           isSelectableInCurrentContext(mouseTracker.lastMouseFocusedID, workspaceWindows: wsWindows),
-           let w = stateCache.cachedWindows[mouseTracker.lastMouseFocusedID] {
+        if focusController.lastFocusedID != 0,
+           isSelectableInCurrentContext(focusController.lastFocusedID, workspaceWindows: wsWindows),
+           let w = stateCache.cachedWindows[focusController.lastFocusedID] {
             w.focusWithoutRaise()
             updateFocusBorder(for: w)
             return
@@ -526,7 +533,7 @@ class WindowManager {
             guard let w = stateCache.cachedWindows[wid], let frame = w.frame else { continue }
             if frame.contains(cgPoint) {
                 w.focusWithoutRaise()
-                mouseTracker.lastMouseFocusedID = wid
+                focusController.recordFocus(wid, reason: "ensureFocus-floating")
                 updateFocusBorder(for: w)
                 return
             }
@@ -537,7 +544,7 @@ class WindowManager {
             if wsWindows.contains(wid), rect.contains(cgPoint),
                let w = stateCache.cachedWindows[wid] {
                 w.focusWithoutRaise()
-                mouseTracker.lastMouseFocusedID = wid
+                focusController.recordFocus(wid, reason: "ensureFocus-tiled")
                 updateFocusBorder(for: w)
                 return
             }
@@ -546,7 +553,7 @@ class WindowManager {
         // whatever AX says is focused, if it is on this workspace
         if let focused = accessibility.getFocusedWindow(),
            isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
-            mouseTracker.lastMouseFocusedID = focused.windowID
+            focusController.recordFocus(focused.windowID, reason: "ensureFocus-ax")
             updateFocusBorder(for: focused)
             return
         }
@@ -561,7 +568,7 @@ class WindowManager {
             }
         if let (wid, _) = fallback, let w = stateCache.cachedWindows[wid] {
             w.focusWithoutRaise()
-            mouseTracker.lastMouseFocusedID = wid
+            focusController.recordFocus(wid, reason: "ensureFocus-fallback")
             updateFocusBorder(for: w)
         }
     }
@@ -744,7 +751,7 @@ class WindowManager {
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
             target.focusWithoutRaise()
             cursorManager.warpToCenter(of: target)
-            mouseTracker.lastMouseFocusedID = target.windowID
+            focusController.recordFocus(target.windowID, reason: "focusInDirection")
             updateFocusBorder(for: target)
         }
     }
@@ -860,7 +867,7 @@ class WindowManager {
                 ?? visibleWindows.first {
                 best.focus()
                 cursorManager.warpToCenter(of: best)
-                mouseTracker.lastMouseFocusedID = best.windowID
+                focusController.recordFocus(best.windowID, reason: "switchWorkspace-already-visible")
                 updateFocusBorder(for: best)
             } else {
                 let rect = displayManager.cgRect(for: result.screen)
@@ -893,7 +900,7 @@ class WindowManager {
         if let best = tiled ?? newWorkspaceWindows.first {
             best.focus()
             cursorManager.warpToCenter(of: best)
-            mouseTracker.lastMouseFocusedID = best.windowID
+            focusController.recordFocus(best.windowID, reason: "switchWorkspace-after-show")
             updateFocusBorder(for: best)
         } else {
             let rect = displayManager.cgRect(for: result.screen)
@@ -1156,7 +1163,7 @@ class WindowManager {
 
         target.focus()
         cursorManager.warpToCenter(of: target)
-        mouseTracker.lastMouseFocusedID = target.windowID
+        focusController.recordFocus(target.windowID, reason: "focusFloating")
         target.isFloating = true
         stateCache.cachedWindows[target.windowID] = target
         updateFocusBorder(for: target)
@@ -1568,7 +1575,7 @@ class WindowManager {
     // returns the window the user actually intends to control. AX's notion of
     // "focused window" can lag or flat-out diverge from reality for multi-window
     // apps (Finder, Teams) — focusWithoutRaise (used by FFM and Hypr+Arrow) does
-    // not reliably update kAXFocusedWindowAttribute. our own lastMouseFocusedID
+    // not reliably update kAXFocusedWindowAttribute. our own focusController.lastFocusedID
     // tracker is updated on every focus action *and* on manual clicks, so it
     // stays in sync with what the user actually pointed at last.
     private func currentFocusedWindow() -> HyprWindow? {
@@ -1581,9 +1588,9 @@ class WindowManager {
             return w
         }
 
-        if mouseTracker.lastMouseFocusedID != 0,
-           isSelectableInCurrentContext(mouseTracker.lastMouseFocusedID, workspaceWindows: wsWindows),
-           let w = stateCache.cachedWindows[mouseTracker.lastMouseFocusedID] {
+        if focusController.lastFocusedID != 0,
+           isSelectableInCurrentContext(focusController.lastFocusedID, workspaceWindows: wsWindows),
+           let w = stateCache.cachedWindows[focusController.lastFocusedID] {
             return w
         }
 
@@ -1634,12 +1641,12 @@ class WindowManager {
             guard workspaceManager.isWindowVisible(wid),
                   let w = stateCache.cachedWindows[wid], let frame = w.frame else { continue }
             if frame.contains(cgPoint) {
-                mouseTracker.lastMouseFocusedID = wid
+                focusController.recordFocus(wid, reason: "syncTracker-floating")
                 return
             }
         }
         for (wid, rect) in stateCache.tiledPositions where rect.contains(cgPoint) {
-            mouseTracker.lastMouseFocusedID = wid
+            focusController.recordFocus(wid, reason: "syncTracker-tiled")
             return
         }
     }
@@ -1656,8 +1663,8 @@ class WindowManager {
         stateCache.cachedWindows.removeValue(forKey: id)
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
-        if mouseTracker.lastMouseFocusedID == id {
-            mouseTracker.lastMouseFocusedID = 0
+        if focusController.lastFocusedID == id {
+            focusController.recordFocus(0, reason: "forgetWindow")
         }
         if focusBorder.trackedWindowID == id {
             focusBorder.hide(); dimmingOverlay.hideAll()
@@ -1727,7 +1734,7 @@ class WindowManager {
         // prefer whatever AX says is focused if it's on this workspace
         if let focused = accessibility.getFocusedWindow(),
            wsWindows.contains(focused.windowID) {
-            mouseTracker.lastMouseFocusedID = focused.windowID
+            focusController.recordFocus(focused.windowID, reason: "ensureInvariant-ax")
             updateFocusBorder(for: focused)
             return
         }
@@ -1735,7 +1742,7 @@ class WindowManager {
         for (wid, _) in stateCache.tiledPositions where wsWindows.contains(wid) {
             if let w = stateCache.cachedWindows[wid] {
                 w.focusWithoutRaise()
-                mouseTracker.lastMouseFocusedID = wid
+                focusController.recordFocus(wid, reason: "ensureInvariant-tiled")
                 updateFocusBorder(for: w)
                 return
             }
@@ -1744,7 +1751,7 @@ class WindowManager {
         for wid in wsWindows {
             if let w = stateCache.cachedWindows[wid] {
                 w.focusWithoutRaise()
-                mouseTracker.lastMouseFocusedID = wid
+                focusController.recordFocus(wid, reason: "ensureInvariant-fallback")
                 updateFocusBorder(for: w)
                 return
             }
@@ -1952,7 +1959,7 @@ class WindowManager {
         let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
         if !gone.isEmpty {
             for id in gone {
-                if id == mouseTracker.lastMouseFocusedID { focusedWindowGone = true }
+                if id == focusController.lastFocusedID { focusedWindowGone = true }
                 stateCache.tiledPositions.removeValue(forKey: id)
                 stateCache.cachedWindows.removeValue(forKey: id)
 
@@ -2062,7 +2069,7 @@ class WindowManager {
         )
         guard !toRaise.isEmpty else { return }
 
-        let previousFocusID = mouseTracker.lastMouseFocusedID
+        let previousFocusID = focusController.lastFocusedID
         let previousWindow = stateCache.cachedWindows[previousFocusID]
 
         suppressions.suppress("activation-switch", for: 0.5)
