@@ -397,4 +397,50 @@ class BSPTree {
         if node.isLeaf { return node }
         return deepestRightLeaf(node.right ?? node.left ?? node)
     }
+
+    // MARK: - snapshot / restore
+
+    /// Opaque snapshot of every per-node knob (window, splitRatio, userSetRatio,
+    /// splitOverride). Pair with `restore(_:)` to scope a speculative mutation —
+    /// e.g., `canSwapWindows` mutates the tree to test a hypothetical layout
+    /// and rewinds via the snapshot.
+    ///
+    /// Topology (left/right pointers) is **not** captured. Speculative paths
+    /// that need topology rewind must restore that themselves; in practice the
+    /// only current caller (canSwapWindows) only mutates window references and
+    /// ratios, not topology.
+    struct Snapshot {
+        fileprivate let states: [NodeState]
+        fileprivate struct NodeState {
+            let node: BSPNode
+            let splitRatio: CGFloat
+            let userSetRatio: Bool
+            let splitOverride: SplitDirection?
+            let window: HyprWindow?
+        }
+    }
+
+    func snapshot() -> Snapshot {
+        var states: [Snapshot.NodeState] = []
+        func walk(_ node: BSPNode) {
+            states.append(Snapshot.NodeState(node: node,
+                                             splitRatio: node.splitRatio,
+                                             userSetRatio: node.userSetRatio,
+                                             splitOverride: node.splitOverride,
+                                             window: node.window))
+            if let left = node.left { walk(left) }
+            if let right = node.right { walk(right) }
+        }
+        walk(root)
+        return Snapshot(states: states)
+    }
+
+    func restore(_ snapshot: Snapshot) {
+        for state in snapshot.states {
+            state.node.splitRatio = state.splitRatio
+            state.node.userSetRatio = state.userSetRatio
+            state.node.splitOverride = state.splitOverride
+            state.node.window = state.window
+        }
+    }
 }

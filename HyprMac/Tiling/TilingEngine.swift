@@ -168,38 +168,6 @@ class TilingEngine {
 
     private let readbackPoller = FrameReadbackPoller()
 
-    private struct NodeState {
-        let node: BSPNode
-        let splitRatio: CGFloat
-        let userSetRatio: Bool
-        let splitOverride: SplitDirection?
-        let window: HyprWindow?
-    }
-
-    private func snapshotTree(_ tree: BSPTree) -> [NodeState] {
-        var states: [NodeState] = []
-        func walk(_ node: BSPNode) {
-            states.append(NodeState(node: node,
-                                    splitRatio: node.splitRatio,
-                                    userSetRatio: node.userSetRatio,
-                                    splitOverride: node.splitOverride,
-                                    window: node.window))
-            if let left = node.left { walk(left) }
-            if let right = node.right { walk(right) }
-        }
-        walk(tree.root)
-        return states
-    }
-
-    private func restoreTree(_ states: [NodeState]) {
-        for state in states {
-            state.node.splitRatio = state.splitRatio
-            state.node.userSetRatio = state.userSetRatio
-            state.node.splitOverride = state.splitOverride
-            state.node.window = state.window
-        }
-    }
-
     // delegate to FrameReadbackPoller and reconcile its result against our
     // min-size memory. returns the conflicts the engine should pass into
     // BSPTree.adjustForMinSizes.
@@ -515,8 +483,8 @@ class TilingEngine {
         let t = tree(for: key)
         guard t.contains(a) && t.contains(b) else { return false }
 
-        let snapshot = snapshotTree(t)
-        defer { restoreTree(snapshot) }
+        let snapshot = t.snapshot()
+        defer { t.restore(snapshot) }
 
         let rect = displayManager.cgRect(for: screen)
         t.swap(a, b)
