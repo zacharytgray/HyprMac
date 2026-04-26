@@ -40,6 +40,11 @@ final class ActionDispatcher {
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var updatePositionCache: () -> Void = {}
     var screenUnderCursor: () -> NSScreen = { NSScreen.main! }
+    // additional closures used by applyChanges (Phase 4 step 3b)
+    var applyForgottenIDCleanup: (CGWindowID) -> Void = { _ in }
+    var animatedRetile: ([HyprWindow]) -> Void = { _ in }
+    var refocusUnderCursor: () -> Void = {}
+    var isMenuTracking: () -> Bool = { false }
 
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
@@ -73,6 +78,56 @@ final class ActionDispatcher {
 
     // MARK: - public API
 
+    // apply a discovery delta to the live state. WindowDiscoveryService produces
+    // the delta and updates its cache half; this method runs the engine/workspace/
+    // focus reactions for everything else.
+    //
+    // per plan §3.2 (post-Phase-4 data flow), this is the path:
+    //   PollingScheduler.coalesce → WM.pollWindowChanges → discovery.computeChanges
+    //     → ActionDispatcher.applyChanges → animator/workspace/focus reactions.
+    //
+    // allWindows is the same snapshot WindowDiscoveryService consumed; we re-pass
+    // it here so animatedRetile + workspace assignment don't re-fetch from AX.
+    func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow]) {
+        // workspace assignment for new windows that didn't auto-float onto a
+        // disabled monitor. assigning by physical screen — cursor-based was
+        // unreliable under multi-monitor + display-reconfig churn.
+        for w in changes.newWindows where !changes.newOnDisabledMonitor.contains(w.windowID) {
+            assignNewWindow(w)
+        }
+
+        // engine/workspace/focus cleanup for ids the service forgot.
+        for id in changes.fullyForgottenIDs {
+            applyForgottenIDCleanup(id)
+        }
+
+        // apply cross-screen drift reassignments.
+        for drift in changes.screenDrift {
+            workspaceManager.moveWindow(drift.windowID, toWorkspace: drift.toWorkspace)
+        }
+
+        if changes.needsRetile {
+            // animate surrounding windows sliding to fill gaps / make room.
+            animatedRetile(allWindows)
+        }
+
+        // if the FFM-tracked window disappeared, refocus to whatever tiled window
+        // is under the cursor now. without this, focus gets stuck because
+        // handleMouseMove only fires on actual mouse movement.
+        if changes.focusedWindowGone {
+            refocusUnderCursor()
+        }
+
+        // catch-all: ensure something on the active workspace has focus + border.
+        ensureFocusInvariant()
+
+        // periodically re-raise floating windows so they don't get stuck behind
+        // full-screen tiled windows (no activation event to trigger raise).
+        if !stateCache.floatingWindowIDs.isEmpty {
+            floatingController.raiseBehind()
+        }
+    }
+
     func dispatch(_ action: Action) {
         switch action {
         case .focusDirection(let dir):
@@ -101,6 +156,68 @@ final class ActionDispatcher {
             closeWindow()
         case .cycleWorkspace(let delta):
             cycleOccupiedWorkspace(delta: delta)
+        }
+    }
+
+    // MARK: - apply-loop helpers (Phase 4 step 3b)
+
+    // assign new window to a workspace based on where it physically opened.
+    // prefer the window's own screen (where macOS actually placed it) — falls
+    // back to cursor screen only when the window has no usable frame yet.
+    // never trusts a stale prior assignment: a recycled CGWindowID could carry
+    // a leftover entry pointing at a workspace the user hasn't used in days.
+    private func assignNewWindow(_ window: HyprWindow) {
+        let physical = displayManager.screen(for: window)
+        let screen = physical ?? screenUnderCursor()
+        guard !workspaceManager.isMonitorDisabled(screen) else { return }
+        let ws = workspaceManager.workspaceForScreen(screen)
+        // overwrite any stale entry — assignWindow handles old-set cleanup
+        workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
+    }
+
+    // if the focus border is hidden but the cursor's screen's workspace has any
+    // visible window, focus one. prevents getting stuck with no focus target —
+    // the user shouldn't have to click a window to get keyboard focus back.
+    private func ensureFocusInvariant() {
+        guard config.showFocusBorder else { return }
+        // don't steal focus from a native menu that's currently tracking —
+        // SLPSPostEventRecordTo + panel reordering both dismiss menus
+        guard !isMenuTracking() else { return }
+        // border is already showing on a live window — nothing to do
+        if let tid = focusBorder.trackedWindowID, stateCache.cachedWindows[tid] != nil {
+            return
+        }
+        let screen = screenUnderCursor()
+        guard !workspaceManager.isMonitorDisabled(screen) else { return }
+        let workspace = workspaceManager.workspaceForScreen(screen)
+        let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
+            .subtracting(stateCache.hiddenWindowIDs)
+        guard !wsWindows.isEmpty else { return }
+
+        // prefer whatever AX says is focused if it's on this workspace
+        if let focused = accessibility.getFocusedWindow(),
+           wsWindows.contains(focused.windowID) {
+            focusController.recordFocus(focused.windowID, reason: "ensureInvariant-ax")
+            updateFocusBorder(focused)
+            return
+        }
+        // any tiled window on this workspace
+        for (wid, _) in stateCache.tiledPositions where wsWindows.contains(wid) {
+            if let w = stateCache.cachedWindows[wid] {
+                w.focusWithoutRaise()
+                focusController.recordFocus(wid, reason: "ensureInvariant-tiled")
+                updateFocusBorder(w)
+                return
+            }
+        }
+        // fall back to any visible window on this workspace (floating, etc.)
+        for wid in wsWindows {
+            if let w = stateCache.cachedWindows[wid] {
+                w.focusWithoutRaise()
+                focusController.recordFocus(wid, reason: "ensureInvariant-fallback")
+                updateFocusBorder(w)
+                return
+            }
         }
     }
 

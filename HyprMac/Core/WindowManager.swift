@@ -194,6 +194,10 @@ class WindowManager {
         actionDispatcher.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         actionDispatcher.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         actionDispatcher.screenUnderCursor = { [weak self] in self?.screenUnderCursor() ?? NSScreen.main! }
+        actionDispatcher.applyForgottenIDCleanup = { [weak self] id in self?.applyForgottenIDExternalCleanup(id) }
+        actionDispatcher.animatedRetile = { [weak self] windows in self?.animatedRetile(windows: windows) }
+        actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
+        actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         // DragSwapHandler shares the dispatcher's swap-rejection flash so cross-monitor and
         // direction swaps both surface the same red-border + beep feedback.
         dragSwapHandler.rejectSwap = { [weak self] window, reason in self?.actionDispatcher.rejectSwap(window, reason: reason) }
@@ -1022,20 +1026,6 @@ class WindowManager {
         }
     }
 
-    // assign new window to a workspace based on where it physically opened.
-    // prefer the window's own screen (where macOS actually placed it) — falls
-    // back to cursor screen only when the window has no usable frame yet.
-    // never trusts a stale prior assignment: a recycled CGWindowID could carry
-    // a leftover entry pointing at a workspace the user hasn't used in days.
-    private func assignNewWindow(_ window: HyprWindow) {
-        let physical = displayManager.screen(for: window)
-        let screen = physical ?? screenUnderCursor()
-        guard !workspaceManager.isMonitorDisabled(screen) else { return }
-        let ws = workspaceManager.workspaceForScreen(screen)
-        // overwrite any stale entry — assignWindow handles old-set cleanup
-        workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
-    }
-
     // returns the window the user actually intends to control. AX's notion of
     // "focused window" can lag or flat-out diverge from reality for multi-window
     // apps (Finder, Teams) — focusWithoutRaise (used by FFM and Hypr+Arrow) does
@@ -1145,51 +1135,6 @@ class WindowManager {
         for id in ids { applyForgottenIDExternalCleanup(id) }
     }
 
-    // if the focus border is hidden but the cursor's screen's workspace has any
-    // visible window, focus one. prevents getting stuck with no focus target —
-    // the user shouldn't have to click a window to get keyboard focus back.
-    private func ensureFocusInvariant() {
-        guard config.showFocusBorder else { return }
-        // don't steal focus from a native menu that's currently tracking —
-        // SLPSPostEventRecordTo + panel reordering both dismiss menus
-        guard !mouseTracker.menuTracking else { return }
-        // border is already showing on a live window — nothing to do
-        if let tid = focusBorder.trackedWindowID, stateCache.cachedWindows[tid] != nil {
-            return
-        }
-        let screen = screenUnderCursor()
-        guard !workspaceManager.isMonitorDisabled(screen) else { return }
-        let workspace = workspaceManager.workspaceForScreen(screen)
-        let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
-            .subtracting(stateCache.hiddenWindowIDs)
-        guard !wsWindows.isEmpty else { return }
-
-        // prefer whatever AX says is focused if it's on this workspace
-        if let focused = accessibility.getFocusedWindow(),
-           wsWindows.contains(focused.windowID) {
-            focusController.recordFocus(focused.windowID, reason: "ensureInvariant-ax")
-            updateFocusBorder(for: focused)
-            return
-        }
-        // any tiled window on this workspace
-        for (wid, _) in stateCache.tiledPositions where wsWindows.contains(wid) {
-            if let w = stateCache.cachedWindows[wid] {
-                w.focusWithoutRaise()
-                focusController.recordFocus(wid, reason: "ensureInvariant-tiled")
-                updateFocusBorder(for: w)
-                return
-            }
-        }
-        // fall back to any visible window on this workspace (floating, etc.)
-        for wid in wsWindows {
-            if let w = stateCache.cachedWindows[wid] {
-                w.focusWithoutRaise()
-                focusController.recordFocus(wid, reason: "ensureInvariant-fallback")
-                updateFocusBorder(for: w)
-                return
-            }
-        }
-    }
 
     // check if at least 25% of the frame is visible on the given screen rect
     private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
@@ -1300,6 +1245,10 @@ class WindowManager {
 
     // MARK: - poll
 
+    // run a discovery diff and hand the result to the dispatcher's apply-loop.
+    // mouse-button-down + animation-in-flight guards stay here because they're
+    // about whether to poll AT ALL; the apply-loop itself runs unconditionally
+    // once it's invoked.
     private func pollWindowChanges() {
         guard !animator.isAnimating else { return }
         guard !mouseButtonDown else { return }
@@ -1313,46 +1262,9 @@ class WindowManager {
             runningPIDs: runningPIDs,
             excludedBundleIDs: Set(config.excludedBundleIDs),
             focusedWindowID: focusController.lastFocusedID,
-            animationInProgress: false  // guarded above
+            animationInProgress: false
         )
-
-        // workspace assignment for new windows that didn't auto-float onto a
-        // disabled monitor. assigning by physical screen — cursor-based was
-        // unreliable under multi-monitor + display-reconfig churn.
-        for w in changes.newWindows where !changes.newOnDisabledMonitor.contains(w.windowID) {
-            assignNewWindow(w)
-        }
-
-        // engine/workspace/focus cleanup for ids the service forgot
-        for id in changes.fullyForgottenIDs {
-            applyForgottenIDExternalCleanup(id)
-        }
-
-        // apply cross-screen drift reassignments
-        for drift in changes.screenDrift {
-            workspaceManager.moveWindow(drift.windowID, toWorkspace: drift.toWorkspace)
-        }
-
-        if changes.needsRetile {
-            // animate surrounding windows sliding to fill gaps / make room
-            animatedRetile(windows: allWindows)
-        }
-
-        // if the FFM-tracked window disappeared, refocus to whatever tiled window
-        // is under the cursor now. without this, focus gets stuck because
-        // handleMouseMove only fires on actual mouse movement.
-        if changes.focusedWindowGone {
-            mouseTracker.refocusUnderCursor()
-        }
-
-        // catch-all: ensure something on the active workspace has focus + border
-        ensureFocusInvariant()
-
-        // periodically re-raise floating windows so they don't get stuck
-        // behind full-screen tiled windows (no activation event to trigger raise)
-        if !stateCache.floatingWindowIDs.isEmpty {
-            floatingController.raiseBehind()
-        }
+        actionDispatcher.applyChanges(changes, allWindows: allWindows)
     }
 
     // MARK: - observers
