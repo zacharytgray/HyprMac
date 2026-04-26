@@ -48,6 +48,7 @@
 		9C6752FADA9267F639122F68 /* AppLauncherSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
+		AC01521BE9F2030CF901A2C9 /* DragSwapHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */; };
 		B44C416E3958C82361083048 /* KeybindOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7BD70717FD497B0899FBCE5 /* KeybindOverlayController.swift */; };
 		B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
 		C1CCA6C07D0B273CF3AB3D6C /* HandleDisplayChangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */; };
@@ -148,6 +149,7 @@
 		E5557F0D5040AE48CF5031E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		EC19E9DB53B109940984B5D5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCodeUtils.swift; sourceTree = "<group>"; };
+		EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragSwapHandler.swift; sourceTree = "<group>"; };
 		EEBFDE19D0C8E2633C66241B /* CGSPrivate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CGSPrivate.h; sourceTree = "<group>"; };
 		F06CFE0CDB28ECDC9411EEB1 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		F24369A83C38C9C3757A23FB /* KeyRemapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRemapper.swift; sourceTree = "<group>"; };
@@ -237,6 +239,7 @@
 				2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */,
 				8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */,
 				46404E9F47AD026DEE8E5EB3 /* Discovery */,
+				FAA866CE85DA0926E2A5E5FC /* Input */,
 				069AB81CC5E4E1E85EC89AD2 /* Orchestration */,
 				6AE3D8602BB4C99734673A60 /* State */,
 				9567CAEC1A7D620C440C60B9 /* Workspace */,
@@ -364,6 +367,14 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		FAA866CE85DA0926E2A5E5FC /* Input */ = {
+			isa = PBXGroup;
+			children = (
+				EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */,
+			);
+			path = Input;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -477,6 +488,7 @@
 				249B0AE228874626C66745EF /* DimmingOverlay.swift in Sources */,
 				0D4C6B4D33142A677A590C35 /* DisplayManager.swift in Sources */,
 				0B9D198B68374BB6E0D0FA1F /* DragManager.swift in Sources */,
+				AC01521BE9F2030CF901A2C9 /* DragSwapHandler.swift in Sources */,
 				531ACE79FC3FD6C76D047281 /* FloatingWindowController.swift in Sources */,
 				3096F5E0A6427D2DB64D076E /* FocusBorder.swift in Sources */,
 				16658F8479CAE2DD07B18DB5 /* FocusStateController.swift in Sources */,

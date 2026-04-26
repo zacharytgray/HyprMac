@@ -35,6 +35,9 @@ class WindowManager {
     // floating-window lifecycle: float/tile toggle, cycle-focus, raise-behind, auto-float predicate.
     private(set) var floatingController: FloatingWindowController!
 
+    // drag-result application — DragManager classifies, this handler applies.
+    private var dragSwapHandler: DragSwapHandler!
+
     // workspace switch / move / move-to-monitor workflows.
     // delegates to workspaceManager + tilingEngine; no new policy lives there.
     private var workspaceOrchestrator: WorkspaceOrchestrator!
@@ -152,6 +155,21 @@ class WindowManager {
         floatingController.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+
+        // drag-result handler
+        self.dragSwapHandler = DragSwapHandler(
+            stateCache: stateCache,
+            dragManager: dragManager,
+            accessibility: accessibility,
+            displayManager: displayManager,
+            workspaceManager: workspaceManager,
+            tilingEngine: tilingEngine,
+            animator: animator,
+            config: config
+        )
+        dragSwapHandler.updatePositionCache = { [weak self] windows in self?.updatePositionCache(windows: windows) }
+        dragSwapHandler.rejectSwap = { [weak self] window, reason in self?.rejectSwap(window, reason: reason) }
+        dragSwapHandler.tileAllVisibleSpaces = { [weak self] windows in self?.tileAllVisibleSpaces(windows: windows) }
 
         tilingEngine.onAutoFloat = { [weak self] window in
             guard let self = self else { return }
@@ -617,104 +635,7 @@ class WindowManager {
     }
 
     private func handleMouseUp(startFrames: [CGWindowID: CGRect]) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.detectDragSwap(startFrames: startFrames)
-        }
-    }
-
-    private func detectDragSwap(startFrames: [CGWindowID: CGRect]) {
-        guard !animator.isAnimating else { return }
-
-        // skip drag detection if the user was dragging a floating window —
-        // floating windows can nudge tiled windows slightly, causing false
-        // snapBack retiles that disrupt the layout
-        if let focused = accessibility.getFocusedWindow(),
-           stateCache.floatingWindowIDs.contains(focused.windowID) {
-            return
-        }
-
-        let allWindows = accessibility.getAllWindows()
-
-        dragManager.floatingWindowIDs = stateCache.floatingWindowIDs
-        dragManager.tiledPositions = stateCache.tiledPositions
-
-        let result = dragManager.detect(
-            allWindows: allWindows,
-            cachedWindows: stateCache.cachedWindows,
-            startFrames: startFrames,
-            screenAt: { [weak self] pt in self?.displayManager.screen(at: pt) },
-            workspaceForScreen: { [weak self] s in self?.workspaceManager.workspaceForScreen(s) ?? 1 }
-        )
-
-        switch result {
-        case .resize(let r):
-            hyprLog(.debug, .lifecycle, "manual resize detected: '\(r.window.title ?? "?")'")
-            tilingEngine.applyResize(r.window, newFrame: r.newFrame, onWorkspace: r.workspace, screen: r.screen)
-            updatePositionCache(windows: allWindows)
-
-        case .swap(let s):
-            if s.crossMonitor {
-                hyprLog(.debug, .lifecycle, "cross-monitor swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
-                if let srcScreen = s.sourceScreen, let tgtScreen = s.targetScreen {
-                    let srcWs = workspaceManager.workspaceForScreen(srcScreen)
-                    let tgtWs = workspaceManager.workspaceForScreen(tgtScreen)
-                    workspaceManager.moveWindow(s.dragged.windowID, toWorkspace: tgtWs)
-                    workspaceManager.moveWindow(s.target.windowID, toWorkspace: srcWs)
-                }
-                tilingEngine.crossSwapWindows(s.dragged, s.target)
-                updatePositionCache(windows: allWindows)
-            } else if let screen = s.sourceScreen {
-                let workspace = workspaceManager.workspaceForScreen(screen)
-                hyprLog(.debug, .lifecycle, "drag swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
-
-                guard tilingEngine.canSwapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen) else {
-                    rejectSwap(s.dragged, reason: "drag swap would violate min-size constraints")
-                    updatePositionCache(windows: allWindows)
-                    return
-                }
-
-                if config.animateWindows,
-                   let draggedFrame = s.dragged.frame,
-                   let targetFrame = s.target.frame,
-                   let layouts = tilingEngine.prepareSwapLayout(s.dragged, s.target, onWorkspace: workspace, screen: screen) {
-                    var transitions: [WindowAnimator.FrameTransition] = []
-                    for (w, toRect) in layouts {
-                        let fromRect: CGRect
-                        if w.windowID == s.dragged.windowID { fromRect = draggedFrame }
-                        else if w.windowID == s.target.windowID { fromRect = targetFrame }
-                        else { continue }
-                        transitions.append(.init(window: w, from: fromRect, to: toRect))
-                    }
-                    animator.animate(transitions, duration: config.animationDuration) { [weak self] in
-                        self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-                        self?.updatePositionCache()
-                    }
-                } else {
-                    tilingEngine.swapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen)
-                    updatePositionCache(windows: allWindows)
-                }
-            }
-
-        case .dragToEmpty(let d):
-            hyprLog(.debug, .lifecycle, "cross-monitor move to empty desktop")
-            let r = displayManager.cgRect(for: d.targetScreen)
-            d.dragged.setFrame(CGRect(
-                x: r.midX - r.width / 4,
-                y: r.midY - r.height / 4,
-                width: r.width / 2,
-                height: r.height / 2
-            ))
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                self?.tileAllVisibleSpaces()
-            }
-
-        case .snapBack:
-            hyprLog(.debug, .lifecycle, "drag snap-back")
-            tileAllVisibleSpaces(windows: allWindows)
-
-        case .none:
-            break
-        }
+        dragSwapHandler.handleMouseUp(startFrames: startFrames)
     }
 
     // MARK: - action dispatch
