@@ -400,8 +400,15 @@ class TilingEngine {
                 return
             }
             if !overflow.isEmpty {
-                hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — discarding min-size adjustment")
-                minSizes.clear(for: overflow)
+                hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — applying pass-1 layout, preserving recorded min sizes")
+                // do NOT clear min-size memory here. the readback in pass-1
+                // gave us real ground-truth (e.g., Spotify's actual min
+                // when its UI is fully expanded). clearing would wipe what
+                // we just learned, causing the next canSwapWindows to
+                // false-accept against the seeded fallback. swapWindows
+                // checks overflow post-retile and reverts if needed; for
+                // non-swap callers this preserves visual state and
+                // correct memory for the next attempt.
                 t.root.resetSplitRatios()
                 applyLayoutFinal(layouts)
                 return
@@ -422,9 +429,15 @@ class TilingEngine {
 
     func canSwapWindows(_ a: HyprWindow, _ b: HyprWindow,
                         onWorkspace workspace: Int, screen: NSScreen) -> Bool {
-        primeMinimumSizes([a, b])
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
+        // prime ALL tree windows, not just [a, b]. siblings still influence
+        // whether adjustForMinSizes can resolve conflicts post-swap; if their
+        // min sizes are stale or missing in the memory, the fit check produces
+        // inconsistent rejections (e.g., a swap that should reject when a
+        // sibling has a hard minimum sneaks through because its min wasn't
+        // re-synced).
+        primeMinimumSizes(t.allWindows)
         guard t.contains(a) && t.contains(b) else { return false }
 
         let snapshot = t.snapshot()
@@ -432,6 +445,13 @@ class TilingEngine {
 
         let rect = displayManager.cgRect(for: screen)
         t.swap(a, b)
+        // clear userSetRatio + reset to 50/50 for the test layout. matches
+        // what the actual swap does below, so canSwapWindows and the
+        // post-acceptance retile evaluate against the same baseline. without
+        // this, a previously user-resized split that favored Spotify's old
+        // slot biases the test in favor of *whatever lands in that slot
+        // post-swap*, masking conflicts that the actual retile would hit.
+        t.root.clearUserSetRatios()
         t.root.resetSplitRatios()
         return layoutCanAccommodateKnownMinimums(t, rect: rect)
     }
@@ -441,8 +461,31 @@ class TilingEngine {
         guard canSwapWindows(a, b, onWorkspace: workspace, screen: screen) else { return false }
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
+
+        // canSwapWindows uses the recorded min sizes which can be seeded
+        // (AX-static) rather than confirmed via readback. for windows like
+        // Spotify whose actual min depends on current UI state, the seeded
+        // values can be too small — canSwapWindows accepts, but the real
+        // pass-1 readback after the swap reveals overflow. snapshot the
+        // tree first so we can revert on that case.
+        let snapshot = t.snapshot()
         t.swap(a, b)
+        // see canSwapWindows — swap is a structural change, prior manual
+        // ratios applied to the OLD occupant of a slot, not the new one.
+        t.root.clearUserSetRatios()
         retile(key: key, screen: screen)
+
+        // post-retile fit check: minSizes was updated by pass-1 readback
+        // during retile. if the resulting layout still overflows the
+        // freshly-recorded mins, the swap doesn't actually fit — revert.
+        let rect = displayManager.cgRect(for: screen)
+        let postLayout = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+        if !overflowingWindows(in: postLayout).isEmpty {
+            hyprLog(.debug, .lifecycle, "swap overflow detected post-readback — reverting")
+            t.restore(snapshot)
+            retile(key: key, screen: screen)
+            return false
+        }
         return true
     }
 
@@ -533,10 +576,15 @@ class TilingEngine {
     func canFitWindow(_ window: HyprWindow? = nil,
                       onWorkspace workspace: Int,
                       screen: NSScreen) -> Bool {
-        if let window { primeMinimumSizes([window]) }
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         if t.root.isEmpty { return true }
+        // prime tree tenants AND incoming window — pairFits reads
+        // minimumSize for both leaf occupant and incoming, so both must be
+        // synced against the latest known/observed values.
+        var toPrime = t.allWindows
+        if let window { toPrime.append(window) }
+        primeMinimumSizes(toPrime)
 
         let rect = displayManager.cgRect(for: screen)
         return fittingLeaf(for: window,
