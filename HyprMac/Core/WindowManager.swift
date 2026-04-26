@@ -26,12 +26,9 @@ class WindowManager {
     // tracks which windows are floating
     private var floatingWindowIDs: Set<CGWindowID> = []
 
-    // track which PID owns each window (for close vs hide detection)
-    private var windowOwners: [CGWindowID: pid_t] = [:]
-
     // window-keyed state cache. fields migrate in over Phase 2 — currently owns
-    // cachedWindows + tiledPositions + hiddenWindowIDs + originalFrames; three more move
-    // in subsequent commits.
+    // cachedWindows + tiledPositions + hiddenWindowIDs + originalFrames + windowOwners;
+    // floatingWindowIDs + knownWindowIDs move in subsequent commits.
     let stateCache = WindowStateCache()
 
     // polling timer
@@ -1305,7 +1302,7 @@ class WindowManager {
                 }
             }
             knownWindowIDs.insert(w.windowID)
-            windowOwners[w.windowID] = w.ownerPID
+            stateCache.windowOwners[w.windowID] = w.ownerPID
 
             // auto-float excluded apps
             if isExcludedApp(w) && !floatingWindowIDs.contains(w.windowID) {
@@ -1660,7 +1657,7 @@ class WindowManager {
         stateCache.hiddenWindowIDs.remove(id)
         stateCache.originalFrames.removeValue(forKey: id)
         floatingWindowIDs.remove(id)
-        windowOwners.removeValue(forKey: id)
+        stateCache.windowOwners.removeValue(forKey: id)
         stateCache.tiledPositions.removeValue(forKey: id)
         stateCache.cachedWindows.removeValue(forKey: id)
         tilingEngine.forgetMinimumSize(windowID: id)
@@ -1678,7 +1675,7 @@ class WindowManager {
     // an app terminates while some of its windows are hidden/minimized — those
     // ids would otherwise leak in hiddenWindowIDs/windowOwners/etc forever.
     private func forgetApp(_ pid: pid_t) {
-        let ids = windowOwners.compactMap { $0.value == pid ? $0.key : nil }
+        let ids = stateCache.windowOwners.compactMap { $0.value == pid ? $0.key : nil }
         for id in ids { forgetWindow(id) }
     }
 
@@ -1766,7 +1763,7 @@ class WindowManager {
     private func reconcileWindowState(runningPIDs: Set<pid_t>) {
         // hidden windows whose owner pid died — fully forget
         for id in stateCache.hiddenWindowIDs {
-            if let pid = windowOwners[id], !runningPIDs.contains(pid) {
+            if let pid = stateCache.windowOwners[id], !runningPIDs.contains(pid) {
                 forgetWindow(id)
             }
         }
@@ -1778,7 +1775,7 @@ class WindowManager {
         // floating set / originalFrames / windowOwners shouldn't outlive known+hidden either
         for id in floatingWindowIDs where !live.contains(id) { forgetWindow(id) }
         for (id, _) in stateCache.originalFrames where !live.contains(id) { forgetWindow(id) }
-        for (id, _) in windowOwners where !live.contains(id) { forgetWindow(id) }
+        for (id, _) in stateCache.windowOwners where !live.contains(id) { forgetWindow(id) }
     }
 
     // check if at least 25% of the frame is visible on the given screen rect
@@ -1904,7 +1901,7 @@ class WindowManager {
             if stateCache.hiddenWindowIDs.contains(w.windowID) {
                 stateCache.hiddenWindowIDs.remove(w.windowID)
                 knownWindowIDs.insert(w.windowID)
-                windowOwners[w.windowID] = w.ownerPID
+                stateCache.windowOwners[w.windowID] = w.ownerPID
 
                 changed = true
                 hyprLog(.debug, .lifecycle, "window returned: '\(w.title ?? "?")' (\(w.windowID))")
@@ -1923,7 +1920,7 @@ class WindowManager {
                     }
                 }
                 knownWindowIDs.insert(w.windowID)
-                windowOwners[w.windowID] = w.ownerPID
+                stateCache.windowOwners[w.windowID] = w.ownerPID
 
                 // auto-float excluded apps
                 if isExcludedApp(w) {
@@ -1965,7 +1962,7 @@ class WindowManager {
                 stateCache.tiledPositions.removeValue(forKey: id)
                 stateCache.cachedWindows.removeValue(forKey: id)
 
-                if let pid = windowOwners[id], runningPIDs.contains(pid) {
+                if let pid = stateCache.windowOwners[id], runningPIDs.contains(pid) {
                     // app still running — window was minimized, hidden, or closed.
                     // track as hidden regardless of workspace visibility so un-minimize
                     // is detected correctly even for windows on hidden workspaces.
@@ -2031,7 +2028,7 @@ class WindowManager {
                 let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
 
                 // only consider windows still tracked (not hidden/closed)
-                let appWindows = windowOwners
+                let appWindows = stateCache.windowOwners
                     .filter { $0.value == pid && knownWindowIDs.contains($0.key) && !stateCache.hiddenWindowIDs.contains($0.key) }
 
                 let appWorkspaces = appWindows.compactMap { (wid, _) in workspaceManager.workspaceFor(wid) }

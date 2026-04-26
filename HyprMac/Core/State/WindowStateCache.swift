@@ -41,6 +41,11 @@ final class WindowStateCache {
     // (when a window leaves the BSP tree, it pops back to its original size).
     var originalFrames: [CGWindowID: CGRect] = [:]
 
+    // wid → owning pid. used to distinguish "window closed" from "app still
+    // running but window hid" — if the pid is alive when the wid disappears,
+    // we mark hidden and keep state; if dead, we forget.
+    var windowOwners: [CGWindowID: pid_t] = [:]
+
     // remove this window from every tracked dict.
     // used when a window is permanently gone (closed, app exited).
     func forget(_ id: CGWindowID) {
@@ -48,5 +53,6 @@ final class WindowStateCache {
         tiledPositions.removeValue(forKey: id)
         hiddenWindowIDs.remove(id)
         originalFrames.removeValue(forKey: id)
+        windowOwners.removeValue(forKey: id)
     }
 }
