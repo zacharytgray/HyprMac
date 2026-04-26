@@ -104,11 +104,12 @@ class TilingEngine {
         trees[TilingKey(workspace: workspace, screen: screen)]
     }
 
-    private struct MinSizeConflict {
-        let window: HyprWindow
-        let allocated: CGRect
-        let actual: CGSize
+    private var layoutEngine: LayoutEngine {
+        LayoutEngine(gapSize: gapSize, outerPadding: outerPadding,
+                     minSlotDimension: minSlotDimension)
     }
+
+    private let readbackPoller = FrameReadbackPoller()
 
     private struct NodeState {
         let node: BSPNode
@@ -142,138 +143,24 @@ class TilingEngine {
         }
     }
 
-    // write all frames first, then wait only as long as AX needs to settle.
-    // fast windows exit after one read; suspected min-size conflicts require
-    // consecutive stable readings so transient AX sizes don't inflate ratios.
-    private func applyLayout(_ layouts: [(HyprWindow, CGRect)]) -> [MinSizeConflict] {
-        guard !layouts.isEmpty else { return [] }
-
-        // previous frames are only diagnostic now; conflicts come from settled
-        // readings, not from matching or not matching the previous frame.
-        var prev: [CGWindowID: CGRect] = [:]
-        for (w, _) in layouts {
-            if let cached = w.cachedFrame { prev[w.windowID] = cached }
+    // delegate to FrameReadbackPoller and reconcile its result against our
+    // min-size memory. returns the conflicts the engine should pass into
+    // BSPTree.adjustForMinSizes.
+    private func applyLayout(_ layouts: [(HyprWindow, CGRect)]) -> [FrameReadbackPoller.Conflict] {
+        let result = readbackPoller.applyLayout(layouts)
+        for obs in result.observations {
+            recordObservedMinimumSize(obs.window, actual: obs.actual,
+                                      widthConflict: obs.widthConflict,
+                                      heightConflict: obs.heightConflict)
         }
-
-        for (window, frame) in layouts {
-            window.setFrame(frame)
+        for (window, size) in result.accepted {
+            lowerMinimumSizeIfAccepted(window, actual: size)
         }
-
-        struct Reading {
-            let window: HyprWindow
-            let frame: CGRect
-            var actual: CGRect
-            var stableSamples: Int
-            var elapsed: TimeInterval
-        }
-
-        func read(_ window: HyprWindow, target: CGRect) -> CGRect {
-            let actualSize = window.size ?? target.size
-            let actualPos = window.position ?? target.origin
-            return CGRect(origin: actualPos, size: actualSize)
-        }
-
-        func exceeds(_ actual: CGRect, _ target: CGRect) -> Bool {
-            actual.width > target.width + TilingConfig.frameToleranceXPx
-                || actual.height > target.height + TilingConfig.frameToleranceXPx
-        }
-
-        func undershoots(_ actual: CGRect, _ target: CGRect) -> Bool {
-            actual.width < target.width - TilingConfig.frameToleranceXPx
-                || actual.height < target.height - TilingConfig.frameToleranceXPx
-        }
-
-        let interval: TimeInterval = TilingConfig.readbackPollInterval
-        let maxWait: TimeInterval = TilingConfig.readbackMaxWait
-        let minConflictSettle: TimeInterval = TilingConfig.readbackMinConflictSettle
-        let stableTolerance: CGFloat = TilingConfig.readbackStableTolerancePx
-        var elapsed: TimeInterval = 0
-        var readings: [Reading] = []
-
-        Thread.sleep(forTimeInterval: interval)
-        elapsed += interval
-        for (window, frame) in layouts {
-            readings.append(Reading(window: window, frame: frame,
-                                    actual: read(window, target: frame),
-                                    stableSamples: 0,
-                                    elapsed: elapsed))
-        }
-
-        // accepted layouts exit fast. over-target readings must settle for two
-        // consecutive samples after a longer floor before they can adjust ratios.
-        // under-target readings are usually a cross-screen clamp/race; reapply
-        // until the destination screen accepts the requested size.
-        while readings.contains(where: { exceeds($0.actual, $0.frame) || undershoots($0.actual, $0.frame) }) && elapsed < maxWait {
-            Thread.sleep(forTimeInterval: interval)
-            elapsed += interval
-
-            var anyUnsettledConflict = false
-            var anyUndersizedFrame = false
-            for i in readings.indices {
-                let next = read(readings[i].window, target: readings[i].frame)
-                let stable = abs(next.width - readings[i].actual.width) <= stableTolerance
-                    && abs(next.height - readings[i].actual.height) <= stableTolerance
-                readings[i].actual = next
-                readings[i].elapsed = elapsed
-                readings[i].stableSamples = stable ? readings[i].stableSamples + 1 : 0
-
-                if undershoots(next, readings[i].frame) {
-                    readings[i].window.setFrame(readings[i].frame)
-                    anyUndersizedFrame = true
-                    continue
-                }
-
-                if exceeds(next, readings[i].frame),
-                   elapsed < minConflictSettle || readings[i].stableSamples < TilingConfig.readbackStableSamples {
-                    anyUnsettledConflict = true
-                }
-            }
-
-            if !anyUnsettledConflict && !anyUndersizedFrame { break }
-        }
-
-        var conflicts: [MinSizeConflict] = []
-        for r in readings {
-            let widthConflict = r.actual.width > r.frame.width + TilingConfig.frameToleranceXPx
-            let heightConflict = r.actual.height > r.frame.height + TilingConfig.frameToleranceXPx
-            let widthUndershot = r.actual.width < r.frame.width - TilingConfig.frameToleranceXPx
-            let heightUndershot = r.actual.height < r.frame.height - TilingConfig.frameToleranceXPx
-            if widthConflict || heightConflict {
-                let settled = r.elapsed >= minConflictSettle && r.stableSamples >= TilingConfig.readbackStableSamples
-                if !settled {
-                    hyprLog(.debug, .lifecycle, "unsettled readback ignored: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
-                    r.window.cachedFrame = r.frame
-                    continue
-                }
-
-                hyprLog(.debug, .lifecycle, "min-size conflict: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), got \(Int(r.actual.width))x\(Int(r.actual.height))")
-                conflicts.append(MinSizeConflict(window: r.window, allocated: r.frame, actual: r.actual.size))
-                recordObservedMinimumSize(r.window, actual: r.actual.size,
-                                          widthConflict: widthConflict,
-                                          heightConflict: heightConflict)
-            } else if widthUndershot || heightUndershot {
-                hyprLog(.debug, .lifecycle, "undersized readback: '\(r.window.title ?? "?")' wanted \(Int(r.frame.width))x\(Int(r.frame.height)), saw \(Int(r.actual.width))x\(Int(r.actual.height)) after \(Int(r.elapsed * 1000))ms")
-                r.window.setFrame(r.frame)
-                r.window.cachedFrame = r.frame
-                continue
-            } else {
-                lowerMinimumSizeIfAccepted(r.window, actual: r.actual.size)
-            }
-            r.window.cachedFrame = r.actual
-
-            if let previous = prev[r.window.windowID], widthConflict || heightConflict {
-                let deltaW = abs(r.actual.width - previous.width)
-                let deltaH = abs(r.actual.height - previous.height)
-                hyprLog(.debug, .lifecycle, "readback settled in \(Int(r.elapsed * 1000))ms for '\(r.window.title ?? "?")' (delta \(Int(deltaW))x\(Int(deltaH)))")
-            }
-        }
-        return conflicts
+        return result.conflicts
     }
 
     private func applyLayoutFinal(_ layouts: [(HyprWindow, CGRect)]) {
-        for (window, frame) in layouts {
-            window.setFrame(frame)
-        }
+        readbackPoller.applyFinal(layouts)
     }
 
     private func overflowingWindows(in layouts: [(HyprWindow, CGRect)]) -> [HyprWindow] {
@@ -353,45 +240,14 @@ class TilingEngine {
     @discardableResult
     private func smartInsertFitting(_ window: HyprWindow, into tree: BSPTree,
                                     maxDepth: Int, rect: CGRect) -> Bool {
-        if tree.root.isEmpty {
-            tree.root.window = window
-            return true
-        }
-
-        guard let leaf = fittingLeaf(for: window, in: tree, maxDepth: maxDepth, rect: rect) else {
-            return false
-        }
-
-        leaf.insert(window)
-        if let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) {
-            hyprLog(.debug, .lifecycle, "smart insert fit at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
-        }
-        return true
+        layoutEngine.smartInsertFitting(window, into: tree, maxDepth: maxDepth,
+                                        rect: rect, minimumSize: minimumSize(for:))
     }
 
     private func fittingLeaf(for window: HyprWindow?, in tree: BSPTree,
                              maxDepth: Int, rect: CGRect) -> BSPNode? {
-        let leaves = tree.root.allLeavesRightToLeft()
-        for pass in 0...1 {
-            for leaf in leaves {
-                guard leaf.depth < maxDepth else { continue }
-                guard let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) else { continue }
-                let dir = leaf.direction(for: leafRect)
-
-                if pass == 0 {
-                    let (a, b) = splitRects(leafRect, dir: dir, gap: gapSize)
-                    let childMin = min(min(a.width, a.height), min(b.width, b.height))
-                    if childMin < minSlotDimension { continue }
-                }
-
-                let existingMin = minimumSize(for: leaf.window)
-                let incomingMin = minimumSize(for: window)
-                if pairFits(existingMin, incomingMin, in: leafRect, dir: dir) {
-                    return leaf
-                }
-            }
-        }
-        return nil
+        layoutEngine.fittingLeaf(for: window, in: tree, maxDepth: maxDepth,
+                                 rect: rect, minimumSize: minimumSize(for:))
     }
 
     // tile windows for a workspace on a specific screen.
@@ -740,50 +596,6 @@ class TilingEngine {
                            in: t,
                            maxDepth: maxDepth(for: screen),
                            rect: rect) != nil
-    }
-
-    private func splitRects(_ rect: CGRect, dir: SplitDirection, gap: CGFloat) -> (CGRect, CGRect) {
-        let halfGap = gap / 2
-        switch dir {
-        case .horizontal:
-            let mid = rect.origin.x + rect.width * 0.5
-            return (
-                CGRect(x: rect.origin.x, y: rect.origin.y,
-                       width: mid - rect.origin.x - halfGap, height: rect.height),
-                CGRect(x: mid + halfGap, y: rect.origin.y,
-                       width: rect.maxX - mid - halfGap, height: rect.height)
-            )
-        case .vertical:
-            let mid = rect.origin.y + rect.height * 0.5
-            return (
-                CGRect(x: rect.origin.x, y: rect.origin.y,
-                       width: rect.width, height: mid - rect.origin.y - halfGap),
-                CGRect(x: rect.origin.x, y: mid + halfGap,
-                       width: rect.width, height: rect.maxY - mid - halfGap)
-            )
-        }
-    }
-
-    private func pairFits(_ aMin: CGSize, _ bMin: CGSize,
-                          in parentRect: CGRect, dir: SplitDirection) -> Bool {
-        let slack = TilingConfig.rectComparisonSlackPx
-        let indCap = TilingConfig.maxRatio
-        switch dir {
-        case .horizontal:
-            let sumOk = aMin.width + bMin.width + gapSize <= parentRect.width + slack
-            let aCross = aMin.height <= parentRect.height + slack
-            let bCross = bMin.height <= parentRect.height + slack
-            let aInd = aMin.width <= parentRect.width * indCap + slack
-            let bInd = bMin.width <= parentRect.width * indCap + slack
-            return sumOk && aCross && bCross && aInd && bInd
-        case .vertical:
-            let sumOk = aMin.height + bMin.height + gapSize <= parentRect.height + slack
-            let aCross = aMin.width <= parentRect.width + slack
-            let bCross = bMin.width <= parentRect.width + slack
-            let aInd = aMin.height <= parentRect.height * indCap + slack
-            let bInd = bMin.height <= parentRect.height * indCap + slack
-            return sumOk && aCross && bCross && aInd && bInd
-        }
     }
 
     // force-insert a window on an explicit screen, evicting deepest-right if full
