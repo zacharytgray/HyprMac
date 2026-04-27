@@ -297,19 +297,21 @@ final class WindowDiscoveryService {
     /// Detect tiled windows whose physical screen no longer matches the
     /// screen of their recorded workspace.
     ///
-    /// Sources include manual cross-monitor drag and dock-click
-    /// activations that raise an app's window on the wrong screen.
+    /// Sources include manual cross-monitor drag, dock-click activations
+    /// that raise an app's window on the wrong screen, and close-then-
+    /// reopen of an app that recycles its CGWindowID (Teams, Mail, etc.)
+    /// — those come back via the `returned` path with a stale workspace
+    /// assignment pointing at a now-hidden workspace.
+    ///
     /// Floating windows are skipped (they can be anywhere by design).
-    /// Cases where the recorded screen and physical screen are the same
-    /// are filtered out to suppress transient frame reads taken
-    /// mid-retile.
+    /// Hide-corner parked windows are skipped — they "look" drifted onto
+    /// whatever workspace currently owns the screen, but they are
+    /// intentionally parked there.
     private func detectScreenDrift(_ allWindows: [HyprWindow]) -> [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)] {
         let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
         var drifts: [(CGWindowID, Int, Int)] = []
         for w in allWindows {
             guard let recordedWs = workspaceManager.workspaceFor(w.windowID) else { continue }
-            // only check windows whose recorded workspace is currently on screen
-            guard visibleWorkspaces.contains(recordedWs) else { continue }
             // floating windows can be anywhere by design — skip
             guard !stateCache.floatingWindowIDs.contains(w.windowID) else { continue }
             guard let physicalScreen = displayManager.screen(for: w) else { continue }
@@ -321,10 +323,26 @@ final class WindowDiscoveryService {
             // same — guards against transient frame reads during retile
             if let recordedScreen = workspaceManager.screenForWorkspace(recordedWs),
                recordedScreen == physicalScreen { continue }
+            // recorded ws hidden: only drift if the window has a real on-screen
+            // frame, not parked at a hide-corner
+            if !visibleWorkspaces.contains(recordedWs) {
+                if isAtHideCorner(w, recordedWs: recordedWs) { continue }
+            }
             drifts.append((w.windowID, recordedWs, physicalWs))
             hyprLog(.debug, .discovery, "drift: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
         }
         return drifts
+    }
+
+    /// `true` when `w`'s top-left sits within a few pixels of the
+    /// hide-corner of `recordedWs`'s home screen. Used to distinguish a
+    /// parked hidden window from one that genuinely returned with a
+    /// real frame.
+    private func isAtHideCorner(_ w: HyprWindow, recordedWs: Int) -> Bool {
+        guard let frame = w.frame,
+              let homeScreen = workspaceManager.homeScreenForWorkspace(recordedWs) else { return false }
+        let corner = workspaceManager.hidePosition(for: homeScreen)
+        return abs(frame.origin.x - corner.x) < 5 && abs(frame.origin.y - corner.y) < 5
     }
 
     /// `true` when at least 25 % of `frame` overlaps `screenRect`. Used
