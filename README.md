@@ -122,6 +122,50 @@ A single macOS Space per monitor is recommended for the cleanest experience.
 
 ---
 
+## Architecture
+
+HyprMac is structured as a thin orchestration layer over a handful of focused services. Hotkeys feed into an `ActionDispatcher` that routes work to the right service; a polling loop drives a `WindowDiscoveryService` that detects new, gone, and drifted windows and hands the diff back to the dispatcher.
+
+```
+HotkeyManager (CGEventTap)
+    └→ WindowManager.handleAction
+        └→ ActionDispatcher.dispatch
+            ├→ FocusStateController       (focus id + visual border)
+            ├→ WorkspaceOrchestrator      (workspace switch / move)
+            ├→ FloatingWindowController   (toggle / cycle / raise)
+            ├→ TilingEngine               (swap / split toggle / retile)
+            └→ AppLauncherManager         (launch / focus)
+                ↓
+        WindowStateCache mutations
+                ↓
+        TilingEngine.applyLayout (two-pass via FrameReadbackPoller)
+                ↓
+        FocusBorder, DimmingOverlay, WindowAnimator (visual layer)
+```
+
+Polling and discovery run in parallel:
+
+```
+PollingScheduler (1 Hz timer + coalesced notification triggers)
+    └→ WindowDiscoveryService.computeChanges
+        └→ ActionDispatcher.applyChanges
+```
+
+Window-keyed state lives in `WindowStateCache`; focus state in `FocusStateController`; date-gated suppressions (`activation-switch`, `mouse-focus`, `cross-swap-in-flight`) in `SuppressionRegistry`. BSP trees live in `TilingEngine` (one per `(workspace, screen)` pair) with smart insert backtracking on constrained monitors and two-pass min-size resolution via `FrameReadbackPoller`.
+
+Everything runs on the main thread. UI-touching classes (`FocusBorder`, `DimmingOverlay`, `KeybindOverlayController`, `CursorManager`, `WindowAnimator`, `MouseTrackingManager`) assert this in DEBUG via `mainThreadOnly()`.
+
+For deeper reading:
+
+- [`docs/architecture.md`](docs/architecture.md) — long-form architecture, ownership rules, threading.
+- [`docs/tiling-algorithm.md`](docs/tiling-algorithm.md) — BSP dwindle, smart insert, two-pass layout, min-size memory.
+- [`docs/coordinate-systems.md`](docs/coordinate-systems.md) — CG ↔ NS conversion, multi-monitor edge cases.
+- [`docs/keybinds-and-actions.md`](docs/keybinds-and-actions.md) — `Action` enum, frozen JSON case keys, schema versioning.
+- [`docs/debugging.md`](docs/debugging.md) — Console.app filters, verbose-logging toggle, common debugging recipes.
+- [`CLAUDE.md`](CLAUDE.md) — build/run, code style, key technical decisions.
+
+---
+
 ## Updating
 
 **In-app updates are recommended for most users.** HyprMac checks for updates automatically via Sparkle — when one is available, you'll be prompted to install it directly from the app. You can also check manually via the menubar icon → "Check for Updates..."
