@@ -1,22 +1,33 @@
+// Action → service routing and the apply-loop reactions that follow a
+// discovery diff. Holds the per-Action implementations that resolve a
+// focused window, drive the right service entry point, and wire up
+// animation glue and rejection feedback.
+
 import Cocoa
 
-// owns Action → service routing. WindowManager.handleAction shrinks to a one-liner
-// that forwards to dispatch(_:); the per-action implementations live here.
-//
-// per plan §3.2 the dispatcher routes ON TOP of WorkspaceOrchestrator and
-// FloatingWindowController — those services own their workflows; the dispatcher
-// just picks the right entry point per Action case and supplies any glue
-// (focused window resolution, swap-rejection flash, animated swap transitions)
-// that's specific to the action path.
-//
-// what does NOT live here:
-//   - workspace switch/move/cycle workflows (WorkspaceOrchestrator)
-//   - float/cycle/raise (FloatingWindowController)
-//   - drag-result application (DragSwapHandler)
-//   - the discovery apply-loop (lifted into applyChanges in Phase 4 step 3b)
-//
-// closure handles cover WM-side helpers that don't have a service home:
-//   currentFocusedWindow, updateFocusBorder, updatePositionCache, screenUnderCursor.
+/// Routes `Action` cases to the services that handle them and applies the
+/// reactions that follow a discovery diff.
+///
+/// Sits on top of `WorkspaceOrchestrator` and `FloatingWindowController`
+/// — those services own their workflows; the dispatcher picks the right
+/// entry point per `Action` case and supplies the glue specific to the
+/// action path: focused-window resolution, swap-rejection flash, animated
+/// swap transitions, etc. `applyChanges` runs the post-discovery
+/// reactions: workspace assignment, forgotten-id cleanup, drift moves,
+/// retile, refocus, and the focus-invariant safety net.
+///
+/// What does not live here: workspace switch/move/cycle (in
+/// `WorkspaceOrchestrator`), float/cycle/raise (in
+/// `FloatingWindowController`), drag-result application (in
+/// `DragSwapHandler`).
+///
+/// Closure handles plumb in WM-side helpers without a service home:
+/// `currentFocusedWindow`, `updateFocusBorder`, `updatePositionCache`,
+/// `screenUnderCursor`, plus the apply-loop helpers
+/// `applyForgottenIDCleanup`, `animatedRetile`, `refocusUnderCursor`, and
+/// `isMenuTracking`.
+///
+/// Threading: main-thread only.
 final class ActionDispatcher {
 
     // hard dependencies
@@ -78,16 +89,20 @@ final class ActionDispatcher {
 
     // MARK: - public API
 
-    // apply a discovery delta to the live state. WindowDiscoveryService produces
-    // the delta and updates its cache half; this method runs the engine/workspace/
-    // focus reactions for everything else.
-    //
-    // per plan §3.2 (post-Phase-4 data flow), this is the path:
-    //   PollingScheduler.coalesce → WM.pollWindowChanges → discovery.computeChanges
-    //     → ActionDispatcher.applyChanges → animator/workspace/focus reactions.
-    //
-    // allWindows is the same snapshot WindowDiscoveryService consumed; we re-pass
-    // it here so animatedRetile + workspace assignment don't re-fetch from AX.
+    /// Run the engine/workspace/focus reactions that follow a discovery
+    /// diff.
+    ///
+    /// `WindowDiscoveryService.computeChanges` produces the delta and
+    /// already updates its cache half. This method handles everything
+    /// downstream: workspace assignment for new windows, cleanup for
+    /// forgotten ids, cross-screen drift reassignment, animated retile,
+    /// refocus when the FFM-tracked window vanished, the focus-invariant
+    /// safety net, and a floater raise pass.
+    ///
+    /// - Parameter changes: discovery delta.
+    /// - Parameter allWindows: the same window snapshot
+    ///   `WindowDiscoveryService` consumed; passed through so
+    ///   `animatedRetile` and workspace assignment do not re-query AX.
     func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow]) {
         // workspace assignment for new windows that didn't auto-float onto a
         // disabled monitor. assigning by physical screen — cursor-based was
@@ -128,6 +143,8 @@ final class ActionDispatcher {
         }
     }
 
+    /// Route a single `Action` to the service that handles it. Called
+    /// from `WindowManager.handleAction` on every hotkey trigger.
     func dispatch(_ action: Action) {
         switch action {
         case .focusDirection(let dir):
@@ -159,13 +176,16 @@ final class ActionDispatcher {
         }
     }
 
-    // MARK: - apply-loop helpers (Phase 4 step 3b)
+    // MARK: - apply-loop helpers
 
-    // assign new window to a workspace based on where it physically opened.
-    // prefer the window's own screen (where macOS actually placed it) — falls
-    // back to cursor screen only when the window has no usable frame yet.
-    // never trusts a stale prior assignment: a recycled CGWindowID could carry
-    // a leftover entry pointing at a workspace the user hasn't used in days.
+    /// Assign a newly-discovered window to a workspace based on where it
+    /// physically opened.
+    ///
+    /// Prefers the window's own screen — that is where macOS placed it —
+    /// and falls back to the cursor's screen only when the window has no
+    /// usable frame yet. Always overwrites any prior assignment: a
+    /// recycled `CGWindowID` could carry a leftover entry pointing at a
+    /// workspace the user has not touched in days.
     private func assignNewWindow(_ window: HyprWindow) {
         let physical = displayManager.screen(for: window)
         let screen = physical ?? screenUnderCursor()
@@ -175,9 +195,17 @@ final class ActionDispatcher {
         workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
     }
 
-    // if the focus border is hidden but the cursor's screen's workspace has any
-    // visible window, focus one. prevents getting stuck with no focus target —
-    // the user shouldn't have to click a window to get keyboard focus back.
+    /// Re-establish keyboard focus when the border has gone dark but the
+    /// cursor's workspace still has a visible window.
+    ///
+    /// Without this safety net the user can end up with no focus target
+    /// after a workspace switch, app close, or window hide — and FFM
+    /// alone will not recover, since `handleMouseMove` only fires on
+    /// actual mouse motion. Resolution order: AX's reported focused
+    /// window if it belongs to this workspace, then any tiled window on
+    /// this workspace, then any visible window on this workspace.
+    /// No-ops when a menu is tracking (refocusing would dismiss it) or
+    /// when the focus border is already showing on a live window.
     private func ensureFocusInvariant() {
         guard config.showFocusBorder else { return }
         // don't steal focus from a native menu that's currently tracking —
@@ -223,6 +251,9 @@ final class ActionDispatcher {
 
     // MARK: - focus / swap
 
+    /// Move keyboard focus to the nearest visible tiled window in
+    /// `direction`. Floating windows and hidden-corner windows are
+    /// excluded from the candidate set.
     private func focusInDirection(_ direction: Direction) {
         guard let focused = currentFocusedWindow() else { return }
         // only consider windows on visible workspaces — hidden corner windows must be excluded
@@ -238,6 +269,18 @@ final class ActionDispatcher {
         }
     }
 
+    /// Swap the focused tile with the nearest tiled window in
+    /// `direction` on the same `(workspace, screen)` tree.
+    ///
+    /// Candidates are pre-filtered to the focused window's own screen so
+    /// a tied directional pick cannot drift across monitors. Rejected
+    /// before any mutation when `canSwapWindows` reports a min-size
+    /// violation. With animation on, layout is computed first via
+    /// `prepareSwapLayout`, animated from old to new rects, then
+    /// committed via `applyComputedLayout`; if the post-readback layout
+    /// overflows recorded mins, `applyComputedLayout` reverts and this
+    /// path surfaces a `flashError`. With animation off, `swapWindows`
+    /// owns its own snapshot/revert.
     private func swapInDirection(_ direction: Direction) {
         guard let focused = currentFocusedWindow() else { return }
         guard !stateCache.floatingWindowIDs.contains(focused.windowID) else { return }
@@ -300,7 +343,9 @@ final class ActionDispatcher {
         }
     }
 
-    // exposed so DragSwapHandler can invoke the same flash on cross-monitor reject paths.
+    /// Beep and flash a red border around `window` to signal a rejected
+    /// swap. Exposed publicly so `DragSwapHandler` can route cross-monitor
+    /// rejections through the same feedback as direction swaps.
     func rejectSwap(_ window: HyprWindow, reason: String) {
         hyprLog(.debug, .orchestration, "\(reason) — rejected swap")
         NSSound.beep()
@@ -311,6 +356,8 @@ final class ActionDispatcher {
 
     // MARK: - close / menu bar
 
+    /// Click the focused window's close button via AX. Silently no-ops
+    /// when the window has no close button (some panels, dialogs).
     private func closeWindow() {
         guard let target = currentFocusedWindow() else { return }
         var closeButton: AnyObject?
@@ -320,6 +367,11 @@ final class ActionDispatcher {
         }
     }
 
+    /// Warp the cursor to the menu bar of the screen the cursor is on.
+    /// Targets the area just past the Apple menu so the user can navigate
+    /// app menus directly. Briefly de-associates the mouse from the
+    /// cursor so the warp lands accurately, then re-associates after a
+    /// short delay.
     private func warpToMenuBar() {
         let mouseNS = NSEvent.mouseLocation
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
@@ -341,8 +393,13 @@ final class ActionDispatcher {
 
     // MARK: - workspace cycle
 
-    // cycle through occupied workspaces on the current monitor (delta: +1 next, -1 prev).
-    // "occupied" = has at least one window assigned to it.
+    /// Cycle through occupied workspaces whose home screen is the cursor's
+    /// monitor.
+    ///
+    /// "Occupied" means at least one window is assigned. Walks the
+    /// workspace numbers in `delta` direction (`+1` next, `-1` previous),
+    /// wrapping around. Workspaces on other monitors are skipped — the
+    /// cycle stays on the current screen.
     private func cycleOccupiedWorkspace(delta: Int) {
         let screen = screenUnderCursor()
         let current = workspaceManager.workspaceForScreen(screen)
@@ -371,7 +428,8 @@ final class ActionDispatcher {
 
     // MARK: - floating / split
 
-    // resolves focused window + screen + workspace, then forwards to FloatingWindowController.
+    /// Resolve the focused window, its physical screen, and the active
+    /// workspace, then hand off to `FloatingWindowController.toggle`.
     private func toggleFloating() {
         guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
@@ -379,11 +437,16 @@ final class ActionDispatcher {
         floatingController.toggle(focused, on: screen, in: workspace)
     }
 
-    // toggle the BSP split direction at the focused leaf's parent.
-    // when animation is on, prepareToggleSplitLayout mutates the tree and returns
-    // target frames so we can animate from current → target. once it returns
-    // non-nil we're committed — falling through to tilingEngine.toggleSplit()
-    // would toggle the tree a second time and revert the user's action.
+    /// Toggle the BSP split direction at the focused leaf's parent.
+    ///
+    /// With animation enabled, `prepareToggleSplitLayout` mutates the
+    /// tree and returns the target frames; the dispatcher animates from
+    /// current to target rects and commits via `applyComputedLayout`.
+    /// Once `prepareToggleSplitLayout` returns non-nil the tree is
+    /// committed — falling through to the synchronous
+    /// `tilingEngine.toggleSplit()` would toggle a second time and revert
+    /// the user's action. With animation disabled, or when the focused
+    /// window is not in the tree, the synchronous path is taken instead.
     private func toggleSplit() {
         guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }

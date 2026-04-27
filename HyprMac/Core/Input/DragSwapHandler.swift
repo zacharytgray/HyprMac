@@ -1,19 +1,26 @@
+// Applies the result of `DragManager.detect` to the tiling engine and
+// workspace state: tree mutation, cross-monitor workspace reassignment,
+// animation, position-cache refresh. The classification heuristics live
+// in `DragManager`; this handler runs the side effects.
+
 import Cocoa
 
-// applies the result of DragManager.detect to the tiling engine and workspace.
-// drag classification (resize vs swap vs snap-back vs cross-monitor move) lives
-// in DragManager; this handler owns the side effects: tree mutation, cross-monitor
-// workspace reassignment, animation, position-cache refresh.
-//
-// what does NOT live here:
-//   - drag classification heuristics (DragManager)
-//   - mouse-monitor wiring or mouseDown frame capture (WindowManager — mouse-tracking
-//     plumbing is separate from drag-result application)
-//   - rejectSwap (WindowManager — also used by keyboard swap, passed as closure)
-//
-// main-thread is a precondition. the 0.1s settle delay is an empirical timing
-// from the original implementation: gives macOS enough time to commit the final
-// dragged frame before AX queries it.
+/// Side effects for drag classifications.
+///
+/// Public surface is a single `handleMouseUp` entry called from the
+/// global mouseUp monitor. After a 0.1 s settle (empirical: gives macOS
+/// time to commit the final dragged frame before AX queries it), the
+/// handler asks `DragManager` to classify and applies the result —
+/// resize, same-monitor swap, cross-monitor swap, drag-to-empty-desktop,
+/// or snap-back.
+///
+/// Cross-monitor swap registers `cross-swap-in-flight` on
+/// `SuppressionRegistry` for ~0.8 s. `PollingScheduler` honors that key,
+/// so neither the 1 Hz timer nor notification-driven schedules fire
+/// during `crossSwapWindows`'s two synchronous retile passes — without
+/// this, polls land mid-mutation and produce inconsistent visible state.
+///
+/// Threading: main-thread only.
 final class DragSwapHandler {
 
     private let stateCache: WindowStateCache
@@ -31,13 +38,15 @@ final class DragSwapHandler {
     var rejectSwap: ((HyprWindow, String) -> Void)?
     var tileAllVisibleSpaces: (([HyprWindow]?) -> Void)?
 
-    // empirical bound on TilingEngine.crossSwapWindows wall-clock cost: two
-    // back-to-back retile passes, each containing up to ~360ms of Thread.sleep
-    // readback polling. 0.8s gives headroom for slow apps + post-swap settling.
-    // PollingScheduler honors this via SuppressionRegistry["cross-swap-in-flight"]
-    // so 1Hz timer ticks and notification-driven schedule() calls don't race
-    // the swap mid-flight (the bug Phase 4 step 5 fixes).
+    /// Empirical bound on the wall-clock cost of
+    /// `TilingEngine.crossSwapWindows`: two back-to-back retile passes,
+    /// each containing up to ~360 ms of `Thread.sleep` readback. 0.8 s
+    /// gives headroom for slow apps and post-swap settling.
     private static let crossSwapSuppressionSec: TimeInterval = 0.8
+
+    /// `SuppressionRegistry` key honored by `PollingScheduler`. Holds
+    /// timer and notification polls off for the duration of a
+    /// cross-monitor drag-swap.
     private static let crossSwapKey = "cross-swap-in-flight"
 
     init(stateCache: WindowStateCache,
@@ -60,8 +69,9 @@ final class DragSwapHandler {
         self.suppressions = suppressions
     }
 
-    // entry point: called from WindowManager's mouseUp handler.
-    // schedules the 0.1s settle then runs detect-and-apply on main.
+    /// Entry point invoked by `WindowManager`'s mouseUp monitor.
+    /// Schedules a 0.1 s settle then runs detect-and-apply on the main
+    /// thread.
     func handleMouseUp(startFrames: [CGWindowID: CGRect]) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             self?.applyDragResult(startFrames: startFrames)
@@ -70,6 +80,12 @@ final class DragSwapHandler {
 
     // MARK: - private
 
+    /// Classify the drag and dispatch to the matching effect.
+    ///
+    /// Skipped when an animation is in flight (animator-parked frames
+    /// would mis-classify) or when the focused window is floating —
+    /// floating windows nudging adjacent tiles otherwise produce false
+    /// snap-back retiles that disrupt the layout.
     private func applyDragResult(startFrames: [CGWindowID: CGRect]) {
         guard !animator.isAnimating else { return }
 
@@ -125,13 +141,22 @@ final class DragSwapHandler {
         }
     }
 
+    /// Apply a drag-classified swap.
+    ///
+    /// Cross-monitor: register `cross-swap-in-flight`, reassign both
+    /// windows to the matching workspaces, then call
+    /// `crossSwapWindows`. Same-monitor: check `canSwapWindows` first
+    /// (rejection beeps + flashes via `rejectSwap`), then either animate
+    /// from old to new rects via `prepareSwapLayout` /
+    /// `applyComputedLayout` or fall through to the synchronous
+    /// `swapWindows`.
     private func applySwap(_ s: DragManager.DragSwapResult, allWindows: [HyprWindow]) {
         if s.crossMonitor {
             hyprLog(.debug, .drag, "cross-monitor swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
             // hold polling off for the duration of the swap. crossSwapWindows runs
             // two synchronous retile passes back-to-back; without this guard, the
             // 1Hz timer or NSWorkspace notifications can fire mid-swap and observe
-            // the windows in an inconsistent state (Phase 4 step 5 fix).
+            // the windows in an inconsistent state.
             suppressions.suppress(Self.crossSwapKey, for: Self.crossSwapSuppressionSec)
             if let srcScreen = s.sourceScreen, let tgtScreen = s.targetScreen {
                 let srcWs = workspaceManager.workspaceForScreen(srcScreen)

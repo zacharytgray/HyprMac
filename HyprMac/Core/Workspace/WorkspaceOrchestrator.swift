@@ -1,23 +1,22 @@
+// Coordinates workspace switch / move-window / move-workspace workflows on
+// top of `WorkspaceManager` and `TilingEngine`. No new policy lives here —
+// the orchestrator just sequences the right calls and supplies the
+// focus/cursor/border glue each workflow needs.
+
 import Cocoa
 
-// coordinates workspace switch / move / move-to-monitor workflows.
-//
-// per plan §3.3, the orchestrator delegates to WorkspaceManager (which still
-// owns workspace-to-screen mapping) and TilingEngine (which still owns BSP
-// trees). it does not own:
-//   - workspaceManager.monitorWorkspace / workspaceHomeScreen (still on WM).
-//   - any tree mutation beyond what TilingEngine.removeWindow / canFitWindow /
-//     maxDepth expose.
-//   - focus / cursor / border policy — those go through the injected closures
-//     and the per-subsystem references, no new policy lives here.
-//
-// the orchestrator holds direct references to long-lived dependencies and
-// closure handles for WM-side helpers (animatedRetile, tileAllVisibleSpaces,
-// currentFocusedWindow, screenUnderCursor, updateFocusBorder) that can't be
-// expressed as standalone services without a wider refactor. these are
-// utility callbacks for action workflows, not reaction callbacks the way
-// Q2 warned against — Phase 4's ActionDispatcher will route into this
-// orchestrator on top, not unwire it.
+/// Coordinator for workspace-level user actions.
+///
+/// Delegates the data ownership to the services it composes:
+/// `WorkspaceManager` still owns workspace-to-screen mapping and home
+/// screens; `TilingEngine` still owns BSP trees. The orchestrator
+/// sequences switch, move-window-to-workspace, and move-workspace-to-
+/// monitor flows, applies suppression keys (`activation-switch`,
+/// `mouse-focus`) for the duration of each action, and routes focus and
+/// cursor-warp results through closure handles back into
+/// `WindowManager`.
+///
+/// Threading: main-thread only.
 final class WorkspaceOrchestrator {
 
     private let workspaceManager: WorkspaceManager
@@ -61,9 +60,19 @@ final class WorkspaceOrchestrator {
 
     // MARK: - switch
 
+    /// Switch to workspace `number` on the cursor's monitor.
+    ///
+    /// Two paths:
+    /// - Already visible (on this or another screen): focus the best
+    ///   window on it and warp the cursor; no hide/show needed.
+    /// - Not visible: hide the displaced workspace's windows, restore
+    ///   floating frames on the incoming workspace, retile, then focus
+    ///   the best new window.
+    ///
+    /// Suppresses `activation-switch` and `mouse-focus` for the duration
+    /// (and a tail) of the switch — `best.focus()` queues asynchronous
+    /// notifications that would otherwise re-bounce focus.
     func switchWorkspace(_ number: Int) {
-        // suppress FFM and activation-triggered switches during and after this switch.
-        // must outlive the synchronous scope because best.focus() queues async notifications.
         suppressions.suppress("activation-switch", for: 0.5)
         suppressions.suppress("mouse-focus", for: 0.3)
 
@@ -125,6 +134,18 @@ final class WorkspaceOrchestrator {
 
     // MARK: - move focused window to workspace
 
+    /// Move the focused window to workspace `number`.
+    ///
+    /// Capacity is checked before any mutation: if the target workspace
+    /// is currently visible, `canFitWindow` is consulted (so min-size
+    /// constraints reject impossible moves); if it is not visible, a
+    /// raw tile-count vs. dwindle-depth check rejects when the
+    /// workspace is full. Rejections beep and flash a red border;
+    /// successful moves animate the surrounding tile and post a
+    /// workspace-changed notification.
+    ///
+    /// Special-cases windows on disabled monitors: they unfloat into
+    /// the target as tiled windows on success.
     func moveToWorkspace(_ number: Int) {
         guard let focused = currentFocusedWindow() else { return }
         tilingEngine.primeMinimumSizes([focused])
@@ -206,6 +227,20 @@ final class WorkspaceOrchestrator {
 
     // MARK: - move workspace to adjacent monitor
 
+    /// Swap the cursor's workspace with the workspace currently on the
+    /// adjacent monitor in `direction` (left or right only).
+    ///
+    /// Sequence:
+    /// 1. Hide windows on both the moving workspace and the displaced
+    ///    workspace (the one currently on the target monitor).
+    /// 2. Restore floating frames on the fallback workspace that takes
+    ///    over the source monitor.
+    /// 3. Retile every visible space.
+    /// 4. Restore floating frames on the moved workspace, now positioned
+    ///    on the target monitor.
+    ///
+    /// Disabled monitors are excluded from the candidate set on both
+    /// sides — moves involving them are rejected without effect.
     func moveCurrentWorkspaceToMonitor(_ direction: Direction) {
         let currentScreen = screenUnderCursor()
 

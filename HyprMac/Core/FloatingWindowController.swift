@@ -1,17 +1,29 @@
+// Floating-window lifecycle: tile/float toggle, cycle, raise-behind, and
+// the auto-float predicate. Holds direct references to long-lived services
+// and uses closure handles for the WM-side glue (animated retile, focus
+// border refresh, position cache).
+
 import Cocoa
 
-// owns floating-window lifecycle: float/tile toggle, cycle-focus, raise-behind, auto-float predicate.
-// hard dependencies are constructor-injected; WM-side glue (animatedRetile, updateFocusBorder,
-// updatePositionCache, menu-tracking lookup) comes in via closure handles, mirroring
-// the WorkspaceOrchestrator pattern from Phase 3.
-//
-// what does NOT live here:
-//   - tilingEngine.onAutoFloat callback wiring (orchestration glue, stays in WM init)
-//   - workspace assignment for new floaters (discovery owns it)
-//   - per-window focus border refresh (FocusBorder + WM's updateFocusBorder)
-//
-// reentrancy: raiseBehind() guards itself with a same-stack-frame Bool + defer (per §5.5
-// — same-stack-frame guard, not a date-gated suppression).
+/// Owner of floating-window behavior.
+///
+/// Public surface: `toggle` flips a window between tiled and floating;
+/// `cycleFocus` rotates focus across visible floaters; `raiseBehind`
+/// lifts floaters that ended up behind tiled windows; `shouldAutoFloat`
+/// is the single predicate used by snapshot and discovery to decide
+/// whether a freshly-seen window enters tiling.
+///
+/// What does not live here: the `onAutoFloat` callback wiring on
+/// `TilingEngine` (stays in `WindowManager` init), workspace assignment
+/// for new floaters (`WindowDiscoveryService`), and per-window focus
+/// border refresh (the focus border itself plus `WindowManager`'s
+/// `updateFocusBorder`).
+///
+/// Reentrancy: `raiseBehind` guards itself with a same-stack-frame
+/// `Bool` + `defer`. This is not a date-gated suppression — see
+/// `SuppressionRegistry`.
+///
+/// Threading: main-thread only.
 final class FloatingWindowController {
 
     private let stateCache: WindowStateCache
@@ -59,8 +71,18 @@ final class FloatingWindowController {
 
     // MARK: - public API
 
-    // toggle a window between floating and tiled. caller resolves the focused window +
-    // its screen + workspace. disabled-monitor screens are a no-op (everything floats there).
+    /// Flip `window` between tiled and floating.
+    ///
+    /// Tiled → floating: the window leaves the BSP tree and pops back to
+    /// its `originalFrame` (when on-screen) or to a screen-centered
+    /// fallback. Floating → tiled: the window enters the BSP tree at the
+    /// best-fit slot; if the tree is full, an existing tile is evicted
+    /// to floating to make room.
+    ///
+    /// On disabled monitors the call is a no-op — everything floats
+    /// there by definition. The actual retile is wrapped in
+    /// `animatedRetile` so the surrounding tiles slide instead of
+    /// snapping.
     func toggle(_ window: HyprWindow, on screen: NSScreen, in workspace: Int) {
         if workspaceManager.isMonitorDisabled(screen) {
             hyprLog(.debug, .floating, "toggle: monitor disabled, no tiling available")
@@ -123,9 +145,14 @@ final class FloatingWindowController {
         }
     }
 
-    // cycle through visible floating windows and raise the next one.
-    // suppresses FFM + activation-switch briefly so the focus change isn't undone
-    // by surrounding mouse/activation noise.
+    /// Cycle focus through visible floating windows in id order, raising
+    /// each in turn.
+    ///
+    /// Suppresses FFM and activation-switch briefly so the focus change
+    /// is not undone by mouse motion or activation churn. Off-screen
+    /// floaters are recentered onto the primary screen before being
+    /// focused, so a floater hidden across a disconnected monitor still
+    /// becomes reachable.
     func cycleFocus() {
         suppressions.suppress("mouse-focus", for: 0.3)
         suppressions.suppress("activation-switch", for: 0.5)
@@ -174,9 +201,15 @@ final class FloatingWindowController {
         }
     }
 
-    // re-raise any floating windows that ended up behind tiled windows on their screen.
-    // suppresses FFM + activation-switch briefly, then restores focus to the previously
-    // focused tiled window so the raise doesn't hijack focus.
+    /// Lift any floating windows that ended up behind tiled windows on
+    /// their screen.
+    ///
+    /// Honors the same-stack reentrancy guard so app-activation churn
+    /// does not retrigger the raise mid-flight, and skips entirely while
+    /// a native menu is tracking — the post-raise focus restore would
+    /// dismiss the menu. After raising, focus is restored to the
+    /// previously focused tiled window via `focusWithoutRaise` so the
+    /// raise itself does not hijack keyboard focus.
     func raiseBehind() {
         guard !isRaising else { return }
         // skip while a native menu is tracking — the post-raise focusWithoutRaise below
@@ -212,9 +245,11 @@ final class FloatingWindowController {
         }
     }
 
-    // predicate: should this window auto-float on discovery / startup?
-    // unifies the "is in excludedBundleIDs" check that snapshotAndTile and discovery both run.
-    // disabled-monitor auto-float is a separate decision (different reason, separate logic).
+    /// `true` when `window` should auto-float on first discovery.
+    ///
+    /// Single source for the "excluded bundle ID" check shared between
+    /// `snapshotAndTile` and `WindowDiscoveryService`. Disabled-monitor
+    /// auto-float is a separate decision with separate logic.
     func shouldAutoFloat(_ window: HyprWindow, excludedBundleIDs: Set<String>) -> Bool {
         guard let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier else {
             return false
@@ -224,7 +259,14 @@ final class FloatingWindowController {
 
     // MARK: - z-order helper (used by raiseBehind + cross-checks)
 
-    // returns floaters that are currently behind the frontmost tiled window on their screen.
+    /// Floaters currently sitting behind the frontmost tiled window on
+    /// their own screen, computed from
+    /// `CGWindowListCopyWindowInfo` z-order.
+    ///
+    /// Per-screen comparison: a floater on monitor A whose z-index is
+    /// greater (deeper) than the frontmost tiled window on monitor A is
+    /// flagged. Without z-order info, every visible floater is returned
+    /// (safe default — `raiseBehind` will lift everything).
     func floatingWindowsBehindTiled(
         floatingWindowIDs: Set<CGWindowID>,
         tiledPositions: [CGWindowID: CGRect]
@@ -273,7 +315,10 @@ final class FloatingWindowController {
 
     // MARK: - private helpers
 
-    // 25%-area visibility threshold — matches WindowManager + WindowDiscoveryService duplicate.
+    /// `true` when at least 25 % of `frame` overlaps `screenRect`.
+    /// Matches the duplicate in `WindowManager` and
+    /// `WindowDiscoveryService`; tracked as an extraction candidate but
+    /// kept inline until a third caller appears.
     private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
         let overlap = frame.intersection(screenRect)
         guard !overlap.isNull else { return false }

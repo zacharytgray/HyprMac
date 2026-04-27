@@ -1,69 +1,81 @@
+// Discovery service: detects window-set changes between polls, mutates the
+// window state cache for the lifecycle/classification half, and surfaces a
+// `WindowChanges` value so the caller can apply the rest in one explicit
+// pass.
+
 import Cocoa
 
-// describes a single poll-cycle delta produced by WindowDiscoveryService.detectChanges.
-//
-// the service updates its owned cache state (knownWindowIDs, hiddenWindowIDs,
-// windowOwners, originalFrames, floatingWindowIDs for auto-float, plus
-// tiledPositions/cachedWindows pruning on gone). everything else surfaces here
-// so the caller can apply external side effects in one explicit pass.
-//
-// per plan §3.2, the long-term shape is detect → ActionDispatcher.applyChanges.
-// in Phase 3 the caller is WindowManager; Phase 4 lifts that loop into the
-// dispatcher with no shape change here.
+/// Single-cycle discovery delta returned by
+/// `WindowDiscoveryService.computeChanges`.
+///
+/// The service updates its owned cache state — `knownWindowIDs`,
+/// `hiddenWindowIDs`, `windowOwners`, `originalFrames`, plus
+/// `floatingWindowIDs` for auto-float and `tiledPositions` /
+/// `cachedWindows` pruning on the gone path. Everything else surfaces in
+/// this struct so the caller can apply the engine, workspace, and focus
+/// reactions in one explicit pass.
 struct WindowChanges {
-    // newly discovered windows (wid not in knownWindowIDs at call time).
-    // cache state already updated for these. caller should:
-    //   - call workspaceManager.assignWindow(wid, toWorkspace:) for each EXCEPT
-    //     those whose wid is in newOnDisabledMonitor (auto-floated, no slot).
+    /// Newly discovered windows. Cache state is already updated. The
+    /// caller assigns each to a workspace, except for ids in
+    /// `newOnDisabledMonitor` (those auto-floated with no slot).
     let newWindows: [HyprWindow]
+
+    /// Subset of `newWindows` that opened on a disabled monitor. The
+    /// caller skips workspace assignment for these.
     let newOnDisabledMonitor: Set<CGWindowID>
 
-    // windows that returned from hidden state. cache updated (removed from
-    // hiddenWindowIDs, re-inserted into knownWindowIDs/owners). no other
-    // action required from the caller beyond the resulting retile.
+    /// Windows that came back from hidden state. Cache is already
+    /// updated (removed from `hiddenWindowIDs`, re-added to
+    /// `knownWindowIDs` and `windowOwners`); the caller's only follow-up
+    /// is the retile that `needsRetile` will request.
     let returned: [HyprWindow]
 
-    // windows that disappeared. cache updated:
-    //   - if owner pid still alive → moved to hiddenWindowIDs (kept in cache).
-    //   - if owner pid dead → fullyForgottenIDs.contains(id), full forget done.
+    /// Windows that disappeared. Each id is either in
+    /// `fullyForgottenIDs` (pid dead) or moved to `hiddenWindowIDs` (pid
+    /// alive, app minimized or window closed but app still running).
     let goneIDs: Set<CGWindowID>
 
-    // every wid the service called stateCache.forget(_:) on this cycle.
-    // includes pid-dead windows from the gone path AND ids swept during
-    // reconcileWindowState. caller must run external cleanup per id:
-    //   - tilingEngine.forgetMinimumSize(windowID:)
-    //   - workspaceManager.removeWindow(_:)
-    //   - focusController + focusBorder + dimmingOverlay cleanup if matches
+    /// Every id the service called `stateCache.forget(_:)` on this
+    /// cycle. Includes pid-dead windows from the gone path plus ids
+    /// swept during stale-state reconciliation. The caller runs external
+    /// cleanup for each: engine min-size memory, workspace assignment,
+    /// focus + border + dim state.
     let fullyForgottenIDs: Set<CGWindowID>
 
-    // (windowID, fromWorkspace, toWorkspace) for windows whose physical screen
-    // no longer matches their recorded workspace's screen. caller should call
-    // workspaceManager.moveWindow(wid, toWorkspace: toWorkspace) for each.
+    /// Windows whose physical screen no longer matches their recorded
+    /// workspace's screen — typically a manual cross-monitor drag or a
+    /// dock-click that raised the window on the wrong screen. The
+    /// caller calls `workspaceManager.moveWindow` for each.
     let screenDrift: [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)]
 
-    // true if the previously focused wid disappeared in goneIDs (whether to
-    // hidden or to forgotten). caller should refocusUnderCursor.
+    /// `true` when the previously-focused window id is in `goneIDs`
+    /// (whether moved to hidden or fully forgotten). The caller should
+    /// re-focus a window under the cursor.
     let focusedWindowGone: Bool
 
-    // true if anything happened that warrants a retile. sweep-only forgets
-    // do not bump this — they're silent state hygiene.
+    /// `true` when at least one observed change warrants a retile.
+    /// Stale-state sweeps do not bump this — they are silent state
+    /// hygiene with no visual consequence.
     var needsRetile: Bool {
         !newWindows.isEmpty || !goneIDs.isEmpty || !returned.isEmpty || !screenDrift.isEmpty
     }
 }
 
-// detects window-set changes since the last call. owns the lifecycle/classification
-// cache mutations (per §3.3, WindowStateCache is the cache; this service is the
-// only thing that mutates it on the discovery path).
-//
-// what does NOT live here:
-//   - workspace assignment (surfaced in WindowChanges, applied by caller).
-//   - tree mutation / retile (surfaced via needsRetile, applied by caller).
-//   - focus reactions (surfaced via focusedWindowGone, applied by caller).
-//   - the @objc notification handlers (stay on WindowManager — they also do
-//     forgetApp + scheduling, which compose cache + lifecycle responsibilities).
-//
-// main-thread is a precondition. no synchronization beyond that.
+/// Detects window-set changes between poll cycles.
+///
+/// Owns the lifecycle and classification half of `WindowStateCache`
+/// mutation on the discovery path: new, returned, gone, hidden, fully
+/// forgotten, plus auto-float of excluded apps and disabled-monitor
+/// windows. Everything else — workspace assignment, tree mutation,
+/// retile, focus reactions — is surfaced in `WindowChanges` and applied
+/// by the caller.
+///
+/// The `@objc` notification handlers (app launch/terminate, app
+/// hide/unhide) stay on `WindowManager` because they compose cache
+/// updates with scheduling and per-app cleanup that does not belong on
+/// this service.
+///
+/// Threading: main-thread only.
 final class WindowDiscoveryService {
 
     private let stateCache: WindowStateCache
@@ -71,8 +83,9 @@ final class WindowDiscoveryService {
     private let displayManager: DisplayManager
     private let workspaceManager: WorkspaceManager
 
-    // injected so tests don't depend on NSRunningApplication. production uses
-    // the default; tests provide a deterministic lookup.
+    /// Resolves a process id to its bundle identifier. Injected so tests
+    /// can swap a deterministic lookup; production uses
+    /// `NSRunningApplication`.
     private let bundleIDForPID: (pid_t) -> String?
 
     init(stateCache: WindowStateCache,
@@ -87,7 +100,16 @@ final class WindowDiscoveryService {
         self.bundleIDForPID = bundleIDForPID
     }
 
-    // production entry: snapshot AX + running pids, run the diff.
+    /// Production entry point: snapshot AX, capture running pids, and
+    /// run the diff.
+    ///
+    /// - Parameter excludedBundleIDs: Apps that should auto-float on
+    ///   discovery (never enter tiling).
+    /// - Parameter focusedWindowID: Window currently believed to have
+    ///   focus; used to populate `focusedWindowGone`.
+    /// - Parameter animationInProgress: Skip drift detection while
+    ///   animations are running — animator-parked frames look like
+    ///   physical drift.
     func detectChanges(excludedBundleIDs: Set<String>, focusedWindowID: CGWindowID, animationInProgress: Bool) -> WindowChanges {
         let snapshot = accessibility.getAllWindows()
         let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
@@ -100,9 +122,13 @@ final class WindowDiscoveryService {
         )
     }
 
-    // testable entry: pure with respect to AX + NSWorkspace. caller supplies
-    // a window snapshot and the running-pid set; this method does the diff
-    // and mutates the cache.
+    /// Testable entry point. Pure with respect to AX and `NSWorkspace`:
+    /// the caller supplies the snapshot and running-pid set, and this
+    /// method does the diff and mutates the cache.
+    ///
+    /// - Returns: a `WindowChanges` value describing what changed and
+    ///   what the caller still needs to apply (workspace assignment,
+    ///   external cleanup, retile, refocus).
     func computeChanges(snapshot: [HyprWindow],
                         runningPIDs: Set<pid_t>,
                         excludedBundleIDs: Set<String>,
@@ -212,10 +238,16 @@ final class WindowDiscoveryService {
         )
     }
 
-    // fully forget every window owned by `pid`. used by the appDidTerminate path
-    // before scheduling a poll, so hidden/minimized windows owned by the dead app
-    // don't leak in the cache (they wouldn't appear in the gone-detect set).
-    // returns the set of forgotten ids so the caller can run external cleanup.
+    /// Fully forget every window owned by `pid`.
+    ///
+    /// Called from the `appDidTerminate` path before scheduling a poll,
+    /// so hidden or minimized windows owned by the dead app do not leak
+    /// in the cache — those ids never appear in the gone-detect set
+    /// because the gone path only sees windows still in
+    /// `knownWindowIDs`.
+    ///
+    /// - Returns: the set of ids forgotten, so the caller can run
+    ///   external cleanup for each.
     @discardableResult
     func forgetApp(_ pid: pid_t) -> Set<CGWindowID> {
         let ids = Set(stateCache.windowOwners.compactMap { $0.value == pid ? $0.key : nil })
@@ -225,10 +257,13 @@ final class WindowDiscoveryService {
 
     // MARK: - private helpers
 
-    // sweep state for ids that are no longer alive anywhere. catches drift from
-    // edge cases (race conditions, terminated apps whose windows weren't seen
-    // disappearing first, hidden windows whose owners died). returns the set of
-    // ids that were forgotten so the caller can run external cleanup for each.
+    /// Sweep cache state for ids that are no longer alive anywhere.
+    ///
+    /// Catches drift from edge cases the gone-detect pass misses: race
+    /// conditions during a poll, terminated apps whose windows
+    /// disappeared via a different path, hidden windows whose owners
+    /// died. Returns the ids forgotten so the caller can run external
+    /// cleanup.
     private func sweepStaleState(runningPIDs: Set<pid_t>) -> Set<CGWindowID> {
         var forgotten: Set<CGWindowID> = []
 
@@ -259,11 +294,15 @@ final class WindowDiscoveryService {
         return forgotten
     }
 
-    // detect tiled windows that physically drifted to a different screen than
-    // their recorded workspace lives on (e.g. user dragged across monitors,
-    // macOS dock-clicked an app and raised a window on the wrong screen).
-    // surfaces (id, fromWorkspace, toWorkspace) tuples; the caller applies
-    // workspaceManager.moveWindow for each.
+    /// Detect tiled windows whose physical screen no longer matches the
+    /// screen of their recorded workspace.
+    ///
+    /// Sources include manual cross-monitor drag and dock-click
+    /// activations that raise an app's window on the wrong screen.
+    /// Floating windows are skipped (they can be anywhere by design).
+    /// Cases where the recorded screen and physical screen are the same
+    /// are filtered out to suppress transient frame reads taken
+    /// mid-retile.
     private func detectScreenDrift(_ allWindows: [HyprWindow]) -> [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)] {
         let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
         var drifts: [(CGWindowID, Int, Int)] = []
@@ -288,7 +327,9 @@ final class WindowDiscoveryService {
         return drifts
     }
 
-    // check if at least 25% of the frame is visible on the given screen rect
+    /// `true` when at least 25 % of `frame` overlaps `screenRect`. Used
+    /// to decide whether a captured frame is on-screen for the purposes
+    /// of seeding `originalFrames`.
     private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
         let overlap = frame.intersection(screenRect)
         guard !overlap.isNull else { return false }
