@@ -1,10 +1,16 @@
+// Named constants for the tiling subsystem. Single source for every
+// magic number that BSPNode, BSPTree, TilingEngine, MinSizeMemory, and
+// FrameReadbackPoller would otherwise inline.
+
 import Foundation
 
-// named constants for the tiling subsystem.
-// every value carries an origin (empirical / specified / OS-imposed) and the
-// effect of changing it. user-tunable defaults (gap, padding) live here too —
-// they are still configurable via UserConfig at runtime, but the *defaults* are
-// single-sourced here so BSPNode, BSPTree, and TilingEngine all agree.
+/// Tiling-subsystem constants.
+///
+/// Every value carries an origin (empirical / specified / OS-imposed)
+/// and notes the effect of changing it. User-tunable defaults (gap,
+/// padding) live here too — they are still configurable via
+/// `UserConfig` at runtime, but the defaults are single-sourced here so
+/// every tiling type agrees.
 enum TilingConfig {
 
     // MARK: - layout defaults (user-tunable)

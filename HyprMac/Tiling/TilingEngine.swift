@@ -1,5 +1,10 @@
+// One BSP tree per `(workspace, screen)` pair plus the orchestration
+// surface that drives smart insert, swap, split toggling, two-pass
+// readback, and min-size memory.
+
 import Cocoa
 
+/// Stable key for a `(workspace, screen)` tree.
 private struct TilingKey: Hashable {
     let workspace: Int
     let screenID: Int
@@ -10,25 +15,47 @@ private struct TilingKey: Hashable {
     }
 }
 
+/// Owner of every BSP tree HyprMac maintains.
+///
+/// One tree per `(workspace, screen)` pair. Keeps gap/padding tunables,
+/// per-screen depth overrides, the `MinSizeMemory` for two-pass layout
+/// resolution, and the `onAutoFloat` callback that fires when a window
+/// cannot fit. Public surface owns smart insert, swap, split toggling,
+/// readback-driven settle/conflict resolution, and tree migration on
+/// monitor reconnect.
+///
+/// Threading: main-thread only.
 class TilingEngine {
     private var trees: [TilingKey: BSPTree] = [:]
     private var pendingInsertedWindowIDs: [TilingKey: [CGWindowID]] = [:]
     let displayManager: DisplayManager
 
+    /// Gap between adjacent tiles, in pixels. Default from
+    /// `TilingConfig.defaultGap`; runtime-tunable from the settings UI.
     var gapSize: CGFloat = TilingConfig.defaultGap
+
+    /// Padding between tiles and the screen edge, in pixels.
+    /// Runtime-tunable.
     var outerPadding: CGFloat = TilingConfig.defaultOuterPadding
 
-    // per-screen max BSP depth overrides, keyed by NSScreen.localizedName
+    /// Per-screen max BSP depth overrides, keyed by
+    /// `NSScreen.localizedName`. Falls back to
+    /// `TilingConfig.defaultMaxDepth` for screens without an override.
     var maxSplitsPerMonitor: [String: Int] = [:]
 
+    /// Effective max depth for `screen`, honoring any per-screen
+    /// override.
     func maxDepth(for screen: NSScreen) -> Int {
         maxSplitsPerMonitor[screen.localizedName] ?? TilingConfig.defaultMaxDepth
     }
 
-    // minimum child dimension (px) for smart insert backtracking
+    /// Minimum child dimension (px) below which smart insert
+    /// backtracks to a shallower leaf.
     var minSlotDimension: CGFloat = TilingConfig.minSlotDimension
 
-    // callback when a window can't fit (exceeds max depth)
+    /// Fired when a window cannot enter the tree (max depth reached
+    /// even after smart-insert backtracking). The caller is expected to
+    /// auto-float the window.
     var onAutoFloat: ((HyprWindow) -> Void)?
 
     private let minSizes = MinSizeMemory()
@@ -37,8 +64,14 @@ class TilingEngine {
         self.displayManager = displayManager
     }
 
+    /// Seed `MinSizeMemory` from current AX values for every window.
+    /// Called before any layout pass so size constraints are fresh.
     func primeMinimumSizes(_ windows: [HyprWindow]) { minSizes.prime(windows) }
+
+    /// Drop any stored min-size memory for `windowID`. Called when a
+    /// window is forgotten by the discovery layer.
     func forgetMinimumSize(windowID: CGWindowID) { minSizes.forget(windowID: windowID) }
+
     private func minimumSize(for window: HyprWindow?) -> CGSize { minSizes.minimumSize(for: window) }
 
     private func tree(for key: TilingKey) -> BSPTree {
@@ -48,8 +81,10 @@ class TilingEngine {
         return tree
     }
 
-    // non-creating accessor for tests — returns the live tree if one exists for
-    // (workspace, screen), nil otherwise. production callers go through tree(for:).
+    /// Non-creating tree accessor for tests. Returns the live tree
+    /// for `(workspace, screen)`, or `nil` when none exists.
+    /// Production callers go through `tree(for:)` so the tree is
+    /// created on demand.
     internal func existingTree(forWorkspace workspace: Int, screen: NSScreen) -> BSPTree? {
         trees[TilingKey(workspace: workspace, screen: screen)]
     }
@@ -272,8 +307,16 @@ class TilingEngine {
         return TileMembershipResult(key: key, tree: t, rect: rect, insertedWindows: insertedWindows)
     }
 
-    // tile windows for a workspace on a specific screen.
-    // screen is provided explicitly — don't trust window physical position (may be hidden in corner)
+    /// Tile `windows` for `(workspace, screen)`.
+    ///
+    /// `screen` is supplied explicitly because window positions can be
+    /// the hide-corner sliver — physical position is not trustworthy
+    /// during a workspace switch. Two-pass: pass 1 lays out and reads
+    /// back actual frames; pass 2 (when conflicts are detected)
+    /// adjusts split ratios via `MinSizeMemory` and re-applies. If
+    /// pass-2 still overflows and inserted windows are present, the
+    /// engine auto-floats the overflowing windows; otherwise it
+    /// preserves the recorded mins and falls back to pass-1 frames.
     func tileWindows(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) {
         let m = updateTreeMembership(windows, onWorkspace: workspace, screen: screen)
         let key = m.key
@@ -341,7 +384,10 @@ class TilingEngine {
         return m.tree.layout(in: m.rect, gap: gapSize, padding: outerPadding)
     }
 
-    // add a single window to the tree for its workspace+screen and retile
+    /// Add a single window to the `(workspace, screen)` tree and
+    /// retile. Auto-floats via `onAutoFloat` when smart insert cannot
+    /// place the window without violating `minSlotDimension`. No-op
+    /// for floating windows.
     func addWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen) {
         guard !window.isFloating else { return }
         primeMinimumSizes([window])
@@ -360,6 +406,9 @@ class TilingEngine {
         retile(key: key, screen: screen, inserted: inserted)
     }
 
+    /// Remove `window` from its workspace's tree on whichever screen
+    /// holds it. Compacts and prunes the tree, then retiles every
+    /// affected screen.
     func removeWindow(_ window: HyprWindow, fromWorkspace workspace: Int) {
         // search all trees for this workspace
         for (key, t) in trees where key.workspace == workspace {
@@ -430,7 +479,8 @@ class TilingEngine {
         }
     }
 
-    // apply a manual resize: update split ratios from the new frame, then retile
+    /// Apply a manual resize: update the surrounding split ratios so
+    /// `window`'s new frame is preserved, then retile.
     func applyResize(_ window: HyprWindow, newFrame: CGRect, onWorkspace workspace: Int, screen: NSScreen) {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
@@ -440,6 +490,15 @@ class TilingEngine {
         retile(key: key, screen: screen)
     }
 
+    /// `true` when `a` and `b` can be swapped without violating any
+    /// recorded min-size constraint.
+    ///
+    /// Snapshots the tree, performs a trial swap with cleared
+    /// user-resize ratios, and asks `LayoutEngine` whether the result
+    /// fits every window's currently-known minimum. Restores the
+    /// original tree before returning regardless of outcome. Primes
+    /// `MinSizeMemory` for every window in the tree first — siblings'
+    /// min sizes still influence the post-swap fit decision.
     func canSwapWindows(_ a: HyprWindow, _ b: HyprWindow,
                         onWorkspace workspace: Int, screen: NSScreen) -> Bool {
         let key = TilingKey(workspace: workspace, screen: screen)
@@ -469,6 +528,13 @@ class TilingEngine {
         return layoutCanAccommodateKnownMinimums(t, rect: rect)
     }
 
+    /// Synchronous swap path (no animation).
+    ///
+    /// Snapshots the tree before swapping so a post-readback overflow
+    /// — which `canSwapWindows`' seeded mins can miss when an app's
+    /// real minimum depends on UI state — can be reverted. Returns
+    /// `true` on success, `false` when the swap was rejected up front
+    /// or reverted after readback.
     @discardableResult
     func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) -> Bool {
         guard canSwapWindows(a, b, onWorkspace: workspace, screen: screen) else { return false }
@@ -586,6 +652,12 @@ class TilingEngine {
         return true
     }
 
+    /// Cross-monitor swap. Locates whichever trees hold `a` and `b`,
+    /// exchanges their leaf window references in place, and retiles
+    /// both screens. Silent no-op when either window is not in any
+    /// tree (handles drag-from-floating cases). The two retile passes
+    /// run synchronously back-to-back; pollers are gated externally
+    /// via `cross-swap-in-flight` for the ~800 ms it takes.
     func crossSwapWindows(_ a: HyprWindow, _ b: HyprWindow) {
         primeMinimumSizes([a, b])
         var keyA: TilingKey?
@@ -610,6 +682,9 @@ class TilingEngine {
         if let sB = screenB { retile(key: kB, screen: sB) }
     }
 
+    /// Synchronous split-direction toggle for `window`'s parent
+    /// node. Animation-free path; the dispatcher's animated path goes
+    /// through `prepareToggleSplitLayout` instead.
     func toggleSplit(_ window: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
@@ -642,6 +717,12 @@ class TilingEngine {
         return t.layout(in: rect, gap: gapSize, padding: outerPadding)
     }
 
+    /// `true` when the `(workspace, screen)` tree has room for an
+    /// additional window without violating min-size constraints.
+    ///
+    /// `window` is optional — passing it primes its size for the
+    /// pair-fit check; passing `nil` checks generic capacity.
+    /// Empty trees are always fittable.
     func canFitWindow(_ window: HyprWindow? = nil,
                       onWorkspace workspace: Int,
                       screen: NSScreen) -> Bool {
@@ -662,7 +743,14 @@ class TilingEngine {
                            rect: rect) != nil
     }
 
-    // force-insert a window on an explicit screen, evicting deepest-right if full
+    /// Force `window` into the `(workspace, screen)` tree, evicting
+    /// the deepest-right tile when no room remains.
+    ///
+    /// Used by float→tile toggles when the user explicitly wants
+    /// `window` tiled even though smart insert would otherwise reject
+    /// for capacity. Returns the evicted window so the caller can
+    /// auto-float it; `nil` when the insert succeeded without
+    /// eviction.
     func forceInsertWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen) -> HyprWindow? {
         primeMinimumSizes([window])
         let key = TilingKey(workspace: workspace, screen: screen)

@@ -1,22 +1,27 @@
+// Per-window min-size bookkeeping for the tiling subsystem. macOS apps
+// do not expose reliable `AXMinimumSize`; this class learns the actual
+// floor from `FrameReadbackPoller`'s pass-1 readback and remembers it
+// for subsequent layout decisions.
+
 import Cocoa
 
-// MinSizeMemory — per-window min-size bookkeeping for the tiling subsystem.
-//
-// macOS apps don't expose reliable AXMinimumSize. for tiled apps with hard
-// minimums (Spotify, Messages, Xcode), we learn the actual floor from
-// FrameReadbackPoller's pass-1 readback: when an app refuses to shrink, the
-// observed actual size becomes the new "known" min until a later layout
-// witnesses an even tighter accepted resize and lowers the bound.
-//
-// hysteresis on both ends:
-//   - record: only raise (max with existing on the affected axis); reject
-//     bogus AX sentinels via `usableMinSizeMaxPx`.
-//   - lower:  require an accepted size at least `lowerMinSizeAcceptedDeltaPx`
-//     below the current bound before relaxing — sub-pixel accepts shouldn't
-//     ratchet the floor down.
-//
-// the memory mirrors back onto each HyprWindow's `observedMinSize` so other
-// subsystems (drag-swap fit checks) see consistent values.
+/// Per-window min-size memory.
+///
+/// macOS apps with hard minimums (Spotify, Messages, Xcode) refuse to
+/// shrink past a UI-state-dependent floor that AX does not surface up
+/// front. When pass-1 readback observes an oversize, the observed size
+/// becomes the new known min until a later layout witnesses an even
+/// tighter accepted resize and lowers the bound.
+///
+/// Hysteresis on both ends:
+/// - Record: only raises (max with existing on the affected axis);
+///   rejects bogus AX sentinels via `usableMinSizeMaxPx`.
+/// - Lower: requires an accepted size at least
+///   `lowerMinSizeAcceptedDeltaPx` below the current bound — sub-pixel
+///   accepts cannot ratchet the floor down.
+///
+/// The memory is mirrored back onto each `HyprWindow.observedMinSize`
+/// so other subsystems (drag-swap fit checks) see consistent values.
 class MinSizeMemory {
     private var known: [CGWindowID: CGSize] = [:]
 

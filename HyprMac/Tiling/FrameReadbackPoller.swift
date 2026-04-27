@@ -1,25 +1,27 @@
+// Pass-2 layout settle and conflict detection. After the engine writes
+// target frames, AX returns asynchronously; this type drives the
+// readback loop that resolves the gap.
+
 import Cocoa
 
-// FrameReadbackPoller — pass-2 layout settle/conflict detection.
-//
-// after the engine writes target frames via setFrame, AX returns asynchronously
-// — apps that won't shrink (Spotify, Messages) or are clamped by a screen-edge
-// race (cross-monitor moves) report different actual sizes than requested.
-// this type drives the readback loop:
-//
-//   1. sleep `readbackPollInterval`, snapshot all readings
-//   2. while any reading exceeds or undershoots tolerance and we haven't hit
-//      `readbackMaxWait`, sleep again and re-read
-//      - undershoots get re-applied (re-issued setFrame against the cross-screen race)
-//      - oversized readings need `readbackStableSamples` consecutive matching
-//        reads after a `readbackMinConflictSettle` floor before they count as
-//        a real min-size conflict (transient AX sizes don't inflate ratios)
-//   3. classify final readings into conflicts (settled oversize), accepted
-//      (within tolerance), and observations (oversize per-axis flags for the
-//      engine's min-size memory)
-//
-// pure with respect to tiling state — the engine owns the min-size memory and
-// applies these results after the call returns.
+/// Pass-2 settle / conflict detector for the tiling engine's two-pass
+/// layout.
+///
+/// Algorithm:
+/// 1. Sleep `readbackPollInterval`, snapshot AX frames.
+/// 2. While any reading still differs from the target by more than
+///    tolerance and `readbackMaxWait` has not elapsed, sleep again and
+///    re-read. Undershoots get re-applied via a fresh `setFrame` (the
+///    cross-screen-race case). Oversize readings need
+///    `readbackStableSamples` consecutive matching reads after a
+///    `readbackMinConflictSettle` floor before they count as a real
+///    min-size conflict — transient sizes do not inflate ratios.
+/// 3. Classify final readings into conflicts (settled oversize),
+///    accepted (within tolerance), and observations (per-axis oversize
+///    flags fed into `MinSizeMemory`).
+///
+/// Pure with respect to tiling state — `TilingEngine` owns the
+/// min-size memory and applies the result after the call returns.
 struct FrameReadbackPoller {
 
     struct Conflict {

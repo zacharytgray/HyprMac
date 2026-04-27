@@ -1,19 +1,19 @@
-// BSPTree — owning container for one binary space partition tree.
-//
-// the tiling engine keeps one tree per (workspace, screen) pair; this type is
-// agnostic to that mapping. every public method is pure with respect to the
-// tree (no AX, no AppKit) so it's directly unit-testable. layout math runs
-// entirely through CGRect / CGSize.
-//
-// dwindle layout: each split picks the longer axis of the parent rect; the new
-// window goes on the right/bottom by default. smartInsert refines this by
-// backtracking to shallower leaves when slots would fall below
-// TilingConfig.minSlotDimension on constrained monitors.
-//
-// see also: BSPNode (per-node invariants), TilingConfig (bounds + tolerances),
-// docs/tiling-algorithm.md (long-form, lands in Phase 8).
+// Owning container for one binary space partition tree. `TilingEngine`
+// keeps one per `(workspace, screen)` pair; this type is agnostic to
+// that mapping. Pure with respect to AX and AppKit — geometry is all
+// `CGRect` / `CGSize`, so the type is directly unit-testable.
+
 import Foundation
 
+/// Owns a BSP tree's root node and exposes the structural and layout
+/// API the tiling engine drives.
+///
+/// Default insert places the new window at the deepest-right leaf,
+/// matching the dwindle convention. `smartInsert` refines this by
+/// backtracking to shallower leaves when a child would fall below
+/// `TilingConfig.minSlotDimension` on a constrained monitor (typical
+/// vertical displays). Long-form algorithm walkthroughs live in
+/// `docs/tiling-algorithm.md`.
 class BSPTree {
     var root: BSPNode = BSPNode()
 

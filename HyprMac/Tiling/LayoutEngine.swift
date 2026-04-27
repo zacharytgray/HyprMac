@@ -1,15 +1,15 @@
+// Pure-ish geometric helpers for the tiling subsystem. No AX, no
+// animation, no persistent engine state — every input arrives as a
+// parameter and every result is returned, so the math is unit-testable.
+
 import Cocoa
 
-// LayoutEngine — pure-ish geometric helpers for the tiling subsystem.
-//
-// these helpers were previously inline on TilingEngine but have no dependency
-// on AX, animation, or persistent engine state — they take their inputs as
-// parameters and return values. lifted out so the tiling engine's orchestration
-// surface is smaller and the geometric logic is independently testable.
-//
-// the only impure surface is `fittingLeaf` / `smartInsertFitting`, which need
-// to look up min-sizes for windows already in the tree. callers pass that lookup
-// in as a closure so the engine can wire it to its `knownMinSizes` map.
+/// Geometric helpers for the tiling subsystem.
+///
+/// Pure with respect to AX and animation. The only impure surface is
+/// `fittingLeaf` / `smartInsertFitting`, which need to look up
+/// min-sizes for windows already in the tree; callers pass that lookup
+/// in as a closure so this type does not depend on `MinSizeMemory`.
 struct LayoutEngine {
     let gapSize: CGFloat
     let outerPadding: CGFloat
