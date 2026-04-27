@@ -48,8 +48,10 @@
 		557EC1265B83BD0ACFB2564C /* FrameReadbackPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */; };
 		577FBDB77676F37630FAF0FE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D52156D6AEACDCE26A6370BF /* Sparkle */; };
 		5986B98949D5F866D27EADEC /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF93D6331BC4826814BB7007 /* Constants.swift */; };
+		5C5F0598475E4DEDB6DC82AC /* DwindleLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F356D39971D5A80B38494D15 /* DwindleLayout.swift */; };
 		696EB6B8B6A4A823B6DBBCD0 /* WindowDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */; };
 		6D69BEB2961B224657725D8A /* WelcomeContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EBC04818743A6F6231119AB /* WelcomeContent.swift */; };
+		7A66C97726B539669E56D8DD /* DwindleLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */; };
 		7DFABB5348197A0B951CFD6D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
 		7FB049BFF3F0B8E61B5D9177 /* BundleIDPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */; };
 		817F97F4F963BEF681283D1F /* PaginationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5530B03FA6EEA9DDB4BC9E63 /* PaginationView.swift */; };
@@ -123,6 +125,7 @@
 		1EC1549522E2889DEA3AD528 /* WhatsNewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewView.swift; sourceTree = "<group>"; };
 		1F4BE620A1670E1D89160707 /* KeybindCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindCategory.swift; sourceTree = "<group>"; };
 		23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
+		26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwindleLayoutTests.swift; sourceTree = "<group>"; };
 		2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTreeTests.swift; sourceTree = "<group>"; };
 		298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngineTests.swift; sourceTree = "<group>"; };
 		2CD84800A82DD5466833975C /* MouseTrackingManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MouseTrackingManager.swift; sourceTree = "<group>"; };
@@ -195,6 +198,7 @@
 		EEBFDE19D0C8E2633C66241B /* CGSPrivate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = CGSPrivate.h; sourceTree = "<group>"; };
 		F06CFE0CDB28ECDC9411EEB1 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		F24369A83C38C9C3757A23FB /* KeyRemapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRemapper.swift; sourceTree = "<group>"; };
+		F356D39971D5A80B38494D15 /* DwindleLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwindleLayout.swift; sourceTree = "<group>"; };
 		F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRecorderView.swift; sourceTree = "<group>"; };
 		F548FEECDD35DFF1120E2553 /* ConfigMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigMigrationTests.swift; sourceTree = "<group>"; };
 		F95CD8FB8B25B86236401214 /* AppIcon.svg */ = {isa = PBXFileReference; path = AppIcon.svg; sourceTree = "<group>"; };
@@ -364,6 +368,7 @@
 			children = (
 				8B20DF87F29CD5B1164F1E80 /* Action.swift */,
 				C5ECA897D9C7F4DF25FFE758 /* DefaultKeybinds.swift */,
+				F356D39971D5A80B38494D15 /* DwindleLayout.swift */,
 				85E2687861DA70718C132100 /* HyprKey.swift */,
 				FA85C3347F1D7A782EA9EA39 /* HyprWindow.swift */,
 				6E4E656D3CA021B130775CC3 /* Keybind.swift */,
@@ -390,6 +395,7 @@
 				2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */,
 				F548FEECDD35DFF1120E2553 /* ConfigMigrationTests.swift */,
 				6B23E3313247FD77173D35DD /* DefaultKeybindsTests.swift */,
+				26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */,
 				084CC77D9BC9594A5E7DE366 /* FocusStateControllerTests.swift */,
 				C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */,
 				43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */,
@@ -577,6 +583,7 @@
 				0D4C6B4D33142A677A590C35 /* DisplayManager.swift in Sources */,
 				0B9D198B68374BB6E0D0FA1F /* DragManager.swift in Sources */,
 				AC01521BE9F2030CF901A2C9 /* DragSwapHandler.swift in Sources */,
+				5C5F0598475E4DEDB6DC82AC /* DwindleLayout.swift in Sources */,
 				531ACE79FC3FD6C76D047281 /* FloatingWindowController.swift in Sources */,
 				3096F5E0A6427D2DB64D076E /* FocusBorder.swift in Sources */,
 				16658F8479CAE2DD07B18DB5 /* FocusStateController.swift in Sources */,
@@ -636,6 +643,7 @@
 				4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */,
 				B82265C32A87C7C47C0921AE /* ConfigMigrationTests.swift in Sources */,
 				2A235468195A778CCCA51C70 /* DefaultKeybindsTests.swift in Sources */,
+				7A66C97726B539669E56D8DD /* DwindleLayoutTests.swift in Sources */,
 				EDF1F6BE9094C220921182DC /* FocusStateControllerTests.swift in Sources */,
 				EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */,
 				C1CCA6C07D0B273CF3AB3D6C /* HandleDisplayChangeTests.swift in Sources */,
