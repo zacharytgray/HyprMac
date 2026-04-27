@@ -56,17 +56,9 @@ class KeybindOverlayController {
 private struct KeybindOverlayView: View {
     let keybinds: [Keybind]
 
-    private let categoryOrder = [
-        "Focus & Navigation",
-        "Window Management",
-        "Workspaces",
-        "Apps",
-        "System"
-    ]
-
-    private var grouped: [(category: String, binds: [Keybind])] {
-        let pairs = keybinds.map { ($0, category(for: $0)) }
-        return categoryOrder.compactMap { cat in
+    private var grouped: [(category: KeybindCategory, binds: [Keybind])] {
+        let pairs = keybinds.map { ($0, KeybindCategory.from($0.action)) }
+        return KeybindCategory.allCases.compactMap { cat in
             let binds = pairs.filter { $0.1 == cat }.map(\.0)
             return binds.isEmpty ? nil : (cat, binds)
         }
@@ -77,7 +69,7 @@ private struct KeybindOverlayView: View {
             VStack(alignment: .leading, spacing: 16) {
                 ForEach(grouped, id: \.category) { group in
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(group.category)
+                        Text(group.category.rawValue)
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .textCase(.uppercase)
@@ -112,18 +104,4 @@ private struct KeybindOverlayView: View {
         }
     }
 
-    private func category(for bind: Keybind) -> String {
-        switch bind.action {
-        case .focusDirection, .focusFloating, .focusMenuBar:
-            return "Focus & Navigation"
-        case .swapDirection, .toggleFloating, .toggleSplit, .closeWindow:
-            return "Window Management"
-        case .switchWorkspace, .moveToWorkspace, .moveWorkspaceToMonitor, .cycleWorkspace:
-            return "Workspaces"
-        case .launchApp:
-            return "Apps"
-        case .showKeybinds:
-            return "System"
-        }
-    }
 }

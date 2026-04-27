@@ -9,11 +9,9 @@ struct KeybindsSettingsView: View {
     @State private var showingAddSheet = false
     @State private var editingBind: Keybind?
 
-    private let categoryOrder = [
-        "Focus & Navigation",
-        "Window Management",
-        "Workspaces",
-        "System"
+    // launchApp lives in its own settings tab — not shown here
+    private static let visibleCategories: [KeybindCategory] = [
+        .focusNav, .windowManagement, .workspaces, .system
     ]
 
     private var nonLauncherBinds: [Keybind] {
@@ -23,9 +21,9 @@ struct KeybindsSettingsView: View {
         }
     }
 
-    private var grouped: [(category: String, binds: [Keybind])] {
-        let pairs = nonLauncherBinds.map { ($0, bindCategory($0)) }
-        return categoryOrder.compactMap { cat in
+    private var grouped: [(category: KeybindCategory, binds: [Keybind])] {
+        let pairs = nonLauncherBinds.map { ($0, KeybindCategory.from($0.action)) }
+        return Self.visibleCategories.compactMap { cat in
             let binds = pairs.filter { $0.1 == cat }.map(\.0)
             return binds.isEmpty ? nil : (cat, binds)
         }
@@ -35,7 +33,7 @@ struct KeybindsSettingsView: View {
         VStack(spacing: 0) {
             List(selection: $selectedBindID) {
                 ForEach(grouped, id: \.category) { group in
-                    Section(group.category) {
+                    Section(group.category.rawValue) {
                         ForEach(group.binds) { bind in
                             KeybindRow(bind: bind)
                                 .tag(bind.id)
@@ -106,18 +104,6 @@ struct KeybindsSettingsView: View {
         }
     }
 
-    private func bindCategory(_ bind: Keybind) -> String {
-        switch bind.action {
-        case .focusDirection, .focusFloating, .focusMenuBar:
-            return "Focus & Navigation"
-        case .swapDirection, .toggleFloating, .toggleSplit, .closeWindow:
-            return "Window Management"
-        case .switchWorkspace, .moveToWorkspace, .moveWorkspaceToMonitor, .cycleWorkspace:
-            return "Workspaces"
-        case .showKeybinds, .launchApp:
-            return "System"
-        }
-    }
 }
 
 private struct KeybindRow: View {

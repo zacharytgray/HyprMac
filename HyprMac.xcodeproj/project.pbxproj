@@ -66,6 +66,7 @@
 		CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */; };
 		D380E4A1BDD2AD4281299E72 /* KeybindDecoderToleranceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3521F94E7B0FCC0E03B50D3 /* KeybindDecoderToleranceTests.swift */; };
 		D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
+		DA506BA26A104FA2BA45FF3C /* KeybindCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4BE620A1670E1D89160707 /* KeybindCategory.swift */; };
 		DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */; };
 		DD38C6D3A18D2B209CDDB9BC /* ThreadAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7C6CB56D09DB0F05AE6EDC /* ThreadAssertions.swift */; };
 		DFB503500879F243DD9C3FC1 /* HyprWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA85C3347F1D7A782EA9EA39 /* HyprWindow.swift */; };
@@ -107,6 +108,7 @@
 		1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTestSupport.swift; sourceTree = "<group>"; };
 		1AA39AE261654BF110E66771 /* WindowStateCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCache.swift; sourceTree = "<group>"; };
 		1BB92BD985DAC4292DE1C57F /* CursorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorManager.swift; sourceTree = "<group>"; };
+		1F4BE620A1670E1D89160707 /* KeybindCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindCategory.swift; sourceTree = "<group>"; };
 		23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTreeTests.swift; sourceTree = "<group>"; };
 		298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngineTests.swift; sourceTree = "<group>"; };
@@ -305,6 +307,7 @@
 				BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */,
 				8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */,
 				97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */,
+				1F4BE620A1670E1D89160707 /* KeybindCategory.swift */,
 				0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */,
 				F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */,
 				5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */,
@@ -548,6 +551,7 @@
 				E49C450CFEE3A7BC692AA590 /* KeyRecorderView.swift in Sources */,
 				EE46ED338F7A2FDCC86D94D5 /* KeyRemapper.swift in Sources */,
 				188EAF405D36CBFCDAB54014 /* Keybind.swift in Sources */,
+				DA506BA26A104FA2BA45FF3C /* KeybindCategory.swift in Sources */,
 				B44C416E3958C82361083048 /* KeybindOverlayController.swift in Sources */,
 				C5C841CD7B9E0C41D488EF3B /* KeybindsSettingsView.swift in Sources */,
 				1DEA79CA749DC72D381082D3 /* LayoutEngine.swift in Sources */,
