@@ -64,7 +64,11 @@ class WindowAnimator {
             win.backgroundColor = .black
             win.level = .statusBar
             win.ignoresMouseEvents = true
-            win.hasShadow = false
+            // proxy carries a system shadow so the moving content looks like a
+            // real window. real window is parked off-screen during animation
+            // (see animateWithProxies) so its shadow doesn't trail at the
+            // source position.
+            win.hasShadow = true
             win.animationBehavior = .none
 
             let iv = NSImageView(frame: NSRect(origin: .zero, size: nsFrame.size))
@@ -107,6 +111,10 @@ class WindowAnimator {
         return proxies
     }
 
+    // far enough off-screen that the parked window's shadow can't bleed
+    // back onto any monitor in any reasonable multi-display setup.
+    private static let proxyParkPosition = CGPoint(x: -50_000, y: -50_000)
+
     private func animateWithProxies(_ transitions: [FrameTransition], proxies: [ProxyWindow],
                                     duration: TimeInterval, completion: @escaping () -> Void) {
         isAnimating = true
@@ -114,8 +122,16 @@ class WindowAnimator {
         activeTransitions = transitions
         let screenH = NSScreen.screens.first?.frame.height ?? 0
 
-        // show proxies covering real windows
+        // show proxies covering real windows at `from`. ordering matters:
+        // the proxy must be visible BEFORE we park the real window, so the
+        // off-screen AX move below is visually masked.
         for proxy in proxies { proxy.show() }
+
+        // park real windows off-screen so their system shadows don't trail
+        // at `from` while the proxy slides. position-only write — size stays,
+        // so when we restore to `to` at the end we don't need a full
+        // resize-move-resize cycle (just position back to to.origin).
+        for tr in transitions { tr.window.position = Self.proxyParkPosition }
 
         let start = CACurrentMediaTime()
         let timer = DispatchSource.makeTimerSource(queue: .main)
@@ -130,9 +146,13 @@ class WindowAnimator {
             let t = Self.easeOutCubic(progress)
 
             if progress >= 1.0 {
+                // restore real windows BEFORE closing proxies. the proxy
+                // sits at `to` at this point, so the AX restore is hidden
+                // behind it; closing first would briefly expose the parked
+                // (off-screen → empty) area before setFrame completes.
+                for tr in transitions { tr.window.setFrame(tr.to) }
                 for proxy in proxies { proxy.close() }
                 self.activeProxies.removeAll()
-                for tr in transitions { tr.window.setFrame(tr.to) }
                 self.activeTransitions.removeAll()
                 self.finish()
                 completion()
