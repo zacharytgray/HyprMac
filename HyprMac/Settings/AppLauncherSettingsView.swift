@@ -1,6 +1,9 @@
 import SwiftUI
 import Carbon
 
+// Settings tab for app-launcher keybinds. Lists existing launchApp
+// bindings (filtered out of the main Keybinds tab) and provides an
+// editor sheet that picks an app via NSOpenPanel and records a chord.
 struct AppLauncherSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var showingAddSheet = false
@@ -101,6 +104,10 @@ struct AppLauncherSettingsView: View {
 
 // MARK: - editor sheet
 
+// Modal for adding a new app launcher binding. Picks the app via
+// NSOpenPanel (so users can target any .app, not just /Applications),
+// records a chord with KeyRecorderView, and constructs a launchApp
+// Keybind. The keybinds tab handles edit/delete from there on.
 struct AppLauncherEditorSheet: View {
     let onSave: (Keybind) -> Void
     @Environment(\.dismiss) private var dismiss

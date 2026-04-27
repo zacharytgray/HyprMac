@@ -1,6 +1,10 @@
 import SwiftUI
 import Sparkle
 
+// MenuBarExtra dropdown contents: enable toggle, per-screen workspace
+// status badges, and standard housekeeping actions (settings, retile,
+// updates, quit). The compact dot-grid label that lives in the menu
+// bar itself is WorkspaceIndicatorLabel below.
 struct MenuBarView: View {
     @ObservedObject var config = UserConfig.shared
     @Environment(\.openWindow) private var openWindow
@@ -101,9 +105,11 @@ struct MenuBarView: View {
     }
 }
 
-// shared observable for menu bar label — updated by WindowManager,
-// observed by WorkspaceIndicatorLabel. this bridges the gap between
-// WindowManager (not available at app init) and the MenuBarExtra label.
+// Bridge for the menu bar label between WindowManager (which knows the
+// workspace state but is not available at app init) and the SwiftUI
+// MenuBarExtra label (which is built before WindowManager exists).
+// WindowManager.updateMenuBarState writes to .shared after every poll;
+// WorkspaceIndicatorLabel observes it.
 class MenuBarState: ObservableObject {
     static let shared = MenuBarState()
     @Published var labelText: String = ""
@@ -112,8 +118,16 @@ class MenuBarState: ObservableObject {
     @Published var hasData = false
 }
 
-// compact menu bar label: dots for workspace state, ◇ for floating.
-// position = workspace number, ● active, ○ occupied, · empty.
+// Compact dot-grid menu bar label, one symbol per workspace 1..N where N
+// is the highest occupied (or active) workspace. Encoding:
+//   ●  active workspace
+//   ◆  active workspace, contains floating window(s)
+//   ○  occupied (has windows) but not active
+//   ◇  occupied + floating, not active
+//   ·  empty
+// String is computed by WindowManager.updateMenuBarState and pushed via
+// MenuBarState.labelText. Falls back to a static icon if disabled or if
+// no workspace data has been seen yet.
 struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared

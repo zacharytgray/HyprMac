@@ -1,5 +1,10 @@
 import SwiftUI
 
+// "General" tab of Settings: enable toggle, accessibility status,
+// focus-follows-mouse, never-tile bundle list, menu bar indicator,
+// iCloud sync, Hypr key picker, version, reset. Status sections are
+// observational; they read from UserConfig and AccessibilityManager
+// without owning any state of their own.
 struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()

@@ -1,6 +1,11 @@
 import SwiftUI
 
-// reusable shortcut recorder: modifier toggles + key capture button + live preview badge
+// Shared chord-recording control for both editor sheets (keybinds and
+// app launchers). Layout: row of modifier toggles (Hypr/Ctrl/Opt/Shift/Cmd)
+// over a "click to record" button. While recording, an NSEvent local
+// monitor swallows the next keyDown — modifier-only key codes are
+// rejected so users can't bind to a bare modifier — and writes the
+// captured keyCode back to the binding.
 struct KeyRecorderView: View {
     @ObservedObject var config = UserConfig.shared
     @Binding var keyCode: UInt16
