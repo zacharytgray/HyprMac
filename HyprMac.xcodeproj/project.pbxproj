@@ -31,9 +31,11 @@
 		3096F5E0A6427D2DB64D076E /* FocusBorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = B38E1F4DBD1DB2807610AB4E /* FocusBorder.swift */; };
 		321ED983E085852543CE66E5 /* TilingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */; };
 		33D18D1F45F3CB1C3E2FDA03 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06CFE0CDB28ECDC9411EEB1 /* HotkeyManager.swift */; };
+		34D02ABE4C3B2E9D68C46C0E /* WhatsNewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EC1549522E2889DEA3AD528 /* WhatsNewView.swift */; };
 		3564F2FDA0E1E1BEA5FDFCA8 /* HyprKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85E2687861DA70718C132100 /* HyprKey.swift */; };
 		3C05D5F0C1395F04AAC506A7 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EC19E9DB53B109940984B5D5 /* Assets.xcassets */; };
 		3D84219CDFABCE2B2019F0DC /* SpaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 913F7521CBE5FF04365D18D8 /* SpaceManager.swift */; };
+		40C8D35EED1CD42CE9E89A6F /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0541DE9D8D6BB8EAB36DA0AE /* OnboardingView.swift */; };
 		418CEE0D45A22A4854CBF801 /* TilingConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC47A2DE51571E5A9EEBE362 /* TilingConfig.swift */; };
 		42778D615628483A357572DF /* WorkspaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */; };
 		440732216A02AA6BC39588CC /* AppLauncherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */; };
@@ -62,6 +64,7 @@
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
 		AC01521BE9F2030CF901A2C9 /* DragSwapHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */; };
+		AFBFBEE9192B25C103780FBD /* WelcomeSlideView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E67E2E0B7824A8E11B1B2D39 /* WelcomeSlideView.swift */; };
 		B44C416E3958C82361083048 /* KeybindOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7BD70717FD497B0899FBCE5 /* KeybindOverlayController.swift */; };
 		B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
 		B82265C32A87C7C47C0921AE /* ConfigMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F548FEECDD35DFF1120E2553 /* ConfigMigrationTests.swift */; };
@@ -105,6 +108,7 @@
 
 /* Begin PBXFileReference section */
 		02E56F3B2C9834C78368323D /* DragManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragManager.swift; sourceTree = "<group>"; };
+		0541DE9D8D6BB8EAB36DA0AE /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngine.swift; sourceTree = "<group>"; };
 		084CC77D9BC9594A5E7DE366 /* FocusStateControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusStateControllerTests.swift; sourceTree = "<group>"; };
 		0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindsSettingsView.swift; sourceTree = "<group>"; };
@@ -116,6 +120,7 @@
 		1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTestSupport.swift; sourceTree = "<group>"; };
 		1AA39AE261654BF110E66771 /* WindowStateCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCache.swift; sourceTree = "<group>"; };
 		1BB92BD985DAC4292DE1C57F /* CursorManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorManager.swift; sourceTree = "<group>"; };
+		1EC1549522E2889DEA3AD528 /* WhatsNewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatsNewView.swift; sourceTree = "<group>"; };
 		1F4BE620A1670E1D89160707 /* KeybindCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindCategory.swift; sourceTree = "<group>"; };
 		23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarView.swift; sourceTree = "<group>"; };
 		2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTreeTests.swift; sourceTree = "<group>"; };
@@ -181,6 +186,7 @@
 		E33C1B4E40A4FC68DD601FA8 /* HyprMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HyprMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E402467C270ED2039D610DC0 /* HyprMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HyprMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E5557F0D5040AE48CF5031E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E67E2E0B7824A8E11B1B2D39 /* WelcomeSlideView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeSlideView.swift; sourceTree = "<group>"; };
 		E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleIDPicker.swift; sourceTree = "<group>"; };
 		EC19E9DB53B109940984B5D5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCodeUtils.swift; sourceTree = "<group>"; };
@@ -411,8 +417,11 @@
 		DAD96F8D475B496ABA6E5514 /* Welcome */ = {
 			isa = PBXGroup;
 			children = (
+				0541DE9D8D6BB8EAB36DA0AE /* OnboardingView.swift */,
 				5530B03FA6EEA9DDB4BC9E63 /* PaginationView.swift */,
 				9EBC04818743A6F6231119AB /* WelcomeContent.swift */,
+				E67E2E0B7824A8E11B1B2D39 /* WelcomeSlideView.swift */,
+				1EC1549522E2889DEA3AD528 /* WhatsNewView.swift */,
 			);
 			path = Welcome;
 			sourceTree = "<group>";
@@ -592,6 +601,7 @@
 				1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */,
 				C59F755D984292EB1E5B57CD /* MinSizeMemory.swift in Sources */,
 				94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */,
+				40C8D35EED1CD42CE9E89A6F /* OnboardingView.swift in Sources */,
 				817F97F4F963BEF681283D1F /* PaginationView.swift in Sources */,
 				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
 				B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */,
@@ -604,7 +614,9 @@
 				9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */,
 				119D5D15C739E8C9B79392F7 /* UserConfigDefaults.swift in Sources */,
 				6D69BEB2961B224657725D8A /* WelcomeContent.swift in Sources */,
+				AFBFBEE9192B25C103780FBD /* WelcomeSlideView.swift in Sources */,
 				A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */,
+				34D02ABE4C3B2E9D68C46C0E /* WhatsNewView.swift in Sources */,
 				29E2FA4EAB3E1C5BD02A9F1E /* WindowAnimator.swift in Sources */,
 				696EB6B8B6A4A823B6DBBCD0 /* WindowDiscoveryService.swift in Sources */,
 				DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */,
