@@ -379,7 +379,23 @@ class TilingEngine {
         }
     }
 
-    private func retile(key: TilingKey, screen: NSScreen, inserted: [HyprWindow] = []) {
+    // preserveMinSizesOnOverflow:
+    //   true  → swap-rejection callers (swapWindows + applyComputedLayout's
+    //           animated swap revert) need the readback-confirmed mins to
+    //           survive past this retile so their post-retile fit check sees
+    //           the real bound and can reject the swap.
+    //   false → all other callers want the pre-0f24775 behavior. preserving
+    //           mins here ratchets every visible app's recorded minimum up to
+    //           whatever-it-couldn't-shrink-to-this-attempt and keeps it
+    //           sticky. forceInsertWindow's smart-insert pre-check then
+    //           reads those bumped values via pairFits and false-rejects
+    //           legitimate slots, dropping forceInsertWindow into its
+    //           eviction fallback — which is supposed to fire only when the
+    //           tree is full. user-observed bug: Caps+Shift+T on a floating
+    //           window kicks an existing tile out instead of slotting in.
+    private func retile(key: TilingKey, screen: NSScreen,
+                        inserted: [HyprWindow] = [],
+                        preserveMinSizesOnOverflow: Bool = false) {
         let t = tree(for: key)
         primeMinimumSizes(t.allWindows)
         let rect = displayManager.cgRect(for: screen)
@@ -400,15 +416,12 @@ class TilingEngine {
                 return
             }
             if !overflow.isEmpty {
-                hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — applying pass-1 layout, preserving recorded min sizes")
-                // do NOT clear min-size memory here. the readback in pass-1
-                // gave us real ground-truth (e.g., Spotify's actual min
-                // when its UI is fully expanded). clearing would wipe what
-                // we just learned, causing the next canSwapWindows to
-                // false-accept against the seeded fallback. swapWindows
-                // checks overflow post-retile and reverts if needed; for
-                // non-swap callers this preserves visual state and
-                // correct memory for the next attempt.
+                if preserveMinSizesOnOverflow {
+                    hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — preserving recorded min sizes for caller's post-retile fit check")
+                } else {
+                    hyprLog(.debug, .lifecycle, "overflow persisted with no inserted target — discarding min-size adjustment")
+                    minSizes.clear(for: overflow)
+                }
                 t.root.resetSplitRatios()
                 applyLayoutFinal(layouts)
                 return
@@ -473,7 +486,11 @@ class TilingEngine {
         // see canSwapWindows — swap is a structural change, prior manual
         // ratios applied to the OLD occupant of a slot, not the new one.
         t.root.clearUserSetRatios()
-        retile(key: key, screen: screen)
+        // preserveMinSizesOnOverflow: the post-retile check below reads
+        // minimumSize against the retile's freshly-recorded mins. if retile
+        // cleared them on the no-inserted-target overflow branch, the
+        // post-retile check would false-pass.
+        retile(key: key, screen: screen, preserveMinSizesOnOverflow: true)
 
         // post-retile fit check: minSizes was updated by pass-1 readback
         // during retile. if the resulting layout still overflows the
@@ -545,7 +562,13 @@ class TilingEngine {
     func applyComputedLayout(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
-        retile(key: key, screen: screen)
+        // when a swap is pending, the post-retile fit check below relies on
+        // freshly-recorded mins surviving past retile (same contract as
+        // swapWindows above). otherwise — toggleSplit, animated retile from
+        // tileAllVisibleSpaces, etc. — fall through to the default which
+        // matches forceInsertWindow's expectations.
+        let preserve = (pendingSwapRevert?.key == key)
+        retile(key: key, screen: screen, preserveMinSizesOnOverflow: preserve)
 
         // consume any pending swap snapshot for this key. only the swap
         // path sets this — toggleSplit etc. leave it nil.
