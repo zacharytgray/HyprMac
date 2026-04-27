@@ -1,0 +1,102 @@
+import SwiftUI
+
+// data tables and reusable building blocks for the Welcome window.
+// the FeaturePage view sits here too because it's used by both the
+// onboarding pages and the welcome slideshow pages.
+
+// MARK: - what's new feature list
+// agents: update this array before each release with features from git log.
+// see CLAUDE.md "Release Feature List" for the workflow.
+
+struct WhatsNewFeature {
+    let icon: String
+    let title: String
+    let description: String
+}
+
+enum WhatsNewFeatures {
+    // update this before each release — see CLAUDE.md instructions
+    static let current: [WhatsNewFeature] = [
+        WhatsNewFeature(
+            icon: "keyboard",
+            title: "Configurable Hypr Key",
+            description: "Choose Caps Lock, Tab, backtick, backslash, F13-F20, or left/right modifier keys as your Hypr key."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.split.2x2",
+            title: "Split-Limit Layout Fix",
+            description: "Fixed an edge case near max split depth that could stretch one window and squeeze sibling tiles too small."
+        ),
+        WhatsNewFeature(
+            icon: "slider.horizontal.3",
+            title: "Better Keybind Labels",
+            description: "Shortcut badges now reflect your selected physical Hypr key throughout Settings."
+        ),
+    ]
+}
+
+// MARK: - essential shortcuts shown on the welcome slideshow
+
+enum WelcomeContent {
+    static let essentialKeybinds: [(key: String, desc: String)] = [
+        ("Hypr + Arrow",         "Focus window in direction"),
+        ("Hypr + Shift + Arrow", "Swap window in direction"),
+        ("Hypr + 1-9",           "Switch workspace"),
+        ("Hypr + Shift + 1-9",   "Move window to workspace"),
+        ("Hypr + Shift + T",     "Toggle floating"),
+        ("Hypr + J",             "Toggle split direction"),
+        ("Hypr + F",             "Cycle floating windows"),
+        ("Hypr + K",             "Show keybind overlay"),
+    ]
+
+    static var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+}
+
+// MARK: - shared single feature page (icon + title + description + detail)
+
+struct FeaturePage: View {
+    let icon: String
+    let title: String
+    let description: String
+    let detail: String
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 32))
+                .foregroundColor(.accentColor)
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+            Text(description)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+            Text(detail)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 360)
+        }
+        .padding(.horizontal, 24)
+    }
+}
+
+// MARK: - vibrancy wrapper
+
+struct VisualEffectView: NSViewRepresentable {
+    let material: NSVisualEffectView.Material
+    let blendingMode: NSVisualEffectView.BlendingMode
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = material
+        v.blendingMode = blendingMode
+        v.state = .active
+        return v
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
+}

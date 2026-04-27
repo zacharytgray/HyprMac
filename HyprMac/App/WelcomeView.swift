@@ -73,41 +73,15 @@ struct WelcomeView: View {
             .transition(.opacity)
             .id(currentPage)
 
-            // skip + dots + next
-            HStack {
-                if currentPage < pageCount - 1 {
-                    Button("Skip") { onDismiss() }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 12))
-                }
-
-                Spacer()
-
-                HStack(spacing: 6) {
-                    ForEach(0..<pageCount, id: \.self) { i in
-                        Circle()
-                            .fill(i == currentPage ? Color.accentColor : Color.secondary.opacity(0.3))
-                            .frame(width: 7, height: 7)
-                            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { currentPage = i } }
-                    }
-                }
-
-                Spacer()
-
-                if currentPage < pageCount - 1 {
-                    Button("Next") {
-                        withAnimation(.easeInOut(duration: 0.2)) { currentPage += 1 }
-                    }
-                    .keyboardShortcut(.defaultAction)
-                } else {
-                    Button("Let's Go!") { onDismiss() }
-                        .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(.horizontal, 32)
-            .padding(.bottom, 20)
-            .padding(.top, 8)
+            PaginationView(
+                currentPage: $currentPage,
+                totalPages: pageCount,
+                showSkip: true,
+                nextLabel: "Next",
+                finishLabel: "Let's Go!",
+                onFinish: onDismiss,
+                onSkip: onDismiss
+            )
         }
     }
 
@@ -231,7 +205,7 @@ struct WelcomeView: View {
                 }
                 Text("Welcome to HyprMac")
                     .font(.system(size: 22, weight: .bold))
-                Text("v\(appVersion)")
+                Text("v\(WelcomeContent.appVersion)")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -252,32 +226,15 @@ struct WelcomeView: View {
             .transition(.opacity)
             .id(currentPage)
 
-            // dots + button
-            HStack {
-                HStack(spacing: 6) {
-                    ForEach(0..<pageCount, id: \.self) { i in
-                        Circle()
-                            .fill(i == currentPage ? Color.accentColor : Color.secondary.opacity(0.3))
-                            .frame(width: 7, height: 7)
-                            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { currentPage = i } }
-                    }
-                }
-
-                Spacer()
-
-                if currentPage < pageCount - 1 {
-                    Button("Next") {
-                        withAnimation(.easeInOut(duration: 0.2)) { currentPage += 1 }
-                    }
-                    .keyboardShortcut(.defaultAction)
-                } else {
-                    Button("Get Started") { onDismiss() }
-                        .keyboardShortcut(.defaultAction)
-                }
-            }
-            .padding(.horizontal, 32)
-            .padding(.bottom, 20)
-            .padding(.top, 8)
+            PaginationView(
+                currentPage: $currentPage,
+                totalPages: pageCount,
+                showSkip: false,
+                nextLabel: "Next",
+                finishLabel: "Get Started",
+                onFinish: onDismiss,
+                onSkip: {}
+            )
         }
     }
 
@@ -311,7 +268,7 @@ struct WelcomeView: View {
                 .foregroundColor(.secondary)
 
             Grid(alignment: .leading, verticalSpacing: 3) {
-                ForEach(essentialKeybinds, id: \.key) { kb in
+                ForEach(WelcomeContent.essentialKeybinds, id: \.key) { kb in
                     GridRow {
                         Text(kb.key)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -348,7 +305,7 @@ struct WelcomeView: View {
             VStack(spacing: 6) {
                 Text("What's New in HyprMac")
                     .font(.system(size: 22, weight: .bold))
-                Text("v\(appVersion)")
+                Text("v\(WelcomeContent.appVersion)")
                     .font(.system(size: 14))
                     .foregroundColor(.secondary)
             }
@@ -389,99 +346,6 @@ struct WelcomeView: View {
         }
     }
 
-    // MARK: - Helpers
-
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-    }
-
-    private var essentialKeybinds: [(key: String, desc: String)] {
-        [
-            ("Hypr + Arrow", "Focus window in direction"),
-            ("Hypr + Shift + Arrow", "Swap window in direction"),
-            ("Hypr + 1-9", "Switch workspace"),
-            ("Hypr + Shift + 1-9", "Move window to workspace"),
-            ("Hypr + Shift + T", "Toggle floating"),
-            ("Hypr + J", "Toggle split direction"),
-            ("Hypr + F", "Cycle floating windows"),
-            ("Hypr + K", "Show keybind overlay"),
-        ]
-    }
-}
-
-// single feature page for the slideshow
-private struct FeaturePage: View {
-    let icon: String
-    let title: String
-    let description: String
-    let detail: String
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundColor(.accentColor)
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-            Text(description)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-            Text(detail)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary.opacity(0.7))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-        }
-        .padding(.horizontal, 24)
-    }
-}
-
-// nsvisualeffectview wrapper for vibrancy
-struct VisualEffectView: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = material
-        v.blendingMode = blendingMode
-        v.state = .active
-        return v
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
-}
-
-// MARK: - What's new feature list
-// agents: update this array before each release with features from git log
-
-struct WhatsNewFeature {
-    let icon: String
-    let title: String
-    let description: String
-}
-
-struct WhatsNewFeatures {
-    // update this before each release — see CLAUDE.md instructions
-    static let current: [WhatsNewFeature] = [
-        WhatsNewFeature(
-            icon: "keyboard",
-            title: "Configurable Hypr Key",
-            description: "Choose Caps Lock, Tab, backtick, backslash, F13-F20, or left/right modifier keys as your Hypr key."
-        ),
-        WhatsNewFeature(
-            icon: "rectangle.split.2x2",
-            title: "Split-Limit Layout Fix",
-            description: "Fixed an edge case near max split depth that could stretch one window and squeeze sibling tiles too small."
-        ),
-        WhatsNewFeature(
-            icon: "slider.horizontal.3",
-            title: "Better Keybind Labels",
-            description: "Shortcut badges now reflect your selected physical Hypr key throughout Settings."
-        ),
-    ]
 }
 
 // MARK: - Window management
