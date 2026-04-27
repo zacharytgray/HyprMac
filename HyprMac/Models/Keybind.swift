@@ -26,11 +26,11 @@ struct Keybind: Codable, Equatable, Identifiable {
 
         func toAction() -> Action {
             switch self {
-            case .focusDirection(let d): return .focusDirection(Direction(rawValue: d)!)
-            case .swapDirection(let d): return .swapDirection(Direction(rawValue: d)!)
+            case .focusDirection(let d): return .focusDirection(Self.parseDirection(d, field: "focusDirection"))
+            case .swapDirection(let d): return .swapDirection(Self.parseDirection(d, field: "swapDirection"))
             case .switchDesktop(let n): return .switchDesktop(n)
             case .moveToDesktop(let n): return .moveToDesktop(n)
-            case .moveWorkspaceToMonitor(let d): return .moveWorkspaceToMonitor(Direction(rawValue: d)!)
+            case .moveWorkspaceToMonitor(let d): return .moveWorkspaceToMonitor(Self.parseDirection(d, field: "moveWorkspaceToMonitor"))
             case .toggleFloating: return .toggleFloating
             case .toggleSplit: return .toggleSplit
             case .showKeybinds: return .showKeybinds
@@ -40,6 +40,16 @@ struct Keybind: Codable, Equatable, Identifiable {
             case .closeWindow: return .closeWindow
             case .cycleWorkspace(let d): return .cycleWorkspace(d)
             }
+        }
+
+        // malformed direction strings used to crash via Direction(rawValue:)!.
+        // log + fall back to .right (a neutral default) instead — old configs
+        // and hand-edited files survive without taking down the app.
+        private static func parseDirection(_ raw: String, field: String) -> Direction {
+            if let d = Direction(rawValue: raw) { return d }
+            hyprLog(.warning, .config,
+                    "malformed direction '\(raw)' in \(field); falling back to .right")
+            return .right
         }
     }
 }
