@@ -186,7 +186,7 @@ struct KeybindEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var selectedAction: ActionChoice = .focusDirection
-    @State private var directionParam = "left"
+    @State private var directionParam: Direction = .left
     @State private var desktopParam = 1
     @State private var bundleIDParam = "com.apple.Terminal"
 
@@ -245,10 +245,10 @@ struct KeybindEditorSheet: View {
                     switch selectedAction {
                     case .focusDirection, .swapDirection, .moveWorkspaceToMonitor:
                         Picker("Direction", selection: $directionParam) {
-                            Text("Left").tag("left")
-                            Text("Right").tag("right")
-                            Text("Up").tag("up")
-                            Text("Down").tag("down")
+                            Text("Left").tag(Direction.left)
+                            Text("Right").tag(Direction.right)
+                            Text("Up").tag(Direction.up)
+                            Text("Down").tag(Direction.down)
                         }
                         .pickerStyle(.segmented)
                     case .switchDesktop, .moveToDesktop:
@@ -320,7 +320,7 @@ struct KeybindEditorSheet: View {
     private func save() {
         let mods = ModifierFlags.from(hypr: useHypr, shift: useShift, control: useControl, option: useOption, command: useCommand)
 
-        let action: Keybind.ActionDescriptor
+        let action: Action
         switch selectedAction {
         case .focusDirection:         action = .focusDirection(directionParam)
         case .swapDirection:          action = .swapDirection(directionParam)
@@ -363,10 +363,10 @@ extension Keybind {
         switch action {
         case .focusDirection(let d):
             switch d {
-            case "left":  return "arrow.left"
-            case "right": return "arrow.right"
-            case "up":    return "arrow.up"
-            default:      return "arrow.down"
+            case .left:  return "arrow.left"
+            case .right: return "arrow.right"
+            case .up:    return "arrow.up"
+            case .down:  return "arrow.down"
             }
         case .swapDirection:
             return "arrow.left.arrow.right"
@@ -397,11 +397,11 @@ extension Keybind {
 
     var actionDescription: String {
         switch action {
-        case .focusDirection(let d):        return "Focus \(d.capitalized)"
-        case .swapDirection(let d):         return "Swap \(d.capitalized)"
+        case .focusDirection(let d):        return "Focus \(d.rawValue.capitalized)"
+        case .swapDirection(let d):         return "Swap \(d.rawValue.capitalized)"
         case .switchDesktop(let n):         return "Switch to Workspace \(n)"
         case .moveToDesktop(let n):         return "Move to Workspace \(n)"
-        case .moveWorkspaceToMonitor(let d): return "Move Workspace \(d.capitalized)"
+        case .moveWorkspaceToMonitor(let d): return "Move Workspace \(d.rawValue.capitalized)"
         case .toggleFloating:               return "Toggle Floating"
         case .toggleSplit:                  return "Toggle Split Direction"
         case .showKeybinds:                 return "Show Keybind Overlay"

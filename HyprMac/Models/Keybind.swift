@@ -6,52 +6,7 @@ struct Keybind: Codable, Equatable, Identifiable {
 
     let keyCode: UInt16
     let modifiers: ModifierFlags
-    let action: ActionDescriptor
-
-    // wrapper so Action can be serialized
-    enum ActionDescriptor: Codable, Equatable {
-        case focusDirection(String)
-        case swapDirection(String)
-        case switchDesktop(Int)
-        case moveToDesktop(Int)
-        case moveWorkspaceToMonitor(String)
-        case toggleFloating
-        case toggleSplit
-        case showKeybinds
-        case launchApp(bundleID: String)
-        case focusMenuBar
-        case focusFloating
-        case closeWindow
-        case cycleWorkspace(Int)
-
-        func toAction() -> Action {
-            switch self {
-            case .focusDirection(let d): return .focusDirection(Self.parseDirection(d, field: "focusDirection"))
-            case .swapDirection(let d): return .swapDirection(Self.parseDirection(d, field: "swapDirection"))
-            case .switchDesktop(let n): return .switchDesktop(n)
-            case .moveToDesktop(let n): return .moveToDesktop(n)
-            case .moveWorkspaceToMonitor(let d): return .moveWorkspaceToMonitor(Self.parseDirection(d, field: "moveWorkspaceToMonitor"))
-            case .toggleFloating: return .toggleFloating
-            case .toggleSplit: return .toggleSplit
-            case .showKeybinds: return .showKeybinds
-            case .launchApp(let b): return .launchApp(bundleID: b)
-            case .focusMenuBar: return .focusMenuBar
-            case .focusFloating: return .focusFloating
-            case .closeWindow: return .closeWindow
-            case .cycleWorkspace(let d): return .cycleWorkspace(d)
-            }
-        }
-
-        // malformed direction strings used to crash via Direction(rawValue:)!.
-        // log + fall back to .right (a neutral default) instead — old configs
-        // and hand-edited files survive without taking down the app.
-        private static func parseDirection(_ raw: String, field: String) -> Direction {
-            if let d = Direction(rawValue: raw) { return d }
-            hyprLog(.warning, .config,
-                    "malformed direction '\(raw)' in \(field); falling back to .right")
-            return .right
-        }
-    }
+    let action: Action
 }
 
 struct ModifierFlags: OptionSet, Codable, Equatable, Hashable {
@@ -104,23 +59,23 @@ extension Keybind {
 
         // hypr (caps lock) + arrow: focus direction
         binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: .hypr,
-                             action: .focusDirection("left")))
+                             action: .focusDirection(.left)))
         binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: .hypr,
-                             action: .focusDirection("right")))
+                             action: .focusDirection(.right)))
         binds.append(Keybind(keyCode: UInt16(kVK_UpArrow), modifiers: .hypr,
-                             action: .focusDirection("up")))
+                             action: .focusDirection(.up)))
         binds.append(Keybind(keyCode: UInt16(kVK_DownArrow), modifiers: .hypr,
-                             action: .focusDirection("down")))
+                             action: .focusDirection(.down)))
 
         // hypr + shift + arrow: swap direction
         binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .shift],
-                             action: .swapDirection("left")))
+                             action: .swapDirection(.left)))
         binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: [.hypr, .shift],
-                             action: .swapDirection("right")))
+                             action: .swapDirection(.right)))
         binds.append(Keybind(keyCode: UInt16(kVK_UpArrow), modifiers: [.hypr, .shift],
-                             action: .swapDirection("up")))
+                             action: .swapDirection(.up)))
         binds.append(Keybind(keyCode: UInt16(kVK_DownArrow), modifiers: [.hypr, .shift],
-                             action: .swapDirection("down")))
+                             action: .swapDirection(.down)))
 
         // hypr + 1-9: focus monitor N / hypr + shift + 1-9: move window to monitor N
         let numKeys: [UInt16] = [
@@ -137,9 +92,9 @@ extension Keybind {
 
         // hypr + ctrl + left/right: move current workspace to adjacent monitor
         binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .control],
-                             action: .moveWorkspaceToMonitor("left")))
+                             action: .moveWorkspaceToMonitor(.left)))
         binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: [.hypr, .control],
-                             action: .moveWorkspaceToMonitor("right")))
+                             action: .moveWorkspaceToMonitor(.right)))
 
         // hypr + shift + t: toggle floating
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_T), modifiers: [.hypr, .shift],

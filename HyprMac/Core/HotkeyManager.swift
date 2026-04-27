@@ -100,7 +100,7 @@ class HotkeyManager {
 
         let packed = HotkeyManager.packKey(keyCode, flags)
         if let bind = keybindMap[packed] {
-            let action = bind.action.toAction()
+            let action = bind.action
             hyprLog(.debug, .lifecycle, "matched: \(action)")
             DispatchQueue.main.async { [weak self] in
                 self?.onAction?(action)
