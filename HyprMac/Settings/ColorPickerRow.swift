@@ -1,8 +1,10 @@
+// Reusable color picker row used by the Tiling tab for the focus
+// border and floating border colors.
+
 import SwiftUI
 
-// HStack of label + optional Reset button + ColorPicker. Used by the
-// Tiling tab for the focus border + floating border colors; both share
-// the "default vs. user-customized hex" reset semantics.
+/// `HStack` row of label + optional Reset button + `ColorPicker`,
+/// sharing the "default vs. user-customized hex" reset semantics.
 struct ColorPickerRow: View {
     let label: String
     let isCustom: Bool

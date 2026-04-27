@@ -1,6 +1,10 @@
+// SwiftUI app entry. Composes the menu bar item and settings scene.
+// Real lifecycle work lives in `AppDelegate`.
+
 import SwiftUI
 import Sparkle
 
+/// SwiftUI app shell.
 @main
 struct HyprMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate

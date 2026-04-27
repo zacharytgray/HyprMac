@@ -1,8 +1,9 @@
+// 4-way segmented picker for `Direction`.
+
 import SwiftUI
 
-// 4-way segmented picker for Direction. used by focusDirection,
-// swapDirection, and moveWorkspaceToMonitor (which still accepts
-// up/down for now even though the dispatcher only honors left/right).
+/// 4-way segmented picker for `Direction`. Used by direction-bearing
+/// keybind actions in the editor sheet.
 struct DirectionPicker: View {
     @Binding var direction: Direction
 

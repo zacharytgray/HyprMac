@@ -1,6 +1,8 @@
+// Post-install / upgrade welcome slideshow.
+
 import SwiftUI
 
-// Post-install/upgrade slideshow. Four pages of headline features.
+/// Four-page welcome slideshow with headline features.
 struct WelcomeSlideView: View {
     let onDismiss: () -> Void
 

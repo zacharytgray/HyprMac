@@ -1,6 +1,8 @@
+// Text field + helper hint for the `launchApp` bundle-ID parameter.
+
 import SwiftUI
 
-// text field + helper hint for the launchApp bundle-ID parameter.
+/// Bundle-ID text field used by the keybind editor for `launchApp`.
 struct BundleIDPicker: View {
     @Binding var bundleID: String
 

@@ -1,7 +1,10 @@
+// Categorizes a keybind for display. Single source for the action →
+// category mapping; both the settings list and the keybind overlay
+// route through `from(_:)`.
+
 import Foundation
 
-// canonical grouping for displaying keybinds in the settings list and the
-// keybind overlay. both sites previously kept their own copies of this map.
+/// Display category for a keybind.
 enum KeybindCategory: String, CaseIterable {
     case focusNav         = "Focus & Navigation"
     case windowManagement = "Window Management"
@@ -9,6 +12,7 @@ enum KeybindCategory: String, CaseIterable {
     case apps             = "Apps"
     case system           = "System"
 
+    /// Classify `action` into one of the display categories.
     static func from(_ action: Action) -> KeybindCategory {
         switch action {
         case .focusDirection, .focusFloating, .focusMenuBar:

@@ -1,13 +1,14 @@
+// Data tables and reusable building blocks for the Welcome window.
+// `FeaturePage` lives here because it is shared by onboarding and
+// the welcome slideshow.
+
 import SwiftUI
 
-// data tables and reusable building blocks for the Welcome window.
-// the FeaturePage view sits here too because it's used by both the
-// onboarding pages and the welcome slideshow pages.
-
 // MARK: - what's new feature list
-// agents: update this array before each release with features from git log.
+// Update this array before each release with features from git log;
 // see CLAUDE.md "Release Feature List" for the workflow.
 
+/// One row in the "What's New" panel: icon, title, description.
 struct WhatsNewFeature {
     let icon: String
     let title: String

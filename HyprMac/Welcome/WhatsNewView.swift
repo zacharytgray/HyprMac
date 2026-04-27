@@ -1,8 +1,10 @@
+// Post-update "What's New" panel.
+
 import SwiftUI
 
-// Post-update "What's New" panel. Renders WhatsNewFeatures.current
-// (curated per release — see CLAUDE.md "Release Feature List").
-// Single page, no pagination.
+/// Single-page "What's New" panel rendering
+/// `WhatsNewFeatures.current` (curated per release — see CLAUDE.md
+/// "Release Feature List").
 struct WhatsNewView: View {
     let onDismiss: () -> Void
 

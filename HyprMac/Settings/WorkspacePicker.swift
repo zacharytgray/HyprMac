@@ -1,6 +1,8 @@
+// 1–9 segmented picker for `switchWorkspace` and `moveToWorkspace`.
+
 import SwiftUI
 
-// 1-9 segmented picker for switchWorkspace and moveToWorkspace targets.
+/// 1–9 segmented workspace picker.
 struct WorkspacePicker: View {
     @Binding var workspace: Int
 

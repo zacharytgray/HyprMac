@@ -1,10 +1,12 @@
+// State machine for the keybind editor sheet.
+
 import SwiftUI
 import Combine
 
-// State machine for KeybindEditorSheet. Owns the in-progress shortcut
-// (key code + modifiers), the selected action, and per-action parameter
-// values. Loads from an existing Keybind on open and constructs a new
-// Keybind on save.
+/// State machine for the keybind editor sheet. Holds the in-progress
+/// chord, the selected action, and per-action parameter values;
+/// loads from an existing keybind on open and builds a new keybind
+/// on save.
 @MainActor
 final class KeybindEditorViewModel: ObservableObject {
     @Published var selectedAction: ActionChoice = .focusDirection

@@ -1,9 +1,10 @@
+// Top-level settings shell. NavigationSplitView with a tab sidebar
+// and a detail pane; the hosting NSWindow is bumped to `.floating`
+// level so it stays above tiled HyprMac-managed windows.
+
 import SwiftUI
 
-// Top-level Settings shell: NavigationSplitView with a sidebar of tabs
-// (General/Keybinds/App Launcher/Tiling) and a detail pane. The hosting
-// NSWindow is bumped to .floating level via WindowLevelSetter so it
-// stays above tiled HyprMac-managed windows while configuring.
+/// Top-level settings shell with a sidebar of tabs and a detail pane.
 struct SettingsView: View {
     @State private var selectedTab: SettingsTab? = .general
 

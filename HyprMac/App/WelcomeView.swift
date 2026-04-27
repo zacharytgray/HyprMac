@@ -1,14 +1,19 @@
+// Welcome window router and the NSWindow controller that hosts it.
+
 import SwiftUI
 
-// tri-purpose: first-launch onboarding, welcome slideshow, post-update "what's new"
+/// Which welcome flow to render.
 enum WelcomeMode {
+    /// First-launch onboarding tutorial.
     case onboarding
+    /// Post-install / upgrade slideshow.
     case welcome
+    /// Post-update "What's New" panel.
     case whatsNew
 }
 
-// Thin router that dispatches to one of three mode views inside a
-// vibrancy-backed frame. Each mode owns its own pagination state.
+/// Thin router that dispatches to one of three mode views inside a
+/// vibrancy-backed frame. Each mode owns its own pagination state.
 struct WelcomeView: View {
     let mode: WelcomeMode
     let onDismiss: () -> Void
@@ -30,6 +35,9 @@ struct WelcomeView: View {
 
 // MARK: - Window management
 
+/// NSWindow lifecycle for the welcome window. Built borderless with
+/// a draggable background; pinned to `.floating` level so it shows
+/// above tiled windows.
 class WelcomeWindowController {
     private var window: NSWindow?
 

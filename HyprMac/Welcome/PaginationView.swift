@@ -1,9 +1,10 @@
+// Bottom-of-page footer shared by Onboarding and Welcome modes.
+
 import SwiftUI
 
-// bottom-of-page footer shared by Onboarding and Welcome modes.
-// dots in the middle, optional Skip on the left, Next/finish on the right.
-// tapping a dot animates to that page; the rightmost button changes label
-// on the final page (and skips the Next path entirely).
+/// Page-indicator dots with optional Skip on the left and a
+/// Next / Finish button on the right. Tapping a dot animates to that
+/// page.
 struct PaginationView: View {
     @Binding var currentPage: Int
     let totalPages: Int

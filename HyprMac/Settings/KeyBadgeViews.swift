@@ -1,7 +1,10 @@
+// Keybind chord-display chips shared between Keybinds and App
+// Launcher tabs and the keybind overlay.
+
 import SwiftUI
 
-// shared keybind badge components — used by KeybindsSettingsView and AppLauncherSettingsView
-
+/// Renders a keybind's chord as a row of chip-styled key badges
+/// (Hypr, modifiers, key).
 struct KeybadgeView: View {
     @ObservedObject var config = UserConfig.shared
     let bind: Keybind
@@ -18,6 +21,7 @@ struct KeybadgeView: View {
     }
 }
 
+/// Single chip-styled key label rendered inside `KeybadgeView`.
 struct KeyChip: View {
     let label: String
     init(_ label: String) { self.label = label }

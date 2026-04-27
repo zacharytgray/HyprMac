@@ -1,7 +1,9 @@
+// First-launch onboarding tutorial.
+
 import SwiftUI
 
-// First-launch onboarding tutorial. Five paged screens introducing the
-// Hypr key, focus, workspaces, quick tips, and a finish prompt.
+/// Five-page onboarding tutorial: Hypr key intro, focus, workspaces,
+/// quick tips, finish.
 struct OnboardingView: View {
     let onDismiss: () -> Void
 

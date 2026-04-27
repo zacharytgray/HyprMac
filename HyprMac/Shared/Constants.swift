@@ -1,12 +1,10 @@
+// Cross-module shared tunables. Subsystem-local values stay in their
+// own files (`TilingConfig`, file-private `enum Tuning`, etc.).
+
 import Foundation
 
-// global tunables shared across subsystems.
-// per §5.1 of REFACTOR_PLAN.md, this is the home for values that leak across module boundaries
-// (poll interval, default suppression durations, app-wide UI timings).
-//
-// subsystem-local constants stay in their own files (TilingConfig.swift, file-private enum Tuning, etc.).
-// every constant added here must carry a comment noting its origin (empirical / computed / OS-imposed)
-// and the effect of changing it.
-//
-// placeholder — populated incrementally during later phases as constants are extracted.
+/// Cross-module tunables. Every constant added here carries a comment
+/// noting its origin (empirical / computed / OS-imposed) and the
+/// effect of changing it. Empty so far — values land here when a
+/// constant genuinely needs to leak across module boundaries.
 enum Constants {}

@@ -1,11 +1,12 @@
+// Chord recorder shared by the keybind and app-launcher editor
+// sheets.
+
 import SwiftUI
 
-// Shared chord-recording control for both editor sheets (keybinds and
-// app launchers). Layout: row of modifier toggles (Hypr/Ctrl/Opt/Shift/Cmd)
-// over a "click to record" button. While recording, an NSEvent local
-// monitor swallows the next keyDown — modifier-only key codes are
-// rejected so users can't bind to a bare modifier — and writes the
-// captured keyCode back to the binding.
+/// Chord recorder. Modifier toggles plus a record button; while
+/// recording, a local `NSEvent` monitor captures the next key
+/// down. Modifier-only key codes are rejected so users cannot bind
+/// to a bare modifier.
 struct KeyRecorderView: View {
     @ObservedObject var config = UserConfig.shared
     @Binding var keyCode: UInt16

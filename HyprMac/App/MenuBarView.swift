@@ -1,10 +1,13 @@
+// Menu bar dropdown contents and the compact dot-grid label that
+// lives in the menu bar itself.
+
 import SwiftUI
 import Sparkle
 
-// MenuBarExtra dropdown contents: enable toggle, per-screen workspace
-// status badges, and standard housekeeping actions (settings, retile,
-// updates, quit). The compact dot-grid label that lives in the menu
-// bar itself is WorkspaceIndicatorLabel below.
+/// `MenuBarExtra` dropdown contents: enable toggle, per-screen
+/// workspace status badges, and standard actions (Settings, Retile,
+/// Check for Updates, Quit). The label rendered in the menu bar
+/// itself is `WorkspaceIndicatorLabel` (below).
 struct MenuBarView: View {
     @ObservedObject var config = UserConfig.shared
     @Environment(\.openWindow) private var openWindow

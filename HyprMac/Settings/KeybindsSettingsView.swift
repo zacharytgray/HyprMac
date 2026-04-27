@@ -1,8 +1,12 @@
+// "Keybinds" tab. Lists every non-launcher keybind grouped by
+// category and offers an editor sheet for adding or modifying one.
+
 import SwiftUI
 import Carbon
 
 // MARK: - main view
 
+/// "Keybinds" tab.
 struct KeybindsSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var selectedBindID: String?

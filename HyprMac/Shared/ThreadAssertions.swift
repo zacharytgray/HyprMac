@@ -1,15 +1,15 @@
+// Main-thread precondition for UI, AX, and CGEvent code. Crashes
+// loudly in DEBUG when called off-main; no-op in Release.
+
 import Foundation
 
-// main-thread precondition for UI / AX / CGEvent code.
-//
-// HyprMac's policy (§5.3 of REFACTOR_PLAN): every UI-touching public method
-// runs on the main thread. nothing in the codebase asserts this today; if a
-// background queue ever calls into FocusBorder, DimmingOverlay, etc. the
-// failure mode is silent corruption (NSPanel mutation off-main, stale
-// CALayer state). this assertion turns that into a loud crash in DEBUG.
-//
-// release builds skip the check — preconditionFailure has cost, and the
-// invariant is enforced via test coverage in DEBUG.
+/// Main-thread precondition.
+///
+/// Every UI-touching public method runs on the main thread. Without
+/// this assertion, an off-main caller fails silently (NSPanel
+/// mutation, stale CALayer state) — this turns those into a loud
+/// crash in DEBUG. Release skips the check entirely so there is no
+/// runtime cost in shipping builds.
 @inlinable
 func mainThreadOnly(_ file: StaticString = #fileID, _ line: UInt = #line) {
     #if DEBUG

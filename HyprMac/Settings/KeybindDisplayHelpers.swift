@@ -1,9 +1,9 @@
+// Display-side helpers on `Keybind`. Lives in Settings/ because every
+// caller is SwiftUI display code — keeps `Models/Keybind.swift` free
+// of UI strings and SF Symbol references.
+
 import SwiftUI
 
-// Display-side computed properties on Keybind. Used by the settings list,
-// the keybind overlay, and the app launcher tab. Lives in Settings/
-// because every caller is SwiftUI display code; Models/Keybind.swift
-// stays free of UI strings.
 extension Keybind {
     var keyCodeName: String { keyCodeToName(keyCode) }
 

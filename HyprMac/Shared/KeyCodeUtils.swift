@@ -1,9 +1,15 @@
+// Carbon key code helpers shared by the keybind editor and the
+// keybind overlay HUD.
+
 import Carbon
 
-// key codes that are modifier-only (shouldn't be recorded as the "key" in a shortcut)
+/// Carbon key codes corresponding to bare modifier keys (Shift,
+/// Control, Option, Command, left/right variants). The chord
+/// recorder rejects these so users cannot bind to a bare modifier.
 let kModifierKeyCodes: Set<Int> = [55, 54, 56, 58, 59, 61, 62, 60]
 
-// human-readable name for a key code
+/// Human-readable label for a Carbon key code. Falls back to a
+/// `K\(code)` placeholder for unknown codes.
 func keyCodeToName(_ code: UInt16) -> String {
     switch Int(code) {
     case kVK_LeftArrow: return "←"; case kVK_RightArrow: return "→"

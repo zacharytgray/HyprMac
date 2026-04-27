@@ -1,5 +1,10 @@
+// "Tiling" tab. Window gaps, focus indicator color, dim intensity,
+// per-monitor enable + max-splits configuration plus a live dwindle
+// preview.
+
 import SwiftUI
 
+/// "Tiling" tab.
 struct TilingSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var screens: [NSScreen] = NSScreen.screens

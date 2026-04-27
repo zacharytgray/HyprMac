@@ -1,9 +1,12 @@
+// "App Launcher" tab. Manages every `launchApp` keybind separately
+// from the main Keybinds tab so the launcher list stays focused.
+
 import SwiftUI
 import Carbon
 
-// Settings tab for app-launcher keybinds. Lists existing launchApp
-// bindings (filtered out of the main Keybinds tab) and provides an
-// editor sheet that picks an app via NSOpenPanel and records a chord.
+/// "App Launcher" tab. Lists existing `launchApp` bindings and
+/// provides an editor sheet that picks an app via `NSOpenPanel` and
+/// records a chord.
 struct AppLauncherSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var showingAddSheet = false

@@ -1,9 +1,23 @@
+// AppDelegate. Owns the AX permission gate, the `WindowManager`
+// instance, and the welcome / what's-new flow that runs at first
+// launch and across version bumps.
+
 import Cocoa
 
+/// Application lifecycle delegate.
+///
+/// At launch: gates on AX permission (prompting if missing), starts
+/// the `WindowManager`, and decides whether to show onboarding,
+/// welcome, or what's-new based on previous launch state. At quit:
+/// stops the manager and restores the Caps Lock remap.
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
     private var welcomeController: WelcomeWindowController?
 
+    /// AX permission gate plus the rest of startup. Trusted →
+    /// applies the Hypr key remap and starts the manager. Not
+    /// trusted → prompts for AX, then offers a quit-or-retry alert
+    /// after the user toggles the setting.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
@@ -34,6 +48,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Construct `WindowManager`, start it when the user has not
+    /// disabled HyprMac in config, and run the first-launch /
+    /// version-bump welcome decision.
     func startWindowManager() {
         let config = UserConfig.shared
         windowManager = WindowManager(config: config)
@@ -62,6 +79,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
     }
 
+    /// Public entry for the menu-bar "Show Onboarding" action.
     func showOnboarding() {
         showWelcome(mode: .onboarding)
     }

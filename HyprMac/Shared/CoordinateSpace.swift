@@ -1,17 +1,15 @@
+// CG ↔ NS coordinate conversion seam. CG uses a top-left origin; NS
+// uses bottom-left. Conversion anchors on the primary screen height
+// (`NSScreen.screens.first?.frame.height`).
+
 import Foundation
 import AppKit
 
-// CG ↔ NS coordinate conversion.
-// CG uses top-left origin; NS uses bottom-left origin. conversion depends on the primary
-// screen height (NSScreen.screens.first?.frame.height).
-//
-// per §5.2 of REFACTOR_PLAN.md, this consolidates duplicated conversion logic currently in:
-//   - MouseTrackingManager:51
-//   - FocusBorder:286
-//   - DimmingOverlay:138
-//
-// extraction happens in a later phase. this file establishes the seam so callers can migrate
-// one at a time without churning the include graph.
-//
-// placeholder — populated when conversion sites are migrated.
+/// Conversion namespace for CG ↔ NS coordinate work.
+///
+/// Today the active conversions live inline in the call sites
+/// (`MouseTrackingManager`, `FocusBorder`, `DimmingOverlay`,
+/// `DisplayManager`). This enum is the agreed home for the next
+/// shared helper if a third caller appears or if the conversion
+/// pattern grows beyond `primaryScreenHeight - y`.
 enum CoordinateSpace {}
