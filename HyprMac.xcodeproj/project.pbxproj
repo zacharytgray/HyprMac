@@ -21,6 +21,7 @@
 		1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */; };
 		1DEA79CA749DC72D381082D3 /* LayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9927DB9594D281BB5179CA3 /* LayoutEngine.swift */; };
 		249B0AE228874626C66745EF /* DimmingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84FD66866CE44F180CAA03C7 /* DimmingOverlay.swift */; };
+		28BD7C8DD76D02FBC83769F7 /* KeyBadgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */; };
 		296757D9248494D15BF7EB67 /* CursorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB92BD985DAC4292DE1C57F /* CursorManager.swift */; };
 		29E2FA4EAB3E1C5BD02A9F1E /* WindowAnimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B114061648788BA337754F2 /* WindowAnimator.swift */; };
 		29EF01F22534CC2B51FE0390 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EA610EADBFADA21DC625C3 /* AppDelegate.swift */; };
@@ -137,6 +138,7 @@
 		8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDiscoveryService.swift; sourceTree = "<group>"; };
 		901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCacheTests.swift; sourceTree = "<group>"; };
 		913F7521CBE5FF04365D18D8 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
+		97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyBadgeViews.swift; sourceTree = "<group>"; };
 		984C8889680F5B0CDD449061 /* FloatingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingWindowController.swift; sourceTree = "<group>"; };
 		9B114061648788BA337754F2 /* WindowAnimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAnimator.swift; sourceTree = "<group>"; };
 		9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameReadbackPoller.swift; sourceTree = "<group>"; };
@@ -302,6 +304,7 @@
 			children = (
 				BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */,
 				8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */,
+				97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */,
 				0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */,
 				F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */,
 				5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */,
@@ -540,6 +543,7 @@
 				3564F2FDA0E1E1BEA5FDFCA8 /* HyprKey.swift in Sources */,
 				E75F4991C42DA20A1A207121 /* HyprMacApp.swift in Sources */,
 				DFB503500879F243DD9C3FC1 /* HyprWindow.swift in Sources */,
+				28BD7C8DD76D02FBC83769F7 /* KeyBadgeViews.swift in Sources */,
 				D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */,
 				E49C450CFEE3A7BC692AA590 /* KeyRecorderView.swift in Sources */,
 				EE46ED338F7A2FDCC86D94D5 /* KeyRemapper.swift in Sources */,
