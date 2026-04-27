@@ -131,34 +131,7 @@ struct KeybindEditorSheet: View {
     let onSave: (Keybind) -> Void
 
     @Environment(\.dismiss) private var dismiss
-
-    @State private var selectedAction: ActionChoice = .focusDirection
-    @State private var directionParam: Direction = .left
-    @State private var workspaceParam = 1
-    @State private var bundleIDParam = "com.apple.Terminal"
-
-    @State private var recordedKeyCode: UInt16 = 0
-    @State private var useHypr = true
-    @State private var useShift = false
-    @State private var useControl = false
-    @State private var useOption = false
-    @State private var useCommand = false
-
-    enum ActionChoice: String, CaseIterable {
-        case focusDirection         = "Focus Direction"
-        case swapDirection          = "Swap Direction"
-        case switchWorkspace        = "Switch Workspace"
-        case moveToWorkspace        = "Move to Workspace"
-        case moveWorkspaceToMonitor = "Move Workspace to Monitor"
-        case toggleFloating         = "Toggle Floating"
-        case toggleSplit            = "Toggle Split"
-        case showKeybinds           = "Show Keybinds"
-        case launchApp              = "Launch App"
-        case focusMenuBar           = "Focus Menu Bar"
-        case focusFloating          = "Focus Floating"
-        case closeWindow            = "Close Window"
-        case cycleWorkspace         = "Cycle Workspace"
-    }
+    @StateObject private var vm = KeybindEditorViewModel()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -168,10 +141,10 @@ struct KeybindEditorSheet: View {
             // shortcut recorder
             GroupBox {
                 KeyRecorderView(
-                    keyCode: $recordedKeyCode,
-                    useHypr: $useHypr, useShift: $useShift,
-                    useControl: $useControl, useOption: $useOption,
-                    useCommand: $useCommand
+                    keyCode: $vm.recordedKeyCode,
+                    useHypr: $vm.useHypr, useShift: $vm.useShift,
+                    useControl: $vm.useControl, useOption: $vm.useOption,
+                    useCommand: $vm.useCommand
                 )
                 .padding(4)
             }
@@ -184,24 +157,26 @@ struct KeybindEditorSheet: View {
                         .foregroundStyle(.secondary)
                         .textCase(.uppercase)
 
-                    Picker("", selection: $selectedAction) {
-                        ForEach(ActionChoice.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                    Picker("", selection: $vm.selectedAction) {
+                        ForEach(KeybindEditorViewModel.ActionChoice.allCases, id: \.self) {
+                            Text($0.rawValue).tag($0)
+                        }
                     }
                     .labelsHidden()
 
-                    switch selectedAction {
+                    switch vm.selectedAction {
                     case .focusDirection, .swapDirection, .moveWorkspaceToMonitor:
-                        DirectionPicker(direction: $directionParam)
+                        DirectionPicker(direction: $vm.directionParam)
                     case .switchWorkspace, .moveToWorkspace:
-                        WorkspacePicker(workspace: $workspaceParam)
+                        WorkspacePicker(workspace: $vm.workspaceParam)
                     case .cycleWorkspace:
-                        Picker("Direction", selection: $workspaceParam) {
+                        Picker("Direction", selection: $vm.workspaceParam) {
                             Text("Next").tag(1)
                             Text("Previous").tag(-1)
                         }
                         .pickerStyle(.segmented)
                     case .launchApp:
-                        BundleIDPicker(bundleID: $bundleIDParam)
+                        BundleIDPicker(bundleID: $vm.bundleIDParam)
                     default:
                         EmptyView()
                     }
@@ -213,66 +188,19 @@ struct KeybindEditorSheet: View {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("Save") { save() }
-                    .keyboardShortcut(.defaultAction)
-                    .disabled(recordedKeyCode == 0)
-                    .buttonStyle(.borderedProminent)
+                Button("Save") {
+                    onSave(vm.buildKeybind())
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!vm.canSave)
+                .buttonStyle(.borderedProminent)
             }
         }
         .padding(20)
         .frame(width: 460)
-        .onAppear { loadExisting() }
+        .onAppear { vm.load(existingBind) }
     }
-
-    private func loadExisting() {
-        guard let bind = existingBind else { return }
-        recordedKeyCode = bind.keyCode
-        useHypr    = bind.modifiers.contains(.hypr)
-        useShift   = bind.modifiers.contains(.shift)
-        useControl = bind.modifiers.contains(.control)
-        useOption  = bind.modifiers.contains(.option)
-        useCommand = bind.modifiers.contains(.command)
-        switch bind.action {
-        case .focusDirection(let d):         selectedAction = .focusDirection;         directionParam = d
-        case .swapDirection(let d):          selectedAction = .swapDirection;          directionParam = d
-        case .switchWorkspace(let n):          selectedAction = .switchWorkspace;          workspaceParam = n
-        case .moveToWorkspace(let n):          selectedAction = .moveToWorkspace;          workspaceParam = n
-        case .moveWorkspaceToMonitor(let d): selectedAction = .moveWorkspaceToMonitor; directionParam = d
-        case .toggleFloating:                selectedAction = .toggleFloating
-        case .toggleSplit:                   selectedAction = .toggleSplit
-        case .showKeybinds:                  selectedAction = .showKeybinds
-        case .launchApp(let b):              selectedAction = .launchApp;              bundleIDParam = b
-        case .focusMenuBar:                  selectedAction = .focusMenuBar
-        case .focusFloating:                 selectedAction = .focusFloating
-        case .closeWindow:                   selectedAction = .closeWindow
-        case .cycleWorkspace(let d):         selectedAction = .cycleWorkspace;         workspaceParam = d
-        }
-    }
-
-    private func save() {
-        let mods = ModifierFlags.from(hypr: useHypr, shift: useShift, control: useControl, option: useOption, command: useCommand)
-
-        let action: Action
-        switch selectedAction {
-        case .focusDirection:         action = .focusDirection(directionParam)
-        case .swapDirection:          action = .swapDirection(directionParam)
-        case .switchWorkspace:          action = .switchWorkspace(workspaceParam)
-        case .moveToWorkspace:          action = .moveToWorkspace(workspaceParam)
-        case .moveWorkspaceToMonitor: action = .moveWorkspaceToMonitor(directionParam)
-        case .toggleFloating:         action = .toggleFloating
-        case .toggleSplit:            action = .toggleSplit
-        case .showKeybinds:           action = .showKeybinds
-        case .launchApp:              action = .launchApp(bundleID: bundleIDParam)
-        case .focusMenuBar:           action = .focusMenuBar
-        case .focusFloating:          action = .focusFloating
-        case .closeWindow:            action = .closeWindow
-        case .cycleWorkspace:         action = .cycleWorkspace(workspaceParam)
-        }
-
-        onSave(Keybind(keyCode: recordedKeyCode, modifiers: mods, action: action))
-        dismiss()
-    }
-
 }
 
 // MARK: - Keybind display helpers

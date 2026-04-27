@@ -54,6 +54,7 @@
 		86B3C95B411DB51B9AFBE08D /* WorkspacePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4754A615E4871D79F5D066 /* WorkspacePicker.swift */; };
 		87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */; };
 		94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD84800A82DD5466833975C /* MouseTrackingManager.swift */; };
+		96FC11AF63A197C78BBE9E40 /* KeybindEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */; };
 		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
 		9C6752FADA9267F639122F68 /* AppLauncherSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE720F5A58AC7D9D84FB03F /* AppLauncherSettingsView.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
@@ -106,6 +107,7 @@
 		0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindsSettingsView.swift; sourceTree = "<group>"; };
 		12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrepareLayoutMutationTests.swift; sourceTree = "<group>"; };
 		16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNodeTests.swift; sourceTree = "<group>"; };
+		17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindEditorViewModel.swift; sourceTree = "<group>"; };
 		18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingSchedulerTests.swift; sourceTree = "<group>"; };
 		1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserConfig.swift; sourceTree = "<group>"; };
 		1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTestSupport.swift; sourceTree = "<group>"; };
@@ -316,6 +318,7 @@
 				8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */,
 				97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */,
 				1F4BE620A1670E1D89160707 /* KeybindCategory.swift */,
+				17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */,
 				0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */,
 				F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */,
 				5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */,
@@ -563,6 +566,7 @@
 				EE46ED338F7A2FDCC86D94D5 /* KeyRemapper.swift in Sources */,
 				188EAF405D36CBFCDAB54014 /* Keybind.swift in Sources */,
 				DA506BA26A104FA2BA45FF3C /* KeybindCategory.swift in Sources */,
+				96FC11AF63A197C78BBE9E40 /* KeybindEditorViewModel.swift in Sources */,
 				B44C416E3958C82361083048 /* KeybindOverlayController.swift in Sources */,
 				C5C841CD7B9E0C41D488EF3B /* KeybindsSettingsView.swift in Sources */,
 				1DEA79CA749DC72D381082D3 /* LayoutEngine.swift in Sources */,
