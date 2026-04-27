@@ -323,10 +323,10 @@ final class WindowDiscoveryService {
             // same — guards against transient frame reads during retile
             if let recordedScreen = workspaceManager.screenForWorkspace(recordedWs),
                recordedScreen == physicalScreen { continue }
-            // recorded ws hidden: only drift if the window has a real on-screen
-            // frame, not parked at a hide-corner
+            // recorded ws hidden: only drift if the window has a substantial
+            // on-screen footprint, not parked at a hide-corner sliver
             if !visibleWorkspaces.contains(recordedWs) {
-                if isAtHideCorner(w, recordedWs: recordedWs) { continue }
+                if !hasSubstantialOnScreenFrame(w) { continue }
             }
             drifts.append((w.windowID, recordedWs, physicalWs))
             hyprLog(.debug, .discovery, "drift: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
@@ -334,15 +334,23 @@ final class WindowDiscoveryService {
         return drifts
     }
 
-    /// `true` when `w`'s top-left sits within a few pixels of the
-    /// hide-corner of `recordedWs`'s home screen. Used to distinguish a
-    /// parked hidden window from one that genuinely returned with a
-    /// real frame.
-    private func isAtHideCorner(_ w: HyprWindow, recordedWs: Int) -> Bool {
-        guard let frame = w.frame,
-              let homeScreen = workspaceManager.homeScreenForWorkspace(recordedWs) else { return false }
-        let corner = workspaceManager.hidePosition(for: homeScreen)
-        return abs(frame.origin.x - corner.x) < 5 && abs(frame.origin.y - corner.y) < 5
+    /// `true` when more than half of `w`'s frame is visible on any
+    /// enabled screen. Hide-corner-parked windows have a single-pixel
+    /// sliver on screen so they fail this check; a genuinely returned
+    /// window with a real on-screen frame passes.
+    ///
+    /// Conservative on missing data: a nil or zero-area frame returns
+    /// `false` so we do not drift a window we cannot inspect.
+    private func hasSubstantialOnScreenFrame(_ w: HyprWindow) -> Bool {
+        guard let frame = w.frame else { return false }
+        let frameArea = frame.width * frame.height
+        guard frameArea > 0 else { return false }
+        var visibleArea: CGFloat = 0
+        for screen in displayManager.screens {
+            let overlap = frame.intersection(displayManager.cgRect(for: screen))
+            if !overlap.isNull { visibleArea += overlap.width * overlap.height }
+        }
+        return visibleArea / frameArea > 0.5
     }
 
     /// `true` when at least 25 % of `frame` overlaps `screenRect`. Used
