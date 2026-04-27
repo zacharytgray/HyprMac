@@ -31,7 +31,7 @@ echo "=== HyprMac Release v$NEW_VERSION ==="
 echo ""
 
 # --- step 1: bump version in project.yml ---
-echo "[1/7] Bumping version to $NEW_VERSION"
+echo "[1/8] Bumping version to $NEW_VERSION"
 sed -i '' "s/MARKETING_VERSION: \".*\"/MARKETING_VERSION: \"$NEW_VERSION\"/" project.yml
 
 # bump build number
@@ -40,11 +40,44 @@ NEW_BUILD=$((OLD_BUILD + 1))
 sed -i '' "s/CURRENT_PROJECT_VERSION: \"$OLD_BUILD\"/CURRENT_PROJECT_VERSION: \"$NEW_BUILD\"/" project.yml
 
 # --- step 2: regenerate xcode project ---
-echo "[2/7] Regenerating Xcode project"
+echo "[2/8] Regenerating Xcode project"
 xcodegen generate 2>&1 | tail -1
 
-# --- step 3: build, sign, create DMG, notarize ---
-echo "[3/7] Building release"
+# --- step 3: run tests ---
+# gate placed before signing/notarization/upload so a red test aborts the
+# release before any expensive or externally visible step runs. Debug
+# configuration keeps tests fast; separate derivedDataPath so test
+# artifacts don't pollute the Release build directory used downstream.
+echo "[3/8] Running tests"
+TEST_OUT=$(mktemp)
+if xcodebuild test \
+    -project HyprMac.xcodeproj \
+    -scheme HyprMac \
+    -configuration Debug \
+    -derivedDataPath "$BUILD_DIR/test" \
+    CODE_SIGN_IDENTITY=- \
+    CODE_SIGNING_ALLOWED=NO \
+    2>&1 | tee "$TEST_OUT" | grep -E "Test Suite '.*\.xctest'|Executed [0-9]+ tests" | tail -2; then
+    SUMMARY=$(grep -E '^[[:space:]]*Executed [0-9]+ tests' "$TEST_OUT" | tail -1)
+    if echo "$SUMMARY" | grep -q '0 failures'; then
+        echo "       ✓ $SUMMARY"
+    else
+        echo ""
+        echo "ERROR: Tests failed. Aborting release before signing/notarization/upload."
+        echo "       $SUMMARY"
+        rm -f "$TEST_OUT"
+        exit 1
+    fi
+else
+    echo ""
+    echo "ERROR: Test build failed. Aborting release."
+    rm -f "$TEST_OUT"
+    exit 1
+fi
+rm -f "$TEST_OUT"
+
+# --- step 4: build, sign, create DMG, notarize ---
+echo "[4/8] Building release"
 mkdir -p "$DIST_DIR"
 # unlock keychain and pre-authorize codesign so we don't get 20+ password prompts.
 # set-key-partition-list grants codesign access to the signing key for this session.
@@ -129,15 +162,15 @@ else
     [[ $REPLY =~ ^[Yy]$ ]] || exit 1
 fi
 
-# --- step 4: upload to GitHub Release ---
-echo "[4/7] Creating GitHub Release v$NEW_VERSION"
+# --- step 5: upload to GitHub Release ---
+echo "[5/8] Creating GitHub Release v$NEW_VERSION"
 gh release create "v$NEW_VERSION" "$DMG_PATH" \
     --repo "$REPO" \
     --title "HyprMac v$NEW_VERSION" \
     --generate-notes
 
-# --- step 5: generate Sparkle appcast ---
-echo "[5/7] Generating Sparkle appcast"
+# --- step 6: generate Sparkle appcast ---
+echo "[6/8] Generating Sparkle appcast"
 if [ -x "$SPARKLE_BIN/generate_appcast" ]; then
     "$SPARKLE_BIN/generate_appcast" "$DIST_DIR" --download-url-prefix "https://github.com/$REPO/releases/download/v$NEW_VERSION/"
     # move appcast to docs/ for GitHub Pages
@@ -149,8 +182,8 @@ else
     echo "       Run a debug build first to resolve SPM packages, then retry."
 fi
 
-# --- step 6: update Homebrew cask ---
-echo "[6/7] Updating Homebrew cask"
+# --- step 7: update Homebrew cask ---
+echo "[7/8] Updating Homebrew cask"
 DMG_SHA=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
 # update local copy
 sed -i '' "s/version \".*\"/version \"$NEW_VERSION\"/" "$PROJECT_DIR/Casks/hyprmac.rb"
@@ -177,8 +210,8 @@ else
 fi
 echo "       ✓ Cask updated (sha256: ${DMG_SHA:0:16}...)"
 
-# --- step 7: commit and push ---
-echo "[7/7] Committing and pushing"
+# --- step 8: commit and push ---
+echo "[8/8] Committing and pushing"
 git add project.yml HyprMac.xcodeproj/project.pbxproj Casks/hyprmac.rb docs/appcast.xml scripts/build-release.sh scripts/release.sh 2>/dev/null || true
 git commit -m "Release v$NEW_VERSION" 2>/dev/null || echo "       (nothing to commit)"
 git push
