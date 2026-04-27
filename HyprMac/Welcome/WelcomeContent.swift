@@ -19,19 +19,29 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "keyboard",
-            title: "Configurable Hypr Key",
-            description: "Choose Caps Lock, Tab, backtick, backslash, F13-F20, or left/right modifier keys as your Hypr key."
+            icon: "rectangle.2.swap",
+            title: "Smarter Swap Rejection",
+            description: "Same-screen and cross-monitor swaps that would crush a window below its minimum size are now rejected with a flash and beep instead of producing a broken layout."
         ),
         WhatsNewFeature(
-            icon: "rectangle.split.2x2",
-            title: "Split-Limit Layout Fix",
-            description: "Fixed an edge case near max split depth that could stretch one window and squeeze sibling tiles too small."
+            icon: "cursorarrow.rays",
+            title: "Sturdier Hover Focus",
+            description: "Hover focus now hit-tests against the actual visible window region, so floating overlays and edge tiles no longer steal focus from the window underneath your cursor."
         ),
         WhatsNewFeature(
-            icon: "slider.horizontal.3",
-            title: "Better Keybind Labels",
-            description: "Shortcut badges now reflect your selected physical Hypr key throughout Settings."
+            icon: "square.dashed",
+            title: "Cleaner Focus Borders",
+            description: "Focus borders and dim overlays redraw against live tile rects and clip to the visible region, eliminating stale outlines after animations and z-order changes."
+        ),
+        WhatsNewFeature(
+            icon: "wand.and.rays",
+            title: "Animation Polish",
+            description: "Window shadows now keep up with animated tiling, and click-triggered BSP corruption during quick focus switches has been fixed."
+        ),
+        WhatsNewFeature(
+            icon: "checklist",
+            title: "Release Test Gate",
+            description: "Every release build now runs the full XCTest suite before signing and notarization, catching regressions before they ship."
         ),
     ]
 }
