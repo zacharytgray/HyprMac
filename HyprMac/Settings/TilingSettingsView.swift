@@ -42,34 +42,24 @@ struct TilingSettingsView: View {
                 Toggle("Show focus border", isOn: $config.showFocusBorder)
 
                 if config.showFocusBorder {
-                    HStack {
-                        Text("Border Color")
-                        Spacer()
-                        if config.focusBorderColorHex != nil {
-                            Button("Reset") { config.focusBorderColorHex = nil }
-                                .font(.caption)
-                        }
-                        ColorPicker("", selection: Binding(
+                    ColorPickerRow(
+                        label: "Border Color",
+                        isCustom: config.focusBorderColorHex != nil,
+                        onReset: { config.focusBorderColorHex = nil },
+                        color: Binding(
                             get: { Color(config.resolvedFocusBorderColor) },
                             set: { config.focusBorderColorHex = NSColor($0).hexString }
-                        ), supportsOpacity: false)
-                        .labelsHidden()
-                        .frame(width: 36)
-                    }
-                    HStack {
-                        Text("Floating Border Color")
-                        Spacer()
-                        if config.floatingBorderColorHex != nil {
-                            Button("Reset") { config.floatingBorderColorHex = nil }
-                                .font(.caption)
-                        }
-                        ColorPicker("", selection: Binding(
+                        )
+                    )
+                    ColorPickerRow(
+                        label: "Floating Border Color",
+                        isCustom: config.floatingBorderColorHex != nil,
+                        onReset: { config.floatingBorderColorHex = nil },
+                        color: Binding(
                             get: { Color(config.resolvedFloatingBorderColor) },
                             set: { config.floatingBorderColorHex = NSColor($0).hexString }
-                        ), supportsOpacity: false)
-                        .labelsHidden()
-                        .frame(width: 36)
-                    }
+                        )
+                    )
                     Text("Tints the window during traversal; shows as an outline when settled. Floating windows use a separate color.")
                         .font(.caption)
                         .foregroundColor(.secondary)
