@@ -16,6 +16,17 @@ import Foundation
 
 enum ConfigMigration {
 
+    // current on-disk schema version. bump this in lockstep with the
+    // migration code that handles the new shape.
+    static let currentVersion: Int = 1
+
+    // resolve the schema version of a loaded SavedConfig. nil maps to v1
+    // (the version when the field was introduced — every pre-existing
+    // user config decodes as v1).
+    static func schemaVersion(of saved: SavedConfig) -> Int {
+        saved.version ?? 1
+    }
+
     // load monitor config — preferring the local file, falling back to the
     // monitor fields embedded in an older SavedConfig.
     //

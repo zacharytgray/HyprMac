@@ -205,7 +205,14 @@ final class ConfigStore {
 // the keys here are the v0.4.2 wire format. additions go behind Optional<T>
 // so older configs decode without throwing; explicit defaults are applied
 // in the loader.
+//
+// `version` was added in phase 6. it's optional so v0.4.2 configs (where the
+// field is absent) still decode — ConfigMigration treats nil as version 1.
+// the field is intentionally written as nil today so byte-equal round-trip
+// holds for unchanged settings; future schema bumps will start emitting a
+// concrete value when migration logic actually exists.
 struct SavedConfig: Codable {
+    let version: Int?
     let keybinds: [Keybind]
     let gapSize: CGFloat
     let outerPadding: CGFloat

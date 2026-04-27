@@ -71,8 +71,18 @@ class UserConfig: ObservableObject {
         }
     }
 
-    // suppresses didSet handlers during a programmatic reload from disk so
-    // mass property updates don't kick off a flurry of redundant writes.
+    // isReloading: gates @Published didSet handlers during a programmatic
+    // reload (reloadFromDisk + resetToDefaults call sites). every @Published
+    // property's didSet calls save() unless this flag is true. without the
+    // flag, a single reload would write the file 17 times — once per
+    // property update — and worse, the file watcher would observe each
+    // write and re-trigger reloadFromDisk in a tight loop.
+    //
+    // contract: set isReloading = true *before* mass property updates,
+    // false after. only the reload + reset paths use it; ordinary user-
+    // driven mutations let didSet save through.
+    //
+    // not thread-safe — UserConfig is implicitly main-thread.
     private var isReloading = false
 
     private let store: ConfigStore
@@ -94,33 +104,33 @@ class UserConfig: ObservableObject {
             self.gapSize = saved.gapSize
             self.outerPadding = saved.outerPadding
             self.enabled = saved.enabled
-            self.focusFollowsMouse = saved.focusFollowsMouse ?? true
-            self.hyprKey = saved.hyprKey ?? .capsLock
+            self.focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
+            self.hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
-            self.animateWindows = saved.animateWindows ?? true
-            self.animationDuration = saved.animationDuration ?? 0.15
-            self.showMenuBarIndicator = saved.showMenuBarIndicator ?? true
-            self.showFocusBorder = saved.showFocusBorder ?? true
+            self.animateWindows = saved.animateWindows ?? UserConfigDefaults.animateWindows
+            self.animationDuration = saved.animationDuration ?? UserConfigDefaults.animationDuration
+            self.showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
+            self.showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = saved.focusBorderColorHex
             self.floatingBorderColorHex = saved.floatingBorderColorHex
-            self.dimInactiveWindows = saved.dimInactiveWindows ?? false
-            self.dimIntensity = saved.dimIntensity ?? 0.2
+            self.dimInactiveWindows = saved.dimInactiveWindows ?? UserConfigDefaults.dimInactiveWindows
+            self.dimIntensity = saved.dimIntensity ?? UserConfigDefaults.dimIntensity
         } else {
             self.keybinds = Keybind.defaults
-            self.gapSize = 8
-            self.outerPadding = 8
-            self.enabled = true
-            self.focusFollowsMouse = true
-            self.hyprKey = .capsLock
+            self.gapSize = UserConfigDefaults.gapSize
+            self.outerPadding = UserConfigDefaults.outerPadding
+            self.enabled = UserConfigDefaults.enabled
+            self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
+            self.hyprKey = UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
-            self.animateWindows = true
-            self.animationDuration = 0.15
-            self.showMenuBarIndicator = true
-            self.showFocusBorder = true
+            self.animateWindows = UserConfigDefaults.animateWindows
+            self.animationDuration = UserConfigDefaults.animationDuration
+            self.showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
+            self.showFocusBorder = UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = nil
             self.floatingBorderColorHex = nil
-            self.dimInactiveWindows = false
-            self.dimIntensity = 0.2
+            self.dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
+            self.dimIntensity = UserConfigDefaults.dimIntensity
         }
 
         // monitor settings: prefer the local file; fall back to (and migrate
@@ -173,6 +183,7 @@ class UserConfig: ObservableObject {
     // local-only monitor file via ConfigStore.writeSavedMonitorConfig.
     private func makeSavedConfig() -> SavedConfig {
         SavedConfig(
+            version: nil,
             keybinds: keybinds, gapSize: gapSize,
             outerPadding: outerPadding, enabled: enabled,
             focusFollowsMouse: focusFollowsMouse,
@@ -192,22 +203,22 @@ class UserConfig: ObservableObject {
 
     func resetToDefaults() {
         keybinds = Keybind.defaults
-        gapSize = 8
-        outerPadding = 8
-        enabled = true
-        focusFollowsMouse = true
-        hyprKey = .capsLock
+        gapSize = UserConfigDefaults.gapSize
+        outerPadding = UserConfigDefaults.outerPadding
+        enabled = UserConfigDefaults.enabled
+        focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
+        hyprKey = UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
-        animateWindows = true
-        animationDuration = 0.15
-        showMenuBarIndicator = true
+        animateWindows = UserConfigDefaults.animateWindows
+        animationDuration = UserConfigDefaults.animationDuration
+        showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
         maxSplitsPerMonitor = [:]
         disabledMonitors = []
-        showFocusBorder = true
+        showFocusBorder = UserConfigDefaults.showFocusBorder
         focusBorderColorHex = nil
         floatingBorderColorHex = nil
-        dimInactiveWindows = false
-        dimIntensity = 0.2
+        dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
+        dimIntensity = UserConfigDefaults.dimIntensity
     }
 
     // resolve the border color — custom hex or system accent
@@ -261,22 +272,38 @@ class UserConfig: ObservableObject {
 extension SavedConfig {
     static var empty: SavedConfig {
         SavedConfig(
-            keybinds: [], gapSize: 8, outerPadding: 8, enabled: true,
-            focusFollowsMouse: true, hyprKey: .capsLock,
+            version: nil,
+            keybinds: [],
+            gapSize: UserConfigDefaults.gapSize,
+            outerPadding: UserConfigDefaults.outerPadding,
+            enabled: UserConfigDefaults.enabled,
+            focusFollowsMouse: UserConfigDefaults.focusFollowsMouse,
+            hyprKey: UserConfigDefaults.hyprKey,
             excludedBundleIDs: nil,
-            animateWindows: true, animationDuration: 0.15,
-            showMenuBarIndicator: true,
+            animateWindows: UserConfigDefaults.animateWindows,
+            animationDuration: UserConfigDefaults.animationDuration,
+            showMenuBarIndicator: UserConfigDefaults.showMenuBarIndicator,
             maxSplitsPerMonitor: nil, disabledMonitors: nil,
-            showFocusBorder: true,
+            showFocusBorder: UserConfigDefaults.showFocusBorder,
             focusBorderColorHex: nil, floatingBorderColorHex: nil,
-            dimInactiveWindows: false, dimIntensity: 0.2)
+            dimInactiveWindows: UserConfigDefaults.dimInactiveWindows,
+            dimIntensity: UserConfigDefaults.dimIntensity)
     }
 }
 
 extension NSColor {
+    // returns nil + logs at .warning on malformed input. callers fall back
+    // to a system color (controlAccentColor / systemOrange) so a corrupt or
+    // empty hex string can't take down the focus-border / floating-border
+    // pipeline. retained as `fromHex` for compat with existing call sites;
+    // the logging is the phase-6 hardening per §11.1.
     static func fromHex(_ hex: String) -> NSColor? {
         let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard h.count == 6, let val = UInt64(h, radix: 16) else { return nil }
+        guard h.count == 6, let val = UInt64(h, radix: 16) else {
+            hyprLog(.warning, .config,
+                    "malformed hex color '\(hex)'; falling back to system default")
+            return nil
+        }
         return NSColor(red: CGFloat((val >> 16) & 0xFF) / 255,
                        green: CGFloat((val >> 8) & 0xFF) / 255,
                        blue: CGFloat(val & 0xFF) / 255, alpha: 1.0)
