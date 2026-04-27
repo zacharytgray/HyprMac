@@ -172,16 +172,16 @@ final class WorkspaceOrchestrator {
                 ?? workspaceManager.homeScreenForWorkspace(number)
                 ?? screen
 
-            if let visibleScreen = workspaceManager.screenForWorkspace(number) {
-                if !tilingEngine.canFitWindow(focused, onWorkspace: number, screen: visibleScreen) {
-                    hyprLog(.debug, .workspace, "workspace \(number) can't fit '\(focused.title ?? "?")' on \(visibleScreen.localizedName) — rejected move")
-                    NSSound.beep()
-                    if let frame = focused.frame {
-                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
-                    }
-                    return
+            if !tilingEngine.canFitWindow(focused, onWorkspace: number, screen: targetScreen) {
+                hyprLog(.debug, .workspace, "workspace \(number) can't fit '\(focused.title ?? "?")' on \(targetScreen.localizedName) — rejected move")
+                NSSound.beep()
+                if let frame = focused.frame {
+                    focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
                 }
-            } else {
+                return
+            }
+
+            if workspaceManager.screenForWorkspace(number) == nil {
                 // exclude hidden windows (minimized/closed but app still running) from count
                 let wids = workspaceManager.windowIDs(onWorkspace: number).subtracting(stateCache.hiddenWindowIDs)
                 let tiledCount = wids.filter { !stateCache.floatingWindowIDs.contains($0) }.count

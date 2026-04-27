@@ -200,6 +200,17 @@ class TilingEngine {
         return overflowingWindows(in: adjusted).isEmpty
     }
 
+    private func screen(for key: TilingKey) -> NSScreen? {
+        displayManager.screens.first { TilingKey(workspace: key.workspace, screen: $0) == key }
+    }
+
+    private func treeContaining(_ window: HyprWindow) -> (key: TilingKey, tree: BSPTree)? {
+        for (key, tree) in trees where tree.contains(window) {
+            return (key, tree)
+        }
+        return nil
+    }
+
     private func autoFloatOverflow(_ overflow: [HyprWindow],
                                    inserted: [HyprWindow],
                                    tree: BSPTree,
@@ -528,6 +539,48 @@ class TilingEngine {
         return layoutCanAccommodateKnownMinimums(t, rect: rect)
     }
 
+    /// `true` when a cross-monitor swap can place each window into the
+    /// other's tree without violating recorded min-size constraints.
+    ///
+    /// Mirrors `canSwapWindows`, but evaluates both affected trees. The
+    /// trial clears user ratios because those ratios belonged to the
+    /// previous occupants on each screen; the real cross-swap path uses
+    /// the same baseline so preflight and commit agree.
+    func canCrossSwapWindows(_ a: HyprWindow, _ b: HyprWindow) -> Bool {
+        guard let foundA = treeContaining(a),
+              let foundB = treeContaining(b) else { return false }
+
+        if foundA.key == foundB.key {
+            guard let screen = screen(for: foundA.key) else { return false }
+            return canSwapWindows(a, b, onWorkspace: foundA.key.workspace, screen: screen)
+        }
+
+        let windowsToPrime = foundA.tree.allWindows + foundB.tree.allWindows
+        primeMinimumSizes(windowsToPrime)
+
+        let snapshotA = foundA.tree.snapshot()
+        let snapshotB = foundB.tree.snapshot()
+        defer {
+            foundA.tree.restore(snapshotA)
+            foundB.tree.restore(snapshotB)
+        }
+
+        guard let nodeA = foundA.tree.root.find(a),
+              let nodeB = foundB.tree.root.find(b),
+              let screenA = screen(for: foundA.key),
+              let screenB = screen(for: foundB.key) else { return false }
+
+        nodeA.window = b
+        nodeB.window = a
+        foundA.tree.root.clearUserSetRatios()
+        foundB.tree.root.clearUserSetRatios()
+        foundA.tree.root.resetSplitRatios()
+        foundB.tree.root.resetSplitRatios()
+
+        return layoutCanAccommodateKnownMinimums(foundA.tree, rect: displayManager.cgRect(for: screenA))
+            && layoutCanAccommodateKnownMinimums(foundB.tree, rect: displayManager.cgRect(for: screenB))
+    }
+
     /// Synchronous swap path (no animation).
     ///
     /// Snapshots the tree before swapping so a post-readback overflow
@@ -658,28 +711,45 @@ class TilingEngine {
     /// tree (handles drag-from-floating cases). The two retile passes
     /// run synchronously back-to-back; pollers are gated externally
     /// via `cross-swap-in-flight` for the ~800 ms it takes.
-    func crossSwapWindows(_ a: HyprWindow, _ b: HyprWindow) {
-        primeMinimumSizes([a, b])
-        var keyA: TilingKey?
-        var keyB: TilingKey?
-        var treeA: BSPTree?
-        var treeB: BSPTree?
+    @discardableResult
+    func crossSwapWindows(_ a: HyprWindow, _ b: HyprWindow) -> Bool {
+        guard canCrossSwapWindows(a, b),
+              let foundA = treeContaining(a),
+              let foundB = treeContaining(b),
+              let screenA = screen(for: foundA.key),
+              let screenB = screen(for: foundB.key) else { return false }
 
-        for (key, t) in trees {
-            if t.contains(a) { keyA = key; treeA = t }
-            if t.contains(b) { keyB = key; treeB = t }
+        if foundA.key == foundB.key {
+            return swapWindows(a, b, onWorkspace: foundA.key.workspace, screen: screenA)
         }
 
-        guard let kA = keyA, let kB = keyB, let tA = treeA, let tB = treeB else { return }
+        let snapshotA = foundA.tree.snapshot()
+        let snapshotB = foundB.tree.snapshot()
 
-        if let nodeA = tA.root.find(a) { nodeA.window = b }
-        if let nodeB = tB.root.find(b) { nodeB.window = a }
+        if let nodeA = foundA.tree.root.find(a) { nodeA.window = b }
+        if let nodeB = foundB.tree.root.find(b) { nodeB.window = a }
+        foundA.tree.root.clearUserSetRatios()
+        foundB.tree.root.clearUserSetRatios()
 
-        let screenA = displayManager.screens.first { TilingKey(workspace: kA.workspace, screen: $0) == kA }
-        let screenB = displayManager.screens.first { TilingKey(workspace: kB.workspace, screen: $0) == kB }
+        retile(key: foundA.key, screen: screenA, preserveMinSizesOnOverflow: true)
+        retile(key: foundB.key, screen: screenB, preserveMinSizesOnOverflow: true)
 
-        if let sA = screenA { retile(key: kA, screen: sA) }
-        if let sB = screenB { retile(key: kB, screen: sB) }
+        let overflowA = overflowingWindows(in: foundA.tree.layout(in: displayManager.cgRect(for: screenA),
+                                                                  gap: gapSize,
+                                                                  padding: outerPadding))
+        let overflowB = overflowingWindows(in: foundB.tree.layout(in: displayManager.cgRect(for: screenB),
+                                                                  gap: gapSize,
+                                                                  padding: outerPadding))
+        if !overflowA.isEmpty || !overflowB.isEmpty {
+            hyprLog(.debug, .lifecycle, "cross-monitor swap overflow detected post-readback — reverting")
+            foundA.tree.restore(snapshotA)
+            foundB.tree.restore(snapshotB)
+            retile(key: foundA.key, screen: screenA)
+            retile(key: foundB.key, screen: screenB)
+            return false
+        }
+
+        return true
     }
 
     /// Synchronous split-direction toggle for `window`'s parent

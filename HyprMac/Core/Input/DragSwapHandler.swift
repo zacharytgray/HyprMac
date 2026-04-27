@@ -153,18 +153,37 @@ final class DragSwapHandler {
     private func applySwap(_ s: DragManager.DragSwapResult, allWindows: [HyprWindow]) {
         if s.crossMonitor {
             hyprLog(.debug, .drag, "cross-monitor swap: '\(s.dragged.title ?? "?")' ↔ '\(s.target.title ?? "?")'")
+            guard tilingEngine.canCrossSwapWindows(s.dragged, s.target) else {
+                rejectSwap?(s.dragged, "cross-monitor swap would violate min-size constraints")
+                updatePositionCache?(allWindows)
+                return
+            }
+
             // hold polling off for the duration of the swap. crossSwapWindows runs
             // two synchronous retile passes back-to-back; without this guard, the
             // 1Hz timer or NSWorkspace notifications can fire mid-swap and observe
             // the windows in an inconsistent state.
             suppressions.suppress(Self.crossSwapKey, for: Self.crossSwapSuppressionSec)
+            var srcWs: Int?
+            var tgtWs: Int?
             if let srcScreen = s.sourceScreen, let tgtScreen = s.targetScreen {
-                let srcWs = workspaceManager.workspaceForScreen(srcScreen)
-                let tgtWs = workspaceManager.workspaceForScreen(tgtScreen)
-                workspaceManager.moveWindow(s.dragged.windowID, toWorkspace: tgtWs)
-                workspaceManager.moveWindow(s.target.windowID, toWorkspace: srcWs)
+                srcWs = workspaceManager.workspaceForScreen(srcScreen)
+                tgtWs = workspaceManager.workspaceForScreen(tgtScreen)
+                if let srcWs, let tgtWs {
+                    workspaceManager.moveWindow(s.dragged.windowID, toWorkspace: tgtWs)
+                    workspaceManager.moveWindow(s.target.windowID, toWorkspace: srcWs)
+                }
             }
-            tilingEngine.crossSwapWindows(s.dragged, s.target)
+            let ok = tilingEngine.crossSwapWindows(s.dragged, s.target)
+            if !ok {
+                if let srcWs, let tgtWs {
+                    workspaceManager.moveWindow(s.dragged.windowID, toWorkspace: srcWs)
+                    workspaceManager.moveWindow(s.target.windowID, toWorkspace: tgtWs)
+                }
+                rejectSwap?(s.dragged, "cross-monitor swap overflows min-size constraints (post-readback)")
+                tileAllVisibleSpaces?(allWindows)
+                return
+            }
             updatePositionCache?(allWindows)
             return
         }
@@ -192,11 +211,18 @@ final class DragSwapHandler {
                 transitions.append(.init(window: w, from: fromRect, to: toRect))
             }
             animator.animate(transitions, duration: config.animationDuration) { [weak self] in
-                self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-                self?.updatePositionCache?(nil)
+                guard let self else { return }
+                let ok = self.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
+                if !ok {
+                    self.rejectSwap?(s.dragged, "drag swap overflows min-size constraints (post-readback)")
+                }
+                self.updatePositionCache?(nil)
             }
         } else {
-            tilingEngine.swapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen)
+            let ok = tilingEngine.swapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen)
+            if !ok {
+                rejectSwap?(s.dragged, "drag swap overflows min-size constraints (post-readback)")
+            }
             updatePositionCache?(allWindows)
         }
     }
