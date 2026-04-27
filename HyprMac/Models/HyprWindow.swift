@@ -1,30 +1,55 @@
+// One window's identity and AX-driven controls. Wraps an
+// `AXUIElement` and its stable `CGWindowID`; everything else
+// (`frame`, `position`, `size`, `focus`, `setFrame`) is built on AX
+// gets/sets. Also holds the SkyLight private-API hooks used for
+// focus-without-raise.
+
 import Cocoa
 
-// private SkyLight APIs for focus-without-raise (used by yabai + Amethyst)
-// activates a process without reordering windows
+// Private SkyLight APIs. `_SLPSSetFrontProcessWithOptions` activates a
+// process without reordering its windows; `SLPSPostEventRecordTo`
+// synthesizes keyboard focus events. Same approach yabai and
+// AeroSpace use.
 @_silgen_name("_SLPSSetFrontProcessWithOptions") @discardableResult
 private func _SLPSSetFrontProcessWithOptions(_ psn: inout ProcessSerialNumber, _ wid: UInt32, _ mode: UInt32) -> CGError
 
-// synthesizes keyboard focus events to a specific window
 @_silgen_name("SLPSPostEventRecordTo") @discardableResult
 private func SLPSPostEventRecordTo(_ psn: inout ProcessSerialNumber, _ bytes: inout UInt8) -> CGError
 
-// get PSN from PID (deprecated but functional)
 @_silgen_name("GetProcessForPID") @discardableResult
 private func GetProcessForPID(_ pid: pid_t, _ psn: inout ProcessSerialNumber) -> OSStatus
 
 private let kCPSUserGenerated: UInt32 = 0x200
 
+/// One window managed by HyprMac, identified by its stable
+/// `CGWindowID` and backed by an `AXUIElement`.
+///
+/// Owns the resize-move-resize pattern (`setFrame` /
+/// `setFrameWithReadback`), the focus operations (`focus`,
+/// `focusWithoutRaise`), and the per-window `observedMinSize` cache
+/// `MinSizeMemory` reads and writes.
+///
+/// Threading: main-thread only. AX calls block briefly while the OS
+/// round-trips to the owning app.
 class HyprWindow: Equatable, Hashable {
     let element: AXUIElement
     let windowID: CGWindowID
     let ownerPID: pid_t
+
+    /// `true` when the window is excluded from tiling. Toggled by the
+    /// floating controller and by auto-float predicates.
     var isFloating: Bool = false
-    // cached from getAllWindows() — avoids redundant AX reads in updatePositionCache.
-    // cleared on setFrame/setFrameWithReadback so stale values aren't used.
+
+    /// Most recent AX frame read by `getAllWindows`. Lets
+    /// `updatePositionCache` skip redundant AX reads. Cleared by
+    /// `setFrame` / `setFrameWithReadback` so stale values are not
+    /// reused.
     var cachedFrame: CGRect?
-    // known lower bound for app resizing. seeded from AXMinimumSize/heuristics
-    // when available, then refined when layout readback witnesses a refusal.
+
+    /// Known lower bound on the window's resizable size. Seeded from
+    /// `AXMinimumSize` (or a per-bundle-id heuristic when AX does not
+    /// expose one), then refined whenever readback witnesses an
+    /// app's refusal to shrink past a tighter bound.
     var observedMinSize: CGSize?
 
     init(element: AXUIElement, windowID: CGWindowID, ownerPID: pid_t) {
@@ -39,6 +64,10 @@ class HyprWindow: Equatable, Hashable {
         return value as? String
     }
 
+    /// Set `observedMinSize` from `AXMinimumSize` (or per-bundle-id
+    /// fallback) when AX exposes a usable value. No-op when neither
+    /// source produces one — `MinSizeMemory` will learn from readback
+    /// later.
     func seedMinimumSize(bundleIdentifier: String?) {
         if let axSize = axMinimumSize() {
             observedMinSize = axSize
@@ -122,12 +151,18 @@ class HyprWindow: Equatable, Hashable {
         }
     }
 
-    // resize-move-resize pattern (from yabai) — handles macOS screen-bound constraints.
-    // macOS clamps resize based on the current screen, so we must:
-    // 1. resize to target (may be clamped by source screen)
-    // 2. move to target position (now on destination screen)
-    // 3. resize again (now unclamped by destination screen bounds)
-    // crossMonitor=false skips step 3 for same-screen tiling (saves 1 AX call per window)
+    /// Apply `rect` to the window using the resize-move-resize
+    /// pattern.
+    ///
+    /// macOS clamps resize against the current screen's bounds, so a
+    /// naive set on a cross-monitor move ends up clamped at the source
+    /// screen's edge. Three steps:
+    /// 1. Resize to target (may be clamped by source screen).
+    /// 2. Move to target position (now on destination screen).
+    /// 3. Resize again (now unclamped by destination's bounds).
+    ///
+    /// Same-screen tile updates pass `crossMonitor: false` so step 3
+    /// is skipped — one AX call saved per window per retile.
     func setFrame(_ rect: CGRect, crossMonitor: Bool = true) {
         cachedFrame = nil
         size = rect.size
@@ -135,8 +170,13 @@ class HyprWindow: Equatable, Hashable {
         if crossMonitor { size = rect.size }
     }
 
-    // set frame and read back actual size — returns what the app actually accepted.
-    // apps with minimum sizes will refuse to shrink, and the readback catches that.
+    /// Apply `rect` and immediately read back the actual frame the
+    /// app accepted.
+    ///
+    /// Apps with hard minimums refuse to shrink past their floor; the
+    /// readback returns the actual size the OS settled on, which the
+    /// tiling engine compares against the requested size to decide
+    /// whether pass 2 is needed.
     @discardableResult
     func setFrameWithReadback(_ rect: CGRect) -> CGRect {
         setFrame(rect)
@@ -154,6 +194,14 @@ class HyprWindow: Equatable, Hashable {
         return CGPoint(x: f.midX, y: f.midY)
     }
 
+    /// Bring this window forward and give it keyboard focus, raising
+    /// it above the other windows of its app and activating the app
+    /// itself if it is not already frontmost.
+    ///
+    /// Performs the AX raise + main + focused triple, then activates
+    /// the app and re-asserts focus 50 ms later — single-pass focus
+    /// is unreliable when the app was not already active because the
+    /// AX writes can race the activation.
     func focus() {
         let app = NSRunningApplication(processIdentifier: ownerPID)
         let alreadyActive = app?.isActive ?? false
@@ -173,10 +221,13 @@ class HyprWindow: Equatable, Hashable {
         }
     }
 
-    // focus this window without changing z-order (yabai's focus_without_raise).
-    // uses _SLPSSetFrontProcessWithOptions to activate the process without
-    // reordering windows, then SLPSPostEventRecordTo to synthesize keyboard
-    // focus events. floating windows stay exactly where they are.
+    /// Give this window keyboard focus without changing z-order.
+    ///
+    /// Uses `_SLPSSetFrontProcessWithOptions` to activate the process
+    /// in place, then `SLPSPostEventRecordTo` to synthesize the
+    /// keyboard-focus events. Floating windows stay exactly where
+    /// they are — used by FFM and `Hypr+Arrow` to avoid disturbing
+    /// the user's z-stack.
     func focusWithoutRaise() {
         var psn = ProcessSerialNumber()
         guard GetProcessForPID(ownerPID, &psn) == noErr else { return }

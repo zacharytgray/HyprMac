@@ -1,15 +1,29 @@
+// User-triggerable actions. The `Action` enum is the protocol between
+// `HotkeyManager` (which produces values) and `ActionDispatcher` (which
+// applies them).
+
 import Foundation
 
+/// Cardinal direction parameter used by focus / swap / move-workspace
+/// actions.
 enum Direction: String, Codable {
     case left, right, up, down
 }
 
+/// Every keybind-triggerable action.
+///
+/// Cases with associated values carry the action's parameter
+/// (`Direction`, workspace number, bundle id). Round-trip stable in
+/// JSON via the custom `Codable` implementation below — wire-format
+/// case keys are frozen at the v0.4.2 names indefinitely.
 enum Action: Equatable {
     case focusDirection(Direction)
     case swapDirection(Direction)
     case switchWorkspace(Int)
     case moveToWorkspace(Int)
-    case moveWorkspaceToMonitor(Direction)  // move current workspace to adjacent monitor
+    /// Move the current workspace to the adjacent monitor. Only
+    /// `.left` / `.right` are meaningful.
+    case moveWorkspaceToMonitor(Direction)
     case toggleFloating
     case toggleSplit
     case showKeybinds
@@ -17,28 +31,29 @@ enum Action: Equatable {
     case focusMenuBar
     case focusFloating
     case closeWindow
-    case cycleWorkspace(Int)  // +1 = next occupied, -1 = prev occupied (on current monitor)
+    /// Cycle through occupied workspaces on the current monitor.
+    /// `+1` advances to the next occupied workspace; `-1` rewinds.
+    case cycleWorkspace(Int)
 }
 
 // MARK: - Codable
 
-// custom Codable preserving the v0.4.2 wire format byte-for-byte. the
-// synthesized format (which user configs were written with) puts the case
-// name at the outer key and the associated value under "_0" (or the
-// parameter label for named associated values).
+// Custom `Codable` preserving the v0.4.2 wire format byte-for-byte. The
+// synthesized format (which user configs were written with) places the
+// case name at the outer key and the associated value under "_0" (or
+// the parameter label for named associated values).
 //
-// JSON case keys are frozen at "switchDesktop" / "moveToDesktop" forever
-// per §5.6 — the in-code rename to switchWorkspace / moveToWorkspace is
-// purely internal. the decoder accepts both old and new alias names so a
-// hand-edited config using the new spelling still loads; the encoder
-// always writes the canonical (old) keys so user configs never see
-// noisy churn.
+// JSON case keys are an API guarantee — the decoder accepts both old
+// and new spellings as aliases, but the encoder always writes the
+// canonical (legacy) names so existing user configs do not see churn
+// after an in-code rename.
 
 extension Action: Codable {
 
-    // CaseKey rawValues are the JSON wire-format keys, frozen at the v0.4.2
-    // names — switchWorkspace/moveToWorkspace deliberately encode under their
-    // legacy "switchDesktop"/"moveToDesktop" keys forever per §5.6.
+    /// JSON wire-format case keys. Frozen at the v0.4.2 names forever:
+    /// `switchWorkspace` / `moveToWorkspace` encode under their legacy
+    /// `"switchDesktop"` / `"moveToDesktop"` keys so existing configs
+    /// load cleanly across in-code renames.
     private enum CaseKey: String, CodingKey {
         case focusDirection
         case swapDirection
@@ -55,9 +70,9 @@ extension Action: Codable {
         case cycleWorkspace
     }
 
-    // accepted-but-not-emitted aliases. lets a hand-edited config using the
-    // new in-code spellings still decode; the encoder always writes the
-    // canonical (legacy) key from CaseKey.rawValue.
+    /// Accepted-but-not-emitted aliases. Lets a hand-edited config
+    /// using the new in-code spellings decode; the encoder always
+    /// writes the canonical (legacy) key from `CaseKey.rawValue`.
     private static let aliases: [String: CaseKey] = [
         "switchWorkspace": .switchWorkspace,
         "moveToWorkspace": .moveToWorkspace,
@@ -111,9 +126,9 @@ extension Action: Codable {
         }
     }
 
-    // malformed direction strings used to crash via Direction(rawValue:)!.
-    // log + fall back to .right (a neutral default) so a typo doesn't take
-    // down the app.
+    /// Decode a `Direction`, logging a warning and falling back to
+    /// `.right` on a malformed string. A typo in a hand-edited config
+    /// must not crash the app.
     private static func decodeDirection(_ c: KeyedDecodingContainer<PayloadKey>,
                                         field: String) throws -> Direction {
         let raw = try c.decode(String.self, forKey: ._0)
@@ -163,8 +178,8 @@ extension Action: Codable {
     }
 }
 
-// dynamic key for reading the action's outer case-name key without
-// pre-declaring every accepted alias as a CodingKey case.
+/// Dynamic `CodingKey` used to read the action's outer case-name key
+/// without pre-declaring every accepted alias as a `CodingKey` case.
 private struct AnyKey: CodingKey {
     var stringValue: String
     var intValue: Int? { nil }

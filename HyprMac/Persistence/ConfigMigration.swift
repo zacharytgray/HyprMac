@@ -1,38 +1,38 @@
+// One-time data migrations and schema-version bookkeeping. Lives in
+// Persistence so changes here do not touch the `@Published` surface
+// in `UserConfig`. Today: the monitor-config split (per-machine
+// settings extracted from the iCloud-synced file). Future schema
+// bumps land here too.
+
 import Foundation
 
-// ConfigMigration owns one-time data migrations + (eventually) schema-version
-// bumps. lives in Persistence so changes here don't touch the @Published
-// surface in UserConfig.
-//
-// today this houses the monitor-config split: maxSplitsPerMonitor and
-// disabledMonitors used to live in the main (iCloud-synced) config.json.
-// they're now in a local-only monitor-config.json so per-machine settings
-// don't roundtrip through iCloud and clobber each machine's setup. when a
-// pre-split config is loaded, we extract the monitor data, write it locally,
-// and stop using the synced fields.
-//
-// future schema bumps land here too — bump SavedConfig.version and add a
-// case in migrate(...) that mutates the loaded SavedConfig in place.
-
+/// One-time migrations and schema-version helpers for `SavedConfig`.
 enum ConfigMigration {
 
-    // current on-disk schema version. bump this in lockstep with the
-    // migration code that handles the new shape.
+    /// Current on-disk schema version. Bump in lockstep with the
+    /// migration code that handles the new shape.
     static let currentVersion: Int = 1
 
-    // resolve the schema version of a loaded SavedConfig. nil maps to v1
-    // (the version when the field was introduced — every pre-existing
-    // user config decodes as v1).
+    /// Schema version of a loaded `SavedConfig`. `nil` maps to v1 —
+    /// the version when the field was introduced; every pre-existing
+    /// config decodes as v1.
     static func schemaVersion(of saved: SavedConfig) -> Int {
         saved.version ?? 1
     }
 
-    // load monitor config — preferring the local file, falling back to the
-    // monitor fields embedded in an older SavedConfig.
-    //
-    // returns the resolved (maxSplitsPerMonitor, disabledMonitors) pair, plus
-    // a flag indicating whether the local monitor file needs to be written
-    // (i.e. we just migrated the data out of the synced config).
+    /// Resolve monitor config, preferring the local file and falling
+    /// back to the monitor fields embedded in an older
+    /// `SavedConfig`.
+    ///
+    /// `maxSplitsPerMonitor` and `disabledMonitors` used to live in
+    /// the main (iCloud-synced) `config.json`; they now live in a
+    /// local-only `monitor-config.json` so per-machine settings do
+    /// not round-trip through iCloud and clobber each machine's
+    /// setup.
+    ///
+    /// - Returns: the resolved values plus `needsLocalWrite`, which
+    ///   indicates the caller should persist the local file because
+    ///   the values were just migrated out of the synced config.
     static func resolveMonitorConfig(
         local: SavedMonitorConfig?,
         embedded saved: SavedConfig?

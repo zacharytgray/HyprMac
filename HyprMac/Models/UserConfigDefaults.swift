@@ -1,16 +1,16 @@
+// Single source of truth for `UserConfig`'s scalar default values.
+// Used by the init's else branch, by `resetToDefaults`, and by the
+// `?? value` fallbacks that absorb a missing optional field on
+// decode.
+
 import Foundation
 
-// single source of truth for UserConfig's default values.
-//
-// extracted in phase 6 because the same defaults were spelled out in three
-// places (UserConfig.init's else branch, UserConfig.resetToDefaults, and the
-// `?? value` fallbacks applied when a v0.4.2 config decodes without an
-// optional field). triplication made it easy for one to drift behind.
-//
-// keybinds + excluded bundle IDs intentionally stay in their respective
-// type-specific files (DefaultKeybinds.swift / UserConfig.defaultExcludedBundleIDs)
-// so this file is purely the scalar/flag defaults.
-
+/// Scalar defaults for `UserConfig`.
+///
+/// Keybinds and excluded bundle ids live in their type-specific
+/// files (`DefaultKeybinds.swift` /
+/// `UserConfig.defaultExcludedBundleIDs`); this enum holds only the
+/// scalar and flag defaults.
 enum UserConfigDefaults {
     static let gapSize: CGFloat = 8
     static let outerPadding: CGFloat = 8

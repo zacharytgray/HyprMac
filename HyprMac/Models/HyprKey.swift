@@ -1,6 +1,17 @@
+// Identifies the physical key acting as the Hypr modifier. Caps Lock
+// is the default; the user can pick another modifier or function key
+// from the settings UI.
+
 import Carbon
 import CoreGraphics
 
+/// Physical key that takes the Hypr modifier role.
+///
+/// `capsLock` is special — it is remapped to `F18` at the IOKit
+/// driver level via `KeyRemapper.usesCapsLockRemap`, so the Carbon
+/// key code observed by `HotkeyManager` is `kVK_F18` regardless of
+/// the user's choice. Every other case is a key the OS already
+/// surfaces to the event tap directly.
 enum HyprKey: String, Codable, CaseIterable, Identifiable {
     case capsLock
     case tab

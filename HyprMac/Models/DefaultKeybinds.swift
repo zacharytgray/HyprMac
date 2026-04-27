@@ -1,15 +1,14 @@
+// Default keybind table that ships with HyprMac. Any new default
+// action goes here. `UserConfig.mergeNewDefaults` injects these into
+// existing saved configs at load time, so users who upgrade pick up
+// new defaults without resetting their customizations.
+
 import Carbon
 
-// data-only file: the default keybind table that ships with HyprMac.
-// extracted from Keybind.swift in phase 6 so the model file stays focused on
-// the Keybind / ModifierFlags types and DefaultKeybindsTests can verify the
-// table without reaching across multiple concerns.
-//
-// any new default action goes here. UserConfig.mergeNewDefaults() injects
-// these into existing saved configs at load time, so users who upgrade pick
-// up new defaults without resetting their customizations.
-
 extension Keybind {
+    /// Built-in keybind set seeded into a fresh user config and
+    /// merged into existing configs on upgrade. Source for the
+    /// reference table in CLAUDE.md.
     static let defaults: [Keybind] = {
         var binds: [Keybind] = []
 

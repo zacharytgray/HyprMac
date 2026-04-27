@@ -1,14 +1,18 @@
+// Pure rect math driving the Settings → Tiling dwindle preview.
+// Parallel to the real BSP layout but specifically a visualization
+// path — kept in Models/ so it is testable without SwiftUI.
+
 import CoreGraphics
 
-// Pure rect math used by the Settings → Tiling dwindle preview.
-// Lives in Models/ so it can be exercised by unit tests without
-// importing SwiftUI. The real tiling engine has its own BSP layout
-// path; this is a parallel approximation for visualizing settings.
+/// Visualization helpers for the dwindle preview in
+/// `TilingSettingsView`.
 enum DwindleLayout {
-    // Recursive dwindle split: alternates horizontal/vertical based on
-    // the current rect's aspect ratio. Each step carves off the first
-    // window from the larger remaining slot, applying `gap` between
-    // siblings. count == 0 returns []; count == 1 returns [bounds].
+    /// Recursive dwindle split for `count` windows inside `bounds`.
+    ///
+    /// Alternates horizontal / vertical based on the current rect's
+    /// aspect ratio; carves off the first slot, recurses on the rest
+    /// with `gap` between siblings. `count == 0` returns `[]`;
+    /// `count == 1` returns `[bounds]`.
     static func rects(count: Int, in bounds: CGRect, gap: CGFloat) -> [CGRect] {
         guard count > 0 else { return [] }
         if count == 1 { return [bounds] }
@@ -36,9 +40,10 @@ enum DwindleLayout {
         return [first] + rects(count: count - 1, in: rest, gap: gap)
     }
 
-    // Scales a rect of the given aspect ratio to fit inside `container`,
-    // leaving small margins (16px horizontal, 8px vertical). Used to
-    // preview how a monitor's tile layout will look in the settings UI.
+    /// Fit a rect of `aspect` inside `container`, leaving small
+    /// margins (16 px horizontal, 8 px vertical). Used to preview a
+    /// monitor's tile layout in the settings UI without distorting
+    /// its shape.
     static func fitSize(in container: CGSize, aspect: CGFloat) -> CGSize {
         let maxW = container.width - 16
         let maxH = container.height - 8

@@ -1,23 +1,23 @@
+// On-disk persistence for user config. File paths, raw JSON load /
+// save, iCloud Drive sync lifecycle (move + symlink), and a file
+// watcher that fires when the file changes externally.
+
 import Foundation
 
-// ConfigStore owns the on-disk representation of user config.
-//
-// responsibilities:
-// - file paths (local config, monitor-specific config, iCloud Drive symlink target)
-// - load/save of SavedConfig + SavedMonitorConfig (raw JSON I/O)
-// - iCloud Drive sync lifecycle: turning sync on moves the file to iCloud and
-//   replaces the local path with a symlink; turning it off resolves the
-//   symlink, copies data back, and removes the link
-// - file watcher: notifies an observer when the on-disk file changes
-//   (iCloud sync from another machine, or a manual edit by the user)
-//
-// not responsible for:
-// - schema migration (lives in ConfigMigration.swift)
-// - the @Published observable surface (lives in UserConfig.swift)
-// - building a SavedConfig from runtime state (UserConfig owns that)
-//
-// instance lifetime: one shared instance, owned by UserConfig.
-
+/// Owns the on-disk representation of `UserConfig`.
+///
+/// File paths, JSON I/O for `SavedConfig` and `SavedMonitorConfig`,
+/// and the iCloud Drive sync lifecycle: enabling sync moves the
+/// config to iCloud Drive and replaces the local path with a
+/// symlink; disabling sync resolves the symlink, copies the data
+/// back, and removes the link. Also runs a file watcher that
+/// notifies `UserConfig` when the file changes (iCloud sync from
+/// another machine or a manual edit).
+///
+/// Not responsible for schema migration (lives in `ConfigMigration`),
+/// the `@Published` observable surface (lives in `UserConfig`), or
+/// building a `SavedConfig` from runtime state (lives in
+/// `UserConfig`).
 final class ConfigStore {
 
     // MARK: - paths

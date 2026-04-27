@@ -1,7 +1,24 @@
+// User-facing configuration. SwiftUI views bind to the published
+// properties; mutations write through to disk via `ConfigStore` and
+// notify observers. Persists to
+// `~/Library/Application Support/HyprMac/config.json`.
+
 import Foundation
 import Cocoa
 
+/// Persisted user preferences exposed as a SwiftUI-observable model.
+///
+/// Each public field is `@Published` so SwiftUI views and Combine
+/// subscribers re-render on change. Every mutation writes through to
+/// `ConfigStore` (debounce by `isReloading` during programmatic
+/// reloads) and emits notifications to drive `WindowManager`'s live
+/// re-tile / re-bind paths.
+///
+/// Threading: main-thread only. The shared singleton is accessed
+/// directly across SwiftUI and orchestration code.
 class UserConfig: ObservableObject {
+    /// Process-wide singleton bound by SwiftUI views and the
+    /// orchestration layer.
     static let shared = UserConfig()
 
     @Published var keybinds: [Keybind] {
@@ -71,18 +88,14 @@ class UserConfig: ObservableObject {
         }
     }
 
-    // isReloading: gates @Published didSet handlers during a programmatic
-    // reload (reloadFromDisk + resetToDefaults call sites). every @Published
-    // property's didSet calls save() unless this flag is true. without the
-    // flag, a single reload would write the file 17 times — once per
-    // property update — and worse, the file watcher would observe each
-    // write and re-trigger reloadFromDisk in a tight loop.
-    //
-    // contract: set isReloading = true *before* mass property updates,
-    // false after. only the reload + reset paths use it; ordinary user-
-    // driven mutations let didSet save through.
-    //
-    // not thread-safe — UserConfig is implicitly main-thread.
+    /// Gates `didSet` save handlers during a programmatic reload.
+    ///
+    /// Every `@Published` property writes to disk in its `didSet`
+    /// unless this flag is `true`. Without the flag, a single
+    /// `reloadFromDisk` would rewrite the file 17 times — once per
+    /// property update — and the file watcher would observe each
+    /// write and re-fire reload in a tight loop. Set `true` *before*
+    /// mass property updates, then `false`. Main-thread only.
     private var isReloading = false
 
     private let store: ConfigStore
