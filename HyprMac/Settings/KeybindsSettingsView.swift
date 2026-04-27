@@ -191,18 +191,9 @@ struct KeybindEditorSheet: View {
 
                     switch selectedAction {
                     case .focusDirection, .swapDirection, .moveWorkspaceToMonitor:
-                        Picker("Direction", selection: $directionParam) {
-                            Text("Left").tag(Direction.left)
-                            Text("Right").tag(Direction.right)
-                            Text("Up").tag(Direction.up)
-                            Text("Down").tag(Direction.down)
-                        }
-                        .pickerStyle(.segmented)
+                        DirectionPicker(direction: $directionParam)
                     case .switchWorkspace, .moveToWorkspace:
-                        Picker("Workspace", selection: $workspaceParam) {
-                            ForEach(1...9, id: \.self) { Text("\($0)").tag($0) }
-                        }
-                        .pickerStyle(.segmented)
+                        WorkspacePicker(workspace: $workspaceParam)
                     case .cycleWorkspace:
                         Picker("Direction", selection: $workspaceParam) {
                             Text("Next").tag(1)
@@ -210,13 +201,7 @@ struct KeybindEditorSheet: View {
                         }
                         .pickerStyle(.segmented)
                     case .launchApp:
-                        VStack(alignment: .leading, spacing: 4) {
-                            TextField("Bundle ID", text: $bundleIDParam)
-                                .textFieldStyle(.roundedBorder)
-                            Text("e.g. com.apple.Terminal, com.googlecode.iterm2")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
+                        BundleIDPicker(bundleID: $bundleIDParam)
                     default:
                         EmptyView()
                     }
