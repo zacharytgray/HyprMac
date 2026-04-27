@@ -1,8 +1,18 @@
+// Heuristics for classifying mouse-driven drags on tiled windows. Pure
+// classification — `DragSwapHandler` applies whatever this returns.
+
 import Cocoa
 
-// detects drag-swap and manual resize gestures on tiled windows
+/// Detects manual resize, swap, drag-to-empty-desktop, and snap-back
+/// gestures on tiled windows.
+///
+/// Compares mouse-down frames against post-mouse-up frames and decides
+/// what the user did. Output is one of `DetectionResult`'s cases; the
+/// caller (`DragSwapHandler`) applies the side effects.
 class DragManager {
 
+    /// Classification: window was resized in place. `newFrame` is the
+    /// post-drag frame; `screen` and `workspace` locate the BSP tree.
     struct ResizeResult {
         let window: HyprWindow
         let newFrame: CGRect
@@ -10,6 +20,9 @@ class DragManager {
         let workspace: Int
     }
 
+    /// Classification: window was dragged onto another tiled window's
+    /// slot. `crossMonitor` distinguishes the same-tree path from the
+    /// cross-screen path.
     struct DragSwapResult {
         let dragged: HyprWindow
         let target: HyprWindow
@@ -18,11 +31,15 @@ class DragManager {
         let crossMonitor: Bool
     }
 
+    /// Classification: window was dragged onto an empty workspace on a
+    /// different monitor.
     struct DragToEmptyResult {
         let dragged: HyprWindow
         let targetScreen: NSScreen
     }
 
+    /// One of the five drag classifications; `none` means nothing
+    /// actionable happened.
     enum DetectionResult {
         case resize(ResizeResult)
         case swap(DragSwapResult)
@@ -31,10 +48,23 @@ class DragManager {
         case none
     }
 
-    // dependencies
+    /// Snapshot of currently-floating window IDs at detect time.
+    /// Caller-supplied so this class does not depend on `WindowStateCache`.
     var floatingWindowIDs: Set<CGWindowID> = []
+
+    /// Snapshot of expected tiled rects at detect time. Used to compare
+    /// against post-drag positions.
     var tiledPositions: [CGWindowID: CGRect] = [:]
 
+    /// Classify whatever happened between `startFrames` (mouseDown) and
+    /// the current AX frames in `allWindows` (post-mouseUp).
+    ///
+    /// - Parameter cachedWindows: cache lookup so the result can carry
+    ///   `HyprWindow` references that survive the AX round trip.
+    /// - Parameter screenAt: cursor-position → screen lookup, supplied
+    ///   by `DisplayManager` via closure.
+    /// - Parameter workspaceForScreen: screen → workspace lookup, also
+    ///   supplied via closure.
     func detect(
         allWindows: [HyprWindow],
         cachedWindows: [CGWindowID: HyprWindow],

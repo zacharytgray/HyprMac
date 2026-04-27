@@ -1,17 +1,32 @@
+// macOS Spaces enumeration via private CGS APIs. Read-only — virtual
+// workspaces (`WorkspaceManager`) replace native Spaces for hide/show
+// behavior, but this class is still used to look up the current
+// per-display space layout.
+
 import Cocoa
 
+/// Read-only inspector for macOS native Spaces.
+///
+/// Wraps the private `CGSCopyManagedDisplaySpaces` API. Caches the
+/// display↔space mapping with a 0.5 s cooldown so repeated calls
+/// during a single user action do not re-query CGS. Refresh is
+/// idempotent and safe to invoke at any time.
 class SpaceManager {
-    // display UUID -> ordered space IDs on that display
+    /// Display UUID → ordered list of space IDs on that display.
     private(set) var spacesByDisplay: [String: [CGSSpaceID]] = [:]
-    // space ID -> display UUID
+
+    /// Space ID → owning display UUID.
     private(set) var displayForSpace: [CGSSpaceID: String] = [:]
-    // ordered display UUIDs (matches CGSCopyManagedDisplaySpaces order)
+
+    /// Ordered display UUIDs. Matches `CGSCopyManagedDisplaySpaces`
+    /// iteration order, which itself matches `NSScreen.screens`.
     private(set) var displayOrder: [String] = []
 
     private var lastRefreshTime: CFAbsoluteTime = 0
     private let refreshCooldown: CFAbsoluteTime = 0.5
 
-    // refresh the display/space mapping
+    /// Re-query CGS for the current space mapping. Cached for 0.5 s;
+    /// pass `force: true` to bypass the cooldown.
     func refreshSpaceMap(force: Bool = false) {
         let now = CFAbsoluteTimeGetCurrent()
         if !force && now - lastRefreshTime < refreshCooldown && !spacesByDisplay.isEmpty {
@@ -53,8 +68,8 @@ class SpaceManager {
         }
     }
 
-    // get ordered list of space IDs across all displays
-    // order: display 1 spaces, then display 2 spaces, etc.
+    /// Flatten the display→spaces map into a single list, ordered by
+    /// display order then by per-display space order.
     func getAllSpaceIDs() -> [CGSSpaceID] {
         refreshSpaceMap()
         var result: [CGSSpaceID] = []
@@ -65,7 +80,8 @@ class SpaceManager {
         return result
     }
 
-    // get the currently active space ID on the focused display
+    /// Active space ID on the focused display, or `nil` if CGS does
+    /// not report one.
     func currentSpaceID() -> CGSSpaceID? {
         let conn = _CGSDefaultConnection()
         guard let cfArray = CGSCopyManagedDisplaySpaces(conn),
@@ -86,7 +102,7 @@ class SpaceManager {
         return nil
     }
 
-    // get all current space IDs (one per display)
+    /// Active space IDs across every display, in display order.
     func allCurrentSpaceIDs() -> [CGSSpaceID] {
         let conn = _CGSDefaultConnection()
         guard let cfArray = CGSCopyManagedDisplaySpaces(conn),
@@ -105,14 +121,15 @@ class SpaceManager {
         return result
     }
 
-    // get the space ID for a given desktop number (1-indexed)
+    /// Space ID for desktop `number` (1-indexed across all displays).
+    /// Returns `nil` when the number is out of range.
     func spaceID(forDesktop number: Int) -> CGSSpaceID? {
         let spaces = getAllSpaceIDs()
         guard number >= 1 && number <= spaces.count else { return nil }
         return spaces[number - 1]
     }
 
-    // get which display UUID a desktop number belongs to
+    /// Display UUID owning desktop `number`.
     func displayID(forDesktop number: Int) -> String? {
         guard let sid = spaceID(forDesktop: number) else { return nil }
         return displayForSpace[sid]
@@ -121,6 +138,8 @@ class SpaceManager {
     // type 7 = kCGSSpaceAll on Sequoia
     private let kCGSAllSpacesMask: CInt = 7
 
+    /// First space containing `windowID`, or `nil` when CGS reports
+    /// no spaces for it.
     func spaceForWindow(_ windowID: CGWindowID) -> CGSSpaceID? {
         let conn = _CGSDefaultConnection()
         let winArray = [NSNumber(value: windowID)] as CFArray
@@ -131,7 +150,8 @@ class SpaceManager {
         return first.uint64Value
     }
 
-    // move a window to a different space
+    /// Move `windowID` to `spaceID` via CGS's atomic move API.
+    /// Removes the window from every other space in one call.
     func moveWindow(_ windowID: CGWindowID, toSpace spaceID: CGSSpaceID) {
         let conn = _CGSDefaultConnection()
         let winArray = [NSNumber(value: windowID)] as CFArray
@@ -154,13 +174,15 @@ class SpaceManager {
         hyprLog(.debug, .lifecycle, "moved window \(windowID) to space \(spaceID)")
     }
 
-    // initialize space tracking (call on startup)
+    /// Force-refresh the space map. Call once on startup.
     func setup() {
         refreshSpaceMap(force: true)
         hyprLog(.debug, .lifecycle, "space manager ready: \(displayOrder.count) displays, \(displayForSpace.count) spaces")
     }
 
-    // switch to a desktop using the private CGS API (direct, no sentinels needed)
+    /// Switch the appropriate display to desktop `number` via CGS.
+    /// Returns `true` on success, `false` when the desktop number is
+    /// out of range or the CGS call fails.
     func switchToDesktop(_ number: Int) -> Bool {
         refreshSpaceMap(force: true)
 

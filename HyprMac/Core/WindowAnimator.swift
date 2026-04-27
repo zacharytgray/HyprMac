@@ -1,12 +1,35 @@
+// Animates window frame transitions by overlaying screenshot proxies and
+// tweening their frames, then committing the real AX frames at the end.
+// Avoids the per-frame app re-render cost of animating real windows.
+
 import Cocoa
 
+/// Tweens a set of frame changes between current and target rects.
+///
+/// Uses a screenshot-proxy approach: capture each window via
+/// `CGWindowListCreateImage`, place it in a borderless overlay window,
+/// park the real window off-screen during the animation so its shadow
+/// does not trail, animate the proxy frame, then commit the real frame
+/// at the end and close the proxy. Falls back to direct AX frame
+/// animation when the screenshot path cannot be set up (e.g.
+/// permission edge case).
+///
+/// `cancelAndSnap` is idempotent and is called at the start of every
+/// `animate` to make sure a new animation supersedes any in flight.
+///
+/// Threading: main-thread only.
 class WindowAnimator {
+    /// `true` between `animate` start and completion. Polled by
+    /// `WindowManager.tileAllVisibleSpaces` so retiles do not stomp
+    /// the animator's parked frames.
     private(set) var isAnimating = false
     private var timer: DispatchSourceTimer?
     private var activeProxies: [ProxyWindow] = []
-    // stash transitions so cancelAndSnap can finalize
+    /// Stashed so `cancelAndSnap` can finalize windows to their target
+    /// frames if the animation is interrupted.
     private var activeTransitions: [FrameTransition] = []
 
+    /// One window's animation request: source and target frames.
     struct FrameTransition {
         let window: HyprWindow
         let from: CGRect
@@ -14,6 +37,12 @@ class WindowAnimator {
         var needsResize: Bool { abs(from.width - to.width) > 1 || abs(from.height - to.height) > 1 }
     }
 
+    /// Animate every transition concurrently. Snaps any in-flight
+    /// animation first via `cancelAndSnap`. Empty input completes
+    /// synchronously.
+    ///
+    /// - Parameter completion: runs on the main thread after the
+    ///   animation finishes (or immediately on the empty path).
     func animate(_ transitions: [FrameTransition], duration: TimeInterval, completion: @escaping () -> Void) {
         mainThreadOnly()
         guard !transitions.isEmpty else { completion(); return }
@@ -27,6 +56,10 @@ class WindowAnimator {
         }
     }
 
+    /// Tear down any in-flight animation and snap every active window
+    /// to its target frame. Idempotent. Called automatically at the
+    /// start of `animate` so a new request supersedes any prior one
+    /// without leaving proxies on screen.
     func cancelAndSnap() {
         mainThreadOnly()
         timer?.cancel()

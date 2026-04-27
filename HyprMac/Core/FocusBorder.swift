@@ -1,22 +1,31 @@
+// Persistent focus indicator around the active window, plus outline-only
+// borders around every visible floating window. Implemented as borderless
+// `NSPanel`s at `.floating` tier with `CALayer` masking for occlusion.
+
 import Cocoa
 
-// persistent focus indicator around the active window.
-//
-// state machine:
-//   hidden  --show()-->  active   (tint fill + border, ~settleDelay)
-//   active  --settle()-> settled  (outline only, no fill)
-//   any     --hide()-->  hidden   (fade out + orderOut + nil-out)
-//   any     --flashError()--> active (red shake; hides itself when done)
-//
-// floating windows also get persistent outline-only panels keyed by window id
-// (managed via updateFloatingBorders / hideFloatingBorder(s)).
-//
-// lifecycle: every public mutation cancels in-flight work (settleWork,
-// shakeTimer) before reassigning. hide() nils the panel + glowView so a
-// long-lived FocusBorder doesn't accumulate orphaned panels across
-// app/workspace transitions. deinit guarantees cleanup if the FocusBorder
-// itself is dropped (currently it isn't — WindowManager owns it for the
-// lifetime of the app — but the contract holds for tests + future swaps).
+/// Visual focus indicator: a tinted outline around the focused window
+/// and a thinner outline around each visible floating window.
+///
+/// State machine on the focused-window panel:
+/// ```
+/// hidden  --show()-->        active   (tint fill + border)
+/// active  --settle()-->      settled  (outline only, no fill)
+/// any     --hide()-->        hidden   (fade out + orderOut + nil-out)
+/// any     --flashError()-->  active   (red shake; hides itself afterward)
+/// ```
+///
+/// Floating-window panels are keyed by `CGWindowID` and managed
+/// independently via `updateFloatingBorders` / `hideFloatingBorders`.
+///
+/// Lifecycle invariants: every public mutation cancels in-flight work
+/// (`settleWork`, `shakeTimer`) before reassigning; `hide` nils the
+/// focused panel and its glow view synchronously so the next `show`
+/// builds a fresh panel rather than reusing one that is mid-fade;
+/// `deinit` guarantees cleanup of every owned panel and timer.
+///
+/// Threading: main-thread only. Public methods assert via
+/// `mainThreadOnly()`.
 class FocusBorder {
     private(set) var trackedWindowID: CGWindowID?
 
@@ -38,9 +47,10 @@ class FocusBorder {
         let glowView: NSView
     }
 
-    // tunables. origin: empirical (settleDelay, shake timing) and OS-imposed
-    // (corner radius needs to track the actual window corner radius per macOS
-    // version or the border arcs tighter and leaves visible gaps at corners).
+    /// Tunables. Empirical timings (settle delay, shake step) and
+    /// OS-imposed values (corner radius must track the actual window
+    /// corner radius per macOS version, otherwise the border arcs
+    /// tighter than the window and leaves visible gaps at the corners).
     private enum Tuning {
         static let margin: CGFloat = 6
         static let settleDelaySec: TimeInterval = 0.5
@@ -83,6 +93,11 @@ class FocusBorder {
 
     // MARK: - public API
 
+    /// Show the focused-window border around `rect` and start the
+    /// transition to the settled (outline-only) state after
+    /// `settleDelaySec`. Cancels any in-flight settle or shake before
+    /// re-asserting — without this, a pending shake or settle would
+    /// stomp the new frame moments after `show` returns.
     func show(around rect: CGRect, windowID: CGWindowID) {
         mainThreadOnly()
         // cancel any in-flight transition (settle, shake) before re-asserting.
@@ -127,6 +142,9 @@ class FocusBorder {
         DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.settleDelaySec, execute: work)
     }
 
+    /// Reposition the focused-window border to `rect` without changing
+    /// state. Called on tile/resize/move so the border tracks the
+    /// window without re-running the show transition.
     func updatePosition(_ rect: CGRect) {
         mainThreadOnly()
         guard let p = panel, state != .hidden, trackedWindowID != nil else { return }
@@ -136,6 +154,11 @@ class FocusBorder {
         trackedWindowFrame = rect
     }
 
+    /// Sync the floating-border panels to `frames`. Creates panels for
+    /// new ids, repositions existing ones, and orders out any panel
+    /// whose id is not present in the input — so a single call brings
+    /// the floating-border set into agreement with the current
+    /// floating-window set.
     func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
         mainThreadOnly()
         let visibleIDs = Set(frames.keys)
@@ -170,6 +193,7 @@ class FocusBorder {
         }
     }
 
+    /// Order out every floating-border panel and drop the cache.
     func hideFloatingBorders() {
         mainThreadOnly()
         for (_, border) in floatingPanels {
@@ -179,6 +203,8 @@ class FocusBorder {
         floaterFrames.removeAll()
     }
 
+    /// Order out and forget the floating-border panel for `windowID`.
+    /// No-op when the id is unknown.
     func hideFloatingBorder(for windowID: CGWindowID) {
         mainThreadOnly()
         guard let border = floatingPanels.removeValue(forKey: windowID) else { return }
@@ -186,6 +212,9 @@ class FocusBorder {
         floaterFrames.removeValue(forKey: windowID)
     }
 
+    /// Transition the focused-window panel from `active` (filled) to
+    /// `settled` (outline only). Called automatically by the timer
+    /// scheduled in `show`; safe to call manually as well.
     func settle() {
         mainThreadOnly()
         guard state == .active, let layer = glowView?.layer else { return }
@@ -200,6 +229,13 @@ class FocusBorder {
         CATransaction.commit()
     }
 
+    /// Hide the focused-window border with a fade-out, then order out
+    /// the panel.
+    ///
+    /// Detaches `panel` and `glowView` synchronously — the captured
+    /// reference keeps the old panel alive through the animation, while
+    /// the next `show` builds a fresh panel rather than reusing the one
+    /// that is mid-fade. Cancels any pending settle or shake work.
     func hide() {
         mainThreadOnly()
         settleWork?.cancel()
@@ -224,7 +260,14 @@ class FocusBorder {
         })
     }
 
-    // brief red flash + shake to indicate a rejected operation
+    /// Flash a red border around `rect` and shake the window
+    /// horizontally to signal a rejected operation (e.g. swap that
+    /// would violate min-size constraints, move to a full workspace).
+    /// The border auto-hides after the shake completes.
+    ///
+    /// - Parameter window: when supplied, the actual window oscillates
+    ///   along with the overlay panel; without it, only the overlay
+    ///   shakes.
     func flashError(around rect: CGRect, windowID: CGWindowID, window: HyprWindow? = nil) {
         mainThreadOnly()
         settleWork?.cancel()
@@ -294,15 +337,20 @@ class FocusBorder {
 
     // MARK: - occlusion masking
 
-    // Apply CALayer masks so each border's portion that overlaps a higher-z
-    // tracked window is hidden. Without this, a floater behind a tile draws
-    // its border across the visible tile, and a focused tile partly covered
-    // by a floater draws its border across the visible floater. Both
-    // borders sit at the same .floating tier, so OS layering can't fix it
-    // — we explicitly clip the lower-z border to the visible region.
-    //
-    // occluder rects are in CG (top-left) screen coords. caller decides
-    // z-order via CGWindowListCopyWindowInfo or equivalent.
+    /// Apply `CALayer` masks so each border's portion that overlaps a
+    /// higher-z tracked window is hidden.
+    ///
+    /// Both focus and floating borders sit at `.floating` tier — OS
+    /// layering cannot resolve which border should appear when a floater
+    /// is behind a focused tile, or vice versa. The caller computes
+    /// occluder rects from `CGWindowListCopyWindowInfo` z-order; this
+    /// method translates each occluder into glow-local NS coords and
+    /// builds a mask path that excludes them.
+    ///
+    /// - Parameter focusedOccluders: rects of higher-z windows
+    ///   overlapping the focused border.
+    /// - Parameter floaterOccluders: per-window occluder rects for
+    ///   floating borders.
     func applyOcclusion(focusedOccluders: [CGRect], floaterOccluders: [CGWindowID: [CGRect]]) {
         mainThreadOnly()
         if let frame = trackedWindowFrame, let glow = glowView {

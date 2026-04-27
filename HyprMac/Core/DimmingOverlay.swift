@@ -1,19 +1,27 @@
+// Dims non-focused tiled windows by drawing a per-screen shape mask. One
+// NSPanel per screen at `.floating - 1`; a CAShapeLayer inside fills only
+// the rects of non-focused tiled windows, leaving floaters and the
+// focused tile bright.
+
 import Cocoa
 
-// dims non-focused tiled windows by drawing a shape mask per screen.
-// one NSPanel per screen covers the whole screen;
-// a CAShapeLayer inside fills *only* the rects of non-focused tiled windows.
-// focused window and floating windows render bright because the path skips them.
-//
-// deterministic — doesn't depend on relative z-order of other apps' windows.
-// that's why v1 (order relative to focused window) was flaky: macOS reshuffles
-// the global z-stack constantly on app activation, window open/close, etc.
-//
-// internal panel identity keys by CGDirectDisplayID. user-facing per-monitor
-// config (gap overrides, disabledMonitors, settings UI) keys by
-// NSScreen.localizedName per the §6 monitor identity contract — panels are an
-// internal-only state, so we use the OS-stable numeric ID and don't have to
-// worry about two physical monitors with identical localized names.
+/// Dim overlay for non-focused tiled windows.
+///
+/// One panel per active display, sized to that display's frame, with a
+/// `CAShapeLayer` whose path covers every non-focused tiled rect.
+/// Focused and floating windows render bright because the path skips
+/// them. The approach is deterministic: it does not rely on the relative
+/// z-order of other apps' windows, which macOS reshuffles on every
+/// activation, window open, or close.
+///
+/// Panels live at `NSWindow.Level.floating - 1` so they sit above
+/// `.normal` app windows but below the focus borders (which sit at
+/// `.floating`). Internal storage keys by `CGDirectDisplayID` — that ID
+/// is OS-stable and unique even when two physical monitors share a
+/// localized name. User-facing per-monitor config still keys by
+/// `NSScreen.localizedName`.
+///
+/// Threading: main-thread only.
 class DimmingOverlay {
 
     private class DimView: NSView {
@@ -63,6 +71,20 @@ class DimmingOverlay {
         for (_, entry) in panels { entry.panel.orderOut(nil) }
     }
 
+    /// Rebuild the dim shape from the current focus + window set.
+    ///
+    /// Per-display: ensure a panel exists, prune any stale displays
+    /// since the last call, then rebuild the dim path from non-focused
+    /// tile rects with the focused tile and every visible floater
+    /// subtracted out. Inputs are memoized — when nothing changed since
+    /// the last call, the O(tiled × floating) path build is skipped.
+    ///
+    /// - Parameter focusedID: the bright window. `0` (or `enabled ==
+    ///   false`) hides every panel.
+    /// - Parameter tiledRects: every visible tile keyed by id.
+    /// - Parameter floatingRects: every visible floating window keyed by
+    ///   id; subtracted from the dim path so floaters render bright.
+    /// - Parameter screens: enabled `NSScreen`s.
     func update(
         focusedID: CGWindowID,
         tiledRects: [CGWindowID: CGRect],
@@ -145,6 +167,7 @@ class DimmingOverlay {
         }
     }
 
+    /// Order out every dim panel. Idempotent.
     func hideAll() {
         mainThreadOnly()
         guard visible else { return }
@@ -154,6 +177,8 @@ class DimmingOverlay {
         }
     }
 
+    /// Clamp `value` into `0...1` and apply it as the dim alpha.
+    /// Inputs outside the range are clamped silently.
     func setIntensity(_ value: CGFloat) {
         mainThreadOnly()
         intensity = max(0, min(1, value))

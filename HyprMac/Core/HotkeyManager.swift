@@ -1,11 +1,31 @@
+// CGEventTap-based hotkey interceptor. Watches for the Hypr modifier
+// (default Caps Lock, remapped to F18 at the HID level) plus chord keys
+// and dispatches `Action` values to `WindowManager`.
+
 import Cocoa
 import Carbon
 
+/// Global hotkey interceptor.
+///
+/// Installs a session-level `CGEventTap` that observes keyDown, keyUp,
+/// and flagsChanged events. The Hypr key is the modifier substrate —
+/// when held, chord keys produce `Action` values via the `keybindMap`.
+/// Bare press-and-release of the Hypr key fires `onHyprKeyDown` and
+/// `onHyprKeyUp` so the focus border can be re-asserted.
+///
+/// Threading: the event tap callback runs on the main run loop. All
+/// public methods assume main thread.
 class HotkeyManager {
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+
+    /// Fires for every recognized chord (Hypr + bound key).
     var onAction: ((Action) -> Void)?
+
+    /// Fires when the Hypr key transitions from up to down.
     var onHyprKeyDown: (() -> Void)?
+
+    /// Fires when the Hypr key transitions from down to up.
     var onHyprKeyUp: (() -> Void)?
 
     // physical key currently acting as the logical Hypr modifier
@@ -21,6 +41,9 @@ class HotkeyManager {
         UInt32(keyCode) << 16 | UInt32(modifiers.rawValue & 0xFFFF)
     }
 
+    /// Replace the active keybind set. Last-wins on duplicate chords —
+    /// matches the prior linear-scan behavior. Builds the O(1) lookup
+    /// map keyed by packed keyCode + modifiers.
     func updateKeybinds(_ binds: [Keybind]) {
         keybinds = binds
         // last-wins for duplicate key combos (matches old linear scan behavior)
@@ -30,6 +53,9 @@ class HotkeyManager {
         }
     }
 
+    /// Switch the physical key acting as the Hypr modifier. Resets any
+    /// in-progress modifier state so a key already down at the moment
+    /// of the swap is not misinterpreted.
     func updateHyprKey(_ key: HyprKey) {
         hyprKey = key
         hyprKeyDown = false
@@ -37,6 +63,10 @@ class HotkeyManager {
         hyprLog(.debug, .lifecycle, "hypr key set to \(key.displayName)")
     }
 
+    /// Install the event tap and add it to the main run loop.
+    /// No-op if the tap fails to create — typically means AX
+    /// permission is missing; the failure is logged and `isInstalled`
+    /// remains `false`.
     func start() {
         let mask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
             | (1 << CGEventType.keyUp.rawValue)
@@ -64,6 +94,8 @@ class HotkeyManager {
         hyprLog(.debug, .lifecycle, "event tap started, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
     }
 
+    /// Disable the tap, remove its run-loop source, and drop the tap
+    /// reference. Idempotent.
     func stop() {
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)

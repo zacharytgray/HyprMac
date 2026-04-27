@@ -1,13 +1,23 @@
+// HUD panel listing every active keybind, grouped by category. Toggled
+// via `Hypr+K`.
+
 import Cocoa
 import SwiftUI
 
-// manages the keybind overlay HUD panel
+/// Lifecycle for the keybind overlay HUD.
+///
+/// Holds the `NSPanel` for the overlay (a `.hudWindow` at `.floating`
+/// level). `toggle` shows or hides depending on current state.
+///
+/// Threading: main-thread only.
 class KeybindOverlayController {
 
     private var panel: NSPanel?
 
+    /// `true` when the overlay panel is on screen.
     var isShowing: Bool { panel != nil }
 
+    /// Show the overlay, or close it if already visible.
     func toggle(keybinds: [Keybind]) {
         mainThreadOnly()
         if let panel = panel {
@@ -18,6 +28,7 @@ class KeybindOverlayController {
         show(keybinds: keybinds)
     }
 
+    /// Close the overlay if it is showing. Idempotent.
     func close() {
         mainThreadOnly()
         panel?.close()

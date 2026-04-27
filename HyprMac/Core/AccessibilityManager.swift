@@ -1,11 +1,30 @@
+// AX bridge: enumerates visible windows across every running app, returns
+// the focused window, and exposes `windowInDirection` for swap/focus
+// pickers. Windows from this layer come back as `HyprWindow` values
+// keyed by stable `CGWindowID`.
+
 import Cocoa
 
+/// Wrapper around the macOS Accessibility (AX) API.
+///
+/// Owns the AX↔CG mapping path: each visible window is enumerated via
+/// AX, paired with its `CGWindowID` through the `_AXUIElementGetWindow`
+/// private SPI (same approach as yabai/AeroSpace/Amethyst), and
+/// returned as a `HyprWindow`. A short-lived cache fronts
+/// `CGWindowListCopyWindowInfo` so back-to-back calls in the same cycle
+/// do not duplicate the system call.
+///
+/// Threading: main-thread only.
 class AccessibilityManager {
 
+    /// `true` when the running process has been granted Accessibility
+    /// permission in System Settings → Privacy → Accessibility.
     static func isAccessibilityEnabled() -> Bool {
         AXIsProcessTrusted()
     }
 
+    /// Show the macOS Accessibility prompt that takes the user to
+    /// System Settings to grant the app permission.
     static func promptForAccessibility() {
         let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
         AXIsProcessTrustedWithOptions(opts)
@@ -81,9 +100,16 @@ class AccessibilityManager {
         return err == .success && wid != 0 ? wid : nil
     }
 
-    // get all visible windows across all apps. AX→CG mapping is deterministic
-    // via _AXUIElementGetWindow (private SPI). position-based matching is kept
-    // only as a defensive fallback — should never fire in practice.
+    /// Snapshot every visible normal window across all running apps.
+    ///
+    /// Walks every regular-activation app's `kAXWindowsAttribute`,
+    /// filters out minimized / non-standard / modal windows, then maps
+    /// each AX element to a `CGWindowID` by calling
+    /// `_AXUIElementGetWindow` first and falling back to greedy
+    /// nearest-position matching only when the SPI fails. The fallback
+    /// is defensive — it should not fire in practice.
+    ///
+    /// Returns an empty array when AX permission has not been granted.
     func getAllWindows() -> [HyprWindow] {
         guard AXIsProcessTrusted() else { return [] }
 
@@ -186,10 +212,13 @@ class AccessibilityManager {
         return windows
     }
 
-    // get the currently focused window. routes through getAllWindows so the
-    // AX→CG matching is identical — without this, multi-window apps (Finder,
-    // Teams, etc.) could resolve the focused window to a *sibling* window's
-    // CGWindowID, which then makes swap/move/etc. operate on the wrong window.
+    /// Resolve the AX-focused window of the frontmost app to a
+    /// `HyprWindow`.
+    ///
+    /// Routes through `getAllWindows` so the AX→CG matching pass is
+    /// identical — without this, multi-window apps (Finder, Teams) can
+    /// resolve the focused window to a sibling window's `CGWindowID`,
+    /// which silently routes swap/move/close to the wrong window.
     func getFocusedWindow() -> HyprWindow? {
         guard AXIsProcessTrusted() else { return nil }
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
@@ -207,27 +236,26 @@ class AccessibilityManager {
         return getAllWindows().first { CFEqual($0.element, focusedAX) }
     }
 
-    // find the nearest window in a direction from a given window.
-    //
-    // edge-based scoring (not center-based): measures the gap between the
-    // source's leading edge and each candidate's trailing edge along the
-    // movement axis, then perpendicular overlap. center-based scoring
-    // produced non-deterministic ties when the source spanned multiple
-    // candidates (e.g., a full-width window going down with two
-    // half-width windows directly below — both have identical center
-    // distance, and AX ordering chose between them arbitrarily).
-    //
-    // ranking, lexicographic:
-    //   1. smaller edge-to-edge axial gap (closer along the movement axis)
-    //   2. containsRay first — candidate whose perpendicular span contains
-    //      the source's center coord on the perpendicular axis (i.e., the
-    //      candidate the user "naturally falls into" extending the source)
-    //   3. larger perpendicular overlap
-    //   4. stable reading order — for vertical moves choose lowest minX,
-    //      for horizontal moves choose lowest minY. used only when source
-    //      spans the perpendicular gap between two candidates so that
-    //      neither uniquely contains the ray; ensures the same arrow
-    //      always picks the same target.
+    /// Find the nearest window in `direction` relative to `window`.
+    ///
+    /// Edge-based scoring: measures the axial gap between the source's
+    /// leading edge and each candidate's trailing edge, then
+    /// perpendicular overlap. Center-based scoring produced
+    /// non-deterministic ties when the source spanned multiple
+    /// candidates — for example, a full-width window going down with
+    /// two half-width windows directly below has identical center
+    /// distance to both, and AX iteration chose arbitrarily.
+    ///
+    /// Ranking, lexicographic:
+    /// 1. Smaller edge-to-edge axial gap (closer along the movement
+    ///    axis).
+    /// 2. `containsRay` first — candidate whose perpendicular span
+    ///    contains the source's center coord on the perpendicular axis.
+    /// 3. Larger perpendicular overlap.
+    /// 4. Stable reading order: vertical moves pick lowest `minX`,
+    ///    horizontal moves pick lowest `minY`. Used only when neither
+    ///    candidate uniquely contains the ray; guarantees the same
+    ///    arrow always picks the same target.
     func windowInDirection(_ direction: Direction, from window: HyprWindow, among windows: [HyprWindow]) -> HyprWindow? {
         guard let sourceFrame = window.frame else { return nil }
 

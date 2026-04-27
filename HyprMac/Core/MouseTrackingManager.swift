@@ -1,24 +1,31 @@
+// Focus-follows-mouse plus menu-bar-tracking suppression and
+// refocus-under-cursor recovery. Throttled to ~60 Hz with a short-TTL
+// topmost-window cache so the global mouseMoved handler stays cheap.
+
 import Cocoa
 
-// handles focus-follows-mouse, refocus-under-cursor, and menu bar tracking
-// suppression.
-//
-// FFM pipeline: handleMouseMove() runs on every NSMouseMoved event, but
-// most events bail out — the work is throttled to ~60Hz, gated on a stack
-// of eligibility predicates (isFFMEligible), and short-circuited when the
-// cursor is outside the focus-relevant region (isInMenuBarDeadZone) or
-// resolves to "no change" (determineFocusTarget returning nil).
-//
-// the throttle is the load-bearing piece on heavy displays — mouseMoved
-// can fire hundreds of times per second, and each event used to walk every
-// visible window. the gate plus the topmost-window cache (TTL + spatial
-// tolerance) keep this off the hot path.
+/// Mouse-driven focus controller for focus-follows-mouse (FFM).
+///
+/// `handleMouseMove` fires on every `NSMouseMoved` event, so the hot
+/// path is built around early exits. The eligibility check
+/// (`isFFMEligible`) gates on the FFM toggle, mouse button state, menu
+/// tracking, dock activation, animation in flight, and the
+/// `mouse-focus` suppression key. After eligibility, a 60 Hz throttle
+/// caps resolve work, and a topmost-window cache (TTL +
+/// spatial-tolerance) avoids redundant `CGWindowListCopyWindowInfo`
+/// queries when the cursor jitters.
+///
+/// `refocusUnderCursor` is a separate path used when the previously
+/// focused window vanishes mid-flight — it re-derives focus from the
+/// current cursor position without going through the FFM gates.
+///
+/// Threading: main-thread only.
 class MouseTrackingManager {
 
-    // tunables. origin: empirical timing measured on M1 Air with ~30
-    // visible windows; raising throttleInterval beyond ~24ms produces
-    // visible focus lag during fast cursor sweeps, lowering below ~16ms
-    // wastes work on no-op resolves between display refreshes.
+    /// Tunables. Empirical: throttle measured on M1 Air with ~30
+    /// visible windows; raising past ~24 ms produces visible focus lag
+    /// during fast cursor sweeps, lowering below ~16 ms wastes work on
+    /// no-op resolves between display frames.
     private enum Tuning {
         // 60Hz cap on FFM resolve work. raising = slower focus, lowering =
         // wasted CG window-list queries between display frames.
@@ -69,6 +76,9 @@ class MouseTrackingManager {
         let reason: String
     }
 
+    /// Entry point for FFM. Called from the global `NSMouseMoved`
+    /// monitor on every event; gates and throttles before doing real
+    /// work, then resolves a focus target and applies it.
     func handleMouseMove() {
         mainThreadOnly()
         guard isFFMEligible() else { return }
@@ -92,14 +102,15 @@ class MouseTrackingManager {
         onFocusForFFM(target.window)
     }
 
-    // FFM eligibility: every gate that determines whether we should react to
-    // mouse movement at all. each guard exists for a specific reason —
-    // isMouseButtonDown skips drags (DragManager owns those), menuTracking
-    // and dockIsActive skip transient OS UI that would race with focus
-    // changes, isAnimating skips during WindowAnimator transitions where
-    // the visual frames don't match underlying AX positions, and
-    // isMouseFocusSuppressed honors the post-action quiet window owned by
-    // SuppressionRegistry["mouse-focus"].
+    /// `true` when FFM should react to the current mouse event.
+    ///
+    /// Each guard exists for a specific reason: `isMouseButtonDown`
+    /// skips drags (`DragManager` owns those), `menuTracking` and
+    /// `dockIsActive` skip transient OS UI that would race with focus
+    /// changes, `isAnimating` skips during `WindowAnimator` transitions
+    /// where visual frames do not match AX positions, and
+    /// `isMouseFocusSuppressed` honors the post-action quiet window
+    /// owned by `SuppressionRegistry["mouse-focus"]`.
     private func isFFMEligible() -> Bool {
         guard isFocusFollowsMouseEnabled() else { return false }
         guard !isMouseButtonDown() else { return false }
@@ -110,15 +121,19 @@ class MouseTrackingManager {
         return true
     }
 
+    /// `true` when `cgPoint` is in the menu-bar dead zone — focus
+    /// changes that fired here would compete with menu interaction.
     private func isInMenuBarDeadZone(_ cgPoint: CGPoint) -> Bool {
         cgPoint.y < Tuning.menuBarDeadZonePx
     }
 
-    // resolve which window (if any) should receive focus for the given
-    // cursor position. returns nil for "no change" cases: cursor over a
-    // floater (leave focus alone), cursor over the already-focused tile,
-    // cursor over an unmanaged normal-layer overlay (popovers etc.), or
-    // no managed window at all.
+    /// Resolve which window should receive focus for `cgPoint`, or `nil`
+    /// when no change is appropriate.
+    ///
+    /// Returns `nil` for the common no-change cases: cursor over a
+    /// floater (leave focus alone), cursor over the already-focused
+    /// tile, cursor over an unmanaged normal-layer overlay (popover,
+    /// autocomplete panel), or no managed window at all.
     private func determineFocusTarget(at cgPoint: CGPoint) -> FocusTarget? {
         // snapshot closures once per move event
         let floating = floatingWindowIDs()
@@ -170,10 +185,14 @@ class MouseTrackingManager {
         return nil
     }
 
-    // re-derive focus from cursor position after a window disappears.
-    // when cursor isn't over any tiled window we *don't* hide the border —
-    // WindowManager.ensureFocusInvariant runs after every poll and will pick
-    // a fallback so the user never ends up with nothing focused.
+    /// Re-derive focus from the current cursor position after a window
+    /// vanishes mid-flight.
+    ///
+    /// Bypasses the FFM eligibility gates — this is invoked from
+    /// `ActionDispatcher.applyChanges` when `focusedWindowGone` fires.
+    /// When the cursor is not over any tiled window the border is left
+    /// alone so `ensureFocusInvariant` can pick a fallback target on
+    /// the next pass.
     func refocusUnderCursor() {
         mainThreadOnly()
         let mouseNS = NSEvent.mouseLocation
@@ -196,11 +215,15 @@ class MouseTrackingManager {
         recordFocus(0, "refocus-under-cursor-clear")
     }
 
-    // CGWindowListCopyWindowInfo is expensive — cache result with short TTL
+    /// Short-TTL cache of the most recent topmost-window result.
+    /// `CGWindowListCopyWindowInfo` is expensive enough to dominate the
+    /// FFM hot path without this.
     private var topmostCache: (windowID: CGWindowID, time: CFAbsoluteTime, point: CGPoint)?
 
-    // front-to-back CG hit-test for the real window under the cursor.
-    // returns 0 when no normal visible window is at the point.
+    /// Front-to-back CG hit-test for the real window under `point`.
+    /// Skips this process's own windows (the focus border, dim panel,
+    /// settings/welcome) and any layer ≠ 0. Returns `nil` when no
+    /// normal-layer visible window covers the point.
     private func topmostWindowID(at point: CGPoint) -> CGWindowID? {
         let now = CFAbsoluteTimeGetCurrent()
         if let cache = topmostCache,
@@ -238,15 +261,20 @@ class MouseTrackingManager {
         return nil
     }
 
+    /// Called when a menu (app menu or right-click context menu) opens.
+    /// Sets the suppression flag so FFM stops reacting; deliberately
+    /// leaves the focus border intact, since hiding it would clear
+    /// `trackedWindowID` and cause `ensureFocusInvariant` to re-assert
+    /// focus and dismiss the menu. The border drawing on top while the
+    /// menu is open is harmless — the menu is at a higher window level.
     func menuTrackingBegan() {
         mainThreadOnly()
         menuTracking = true
-        // leave the focus border intact — hiding it clears trackedWindowID,
-        // which causes ensureFocusInvariant to re-assert focus during menu
-        // tracking and dismiss the context menu. the border drawing on top
-        // while a menu is open is harmless; menu is at a higher window level.
     }
 
+    /// Called when the menu closes. Refreshes the focus border on the
+    /// last-focused window so its rect tracks any motion that happened
+    /// during the menu's lifetime.
     func menuTrackingEnded() {
         mainThreadOnly()
         menuTracking = false

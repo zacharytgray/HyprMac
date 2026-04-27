@@ -1,36 +1,65 @@
+// Virtual workspace bookkeeping. Keeps the screen↔workspace mapping,
+// the per-window workspace assignment, and the home-screen affinity that
+// makes a workspace return to the same monitor when revealed.
+
 import Cocoa
 
+/// Single source of truth for HyprMac's nine virtual workspaces.
+///
+/// Owns:
+/// - `monitorWorkspace`: which workspace is currently visible on each
+///   screen (keyed by `screenID`).
+/// - `workspaceHomeScreen`: which screen each workspace was last shown
+///   on. A workspace returns to its home screen when it is reactivated
+///   from a hidden state, so workspace identity does not drift across
+///   monitors.
+/// - `windowWorkspaces` (private): window → workspace assignment, with
+///   a reverse index for O(1) "windows on workspace N" lookup.
+/// - `savedFloatingFrames` (private): per-window floating frames captured
+///   before a hide, restored on show so a floater returns to where the
+///   user left it.
+///
+/// Threading: main-thread only.
 class WorkspaceManager {
     let displayManager: DisplayManager
 
-    // screenID → workspace number currently shown on that monitor
+    /// Screen → workspace currently shown on that screen.
     private(set) var monitorWorkspace: [Int: Int] = [:]
 
-    // workspace → last screenID it was shown on (its "home" screen)
+    /// Workspace → screen it was last shown on. Used to send a hidden
+    /// workspace back to the same monitor on reactivation.
     private(set) var workspaceHomeScreen: [Int: Int] = [:]
 
-    // windowID → workspace number
+    /// Window → workspace assignment.
     private var windowWorkspaces: [CGWindowID: Int] = [:]
-    // reverse index: workspace → window IDs (kept in sync with windowWorkspaces)
+
+    /// Reverse index of `windowWorkspaces`. Kept in sync by every
+    /// `assignWindow` / `removeWindow` / `moveWindow` call.
     private var workspaceWindowSets: [Int: Set<CGWindowID>] = [:]
 
-    // saved frames for floating windows before hiding (for restore)
+    /// Pre-hide frames for floating windows. Restored on the next
+    /// reveal so floaters return to their last user-chosen position.
     private var savedFloatingFrames: [CGWindowID: CGRect] = [:]
 
-    // monitors excluded from tiling (keyed by NSScreen.localizedName)
+    /// Localized names of monitors the user has excluded from tiling.
+    /// Disabled monitors host floating windows only.
     var disabledMonitors: Set<String> = []
 
+    /// Total number of virtual workspaces (1...9).
     let workspaceCount = 9
 
     init(displayManager: DisplayManager) {
         self.displayManager = displayManager
     }
 
-    // consistent screen ID matching TilingKey
+    /// Stable per-screen integer key matching the BSP tree's
+    /// `TilingKey` derivation. Two screens at the same origin would
+    /// collide; in practice macOS prevents that.
     func screenID(for screen: NSScreen) -> Int {
         Int(screen.frame.origin.x * 10000 + screen.frame.origin.y)
     }
 
+    /// `true` when `screen` is in the user's `disabledMonitors` list.
     func isMonitorDisabled(_ screen: NSScreen) -> Bool {
         disabledMonitors.contains(screen.localizedName)
     }
@@ -40,8 +69,13 @@ class WorkspaceManager {
         displayManager.screens.sorted { $0.frame.origin.x < $1.frame.origin.x }
     }
 
-    // assign workspace N to the Nth enabled monitor left-to-right (startup only).
-    // disabled monitors get no workspace. only fills in screens that don't already have a mapping.
+    /// Establish or refresh the screen→workspace mapping.
+    ///
+    /// Assigns workspace N to the Nth enabled monitor left-to-right
+    /// for any screen that has no existing mapping. Drops mappings
+    /// for newly-disabled or removed screens. Already-mapped screens
+    /// keep their workspace, so this is safe to call after a screen
+    /// reconfiguration without disturbing the user's setup.
     func initializeMonitors() {
         let sorted = screensLeftToRight()
 
@@ -93,7 +127,10 @@ class WorkspaceManager {
         hyprLog(.debug, .lifecycle, "workspace init: monitors=\(monitorWorkspace) homes=\(workspaceHomeScreen) disabled=\(disabledMonitors)")
     }
 
-    // which workspace is currently shown on a given screen
+    /// Workspace currently visible on `screen`. Self-heals by calling
+    /// `initializeMonitors` and retrying when the screen has no
+    /// mapping — that path should not normally fire and logs a warning
+    /// when it does.
     func workspaceForScreen(_ screen: NSScreen) -> Int {
         let sid = screenID(for: screen)
         if let ws = monitorWorkspace[sid] {
@@ -104,27 +141,36 @@ class WorkspaceManager {
         return monitorWorkspace[sid] ?? 1
     }
 
-    // which screen is currently showing a given workspace (nil = not visible)
+    /// Screen currently showing `workspace`, or `nil` when the
+    /// workspace is hidden.
     func screenForWorkspace(_ workspace: Int) -> NSScreen? {
         let targetSID = monitorWorkspace.first { $0.value == workspace }?.key
         guard let sid = targetSID else { return nil }
         return displayManager.screens.first { screenID(for: $0) == sid }
     }
 
-    // which screen was last showing a workspace (its "home" — may or may not be visible now)
+    /// Screen `workspace` was last shown on (its home), regardless of
+    /// current visibility. Returns `nil` when the workspace has never
+    /// been shown.
     func homeScreenForWorkspace(_ workspace: Int) -> NSScreen? {
         guard let sid = workspaceHomeScreen[workspace] else { return nil }
         return displayManager.screens.first { screenID(for: $0) == sid }
     }
 
+    /// Force-set `workspace`'s home screen. Used by
+    /// `WorkspaceOrchestrator` when a manual move re-anchors a
+    /// workspace's affinity.
     func setHomeScreen(for workspace: Int, screenID sid: Int) {
         workspaceHomeScreen[workspace] = sid
     }
 
+    /// `true` when `workspace` is currently shown on any screen.
     func isWorkspaceVisible(_ workspace: Int) -> Bool {
         monitorWorkspace.values.contains(workspace)
     }
 
+    /// Assign `windowID` to `workspace`, removing it from any prior
+    /// workspace assignment in the same call.
     func assignWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
         if let old = windowWorkspaces[windowID] {
             workspaceWindowSets[old]?.remove(windowID)
@@ -133,23 +179,33 @@ class WorkspaceManager {
         workspaceWindowSets[workspace, default: []].insert(windowID)
     }
 
+    /// Workspace a window is assigned to, or `nil` when no
+    /// assignment exists.
     func workspaceFor(_ windowID: CGWindowID) -> Int? {
         windowWorkspaces[windowID]
     }
 
+    /// `true` when `windowID`'s workspace is currently visible (or
+    /// when the window has no assignment — floating windows take this
+    /// branch).
     func isWindowVisible(_ windowID: CGWindowID) -> Bool {
         guard let ws = windowWorkspaces[windowID] else { return true }
         return isWorkspaceVisible(ws)
     }
 
+    /// Every window assigned to `workspace`. Includes hidden windows.
     func windowIDs(onWorkspace workspace: Int) -> Set<CGWindowID> {
         workspaceWindowSets[workspace] ?? []
     }
 
+    /// Snapshot of the live window→workspace map.
     func allWindowWorkspaces() -> [CGWindowID: Int] {
         windowWorkspaces
     }
 
+    /// Move `windowID` to `workspace`. Identical effect to
+    /// `assignWindow`; the alias clarifies caller intent at the use
+    /// site.
     func moveWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
         if let old = windowWorkspaces[windowID] {
             workspaceWindowSets[old]?.remove(windowID)
@@ -158,6 +214,8 @@ class WorkspaceManager {
         workspaceWindowSets[workspace, default: []].insert(windowID)
     }
 
+    /// Drop `windowID` from workspace tracking entirely. Used when the
+    /// window closes or its app terminates.
     func removeWindow(_ windowID: CGWindowID) {
         if let old = windowWorkspaces[windowID] {
             workspaceWindowSets[old]?.remove(windowID)
@@ -166,7 +224,9 @@ class WorkspaceManager {
         savedFloatingFrames.removeValue(forKey: windowID)
     }
 
-    // hide corner position: bottom-right of screen's full frame in CG coords
+    /// CG coordinate for the hide-corner sliver: the bottom-right
+    /// pixel of `screen`'s full frame. Hidden windows park here; the
+    /// 1 px sliver remains visible (macOS limitation).
     func hidePosition(for screen: NSScreen) -> CGPoint {
         let primaryH = displayManager.primaryScreenHeight
         let frame = screen.frame
@@ -175,18 +235,25 @@ class WorkspaceManager {
         return CGPoint(x: cgRight - 1, y: cgBottom - 1)
     }
 
+    /// Park `window` at the hide corner of `screen`. Used to make a
+    /// window on a hidden workspace visually disappear without
+    /// touching its tree state.
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
         let pos = hidePosition(for: screen)
         window.position = pos
         hyprLog(.debug, .lifecycle, "hiding '\(window.title ?? "?")' (\(window.windowID)) at (\(Int(pos.x)),\(Int(pos.y)))")
     }
 
+    /// Capture `window`'s current frame so it can be restored after a
+    /// workspace switch. No-op when the window has no readable frame.
     func saveFloatingFrame(_ window: HyprWindow) {
         if let frame = window.frame {
             savedFloatingFrames[window.windowID] = frame
         }
     }
 
+    /// Apply the saved floating frame to `window` and clear the saved
+    /// entry. No-op when no frame was captured.
     func restoreFloatingFrame(_ window: HyprWindow) {
         if let frame = savedFloatingFrames[window.windowID] {
             window.setFrame(frame)
@@ -194,16 +261,23 @@ class WorkspaceManager {
         }
     }
 
-    // move current workspace from sourceScreen to targetScreen.
-    // source falls back to its pinned home workspace (monitor index + 1).
-    // pinned workspaces (1..monitorCount) can't be moved off their home monitor.
-    // returns (movedWs, fallbackWs, targetOldWs) or nil if blocked.
+    /// Result of `moveWorkspace`: which workspace moved, which one
+    /// the source screen fell back to, and which one was displaced
+    /// off the target screen.
     struct MoveResult {
         let movedWs: Int       // workspace that moved to target
         let fallbackWs: Int    // workspace source fell back to
         let targetOldWs: Int   // workspace target was showing before (now displaced)
     }
 
+    /// Move the workspace currently on `sourceScreen` to
+    /// `targetScreen`, with `sourceScreen` falling back to its pinned
+    /// home workspace (`monitor index + 1`).
+    ///
+    /// Pinned workspaces (1..`monitorCount`) cannot be moved off
+    /// their home monitor — those calls return `nil`. The fallback
+    /// must not already be visible on a different screen, otherwise
+    /// the move is also blocked.
     func moveWorkspace(from sourceScreen: NSScreen, to targetScreen: NSScreen, monitorCount: Int) -> MoveResult? {
         let srcSID = screenID(for: sourceScreen)
         let tgtSID = screenID(for: targetScreen)
@@ -240,17 +314,25 @@ class WorkspaceManager {
         return MoveResult(movedWs: srcWs, fallbackWs: fallbackWs, targetOldWs: tgtWs)
     }
 
+    /// Result of `switchWorkspace`. `toHide` and `toShow` are window
+    /// id sets the caller drives through hide-corner and tile.
+    /// `alreadyVisible` skips the hide/show pass entirely.
     struct SwitchResult {
         let toHide: Set<CGWindowID>
         let toShow: Set<CGWindowID>
-        let screen: NSScreen      // the screen where the switch happened
+        let screen: NSScreen
         let alreadyVisible: Bool
     }
 
     /// Switch to workspace `number`.
+    ///
     /// - If already visible somewhere: just focus that screen.
-    /// - If not visible: show it on its HOME screen (where it was last seen),
-    ///   NOT on the cursor's screen. First-time workspaces default to cursorScreen.
+    /// - If not visible: show it on its home screen (where it was
+    ///   last seen) when that screen is enabled; otherwise on
+    ///   `cursorScreen` when enabled; otherwise the first enabled
+    ///   screen. First-time workspaces default to `cursorScreen`.
+    ///
+    /// - Parameter cursorScreen: the screen the cursor is currently on.
     func switchWorkspace(_ number: Int, cursorScreen: NSScreen) -> SwitchResult {
         guard number >= 1 && number <= workspaceCount else {
             return SwitchResult(toHide: [], toShow: [], screen: cursorScreen, alreadyVisible: false)

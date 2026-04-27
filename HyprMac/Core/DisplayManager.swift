@@ -1,8 +1,23 @@
+// Tracks the live NSScreen list and converts between AppKit's
+// bottom-left NS origin and CoreGraphics' top-left CG origin. Listens
+// for `didChangeScreenParameters` and refreshes automatically.
+
 import Cocoa
 
+/// Owner of the active screen list and the NS↔CG coordinate
+/// conversions every other subsystem relies on.
+///
+/// `primaryScreenHeight` is cached so the conversion does not hit
+/// `NSScreen.screens` on every call. Subscribed to
+/// `didChangeScreenParameters` so monitor connect/disconnect refreshes
+/// the cache automatically.
 class DisplayManager {
+    /// Current screens in `NSScreen.screens` order. Refreshed on every
+    /// `didChangeScreenParameters` notification.
     private(set) var screens: [NSScreen] = []
-    // cached to avoid hitting NSScreen.screens on every coordinate conversion
+
+    /// Height of the primary screen — the basis for NS↔CG conversion.
+    /// Cached to avoid `NSScreen.screens.first` on every call.
     private(set) var primaryScreenHeight: CGFloat = 0
 
     init() {
@@ -13,6 +28,9 @@ class DisplayManager {
         )
     }
 
+    /// Reread `NSScreen.screens` and rebuild the cached primary
+    /// height. Called automatically on screen parameter changes; safe
+    /// to invoke manually.
     @objc func refresh() {
         screens = NSScreen.screens
         primaryScreenHeight = screens.first?.frame.height ?? 0
@@ -25,8 +43,9 @@ class DisplayManager {
         }
     }
 
-    // convert NSScreen's visibleFrame (bottom-left origin) to CG coordinates (top-left origin)
-    // this works correctly for ALL screens, not just the primary
+    /// Convert `screen.visibleFrame` (NS, bottom-left origin) to CG
+    /// coordinates (top-left origin). Works for every screen, not just
+    /// the primary, by anchoring to the cached primary height.
     func cgRect(for screen: NSScreen) -> CGRect {
         let visible = screen.visibleFrame
         let primaryH = primaryScreenHeight
@@ -39,7 +58,10 @@ class DisplayManager {
         )
     }
 
-    // find which screen a CG point (top-left origin) is on
+    /// Resolve which screen contains `cgPoint` (top-left origin).
+    /// Falls back to the nearest screen by Manhattan distance to its
+    /// edge when no screen actually contains the point — handles
+    /// out-of-bounds inputs (e.g. cursor on a disconnected display).
     func screen(at cgPoint: CGPoint) -> NSScreen? {
         let primaryH = primaryScreenHeight
 
@@ -77,7 +99,8 @@ class DisplayManager {
         return best ?? screens.first
     }
 
-    // find which screen a window is on (by its center point)
+    /// Resolve which screen `window` lives on, using its center point
+    /// (or top-left position when the size is unknown).
     func screen(for window: HyprWindow) -> NSScreen? {
         guard let center = window.center else {
             // can't determine — try position alone
@@ -87,9 +110,9 @@ class DisplayManager {
         return screen(at: center)
     }
 
-    // find NSScreen by display UUID (from CGSCopyManagedDisplaySpaces "Display Identifier")
-    // the display identifier is like "Main" or a UUID string — match by index order
-    // since CGSCopyManagedDisplaySpaces and NSScreen.screens use the same ordering
+    /// Resolve a screen by index. `CGSCopyManagedDisplaySpaces` and
+    /// `NSScreen.screens` use the same ordering, so the index returned
+    /// from one can index into the other.
     func screen(forDisplayIndex index: Int) -> NSScreen? {
         guard index >= 0 && index < screens.count else { return nil }
         return screens[index]

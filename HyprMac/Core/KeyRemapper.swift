@@ -1,12 +1,23 @@
+// HID-level key remap shim. Drives `hidutil` to map Caps Lock → F18 so
+// the Hypr key produces clean keyDown/keyUp events that
+// `HotkeyManager`'s CGEventTap can intercept; Caps Lock alone is a
+// driver-level toggle and never reaches the tap.
+
 import Foundation
 
-// remaps Caps Lock → F18 at the IOKit driver level using hidutil
-// this happens before CGEventTap, so caps lock never toggles
-// and F18 produces clean keyDown/keyUp events
+/// Static helpers for applying and clearing the Caps Lock → F18 remap.
+///
+/// Uses `hidutil property --set` under the hood. Also clears any
+/// system-level Caps Lock overrides set in System Settings →
+/// Keyboard → Modifier Keys, which would otherwise take priority over
+/// the remap and consume the keypress before it reached the IOKit
+/// driver layer.
 class KeyRemapper {
     private static let capsLockHID: UInt = 0x700000039
     private static let f18HID: UInt = 0x70000006D
 
+    /// Apply or restore the remap based on the configured Hypr key.
+    /// `hyprKey.usesCapsLockRemap` controls which path runs.
     static func applyHyprKey(_ key: HyprKey) {
         if key.usesCapsLockRemap {
             remapCapsLockToF18()

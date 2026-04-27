@@ -1,6 +1,17 @@
+// Launches an app by bundle ID, or activates and unminimizes its
+// existing windows if it is already running.
+
 import Cocoa
 
+/// Launch-or-focus helper for the `Action.launchApp` keybind.
+///
+/// Resolves an app by bundle identifier and routes through one of three
+/// paths: already running with windows → activate; already running
+/// with no windows → reopen the app (so `applicationOpenUntitledFile`
+/// can fire); not running → launch via `NSWorkspace.openApplication`.
 class AppLauncherManager {
+    /// Bring the app to the foreground, opening a window if needed.
+    /// No-op when the bundle ID does not resolve to an installed app.
     func launchOrFocus(bundleID: String) {
         // if already running, unhide/unminimize and activate
         if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
