@@ -1,7 +1,13 @@
-# SwiftLint config — Phase 0 baseline.
-# warnings only; nothing here fails the build yet. Phase 8 will tighten and
-# promote selected rules from warning → error.
-# REFACTOR_PLAN.md §8.4
+# SwiftLint config.
+#
+# `strict: false` keeps warnings from failing the build for now. The
+# thresholds below are tightened from the Phase 0 baseline so that
+# new code respects the post-refactor structure (smaller types,
+# shorter functions). The current codebase is documented to exceed a
+# handful of these — `WindowManager` and `TilingEngine` are
+# explicitly over the type-body / file-length targets, see
+# REFACTOR_PLAN.md §11 — and existing files are excluded from
+# escalation by keeping `strict: false` until those reductions land.
 
 included:
   - HyprMac
@@ -13,15 +19,13 @@ excluded:
   - HyprMac/PrivateAPI
   - HyprMac/Resources
 
-# severity escalations are deferred to Phase 8. for now everything is a warning.
 strict: false
 
-# rule selection — start permissive, tighten over time.
 disabled_rules:
-  - identifier_name        # we use short names like w, l, r, b in BSP code by design
-  - todo                   # we have legitimate TODOs tracked in REFACTOR_PLAN.md
+  - identifier_name        # short names like w, l, r are intentional in BSP code
+  - todo                   # legitimate TODOs are tracked in REFACTOR_PLAN.md / docs/
   - trailing_whitespace
-  - line_length            # tightened in Phase 8
+  - large_tuple            # WindowChanges.screenDrift is a labeled 3-tuple by design
 
 opt_in_rules:
   - empty_count
@@ -33,19 +37,36 @@ opt_in_rules:
   - sorted_first_last
   - toggle_bool
   - unused_import
+  - force_unwrapping
 
-# tunables — relaxed for Phase 0; tightened in Phase 8.
+# CGS bridging-header sites legitimately need force-unwraps where the
+# CFTypeID is already validated. PrivateAPI is excluded above; AX
+# bridging in HyprWindow / AccessibilityManager carries adjacent
+# CFGetTypeID guards and would be too noisy to refactor case-by-case.
+force_unwrapping:
+  excluded:
+    - HyprMac/Models/HyprWindow.swift
+    - HyprMac/Core/AccessibilityManager.swift
+    - HyprMac/Core/Orchestration/ActionDispatcher.swift
+
+line_length:
+  warning: 140
+  error: 200
+  ignores_comments: true
+  ignores_urls: true
+  ignores_function_declarations: true
+
 function_body_length:
-  warning: 120
-  error: 250
+  warning: 80
+  error: 200
 
 type_body_length:
-  warning: 600
+  warning: 500
   error: 1500
 
 file_length:
-  warning: 800
-  error: 2500
+  warning: 700
+  error: 2000
   ignore_comment_only_lines: true
 
 cyclomatic_complexity:
