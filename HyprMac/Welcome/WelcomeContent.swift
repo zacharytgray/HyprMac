@@ -19,29 +19,9 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.2.swap",
-            title: "Smarter Swap Rejection",
-            description: "Same-screen and cross-monitor swaps that would crush a window below its minimum size are now rejected with a flash and beep instead of producing a broken layout."
-        ),
-        WhatsNewFeature(
-            icon: "cursorarrow.rays",
-            title: "Sturdier Hover Focus",
-            description: "Hover focus now hit-tests against the actual visible window region, so floating overlays and edge tiles no longer steal focus from the window underneath your cursor."
-        ),
-        WhatsNewFeature(
-            icon: "square.dashed",
-            title: "Cleaner Focus Borders",
-            description: "Focus borders and dim overlays redraw against live tile rects and clip to the visible region, eliminating stale outlines after animations and z-order changes."
-        ),
-        WhatsNewFeature(
-            icon: "wand.and.rays",
-            title: "Animation Polish",
-            description: "Window shadows now keep up with animated tiling, and click-triggered BSP corruption during quick focus switches has been fixed."
-        ),
-        WhatsNewFeature(
-            icon: "checklist",
-            title: "Release Test Gate",
-            description: "Every release build now runs the full XCTest suite before signing and notarization, catching regressions before they ship."
+            icon: "arrow.uturn.backward.circle",
+            title: "Reopened Windows Land on the Right Workspace",
+            description: "Apps that recycle window IDs across close-and-reopen (Teams, Mail, Music) no longer come back bound to the workspace they were closed on — the window now drifts to whatever workspace it actually opened on and tiles correctly."
         ),
     ]
 }
