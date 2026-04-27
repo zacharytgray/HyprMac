@@ -7,8 +7,8 @@ enum Direction: String, Codable {
 enum Action: Equatable {
     case focusDirection(Direction)
     case swapDirection(Direction)
-    case switchDesktop(Int)
-    case moveToDesktop(Int)
+    case switchWorkspace(Int)
+    case moveToWorkspace(Int)
     case moveWorkspaceToMonitor(Direction)  // move current workspace to adjacent monitor
     case toggleFloating
     case toggleSplit
@@ -36,11 +36,14 @@ enum Action: Equatable {
 
 extension Action: Codable {
 
+    // CaseKey rawValues are the JSON wire-format keys, frozen at the v0.4.2
+    // names — switchWorkspace/moveToWorkspace deliberately encode under their
+    // legacy "switchDesktop"/"moveToDesktop" keys forever per §5.6.
     private enum CaseKey: String, CodingKey {
         case focusDirection
         case swapDirection
-        case switchDesktop
-        case moveToDesktop
+        case switchWorkspace        = "switchDesktop"
+        case moveToWorkspace        = "moveToDesktop"
         case moveWorkspaceToMonitor
         case toggleFloating
         case toggleSplit
@@ -52,11 +55,12 @@ extension Action: Codable {
         case cycleWorkspace
     }
 
-    // accepted-but-not-emitted aliases. encoder writes the canonical key
-    // (left side of the table); decoder accepts the alias (right side).
+    // accepted-but-not-emitted aliases. lets a hand-edited config using the
+    // new in-code spellings still decode; the encoder always writes the
+    // canonical (legacy) key from CaseKey.rawValue.
     private static let aliases: [String: CaseKey] = [
-        "switchWorkspace": .switchDesktop,
-        "moveToWorkspace": .moveToDesktop,
+        "switchWorkspace": .switchWorkspace,
+        "moveToWorkspace": .moveToWorkspace,
     ]
 
     private enum PayloadKey: String, CodingKey {
@@ -90,10 +94,10 @@ extension Action: Codable {
             self = .swapDirection(try Self.decodeDirection(inner, field: "swapDirection"))
         case .moveWorkspaceToMonitor:
             self = .moveWorkspaceToMonitor(try Self.decodeDirection(inner, field: "moveWorkspaceToMonitor"))
-        case .switchDesktop:
-            self = .switchDesktop(try inner.decode(Int.self, forKey: ._0))
-        case .moveToDesktop:
-            self = .moveToDesktop(try inner.decode(Int.self, forKey: ._0))
+        case .switchWorkspace:
+            self = .switchWorkspace(try inner.decode(Int.self, forKey: ._0))
+        case .moveToWorkspace:
+            self = .moveToWorkspace(try inner.decode(Int.self, forKey: ._0))
         case .cycleWorkspace:
             self = .cycleWorkspace(try inner.decode(Int.self, forKey: ._0))
         case .launchApp:
@@ -131,11 +135,11 @@ extension Action: Codable {
         case .moveWorkspaceToMonitor(let d):
             var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .moveWorkspaceToMonitor)
             try p.encode(d.rawValue, forKey: ._0)
-        case .switchDesktop(let n):
-            var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .switchDesktop)
+        case .switchWorkspace(let n):
+            var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .switchWorkspace)
             try p.encode(n, forKey: ._0)
-        case .moveToDesktop(let n):
-            var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .moveToDesktop)
+        case .moveToWorkspace(let n):
+            var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .moveToWorkspace)
             try p.encode(n, forKey: ._0)
         case .cycleWorkspace(let n):
             var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .cycleWorkspace)

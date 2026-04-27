@@ -33,13 +33,13 @@ final class KeybindDecoderToleranceTests: XCTestCase {
     func testSwitchDesktopWireFormatDecodes() throws {
         let json = #"{"action":{"switchDesktop":{"_0":3}},"keyCode":20,"modifiers":1}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
-        XCTAssertEqual(kb.action, .switchDesktop(3))
+        XCTAssertEqual(kb.action, .switchWorkspace(3))
     }
 
     func testMoveToDesktopWireFormatDecodes() throws {
         let json = #"{"action":{"moveToDesktop":{"_0":7}},"keyCode":26,"modifiers":3}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
-        XCTAssertEqual(kb.action, .moveToDesktop(7))
+        XCTAssertEqual(kb.action, .moveToWorkspace(7))
     }
 
     func testMoveWorkspaceToMonitorWireFormatDecodes() throws {
@@ -150,14 +150,14 @@ final class KeybindDecoderToleranceTests: XCTestCase {
     // / moveToWorkspace, so user configs never see noisy churn.
 
     func testEncoderProducesSwitchDesktopKey() throws {
-        let kb = Keybind(keyCode: 18, modifiers: .hypr, action: .switchDesktop(1))
+        let kb = Keybind(keyCode: 18, modifiers: .hypr, action: .switchWorkspace(1))
         let s = String(data: try JSONEncoder().encode(kb), encoding: .utf8)!
         XCTAssertTrue(s.contains(#""switchDesktop":{"_0":1}"#),
                       "expected switchDesktop key in encoded JSON: \(s)")
     }
 
     func testEncoderProducesMoveToDesktopKey() throws {
-        let kb = Keybind(keyCode: 18, modifiers: [.hypr, .shift], action: .moveToDesktop(2))
+        let kb = Keybind(keyCode: 18, modifiers: [.hypr, .shift], action: .moveToWorkspace(2))
         let s = String(data: try JSONEncoder().encode(kb), encoding: .utf8)!
         XCTAssertTrue(s.contains(#""moveToDesktop":{"_0":2}"#),
                       "expected moveToDesktop key in encoded JSON: \(s)")
@@ -201,13 +201,13 @@ final class KeybindDecoderToleranceTests: XCTestCase {
     func testSwitchWorkspaceAliasDecodesAsSwitchDesktop() throws {
         let json = #"{"action":{"switchWorkspace":{"_0":4}},"keyCode":21,"modifiers":1}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
-        XCTAssertEqual(kb.action, .switchDesktop(4))
+        XCTAssertEqual(kb.action, .switchWorkspace(4))
     }
 
     func testMoveToWorkspaceAliasDecodesAsMoveToDesktop() throws {
         let json = #"{"action":{"moveToWorkspace":{"_0":5}},"keyCode":23,"modifiers":3}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
-        XCTAssertEqual(kb.action, .moveToDesktop(5))
+        XCTAssertEqual(kb.action, .moveToWorkspace(5))
     }
 
     func testEncoderDoesNotEmitWorkspaceAliases() throws {

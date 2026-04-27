@@ -118,7 +118,7 @@ private struct KeybindOverlayView: View {
             return "Focus & Navigation"
         case .swapDirection, .toggleFloating, .toggleSplit, .closeWindow:
             return "Window Management"
-        case .switchDesktop, .moveToDesktop, .moveWorkspaceToMonitor, .cycleWorkspace:
+        case .switchWorkspace, .moveToWorkspace, .moveWorkspaceToMonitor, .cycleWorkspace:
             return "Workspaces"
         case .launchApp:
             return "Apps"

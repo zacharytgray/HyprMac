@@ -85,9 +85,9 @@ extension Keybind {
         ]
         for (i, key) in numKeys.enumerated() {
             binds.append(Keybind(keyCode: key, modifiers: .hypr,
-                                 action: .switchDesktop(i + 1)))
+                                 action: .switchWorkspace(i + 1)))
             binds.append(Keybind(keyCode: key, modifiers: [.hypr, .shift],
-                                 action: .moveToDesktop(i + 1)))
+                                 action: .moveToWorkspace(i + 1)))
         }
 
         // hypr + ctrl + left/right: move current workspace to adjacent monitor

@@ -134,9 +134,9 @@ final class ActionDispatcher {
             focusInDirection(dir)
         case .swapDirection(let dir):
             swapInDirection(dir)
-        case .switchDesktop(let num):
+        case .switchWorkspace(let num):
             workspaceOrchestrator.switchWorkspace(num)
-        case .moveToDesktop(let num):
+        case .moveToWorkspace(let num):
             workspaceOrchestrator.moveToWorkspace(num)
         case .moveWorkspaceToMonitor(let dir):
             workspaceOrchestrator.moveCurrentWorkspaceToMonitor(dir)

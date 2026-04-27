@@ -151,7 +151,7 @@ struct KeybindsSettingsView: View {
             return "Focus & Navigation"
         case .swapDirection, .toggleFloating, .toggleSplit, .closeWindow:
             return "Window Management"
-        case .switchDesktop, .moveToDesktop, .moveWorkspaceToMonitor, .cycleWorkspace:
+        case .switchWorkspace, .moveToWorkspace, .moveWorkspaceToMonitor, .cycleWorkspace:
             return "Workspaces"
         case .showKeybinds, .launchApp:
             return "System"
@@ -187,7 +187,7 @@ struct KeybindEditorSheet: View {
 
     @State private var selectedAction: ActionChoice = .focusDirection
     @State private var directionParam: Direction = .left
-    @State private var desktopParam = 1
+    @State private var workspaceParam = 1
     @State private var bundleIDParam = "com.apple.Terminal"
 
     @State private var recordedKeyCode: UInt16 = 0
@@ -200,8 +200,8 @@ struct KeybindEditorSheet: View {
     enum ActionChoice: String, CaseIterable {
         case focusDirection         = "Focus Direction"
         case swapDirection          = "Swap Direction"
-        case switchDesktop          = "Switch Workspace"
-        case moveToDesktop          = "Move to Workspace"
+        case switchWorkspace        = "Switch Workspace"
+        case moveToWorkspace        = "Move to Workspace"
         case moveWorkspaceToMonitor = "Move Workspace to Monitor"
         case toggleFloating         = "Toggle Floating"
         case toggleSplit            = "Toggle Split"
@@ -251,13 +251,13 @@ struct KeybindEditorSheet: View {
                             Text("Down").tag(Direction.down)
                         }
                         .pickerStyle(.segmented)
-                    case .switchDesktop, .moveToDesktop:
-                        Picker("Workspace", selection: $desktopParam) {
+                    case .switchWorkspace, .moveToWorkspace:
+                        Picker("Workspace", selection: $workspaceParam) {
                             ForEach(1...9, id: \.self) { Text("\($0)").tag($0) }
                         }
                         .pickerStyle(.segmented)
                     case .cycleWorkspace:
-                        Picker("Direction", selection: $desktopParam) {
+                        Picker("Direction", selection: $workspaceParam) {
                             Text("Next").tag(1)
                             Text("Previous").tag(-1)
                         }
@@ -303,8 +303,8 @@ struct KeybindEditorSheet: View {
         switch bind.action {
         case .focusDirection(let d):         selectedAction = .focusDirection;         directionParam = d
         case .swapDirection(let d):          selectedAction = .swapDirection;          directionParam = d
-        case .switchDesktop(let n):          selectedAction = .switchDesktop;          desktopParam = n
-        case .moveToDesktop(let n):          selectedAction = .moveToDesktop;          desktopParam = n
+        case .switchWorkspace(let n):          selectedAction = .switchWorkspace;          workspaceParam = n
+        case .moveToWorkspace(let n):          selectedAction = .moveToWorkspace;          workspaceParam = n
         case .moveWorkspaceToMonitor(let d): selectedAction = .moveWorkspaceToMonitor; directionParam = d
         case .toggleFloating:                selectedAction = .toggleFloating
         case .toggleSplit:                   selectedAction = .toggleSplit
@@ -313,7 +313,7 @@ struct KeybindEditorSheet: View {
         case .focusMenuBar:                  selectedAction = .focusMenuBar
         case .focusFloating:                 selectedAction = .focusFloating
         case .closeWindow:                   selectedAction = .closeWindow
-        case .cycleWorkspace(let d):         selectedAction = .cycleWorkspace;         desktopParam = d
+        case .cycleWorkspace(let d):         selectedAction = .cycleWorkspace;         workspaceParam = d
         }
     }
 
@@ -324,8 +324,8 @@ struct KeybindEditorSheet: View {
         switch selectedAction {
         case .focusDirection:         action = .focusDirection(directionParam)
         case .swapDirection:          action = .swapDirection(directionParam)
-        case .switchDesktop:          action = .switchDesktop(desktopParam)
-        case .moveToDesktop:          action = .moveToDesktop(desktopParam)
+        case .switchWorkspace:          action = .switchWorkspace(workspaceParam)
+        case .moveToWorkspace:          action = .moveToWorkspace(workspaceParam)
         case .moveWorkspaceToMonitor: action = .moveWorkspaceToMonitor(directionParam)
         case .toggleFloating:         action = .toggleFloating
         case .toggleSplit:            action = .toggleSplit
@@ -334,7 +334,7 @@ struct KeybindEditorSheet: View {
         case .focusMenuBar:           action = .focusMenuBar
         case .focusFloating:          action = .focusFloating
         case .closeWindow:            action = .closeWindow
-        case .cycleWorkspace:         action = .cycleWorkspace(desktopParam)
+        case .cycleWorkspace:         action = .cycleWorkspace(workspaceParam)
         }
 
         onSave(Keybind(keyCode: recordedKeyCode, modifiers: mods, action: action))
@@ -370,9 +370,9 @@ extension Keybind {
             }
         case .swapDirection:
             return "arrow.left.arrow.right"
-        case .switchDesktop:
+        case .switchWorkspace:
             return "number.circle"
-        case .moveToDesktop:
+        case .moveToWorkspace:
             return "arrow.up.right.square"
         case .moveWorkspaceToMonitor:
             return "rectangle.2.swap"
@@ -399,8 +399,8 @@ extension Keybind {
         switch action {
         case .focusDirection(let d):        return "Focus \(d.rawValue.capitalized)"
         case .swapDirection(let d):         return "Swap \(d.rawValue.capitalized)"
-        case .switchDesktop(let n):         return "Switch to Workspace \(n)"
-        case .moveToDesktop(let n):         return "Move to Workspace \(n)"
+        case .switchWorkspace(let n):         return "Switch to Workspace \(n)"
+        case .moveToWorkspace(let n):         return "Move to Workspace \(n)"
         case .moveWorkspaceToMonitor(let d): return "Move Workspace \(d.rawValue.capitalized)"
         case .toggleFloating:               return "Toggle Floating"
         case .toggleSplit:                  return "Toggle Split Direction"
