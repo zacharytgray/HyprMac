@@ -20,8 +20,8 @@ enum WhatsNewFeatures {
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
             icon: "rectangle.split.2x1",
-            title: "No More Lingering Gaps After Closing Windows",
-            description: "Closing a window through any path — Cmd+W, the red close button, Caps+W — now reliably reflows the surrounding tiles to fill the cavity. Previously a closed window's slot could persist if its workspace was hidden or another animation was running at close time."
+            title: "No More Lingering Gaps When an App Quits",
+            description: "When an app fully quits (TestFlight, single-window utilities), the BSP tree now drops its leaf immediately and the surrounding tiles reflow to fill the slot. Previously the dead leaf could linger until the next user action because the app-termination path bypassed the diff that normally cleans the tree."
         ),
     ]
 }

@@ -1365,7 +1365,17 @@ class WindowManager {
     /// missing from `knownWindowIDs`.
     private func forgetApp(_ pid: pid_t) {
         let ids = discovery.forgetApp(pid)
-        for id in ids { applyForgottenIDExternalCleanup(id) }
+        guard !ids.isEmpty else { return }
+        for id in ids {
+            tilingEngine.removeWindowID(id)
+            applyForgottenIDExternalCleanup(id)
+        }
+        hyprLog(.debug, .lifecycle, "forgetApp pid=\(pid) cleaned \(ids.count) window(s)")
+        // discovery.forgetApp already cleared knownWindowIDs, so the scheduled
+        // poll's diff returns no changes and needsRetile is false. apply new
+        // frames here so the surrounding tiles expand into the freed slot
+        // instead of waiting for the next user action to trigger a retile.
+        animatedRetile()
     }
 
 
