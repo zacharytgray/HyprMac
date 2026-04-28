@@ -116,6 +116,16 @@ final class ActionDispatcher {
             applyForgottenIDCleanup(id)
         }
 
+        // proactively drop every gone window from its BSP tree. tileAllVisibleSpaces
+        // only diffs trees for currently-visible workspaces and bails when an
+        // animation is in flight; either case can leave a closed window's node
+        // lingering, so the surrounding tiles never expand to fill the gap. doing
+        // it here is independent of which workspace was visible at close time and
+        // independent of whether the follow-up retile actually runs.
+        for id in changes.goneIDs {
+            tilingEngine.removeWindowID(id)
+        }
+
         // apply cross-screen drift reassignments.
         for drift in changes.screenDrift {
             workspaceManager.moveWindow(drift.windowID, toWorkspace: drift.toWorkspace)

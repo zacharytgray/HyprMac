@@ -19,9 +19,9 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "arrow.uturn.backward.circle",
-            title: "Reopened Windows Land on the Right Workspace",
-            description: "Apps that recycle window IDs across close-and-reopen (Teams, Mail, Music) no longer come back bound to the workspace they were closed on — the window now drifts to whatever workspace it actually opened on and tiles correctly."
+            icon: "rectangle.split.2x1",
+            title: "No More Lingering Gaps After Closing Windows",
+            description: "Closing a window through any path — Cmd+W, the red close button, Caps+W — now reliably reflows the surrounding tiles to fill the cavity. Previously a closed window's slot could persist if its workspace was hidden or another animation was running at close time."
         ),
     ]
 }

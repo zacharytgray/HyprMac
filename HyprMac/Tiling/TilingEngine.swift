@@ -72,6 +72,31 @@ class TilingEngine {
     /// window is forgotten by the discovery layer.
     func forgetMinimumSize(windowID: CGWindowID) { minSizes.forget(windowID: windowID) }
 
+    /// Defensive cleanup — drop `windowID` from whichever BSP tree
+    /// currently holds it, prune empties, and compact the surviving
+    /// windows on that tree. Called from the discovery gone path so a
+    /// closed window's node cannot outlive its AX presence even when the
+    /// owning workspace is hidden (and therefore skipped by
+    /// `tileAllVisibleSpaces`) or the follow-up retile is dropped because
+    /// `animator.isAnimating` is true. The frame application happens later
+    /// — this only fixes tree topology so the next layout pass produces a
+    /// gapless result. No-op when no tree contains `windowID`.
+    func removeWindowID(_ windowID: CGWindowID) {
+        for (key, t) in trees {
+            guard let w = t.allWindows.first(where: { $0.windowID == windowID }) else { continue }
+            t.remove(w)
+            t.root.pruneEmptyNodes()
+            if let screen = displayManager.screens.first(where: {
+                TilingKey(workspace: key.workspace, screen: $0) == key
+            }) {
+                let rect = displayManager.cgRect(for: screen)
+                t.compact(maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
+                          padding: outerPadding, minSlotDimension: minSlotDimension)
+            }
+            return
+        }
+    }
+
     private func minimumSize(for window: HyprWindow?) -> CGSize { minSizes.minimumSize(for: window) }
 
     private func tree(for key: TilingKey) -> BSPTree {
