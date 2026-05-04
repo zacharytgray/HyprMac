@@ -164,7 +164,13 @@ class WindowAnimator {
         // at `from` while the proxy slides. position-only write — size stays,
         // so when we restore to `to` at the end we don't need a full
         // resize-move-resize cycle (just position back to to.origin).
-        for tr in transitions { tr.window.position = Self.proxyParkPosition }
+        // Must go through `setPositionOnly` (not the bare `position` setter)
+        // so AXEnhancedUserInterface is disabled during the write — otherwise
+        // Tahoe animates the park move and clamps to screen bounds, leaving
+        // a residual in-flight animation that races the setFrame at the end
+        // of `animate` and lands the window at the screen edge instead of
+        // its target rect.
+        for tr in transitions { tr.window.setPositionOnly(Self.proxyParkPosition) }
 
         let start = CACurrentMediaTime()
         let timer = DispatchSource.makeTimerSource(queue: .main)

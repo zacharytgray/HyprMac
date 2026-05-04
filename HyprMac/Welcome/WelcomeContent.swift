@@ -19,6 +19,11 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "wrench.adjustable",
+            title: "Animated Swap Fix",
+            description: "Hypr+Shift+Arrow swaps with animations enabled could leave a window stuck at the screen edge on Tahoe. The window animator now disables AXEnhancedUserInterface while parking windows off-screen during the proxy animation, so the park write doesn't get clamped and race the final setFrame."
+        ),
+        WhatsNewFeature(
             icon: "paintbrush.pointed",
             title: "Settings, Reimagined",
             description: "The settings window has been redesigned from the ground up — restrained Mac-native chassis with a cyan signature accent at active and focus moments. Custom panels, custom toggles, monospace key chips, and a sidebar that actually feels like it belongs in HyprMac."
