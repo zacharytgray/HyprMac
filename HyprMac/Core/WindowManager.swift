@@ -157,8 +157,12 @@ class WindowManager {
         // hold polling off while a cross-monitor drag-swap is in flight (Phase 4 step 5).
         // DragSwapHandler.applySwap registers the "cross-swap-in-flight" key for ~800ms;
         // both the 1Hz timer and notification-driven schedule() calls drop until it expires.
+        // workspace-transition is set by switchWorkspace and moveToWorkspace for 0.6s
+        // so drift detection can't fire on stale-AX-read frames mid-transition.
         pollingScheduler.isSuppressed = { [weak self] in
-            self?.suppressions.isSuppressed("cross-swap-in-flight") ?? false
+            guard let self else { return false }
+            return self.suppressions.isSuppressed("cross-swap-in-flight")
+                || self.suppressions.isSuppressed("workspace-transition")
         }
 
         hotkeyManager.onAction = { [weak self] action in
@@ -629,6 +633,7 @@ class WindowManager {
         focusBorder.accentCGColor = stateCache.floatingWindowIDs.contains(window.windowID)
             ? config.resolvedFloatingBorderColor.cgColor
             : config.resolvedFocusBorderColor.cgColor
+        WindowCornerRadius.prime(for: window)
         focusBorder.show(around: frame, windowID: window.windowID)
         if stateCache.floatingWindowIDs.contains(window.windowID) {
             refreshFloatingBorders(windows: accessibility.getAllWindows())
@@ -1177,12 +1182,11 @@ class WindowManager {
             usedWs.insert(ws)
         }
 
-        var spillScreenIdx = 0
+        // spillover slots: workspaces not currently visible. each spills
+        // to its static home monitor, computed by `homeScreenForWorkspace`.
         for ws in 1...workspaceManager.workspaceCount where !usedWs.contains(ws) {
-            let screen = screens[spillScreenIdx % screens.count]
+            guard let screen = workspaceManager.homeScreenForWorkspace(ws) else { continue }
             slots.append((ws, screen))
-            workspaceManager.setHomeScreen(for: ws, screenID: workspaceManager.screenID(for: screen))
-            spillScreenIdx += 1
         }
 
         // fill slots in order — each slot = one workspace on one screen
@@ -1356,6 +1360,7 @@ class WindowManager {
             focusBorder.hide(); dimmingOverlay.hideAll()
         }
         focusBorder.hideFloatingBorder(for: id)
+        WindowCornerRadius.forget(id)
     }
 
     /// Forget every window owned by `pid`. Called on app termination —
@@ -1452,6 +1457,12 @@ class WindowManager {
         if config.showFocusBorder {
             let source = windows ?? Array(stateCache.cachedWindows.values)
             let frames = floatingFrames(from: source)
+            // prime the radius cache for each visible floater so the
+            // bundle-id override table applies (otherwise resolve()
+            // falls back to osDefault for every floating window).
+            for w in source where frames[w.windowID] != nil {
+                WindowCornerRadius.prime(for: w)
+            }
             focusBorder.updateFloatingBorders(
                 frames,
                 color: config.resolvedFloatingBorderColor.cgColor

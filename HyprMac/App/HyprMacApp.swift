@@ -21,6 +21,6 @@ struct HyprMacApp: App {
         Window("HyprMac Settings", id: "settings") {
             SettingsView()
         }
-        .defaultSize(width: 600, height: 500)
+        .defaultSize(width: 760, height: 600)
     }
 }

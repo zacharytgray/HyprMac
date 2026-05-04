@@ -165,9 +165,42 @@ class HyprWindow: Equatable, Hashable {
     /// is skipped — one AX call saved per window per retile.
     func setFrame(_ rect: CGRect, crossMonitor: Bool = true) {
         cachedFrame = nil
-        size = rect.size
-        position = rect.origin
-        if crossMonitor { size = rect.size }
+        withEnhancedUIDisabled {
+            size = rect.size
+            position = rect.origin
+            if crossMonitor { size = rect.size }
+        }
+    }
+
+    /// Move (without resizing) under the same EnhancedUI guard as
+    /// `setFrame`. Used by the hide path so macOS doesn't animate or
+    /// reposition the parked window — animations cause apps to snap
+    /// to nearby monitors and become half-visible.
+    func setPositionOnly(_ point: CGPoint) {
+        cachedFrame = nil
+        withEnhancedUIDisabled {
+            position = point
+        }
+    }
+
+    /// Disable `AXEnhancedUserInterface` on the owning app for the
+    /// duration of `block`, then restore it. Matches yabai's
+    /// `AX_ENHANCED_UI_WORKAROUND` and AeroSpace's `disableAnimations`.
+    /// On Sequoia+ and especially Tahoe, leaving EnhancedUI on causes
+    /// macOS to animate / clamp / reposition AX writes, making them
+    /// arrive as something other than what we asked for.
+    private func withEnhancedUIDisabled(_ block: () -> Void) {
+        let appElement = AXUIElementCreateApplication(ownerPID)
+        var prevValue: CFTypeRef?
+        let prevRC = AXUIElementCopyAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, &prevValue)
+        let wasEnhanced = (prevRC == .success && (prevValue as? Bool) == true)
+        if wasEnhanced {
+            AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
+        }
+        block()
+        if wasEnhanced {
+            AXUIElementSetAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        }
     }
 
     /// Apply `rect` and immediately read back the actual frame the

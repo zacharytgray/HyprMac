@@ -417,10 +417,11 @@ final class ActionDispatcher {
 
         let screenSID = workspaceManager.screenID(for: screen)
 
-        // collect occupied workspaces that belong to this monitor (home screen matches)
+        // collect occupied workspaces whose static home is this monitor
         let occupied = Set((1...total).filter { ws in
-            workspaceManager.workspaceHomeScreen[ws] == screenSID &&
-            !workspaceManager.windowIDs(onWorkspace: ws).isEmpty
+            guard let home = workspaceManager.homeScreenForWorkspace(ws) else { return false }
+            return workspaceManager.screenID(for: home) == screenSID &&
+                !workspaceManager.windowIDs(onWorkspace: ws).isEmpty
         })
 
         guard !occupied.isEmpty else { return }

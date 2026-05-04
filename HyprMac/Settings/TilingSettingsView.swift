@@ -10,45 +10,79 @@ struct TilingSettingsView: View {
     @State private var screens: [NSScreen] = NSScreen.screens
 
     var body: some View {
-        Form {
-            Section("Window Gaps") {
-                HStack {
-                    Text("Inner Gap")
-                    Slider(value: $config.gapSize, in: 0...32, step: 2)
-                    Text("\(Int(config.gapSize))px")
-                        .frame(width: 40)
-                        .monospacedDigit()
-                }
+        VStack(spacing: HyprSpacing.lg) {
+            gapsPanel
+            animationPanel
+            focusPanel
+            monitorsPanel
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screens = NSScreen.screens
+        }
+    }
 
-                HStack {
-                    Text("Outer Padding")
-                    Slider(value: $config.outerPadding, in: 0...32, step: 2)
-                    Text("\(Int(config.outerPadding))px")
-                        .frame(width: 40)
-                        .monospacedDigit()
+    // MARK: gaps
+
+    private var gapsPanel: some View {
+        HyprPanel("Window Gaps") {
+            HyprRow("Inner gap", icon: "rectangle.inset.filled.and.person.filled") {
+                HStack(spacing: HyprSpacing.sm) {
+                    Slider(value: $config.gapSize, in: 0...32, step: 2)
+                        .frame(width: 180)
+                    HyprChip("\(Int(config.gapSize))px")
+                        .frame(width: 56, alignment: .trailing)
                 }
             }
+            HyprRow("Outer padding", icon: "square.dashed", divider: false) {
+                HStack(spacing: HyprSpacing.sm) {
+                    Slider(value: $config.outerPadding, in: 0...32, step: 2)
+                        .frame(width: 180)
+                    HyprChip("\(Int(config.outerPadding))px")
+                        .frame(width: 56, alignment: .trailing)
+                }
+            }
+        }
+    }
 
-            Section("Animation") {
-                Toggle("Animate window transitions", isOn: $config.animateWindows)
+    // MARK: animation
 
-                if config.animateWindows {
-                    HStack {
-                        Text("Duration")
+    private var animationPanel: some View {
+        HyprPanel("Animation") {
+            HyprRow("Animate window transitions", icon: "wave.3.right",
+                    divider: config.animateWindows) {
+                Toggle("", isOn: $config.animateWindows)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+            if config.animateWindows {
+                HyprRow("Duration", icon: "timer", divider: false) {
+                    HStack(spacing: HyprSpacing.sm) {
                         Slider(value: $config.animationDuration, in: 0.05...0.4, step: 0.05)
-                        Text("\(Int(config.animationDuration * 1000))ms")
-                            .frame(width: 48)
-                            .monospacedDigit()
+                            .frame(width: 180)
+                        HyprChip("\(Int(config.animationDuration * 1000))ms")
+                            .frame(width: 56, alignment: .trailing)
                     }
                 }
             }
+        }
+    }
 
-            Section("Focus Indicator") {
-                Toggle("Show focus border", isOn: $config.showFocusBorder)
+    // MARK: focus indicator + dim
 
-                if config.showFocusBorder {
+    private var focusPanel: some View {
+        HyprPanel("Focus Indicator",
+                  footer: "The border tints the focused window during traversal and settles to an outline. Floating windows use a separate color. Dim darkens everything except the focused window via an overlay panel — no SIP required.") {
+            HyprRow("Show focus border", icon: "rectangle.dashed",
+                    divider: config.showFocusBorder) {
+                Toggle("", isOn: $config.showFocusBorder)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+
+            if config.showFocusBorder {
+                HyprRow("Border color", icon: "paintpalette") {
                     ColorPickerRow(
-                        label: "Border Color",
+                        label: "",
                         isCustom: config.focusBorderColorHex != nil,
                         onReset: { config.focusBorderColorHex = nil },
                         color: Binding(
@@ -56,8 +90,11 @@ struct TilingSettingsView: View {
                             set: { config.focusBorderColorHex = NSColor($0).hexString }
                         )
                     )
+                }
+                HyprRow("Floating border color", icon: "paintpalette.fill",
+                        divider: true) {
                     ColorPickerRow(
-                        label: "Floating Border Color",
+                        label: "",
                         isCustom: config.floatingBorderColorHex != nil,
                         onReset: { config.floatingBorderColorHex = nil },
                         color: Binding(
@@ -65,63 +102,60 @@ struct TilingSettingsView: View {
                             set: { config.floatingBorderColorHex = NSColor($0).hexString }
                         )
                     )
-                    Text("Tints the window during traversal; shows as an outline when settled. Floating windows use a separate color.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
                 }
-
-                Divider().padding(.vertical, 4)
-
-                Toggle("Dim inactive windows", isOn: $config.dimInactiveWindows)
-                if config.dimInactiveWindows {
-                    HStack {
-                        Text("Dim intensity")
-                        Slider(value: $config.dimIntensity, in: 0.05...0.6)
-                        Text(String(format: "%.0f%%", config.dimIntensity * 100))
-                            .font(.caption.monospacedDigit())
-                            .foregroundColor(.secondary)
-                            .frame(width: 40, alignment: .trailing)
-                    }
-                }
-                Text("Darkens everything except the focused window. Uses an overlay panel ordered below the focused window — no SIP required.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
 
-            Section("Per-Monitor Settings") {
-                ForEach(screens, id: \.localizedName) { screen in
-                    MonitorSplitsRow(
-                        screen: screen,
-                        tilingEnabled: Binding(
-                            get: { !config.disabledMonitors.contains(screen.localizedName) },
-                            set: { enabled in
-                                if enabled {
-                                    config.disabledMonitors.remove(screen.localizedName)
-                                } else {
-                                    config.disabledMonitors.insert(screen.localizedName)
-                                }
-                            }
-                        ),
-                        maxSplits: Binding(
-                            get: { config.maxSplitsPerMonitor[screen.localizedName] ?? 3 },
-                            set: { newVal in
-                                if newVal == 3 {
-                                    config.maxSplitsPerMonitor.removeValue(forKey: screen.localizedName)
-                                } else {
-                                    config.maxSplitsPerMonitor[screen.localizedName] = newVal
-                                }
-                            }
-                        ),
-                        gap: config.gapSize,
-                        padding: config.outerPadding
-                    )
+            HyprRow("Dim inactive windows", icon: "moon",
+                    divider: config.dimInactiveWindows) {
+                Toggle("", isOn: $config.dimInactiveWindows)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+            if config.dimInactiveWindows {
+                HyprRow("Dim intensity", icon: "circle.lefthalf.filled", divider: false) {
+                    HStack(spacing: HyprSpacing.sm) {
+                        Slider(value: $config.dimIntensity, in: 0.05...0.6)
+                            .frame(width: 180)
+                        HyprChip(String(format: "%.0f%%", config.dimIntensity * 100))
+                            .frame(width: 56, alignment: .trailing)
+                    }
                 }
             }
         }
-        .formStyle(.grouped)
-        .padding()
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            screens = NSScreen.screens
+    }
+
+    // MARK: monitors
+
+    private var monitorsPanel: some View {
+        HyprPanel("Per-Monitor Settings") {
+            ForEach(Array(screens.enumerated()), id: \.element.localizedName) { idx, screen in
+                MonitorSplitsRow(
+                    screen: screen,
+                    tilingEnabled: Binding(
+                        get: { !config.disabledMonitors.contains(screen.localizedName) },
+                        set: { enabled in
+                            if enabled {
+                                config.disabledMonitors.remove(screen.localizedName)
+                            } else {
+                                config.disabledMonitors.insert(screen.localizedName)
+                            }
+                        }
+                    ),
+                    maxSplits: Binding(
+                        get: { config.maxSplitsPerMonitor[screen.localizedName] ?? 3 },
+                        set: { newVal in
+                            if newVal == 3 {
+                                config.maxSplitsPerMonitor.removeValue(forKey: screen.localizedName)
+                            } else {
+                                config.maxSplitsPerMonitor[screen.localizedName] = newVal
+                            }
+                        }
+                    ),
+                    gap: config.gapSize,
+                    padding: config.outerPadding,
+                    isLast: idx == screens.count - 1
+                )
+            }
         }
     }
 }
@@ -134,42 +168,57 @@ private struct MonitorSplitsRow: View {
     @Binding var maxSplits: Int
     let gap: CGFloat
     let padding: CGFloat
+    let isLast: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // monitor name + resolution + tiling toggle
-            let res = screen.frame.size
-            HStack {
-                Text("\(screen.localizedName) — \(Int(res.width))×\(Int(res.height))")
-                    .font(.headline)
-                Spacer()
-                Toggle("Tiling", isOn: $tilingEnabled)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: HyprSpacing.sm) {
+                let res = screen.frame.size
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(screen.localizedName)
+                            .font(.hyprBody)
+                        Text("\(Int(res.width)) × \(Int(res.height))")
+                            .font(.hyprMonoXs)
+                            .foregroundStyle(Color.hyprTextTertiary)
+                    }
+                    Spacer()
+                    Toggle("", isOn: $tilingEnabled)
+                        .toggleStyle(HyprToggleStyle())
+                        .labelsHidden()
+                }
+
+                if tilingEnabled {
+                    MaxSplitsPicker(value: $maxSplits)
+
+                    let aspect = res.width / res.height
+                    DwindlePreview(
+                        windowCount: maxSplits + 1,
+                        aspectRatio: aspect,
+                        gap: gap,
+                        padding: padding
+                    )
+                    .frame(height: 110)
+                    .background(
+                        RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                            .fill(Color.hyprBackground)
+                    )
+                } else {
+                    Text("Tiling disabled — windows on this monitor float freely.")
+                        .font(.hyprCaption)
+                        .foregroundStyle(Color.hyprTextSecondary)
+                }
             }
+            .padding(.horizontal, HyprSpacing.md)
+            .padding(.vertical, HyprSpacing.md)
 
-            if tilingEnabled {
-                // pill picker
-                MaxSplitsPicker(value: $maxSplits)
-
-                // dwindle preview matching monitor aspect ratio
-                let aspect = res.width / res.height
-                DwindlePreview(
-                    windowCount: maxSplits + 1,
-                    aspectRatio: aspect,
-                    gap: gap,
-                    padding: padding
-                )
-                .frame(height: 120)
-                .background(Color(nsColor: .windowBackgroundColor))
-                .cornerRadius(8)
-            } else {
-                Text("Tiling disabled — windows on this monitor float freely.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            if !isLast {
+                Rectangle()
+                    .fill(Color.hyprSeparator)
+                    .frame(height: 0.5)
+                    .padding(.horizontal, HyprSpacing.md)
             }
         }
-        .padding(.vertical, 4)
     }
 }
 
@@ -179,29 +228,41 @@ private struct MaxSplitsPicker: View {
     @Binding var value: Int
 
     var body: some View {
-        HStack(spacing: 4) {
-            ForEach(1...7, id: \.self) { n in
-                Button {
-                    value = n
-                } label: {
-                    Text("\(n)")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 28, height: 24)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(n == value ? Color.accentColor : Color.gray.opacity(0.15))
-                        )
-                        .foregroundColor(n == value ? .white : .primary)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                ForEach(1...7, id: \.self) { n in
+                    Button {
+                        value = n
+                    } label: {
+                        Text("\(n)")
+                            .font(.hyprMonoSm)
+                            .frame(width: 26, height: 22)
+                            .background(
+                                RoundedRectangle(cornerRadius: HyprRadius.sm, style: .continuous)
+                                    .fill(n == value
+                                          ? Color.hyprCyan.opacity(0.18)
+                                          : Color.hyprSurfaceElevated)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: HyprRadius.sm, style: .continuous)
+                                    .strokeBorder(n == value
+                                                  ? Color.hyprCyan.opacity(0.55)
+                                                  : Color.hyprSeparator,
+                                                  lineWidth: 0.5)
+                            )
+                            .foregroundStyle(n == value ? Color.hyprCyan : Color.hyprTextPrimary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                Text("max splits")
+                    .font(.hyprCaption)
+                    .foregroundStyle(Color.hyprTextSecondary)
+                    .padding(.leading, HyprSpacing.xs)
             }
-            Text("max splits")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text("Maximum number of tiled windows on this display. Additional windows auto-float.")
+                .font(.hyprCaption)
+                .foregroundStyle(Color.hyprTextTertiary)
         }
-        Text("Maximum number of tiled windows on this display. Additional windows auto-float.")
-            .font(.caption)
-            .foregroundColor(.secondary)
     }
 }
 
@@ -222,23 +283,21 @@ private struct DwindlePreview: View {
             )
             let outerRect = CGRect(origin: origin, size: previewSize)
 
-            // scale gaps/padding relative to preview vs real screen
-            let scale = previewSize.width / (aspectRatio * 1000) // normalize
+            let scale = previewSize.width / (aspectRatio * 1000)
             let scaledGap = max(gap * scale, 1)
             let scaledPad = max(padding * scale, 1)
 
             let innerRect = outerRect.insetBy(dx: scaledPad, dy: scaledPad)
             let rects = DwindleLayout.rects(count: windowCount, in: innerRect, gap: scaledGap)
 
-            // monitor outline
             RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                .stroke(Color.hyprSeparator, lineWidth: 0.5)
                 .frame(width: previewSize.width, height: previewSize.height)
                 .position(x: outerRect.midX, y: outerRect.midY)
 
             ForEach(Array(rects.enumerated()), id: \.offset) { idx, rect in
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(Color.accentColor.opacity(0.6 - Double(idx) * 0.06))
+                    .fill(Color.hyprCyan.opacity(0.45 - Double(idx) * 0.05))
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
             }

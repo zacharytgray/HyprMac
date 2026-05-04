@@ -4,9 +4,9 @@
 import SwiftUI
 
 /// Chord recorder. Modifier toggles plus a record button; while
-/// recording, a local `NSEvent` monitor captures the next key
-/// down. Modifier-only key codes are rejected so users cannot bind
-/// to a bare modifier.
+/// recording, a local `NSEvent` monitor captures the next key down.
+/// Modifier-only key codes are rejected so users cannot bind to a
+/// bare modifier.
 struct KeyRecorderView: View {
     @ObservedObject var config = UserConfig.shared
     @Binding var keyCode: UInt16
@@ -20,14 +20,9 @@ struct KeyRecorderView: View {
     @State private var recordingPulse = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Shortcut")
-                .font(.caption.weight(.medium))
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-
+        VStack(alignment: .leading, spacing: HyprSpacing.sm) {
             // modifier toggles
-            HStack(spacing: 6) {
+            HStack(spacing: HyprSpacing.xs + 2) {
                 ModifierToggle("\(config.hyprKey.badgeLabel) Hypr", isOn: $useHypr)
                 ModifierToggle("⌃ Ctrl",  isOn: $useControl)
                 ModifierToggle("⌥ Opt",   isOn: $useOption)
@@ -35,22 +30,12 @@ struct KeyRecorderView: View {
                 ModifierToggle("⌘ Cmd",   isOn: $useCommand)
             }
 
-            // key recorder
+            // chord display / record button
             Button { isRecording.toggle() } label: {
-                HStack(spacing: 8) {
-                    if keyCode != 0 && !isRecording {
-                        KeybadgeView(bind: previewBind)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        Text(isRecording ? "Press a key…" : "Click to record a key")
-                            .foregroundStyle(isRecording ? Color.accentColor : Color.secondary)
-                            .font(isRecording ? .body : .callout)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-
+                HStack(spacing: HyprSpacing.sm) {
                     if isRecording {
                         Circle()
-                            .fill(.red)
+                            .fill(Color.hyprMagenta)
                             .frame(width: 7, height: 7)
                             .opacity(recordingPulse ? 1 : 0.3)
                             .onAppear {
@@ -59,20 +44,32 @@ struct KeyRecorderView: View {
                                 }
                             }
                             .onDisappear { recordingPulse = false }
+                        Text("Press a key…")
+                            .font(.hyprBody)
+                            .foregroundStyle(Color.hyprMagenta)
+                    } else if keyCode != 0 {
+                        KeybadgeView(bind: previewBind)
+                    } else {
+                        Text("Click to record a chord")
+                            .font(.hyprBody)
+                            .foregroundStyle(Color.hyprTextSecondary)
                     }
+                    Spacer()
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.horizontal, HyprSpacing.md)
+                .padding(.vertical, HyprSpacing.sm + 1)
                 .background(
-                    RoundedRectangle(cornerRadius: 7)
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
                         .fill(isRecording
-                              ? Color.accentColor.opacity(0.07)
-                              : Color(nsColor: .controlBackgroundColor))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 7)
-                                .stroke(isRecording ? Color.accentColor : Color(nsColor: .separatorColor),
-                                        lineWidth: isRecording ? 1.5 : 0.5)
-                        )
+                              ? Color.hyprMagenta.opacity(0.07)
+                              : Color.hyprSurface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .strokeBorder(isRecording
+                                      ? Color.hyprMagenta.opacity(0.65)
+                                      : Color.hyprSeparator,
+                                      lineWidth: isRecording ? 1 : 0.5)
                 )
             }
             .buttonStyle(.plain)
@@ -100,7 +97,7 @@ struct KeyRecorderView: View {
     }
 }
 
-// MARK: - modifier toggle button
+// MARK: - modifier toggle
 
 struct ModifierToggle: View {
     let label: String
@@ -114,19 +111,25 @@ struct ModifierToggle: View {
     var body: some View {
         Button { isOn.toggle() } label: {
             Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .font(.hyprMonoSm)
+                .padding(.horizontal, HyprSpacing.sm)
+                .padding(.vertical, HyprSpacing.xs + 1)
                 .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isOn ? Color.accentColor : Color(nsColor: .controlBackgroundColor))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(isOn ? Color.accentColor : Color(nsColor: .separatorColor), lineWidth: 0.5)
-                        )
+                    RoundedRectangle(cornerRadius: HyprRadius.sm, style: .continuous)
+                        .fill(isOn
+                              ? Color.hyprCyan.opacity(0.15)
+                              : Color.hyprSurface)
                 )
-                .foregroundStyle(isOn ? .white : .primary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: HyprRadius.sm, style: .continuous)
+                        .strokeBorder(isOn
+                                      ? Color.hyprCyan.opacity(0.55)
+                                      : Color.hyprSeparator,
+                                      lineWidth: 0.5)
+                )
+                .foregroundStyle(isOn ? Color.hyprCyan : Color.hyprTextPrimary)
         }
         .buttonStyle(.plain)
+        .animation(HyprMotion.snap, value: isOn)
     }
 }

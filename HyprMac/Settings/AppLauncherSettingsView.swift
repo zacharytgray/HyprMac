@@ -4,9 +4,7 @@
 import SwiftUI
 import Carbon
 
-/// "App Launcher" tab. Lists existing `launchApp` bindings and
-/// provides an editor sheet that picks an app via `NSOpenPanel` and
-/// records a chord.
+/// "App Launcher" tab.
 struct AppLauncherSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var showingAddSheet = false
@@ -19,82 +17,21 @@ struct AppLauncherSettingsView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: HyprSpacing.lg) {
             if launcherEntries.isEmpty {
-                Spacer()
-                VStack(spacing: 8) {
-                    Image(systemName: "app.badge")
-                        .font(.system(size: 36))
-                        .foregroundStyle(.tertiary)
-                    Text("No App Launchers")
-                        .font(.headline)
-                        .foregroundStyle(.secondary)
-                    Text("Bind a hotkey to instantly launch or focus any app.")
-                        .font(.callout)
-                        .foregroundStyle(.tertiary)
-                        .multilineTextAlignment(.center)
-                    Button("Add App Launcher") { showingAddSheet = true }
-                        .buttonStyle(.borderedProminent)
-                        .padding(.top, 4)
-                }
-                .padding()
-                Spacer()
+                emptyPanel
             } else {
-                List {
-                    ForEach(launcherEntries, id: \.bind.id) { entry in
-                        if case .launchApp(let bundleID) = entry.bind.action {
-                            HStack(spacing: 12) {
-                                // app icon
-                                Group {
-                                    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-                                        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                                            .resizable()
-                                    } else {
-                                        Image(systemName: "app")
-                                            .resizable()
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                                .frame(width: 28, height: 28)
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(appDisplayName(for: bundleID))
-                                        .font(.body)
-                                    Text(bundleID)
-                                        .font(.caption)
-                                        .foregroundStyle(.tertiary)
-                                }
-
-                                Spacer()
-
-                                KeybadgeView(bind: entry.bind)
-
-                                Button(role: .destructive) {
-                                    config.keybinds.remove(at: entry.index)
-                                } label: {
-                                    Image(systemName: "trash")
-                                        .foregroundStyle(.red.opacity(0.8))
-                                }
-                                .buttonStyle(.borderless)
-                                .help("Remove")
-                            }
-                            .padding(.vertical, 2)
-                        }
-                    }
-                }
+                launchersPanel
             }
-
-            Divider()
 
             HStack {
                 Button { showingAddSheet = true } label: {
-                    Label("Add App Launcher", systemImage: "plus")
+                    Label("Add app launcher", systemImage: "plus")
                 }
-                .buttonStyle(.borderless)
+                .controlSize(.small)
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, HyprSpacing.xs)
         }
         .sheet(isPresented: $showingAddSheet) {
             AppLauncherEditorSheet { bind in
@@ -103,14 +40,94 @@ struct AppLauncherSettingsView: View {
         }
     }
 
+    private var emptyPanel: some View {
+        HyprPanel {
+            VStack(spacing: HyprSpacing.sm) {
+                Image(systemName: "square.grid.2x2")
+                    .font(.system(size: 32, weight: .light))
+                    .foregroundStyle(Color.hyprTextTertiary)
+                Text("No app launchers")
+                    .font(.hyprBody)
+                    .foregroundStyle(Color.hyprTextSecondary)
+                Text("Bind a hotkey to instantly launch or focus any app.")
+                    .font(.hyprCaption)
+                    .foregroundStyle(Color.hyprTextTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, HyprSpacing.xl)
+            .padding(.horizontal, HyprSpacing.xl)
+        }
+    }
+
+    private var launchersPanel: some View {
+        HyprPanel("Launchers") {
+            ForEach(Array(launcherEntries.enumerated()), id: \.element.bind.id) { idx, entry in
+                if case .launchApp(let bundleID) = entry.bind.action {
+                    launcherRow(
+                        bundleID: bundleID,
+                        bind: entry.bind,
+                        isLast: idx == launcherEntries.count - 1,
+                        onDelete: { config.keybinds.remove(at: entry.index) }
+                    )
+                }
+            }
+        }
+    }
+
+    private func launcherRow(bundleID: String,
+                             bind: Keybind,
+                             isLast: Bool,
+                             onDelete: @escaping () -> Void) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: HyprSpacing.md) {
+                Group {
+                    if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                        Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                            .resizable()
+                    } else {
+                        Image(systemName: "app")
+                            .resizable()
+                            .foregroundStyle(Color.hyprTextTertiary)
+                            .padding(4)
+                    }
+                }
+                .frame(width: 28, height: 28)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(appDisplayName(for: bundleID))
+                        .font(.hyprBody)
+                    Text(bundleID)
+                        .font(.hyprMonoXs)
+                        .foregroundStyle(Color.hyprTextTertiary)
+                }
+
+                Spacer()
+
+                KeybadgeView(bind: bind)
+
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red.opacity(0.75))
+                }
+                .buttonStyle(.borderless)
+                .help("Remove")
+            }
+            .padding(.horizontal, HyprSpacing.md)
+            .padding(.vertical, HyprSpacing.sm + 1)
+
+            if !isLast {
+                Rectangle()
+                    .fill(Color.hyprSeparator)
+                    .frame(height: 0.5)
+                    .padding(.leading, HyprSpacing.md + 28 + HyprSpacing.md)
+            }
+        }
+    }
 }
 
 // MARK: - editor sheet
 
-// Modal for adding a new app launcher binding. Picks the app via
-// NSOpenPanel (so users can target any .app, not just /Applications),
-// records a chord with KeyRecorderView, and constructs a launchApp
-// Keybind. The keybinds tab handles edit/delete from there on.
 struct AppLauncherEditorSheet: View {
     let onSave: (Keybind) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -125,22 +142,31 @@ struct AppLauncherEditorSheet: View {
     @State private var useCommand = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
+        VStack(alignment: .leading, spacing: HyprSpacing.lg) {
             Text("Add App Launcher")
-                .font(.title3.weight(.semibold))
+                .font(.hyprTitle)
 
             // app picker
-            GroupBox {
-                HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: HyprSpacing.sm) {
+                Text("Application")
+                    .font(.hyprSection)
+                    .foregroundStyle(Color.hyprTextSecondary)
+                    .textCase(.uppercase)
+                    .kerning(0.5)
+
+                HStack(spacing: HyprSpacing.md) {
                     Group {
                         if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: selectedBundleID),
                            !selectedAppName.isEmpty {
                             Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
                                 .resizable()
                         } else {
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(Color(nsColor: .controlBackgroundColor))
-                                .overlay(Image(systemName: "app").foregroundStyle(.tertiary))
+                            RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                                .fill(Color.hyprSurfaceElevated)
+                                .overlay(
+                                    Image(systemName: "app")
+                                        .foregroundStyle(Color.hyprTextTertiary)
+                                )
                         }
                     }
                     .frame(width: 36, height: 36)
@@ -148,33 +174,43 @@ struct AppLauncherEditorSheet: View {
                     VStack(alignment: .leading, spacing: 2) {
                         if selectedAppName.isEmpty {
                             Text("No app selected")
-                                .foregroundStyle(.secondary)
+                                .font(.hyprBody)
+                                .foregroundStyle(Color.hyprTextSecondary)
                         } else {
-                            Text(selectedAppName).font(.body)
-                            Text(selectedBundleID).font(.caption).foregroundStyle(.secondary)
+                            Text(selectedAppName).font(.hyprBody)
+                            Text(selectedBundleID)
+                                .font(.hyprMonoXs)
+                                .foregroundStyle(Color.hyprTextTertiary)
                         }
                     }
 
                     Spacer()
-                    Button("Choose App…") { pickApp() }
+                    Button("Choose…") { pickApp() }
                 }
-                .padding(4)
-            } label: {
-                Text("Application")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .textCase(.uppercase)
+                .padding(HyprSpacing.md)
+                .background(
+                    RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
+                        .fill(Color.hyprSurface)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
+                        .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)
+                )
             }
 
             // shortcut recorder
-            GroupBox {
+            VStack(alignment: .leading, spacing: HyprSpacing.sm) {
+                Text("Shortcut")
+                    .font(.hyprSection)
+                    .foregroundStyle(Color.hyprTextSecondary)
+                    .textCase(.uppercase)
+                    .kerning(0.5)
                 KeyRecorderView(
                     keyCode: $recordedKeyCode,
                     useHypr: $useHypr, useShift: $useShift,
                     useControl: $useControl, useOption: $useOption,
                     useCommand: $useCommand
                 )
-                .padding(4)
             }
 
             HStack {
@@ -187,8 +223,8 @@ struct AppLauncherEditorSheet: View {
                     .buttonStyle(.borderedProminent)
             }
         }
-        .padding(20)
-        .frame(width: 440)
+        .padding(HyprSpacing.xl)
+        .frame(width: 460)
     }
 
     private func pickApp() {

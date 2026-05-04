@@ -145,8 +145,22 @@ class DimmingOverlay {
                     for floater in floatingLocals {
                         pieces = pieces.flatMap { subtract(floater, from: $0) }
                     }
-                    for piece in pieces {
-                        path.addRect(piece)
+                    // pure case (no overlaps with focused/floating): the
+                    // single piece IS the original tile — round its corners
+                    // to match the window the dim sits over. overlap cases
+                    // degrade to rect strips since rounding strips would
+                    // produce visible artifacts at the cut edges.
+                    if pieces.count == 1, pieces[0] == local {
+                        let radius = WindowCornerRadius.resolve(for: wid)
+                        if radius > 0 {
+                            path.addRoundedRect(in: local,
+                                                cornerWidth: radius,
+                                                cornerHeight: radius)
+                        } else {
+                            path.addRect(local)
+                        }
+                    } else {
+                        for piece in pieces { path.addRect(piece) }
                     }
                 }
 

@@ -73,6 +73,10 @@ final class WorkspaceOrchestrator {
     /// (and a tail) of the switch — `best.focus()` queues asynchronous
     /// notifications that would otherwise re-bounce focus.
     func switchWorkspace(_ number: Int) {
+        // hold polls off for the duration of the transition. Tahoe AX
+        // writes lag, so a poll mid-transition reads stale frames and
+        // drift detection can falsely reassign windows.
+        suppressions.suppress("workspace-transition", for: 1.5)
         suppressions.suppress("activation-switch", for: 0.5)
         suppressions.suppress("mouse-focus", for: 0.3)
 
@@ -148,6 +152,11 @@ final class WorkspaceOrchestrator {
     /// the target as tiled windows on success.
     func moveToWorkspace(_ number: Int) {
         guard let focused = currentFocusedWindow() else { return }
+        // hold polls off for the duration of the transition. Tahoe AX
+        // writes lag, so a poll mid-transition reads the moved window
+        // at its OLD pre-hide tile rect and drift detection
+        // erroneously reassigns it back to its source workspace.
+        suppressions.suppress("workspace-transition", for: 1.5)
         tilingEngine.primeMinimumSizes([focused])
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
 
@@ -166,11 +175,11 @@ final class WorkspaceOrchestrator {
         // when coming from disabled monitor, unfloat so it enters tiling on target
         let willTile = onDisabledMonitor || !isFloating
 
-        // check capacity on target workspace before moving a tiled window
+        // check capacity on target workspace before moving a tiled window.
+        // target screen is the workspace's static home — same answer
+        // whether the workspace is currently visible or hidden.
         if willTile {
-            let targetScreen = workspaceManager.screenForWorkspace(number)
-                ?? workspaceManager.homeScreenForWorkspace(number)
-                ?? screen
+            let targetScreen = workspaceManager.homeScreenForWorkspace(number) ?? screen
 
             if !tilingEngine.canFitWindow(focused, onWorkspace: number, screen: targetScreen) {
                 hyprLog(.debug, .workspace, "workspace \(number) can't fit '\(focused.title ?? "?")' on \(targetScreen.localizedName) — rejected move")
@@ -215,11 +224,16 @@ final class WorkspaceOrchestrator {
             // reassign globally
             workspaceManager.moveWindow(focused.windowID, toWorkspace: number)
 
-            // hide the window — target workspace may not be visible
+            // hide the window — target workspace may not be visible.
+            // park on the workspace's static home monitor, not the source
+            // screen. AeroSpace pattern: a window assigned to ws N belongs
+            // physically near ws N's monitor so the next show is a no-op
+            // hide-corner→tile transition on a single screen.
             if isFloating && !onDisabledMonitor {
                 workspaceManager.saveFloatingFrame(focused)
             }
-            workspaceManager.hideInCorner(focused, on: screen)
+            let parkScreen = workspaceManager.homeScreenForWorkspace(number) ?? screen
+            workspaceManager.hideInCorner(focused, on: parkScreen)
         }, {
             NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         })
@@ -227,96 +241,12 @@ final class WorkspaceOrchestrator {
 
     // MARK: - move workspace to adjacent monitor
 
-    /// Swap the cursor's workspace with the workspace currently on the
-    /// adjacent monitor in `direction` (left or right only).
-    ///
-    /// Sequence:
-    /// 1. Hide windows on both the moving workspace and the displaced
-    ///    workspace (the one currently on the target monitor).
-    /// 2. Restore floating frames on the fallback workspace that takes
-    ///    over the source monitor.
-    /// 3. Retile every visible space.
-    /// 4. Restore floating frames on the moved workspace, now positioned
-    ///    on the target monitor.
-    ///
-    /// Disabled monitors are excluded from the candidate set on both
-    /// sides — moves involving them are rejected without effect.
+    /// No-op under static workspace anchoring. Workspaces are pinned to
+    /// monitors by `(N - 1) % enabledMonitorCount` and cannot move.
+    /// Beeps so the user gets immediate feedback that the keybind fired
+    /// but the action is rejected.
     func moveCurrentWorkspaceToMonitor(_ direction: Direction) {
-        let currentScreen = screenUnderCursor()
-
-        // can't move workspaces from/to disabled monitors
-        if workspaceManager.isMonitorDisabled(currentScreen) {
-            hyprLog(.debug, .workspace, "moveWorkspaceToMonitor: current monitor is disabled")
-            return
-        }
-
-        // find adjacent enabled monitor in the given direction
-        let screens = displayManager.screens
-            .filter { !workspaceManager.isMonitorDisabled($0) }
-            .sorted { $0.frame.origin.x < $1.frame.origin.x }
-        guard let currentIdx = screens.firstIndex(of: currentScreen) else { return }
-
-        let targetIdx: Int
-        switch direction {
-        case .left:  targetIdx = currentIdx - 1
-        case .right: targetIdx = currentIdx + 1
-        default:
-            hyprLog(.debug, .workspace, "moveWorkspaceToMonitor: only left/right supported")
-            return
-        }
-
-        guard targetIdx >= 0 && targetIdx < screens.count else {
-            hyprLog(.debug, .workspace, "moveWorkspaceToMonitor: no monitor in that direction")
-            return
-        }
-
-        let targetScreen = screens[targetIdx]
-        let monitorCount = screens.count
-
-        guard let result = workspaceManager.moveWorkspace(
-            from: currentScreen, to: targetScreen, monitorCount: monitorCount
-        ) else { return }
-
-        let allWindows = accessibility.getAllWindows()
-
-        // hide windows that need to move — they'll be retiled to correct positions
-        // moved workspace windows: currently on source screen, moving to target
-        let movedWindows = workspaceManager.windowIDs(onWorkspace: result.movedWs)
-        for wid in movedWindows {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
-                workspaceManager.hideInCorner(w, on: targetScreen)
-            }
-        }
-
-        // target's old workspace windows: need to be hidden (displaced, no longer visible)
-        let displacedWindows = workspaceManager.windowIDs(onWorkspace: result.targetOldWs)
-        if !workspaceManager.isWorkspaceVisible(result.targetOldWs) {
-            for wid in displacedWindows {
-                if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                    if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
-                    workspaceManager.hideInCorner(w, on: targetScreen)
-                }
-            }
-        }
-
-        // fallback workspace windows: need to appear on source screen
-        let fallbackWindows = workspaceManager.windowIDs(onWorkspace: result.fallbackWs)
-        for wid in fallbackWindows where stateCache.floatingWindowIDs.contains(wid) {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                workspaceManager.restoreFloatingFrame(w)
-            }
-        }
-
-        tileAllVisibleSpaces()
-
-        // restore floating windows on moved workspace (now on target screen)
-        for wid in movedWindows where stateCache.floatingWindowIDs.contains(wid) {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                workspaceManager.restoreFloatingFrame(w)
-            }
-        }
-
-        NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
+        hyprLog(.debug, .workspace, "moveWorkspaceToMonitor: rejected (workspaces are statically anchored)")
+        NSSound.beep()
     }
 }

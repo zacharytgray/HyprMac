@@ -19,9 +19,24 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.split.2x1",
-            title: "No More Lingering Gaps When an App Quits",
-            description: "When an app fully quits (TestFlight, single-window utilities), the BSP tree now drops its leaf immediately and the surrounding tiles reflow to fill the slot. Previously the dead leaf could linger until the next user action because the app-termination path bypassed the diff that normally cleans the tree."
+            icon: "paintbrush.pointed",
+            title: "Settings, Reimagined",
+            description: "The settings window has been redesigned from the ground up — restrained Mac-native chassis with a cyan signature accent at active and focus moments. Custom panels, custom toggles, monospace key chips, and a sidebar that actually feels like it belongs in HyprMac."
+        ),
+        WhatsNewFeature(
+            icon: "menubar.dock.rectangle",
+            title: "New Menu Bar Look",
+            description: "The menu bar dropdown picks up the same design language: HYPRMAC mono header with live tiling status, workspace badges per screen, and action rows with shortcut glyphs."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.dashed",
+            title: "Tighter Focus Border",
+            description: "The focus border now sits centered on the window edge instead of floating 6pt outside, reading as part of the window rather than a frame around it. The dim overlay's cutouts are rounded too, so they no longer carve hard rectangles over rounded windows."
+        ),
+        WhatsNewFeature(
+            icon: "command",
+            title: "Hypr Key Lives With Keybinds",
+            description: "The Hypr Key picker has moved from General to the top of the Keybinds tab, where the rest of your shortcut configuration lives."
         ),
     ]
 }

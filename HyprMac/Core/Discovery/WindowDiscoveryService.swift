@@ -319,15 +319,22 @@ final class WindowDiscoveryService {
             guard !workspaceManager.isMonitorDisabled(physicalScreen) else { continue }
             let physicalWs = workspaceManager.workspaceForScreen(physicalScreen)
             guard physicalWs != recordedWs else { continue }
-            // ignore windows whose recorded screen and physical screen are the
-            // same — guards against transient frame reads during retile
-            if let recordedScreen = workspaceManager.screenForWorkspace(recordedWs),
-               recordedScreen == physicalScreen { continue }
-            // recorded ws hidden: only drift if the window has a substantial
-            // on-screen footprint, not parked at a hide-corner sliver
-            if !visibleWorkspaces.contains(recordedWs) {
-                if !hasSubstantialOnScreenFrame(w) { continue }
-            }
+            // with static workspace anchoring, a window whose recorded
+            // workspace's home matches its physical screen is correctly
+            // placed — even if some other workspace happens to be visible
+            // on that screen right now.
+            if let homeScreen = workspaceManager.homeScreenForWorkspace(recordedWs),
+               homeScreen == physicalScreen { continue }
+            // recorded ws hidden: NEVER drift. on Tahoe, AX can return
+            // the old pre-hide frame for >1 sec after the actual position
+            // write, so hasSubstantialOnScreenFrame returns true against
+            // stale data and we falsely conclude the window drifted.
+            // when the recorded ws is shown again, the tile pass will
+            // place the window in its correct slot. drifting based on a
+            // stale read produces the bug where moveToWorkspace cascades
+            // into auto-floats and apps splattered across the wrong
+            // monitor (logs 2026-05-04 09:53:01.998).
+            if !visibleWorkspaces.contains(recordedWs) { continue }
             drifts.append((w.windowID, recordedWs, physicalWs))
             hyprLog(.debug, .discovery, "drift: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
         }

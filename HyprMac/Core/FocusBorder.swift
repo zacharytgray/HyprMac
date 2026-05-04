@@ -48,11 +48,11 @@ class FocusBorder {
     }
 
     /// Tunables. Empirical timings (settle delay, shake step) and
-    /// OS-imposed values (corner radius must track the actual window
-    /// corner radius per macOS version, otherwise the border arcs
-    /// tighter than the window and leaves visible gaps at the corners).
+    /// stroke widths. Per-window corner radius is resolved via
+    /// `WindowCornerRadius` rather than a single static value, so the
+    /// border arcs concentrically with whatever radius the underlying
+    /// app actually renders.
     private enum Tuning {
-        static let margin: CGFloat = 6
         static let settleDelaySec: TimeInterval = 0.5
         static let settleAnimationDurationSec: TimeInterval = 0.3
         static let hideAnimationDurationSec: TimeInterval = 0.15
@@ -65,19 +65,7 @@ class FocusBorder {
         static let errorBorderWidth: CGFloat = 2.5
         static let activeFillAlpha: CGFloat = 0.08
         static let errorFillAlpha: CGFloat = 0.12
-        // Tahoe (macOS 26) uses noticeably rounder window corners than
-        // Sequoia (15); using Sequoia's radius on Tahoe leaves visible
-        // gaps where the border arcs tighter than the window.
-        static let macOSSequoiaCornerRadius: CGFloat = 10
-        static let macOSTahoeCornerRadius: CGFloat = 12
     }
-
-    private let borderRadius: CGFloat = {
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 {
-            return Tuning.macOSTahoeCornerRadius
-        }
-        return Tuning.macOSSequoiaCornerRadius
-    }()
 
     // resolved from config — call updateColor() when config changes
     var accentCGColor: CGColor = NSColor.controlAccentColor.cgColor
@@ -107,7 +95,9 @@ class FocusBorder {
         shakeTimer?.cancel()
         shakeTimer = nil
 
-        let nsRect = panelRect(for: rect)
+        let expansion = Tuning.activeBorderWidth / 2
+        let nsRect = panelRect(for: rect, expansion: expansion)
+        let windowRadius = WindowCornerRadius.resolve(for: windowID)
 
         let p: NSPanel
         if let existing = panel {
@@ -119,13 +109,13 @@ class FocusBorder {
             panel = p
         }
 
-        // active state: tint fill + border
+        // active state: tint fill + border, centered on window edge
         if let layer = glowView?.layer {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.borderColor = accentCGColor
             layer.borderWidth = Tuning.activeBorderWidth
-            layer.cornerRadius = borderRadius
+            layer.cornerRadius = windowRadius + expansion
             layer.backgroundColor = accentCGColor.copy(alpha: Tuning.activeFillAlpha)
             CATransaction.commit()
         }
@@ -148,7 +138,8 @@ class FocusBorder {
     func updatePosition(_ rect: CGRect) {
         mainThreadOnly()
         guard let p = panel, state != .hidden, trackedWindowID != nil else { return }
-        let nsRect = panelRect(for: rect)
+        let expansion = Tuning.activeBorderWidth / 2
+        let nsRect = panelRect(for: rect, expansion: expansion)
         p.setFrame(nsRect, display: false)
         positionGlowView(in: p)
         trackedWindowFrame = rect
@@ -166,8 +157,10 @@ class FocusBorder {
         for windowID in staleIDs { hideFloatingBorder(for: windowID) }
 
         floaterFrames = frames
+        let expansion = Tuning.floatingBorderWidth / 2
         for (windowID, frame) in frames {
-            let nsRect = panelRect(for: frame)
+            let nsRect = panelRect(for: frame, expansion: expansion)
+            let windowRadius = WindowCornerRadius.resolve(for: windowID)
             let border: BorderPanel
             if let existing = floatingPanels[windowID] {
                 border = existing
@@ -183,7 +176,7 @@ class FocusBorder {
                 CATransaction.setDisableActions(true)
                 layer.borderColor = color
                 layer.borderWidth = Tuning.floatingBorderWidth
-                layer.cornerRadius = borderRadius
+                layer.cornerRadius = windowRadius + expansion
                 layer.backgroundColor = CGColor.clear
                 CATransaction.commit()
             }
@@ -273,7 +266,9 @@ class FocusBorder {
         settleWork?.cancel()
         shakeTimer?.cancel()
 
-        let nsRect = panelRect(for: rect)
+        let expansion = Tuning.errorBorderWidth / 2
+        let nsRect = panelRect(for: rect, expansion: expansion)
+        let windowRadius = WindowCornerRadius.resolve(for: windowID)
         let p: NSPanel
         if let existing = panel {
             p = existing
@@ -290,7 +285,7 @@ class FocusBorder {
             CATransaction.setDisableActions(true)
             layer.borderColor = red
             layer.borderWidth = Tuning.errorBorderWidth
-            layer.cornerRadius = borderRadius
+            layer.cornerRadius = windowRadius + expansion
             layer.backgroundColor = red.copy(alpha: Tuning.errorFillAlpha)
             CATransaction.commit()
         }
@@ -354,16 +349,20 @@ class FocusBorder {
     func applyOcclusion(focusedOccluders: [CGRect], floaterOccluders: [CGWindowID: [CGRect]]) {
         mainThreadOnly()
         if let frame = trackedWindowFrame, let glow = glowView {
-            applyMask(to: glow, windowCGRect: frame, occluders: focusedOccluders)
+            applyMask(to: glow, windowCGRect: frame,
+                      expansion: Tuning.activeBorderWidth / 2,
+                      occluders: focusedOccluders)
         }
         for (wid, border) in floatingPanels {
             guard let frame = floaterFrames[wid] else { continue }
             let occluders = floaterOccluders[wid] ?? []
-            applyMask(to: border.glowView, windowCGRect: frame, occluders: occluders)
+            applyMask(to: border.glowView, windowCGRect: frame,
+                      expansion: Tuning.floatingBorderWidth / 2,
+                      occluders: occluders)
         }
     }
 
-    private func applyMask(to glow: NSView, windowCGRect: CGRect, occluders: [CGRect]) {
+    private func applyMask(to glow: NSView, windowCGRect: CGRect, expansion: CGFloat, occluders: [CGRect]) {
         guard let layer = glow.layer else { return }
         if occluders.isEmpty {
             layer.mask = nil
@@ -371,15 +370,16 @@ class FocusBorder {
         }
 
         // visible region in glow-local NS coords (lower-left origin).
-        // glow.bounds origin is (0,0); size matches the bordered window's
-        // CG rect. translate each occluder into the same local space:
-        //   x_local = occCG.minX - windowCG.minX
-        //   y_local = windowCG.maxY - occCG.maxY   (CG is top-down; NS is bottom-up)
+        // glow.bounds is the panel's content rect — `expansion` larger
+        // than the window on every side. translate each occluder from
+        // CG (top-down, screen origin) into glow-local NS:
+        //   x_local = occCG.minX - (windowCG.minX - expansion)
+        //   y_local = (windowCG.maxY + expansion) - occCG.maxY
         var pieces: [NSRect] = [layer.bounds]
         for occCG in occluders {
             let occLocal = NSRect(
-                x: occCG.origin.x - windowCGRect.origin.x,
-                y: windowCGRect.maxY - occCG.maxY,
+                x: occCG.origin.x - (windowCGRect.origin.x - expansion),
+                y: (windowCGRect.maxY + expansion) - occCG.maxY,
                 width: occCG.width,
                 height: occCG.height)
             pieces = pieces.flatMap { subtract(occLocal, from: $0) }
@@ -475,22 +475,25 @@ class FocusBorder {
 
     private func positionGlowView(_ glow: NSView, in panel: NSPanel) {
         guard let content = panel.contentView else { return }
-        let bounds = content.bounds
-        glow.frame = NSRect(x: Tuning.margin, y: Tuning.margin,
-                            width: bounds.width - Tuning.margin * 2,
-                            height: bounds.height - Tuning.margin * 2)
+        // glow fills the entire panel; the panel itself is sized
+        // slightly larger than the window so the stroke (drawn inset
+        // from glow's outer edge) lands centered on the window edge.
+        glow.frame = content.bounds
     }
 
     // MARK: - coordinate conversion
 
     var primaryScreenHeight: CGFloat = 0
 
-    private func panelRect(for cgRect: CGRect) -> NSRect {
+    /// Panel rect expanded outward from `cgRect` by `expansion` on each
+    /// side. Pass `strokeWidth/2` to land the stroke's centerline on
+    /// the window edge.
+    private func panelRect(for cgRect: CGRect, expansion: CGFloat) -> NSRect {
         let primaryH = primaryScreenHeight
         let nsY = primaryH - cgRect.origin.y - cgRect.height
-        return NSRect(x: cgRect.origin.x - Tuning.margin,
-                      y: nsY - Tuning.margin,
-                      width: cgRect.width + Tuning.margin * 2,
-                      height: cgRect.height + Tuning.margin * 2)
+        return NSRect(x: cgRect.origin.x - expansion,
+                      y: nsY - expansion,
+                      width: cgRect.width + expansion * 2,
+                      height: cgRect.height + expansion * 2)
     }
 }

@@ -241,18 +241,24 @@ class TilingEngine {
                                    tree: BSPTree,
                                    key: TilingKey,
                                    screen: NSScreen) -> Bool {
+        // Tahoe: AX readback lags AX setattr, so "overflow" frequently
+        // reports false positives. yabai's window_manager.c:732 documents
+        // the same race ("frame cache is not reliable... causing layout to
+        // not be modified the way we expect"). auto-floating from a stale
+        // readback is exactly what's been making windows mysteriously float
+        // and land at wrong sizes. accept the apparent overflow and let the
+        // next AX-event-driven retile fix it if it's real.
         guard !overflow.isEmpty, !inserted.isEmpty else { return false }
         let overflowIDs = Set(overflow.map { $0.windowID })
         let target = inserted.reversed().first { overflowIDs.contains($0.windowID) }
             ?? inserted.last
         guard let target else { return false }
 
-        hyprLog(.debug, .lifecycle, "overflow after min-size adjustment — auto-floating '\(target.title ?? "?")'")
-        tree.remove(target)
-        tree.root.pruneEmptyNodes()
-        onAutoFloat?(target)
-        retile(key: key, screen: screen)
-        return true
+        hyprLog(.notice, .tiling, "overflow detected (NOT auto-floating, may be stale readback): '\(target.title ?? "?")' (\(target.windowID))")
+        // intentionally no longer remove from tree or call onAutoFloat —
+        // returning false lets the caller fall through to applyLayoutFinal.
+        _ = tree; _ = key; _ = screen
+        return false
     }
 
     private func rememberPendingInserted(_ windows: [HyprWindow], for key: TilingKey) {

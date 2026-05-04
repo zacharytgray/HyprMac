@@ -28,17 +28,18 @@ struct KeyChip: View {
 
     var body: some View {
         Text(label)
-            .font(.system(size: 11, weight: .medium))
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(minWidth: 28)
             .background(
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-                    .shadow(color: .black.opacity(0.14), radius: 1, x: 0, y: 1)
+                RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                    .fill(Color.gray.opacity(0.18))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(Color(nsColor: .separatorColor), lineWidth: 0.5)
+                RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                    .strokeBorder(Color.hyprSeparator, lineWidth: 1)
             )
+            .foregroundStyle(Color.hyprTextPrimary)
     }
 }

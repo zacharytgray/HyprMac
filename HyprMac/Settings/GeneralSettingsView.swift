@@ -4,186 +4,190 @@ import SwiftUI
 
 /// "General" tab. Enable toggle, accessibility status,
 /// focus-follows-mouse, never-tile bundle list, menu bar indicator,
-/// iCloud sync, Hypr key picker, version, and reset. Read-only
-/// status rows pull from `UserConfig` and `AccessibilityManager`.
+/// iCloud sync, Hypr key picker, version, and reset.
 struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
 
     var body: some View {
-        Form {
-            // status
-            Section {
-                HStack {
-                    Label("HyprMac", systemImage: "bolt.fill")
-                        .foregroundStyle(.primary)
-                    Spacer()
-                    Toggle("", isOn: $config.enabled)
-                        .labelsHidden()
-                }
-
-                HStack {
-                    Label("Accessibility", systemImage: accessibilityGranted ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
-                        .foregroundStyle(accessibilityGranted ? .green : .orange)
-                    Spacer()
-                    if accessibilityGranted {
-                        Text("Granted")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Button("Grant Access") {
-                            AccessibilityManager.promptForAccessibility()
-                        }
-                        .buttonStyle(.borderless)
-                        .foregroundStyle(Color.accentColor)
-                    }
-                }
-            } header: {
-                Text("Status")
-            } footer: {
-                if !accessibilityGranted {
-                    Text("Accessibility permission is required for HyprMac to function. Open System Settings to grant it.")
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            // mouse behavior
-            Section("Mouse") {
-                Toggle("Focus Follows Mouse", isOn: $config.focusFollowsMouse)
-                Text("Hovering over a tiled window focuses it. Drag-swap works regardless of this setting.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // never tile
-            Section {
-                if config.excludedBundleIDs.isEmpty {
-                    Text("No apps excluded — all windows will be tiled.")
-                        .foregroundStyle(.secondary)
-                        .font(.callout)
-                } else {
-                    ForEach(Array(config.excludedBundleIDs).sorted(), id: \.self) { bundleID in
-                        HStack(spacing: 10) {
-                            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-                                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                                    .resizable()
-                                    .frame(width: 20, height: 20)
-                            }
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(appDisplayName(for: bundleID))
-                                Text(bundleID)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            Button(role: .destructive) {
-                                config.excludedBundleIDs.remove(bundleID)
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
-                                    .foregroundStyle(.red.opacity(0.8))
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                }
-                Button("Add App…") { pickExcludedApp() }
-            } header: {
-                Text("Never Tile")
-            } footer: {
-                Text("These apps always float and are never placed in the tiling layout.")
-                    .foregroundStyle(.secondary)
-            }
-
-            // menu bar
-            Section("Menu Bar") {
-                Toggle("Show Workspace Indicator", isOn: $config.showMenuBarIndicator)
-                Text("Displays active workspaces and floating window status. When disabled, shows a static icon.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // iCloud sync
-            Section {
-                if config.isICloudDriveAvailable {
-                    Toggle("Sync via iCloud Drive", isOn: $config.iCloudSyncEnabled)
-                    if config.iCloudSyncEnabled {
-                        Label("Syncing via iCloud Drive", systemImage: "checkmark.icloud.fill")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-                } else {
-                    Label("iCloud Drive not available", systemImage: "xmark.icloud")
-                        .foregroundStyle(.secondary)
-                }
-                Text("Syncs keybinds, tiling settings, and preferences across Macs. Requires iCloud Drive in System Settings.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("iCloud Sync")
-            }
-
-            // hypr key info
-            Section {
-                Picker("Physical Key", selection: $config.hyprKey) {
-                    ForEach(HyprKey.allCases) { key in
-                        Label(key.displayName, systemImage: key.pickerIcon)
-                            .tag(key)
-                    }
-                }
-                Text(hyprKeyDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Hypr Key")
-            }
-
-            // startup
-            Section("Startup") {
-                Label("Launch at Login", systemImage: "power")
-                    .font(.callout)
-                Text("Add HyprMac to Login Items in System Settings → General → Login Items to launch at startup.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            // about + reset
-            Section {
-                HStack {
-                    Text("Version")
-                    Spacer()
-                    Text(appVersion)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                }
-                Button("Show Getting Started") {
-                    (NSApp.delegate as? AppDelegate)?.showOnboarding()
-                }
-                Button("Reset All Settings to Defaults") {
-                    config.resetToDefaults()
-                }
-                .foregroundStyle(.red)
-            } header: {
-                Text("About")
-            }
+        VStack(spacing: HyprSpacing.lg) {
+            statusPanel
+            mousePanel
+            neverTilePanel
+            menuBarPanel
+            iCloudPanel
+            startupPanel
+            aboutPanel
         }
-        .formStyle(.grouped)
         .onAppear {
             accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
         }
     }
 
+    // MARK: status
+
+    private var statusPanel: some View {
+        HyprPanel("Status",
+                  footer: accessibilityGranted ? nil : "Accessibility permission is required for HyprMac to function. Open System Settings to grant it.") {
+            HyprRow("HyprMac", icon: "bolt.fill") {
+                if config.enabled {
+                    HyprAccentBadge("ACTIVE", icon: "checkmark")
+                }
+                Toggle("", isOn: $config.enabled)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+            HyprRow(accessibilityGranted ? "Accessibility granted" : "Accessibility required",
+                    icon: accessibilityGranted ? "checkmark.shield" : "exclamationmark.shield",
+                    divider: false) {
+                if accessibilityGranted {
+                    HyprChip("OK")
+                } else {
+                    Button("Grant") { AccessibilityManager.promptForAccessibility() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    // MARK: mouse
+
+    private var mousePanel: some View {
+        HyprPanel("Mouse",
+                  footer: "Hovering over a tiled window focuses it. Drag-swap works regardless of this setting.") {
+            HyprRow("Focus follows mouse", icon: "cursorarrow.motionlines", divider: false) {
+                Toggle("", isOn: $config.focusFollowsMouse)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+        }
+    }
+
+    // MARK: never tile
+
+    private var neverTilePanel: some View {
+        HyprPanel("Never tile",
+                  footer: "These apps always float and are never placed in the tiling layout.") {
+            if config.excludedBundleIDs.isEmpty {
+                HyprRow("No exclusions", icon: "circle.dashed",
+                        subtitle: "All windows tile by default", divider: false) { EmptyView() }
+            } else {
+                let sorted = Array(config.excludedBundleIDs).sorted()
+                ForEach(Array(sorted.enumerated()), id: \.element) { idx, bundleID in
+                    excludedRow(bundleID: bundleID, isLast: idx == sorted.count - 1)
+                }
+            }
+            HyprRow("Add app", icon: "plus", divider: false) {
+                Button("Choose…") { pickExcludedApp() }
+                    .controlSize(.small)
+            }
+        }
+    }
+
+    private func excludedRow(bundleID: String, isLast: Bool) -> some View {
+        HStack(spacing: HyprSpacing.md) {
+            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .frame(width: 22, height: 22)
+            } else {
+                Image(systemName: "app").font(.system(size: 16)).foregroundStyle(Color.hyprTextTertiary)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(appDisplayName(for: bundleID)).font(.hyprBody)
+                Text(bundleID).font(.hyprMonoXs).foregroundStyle(Color.hyprTextTertiary)
+            }
+            Spacer()
+            Button {
+                config.excludedBundleIDs.remove(bundleID)
+            } label: {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundStyle(.red.opacity(0.75))
+            }
+            .buttonStyle(.borderless)
+        }
+        .padding(.horizontal, HyprSpacing.md)
+        .padding(.vertical, HyprSpacing.sm)
+        .overlay(alignment: .bottom) {
+            if !isLast {
+                Rectangle()
+                    .fill(Color.hyprSeparator)
+                    .frame(height: 0.5)
+                    .padding(.leading, HyprSpacing.md + 22 + HyprSpacing.md)
+            }
+        }
+    }
+
+    // MARK: menu bar
+
+    private var menuBarPanel: some View {
+        HyprPanel("Menu bar",
+                  footer: "Displays active workspaces and floating window status. When disabled, shows a static icon.") {
+            HyprRow("Workspace indicator", icon: "rectangle.fill.on.rectangle.fill", divider: false) {
+                Toggle("", isOn: $config.showMenuBarIndicator)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+        }
+    }
+
+    // MARK: iCloud
+
+    private var iCloudPanel: some View {
+        HyprPanel("iCloud sync",
+                  footer: "Syncs keybinds, tiling settings, and preferences across Macs. Requires iCloud Drive in System Settings.") {
+            if config.isICloudDriveAvailable {
+                HyprRow("Sync via iCloud Drive", icon: "icloud", divider: false) {
+                    Toggle("", isOn: $config.iCloudSyncEnabled)
+                        .toggleStyle(HyprToggleStyle())
+                        .labelsHidden()
+                }
+            } else {
+                HyprRow("iCloud Drive unavailable", icon: "xmark.icloud",
+                        subtitle: "Enable iCloud Drive in System Settings", divider: false) { EmptyView() }
+            }
+        }
+    }
+
+    // MARK: startup
+
+    private var startupPanel: some View {
+        HyprPanel("Startup",
+                  footer: "Add HyprMac to Login Items in System Settings → General → Login Items to launch at startup.") {
+            HyprRow("Launch at login", icon: "power", divider: false) {
+                HyprChip("MANUAL")
+            }
+        }
+    }
+
+    // MARK: about
+
+    private var aboutPanel: some View {
+        HyprPanel("About") {
+            HyprRow("Version", icon: "tag") {
+                HyprChip(appVersion)
+            }
+            HyprRow("Getting started", icon: "sparkles") {
+                Button("Show") {
+                    (NSApp.delegate as? AppDelegate)?.showOnboarding()
+                }
+                .controlSize(.small)
+            }
+            HyprRow("Reset all settings", icon: "arrow.counterclockwise",
+                    subtitle: "Restores keybinds, tiling, exclusions to defaults",
+                    divider: false) {
+                Button("Reset") { config.resetToDefaults() }
+                    .controlSize(.small)
+                    .tint(.red)
+            }
+        }
+    }
+
+    // MARK: helpers
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-    }
-
-    private var hyprKeyDescription: String {
-        if config.hyprKey.usesCapsLockRemap {
-            return "Caps Lock is remapped to F18 via hidutil while HyprMac is running, then restored when the app quits."
-        }
-        if config.hyprKey.nativeModifierFlag != nil {
-            return "\(config.hyprKey.displayName) acts as a dedicated Hypr key while HyprMac is running and is swallowed before apps see it."
-        }
-        return "\(config.hyprKey.displayName) acts as the Hypr key while HyprMac is running and is swallowed before apps see it."
     }
 
     private func pickExcludedApp() {
