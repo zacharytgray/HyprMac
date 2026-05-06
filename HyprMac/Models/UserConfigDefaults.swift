@@ -16,6 +16,7 @@ enum UserConfigDefaults {
     static let outerPadding: CGFloat = 8
     static let enabled: Bool = true
     static let focusFollowsMouse: Bool = true
+    static let mouseHoverPollHz: Int = 120
     static let hyprKey: HyprKey = .capsLock
     static let animateWindows: Bool = true
     static let animationDuration: Double = 0.15

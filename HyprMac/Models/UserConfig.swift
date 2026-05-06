@@ -36,6 +36,9 @@ class UserConfig: ObservableObject {
     @Published var focusFollowsMouse: Bool {
         didSet { if !isReloading { save() } }
     }
+    @Published var mouseHoverPollHz: Int {
+        didSet { if !isReloading { save() } }
+    }
     @Published var hyprKey: HyprKey {
         didSet { if !isReloading { save() } }
     }
@@ -118,6 +121,7 @@ class UserConfig: ObservableObject {
             self.outerPadding = saved.outerPadding
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
+            self.mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
             self.animateWindows = saved.animateWindows ?? UserConfigDefaults.animateWindows
@@ -134,6 +138,7 @@ class UserConfig: ObservableObject {
             self.outerPadding = UserConfigDefaults.outerPadding
             self.enabled = UserConfigDefaults.enabled
             self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
+            self.mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             self.animateWindows = UserConfigDefaults.animateWindows
@@ -211,7 +216,8 @@ class UserConfig: ObservableObject {
             focusBorderColorHex: focusBorderColorHex,
             floatingBorderColorHex: floatingBorderColorHex,
             dimInactiveWindows: dimInactiveWindows,
-            dimIntensity: dimIntensity)
+            dimIntensity: dimIntensity,
+            mouseHoverPollHz: mouseHoverPollHz)
     }
 
     func resetToDefaults() {
@@ -220,6 +226,7 @@ class UserConfig: ObservableObject {
         outerPadding = UserConfigDefaults.outerPadding
         enabled = UserConfigDefaults.enabled
         focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
+        mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
         hyprKey = UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         animateWindows = UserConfigDefaults.animateWindows
@@ -300,7 +307,8 @@ extension SavedConfig {
             showFocusBorder: UserConfigDefaults.showFocusBorder,
             focusBorderColorHex: nil, floatingBorderColorHex: nil,
             dimInactiveWindows: UserConfigDefaults.dimInactiveWindows,
-            dimIntensity: UserConfigDefaults.dimIntensity)
+            dimIntensity: UserConfigDefaults.dimIntensity,
+            mouseHoverPollHz: UserConfigDefaults.mouseHoverPollHz)
     }
 }
 

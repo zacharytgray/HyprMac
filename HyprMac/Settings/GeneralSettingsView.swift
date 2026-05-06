@@ -55,11 +55,27 @@ struct GeneralSettingsView: View {
 
     private var mousePanel: some View {
         HyprPanel("Mouse",
-                  footer: "Hovering over a tiled window focuses it. Drag-swap works regardless of this setting.") {
-            HyprRow("Focus follows mouse", icon: "cursorarrow.motionlines", divider: false) {
+                  footer: "Hovering over a tiled window focuses it. Higher refresh rates feel snappier on ProMotion displays at the cost of more CPU.") {
+            HyprRow("Focus follows mouse", icon: "cursorarrow.motionlines") {
                 Toggle("", isOn: $config.focusFollowsMouse)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
+            }
+            HyprRow("Refresh rate", icon: "speedometer", divider: false) {
+                HStack(spacing: HyprSpacing.sm) {
+                    Slider(
+                        value: Binding(
+                            get: { Double(config.mouseHoverPollHz) },
+                            set: { config.mouseHoverPollHz = Int($0) }
+                        ),
+                        in: 60...240,
+                        step: 30
+                    )
+                    .frame(width: 180)
+                    .disabled(!config.focusFollowsMouse)
+                    HyprChip("\(config.mouseHoverPollHz) Hz")
+                        .frame(width: 64, alignment: .trailing)
+                }
             }
         }
     }

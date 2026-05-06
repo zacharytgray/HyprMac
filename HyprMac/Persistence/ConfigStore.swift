@@ -230,6 +230,7 @@ struct SavedConfig: Codable {
     let floatingBorderColorHex: String?
     let dimInactiveWindows: Bool?
     let dimIntensity: Double?
+    let mouseHoverPollHz: Int?
 }
 
 // monitor-specific settings — stored locally, never synced via iCloud

@@ -27,9 +27,9 @@ class MouseTrackingManager {
     /// during fast cursor sweeps, lowering below ~16 ms wastes work on
     /// no-op resolves between display frames.
     private enum Tuning {
-        // 60Hz cap on FFM resolve work. raising = slower focus, lowering =
+        // 120Hz cap on FFM resolve work. raising = slower focus, lowering =
         // wasted CG window-list queries between display frames.
-        static let throttleInterval: CFAbsoluteTime = 0.016
+        static let throttleInterval: CFAbsoluteTime = 0.008
         // dedupe burst of NSMouseMoved events on a single frame; short
         // enough that windows reshuffling under a stationary cursor still
         // re-resolve within ~80ms.
@@ -66,6 +66,8 @@ class MouseTrackingManager {
     var onHideFocusBorder: () -> Void = {}
     // routed to SuppressionRegistry["mouse-focus"] by WindowManager
     var isMouseFocusSuppressed: () -> Bool = { false }
+    // user-configurable throttle override; falls back to Tuning.throttleInterval
+    var hoverThrottleInterval: () -> CFAbsoluteTime = { Tuning.throttleInterval }
     // routed to FocusStateController by WindowManager (canonical "last focused" id)
     var lastFocusedID: () -> CGWindowID = { 0 }
     var recordFocus: (CGWindowID, String) -> Void = { _, _ in }
@@ -88,7 +90,7 @@ class MouseTrackingManager {
         // matches the prior behavior, where any pass through the eligibility
         // gate consumes the throttle window.
         let now = CFAbsoluteTimeGetCurrent()
-        if now - lastHandleTime < Tuning.throttleInterval { return }
+        if now - lastHandleTime < hoverThrottleInterval() { return }
         lastHandleTime = now
 
         let mouseNS = NSEvent.mouseLocation
@@ -113,11 +115,11 @@ class MouseTrackingManager {
     /// owned by `SuppressionRegistry["mouse-focus"]`.
     private func isFFMEligible() -> Bool {
         guard isFocusFollowsMouseEnabled() else { return false }
-        guard !isMouseButtonDown() else { return false }
-        guard !menuTracking else { return false }
-        guard !dockIsActive else { return false }
-        guard !isAnimating() else { return false }
-        guard !isMouseFocusSuppressed() else { return false }
+        if isMouseButtonDown() { hyprLog(.debug, .mouse, "ffm-bail: mouseButtonDown"); return false }
+        if menuTracking { hyprLog(.debug, .mouse, "ffm-bail: menuTracking"); return false }
+        if dockIsActive { hyprLog(.debug, .mouse, "ffm-bail: dockIsActive"); return false }
+        if isAnimating() { hyprLog(.debug, .mouse, "ffm-bail: isAnimating"); return false }
+        if isMouseFocusSuppressed() { hyprLog(.debug, .mouse, "ffm-bail: mouse-focus suppressed"); return false }
         return true
     }
 
@@ -147,12 +149,16 @@ class MouseTrackingManager {
 
             if managed[topmostID] != nil {
                 guard topmostID != lastFocusedID() else { return nil }
-                guard let target = cachedWindow(topmostID) else { return nil }
+                guard let target = cachedWindow(topmostID) else {
+                    hyprLog(.debug, .mouse, "ffm-bail: topmost \(topmostID) in managed but cachedWindow nil")
+                    return nil
+                }
                 return FocusTarget(windowID: topmostID, window: target, reason: "ffm-topmost")
             }
 
             // an unmanaged normal-layer window is above the tiled window
             // here, such as a popover or autocomplete panel.
+            hyprLog(.debug, .mouse, "ffm-bail: topmost \(topmostID) not in managed (managed.count=\(managed.count), cached=\(cachedWindow(topmostID) != nil), floating=\(floating.contains(topmostID)))")
             return nil
         }
 

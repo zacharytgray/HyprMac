@@ -19,6 +19,11 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "speedometer",
+            title: "Snappier Mouse Hover",
+            description: "Focus-follows-mouse now defaults to 120 Hz instead of 60 Hz, removing the half-frame lag noticeable during fast cursor sweeps on ProMotion displays. Settings → General → Mouse exposes a Refresh rate slider (60–240 Hz) so you can tune it for your display and CPU budget."
+        ),
+        WhatsNewFeature(
             icon: "wrench.adjustable",
             title: "Animated Swap Fix",
             description: "Hypr+Shift+Arrow swaps with animations enabled could leave a window stuck at the screen edge on Tahoe. The window animator now disables AXEnhancedUserInterface while parking windows off-screen during the proxy animation, so the park write doesn't get clamped and race the final setFrame."

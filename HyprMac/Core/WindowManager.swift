@@ -179,6 +179,9 @@ class WindowManager {
 
         // wire up mouse tracker dependencies
         mouseTracker.isFocusFollowsMouseEnabled = { [weak self] in self?.config.focusFollowsMouse ?? false }
+        mouseTracker.hoverThrottleInterval = { [weak self] in
+            1.0 / Double(max(30, self?.config.mouseHoverPollHz ?? 120))
+        }
         mouseTracker.isMouseButtonDown = { [weak self] in self?.mouseButtonDown ?? false }
         mouseTracker.isAnimating = { [weak self] in self?.animator.isAnimating ?? false }
         mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
