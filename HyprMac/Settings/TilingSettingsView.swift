@@ -12,7 +12,6 @@ struct TilingSettingsView: View {
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
             gapsPanel
-            animationPanel
             focusPanel
             monitorsPanel
         }
@@ -39,29 +38,6 @@ struct TilingSettingsView: View {
                         .frame(width: 180)
                     HyprChip("\(Int(config.outerPadding))px")
                         .frame(width: 56, alignment: .trailing)
-                }
-            }
-        }
-    }
-
-    // MARK: animation
-
-    private var animationPanel: some View {
-        HyprPanel("Animation") {
-            HyprRow("Animate window transitions", icon: "wave.3.right",
-                    divider: config.animateWindows) {
-                Toggle("", isOn: $config.animateWindows)
-                    .toggleStyle(HyprToggleStyle())
-                    .labelsHidden()
-            }
-            if config.animateWindows {
-                HyprRow("Duration", icon: "timer", divider: false) {
-                    HStack(spacing: HyprSpacing.sm) {
-                        Slider(value: $config.animationDuration, in: 0.05...0.4, step: 0.05)
-                            .frame(width: 180)
-                        HyprChip("\(Int(config.animationDuration * 1000))ms")
-                            .frame(width: 56, alignment: .trailing)
-                    }
                 }
             }
         }

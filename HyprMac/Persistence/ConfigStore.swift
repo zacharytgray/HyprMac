@@ -220,8 +220,6 @@ struct SavedConfig: Codable {
     let focusFollowsMouse: Bool?
     let hyprKey: HyprKey?
     let excludedBundleIDs: [String]?
-    let animateWindows: Bool?
-    let animationDuration: Double?
     let showMenuBarIndicator: Bool?
     let maxSplitsPerMonitor: [String: Int]?
     let disabledMonitors: [String]?

@@ -41,8 +41,7 @@ final class WindowDiscoveryServiceTests: XCTestCase {
             snapshot: snapshot,
             runningPIDs: runningPIDs,
             excludedBundleIDs: excluded,
-            focusedWindowID: focusedID,
-            animationInProgress: false
+            focusedWindowID: focusedID
         )
     }
 

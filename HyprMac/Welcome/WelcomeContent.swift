@@ -19,34 +19,19 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "speedometer",
-            title: "Snappier Mouse Hover",
-            description: "Focus-follows-mouse now defaults to 120 Hz instead of 60 Hz, removing the half-frame lag noticeable during fast cursor sweeps on ProMotion displays. Settings → General → Mouse exposes a Refresh rate slider (60–240 Hz) so you can tune it for your display and CPU budget."
+            icon: "cursorarrow.rays",
+            title: "Tahoe FFM Fix",
+            description: "Focus-follows-mouse now reliably moves OS keyboard focus on macOS 26 Tahoe. Tahoe silently dropped activation requests from accessory apps in mouse-move handlers, so HyprMac now delivers a synthesized title-bar click directly into the target process — bypassing the gate without disturbing the cursor. A post-mouseUp safety net also catches the fast click-then-stop case where no further mouse-move would fire."
         ),
         WhatsNewFeature(
-            icon: "wrench.adjustable",
-            title: "Animated Swap Fix",
-            description: "Hypr+Shift+Arrow swaps with animations enabled could leave a window stuck at the screen edge on Tahoe. The window animator now disables AXEnhancedUserInterface while parking windows off-screen during the proxy animation, so the park write doesn't get clamped and race the final setFrame."
+            icon: "bolt.fill",
+            title: "No-Animation Mode",
+            description: "Window transitions are now instant — Hypr+Shift+Arrow swaps, toggleSplit, and retiles snap directly to their target frames. Removed the screenshot-proxy animator entirely. Tightens the feel of every keybind and eliminates a class of timing-related bugs."
         ),
         WhatsNewFeature(
-            icon: "paintbrush.pointed",
-            title: "Settings, Reimagined",
-            description: "The settings window has been redesigned from the ground up — restrained Mac-native chassis with a cyan signature accent at active and focus moments. Custom panels, custom toggles, monospace key chips, and a sidebar that actually feels like it belongs in HyprMac."
-        ),
-        WhatsNewFeature(
-            icon: "menubar.dock.rectangle",
-            title: "New Menu Bar Look",
-            description: "The menu bar dropdown picks up the same design language: HYPRMAC mono header with live tiling status, workspace badges per screen, and action rows with shortcut glyphs."
-        ),
-        WhatsNewFeature(
-            icon: "rectangle.dashed",
-            title: "Tighter Focus Border",
-            description: "The focus border now sits centered on the window edge instead of floating 6pt outside, reading as part of the window rather than a frame around it. The dim overlay's cutouts are rounded too, so they no longer carve hard rectangles over rounded windows."
-        ),
-        WhatsNewFeature(
-            icon: "command",
-            title: "Hypr Key Lives With Keybinds",
-            description: "The Hypr Key picker has moved from General to the top of the Keybinds tab, where the rest of your shortcut configuration lives."
+            icon: "rectangle.on.rectangle",
+            title: "Floating Stays On Top",
+            description: "Clicking a floating window no longer sinks it behind tiled neighbors. The post-click refocus now respects floaters under the cursor instead of pulling the tile beneath it forward."
         ),
     ]
 }

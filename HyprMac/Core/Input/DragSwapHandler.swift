@@ -29,7 +29,6 @@ final class DragSwapHandler {
     private let displayManager: DisplayManager
     private let workspaceManager: WorkspaceManager
     private let tilingEngine: TilingEngine
-    private let animator: WindowAnimator
     private let config: UserConfig
     private let suppressions: SuppressionRegistry
 
@@ -55,7 +54,6 @@ final class DragSwapHandler {
          displayManager: DisplayManager,
          workspaceManager: WorkspaceManager,
          tilingEngine: TilingEngine,
-         animator: WindowAnimator,
          config: UserConfig,
          suppressions: SuppressionRegistry) {
         self.stateCache = stateCache
@@ -64,7 +62,6 @@ final class DragSwapHandler {
         self.displayManager = displayManager
         self.workspaceManager = workspaceManager
         self.tilingEngine = tilingEngine
-        self.animator = animator
         self.config = config
         self.suppressions = suppressions
     }
@@ -82,13 +79,10 @@ final class DragSwapHandler {
 
     /// Classify the drag and dispatch to the matching effect.
     ///
-    /// Skipped when an animation is in flight (animator-parked frames
-    /// would mis-classify) or when the focused window is floating —
-    /// floating windows nudging adjacent tiles otherwise produce false
-    /// snap-back retiles that disrupt the layout.
+    /// Skipped when the focused window is floating — floating windows nudging
+    /// adjacent tiles otherwise produce false snap-back retiles that disrupt
+    /// the layout.
     private func applyDragResult(startFrames: [CGWindowID: CGRect]) {
-        guard !animator.isAnimating else { return }
-
         // skip drag detection if the user was dragging a floating window —
         // floating windows can nudge tiled windows slightly, causing false
         // snapBack retiles that disrupt the layout.
@@ -198,32 +192,10 @@ final class DragSwapHandler {
             return
         }
 
-        if config.animateWindows,
-           let draggedFrame = s.dragged.frame,
-           let targetFrame = s.target.frame,
-           let layouts = tilingEngine.prepareSwapLayout(s.dragged, s.target, onWorkspace: workspace, screen: screen) {
-            var transitions: [WindowAnimator.FrameTransition] = []
-            for (w, toRect) in layouts {
-                let fromRect: CGRect
-                if w.windowID == s.dragged.windowID { fromRect = draggedFrame }
-                else if w.windowID == s.target.windowID { fromRect = targetFrame }
-                else { continue }
-                transitions.append(.init(window: w, from: fromRect, to: toRect))
-            }
-            animator.animate(transitions, duration: config.animationDuration) { [weak self] in
-                guard let self else { return }
-                let ok = self.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-                if !ok {
-                    self.rejectSwap?(s.dragged, "drag swap overflows min-size constraints (post-readback)")
-                }
-                self.updatePositionCache?(nil)
-            }
-        } else {
-            let ok = tilingEngine.swapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen)
-            if !ok {
-                rejectSwap?(s.dragged, "drag swap overflows min-size constraints (post-readback)")
-            }
-            updatePositionCache?(allWindows)
+        let ok = tilingEngine.swapWindows(s.dragged, s.target, onWorkspace: workspace, screen: screen)
+        if !ok {
+            rejectSwap?(s.dragged, "drag swap overflows min-size constraints (post-readback)")
         }
+        updatePositionCache?(allWindows)
     }
 }

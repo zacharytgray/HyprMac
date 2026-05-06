@@ -45,12 +45,6 @@ class UserConfig: ObservableObject {
     @Published var excludedBundleIDs: Set<String> {
         didSet { if !isReloading { save() } }
     }
-    @Published var animateWindows: Bool {
-        didSet { if !isReloading { save() } }
-    }
-    @Published var animationDuration: Double {
-        didSet { if !isReloading { save() } }
-    }
     @Published var showMenuBarIndicator: Bool {
         didSet { if !isReloading { save() } }
     }
@@ -124,8 +118,6 @@ class UserConfig: ObservableObject {
             self.mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
-            self.animateWindows = saved.animateWindows ?? UserConfigDefaults.animateWindows
-            self.animationDuration = saved.animationDuration ?? UserConfigDefaults.animationDuration
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
             self.showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = saved.focusBorderColorHex
@@ -141,8 +133,6 @@ class UserConfig: ObservableObject {
             self.mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
-            self.animateWindows = UserConfigDefaults.animateWindows
-            self.animationDuration = UserConfigDefaults.animationDuration
             self.showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
             self.showFocusBorder = UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = nil
@@ -207,8 +197,6 @@ class UserConfig: ObservableObject {
             focusFollowsMouse: focusFollowsMouse,
             hyprKey: hyprKey,
             excludedBundleIDs: Array(excludedBundleIDs),
-            animateWindows: animateWindows,
-            animationDuration: animationDuration,
             showMenuBarIndicator: showMenuBarIndicator,
             maxSplitsPerMonitor: nil,
             disabledMonitors: nil,
@@ -229,8 +217,6 @@ class UserConfig: ObservableObject {
         mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
         hyprKey = UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
-        animateWindows = UserConfigDefaults.animateWindows
-        animationDuration = UserConfigDefaults.animationDuration
         showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
         maxSplitsPerMonitor = [:]
         disabledMonitors = []
@@ -264,8 +250,6 @@ class UserConfig: ObservableObject {
         focusFollowsMouse = saved.focusFollowsMouse ?? true
         hyprKey = saved.hyprKey ?? .capsLock
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
-        animateWindows = saved.animateWindows ?? true
-        animationDuration = saved.animationDuration ?? 0.15
         showMenuBarIndicator = saved.showMenuBarIndicator ?? true
         showFocusBorder = saved.showFocusBorder ?? true
         focusBorderColorHex = saved.focusBorderColorHex
@@ -300,8 +284,6 @@ extension SavedConfig {
             focusFollowsMouse: UserConfigDefaults.focusFollowsMouse,
             hyprKey: UserConfigDefaults.hyprKey,
             excludedBundleIDs: nil,
-            animateWindows: UserConfigDefaults.animateWindows,
-            animationDuration: UserConfigDefaults.animationDuration,
             showMenuBarIndicator: UserConfigDefaults.showMenuBarIndicator,
             maxSplitsPerMonitor: nil, disabledMonitors: nil,
             showFocusBorder: UserConfigDefaults.showFocusBorder,

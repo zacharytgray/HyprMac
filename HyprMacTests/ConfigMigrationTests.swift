@@ -72,7 +72,6 @@ final class ConfigMigrationTests: XCTestCase {
             gapSize: 8, outerPadding: 8, enabled: true,
             focusFollowsMouse: true, hyprKey: .capsLock,
             excludedBundleIDs: ["com.apple.FaceTime"],
-            animateWindows: true, animationDuration: 0.15,
             showMenuBarIndicator: true,
             maxSplitsPerMonitor: nil, disabledMonitors: nil,
             showFocusBorder: true,
@@ -98,7 +97,7 @@ final class ConfigMigrationTests: XCTestCase {
         let embedded = SavedConfig(
             version: nil, keybinds: [], gapSize: 8, outerPadding: 8, enabled: true,
             focusFollowsMouse: nil, hyprKey: nil, excludedBundleIDs: nil,
-            animateWindows: nil, animationDuration: nil, showMenuBarIndicator: nil,
+            showMenuBarIndicator: nil,
             maxSplitsPerMonitor: ["Old": 99], disabledMonitors: ["Old"],
             showFocusBorder: nil, focusBorderColorHex: nil,
             floatingBorderColorHex: nil, dimInactiveWindows: nil, dimIntensity: nil,
@@ -114,7 +113,7 @@ final class ConfigMigrationTests: XCTestCase {
         let embedded = SavedConfig(
             version: nil, keybinds: [], gapSize: 8, outerPadding: 8, enabled: true,
             focusFollowsMouse: nil, hyprKey: nil, excludedBundleIDs: nil,
-            animateWindows: nil, animationDuration: nil, showMenuBarIndicator: nil,
+            showMenuBarIndicator: nil,
             maxSplitsPerMonitor: ["DELL U2723QE": 2],
             disabledMonitors: ["External"],
             showFocusBorder: nil, focusBorderColorHex: nil,
@@ -138,7 +137,7 @@ final class ConfigMigrationTests: XCTestCase {
         let embedded = SavedConfig(
             version: nil, keybinds: [], gapSize: 8, outerPadding: 8, enabled: true,
             focusFollowsMouse: nil, hyprKey: nil, excludedBundleIDs: nil,
-            animateWindows: nil, animationDuration: nil, showMenuBarIndicator: nil,
+            showMenuBarIndicator: nil,
             maxSplitsPerMonitor: nil, disabledMonitors: nil,
             showFocusBorder: nil, focusBorderColorHex: nil,
             floatingBorderColorHex: nil, dimInactiveWindows: nil, dimIntensity: nil,

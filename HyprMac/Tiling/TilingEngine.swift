@@ -77,10 +77,9 @@ class TilingEngine {
     /// windows on that tree. Called from the discovery gone path so a
     /// closed window's node cannot outlive its AX presence even when the
     /// owning workspace is hidden (and therefore skipped by
-    /// `tileAllVisibleSpaces`) or the follow-up retile is dropped because
-    /// `animator.isAnimating` is true. The frame application happens later
-    /// — this only fixes tree topology so the next layout pass produces a
-    /// gapless result. No-op when no tree contains `windowID`.
+    /// `tileAllVisibleSpaces`). The frame application happens later — this
+    /// only fixes tree topology so the next layout pass produces a gapless
+    /// result. No-op when no tree contains `windowID`.
     func removeWindowID(_ windowID: CGWindowID) {
         for (key, t) in trees {
             guard let w = t.allWindows.first(where: { $0.windowID == windowID }) else { continue }

@@ -18,8 +18,6 @@ enum UserConfigDefaults {
     static let focusFollowsMouse: Bool = true
     static let mouseHoverPollHz: Int = 120
     static let hyprKey: HyprKey = .capsLock
-    static let animateWindows: Bool = true
-    static let animationDuration: Double = 0.15
     static let showMenuBarIndicator: Bool = true
     static let showFocusBorder: Bool = true
     static let dimInactiveWindows: Bool = false

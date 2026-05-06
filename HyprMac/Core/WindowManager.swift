@@ -32,7 +32,6 @@ class WindowManager {
     let cursorManager = CursorManager()
     let appLauncher = AppLauncherManager()
     let config: UserConfig
-    let animator = WindowAnimator()
     let focusBorder = FocusBorder()
     let dimmingOverlay = DimmingOverlay()
     let mouseTracker = MouseTrackingManager()
@@ -183,7 +182,6 @@ class WindowManager {
             1.0 / Double(max(30, self?.config.mouseHoverPollHz ?? 120))
         }
         mouseTracker.isMouseButtonDown = { [weak self] in self?.mouseButtonDown ?? false }
-        mouseTracker.isAnimating = { [weak self] in self?.animator.isAnimating ?? false }
         mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
         mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
         mouseTracker.floatingWindowIDs = { [weak self] in self?.stateCache.floatingWindowIDs ?? [] }
@@ -216,7 +214,6 @@ class WindowManager {
             displayManager: displayManager,
             workspaceManager: workspaceManager,
             tilingEngine: tilingEngine,
-            animator: animator,
             config: config,
             suppressions: suppressions
         )
@@ -231,7 +228,6 @@ class WindowManager {
             cursorManager: cursorManager,
             workspaceManager: workspaceManager,
             tilingEngine: tilingEngine,
-            animator: animator,
             focusController: focusController,
             focusBorder: focusBorder,
             keybindOverlay: keybindOverlay,
@@ -542,6 +538,14 @@ class WindowManager {
             self.mouseButtonDown = true
             self.mouseDraggedSinceDown = false
             self.captureMouseDownFrames()
+            // a menu open at the OS level eats clicks before we'd see them
+            // here, so a global mouseDown reaching us is unambiguous proof
+            // there is no menu currently tracking. clears the flag if a
+            // dropped HIToolbox end-notification left it stuck.
+            if self.mouseTracker.menuTracking {
+                hyprLog(.notice, .mouse, "leftMouseDown with menuTracking=true — clearing stuck flag")
+                self.mouseTracker.menuTrackingEnded()
+            }
             // sync our focus tracker with the click — without this, manual clicks
             // leave focusController.lastFocusedID stale and currentFocusedWindow() routes
             // commands to whatever was previously hovered, not what the user clicked
@@ -589,6 +593,13 @@ class WindowManager {
                     self.refreshFloatingBorders()
                 }
             }
+            // belt-and-suspenders: re-resolve FFM after the click sequence settles.
+            // fast click+move-back leaves the cursor stationary post-mouseUp, so no
+            // further .mouseMoved fires and FFM gets stuck on whatever the click
+            // syncTracker last recorded. force a refocus 200ms later.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                self?.mouseTracker.refocusUnderCursor()
+            }
         }
     }
 
@@ -611,9 +622,17 @@ class WindowManager {
     /// Suppresses the dock-click workspace switch for half a second so the
     /// app activation kicked off by the AX focus call doesn't bounce the
     /// user to a different workspace.
+    ///
+    /// On Tahoe, AX writes + SkyLight + `NSRunningApplication.activate()` are all
+    /// silently rejected from a `.accessory` app's mouse-move handler context, so
+    /// `focusViaSyntheticClick` posts a leftMouseDown/Up directly into the target
+    /// process — the only reliable activator. AX/SkyLight calls remain so the
+    /// rest of the system (`AXFocused` queries, key-window state) sees the right
+    /// window even before the click lands.
     private func focusForFFM(_ window: HyprWindow) {
         suppressions.suppress("activation-switch", for: 0.5)
         window.focusWithoutRaise()
+        window.focusViaSyntheticClick()
         updateFocusBorder(for: window)
     }
 
@@ -980,15 +999,13 @@ class WindowManager {
     /// Tile each enabled screen's active workspace with the windows
     /// assigned to it.
     ///
-    /// Bypassed while an animation is in flight so the animator's parked
-    /// frames are not stomped. Refreshes the position cache after applying
-    /// frames so the menu bar indicator and dim mask track the new layout.
+    /// Refreshes the position cache after applying frames so the menu bar
+    /// indicator and dim mask track the new layout.
     ///
     /// - Parameter windows: Pre-fetched window list. When `nil`, AX is
     ///   re-queried. Callers that already have a fresh list pass it to
     ///   avoid the round trip.
     func tileAllVisibleSpaces(windows: [HyprWindow]? = nil) {
-        guard !animator.isAnimating else { return }
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
 
@@ -1020,107 +1037,17 @@ class WindowManager {
 
     /// Retile with a slide animation between old and new tile rects.
     ///
-    /// Five steps:
-    /// 1. Capture before-frames for every visible non-floating window.
-    /// 2. Run `prepare` to mutate state (remove from tree, toggle float,
-    ///    swap, etc.).
-    /// 3. Re-fetch the window list when `prepare` ran — the membership of
-    ///    visible windows may have changed.
-    /// 4. Compute new layout rects via `prepareTileLayout` per screen and
-    ///    build slide transitions for windows that moved.
-    /// 5. Drive the animator; after it completes, apply the final layout
-    ///    with two-pass min-size resolution and refresh the position cache.
-    ///
-    /// Falls through to a synchronous tile when animations are disabled or
-    /// another animation is already in flight. Only animates the windows
-    /// whose rects changed — there is no fade or scale on the window the
-    /// caller just mutated.
-    ///
-    /// - Parameter windows: Pre-fetched window list (optional, see
-    ///   `tileAllVisibleSpaces`).
-    /// - Parameter prepare: State mutation that produces the new layout.
-    /// - Parameter completion: Runs after the animation settles or
-    ///   immediately on the synchronous fall-through path.
+    /// Run `prepare`, retile every visible workspace, run `completion`.
+    /// Animations were stripped — this is now just a sequenced retile.
+    /// Name kept so existing call sites compile unchanged.
     private func animatedRetile(
         windows: [HyprWindow]? = nil,
         prepare: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
     ) {
-        guard config.animateWindows, !animator.isAnimating else {
-            prepare?()
-            tileAllVisibleSpaces(windows: windows)
-            completion?()
-            return
-        }
-
-        let allWindows = windows ?? accessibility.getAllWindows()
-        tilingEngine.primeMinimumSizes(allWindows)
-
-        // capture before-frames for visible tiled windows
-        var beforeFrames: [CGWindowID: CGRect] = [:]
-        for w in allWindows {
-            guard workspaceManager.isWindowVisible(w.windowID),
-                  !stateCache.floatingWindowIDs.contains(w.windowID),
-                  let f = w.frame else { continue }
-            beforeFrames[w.windowID] = f
-        }
-
-        // run state changes (e.g. remove from tree, toggle float)
         prepare?()
-
-        // re-fetch after prepare() — window list may have changed (add/remove/float toggle).
-        // only re-fetch if prepare actually ran; otherwise reuse existing list.
-        let refreshedWindows = prepare != nil ? accessibility.getAllWindows() : allWindows
-        tilingEngine.primeMinimumSizes(refreshedWindows)
-
-        // compute new layout for each screen without applying
-        var newLayouts: [(HyprWindow, CGRect)] = []
-
-        // mark floating flags on refreshed window objects
-        for w in refreshedWindows {
-            if stateCache.floatingWindowIDs.contains(w.windowID) { w.isFloating = true }
-        }
-        for screen in displayManager.screens {
-            if workspaceManager.isMonitorDisabled(screen) { continue }
-            let workspace = workspaceManager.workspaceForScreen(screen)
-            let widsOnWorkspace = workspaceManager.windowIDs(onWorkspace: workspace)
-
-            var workspaceWindows: [HyprWindow] = []
-            for window in refreshedWindows {
-                if widsOnWorkspace.contains(window.windowID) {
-                    workspaceWindows.append(window)
-                }
-            }
-
-            let layouts = tilingEngine.prepareTileLayout(workspaceWindows, onWorkspace: workspace, screen: screen)
-            newLayouts.append(contentsOf: layouts)
-        }
-
-        // build slide transitions for windows that moved
-        var transitions: [WindowAnimator.FrameTransition] = []
-        for (w, toRect) in newLayouts {
-            if let fromRect = beforeFrames[w.windowID], fromRect != toRect {
-                transitions.append(.init(window: w, from: fromRect, to: toRect))
-            }
-        }
-
-        guard !transitions.isEmpty else {
-            tileAllVisibleSpaces(windows: refreshedWindows)
-            completion?()
-            return
-        }
-
-        animator.animate(transitions, duration: config.animationDuration) { [weak self] in
-            guard let self else { return }
-            // apply final layout with two-pass min-size resolution
-            for screen in self.displayManager.screens {
-                if self.workspaceManager.isMonitorDisabled(screen) { continue }
-                let workspace = self.workspaceManager.workspaceForScreen(screen)
-                self.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-            }
-            self.updatePositionCache()
-            completion?()
-        }
+        tileAllVisibleSpaces(windows: windows)
+        completion?()
     }
 
     /// Spread every tiling-eligible window across workspaces so no single
@@ -1261,26 +1188,33 @@ class WindowManager {
     /// → AX's reported focused window → `nil`. Each candidate must be
     /// selectable in the cursor's current workspace.
     private func currentFocusedWindow() -> HyprWindow? {
-        let workspace = workspaceManager.workspaceForScreen(screenUnderCursor())
+        let screen = screenUnderCursor()
+        let workspace = workspaceManager.workspaceForScreen(screen)
         let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
+        let bid = focusBorder.trackedWindowID ?? 0
+        let lid = focusController.lastFocusedID
 
         if let tid = focusBorder.trackedWindowID,
            isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[tid] {
+            hyprLog(.debug, .focus, "currentFocused → border=\(tid) ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
             return w
         }
 
         if focusController.lastFocusedID != 0,
            isSelectableInCurrentContext(focusController.lastFocusedID, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[focusController.lastFocusedID] {
+            hyprLog(.debug, .focus, "currentFocused → last=\(focusController.lastFocusedID) ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
             return w
         }
 
         if let focused = accessibility.getFocusedWindow(),
            isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
+            hyprLog(.debug, .focus, "currentFocused → ax=\(focused.windowID) ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
             return focused
         }
 
+        hyprLog(.debug, .focus, "currentFocused → nil ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
         return nil
     }
 
@@ -1588,19 +1522,15 @@ class WindowManager {
     /// Run a single discovery diff and hand the result to the dispatcher's
     /// apply-loop.
     ///
-    /// Drops the poll entirely when an animation is in flight (the
-    /// animator's parked frames would look like stale geometry to
-    /// discovery) or when a mouse button is down (the user is dragging or
-    /// clicking through controls; window state is mid-transition). Both
-    /// guards are about whether to poll *at all* — once `applyChanges` is
-    /// called, the apply-loop runs unconditionally.
+    /// Drops the poll entirely when a mouse button is down (the user is
+    /// dragging or clicking through controls; window state is mid-transition).
+    /// Once `applyChanges` is called, the apply-loop runs unconditionally.
     ///
     /// Coalesced with notification-driven schedules by `PollingScheduler`,
     /// which also honors the `cross-swap-in-flight` suppression so a
     /// cross-monitor drag-swap completes without pollers stomping on its
     /// in-flight tree mutations.
     private func pollWindowChanges() {
-        guard !animator.isAnimating else { return }
         guard !mouseButtonDown else { return }
 
         let allWindows = accessibility.getAllWindows()
@@ -1611,8 +1541,7 @@ class WindowManager {
             snapshot: allWindows,
             runningPIDs: runningPIDs,
             excludedBundleIDs: Set(config.excludedBundleIDs),
-            focusedWindowID: focusController.lastFocusedID,
-            animationInProgress: false
+            focusedWindowID: focusController.lastFocusedID
         )
         actionDispatcher.applyChanges(changes, allWindows: allWindows)
     }

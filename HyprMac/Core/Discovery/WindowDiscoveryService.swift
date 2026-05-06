@@ -107,18 +107,14 @@ final class WindowDiscoveryService {
     ///   discovery (never enter tiling).
     /// - Parameter focusedWindowID: Window currently believed to have
     ///   focus; used to populate `focusedWindowGone`.
-    /// - Parameter animationInProgress: Skip drift detection while
-    ///   animations are running — animator-parked frames look like
-    ///   physical drift.
-    func detectChanges(excludedBundleIDs: Set<String>, focusedWindowID: CGWindowID, animationInProgress: Bool) -> WindowChanges {
+    func detectChanges(excludedBundleIDs: Set<String>, focusedWindowID: CGWindowID) -> WindowChanges {
         let snapshot = accessibility.getAllWindows()
         let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
         return computeChanges(
             snapshot: snapshot,
             runningPIDs: runningPIDs,
             excludedBundleIDs: excludedBundleIDs,
-            focusedWindowID: focusedWindowID,
-            animationInProgress: animationInProgress
+            focusedWindowID: focusedWindowID
         )
     }
 
@@ -132,8 +128,7 @@ final class WindowDiscoveryService {
     func computeChanges(snapshot: [HyprWindow],
                         runningPIDs: Set<pid_t>,
                         excludedBundleIDs: Set<String>,
-                        focusedWindowID: CGWindowID,
-                        animationInProgress: Bool) -> WindowChanges {
+                        focusedWindowID: CGWindowID) -> WindowChanges {
         let currentIDs = Set(snapshot.map { $0.windowID })
 
         var newWindows: [HyprWindow] = []
@@ -218,12 +213,7 @@ final class WindowDiscoveryService {
         fullyForgotten.formUnion(swept)
 
         // drift detection
-        let drift: [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)]
-        if animationInProgress {
-            drift = []
-        } else {
-            drift = detectScreenDrift(snapshot)
-        }
+        let drift = detectScreenDrift(snapshot)
 
         let focusedGone = goneIDs.contains(focusedWindowID)
 

@@ -2,21 +2,10 @@ import XCTest
 import Cocoa
 @testable import HyprMac
 
-// pins the WindowManager.toggleSplit fallthrough fix that landed in Phase 1.
-//
-// the bug: prepareToggleSplitLayout mutates the BSP tree (toggles parent
-// direction). once it returns non-nil, the action handler is committed.
-// before the fix, when prepareToggleSplitLayout returned non-nil but produced
-// no animation transitions (e.g., empty layout dict, or windows without
-// resolvable from-frames), the code fell through to tilingEngine.toggleSplit(),
-// toggling the tree a second time and reverting the user's action.
-//
-// Phase 1 fix: ensure the action returns after applying the prepared layout,
-// regardless of whether transitions were animated. The test was deferred to
-// Phase 4 because, until ActionDispatcher landed, WindowManager's action path
-// had no DI seam to drive in isolation.
-//
-// see plan §4.2 + §8.2.
+// pins the WindowManager.toggleSplit single-mutation behavior. with animation
+// stripped, the dispatcher just calls tilingEngine.toggleSplit directly — but
+// the regression test stays as a guard against future reintroduction of a
+// double-toggle path.
 
 final class ToggleSplitFallthroughRegressionTests: XCTestCase {
 
@@ -28,7 +17,6 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
     private var focusBorder: FocusBorder!
     private var focusController: FocusStateController!
     private var dimmingOverlay: DimmingOverlay!
-    private var animator: WindowAnimator!
     private var accessibility: AccessibilityManager!
     private var cursorManager: CursorManager!
     private var keybindOverlay: KeybindOverlayController!
@@ -53,9 +41,6 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
         screen = primary
 
         config = UserConfig()
-        // animateWindows = true is required to exercise the buggy branch.
-        // prepareToggleSplitLayout only runs when animation is enabled.
-        config.animateWindows = true
 
         displayManager = DisplayManager()
         stateCache = WindowStateCache()
@@ -63,7 +48,6 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
         focusBorder = FocusBorder()
         focusController = FocusStateController(focusBorder: focusBorder)
         dimmingOverlay = DimmingOverlay()
-        animator = WindowAnimator()
         accessibility = AccessibilityManager()
         cursorManager = CursorManager()
         keybindOverlay = KeybindOverlayController()
@@ -103,7 +87,6 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
             cursorManager: cursorManager,
             workspaceManager: workspaceManager,
             tilingEngine: tilingEngine,
-            animator: animator,
             focusController: focusController,
             focusBorder: focusBorder,
             keybindOverlay: keybindOverlay,

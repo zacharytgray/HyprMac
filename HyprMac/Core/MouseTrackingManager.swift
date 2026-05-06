@@ -50,11 +50,18 @@ class MouseTrackingManager {
     var dockIsActive = false
 
     private var lastHandleTime: CFAbsoluteTime = 0
+    // last time menuTrackingBegan was called. used by the watchdog to clear
+    // a stuck menuTracking flag — Tahoe sometimes drops the end notification,
+    // which would otherwise kill FFM until the next begin/end cycle.
+    private var menuTrackingStart: CFAbsoluteTime = 0
+    // hard ceiling on how long menuTracking can stay true without an explicit
+    // end notification. real menus get dismissed by mouseDown anyway, so this
+    // is just a safety net for the dropped-notification case.
+    private static let menuTrackingMaxAge: CFAbsoluteTime = 5.0
 
     // dependencies injected by WindowManager
     var isFocusFollowsMouseEnabled: () -> Bool = { false }
     var isMouseButtonDown: () -> Bool = { false }
-    var isAnimating: () -> Bool = { false }
     var primaryScreenHeight: () -> CGFloat = { 0 }
     var screenAt: (CGPoint) -> NSScreen? = { _ in nil }
     var floatingWindowIDs: () -> Set<CGWindowID> = { [] }
@@ -109,16 +116,26 @@ class MouseTrackingManager {
     /// Each guard exists for a specific reason: `isMouseButtonDown`
     /// skips drags (`DragManager` owns those), `menuTracking` and
     /// `dockIsActive` skip transient OS UI that would race with focus
-    /// changes, `isAnimating` skips during `WindowAnimator` transitions
-    /// where visual frames do not match AX positions, and
-    /// `isMouseFocusSuppressed` honors the post-action quiet window
+    /// changes, and `isMouseFocusSuppressed` honors the post-action quiet window
     /// owned by `SuppressionRegistry["mouse-focus"]`.
     private func isFFMEligible() -> Bool {
         guard isFocusFollowsMouseEnabled() else { return false }
         if isMouseButtonDown() { hyprLog(.debug, .mouse, "ffm-bail: mouseButtonDown"); return false }
-        if menuTracking { hyprLog(.debug, .mouse, "ffm-bail: menuTracking"); return false }
+        if menuTracking {
+            // watchdog: HIToolbox sometimes drops endMenuTrackingNotification on
+            // Tahoe, leaving menuTracking latched and FFM dead until the next
+            // menu cycle. force-clear after the max age so a dropped notification
+            // doesn't permanently kill hover focus.
+            let age = CFAbsoluteTimeGetCurrent() - menuTrackingStart
+            if age > Self.menuTrackingMaxAge {
+                hyprLog(.notice, .mouse, "menuTracking stuck for \(String(format: "%.1f", age))s — force-clearing")
+                menuTracking = false
+            } else {
+                hyprLog(.debug, .mouse, "ffm-bail: menuTracking (age=\(String(format: "%.1f", age))s)")
+                return false
+            }
+        }
         if dockIsActive { hyprLog(.debug, .mouse, "ffm-bail: dockIsActive"); return false }
-        if isAnimating() { hyprLog(.debug, .mouse, "ffm-bail: isAnimating"); return false }
         if isMouseFocusSuppressed() { hyprLog(.debug, .mouse, "ffm-bail: mouse-focus suppressed"); return false }
         return true
     }
@@ -205,6 +222,14 @@ class MouseTrackingManager {
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
+        // bail if cursor is over a visible floater — refocusing the tile below
+        // would pull the tile above the floater (the synthetic click in
+        // focusForFFM raises the clicked window's app). matches the same guard
+        // determineFocusTarget uses on the live FFM path.
+        for wid in floatingWindowIDs() where isWindowVisible(wid) {
+            if let f = cachedWindow(wid)?.frame, f.contains(cgPoint) { return }
+        }
+
         for (wid, rect) in tiledPositions() {
             if rect.contains(cgPoint), let target = cachedWindow(wid) {
                 recordFocus(wid, "refocus-under-cursor")
@@ -276,6 +301,7 @@ class MouseTrackingManager {
     func menuTrackingBegan() {
         mainThreadOnly()
         menuTracking = true
+        menuTrackingStart = CFAbsoluteTimeGetCurrent()
     }
 
     /// Called when the menu closes. Refreshes the focus border on the

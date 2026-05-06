@@ -238,18 +238,32 @@ class HyprWindow: Equatable, Hashable {
     func focus() {
         let app = NSRunningApplication(processIdentifier: ownerPID)
         let alreadyActive = app?.isActive ?? false
+        let wid = windowID
 
-        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
-        AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
-        AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        let raiseRC = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        let mainRC = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        let focRC = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        hyprLog(.debug, .focus, "focus(\(wid)) ax raise=\(raiseRC.rawValue) main=\(mainRC.rawValue) focused=\(focRC.rawValue) alreadyActive=\(alreadyActive)")
 
         if !alreadyActive {
-            app?.activate()
+            // .activateIgnoringOtherApps is the legacy option but still functions on Tahoe;
+            // empty-options activate() is silently dropped from non-keyboard contexts.
+            app?.activate(options: [.activateIgnoringOtherApps])
+            // verify activation actually flipped — if not, log it.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak app] in
+                let nowActive = app?.isActive ?? false
+                if !nowActive {
+                    hyprLog(.notice, .focus, "focus(\(wid)) activate dropped — app still inactive 10ms after activate()")
+                } else {
+                    hyprLog(.debug, .focus, "focus(\(wid)) activate ok — app flipped active")
+                }
+            }
             let el = element
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                AXUIElementPerformAction(el, kAXRaiseAction as CFString)
-                AXUIElementSetAttributeValue(el, kAXMainAttribute as CFString, kCFBooleanTrue)
-                AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                let r2 = AXUIElementPerformAction(el, kAXRaiseAction as CFString)
+                let m2 = AXUIElementSetAttributeValue(el, kAXMainAttribute as CFString, kCFBooleanTrue)
+                let f2 = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+                hyprLog(.debug, .focus, "focus(\(wid)) re-assert raise=\(r2.rawValue) main=\(m2.rawValue) focused=\(f2.rawValue)")
             }
         }
     }
@@ -262,21 +276,85 @@ class HyprWindow: Equatable, Hashable {
     /// they are — used by FFM and `Hypr+Arrow` to avoid disturbing
     /// the user's z-stack.
     func focusWithoutRaise() {
+        let wid = windowID
+
+        // window-level AX: doesn't raise on its own — kAXRaiseAction is what raises.
+        let mainRC = AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
+        let focRC = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+
+        // process-level: activate the owning app so keystrokes route here.
+        // .activateIgnoringOtherApps is deprecated but still works on Tahoe; empty-options
+        // activate() is silently dropped when invoked from a mouse-move context in a
+        // .accessory app, which manifests as "FFM stops keeping up with the cursor".
+        let app = NSRunningApplication(processIdentifier: ownerPID)
+        let wasActive = app?.isActive ?? false
+        if let app, !wasActive {
+            app.activate(options: [.activateIgnoringOtherApps])
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak app] in
+                let nowActive = app?.isActive ?? false
+                if !nowActive {
+                    hyprLog(.notice, .focus, "focusWithoutRaise(\(wid)) activate dropped — app still inactive 10ms after activate()")
+                }
+            }
+        }
+
+        // SkyLight: route the synthesized key-focus event to the specific window.
+        // byte layout matches yabai's window_manager_make_key_window.
         var psn = ProcessSerialNumber()
-        guard GetProcessForPID(ownerPID, &psn) == noErr else { return }
+        guard GetProcessForPID(ownerPID, &psn) == noErr else {
+            hyprLog(.notice, .focus, "focusWithoutRaise(\(wid)) GetProcessForPID failed")
+            return
+        }
+        let setFrontRC = _SLPSSetFrontProcessWithOptions(&psn, UInt32(windowID), kCPSUserGenerated)
 
-        // activate process without reordering windows
-        _SLPSSetFrontProcessWithOptions(&psn, UInt32(windowID), kCPSUserGenerated)
-
-        // synthesize keyboard focus events to make this the key window
         var bytes = [UInt8](repeating: 0, count: 0xf8)
-        bytes[0x04] = 0xF8  // event type
-        bytes[0x08] = 0x01  // key focus event
-        bytes[0x8a] = 0x02  // window focus
-        SLPSPostEventRecordTo(&psn, &bytes[0])
+        bytes[0x04] = 0xF8
+        bytes[0x08] = 0x01
+        bytes[0x3a] = 0x10
+        var widBytes = UInt32(windowID)
+        withUnsafeBytes(of: &widBytes) { src in
+            for i in 0..<4 { bytes[0x3c + i] = src[i] }
+        }
+        for i in 0..<0x10 { bytes[0x20 + i] = 0xFF }
+        let post1RC = SLPSPostEventRecordTo(&psn, &bytes[0])
 
-        bytes[0x08] = 0x02  // second focus event
-        SLPSPostEventRecordTo(&psn, &bytes[0])
+        bytes[0x08] = 0x02
+        let post2RC = SLPSPostEventRecordTo(&psn, &bytes[0])
+
+        hyprLog(.debug, .focus, "focusWithoutRaise(\(wid)) ax main=\(mainRC.rawValue) focused=\(focRC.rawValue) wasActive=\(wasActive) sl front=\(setFrontRC.rawValue) post1=\(post1RC.rawValue) post2=\(post2RC.rawValue)")
+    }
+
+    /// Force OS keyboard focus by delivering a synthesized leftMouseDown/Up
+    /// directly to the owning process. Used when AX writes + SkyLight + activate()
+    /// are all silently rejected by Tahoe's `.accessory`-app activation gate.
+    ///
+    /// `CGEventPostToPid` routes the event into the target process's queue without
+    /// going through the global event tap, so the visible cursor does not move and
+    /// the OS treats the event as if a real user click landed inside the target's
+    /// title bar — the one thing observed to reliably move keyboard focus on Tahoe.
+    /// Title-bar coordinate (`midX`, `minY + 4`) avoids window controls and any
+    /// in-content button. A bare down+up does not start a drag.
+    func focusViaSyntheticClick() {
+        guard let frame = self.frame else {
+            hyprLog(.notice, .focus, "focusViaSyntheticClick(\(windowID)) no frame")
+            return
+        }
+        let target = CGPoint(x: frame.midX, y: frame.minY + 4)
+        guard let down = CGEvent(mouseEventSource: nil,
+                                 mouseType: .leftMouseDown,
+                                 mouseCursorPosition: target,
+                                 mouseButton: .left),
+              let up = CGEvent(mouseEventSource: nil,
+                               mouseType: .leftMouseUp,
+                               mouseCursorPosition: target,
+                               mouseButton: .left) else {
+            hyprLog(.notice, .focus, "focusViaSyntheticClick(\(windowID)) CGEvent create failed")
+            return
+        }
+        // postToPid: deliver to the app's queue without touching the global cursor
+        down.postToPid(ownerPID)
+        up.postToPid(ownerPID)
+        hyprLog(.debug, .focus, "focusViaSyntheticClick(\(windowID)) posted at (\(Int(target.x)),\(Int(target.y)))")
     }
 
     static func == (lhs: HyprWindow, rhs: HyprWindow) -> Bool {

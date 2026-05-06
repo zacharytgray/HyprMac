@@ -37,7 +37,6 @@ final class ActionDispatcher {
     private let cursorManager: CursorManager
     private let workspaceManager: WorkspaceManager
     private let tilingEngine: TilingEngine
-    private let animator: WindowAnimator
     private let focusController: FocusStateController
     private let focusBorder: FocusBorder
     private let keybindOverlay: KeybindOverlayController
@@ -63,7 +62,6 @@ final class ActionDispatcher {
          cursorManager: CursorManager,
          workspaceManager: WorkspaceManager,
          tilingEngine: TilingEngine,
-         animator: WindowAnimator,
          focusController: FocusStateController,
          focusBorder: FocusBorder,
          keybindOverlay: KeybindOverlayController,
@@ -77,7 +75,6 @@ final class ActionDispatcher {
         self.cursorManager = cursorManager
         self.workspaceManager = workspaceManager
         self.tilingEngine = tilingEngine
-        self.animator = animator
         self.focusController = focusController
         self.focusBorder = focusBorder
         self.keybindOverlay = keybindOverlay
@@ -314,43 +311,13 @@ final class ActionDispatcher {
             return
         }
 
-        if config.animateWindows,
-           let focusedFrame = focused.frame,
-           let targetFrame = target.frame,
-           let layouts = tilingEngine.prepareSwapLayout(focused, target, onWorkspace: workspace, screen: screen) {
-            // build transitions from current positions to computed targets
-            var transitions: [WindowAnimator.FrameTransition] = []
-            for (w, toRect) in layouts {
-                let fromRect: CGRect
-                if w.windowID == focused.windowID { fromRect = focusedFrame }
-                else if w.windowID == target.windowID { fromRect = targetFrame }
-                else { continue }
-                transitions.append(.init(window: w, from: fromRect, to: toRect))
-            }
-
-            animator.animate(transitions, duration: config.animationDuration) { [weak self] in
-                guard let self = self else { return }
-                // snap final state with two-pass min-size resolution. returns
-                // false if the post-readback layout overflows recorded mins
-                // — applyComputedLayout has already reverted to the pre-swap
-                // tree state and retiled. surface as flashError so the user
-                // sees the rejection rather than a silent revert.
-                let ok = self.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-                if !ok {
-                    self.rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
-                }
-                self.cursorManager.warpToCenter(of: focused)
-                self.updatePositionCache()
-            }
-        } else {
-            // swapWindows handles its own snapshot/revert. flashError on false.
-            let ok = tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
-            if !ok {
-                rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
-            }
-            cursorManager.warpToCenter(of: focused)
-            updatePositionCache()
+        // swapWindows handles its own snapshot/revert. flashError on false.
+        let ok = tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
+        if !ok {
+            rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
         }
+        cursorManager.warpToCenter(of: focused)
+        updatePositionCache()
     }
 
     /// Beep and flash a red border around `window` to signal a rejected
@@ -449,15 +416,6 @@ final class ActionDispatcher {
     }
 
     /// Toggle the BSP split direction at the focused leaf's parent.
-    ///
-    /// With animation enabled, `prepareToggleSplitLayout` mutates the
-    /// tree and returns the target frames; the dispatcher animates from
-    /// current to target rects and commits via `applyComputedLayout`.
-    /// Once `prepareToggleSplitLayout` returns non-nil the tree is
-    /// committed — falling through to the synchronous
-    /// `tilingEngine.toggleSplit()` would toggle a second time and revert
-    /// the user's action. With animation disabled, or when the focused
-    /// window is not in the tree, the synchronous path is taken instead.
     private func toggleSplit() {
         guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
@@ -465,36 +423,6 @@ final class ActionDispatcher {
 
         hyprLog(.debug, .orchestration, "toggleSplit on '\(focused.title ?? "?")'")
 
-        if config.animateWindows {
-            // capture current frames before the toggle
-            let windows = accessibility.getAllWindows().filter { workspaceManager.isWindowVisible($0.windowID) }
-            let currentFrames = Dictionary(uniqueKeysWithValues: windows.compactMap { w -> (CGWindowID, CGRect)? in
-                guard let f = w.frame else { return nil }
-                return (w.windowID, f)
-            })
-
-            if let layouts = tilingEngine.prepareToggleSplitLayout(focused, onWorkspace: workspace, screen: screen) {
-                var transitions: [WindowAnimator.FrameTransition] = []
-                for (w, toRect) in layouts {
-                    guard let fromRect = currentFrames[w.windowID], fromRect != toRect else { continue }
-                    transitions.append(.init(window: w, from: fromRect, to: toRect))
-                }
-
-                if !transitions.isEmpty {
-                    animator.animate(transitions, duration: config.animationDuration) { [weak self] in
-                        self?.tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-                        self?.updatePositionCache()
-                    }
-                } else {
-                    // tree was mutated but no frames need to move — apply layout and exit.
-                    tilingEngine.applyComputedLayout(onWorkspace: workspace, screen: screen)
-                    updatePositionCache()
-                }
-                return
-            }
-        }
-
-        // animation disabled, or prepareToggleSplitLayout returned nil (window not in tree)
         tilingEngine.toggleSplit(focused, onWorkspace: workspace, screen: screen)
         updatePositionCache()
     }
