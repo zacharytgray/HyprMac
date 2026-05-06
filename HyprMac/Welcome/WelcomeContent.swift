@@ -19,19 +19,9 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "cursorarrow.rays",
-            title: "Tahoe FFM Fix",
-            description: "Focus-follows-mouse now reliably moves OS keyboard focus on macOS 26 Tahoe. Tahoe silently dropped activation requests from accessory apps in mouse-move handlers, so HyprMac now delivers a synthesized title-bar click directly into the target process — bypassing the gate without disturbing the cursor. A post-mouseUp safety net also catches the fast click-then-stop case where no further mouse-move would fire."
-        ),
-        WhatsNewFeature(
-            icon: "bolt.fill",
-            title: "No-Animation Mode",
-            description: "Window transitions are now instant — Hypr+Shift+Arrow swaps, toggleSplit, and retiles snap directly to their target frames. Removed the screenshot-proxy animator entirely. Tightens the feel of every keybind and eliminates a class of timing-related bugs."
-        ),
-        WhatsNewFeature(
-            icon: "rectangle.on.rectangle",
-            title: "Floating Stays On Top",
-            description: "Clicking a floating window no longer sinks it behind tiled neighbors. The post-click refocus now respects floaters under the cursor instead of pulling the tile beneath it forward."
+            icon: "circle.lefthalf.filled",
+            title: "Dim Independent of Focus Border",
+            description: "Turning off Show focus border no longer disables the dim overlay. Each toggle now only governs its own thing — disable the border without losing window dimming, or the other way around."
         ),
     ]
 }

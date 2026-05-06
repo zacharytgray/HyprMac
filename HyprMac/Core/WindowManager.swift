@@ -430,7 +430,8 @@ class WindowManager {
                 } else {
                     self.focusBorder.hide()
                     self.focusBorder.hideFloatingBorders()
-                    self.dimmingOverlay.hideAll()
+                    // dimming has its own toggle (config.dimInactiveWindows)
+                    // and its own observer above — don't kill it here.
                 }
             }.store(in: &configObservers)
 
