@@ -45,6 +45,7 @@ macOS doesn't ship with a tiling window manager. Third-party options either requ
 ### Homebrew (recommended)
 
 ```sh
+brew tap zacharytgray/hyprmac
 brew install --cask hyprmac
 ```
 
