@@ -638,30 +638,27 @@ class WindowManager {
     }
 
     /// Reposition the focus border around `window`, refresh the floating
-    /// outlines, and rebuild the dim mask for the new focused window. Hides
-    /// every visual indicator if the user has the focus border disabled or
-    /// the window has no readable frame.
+    /// outlines, and rebuild the dim mask for the new focused window.
+    ///
+    /// The border and dim paths are independent: each respects its own
+    /// config toggle. Disabling the border doesn't disable dim (and vice
+    /// versa) — `refreshDimming` always runs and reads
+    /// `config.dimInactiveWindows` itself.
     private func updateFocusBorder(for window: HyprWindow) {
-        guard config.showFocusBorder else {
+        if config.showFocusBorder, let frame = window.frame {
+            focusBorder.accentCGColor = stateCache.floatingWindowIDs.contains(window.windowID)
+                ? config.resolvedFloatingBorderColor.cgColor
+                : config.resolvedFocusBorderColor.cgColor
+            WindowCornerRadius.prime(for: window)
+            focusBorder.show(around: frame, windowID: window.windowID)
+            if stateCache.floatingWindowIDs.contains(window.windowID) {
+                refreshFloatingBorders(windows: accessibility.getAllWindows())
+            } else {
+                refreshFloatingBorders()
+            }
+        } else {
             focusBorder.hide()
             focusBorder.hideFloatingBorders()
-            dimmingOverlay.hideAll()
-            return
-        }
-        guard let frame = window.frame else {
-            focusBorder.hide()
-            dimmingOverlay.hideAll()
-            return
-        }
-        focusBorder.accentCGColor = stateCache.floatingWindowIDs.contains(window.windowID)
-            ? config.resolvedFloatingBorderColor.cgColor
-            : config.resolvedFocusBorderColor.cgColor
-        WindowCornerRadius.prime(for: window)
-        focusBorder.show(around: frame, windowID: window.windowID)
-        if stateCache.floatingWindowIDs.contains(window.windowID) {
-            refreshFloatingBorders(windows: accessibility.getAllWindows())
-        } else {
-            refreshFloatingBorders()
         }
         refreshDimming(focusedID: window.windowID)
     }
