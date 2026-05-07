@@ -88,6 +88,18 @@ class FocusBorder {
     /// stomp the new frame moments after `show` returns.
     func show(around rect: CGRect, windowID: CGWindowID) {
         mainThreadOnly()
+        // idempotent re-show: already painted on this window at this frame
+        // and the state machine has progressed past .hidden — nothing to do.
+        // without this, every redundant updateFocusBorder call (post-click
+        // refocus, raiseBehind, app-activated polls) would re-fire the
+        // active-tint → settle cycle and the user sees the window "light up
+        // again" on each click.
+        if state != .hidden, trackedWindowID == windowID,
+           let f = trackedWindowFrame,
+           abs(f.minX - rect.minX) < 1, abs(f.minY - rect.minY) < 1,
+           abs(f.width - rect.width) < 1, abs(f.height - rect.height) < 1 {
+            return
+        }
         // cancel any in-flight transition (settle, shake) before re-asserting.
         // without this, a pending shake or settle can mutate the panel after
         // show() returns and undo the new frame/state.

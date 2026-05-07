@@ -222,6 +222,19 @@ class MouseTrackingManager {
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
+        // already-focused fast path: cursor is still over the last-focused
+        // tile and that tile still exists — no refocus needed. without this,
+        // every click inside the focused window would re-fire the synthetic
+        // click and re-show the focus border (visible "re-highlight" flash).
+        // matches the same guard determineFocusTarget uses on the live FFM
+        // path. when the previously-focused window is gone, tiledPositions
+        // won't contain its ID, the guard falls through, and a fallback is
+        // picked below.
+        let lastID = lastFocusedID()
+        if lastID != 0, let lastRect = tiledPositions()[lastID], lastRect.contains(cgPoint) {
+            return
+        }
+
         // bail if cursor is over a visible floater — refocusing the tile below
         // would pull the tile above the floater (the synthetic click in
         // focusForFFM raises the clicked window's app). matches the same guard

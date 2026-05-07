@@ -19,14 +19,9 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "arrow.left.arrow.right.square",
-            title: "Reach Overlapped Tiles with the Keyboard",
-            description: "Hypr + Arrow and Hypr + Shift + Arrow now use the BSP-intended tile rect, so an oversized window that overflows into a neighbor's slot no longer traps focus. You can always traverse to and swap with the partially-hidden tile."
-        ),
-        WhatsNewFeature(
-            icon: "circle.lefthalf.filled",
-            title: "Dim Independent of Focus Border",
-            description: "Turning off Show focus border no longer disables the dim overlay. Each toggle now only governs its own thing — disable the border without losing window dimming, or the other way around."
+            icon: "rectangle.dashed",
+            title: "No More Re-Highlight Flash on Click",
+            description: "Clicking inside the focused window — or moving the cursor a pixel after a click — no longer re-fires the active-tint border flash. The border is now idempotent: same window, same frame, no redundant repaint."
         ),
     ]
 }
