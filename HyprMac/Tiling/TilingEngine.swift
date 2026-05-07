@@ -425,6 +425,27 @@ class TilingEngine {
         return m.tree.layout(in: m.rect, gap: gapSize, padding: outerPadding)
     }
 
+    /// BSP-computed intended rect for every tiled window across all
+    /// `(workspace, screen)` trees, keyed by window ID. This is the layout
+    /// the engine *wants* — distinct from the live AX frame, which can be
+    /// inflated when an app refuses to shrink to its slot. Use in geometric
+    /// pickers (directional focus/swap) so a crammed window doesn't push
+    /// its inflated edges past a neighbor's far edge and exclude that
+    /// neighbor from the candidate set.
+    func intendedTileRects() -> [CGWindowID: CGRect] {
+        var out: [CGWindowID: CGRect] = [:]
+        for (key, t) in trees {
+            guard let screen = displayManager.screens.first(where: {
+                TilingKey(workspace: key.workspace, screen: $0) == key
+            }) else { continue }
+            let rect = displayManager.cgRect(for: screen)
+            for (window, frame) in t.layout(in: rect, gap: gapSize, padding: outerPadding) {
+                out[window.windowID] = frame
+            }
+        }
+        return out
+    }
+
     /// Add a single window to the `(workspace, screen)` tree and
     /// retile. Auto-floats via `onAutoFloat` when smart insert cannot
     /// place the window without violating `minSlotDimension`. No-op

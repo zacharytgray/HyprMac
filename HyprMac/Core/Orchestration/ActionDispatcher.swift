@@ -268,7 +268,14 @@ final class ActionDispatcher {
             workspaceManager.isWindowVisible($0.windowID) && !stateCache.floatingWindowIDs.contains($0.windowID)
         }
 
-        if let target = accessibility.windowInDirection(direction, from: focused, among: windows) {
+        // use BSP-computed intended rects so a crammed (oversized) source
+        // window doesn't push its own minX/maxY past a neighbor's far edge
+        // and exclude that neighbor from the directional candidate set.
+        // stateCache.tiledPositions can't be used here — it stores the
+        // *live* AX frame for tiled windows, not the layout-intended rect.
+        let intended = tilingEngine.intendedTileRects()
+        let frameFor: (HyprWindow) -> CGRect? = { intended[$0.windowID] ?? $0.frame }
+        if let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor) {
             target.focusWithoutRaise()
             cursorManager.warpToCenter(of: target)
             focusController.recordFocus(target.windowID, reason: "focusInDirection")
@@ -305,7 +312,10 @@ final class ActionDispatcher {
                 && displayManager.screen(for: $0) == screen
         }
 
-        guard let target = accessibility.windowInDirection(direction, from: focused, among: windows) else { return }
+        // intended tile rects — see focusInDirection for rationale.
+        let intended = tilingEngine.intendedTileRects()
+        let frameFor: (HyprWindow) -> CGRect? = { intended[$0.windowID] ?? $0.frame }
+        guard let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor) else { return }
         guard tilingEngine.canSwapWindows(focused, target, onWorkspace: workspace, screen: screen) else {
             rejectSwap(focused, reason: "swap would violate min-size constraints")
             return

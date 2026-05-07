@@ -256,8 +256,13 @@ class AccessibilityManager {
     ///    horizontal moves pick lowest `minY`. Used only when neither
     ///    candidate uniquely contains the ray; guarantees the same
     ///    arrow always picks the same target.
-    func windowInDirection(_ direction: Direction, from window: HyprWindow, among windows: [HyprWindow]) -> HyprWindow? {
-        guard let sourceFrame = window.frame else { return nil }
+    func windowInDirection(
+        _ direction: Direction,
+        from window: HyprWindow,
+        among windows: [HyprWindow],
+        frameFor: (HyprWindow) -> CGRect? = { $0.frame }
+    ) -> HyprWindow? {
+        guard let sourceFrame = frameFor(window) else { return nil }
 
         struct Scored {
             let window: HyprWindow
@@ -270,7 +275,7 @@ class AccessibilityManager {
         var candidates: [Scored] = []
 
         for candidate in windows where candidate != window {
-            guard let cf = candidate.frame else { continue }
+            guard let cf = frameFor(candidate) else { continue }
 
             let edgeGap: CGFloat
             let perpOverlap: CGFloat
