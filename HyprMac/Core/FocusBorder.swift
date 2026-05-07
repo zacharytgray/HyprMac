@@ -144,6 +144,30 @@ class FocusBorder {
         DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.settleDelaySec, execute: work)
     }
 
+    /// Re-paint the active-tint state on whichever window is currently
+    /// tracked, then schedule a settle. Used to flash the border when
+    /// the Hypr key is held — visual cue that an action is about to
+    /// fire on this window. No position change. No-op when no panel
+    /// is tracking a window. Bypasses `show`'s idempotency guard so the
+    /// flash actually re-fires on a window already being shown.
+    func flashActive() {
+        mainThreadOnly()
+        guard state != .hidden, let layer = glowView?.layer else { return }
+        settleWork?.cancel()
+        shakeTimer?.cancel()
+        shakeTimer = nil
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.backgroundColor = accentCGColor.copy(alpha: Tuning.activeFillAlpha)
+        CATransaction.commit()
+        state = .active
+
+        let work = DispatchWorkItem { [weak self] in self?.settle() }
+        settleWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.settleDelaySec, execute: work)
+    }
+
     /// Reposition the focused-window border to `rect` without changing
     /// state. Called on tile/resize/move so the border tracks the
     /// window without re-running the show transition.

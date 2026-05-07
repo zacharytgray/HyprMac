@@ -171,6 +171,11 @@ class WindowManager {
 
         hotkeyManager.onHyprKeyDown = { [weak self] in
             self?.ensureFocus()
+            // visual cue: re-flash the focus border into active-tint so the
+            // user sees which window the next Hypr action will target. show()
+            // itself is idempotent on the same window, so we bypass it via
+            // flashActive() — which only repaints the layer, not the position.
+            self?.focusBorder.flashActive()
         }
         hotkeyManager.onHyprKeyUp = { [weak self] in
             self?.reassertFocusBorderAfterHyprRelease()
