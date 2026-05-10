@@ -147,10 +147,12 @@ class HotkeyManager {
         let wasDown = hyprKeyDown
         hyprKeyDown = isDown
         if isDown && !wasDown {
+            hyprLog(.notice, .hotkey, "hypr ↓")
             DispatchQueue.main.async { [weak self] in
                 self?.onHyprKeyDown?()
             }
         } else if !isDown && wasDown {
+            hyprLog(.notice, .hotkey, "hypr ↑")
             DispatchQueue.main.async { [weak self] in
                 self?.onHyprKeyUp?()
             }
@@ -189,6 +191,8 @@ private func hotkeyCallback(
     refcon: UnsafeMutableRawPointer?
 ) -> Unmanaged<CGEvent>? {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+        let reason = type == .tapDisabledByTimeout ? "timeout" : "user-input"
+        hyprLog(.notice, .hotkey, "event tap disabled (\(reason)) — re-enabling, hyprKeyDown state may be stale")
         if let refcon = refcon {
             let mgr = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
             if let tap = mgr.eventTap {

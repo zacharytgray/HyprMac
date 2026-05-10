@@ -95,6 +95,13 @@ class WindowManager {
     private var configObservers: Set<AnyCancellable> = []
     private var isRunning = false
 
+    // fingerprint of the last display layout we acted on. macOS posts
+    // didChangeScreenParametersNotification for things that don't actually
+    // change the screen list (FaceTime/Teams call init, app quits that
+    // deregister display callbacks, color profile bumps), and our handler
+    // runs the destructive redistribute every time. guard against no-op fires.
+    private var lastDisplayFingerprint: String = ""
+
     /// Wire the dependency graph and configure every subsystem callback.
     ///
     /// Construction is in three layers:
@@ -1064,6 +1071,7 @@ class WindowManager {
     /// All" so a fresh launch with many windows produces a balanced layout
     /// instead of piling everything on the primary screen.
     private func distributeWindowsAcrossWorkspaces() {
+        hyprLog(.notice, .lifecycle, "distributeWindowsAcrossWorkspaces ENTER — full redistribute about to run (this rewrites workspace assignments)")
         let screens = displayManager.screens.filter { !workspaceManager.isMonitorDisabled($0) }
             .sorted { $0.frame.origin.x < $1.frame.origin.x }
         guard !screens.isEmpty else { return }
@@ -1636,9 +1644,22 @@ class WindowManager {
     /// order would prune the home-screen mapping first and orphan the
     /// migration.
     @objc private func screenParametersChanged() {
-        hyprLog(.debug, .lifecycle, "screen parameters changed — reinitializing workspaces")
+        let names = displayManager.screens.map { $0.localizedName }.joined(separator: ", ")
+        hyprLog(.notice, .lifecycle, "screenParametersChanged fired (current screens: [\(names)])")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
+            // skip if nothing actually changed. macOS fires the notification
+            // for things that don't alter the screen list (call init, app
+            // quits, color profile changes), and the redistribute below is
+            // destructive — it scrambles workspace assignments.
+            let fingerprint = self.displayManager.screens
+                .map { "\($0.localizedName)@\($0.frame)" }
+                .joined(separator: "|")
+            if fingerprint == self.lastDisplayFingerprint {
+                hyprLog(.notice, .lifecycle, "screen layout unchanged — skipping snapshotAndTile")
+                return
+            }
+            self.lastDisplayFingerprint = fingerprint
             self.focusBorder.primaryScreenHeight = self.displayManager.primaryScreenHeight
             // ordering: DisplayManager.refresh runs automatically via the same
             // notification; WorkspaceManager.initializeMonitors must run before

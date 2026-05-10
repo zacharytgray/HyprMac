@@ -195,7 +195,11 @@ final class ActionDispatcher {
     /// workspace the user has not touched in days.
     private func assignNewWindow(_ window: HyprWindow) {
         let physical = displayManager.screen(for: window)
-        let screen = physical ?? screenUnderCursor()
+        let cursor = screenUnderCursor()
+        let screen = physical ?? cursor
+        let frameDesc = window.frame.map { "(\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))×\(Int($0.height)))" } ?? "nil"
+        let physicalName = physical?.localizedName ?? "nil"
+        hyprLog(.notice, .orchestration, "assignNewWindow: '\(window.title ?? "?")' (\(window.windowID)) frame=\(frameDesc) physical=\(physicalName) cursor=\(cursor.localizedName) → ws\(workspaceManager.workspaceForScreen(screen)) on \(screen.localizedName)")
         guard !workspaceManager.isMonitorDisabled(screen) else { return }
         let ws = workspaceManager.workspaceForScreen(screen)
         // overwrite any stale entry — assignWindow handles old-set cleanup

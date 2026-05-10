@@ -326,7 +326,7 @@ final class WindowDiscoveryService {
             // monitor (logs 2026-05-04 09:53:01.998).
             if !visibleWorkspaces.contains(recordedWs) { continue }
             drifts.append((w.windowID, recordedWs, physicalWs))
-            hyprLog(.debug, .discovery, "drift: '\(w.title ?? "?")' ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
+            hyprLog(.notice, .discovery, "drift: '\(w.title ?? "?")' (\(w.windowID)) ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
         }
         return drifts
     }

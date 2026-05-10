@@ -19,9 +19,9 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.dashed",
-            title: "No More Re-Highlight Flash on Click",
-            description: "Clicking inside the focused window — or moving the cursor a pixel after a click — no longer re-fires the active-tint border flash. The border is now idempotent: same window, same frame, no redundant repaint."
+            icon: "rectangle.3.group",
+            title: "No More Random Window Scrambles",
+            description: "macOS posts a display-changed notification for things that don't actually change the display — incoming FaceTime/Teams calls, color profile bumps, some app quits. Each one used to trigger a full workspace redistribute and scramble your windows. HyprMac now fingerprints the screen layout and skips the redistribute when nothing actually changed."
         ),
     ]
 }
