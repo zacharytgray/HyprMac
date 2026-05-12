@@ -19,9 +19,9 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "rectangle.3.group",
-            title: "No More Random Window Scrambles",
-            description: "macOS posts a display-changed notification for things that don't actually change the display — incoming FaceTime/Teams calls, color profile bumps, some app quits. Each one used to trigger a full workspace redistribute and scramble your windows. HyprMac now fingerprints the screen layout and skips the redistribute when nothing actually changed."
+            icon: "capslock",
+            title: "No More Stuck Caps Lock",
+            description: "If macOS disabled HyprMac's event tap (under load, after sleep, or while another app captured the keyboard), the Hypr modifier state could get stuck \"down\" — every normal keystroke after that would silently fire whatever Hypr+letter keybind you had bound. HyprMac now clears modifier state whenever the tap re-enables, so the worst case is a single dropped chord instead of a runaway typing session."
         ),
     ]
 }

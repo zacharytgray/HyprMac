@@ -109,6 +109,22 @@ class HotkeyManager {
         pressedModifierKeyCodes.removeAll()
     }
 
+    /// Drop tracked modifier state after a tap interruption.
+    ///
+    /// `tapDisabledByTimeout` / `tapDisabledByUserInput` means we stopped
+    /// receiving events for some window of time. Any F18 keyUp that
+    /// happened during that window is gone — without this reset, the next
+    /// regular keystroke gets packed with the Hypr modifier and triggers
+    /// a chord the user didn't intend (the "stuck Caps Lock" bug). The
+    /// next legitimate keyDown will re-establish state cleanly.
+    fileprivate func resetTrackingAfterTapInterruption() {
+        if hyprKeyDown {
+            hyprLog(.notice, .hotkey, "resetting stuck hyprKeyDown after tap interruption")
+        }
+        setHyprKeyDown(false)
+        pressedModifierKeyCodes.removeAll()
+    }
+
     fileprivate func handleEvent(_ type: CGEventType, _ event: CGEvent) -> CGEvent? {
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         trackModifierState(type, keyCode)
@@ -192,12 +208,13 @@ private func hotkeyCallback(
 ) -> Unmanaged<CGEvent>? {
     if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
         let reason = type == .tapDisabledByTimeout ? "timeout" : "user-input"
-        hyprLog(.notice, .hotkey, "event tap disabled (\(reason)) — re-enabling, hyprKeyDown state may be stale")
+        hyprLog(.notice, .hotkey, "event tap disabled (\(reason)) — re-enabling and resetting tracked state")
         if let refcon = refcon {
             let mgr = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
             if let tap = mgr.eventTap {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
+            mgr.resetTrackingAfterTapInterruption()
         }
         return Unmanaged.passRetained(event)
     }
