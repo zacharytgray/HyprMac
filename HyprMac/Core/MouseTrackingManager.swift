@@ -142,8 +142,20 @@ class MouseTrackingManager {
 
     /// `true` when `cgPoint` is in the menu-bar dead zone — focus
     /// changes that fired here would compete with menu interaction.
+    ///
+    /// The dead zone is anchored to the cursor's local screen, not the
+    /// primary screen. Without this, a monitor stacked above the primary
+    /// produces `cgY < 0` everywhere and FFM is dead across its full
+    /// height — the bug from the multi-monitor FFM investigation.
     private func isInMenuBarDeadZone(_ cgPoint: CGPoint) -> Bool {
-        cgPoint.y < Tuning.menuBarDeadZonePx
+        guard let screen = screenAt(cgPoint) else {
+            // fall back to the old primary-anchored check
+            return cgPoint.y < Tuning.menuBarDeadZonePx
+        }
+        // screen.frame is in NS (bottom-left). its top edge in CG (top-left) is
+        // primaryH - (origin.y + height).
+        let screenTopCG = primaryScreenHeight() - (screen.frame.origin.y + screen.frame.height)
+        return cgPoint.y - screenTopCG < Tuning.menuBarDeadZonePx
     }
 
     /// Resolve which window should receive focus for `cgPoint`, or `nil`

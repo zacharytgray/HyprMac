@@ -1,4 +1,4 @@
-// "Tiling" tab. Window gaps, focus indicator color, dim intensity,
+// "Tiling" tab. Window gaps, focus color, dim intensity,
 // per-monitor enable + max-splits configuration plus a live dwindle
 // preview.
 
@@ -47,7 +47,18 @@ struct TilingSettingsView: View {
 
     private var focusPanel: some View {
         HyprPanel("Focus Indicator",
-                  footer: "The border tints the focused window during traversal and settles to an outline. Floating windows use a separate color. Dim darkens everything except the focused window via an overlay panel — no SIP required.") {
+                  footer: "Corner brackets appear around the focused window while the Hypr key is held. Show focus border adds a persistent outline that tints during traversal and settles to a thin border. Both use the focus color. Dim darkens everything except the focused window — no SIP required.") {
+            HyprRow("Focus color", icon: "paintpalette", divider: true) {
+                ColorPickerRow(
+                    label: "",
+                    isCustom: config.focusBorderColorHex != nil,
+                    onReset: { config.focusBorderColorHex = nil },
+                    color: Binding(
+                        get: { Color(config.resolvedFocusBorderColor) },
+                        set: { config.focusBorderColorHex = NSColor($0).hexString }
+                    )
+                )
+            }
             HyprRow("Show focus border", icon: "rectangle.dashed",
                     divider: config.showFocusBorder) {
                 Toggle("", isOn: $config.showFocusBorder)
@@ -56,17 +67,6 @@ struct TilingSettingsView: View {
             }
 
             if config.showFocusBorder {
-                HyprRow("Border color", icon: "paintpalette") {
-                    ColorPickerRow(
-                        label: "",
-                        isCustom: config.focusBorderColorHex != nil,
-                        onReset: { config.focusBorderColorHex = nil },
-                        color: Binding(
-                            get: { Color(config.resolvedFocusBorderColor) },
-                            set: { config.focusBorderColorHex = NSColor($0).hexString }
-                        )
-                    )
-                }
                 HyprRow("Floating border color", icon: "paintpalette.fill",
                         divider: true) {
                     ColorPickerRow(
@@ -88,13 +88,23 @@ struct TilingSettingsView: View {
                     .labelsHidden()
             }
             if config.dimInactiveWindows {
-                HyprRow("Dim intensity", icon: "circle.lefthalf.filled", divider: false) {
+                HyprRow("Dim intensity", icon: "circle.lefthalf.filled") {
                     HStack(spacing: HyprSpacing.sm) {
                         Slider(value: $config.dimIntensity, in: 0.05...0.6)
                             .frame(width: 180)
                         HyprChip(String(format: "%.0f%%", config.dimIntensity * 100))
                             .frame(width: 56, alignment: .trailing)
                     }
+                }
+            }
+            // shared between the focus border and dim overlay — they
+            // fade in lockstep so chrome appears/disappears together.
+            HyprRow("Animation duration", icon: "timer", divider: false) {
+                HStack(spacing: HyprSpacing.sm) {
+                    Slider(value: $config.chromeFadeDurationSec, in: 0.0...1.0, step: 0.01)
+                        .frame(width: 180)
+                    HyprChip(String(format: "%.0fms", config.chromeFadeDurationSec * 1000))
+                        .frame(width: 56, alignment: .trailing)
                 }
             }
         }

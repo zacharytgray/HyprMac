@@ -33,6 +33,7 @@ class WindowManager {
     let appLauncher = AppLauncherManager()
     let config: UserConfig
     let focusBorder = FocusBorder()
+    let focusBrackets = FocusBrackets()
     let dimmingOverlay = DimmingOverlay()
     let mouseTracker = MouseTrackingManager()
     let dragManager = DragManager()
@@ -85,6 +86,15 @@ class WindowManager {
     // we hide rather than try to follow, because we'd need 60Hz AX polling per window
     // and that's prohibitively expensive.
     private var preDragFocusedID: CGWindowID = 0
+
+    // true while the Hypr key is physically held. drives focusBrackets — when held,
+    // every focus change re-targets the brackets so they track Hypr+arrow even
+    // across workspace switches (which transiently hide the focus border).
+    private var hyprHeld = false
+
+    // bumped each time the dock activates; the watchdog closure compares against this
+    // before clearing dockIsActive so re-activations cancel earlier pending clears.
+    private var dockActivationToken: UInt64 = 0
 
     // date-gated suppression flags. owned here, shared with subsystems via closures.
     // keys in use: "activation-switch" (gates appDidActivate workspace switch),
@@ -172,19 +182,21 @@ class WindowManager {
         }
 
         hotkeyManager.onAction = { [weak self] action in
-            self?.suppressions.suppress("mouse-focus", for: 0.3)
+            self?.suppressions.suppress("mouse-focus", for: 0.15)
             self?.handleAction(action)
         }
 
         hotkeyManager.onHyprKeyDown = { [weak self] in
+            self?.hyprHeld = true
             self?.ensureFocus()
-            // visual cue: re-flash the focus border into active-tint so the
-            // user sees which window the next Hypr action will target. show()
-            // itself is idempotent on the same window, so we bypass it via
-            // flashActive() — which only repaints the layer, not the position.
-            self?.focusBorder.flashActive()
+            // visual cue: corner brackets snap inward around the focused
+            // window so the user sees which window the next Hypr action
+            // will target. shown regardless of focus-border setting.
+            self?.showFocusBracketsForCurrentFocus()
         }
         hotkeyManager.onHyprKeyUp = { [weak self] in
+            self?.hyprHeld = false
+            self?.focusBrackets.hide()
             self?.reassertFocusBorderAfterHyprRelease()
         }
 
@@ -315,6 +327,10 @@ class WindowManager {
         tilingEngine.outerPadding = config.outerPadding
         tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
+        focusBorder.fadeDurationSec = config.chromeFadeDurationSec
+        focusBrackets.primaryScreenHeight = displayManager.primaryScreenHeight
+        focusBrackets.accentCGColor = config.resolvedFocusBorderColor.cgColor
+        dimmingOverlay.fadeDurationSec = config.chromeFadeDurationSec
         workspaceManager.disabledMonitors = config.disabledMonitors
         hotkeyManager.updateHyprKey(config.hyprKey)
         hotkeyManager.updateKeybinds(config.keybinds)
@@ -344,6 +360,34 @@ class WindowManager {
                          name: NSWorkspace.didHideApplicationNotification, object: nil)
         wsnc.addObserver(self, selector: #selector(appVisibilityChanged(_:)),
                          name: NSWorkspace.didUnhideApplicationNotification, object: nil)
+        // clear stuck dockIsActive if the dock app deactivates without another app taking front
+        wsnc.addObserver(self, selector: #selector(appDidDeactivate(_:)),
+                         name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
+
+        // sleep / wake / lock — any of these can drop the Hypr keyUp event
+        // without triggering tap-disabled, leaving hyprKeyDown stuck true.
+        wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
+                         name: NSWorkspace.didWakeNotification, object: nil)
+        wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
+                         name: NSWorkspace.screensDidWakeNotification, object: nil)
+        wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
+                         name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+        wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
+                         name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(systemInterruption(_:)),
+            name: NSNotification.Name("com.apple.screenIsLocked"), object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(systemInterruption(_:)),
+            name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil
+        )
+
+        // hide chrome when entering a fullscreen Space, restore when leaving.
+        // catches green-button / Cmd-Ctrl-F / browser HTML5 fullscreen since
+        // each moves the window into its own Space.
+        wsnc.addObserver(self, selector: #selector(activeSpaceDidChange(_:)),
+                         name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
 
         // suppress FFM while any app's menu bar is active
         DistributedNotificationCenter.default().addObserver(
@@ -430,6 +474,18 @@ class WindowManager {
             .removeDuplicates()
             .sink { [weak self] _ in
                 self?.refreshDimming()
+            }.store(in: &configObservers)
+
+        config.$chromeFadeDurationSec
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] duration in
+                guard let self else { return }
+                // pushed live — next show/hide on either subsystem reads
+                // the new value. in-flight animations finish at the old
+                // duration; the change only applies to subsequent fades.
+                self.focusBorder.fadeDurationSec = duration
+                self.dimmingOverlay.fadeDurationSec = duration
             }.store(in: &configObservers)
 
         config.$showFocusBorder
@@ -656,7 +712,50 @@ class WindowManager {
     /// config toggle. Disabling the border doesn't disable dim (and vice
     /// versa) — `refreshDimming` always runs and reads
     /// `config.dimInactiveWindows` itself.
+    /// `true` when a fullscreen window is currently driving the active Space.
+    /// Checks `window` first (commonly the new focus target), falls back to
+    /// the active app's focused-window AX query. Results are not cached —
+    /// the AX call is one round-trip and `updateFocusBorder` runs on focus
+    /// change, not on every frame.
+    private func isFullscreenSuppressed(focused window: HyprWindow?) -> Bool {
+        if let w = window, w.isFullscreen { return true }
+        // also check the AX-reported focused window of the frontmost app;
+        // covers cases where `window` is a HyprMac-tracked tile but the
+        // user has clicked into a non-tracked fullscreen overlay (some
+        // video players spawn a separate fullscreen window).
+        if let app = NSWorkspace.shared.frontmostApplication {
+            let appEl = AXUIElementCreateApplication(app.processIdentifier)
+            var focusedRaw: AnyObject?
+            let err = AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &focusedRaw)
+            if err == .success, let focusedEl = focusedRaw {
+                var fsRaw: AnyObject?
+                let fsErr = AXUIElementCopyAttributeValue(focusedEl as! AXUIElement, "AXFullScreen" as CFString, &fsRaw)
+                if fsErr == .success, let n = fsRaw as? NSNumber, n.boolValue {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
     private func updateFocusBorder(for window: HyprWindow) {
+        // suppress all chrome when a fullscreen window is in play — green
+        // button, Cmd-Ctrl-F, browser HTML5 fullscreen, fullscreen video.
+        // HyprMac panels are .canJoinAllSpaces so they'd otherwise draw on
+        // top of the fullscreen content.
+        if isFullscreenSuppressed(focused: window) {
+            focusBorder.hide()
+            focusBorder.hideFloatingBorders()
+            focusBrackets.hide()
+            dimmingOverlay.hideAll()
+            return
+        }
+        // brackets follow focus changes while Hypr is held (e.g. Hypr+arrow
+        // shifts focus mid-press, workspace switch hides the border).
+        if hyprHeld, let frame = window.frame {
+            focusBrackets.accentCGColor = config.resolvedFocusBorderColor.cgColor
+            focusBrackets.show(around: frame, windowID: window.windowID)
+        }
         if config.showFocusBorder, let frame = window.frame {
             focusBorder.accentCGColor = stateCache.floatingWindowIDs.contains(window.windowID)
                 ? config.resolvedFloatingBorderColor.cgColor
@@ -673,6 +772,20 @@ class WindowManager {
             focusBorder.hideFloatingBorders()
         }
         refreshDimming(focusedID: window.windowID)
+    }
+
+    /// Show focus brackets around whichever window `ensureFocus` settled on.
+    /// Resolves the focused window via the same chain `refreshDimming` uses
+    /// (border-tracked → lastFocused), then pulls the live frame from the
+    /// state cache. No-op when no focused window can be resolved or it's
+    /// fullscreen-suppressed.
+    private func showFocusBracketsForCurrentFocus() {
+        let fid = focusBorder.trackedWindowID ?? focusController.lastFocusedID
+        guard fid != 0, let window = stateCache.cachedWindows[fid] else { return }
+        if isFullscreenSuppressed(focused: window) { return }
+        guard let frame = window.frame else { return }
+        focusBrackets.accentCGColor = config.resolvedFocusBorderColor.cgColor
+        focusBrackets.show(around: frame, windowID: fid)
     }
 
     /// Re-show the focus border on the tracked window after the Hypr key is
@@ -714,14 +827,19 @@ class WindowManager {
     /// - Parameter focusedID: Override for the "bright" window. Defaults to
     ///   `focusBorder.trackedWindowID`, then `focusController.lastFocusedID`.
     private func refreshDimming(focusedID: CGWindowID? = nil) {
+        let fid = focusedID ?? focusBorder.trackedWindowID ?? focusController.lastFocusedID
+        let focusedWindow = stateCache.cachedWindows[fid]
+        if isFullscreenSuppressed(focused: focusedWindow) {
+            dimmingOverlay.hideAll()
+            return
+        }
         dimmingOverlay.enabled = config.dimInactiveWindows
         dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
         dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
-        let fid = focusedID ?? focusBorder.trackedWindowID ?? focusController.lastFocusedID
         dimmingOverlay.update(
             focusedID: fid,
             tiledRects: currentTiledRects(),
-            floatingRects: floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 8),
+            floatingRects: floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 2),
             screens: displayManager.screens
         )
     }
@@ -762,7 +880,7 @@ class WindowManager {
     /// finally the nearest tiled window's center. Each candidate must be
     /// selectable in the cursor's current workspace context.
     private func ensureFocus() {
-        suppressions.suppress("mouse-focus", for: 0.3)
+        suppressions.suppress("mouse-focus", for: 0.15)
 
         let screen = screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
@@ -1395,6 +1513,11 @@ class WindowManager {
             focusBorder.updatePosition(frame)
             refreshFloatingBorders(windows: allWindows)
         }
+        // brackets follow the same window if visible (Hypr held during retile)
+        if focusBrackets.isVisible, let bid = focusBrackets.trackedWindowID,
+           let w = stateCache.cachedWindows[bid], let frame = w.frame {
+            focusBrackets.updatePosition(frame)
+        }
         refreshDimming()
     }
 
@@ -1574,7 +1697,20 @@ class WindowManager {
     @objc private func appDidActivate(_ notification: Notification) {
         // suppress FFM while dock popups (downloads, stacks) are open
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
-            mouseTracker.dockIsActive = (app.bundleIdentifier == "com.apple.dock")
+            let isDock = (app.bundleIdentifier == "com.apple.dock")
+            mouseTracker.dockIsActive = isDock
+            if isDock {
+                // watchdog: if no app activates after the dock for 5s (user dismissed
+                // the popup with Escape, e.g.), clear it so FFM doesn't stay dead.
+                let token = dockActivationToken &+ 1
+                dockActivationToken = token
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+                    guard let self = self, self.dockActivationToken == token,
+                          self.mouseTracker.dockIsActive else { return }
+                    hyprLog(.notice, .mouse, "dockIsActive watchdog — clearing after 5s with no other activation")
+                    self.mouseTracker.dockIsActive = false
+                }
+            }
         }
 
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
@@ -1592,6 +1728,10 @@ class WindowManager {
 
                 if !hasVisibleWindow {
                     if let targetWS = appWorkspaces.filter({ !visibleWorkspaces.contains($0) }).min() {
+                        let bid = app.bundleIdentifier ?? "?"
+                        let wsSorted = appWorkspaces.sorted()
+                        let widList = appWindows.map { "\($0.key)→ws\(workspaceManager.workspaceFor($0.key) ?? -1)" }.joined(separator: ",")
+                        hyprLog(.notice, .lifecycle, "dock-affordance: \(bid) pid=\(pid) appWorkspaces=\(wsSorted) visible=\(visibleWorkspaces.sorted()) wids=[\(widList)] → switchWorkspace(\(targetWS))")
                         workspaceOrchestrator.switchWorkspace(targetWS)
                         return
                     }
@@ -1610,6 +1750,46 @@ class WindowManager {
         }
     }
 
+
+    /// Clear `dockIsActive` if the deactivating app is the dock. macOS
+    /// doesn't always fire `didActivate` for the next app (e.g. user
+    /// dismisses a dock popup with Escape), so the watchdog covers that
+    /// path; this is the fast cleanup when a sibling activation does fire.
+    @objc private func appDidDeactivate(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.bundleIdentifier == "com.apple.dock" else { return }
+        if mouseTracker.dockIsActive {
+            mouseTracker.dockIsActive = false
+        }
+    }
+
+    /// Active Space changed — most commonly because the user entered or
+    /// left a fullscreen app's Space. Re-evaluate chrome visibility from
+    /// the new focus target.
+    @objc private func activeSpaceDidChange(_ notification: Notification) {
+        if isFullscreenSuppressed(focused: currentFocusedWindow()) {
+            focusBorder.hide()
+            focusBorder.hideFloatingBorders()
+            dimmingOverlay.hideAll()
+        } else if let w = currentFocusedWindow() {
+            updateFocusBorder(for: w)
+        }
+    }
+
+    /// Wake / lock / unlock / session-change. Any of these can drop an
+    /// in-flight Hypr keyUp without triggering tap-disabled. Reset hotkey
+    /// state so the next regular keystroke isn't packed with a phantom
+    /// Hypr modifier (the "sticky Caps Lock" bug from a different angle).
+    @objc private func systemInterruption(_ notification: Notification) {
+        hyprLog(.notice, .hotkey, "system interruption (\(notification.name.rawValue)) — resetting hotkey state")
+        hotkeyManager.resetTrackingAfterTapInterruption()
+        // also clear stuck dock flag and menu-tracking flag — sleep dialogs
+        // and screen lock can leave either stale.
+        mouseTracker.dockIsActive = false
+        if mouseTracker.menuTracking {
+            mouseTracker.menuTrackingEnded()
+        }
+    }
 
     /// React to a new app launch. Half-second delay gives the app time to
     /// open its first window before discovery runs.

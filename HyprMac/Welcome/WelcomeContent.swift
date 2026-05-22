@@ -19,9 +19,29 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "capslock",
-            title: "No More Stuck Caps Lock",
-            description: "If macOS disabled HyprMac's event tap (under load, after sleep, or while another app captured the keyboard), the Hypr modifier state could get stuck \"down\" — every normal keystroke after that would silently fire whatever Hypr+letter keybind you had bound. HyprMac now clears modifier state whenever the tap re-enables, so the worst case is a single dropped chord instead of a runaway typing session."
+            icon: "viewfinder",
+            title: "Focus Brackets",
+            description: "Hold the Hypr key and rounded corner brackets snap inward around the focused window — a screenshot-tool-style visual cue showing which window your next action will target. The brackets match your window corner radius, use your focus color, and adapt their outline (white on dark colors, black on light) so they stay visible on any background. Shown always, regardless of whether the persistent focus border is on."
+        ),
+        WhatsNewFeature(
+            icon: "moon.haze",
+            title: "Smoother Dimming",
+            description: "The dim overlay now runs as one layer per window instead of one shape per display. On every focus traversal, the window you're leaving fades in and the window you're entering fades out — in parallel — instead of the whole mask repainting at once. Window moves and resizes no longer cause the dim to flicker."
+        ),
+        WhatsNewFeature(
+            icon: "timer",
+            title: "Animation Duration Slider",
+            description: "New control in Tiling settings to set how fast the focus border and dim overlay fade in and out. They animate in lockstep, so chrome always appears and disappears together. Drag it to 0 for instant, snap-cut chrome."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.inset.filled.on.rectangle",
+            title: "Quiet During Fullscreen",
+            description: "Focus border, floating outlines, dim overlay, and brackets all auto-hide when a macOS native fullscreen window is frontmost — full-screen movies, Safari HTML5 fullscreen, Cmd-Ctrl-F apps. No more HyprMac chrome drawing over your content."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.split.2x1",
+            title: "Better Multi-Monitor FFM",
+            description: "Focus-follows-mouse now works correctly on monitors stacked above the primary display. The dead-zone check at the top of each screen is anchored to that screen rather than to the primary, fixing a regression where FFM was effectively dead across the full height of a monitor positioned above your main one."
         ),
     ]
 }

@@ -163,11 +163,18 @@ class WorkspaceManager {
     /// Assign `windowID` to `workspace`, removing it from any prior
     /// workspace assignment in the same call.
     func assignWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
+        let oldDesc: String
         if let old = windowWorkspaces[windowID] {
             workspaceWindowSets[old]?.remove(windowID)
+            oldDesc = "ws\(old)"
+        } else {
+            oldDesc = "none"
         }
         windowWorkspaces[windowID] = workspace
         workspaceWindowSets[workspace, default: []].insert(windowID)
+        if oldDesc != "ws\(workspace)" {
+            hyprLog(.notice, .lifecycle, "assignWindow: wid=\(windowID) \(oldDesc) → ws\(workspace)")
+        }
     }
 
     /// Workspace a window is assigned to, or `nil` when no
@@ -198,11 +205,18 @@ class WorkspaceManager {
     /// `assignWindow`; the alias clarifies caller intent at the use
     /// site.
     func moveWindow(_ windowID: CGWindowID, toWorkspace workspace: Int) {
+        let oldDesc: String
         if let old = windowWorkspaces[windowID] {
             workspaceWindowSets[old]?.remove(windowID)
+            oldDesc = "ws\(old)"
+        } else {
+            oldDesc = "none"
         }
         windowWorkspaces[windowID] = workspace
         workspaceWindowSets[workspace, default: []].insert(windowID)
+        if oldDesc != "ws\(workspace)" {
+            hyprLog(.notice, .lifecycle, "moveWindow: wid=\(windowID) \(oldDesc) → ws\(workspace)")
+        }
     }
 
     /// Drop `windowID` from workspace tracking entirely. Used when the
@@ -302,7 +316,7 @@ class WorkspaceManager {
         let targetSID = screenID(for: targetScreen)
 
         if monitorWorkspace[targetSID] == number {
-            hyprLog(.debug, .lifecycle, "switch: ws\(number) already visible on \(targetScreen.localizedName)")
+            hyprLog(.notice, .lifecycle, "switch: ws\(number) already visible on \(targetScreen.localizedName)")
             return SwitchResult(toHide: [], toShow: windowIDs(onWorkspace: number),
                                 screen: targetScreen, alreadyVisible: true)
         }
@@ -313,7 +327,7 @@ class WorkspaceManager {
 
         monitorWorkspace[targetSID] = number
 
-        hyprLog(.debug, .lifecycle, "switch: \(targetScreen.localizedName) ws\(oldWorkspace)→ws\(number) (hide \(toHide.count), show \(toShow.count))")
+        hyprLog(.notice, .lifecycle, "switch: \(targetScreen.localizedName) ws\(oldWorkspace)→ws\(number) (hide \(toHide.count), show \(toShow.count))")
         return SwitchResult(toHide: toHide, toShow: toShow, screen: targetScreen, alreadyVisible: false)
     }
 }

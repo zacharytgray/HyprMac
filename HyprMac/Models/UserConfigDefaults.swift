@@ -22,6 +22,11 @@ enum UserConfigDefaults {
     static let showFocusBorder: Bool = true
     static let dimInactiveWindows: Bool = false
     static let dimIntensity: Double = 0.2
+    // shared fade duration for both the focus border (show/hide) and the
+    // dim overlay (per-window opacity transitions on focus traversal and
+    // global enable/disable). settle and shake on FocusBorder stay at
+    // their own constants.
+    static let chromeFadeDurationSec: Double = 0.22
     // focusBorderColorHex / floatingBorderColorHex are nil by default —
     // resolvedFocusBorderColor / resolvedFloatingBorderColor compute the
     // system color when nil.

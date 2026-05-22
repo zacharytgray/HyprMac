@@ -117,12 +117,30 @@ class HotkeyManager {
     /// regular keystroke gets packed with the Hypr modifier and triggers
     /// a chord the user didn't intend (the "stuck Caps Lock" bug). The
     /// next legitimate keyDown will re-establish state cleanly.
-    fileprivate func resetTrackingAfterTapInterruption() {
+    ///
+    /// Also called from `WindowManager` on sleep/wake/lock notifications,
+    /// since those can drop the Hypr keyUp without triggering a tap-disabled
+    /// event.
+    func resetTrackingAfterTapInterruption() {
         if hyprKeyDown {
             hyprLog(.notice, .hotkey, "resetting stuck hyprKeyDown after tap interruption")
         }
         setHyprKeyDown(false)
         pressedModifierKeyCodes.removeAll()
+    }
+
+    /// `true` when the HID layer currently reports the Hypr key as down.
+    /// Cheap syscall — one IOKit query.
+    ///
+    /// Returns `nil` when the answer can't be trusted — specifically when
+    /// the Caps Lock → F18 hidutil remap is active. The remap happens at
+    /// the IOKit layer, so the event tap sees F18 events while the session
+    /// state still reports F18 as up (no physical F18 is held). Querying
+    /// Caps Lock instead doesn't help — `kVK_CapsLock`'s session state
+    /// tracks the lock toggle, not the press state.
+    private func isHyprKeyActuallyDown() -> Bool? {
+        if hyprKey.usesCapsLockRemap { return nil }
+        return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(hyprKey.keyCode))
     }
 
     fileprivate func handleEvent(_ type: CGEventType, _ event: CGEvent) -> CGEvent? {
@@ -139,6 +157,17 @@ class HotkeyManager {
                 setHyprKeyDown(pressedModifierKeyCodes.contains(keyCode))
             }
             return nil // always swallow the Hypr key — it's our internal modifier
+        }
+
+        // sanity check on every non-Hypr keyDown: if we think Hypr is held
+        // but the HID layer says it isn't, our state is stale (dropped keyUp
+        // from sleep, lock, modal sheet, etc.). clear before packing flags
+        // so this stroke doesn't get routed as a chord. only runs when the
+        // HID query is trustworthy — under the Caps→F18 remap it lies, so
+        // we fall back to the sleep/wake/tap-disabled paths there.
+        if type == .keyDown, hyprKeyDown, isHyprKeyActuallyDown() == false {
+            hyprLog(.notice, .hotkey, "stale hyprKeyDown detected on keyCode=\(keyCode) — HID says \(hyprKey.displayName) is up; clearing")
+            setHyprKeyDown(false)
         }
 
         // only check keybinds on keyDown

@@ -154,7 +154,7 @@ final class FloatingWindowController {
     /// focused, so a floater hidden across a disconnected monitor still
     /// becomes reachable.
     func cycleFocus() {
-        suppressions.suppress("mouse-focus", for: 0.3)
+        suppressions.suppress("mouse-focus", for: 0.15)
         suppressions.suppress("activation-switch", for: 0.5)
 
         let visibleFloaters = stateCache.floatingWindowIDs.sorted().compactMap { wid -> HyprWindow? in

@@ -72,6 +72,12 @@ class UserConfig: ObservableObject {
     @Published var dimIntensity: Double {
         didSet { if !isReloading { save() } }
     }
+    // shared fade duration for the focus border show/hide and the dim
+    // overlay opacity transitions. Settings slider clamps to a sensible
+    // range; both subsystems read from this on every animation start.
+    @Published var chromeFadeDurationSec: Double {
+        didSet { if !isReloading { save() } }
+    }
 
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
@@ -124,6 +130,7 @@ class UserConfig: ObservableObject {
             self.floatingBorderColorHex = saved.floatingBorderColorHex
             self.dimInactiveWindows = saved.dimInactiveWindows ?? UserConfigDefaults.dimInactiveWindows
             self.dimIntensity = saved.dimIntensity ?? UserConfigDefaults.dimIntensity
+            self.chromeFadeDurationSec = saved.chromeFadeDurationSec ?? UserConfigDefaults.chromeFadeDurationSec
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = UserConfigDefaults.gapSize
@@ -139,6 +146,7 @@ class UserConfig: ObservableObject {
             self.floatingBorderColorHex = nil
             self.dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
             self.dimIntensity = UserConfigDefaults.dimIntensity
+            self.chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
         }
 
         // monitor settings: prefer the local file; fall back to (and migrate
@@ -205,7 +213,8 @@ class UserConfig: ObservableObject {
             floatingBorderColorHex: floatingBorderColorHex,
             dimInactiveWindows: dimInactiveWindows,
             dimIntensity: dimIntensity,
-            mouseHoverPollHz: mouseHoverPollHz)
+            mouseHoverPollHz: mouseHoverPollHz,
+            chromeFadeDurationSec: chromeFadeDurationSec)
     }
 
     func resetToDefaults() {
@@ -225,6 +234,7 @@ class UserConfig: ObservableObject {
         floatingBorderColorHex = nil
         dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
         dimIntensity = UserConfigDefaults.dimIntensity
+        chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
     }
 
     // resolve the border color — custom hex or system accent
@@ -256,6 +266,7 @@ class UserConfig: ObservableObject {
         floatingBorderColorHex = saved.floatingBorderColorHex
         dimInactiveWindows = saved.dimInactiveWindows ?? false
         dimIntensity = saved.dimIntensity ?? 0.2
+        chromeFadeDurationSec = saved.chromeFadeDurationSec ?? UserConfigDefaults.chromeFadeDurationSec
 
         // monitor settings come from the local file, not the synced config
         if let mc = store.loadSavedMonitorConfig() {
@@ -290,7 +301,8 @@ extension SavedConfig {
             focusBorderColorHex: nil, floatingBorderColorHex: nil,
             dimInactiveWindows: UserConfigDefaults.dimInactiveWindows,
             dimIntensity: UserConfigDefaults.dimIntensity,
-            mouseHoverPollHz: UserConfigDefaults.mouseHoverPollHz)
+            mouseHoverPollHz: UserConfigDefaults.mouseHoverPollHz,
+            chromeFadeDurationSec: UserConfigDefaults.chromeFadeDurationSec)
     }
 }
 

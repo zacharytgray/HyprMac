@@ -229,6 +229,7 @@ struct SavedConfig: Codable {
     let dimInactiveWindows: Bool?
     let dimIntensity: Double?
     let mouseHoverPollHz: Int?
+    let chromeFadeDurationSec: Double?
 }
 
 // monitor-specific settings — stored locally, never synced via iCloud

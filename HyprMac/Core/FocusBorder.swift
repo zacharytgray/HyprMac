@@ -55,7 +55,14 @@ class FocusBorder {
     private enum Tuning {
         static let settleDelaySec: TimeInterval = 0.5
         static let settleAnimationDurationSec: TimeInterval = 0.3
-        static let hideAnimationDurationSec: TimeInterval = 0.15
+        // fast enough to feel instant, slow enough to register visually.
+        // applied on transitions from hidden → active (workspace switch,
+        // app un-hide, fresh focus), on focus changes between windows, and
+        // when a floater's border first appears.
+        static let showAnimationDurationSec: TimeInterval = 0.22
+        static let hideAnimationDurationSec: TimeInterval = 0.28
+        static let floatingShowAnimationDurationSec: TimeInterval = 0.22
+        static let floatingHideAnimationDurationSec: TimeInterval = 0.28
         static let shakeStepDurationSec: TimeInterval = 0.04
         static let shakeOffsets: [CGFloat] = [10, -10, 7, -7, 3, -3, 0]
         static let shakeFadeDelaySec: TimeInterval = 0.15
@@ -69,6 +76,14 @@ class FocusBorder {
 
     // resolved from config — call updateColor() when config changes
     var accentCGColor: CGColor = NSColor.controlAccentColor.cgColor
+
+    /// Shared fade duration used by `show`, `hide`, the floating-border
+    /// counterparts, and the `flashError` follow-up. Settle (the
+    /// active-tint → outline transition) and shake keep their own
+    /// constants in `Tuning` — those are timing-of-interaction values,
+    /// not chrome appearance. Set by `WindowManager` from
+    /// `config.chromeFadeDurationSec`.
+    var fadeDurationSec: TimeInterval = Tuning.showAnimationDurationSec
 
     deinit {
         // tests and future ownership swaps may drop a FocusBorder mid-life;
@@ -107,6 +122,14 @@ class FocusBorder {
         shakeTimer?.cancel()
         shakeTimer = nil
 
+        // fade in on fresh appearance (panel orderedOut/nil'd, state hidden)
+        // AND on window-to-window switches — both feel jarring if snapped.
+        // Same-window repositioning (tile resize/move) keeps snap so the
+        // border tracks live geometry without animation lag.
+        let isFreshAppearance = (panel == nil) || (state == .hidden)
+        let isWindowSwitch = (trackedWindowID != nil) && (trackedWindowID != windowID)
+        let shouldFadeIn = isFreshAppearance || isWindowSwitch
+
         let expansion = Tuning.activeBorderWidth / 2
         let nsRect = panelRect(for: rect, expansion: expansion)
         let windowRadius = WindowCornerRadius.resolve(for: windowID)
@@ -134,35 +157,18 @@ class FocusBorder {
 
         p.alphaValue = 1.0
         p.orderFront(nil)
+        if let glow = glowView {
+            if shouldFadeIn {
+                fadeViewAlpha(glow, from: 0, to: 1, duration: fadeDurationSec)
+            } else {
+                glow.alphaValue = 1.0
+            }
+        }
         state = .active
         trackedWindowID = windowID
         trackedWindowFrame = rect
 
         // schedule transition to settled (outline only)
-        let work = DispatchWorkItem { [weak self] in self?.settle() }
-        settleWork = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.settleDelaySec, execute: work)
-    }
-
-    /// Re-paint the active-tint state on whichever window is currently
-    /// tracked, then schedule a settle. Used to flash the border when
-    /// the Hypr key is held — visual cue that an action is about to
-    /// fire on this window. No position change. No-op when no panel
-    /// is tracking a window. Bypasses `show`'s idempotency guard so the
-    /// flash actually re-fires on a window already being shown.
-    func flashActive() {
-        mainThreadOnly()
-        guard state != .hidden, let layer = glowView?.layer else { return }
-        settleWork?.cancel()
-        shakeTimer?.cancel()
-        shakeTimer = nil
-
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer.backgroundColor = accentCGColor.copy(alpha: Tuning.activeFillAlpha)
-        CATransaction.commit()
-        state = .active
-
         let work = DispatchWorkItem { [weak self] in self?.settle() }
         settleWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Tuning.settleDelaySec, execute: work)
@@ -198,13 +204,16 @@ class FocusBorder {
             let nsRect = panelRect(for: frame, expansion: expansion)
             let windowRadius = WindowCornerRadius.resolve(for: windowID)
             let border: BorderPanel
+            let isNewPanel: Bool
             if let existing = floatingPanels[windowID] {
                 border = existing
                 border.panel.setFrame(nsRect, display: false)
                 positionGlowView(border.glowView, in: border.panel)
+                isNewPanel = false
             } else {
                 border = makeFloatingPanel(frame: nsRect)
                 floatingPanels[windowID] = border
+                isNewPanel = true
             }
 
             if let layer = border.glowView.layer {
@@ -219,26 +228,34 @@ class FocusBorder {
 
             border.panel.alphaValue = 1.0
             border.panel.orderFront(nil)
+            if isNewPanel {
+                fadeViewAlpha(border.glowView, from: 0, to: 1,
+                              duration: fadeDurationSec)
+            } else {
+                border.glowView.alphaValue = 1.0
+            }
         }
     }
 
-    /// Order out every floating-border panel and drop the cache.
+    /// Order out every floating-border panel with a fade and drop the cache.
+    /// Captured panel references keep the windows alive through the animation
+    /// while the dict is cleared synchronously so a subsequent
+    /// `updateFloatingBorders` builds fresh panels.
     func hideFloatingBorders() {
         mainThreadOnly()
-        for (_, border) in floatingPanels {
-            border.panel.orderOut(nil)
-        }
+        let toFade = Array(floatingPanels.values)
         floatingPanels.removeAll()
         floaterFrames.removeAll()
+        for border in toFade { fadeOutAndOrderOut(border.panel, layer: border.glowView.layer, duration: fadeDurationSec) }
     }
 
-    /// Order out and forget the floating-border panel for `windowID`.
-    /// No-op when the id is unknown.
+    /// Order out and forget the floating-border panel for `windowID`,
+    /// with a fade. No-op when the id is unknown.
     func hideFloatingBorder(for windowID: CGWindowID) {
         mainThreadOnly()
         guard let border = floatingPanels.removeValue(forKey: windowID) else { return }
-        border.panel.orderOut(nil)
         floaterFrames.removeValue(forKey: windowID)
+        fadeOutAndOrderOut(border.panel, layer: border.glowView.layer, duration: fadeDurationSec)
     }
 
     /// Transition the focused-window panel from `active` (filled) to
@@ -278,15 +295,11 @@ class FocusBorder {
         // detach panel + glowView synchronously so a subsequent show()
         // builds a fresh panel rather than reusing the one we're fading out.
         // the captured `p` keeps the old panel alive through the animation.
+        let glowLayer = glowView?.layer
         panel = nil
         glowView = nil
 
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = Tuning.hideAnimationDurationSec
-            p.animator().alphaValue = 0
-        }, completionHandler: {
-            p.orderOut(nil)
-        })
+        fadeOutAndOrderOut(p, layer: glowLayer, duration: fadeDurationSec)
     }
 
     /// Flash a red border around `rect` and shake the window
@@ -466,9 +479,7 @@ class FocusBorder {
 
     private func makePanel(frame: NSRect) -> NSPanel {
         let p = makeBasePanel(frame: frame)
-        let glow = NSView()
-        glow.wantsLayer = true
-        glow.layer?.masksToBounds = true
+        let glow = makeGlowView()
         p.contentView?.addSubview(glow)
         glowView = glow
         positionGlowView(in: p)
@@ -478,12 +489,24 @@ class FocusBorder {
 
     private func makeFloatingPanel(frame: NSRect) -> BorderPanel {
         let p = makeBasePanel(frame: frame)
-        let glow = NSView()
-        glow.wantsLayer = true
-        glow.layer?.masksToBounds = true
+        let glow = makeGlowView()
         p.contentView?.addSubview(glow)
         positionGlowView(glow, in: p)
         return BorderPanel(panel: p, glowView: glow)
+    }
+
+    /// Layer-hosting glow view. We assign the CALayer BEFORE `wantsLayer`
+    /// so AppKit treats this as a layer-hosting view (we own the layer)
+    /// rather than layer-backed (AppKit re-syncs view→layer each draw).
+    /// In layer-hosting mode `CABasicAnimation` on opacity actually paints
+    /// the in-between frames instead of being instantly overridden.
+    private func makeGlowView() -> NSView {
+        let glow = NSView()
+        let hosted = CALayer()
+        hosted.masksToBounds = true
+        glow.layer = hosted
+        glow.wantsLayer = true
+        return glow
     }
 
     private func makeBasePanel(frame: NSRect) -> NSPanel {
@@ -501,6 +524,11 @@ class FocusBorder {
         p.hasShadow = false
         p.ignoresMouseEvents = true
         p.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        // Critical: the default `.utilityWindow` behavior applies a system
+        // fade on orderFront/orderOut that *replaces* explicit alpha
+        // animations on our content. With `.none`, our CABasicAnimation
+        // on the glow layer's opacity is what the user actually sees.
+        p.animationBehavior = .none
         return p
     }
 
@@ -515,6 +543,53 @@ class FocusBorder {
         // slightly larger than the window so the stroke (drawn inset
         // from glow's outer edge) lands centered on the window edge.
         glow.frame = content.bounds
+    }
+
+    // MARK: - fade helpers
+
+    /// Animate an NSView's `alphaValue`. Goes through NSAnimationContext +
+    /// the view's animator proxy — the documented, reliable path for
+    /// layer-backed NSViews. CALayer.opacity directly doesn't work here
+    /// because AppKit re-syncs the layer's properties from the view on
+    /// each draw cycle and overwrites the in-flight animation.
+    /// Panel-level (`NSWindow.alphaValue`) animations also no-op on these
+    /// borderless `.floating` non-activating panels for reasons not fully
+    /// understood — animating the contentView is what actually paints.
+    private func fadeViewAlpha(_ view: NSView, from: CGFloat, to: CGFloat, duration: TimeInterval) {
+        guard let layer = view.layer else { view.alphaValue = to; return }
+        layer.removeAnimation(forKey: "fade")
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = Float(from)
+        anim.toValue = Float(to)
+        anim.duration = duration
+        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        anim.fillMode = .both
+        anim.isRemovedOnCompletion = true
+        layer.opacity = Float(to)
+        layer.add(anim, forKey: "fade")
+    }
+
+    /// Fade the glow view to 0, then orderOut the panel. Captured panel
+    /// keeps the window alive through the animation.
+    private func fadeOutAndOrderOut(_ p: NSPanel, layer: CALayer?,
+                                    duration: TimeInterval) {
+        guard let glowLayer = (p.contentView?.subviews.first?.layer) else {
+            p.orderOut(nil); return
+        }
+        let fromOpacity = glowLayer.opacity
+        glowLayer.removeAnimation(forKey: "fade")
+        let anim = CABasicAnimation(keyPath: "opacity")
+        anim.fromValue = fromOpacity
+        anim.toValue = 0
+        anim.duration = duration
+        anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        anim.fillMode = .both
+        anim.isRemovedOnCompletion = false
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { p.orderOut(nil) }
+        glowLayer.opacity = 0
+        glowLayer.add(anim, forKey: "fade")
+        CATransaction.commit()
     }
 
     // MARK: - coordinate conversion

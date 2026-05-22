@@ -78,7 +78,7 @@ final class WorkspaceOrchestrator {
         // drift detection can falsely reassign windows.
         suppressions.suppress("workspace-transition", for: 1.5)
         suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.3)
+        suppressions.suppress("mouse-focus", for: 0.15)
 
         let currentScreen = screenUnderCursor()
 

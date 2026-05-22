@@ -64,6 +64,18 @@ class HyprWindow: Equatable, Hashable {
         return value as? String
     }
 
+    /// `true` when the window is in macOS native fullscreen mode (green
+    /// button, Cmd-Ctrl-F, browser HTML5 fullscreen, etc.). HyprMac hides
+    /// its chrome (focus border, dim mask, floating outlines) while a
+    /// fullscreen window is frontmost so it doesn't draw over a movie or
+    /// fullscreen app.
+    var isFullscreen: Bool {
+        var value: AnyObject?
+        let err = AXUIElementCopyAttributeValue(element, "AXFullScreen" as CFString, &value)
+        guard err == .success, let n = value as? NSNumber else { return false }
+        return n.boolValue
+    }
+
     /// Set `observedMinSize` from `AXMinimumSize` (or per-bundle-id
     /// fallback) when AX exposes a usable value. No-op when neither
     /// source produces one — `MinSizeMemory` will learn from readback
