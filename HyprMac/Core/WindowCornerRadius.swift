@@ -11,10 +11,11 @@ import Cocoa
 enum WindowCornerRadius {
 
     // Tahoe (macOS 26) renders noticeably rounder corners than Sequoia
-    // (15). everything else inherits the same value.
+    // (15). 16pt is Tahoe's default window corner radius; 10pt matches
+    // Sequoia and earlier.
     static let global: CGFloat = {
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 {
-            return 12
+            return 16
         }
         return 10
     }()

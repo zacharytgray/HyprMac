@@ -35,6 +35,8 @@ class FocusBorder {
     private var settleWork: DispatchWorkItem?
     private var shakeTimer: DispatchSourceTimer?
     private var state: State = .hidden
+    // pill shown centered in the error panel explaining a rejection.
+    private var messageBanner: NSView?
 
     // remembered CG frames — used by applyOcclusion to translate occluder
     // CG rects into glow-local NS coords. kept in sync with panel positions.
@@ -121,6 +123,8 @@ class FocusBorder {
         settleWork?.cancel()
         shakeTimer?.cancel()
         shakeTimer = nil
+        // drop a leftover error pill if show() reuses a panel mid-flash
+        removeMessageBanner()
 
         // fade in on fresh appearance (panel orderedOut/nil'd, state hidden)
         // AND on window-to-window switches — both feel jarring if snapped.
@@ -289,6 +293,7 @@ class FocusBorder {
         shakeTimer = nil
         trackedWindowID = nil
         trackedWindowFrame = nil
+        removeMessageBanner()
         guard let p = panel, state != .hidden else { return }
         state = .hidden
 
@@ -310,7 +315,9 @@ class FocusBorder {
     /// - Parameter window: when supplied, the actual window oscillates
     ///   along with the overlay panel; without it, only the overlay
     ///   shakes.
-    func flashError(around rect: CGRect, windowID: CGWindowID, window: HyprWindow? = nil) {
+    /// - Parameter message: short reason shown as a pill centered in the
+    ///   flashed window — e.g. "Not enough room to swap".
+    func flashError(around rect: CGRect, windowID: CGWindowID, window: HyprWindow? = nil, message: String? = nil) {
         mainThreadOnly()
         settleWork?.cancel()
         shakeTimer?.cancel()
@@ -344,6 +351,19 @@ class FocusBorder {
         state = .active
         trackedWindowID = windowID
         trackedWindowFrame = rect
+
+        // reason pill, centered over the flashed window
+        removeMessageBanner()
+        if let message, let content = p.contentView {
+            let banner = makeMessageBanner(message)
+            var f = banner.frame
+            f.origin.x = (content.bounds.width - f.width) / 2
+            f.origin.y = (content.bounds.height - f.height) / 2
+            banner.frame = f
+            banner.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+            content.addSubview(banner)
+            messageBanner = banner
+        }
 
         // shake: oscillate both the overlay panel and the actual window
         let panelBaseX = nsRect.origin.x
@@ -507,6 +527,35 @@ class FocusBorder {
         glow.layer = hosted
         glow.wantsLayer = true
         return glow
+    }
+
+    // MARK: - error message banner
+
+    private func removeMessageBanner() {
+        messageBanner?.removeFromSuperview()
+        messageBanner = nil
+    }
+
+    /// Dark rounded pill holding a centered white reason string. Sized to
+    /// fit the text plus padding; positioned by the caller.
+    private func makeMessageBanner(_ text: String) -> NSView {
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 13, weight: .semibold)
+        label.textColor = .white
+        label.alignment = .center
+        label.sizeToFit()
+
+        let padX: CGFloat = 14, padY: CGFloat = 8
+        let pill = NSView(frame: NSRect(x: 0, y: 0,
+                                        width: label.frame.width + padX * 2,
+                                        height: label.frame.height + padY * 2))
+        pill.wantsLayer = true
+        pill.layer?.backgroundColor = NSColor.black.withAlphaComponent(0.78).cgColor
+        pill.layer?.cornerRadius = 10
+        label.frame = NSRect(x: padX, y: padY,
+                             width: label.frame.width, height: label.frame.height)
+        pill.addSubview(label)
+        return pill
     }
 
     private func makeBasePanel(frame: NSRect) -> NSPanel {

@@ -185,7 +185,8 @@ final class WorkspaceOrchestrator {
                 hyprLog(.debug, .workspace, "workspace \(number) can't fit '\(focused.title ?? "?")' on \(targetScreen.localizedName) — rejected move")
                 NSSound.beep()
                 if let frame = focused.frame {
-                    focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
+                    focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
+                                           message: "Won't fit on workspace \(number)")
                 }
                 return
             }
@@ -200,7 +201,8 @@ final class WorkspaceOrchestrator {
                     hyprLog(.debug, .workspace, "workspace \(number) full (\(tiledCount) tiled, max \(maxWindows)) — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
-                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused)
+                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
+                                               message: "Workspace \(number) is full")
                     }
                     return
                 }
