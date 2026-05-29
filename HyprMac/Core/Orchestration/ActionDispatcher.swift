@@ -279,7 +279,10 @@ final class ActionDispatcher {
         // *live* AX frame for tiled windows, not the layout-intended rect.
         let intended = tilingEngine.intendedTileRects()
         let frameFor: (HyprWindow) -> CGRect? = { intended[$0.windowID] ?? $0.frame }
+        // diag: source rect (intended vs live) + physical screen. see directional-focus bug.
+        hyprLog(.debug, .orchestration, "focus \(direction): src '\(focused.title ?? "?")' (\(focused.windowID)) intended=\(intended[focused.windowID].map { "\($0)" } ?? "nil") live=\(focused.frame.map { "\($0)" } ?? "nil") screen=\(displayManager.screen(for: focused)?.localizedName ?? "?")")
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor) {
+            hyprLog(.debug, .orchestration, "focus \(direction): -> '\(target.title ?? "?")' (\(target.windowID)) frameFor=\(frameFor(target).map { "\($0)" } ?? "nil") live=\(target.frame.map { "\($0)" } ?? "nil") screen=\(displayManager.screen(for: target)?.localizedName ?? "?")")
             target.focusWithoutRaise()
             cursorManager.warpToCenter(of: target)
             focusController.recordFocus(target.windowID, reason: "focusInDirection")

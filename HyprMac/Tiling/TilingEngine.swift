@@ -135,14 +135,23 @@ class TilingEngine {
     ///   change (see plan §4.2 — deferred for risk reasons).
     func handleDisplayChange(currentScreens: [NSScreen],
                              homeScreenForWorkspace: (Int) -> NSScreen?) {
-        let currentKeys = Set(currentScreens.map { TilingKey(workspace: 0, screen: $0).screenID })
-
         var migrations: [(old: TilingKey, dest: NSScreen)] = []
         var orphans: [TilingKey] = []
 
+        // static anchoring guarantees exactly one home screen per workspace, so
+        // a tree is stale unless it sits on its workspace's *current* home. this
+        // catches two cases: (1) the home screen vanished (lid close / unplug),
+        // and (2) the home moved to a different live screen after a reconnect —
+        // e.g. ws1's home is the laptop when it's alone, but the leftmost
+        // external once monitors return. case (2) leaves a tree behind on a
+        // screen that still exists, so a plain "is the screen still here?" check
+        // misses it and the window ends up duplicated across two trees, feeding
+        // intendedTileRects a wrong-monitor rect and scrambling directional focus.
         for key in trees.keys {
-            if currentKeys.contains(key.screenID) { continue }
-            if let dest = homeScreenForWorkspace(key.workspace) {
+            let dest = homeScreenForWorkspace(key.workspace)
+            let homeID = dest.map { TilingKey(workspace: key.workspace, screen: $0).screenID }
+            if homeID == key.screenID { continue }
+            if let dest {
                 migrations.append((key, dest))
             } else {
                 orphans.append(key)
@@ -156,11 +165,11 @@ class TilingEngine {
             // been visited there before. prefer the larger one — it's most
             // likely the active one the user expects to keep.
             if let existing = trees[newKey], existing.allWindows.count >= tree.allWindows.count {
-                hyprLog(.debug, .lifecycle, "display change: kept existing tree for ws \(oldKey.workspace) on dest screen, dropped vanished tree (\(tree.allWindows.count) windows)")
+                hyprLog(.notice, .lifecycle, "display change: ws\(oldKey.workspace) sid=\(oldKey.screenID) was misplaced/stale — kept home tree, dropped it (\(tree.allWindows.count) windows)")
                 continue
             }
             trees[newKey] = tree
-            hyprLog(.debug, .lifecycle, "display change: migrated tree for ws \(oldKey.workspace) (\(tree.allWindows.count) windows)")
+            hyprLog(.notice, .lifecycle, "display change: migrated ws\(oldKey.workspace) tree from sid=\(oldKey.screenID) to home (\(tree.allWindows.count) windows)")
         }
 
         for key in orphans {
@@ -434,12 +443,24 @@ class TilingEngine {
     /// neighbor from the candidate set.
     func intendedTileRects() -> [CGWindowID: CGRect] {
         var out: [CGWindowID: CGRect] = [:]
+        // diag: track which (ws, screen) tree last wrote each windowID so a
+        // window living in two trees (stale dup) is loud. see directional-focus bug.
+        var sourceTree: [CGWindowID: String] = [:]
         for (key, t) in trees {
             guard let screen = displayManager.screens.first(where: {
                 TilingKey(workspace: key.workspace, screen: $0) == key
-            }) else { continue }
+            }) else {
+                hyprLog(.notice, .tiling, "intendedRects: tree ws\(key.workspace) sid=\(key.screenID) matches NO current screen — skipped (\(t.allWindows.count) windows)")
+                continue
+            }
             let rect = displayManager.cgRect(for: screen)
+            hyprLog(.debug, .tiling, "intendedRects: tree ws\(key.workspace) sid=\(key.screenID) -> '\(screen.localizedName)' rect=\(rect) (\(t.allWindows.count) windows)")
             for (window, frame) in t.layout(in: rect, gap: gapSize, padding: outerPadding) {
+                let tag = "ws\(key.workspace)@\(screen.localizedName)"
+                if let prev = sourceTree[window.windowID] {
+                    hyprLog(.notice, .tiling, "intendedRects: DUP windowID \(window.windowID) '\(window.title ?? "?")' in both [\(prev)] and [\(tag)] — \(tag) wins rect=\(frame)")
+                }
+                sourceTree[window.windowID] = tag
                 out[window.windowID] = frame
             }
         }
