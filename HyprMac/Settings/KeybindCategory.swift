@@ -19,7 +19,7 @@ enum KeybindCategory: String, CaseIterable {
             return .focusNav
         case .swapDirection, .toggleFloating, .toggleSplit, .closeWindow:
             return .windowManagement
-        case .switchWorkspace, .moveToWorkspace, .moveWorkspaceToMonitor, .cycleWorkspace:
+        case .switchWorkspace, .moveToWorkspace, .moveWindowToMonitor, .cycleWorkspace:
             return .workspaces
         case .launchApp:
             return .apps

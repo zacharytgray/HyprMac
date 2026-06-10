@@ -26,7 +26,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case swapDirection          = "Swap Direction"
         case switchWorkspace        = "Switch Workspace"
         case moveToWorkspace        = "Move to Workspace"
-        case moveWorkspaceToMonitor = "Move Workspace to Monitor"
+        case moveWindowToMonitor    = "Move Window to Monitor"
         case toggleFloating         = "Toggle Floating"
         case toggleSplit            = "Toggle Split"
         case showKeybinds           = "Show Keybinds"
@@ -52,7 +52,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .swapDirection(let d):          selectedAction = .swapDirection;          directionParam = d
         case .switchWorkspace(let n):        selectedAction = .switchWorkspace;        workspaceParam = n
         case .moveToWorkspace(let n):        selectedAction = .moveToWorkspace;        workspaceParam = n
-        case .moveWorkspaceToMonitor(let d): selectedAction = .moveWorkspaceToMonitor; directionParam = d
+        case .moveWindowToMonitor(let d):    selectedAction = .moveWindowToMonitor;    directionParam = d
         case .toggleFloating:                selectedAction = .toggleFloating
         case .toggleSplit:                   selectedAction = .toggleSplit
         case .showKeybinds:                  selectedAction = .showKeybinds
@@ -75,7 +75,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .swapDirection:          action = .swapDirection(directionParam)
         case .switchWorkspace:        action = .switchWorkspace(workspaceParam)
         case .moveToWorkspace:        action = .moveToWorkspace(workspaceParam)
-        case .moveWorkspaceToMonitor: action = .moveWorkspaceToMonitor(directionParam)
+        case .moveWindowToMonitor:    action = .moveWindowToMonitor(directionParam)
         case .toggleFloating:         action = .toggleFloating
         case .toggleSplit:            action = .toggleSplit
         case .showKeybinds:           action = .showKeybinds

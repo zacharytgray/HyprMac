@@ -13,3 +13,17 @@ import AppKit
 /// shared helper if a third caller appears or if the conversion
 /// pattern grows beyond `primaryScreenHeight - y`.
 enum CoordinateSpace {}
+
+extension CGRect {
+    /// `true` when at least `threshold` of this rect's area overlaps
+    /// `screenRect`. The shared "is this frame a real on-screen position
+    /// or a hide-corner sliver?" test used by snapshot capture,
+    /// discovery, float-toggle restore, and floating-frame saves.
+    func isSubstantiallyVisible(on screenRect: CGRect, threshold: CGFloat = 0.25) -> Bool {
+        let overlap = intersection(screenRect)
+        guard !overlap.isNull else { return false }
+        let area = width * height
+        guard area > 0 else { return false }
+        return (overlap.width * overlap.height) / area > threshold
+    }
+}

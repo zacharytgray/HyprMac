@@ -21,9 +21,12 @@ enum Action: Equatable {
     case swapDirection(Direction)
     case switchWorkspace(Int)
     case moveToWorkspace(Int)
-    /// Move the current workspace to the adjacent monitor. Only
-    /// `.left` / `.right` are meaningful.
-    case moveWorkspaceToMonitor(Direction)
+    /// Move the focused window to the adjacent monitor's visible
+    /// workspace. Only `.left` / `.right` are meaningful. Encodes
+    /// under the legacy `"moveWorkspaceToMonitor"` wire key — the
+    /// action was repurposed when static workspace anchoring made
+    /// workspace-to-monitor moves a permanent no-op.
+    case moveWindowToMonitor(Direction)
     case toggleFloating
     case toggleSplit
     case showKeybinds
@@ -59,7 +62,7 @@ extension Action: Codable {
         case swapDirection
         case switchWorkspace        = "switchDesktop"
         case moveToWorkspace        = "moveToDesktop"
-        case moveWorkspaceToMonitor
+        case moveWindowToMonitor    = "moveWorkspaceToMonitor"
         case toggleFloating
         case toggleSplit
         case showKeybinds
@@ -76,6 +79,7 @@ extension Action: Codable {
     private static let aliases: [String: CaseKey] = [
         "switchWorkspace": .switchWorkspace,
         "moveToWorkspace": .moveToWorkspace,
+        "moveWindowToMonitor": .moveWindowToMonitor,
     ]
 
     private enum PayloadKey: String, CodingKey {
@@ -107,8 +111,8 @@ extension Action: Codable {
             self = .focusDirection(try Self.decodeDirection(inner, field: "focusDirection"))
         case .swapDirection:
             self = .swapDirection(try Self.decodeDirection(inner, field: "swapDirection"))
-        case .moveWorkspaceToMonitor:
-            self = .moveWorkspaceToMonitor(try Self.decodeDirection(inner, field: "moveWorkspaceToMonitor"))
+        case .moveWindowToMonitor:
+            self = .moveWindowToMonitor(try Self.decodeDirection(inner, field: "moveWindowToMonitor"))
         case .switchWorkspace:
             self = .switchWorkspace(try inner.decode(Int.self, forKey: ._0))
         case .moveToWorkspace:
@@ -147,8 +151,8 @@ extension Action: Codable {
         case .swapDirection(let d):
             var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .swapDirection)
             try p.encode(d.rawValue, forKey: ._0)
-        case .moveWorkspaceToMonitor(let d):
-            var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .moveWorkspaceToMonitor)
+        case .moveWindowToMonitor(let d):
+            var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .moveWindowToMonitor)
             try p.encode(d.rawValue, forKey: ._0)
         case .switchWorkspace(let n):
             var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .switchWorkspace)

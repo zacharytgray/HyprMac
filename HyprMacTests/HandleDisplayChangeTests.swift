@@ -37,16 +37,17 @@ final class HandleDisplayChangeTests: XCTestCase {
         XCTAssertNil(engine.existingTree(forWorkspace: 1, screen: screen))
     }
 
-    func testHandleDisplayChangeIsNoopWhenAllScreensCurrent() {
+    func testHandleDisplayChangeIsNoopWhenTreeOnItsHome() {
         engine.prepareTileLayout([makeWindow(id: 1), makeWindow(id: 2)],
                                  onWorkspace: 1, screen: screen)
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)
         XCTAssertNotNil(tree)
         let countBefore = tree?.allWindows.count
 
-        engine.handleDisplayChange(currentScreens: [screen], homeScreenForWorkspace: { _ in nil })
+        // a tree already sitting on its workspace's current home is left alone.
+        // (a nil home means "no live home" and prunes — covered above.)
+        engine.handleDisplayChange(currentScreens: [screen], homeScreenForWorkspace: { _ in self.screen })
 
-        // tree untouched — no key vanished
         XCTAssertNotNil(engine.existingTree(forWorkspace: 1, screen: screen))
         XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: screen)?.allWindows.count, countBefore)
     }

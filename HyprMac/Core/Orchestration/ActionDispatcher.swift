@@ -162,8 +162,8 @@ final class ActionDispatcher {
             workspaceOrchestrator.switchWorkspace(num)
         case .moveToWorkspace(let num):
             workspaceOrchestrator.moveToWorkspace(num)
-        case .moveWorkspaceToMonitor(let dir):
-            workspaceOrchestrator.moveCurrentWorkspaceToMonitor(dir)
+        case .moveWindowToMonitor(let dir):
+            workspaceOrchestrator.moveWindowToMonitor(dir)
         case .toggleFloating:
             toggleFloating()
         case .toggleSplit:
@@ -332,6 +332,10 @@ final class ActionDispatcher {
         let ok = tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
         if !ok {
             rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
+            // the revert retiled — sync the cache, but don't warp the
+            // cursor: nothing moved from the user's point of view.
+            updatePositionCache()
+            return
         }
         cursorManager.warpToCenter(of: focused)
         updatePositionCache()

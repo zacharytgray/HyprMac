@@ -172,15 +172,18 @@ final class WorkspaceOrchestrator {
 
         let isFloating = stateCache.floatingWindowIDs.contains(focused.windowID)
 
+        hyprLog(.notice, .workspace, "moveToWorkspace(\(number)): '\(focused.title ?? "?")' (\(focused.windowID)) floating=\(isFloating) currentWs=\(currentWorkspace.map(String.init) ?? "nil") srcScreen=\(screen.localizedName)")
+
         // when coming from disabled monitor, unfloat so it enters tiling on target
         let willTile = onDisabledMonitor || !isFloating
 
-        // check capacity on target workspace before moving a tiled window.
         // target screen is the workspace's static home — same answer
         // whether the workspace is currently visible or hidden.
-        if willTile {
-            let targetScreen = workspaceManager.homeScreenForWorkspace(number) ?? screen
+        let targetScreen = workspaceManager.homeScreenForWorkspace(number) ?? screen
+        let targetVisible = workspaceManager.screenForWorkspace(number) != nil
 
+        // check capacity on target workspace before moving a tiled window.
+        if willTile {
             if !tilingEngine.canFitWindow(focused, onWorkspace: number, screen: targetScreen) {
                 hyprLog(.debug, .workspace, "workspace \(number) can't fit '\(focused.title ?? "?")' on \(targetScreen.localizedName) — rejected move")
                 NSSound.beep()
@@ -226,29 +229,130 @@ final class WorkspaceOrchestrator {
             // reassign globally
             workspaceManager.moveWindow(focused.windowID, toWorkspace: number)
 
-            // hide the window — target workspace may not be visible.
-            // park on the workspace's static home monitor, not the source
-            // screen. AeroSpace pattern: a window assigned to ws N belongs
-            // physically near ws N's monitor so the next show is a no-op
-            // hide-corner→tile transition on a single screen.
-            if isFloating && !onDisabledMonitor {
-                workspaceManager.saveFloatingFrame(focused)
+            if targetVisible {
+                // target workspace is on screen — no park. tiled windows
+                // get their frame from the retile that follows; floaters
+                // are carried to the target screen directly. parking here
+                // used to strand floaters in the hide corner: nothing
+                // restores a floating frame until the next workspace
+                // switch, and the switch's hide pass would re-save the
+                // park position as the "real" frame.
+                hyprLog(.notice, .workspace, "moveToWorkspace(\(number)): target visible — placing '\(focused.title ?? "?")' (\(focused.windowID)) on \(targetScreen.localizedName) tiled=\(willTile)")
+                if !willTile {
+                    carryFloaterToScreen(focused, targetScreen)
+                }
+            } else {
+                // target hidden — park at the global hide corner until the
+                // workspace is shown. park on the workspace's static home
+                // monitor, not the source screen (AeroSpace pattern: a
+                // window assigned to ws N belongs physically near ws N's
+                // monitor so the next show is a single-screen transition).
+                if isFloating && !onDisabledMonitor {
+                    workspaceManager.saveFloatingFrame(focused)
+                }
+                hyprLog(.notice, .workspace, "moveToWorkspace(\(number)): parking '\(focused.title ?? "?")' (\(focused.windowID)) homeScreen=\(targetScreen.localizedName) at \(workspaceManager.hidePosition())")
+                workspaceManager.hideInCorner(focused, on: targetScreen)
             }
-            let parkScreen = workspaceManager.homeScreenForWorkspace(number) ?? screen
-            workspaceManager.hideInCorner(focused, on: parkScreen)
-        }, {
+        }, { [self] in
+            if targetVisible {
+                // destination is on screen — focus follows the window,
+                // matching switchWorkspace's focus+warp behavior.
+                focused.focusWithoutRaise()
+                cursorManager.warpToCenter(of: focused)
+                focusController.recordFocus(focused.windowID, reason: "moveToWorkspace-follow")
+                updateFocusBorder(focused)
+            } else {
+                // window vanished into a hidden workspace — re-anchor focus
+                // on whatever remains on the source workspace instead of
+                // leaving the border tracking a parked window.
+                refocusAfterMove(on: screen, excluding: focused.windowID)
+            }
             NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         })
     }
 
-    // MARK: - move workspace to adjacent monitor
+    /// Place a floating window onto `screen`, preserving its size and its
+    /// relative position. No-op when the floater is already substantially
+    /// visible on the target screen.
+    private func carryFloaterToScreen(_ window: HyprWindow, _ screen: NSScreen) {
+        guard let frame = window.frame else { return }
+        let targetRect = displayManager.cgRect(for: screen)
+        if frame.isSubstantiallyVisible(on: targetRect, threshold: 0.5) { return }
 
-    /// No-op under static workspace anchoring. Workspaces are pinned to
-    /// monitors by `(N - 1) % enabledMonitorCount` and cannot move.
-    /// Beeps so the user gets immediate feedback that the keybind fired
-    /// but the action is rejected.
-    func moveCurrentWorkspaceToMonitor(_ direction: Direction) {
-        hyprLog(.debug, .workspace, "moveWorkspaceToMonitor: rejected (workspaces are statically anchored)")
-        NSSound.beep()
+        let sourceScreen = displayManager.screen(for: window) ?? screen
+        let sourceRect = displayManager.cgRect(for: sourceScreen)
+        let relX = sourceRect.width > 0 ? (frame.midX - sourceRect.minX) / sourceRect.width : 0.5
+        let relY = sourceRect.height > 0 ? (frame.midY - sourceRect.minY) / sourceRect.height : 0.5
+        let size = CGSize(width: min(frame.width, targetRect.width),
+                          height: min(frame.height, targetRect.height))
+        var origin = CGPoint(x: targetRect.minX + relX * targetRect.width - size.width / 2,
+                             y: targetRect.minY + relY * targetRect.height - size.height / 2)
+        origin.x = max(targetRect.minX, min(origin.x, targetRect.maxX - size.width))
+        origin.y = max(targetRect.minY, min(origin.y, targetRect.maxY - size.height))
+        window.setFrame(CGRect(origin: origin, size: size))
+    }
+
+    /// Focus the best remaining window on `screen`'s active workspace
+    /// after `movedID` left it. Prefers tiled windows; hides the chrome
+    /// when the workspace emptied out.
+    private func refocusAfterMove(on screen: NSScreen, excluding movedID: CGWindowID) {
+        guard !workspaceManager.isMonitorDisabled(screen) else { return }
+        let ws = workspaceManager.workspaceForScreen(screen)
+        let remaining = workspaceManager.windowIDs(onWorkspace: ws)
+            .subtracting(stateCache.hiddenWindowIDs)
+            .subtracting([movedID])
+            .filter { stateCache.cachedWindows[$0] != nil }
+            .sorted()
+        let pick = remaining.first { !stateCache.floatingWindowIDs.contains($0) } ?? remaining.first
+        guard let wid = pick, let w = stateCache.cachedWindows[wid] else {
+            focusBorder.hide(); dimmingOverlay.hideAll()
+            return
+        }
+        w.focusWithoutRaise()
+        focusController.recordFocus(wid, reason: "moveToWorkspace-refocus")
+        updateFocusBorder(w)
+    }
+
+    // MARK: - move window to adjacent monitor
+
+    /// Move the focused window to the monitor adjacent in `direction`,
+    /// landing on whatever workspace is visible there. Delegates to
+    /// `moveToWorkspace` so capacity checks, floater handling, and focus
+    /// follow all behave identically to `Hypr+Shift+N`.
+    ///
+    /// Replaces the old workspace-to-monitor move, which static
+    /// anchoring turned into a permanent no-op.
+    func moveWindowToMonitor(_ direction: Direction) {
+        guard direction == .left || direction == .right else {
+            NSSound.beep()
+            return
+        }
+        guard let focused = currentFocusedWindow(),
+              let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else {
+            NSSound.beep()
+            return
+        }
+
+        let enabled = displayManager.screens.filter { !workspaceManager.isMonitorDisabled($0) }
+        let candidates = enabled.filter {
+            direction == .left
+                ? $0.frame.maxX <= screen.frame.minX + 1
+                : $0.frame.minX >= screen.frame.maxX - 1
+        }
+        // nearest screen in the requested direction
+        let target = direction == .left
+            ? candidates.max(by: { $0.frame.origin.x < $1.frame.origin.x })
+            : candidates.min(by: { $0.frame.origin.x < $1.frame.origin.x })
+        guard let target else {
+            hyprLog(.debug, .workspace, "moveWindowToMonitor(\(direction.rawValue)): no monitor in that direction")
+            NSSound.beep()
+            if let frame = focused.frame {
+                focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
+                                       message: "No monitor to the \(direction.rawValue)")
+            }
+            return
+        }
+
+        moveToWorkspace(workspaceManager.workspaceForScreen(target))
     }
 }

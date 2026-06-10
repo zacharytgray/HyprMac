@@ -87,7 +87,9 @@ The physical Hypr key is configurable in Settings → General. Options include C
 | `⇪ + F` | Cycle focus through floating windows |
 | `⇪ + 1–9` | Switch to workspace N |
 | `⇪ + ⇧ + 1–9` | Move window to workspace N |
-| `⇪ + ⌃ + ←/→` | Move workspace to adjacent monitor |
+| `⇪ + ⌃ + ←/→` | Move window to adjacent monitor |
+| `⇪ + ⇥` / `⇪ + ⇧ + ⇥` | Cycle occupied workspaces on current monitor |
+| `⇪ + W` | Close window |
 | `⇪ + K` | Show keybind overlay |
 | `⇪ + ↵` | Launch/focus Terminal |
 | `⇪ + \`` | Warp cursor to menu bar |
@@ -114,10 +116,12 @@ Focus-follows-mouse and the macOS menu bar don't always play nicely together —
 
 HyprMac manages 9 workspaces entirely in userspace, bypassing macOS Spaces.
 
-- Workspaces are assigned to monitors left-to-right on launch (monitor 1 → ws 1, monitor 2 → ws 2, etc.)
-- Each workspace remembers its **home monitor** — switching back returns it there
-- Switching to a workspace that's already visible on another monitor focuses that monitor instead
+- Every workspace is **statically anchored** to a monitor: `(N − 1) mod monitorCount`, left to right. With 3 monitors, workspaces 1/4/7 live on the left, 2/5/8 in the middle, 3/6/9 on the right
+- Switching to workspace N always lands on its home monitor — workspace identity never drifts between monitors
+- Switching to a workspace that's already visible just focuses its monitor
+- `⇪ + ⌃ + ←/→` throws the focused window to the adjacent monitor's visible workspace
 - Inactive windows are hidden off-screen (a macOS constraint — one pixel remains visible in a corner)
+- Monitor connects/disconnects preserve workspace assignments; layouts migrate to each workspace's current home
 
 A single macOS Space per monitor is recommended for the cleanest experience.
 
@@ -141,7 +145,7 @@ HotkeyManager (CGEventTap)
                 ↓
         TilingEngine.applyLayout (two-pass via FrameReadbackPoller)
                 ↓
-        FocusBorder, DimmingOverlay, WindowAnimator (visual layer)
+        FocusBorder, FocusBrackets, DimmingOverlay (visual layer)
 ```
 
 Polling and discovery run in parallel:
@@ -154,7 +158,7 @@ PollingScheduler (1 Hz timer + coalesced notification triggers)
 
 Window-keyed state lives in `WindowStateCache`; focus state in `FocusStateController`; date-gated suppressions (`activation-switch`, `mouse-focus`, `cross-swap-in-flight`) in `SuppressionRegistry`. BSP trees live in `TilingEngine` (one per `(workspace, screen)` pair) with smart insert backtracking on constrained monitors and two-pass min-size resolution via `FrameReadbackPoller`.
 
-Everything runs on the main thread. UI-touching classes (`FocusBorder`, `DimmingOverlay`, `KeybindOverlayController`, `CursorManager`, `WindowAnimator`, `MouseTrackingManager`) assert this in DEBUG via `mainThreadOnly()`.
+Everything runs on the main thread. UI-touching classes (`FocusBorder`, `DimmingOverlay`, `KeybindOverlayController`, `CursorManager`, `MouseTrackingManager`) assert this in DEBUG via `mainThreadOnly()`.
 
 For deeper reading:
 

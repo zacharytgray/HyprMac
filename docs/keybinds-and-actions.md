@@ -13,7 +13,7 @@ enum Action: Equatable {
     case swapDirection(Direction)
     case switchWorkspace(Int)
     case moveToWorkspace(Int)
-    case moveWorkspaceToMonitor(Direction)
+    case moveWindowToMonitor(Direction)
     case toggleFloating
     case toggleSplit
     case showKeybinds
@@ -28,9 +28,12 @@ enum Action: Equatable {
 `Direction` is `enum Direction: String, Codable { left, right, up, down }`.
 
 `cycleWorkspace(Int)` takes `+1` (next occupied workspace on the
-current monitor) or `-1` (previous). `moveWorkspaceToMonitor`
-accepts the full four-way `Direction` for symmetry, but the
-dispatcher only honors `.left` / `.right`.
+current monitor) or `-1` (previous). `moveWindowToMonitor` accepts
+the full four-way `Direction` for symmetry, but the orchestrator
+only honors `.left` / `.right`. It moves the focused window to the
+adjacent monitor's visible workspace — the case was repurposed from
+the old workspace-to-monitor move, which static anchoring made a
+permanent no-op; its wire key is unchanged (see below).
 
 ## JSON wire format
 
@@ -53,22 +56,26 @@ produces for cases with no associated values.
 ## Frozen case keys
 
 The JSON case keys are an API guarantee. The `switchWorkspace` /
-`moveToWorkspace` cases were renamed in code (formerly
-`switchDesktop` / `moveToDesktop`); the JSON wire format keeps the
-legacy names indefinitely:
+`moveToWorkspace` / `moveWindowToMonitor` cases were renamed in code
+(formerly `switchDesktop` / `moveToDesktop` /
+`moveWorkspaceToMonitor`); the JSON wire format keeps the legacy
+names indefinitely:
 
 ```swift
 private enum CaseKey: String, CodingKey {
-    case switchWorkspace = "switchDesktop"
-    case moveToWorkspace = "moveToDesktop"
+    case switchWorkspace     = "switchDesktop"
+    case moveToWorkspace     = "moveToDesktop"
+    case moveWindowToMonitor = "moveWorkspaceToMonitor"
     // ...
 }
 ```
 
 The decoder also accepts the new names as aliases, so a hand-edited
-config using `switchWorkspace` decodes cleanly. The encoder always
-writes the canonical (legacy) name. End result: existing user
-configs never see noisy churn after an in-code rename.
+config using `switchWorkspace` or `moveWindowToMonitor` decodes
+cleanly. The encoder always writes the canonical (legacy) name. End
+result: existing user configs never see noisy churn after an
+in-code rename — and existing `Hypr+Ctrl+arrow` binds picked up the
+new move-window semantics with no config change.
 
 This pattern generalizes — any future case rename should add an
 alias entry rather than break the wire format.

@@ -52,8 +52,8 @@ singleton except `UserConfig.shared` and `MenuBarState.shared`.
 | `DragManager` | Classifies drag gestures into resize / swap / cross-monitor / snap-back. |
 | `DragSwapHandler` | Applies the classified drag (tree mutation, workspace reassignment, animation). |
 | `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. |
+| `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. |
 | `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. |
-| `WindowAnimator` | Screenshot-proxy frame tweens for tile transitions. |
 | `CursorManager` | Cursor warp via `CGWarpMouseCursorPosition` + reassociate dance. |
 | `AppLauncherManager` | Launch-or-focus path for the `launchApp` action. |
 | `KeybindOverlayController` | HUD panel listing every active keybind (`Hypr+K`). |
@@ -108,7 +108,7 @@ WindowStateCache mutations
         ↓
 TilingEngine.applyLayout (two-pass via FrameReadbackPoller)
         ↓
-FocusBorder, DimmingOverlay, WindowAnimator (visual layer)
+FocusBorder, FocusBrackets, DimmingOverlay (visual layer)
 ```
 
 Polling / discovery (parallel):
@@ -142,7 +142,7 @@ PollingScheduler.timer or NSWorkspace notifications
 Every public method runs on the main thread. The CGEventTap callback,
 mouse monitors, and `NSWorkspace` notifications all fire on the main
 run loop. UI-touching classes (`FocusBorder`, `DimmingOverlay`,
-`KeybindOverlayController`, `CursorManager`, `WindowAnimator`,
+`KeybindOverlayController`, `CursorManager`,
 `MouseTrackingManager`) call `mainThreadOnly()` on entry so an
 off-main caller crashes loudly in DEBUG.
 
@@ -167,13 +167,29 @@ toggle.
 
 HyprMac maintains nine virtual workspaces in userspace. macOS native
 Spaces are bypassed — use one native Space per monitor. Inactive
-workspaces park their windows at the bottom-right corner of their home
-screen (a 1 px sliver remains visible; macOS limitation).
+workspaces park their windows at a single global hide position: 1 px
+inside the bottom-right corner of the **rightmost** monitor (a 1 px
+sliver remains visible; macOS limitation). The rightmost edge has no
+neighbor, so the parked window's off-screen extension never overlaps
+another monitor and macOS's rescale-to-neighbor bug cannot fire.
 
-Each workspace remembers a home screen — the monitor it was last
-shown on. Switching to a hidden workspace returns it to its home
-screen, not the cursor's screen, so workspace identity does not
-drift across monitors over time.
+Every workspace is **statically anchored** to a home screen:
+`enabledScreens[(N - 1) % enabledScreens.count]`, left to right.
+Switching to workspace N always lands on its home; workspaces cannot
+move between monitors, so workspace identity never drifts. The
+`moveWindowToMonitor` action (`Hypr+Ctrl+←/→`) moves the focused
+*window* to the adjacent monitor's visible workspace instead.
+
+Monitor connect/disconnect runs `WindowManager.reconcileAfterDisplayChange`:
+visible-workspace mapping refreshes (`initializeMonitors`), BSP trees
+migrate to each workspace's current home
+(`TilingEngine.handleDisplayChange`), hidden-workspace windows
+re-park at the (possibly moved) global corner, and visible workspaces
+retile. Workspace assignments and the floating set are preserved —
+full redistribution (`distributeWindowsAcrossWorkspaces`) runs only at
+first launch and on explicit "Retile All". Discovery polling is
+suppressed through the settle window so drift detection cannot
+reassign windows from their OS-shuffled mid-transition positions.
 
 See `docs/desktop-switching-notes.md` for the deeper implementation
 notes on workspace switching.

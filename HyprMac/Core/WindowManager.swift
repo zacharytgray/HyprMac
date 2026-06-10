@@ -340,6 +340,9 @@ class WindowManager {
             guard let self, self.isRunning else { return }
             self.spaceManager.setup()
             self.workspaceManager.initializeMonitors()
+            // seed the fingerprint so the first (often spurious)
+            // screen-parameters notification after launch is a no-op.
+            self.lastDisplayFingerprint = self.displayFingerprint()
             self.snapshotAndTile()
             // start polling only after the initial tile so pollWindowChanges can't
             // race against snapshotAndTile, claim all windows as new, and trigger
@@ -1046,7 +1049,7 @@ class WindowManager {
             }
         }
 
-        // windows on re-enabled monitors: unfloat and let snapshotAndTile pick them up
+        // windows on re-enabled monitors: unfloat and let the reconcile pick them up
         for screen in displayManager.screens where !workspaceManager.isMonitorDisabled(screen) {
             for w in allWindows {
                 guard let wScreen = displayManager.screen(for: w),
@@ -1060,8 +1063,10 @@ class WindowManager {
             }
         }
 
-        workspaceManager.initializeMonitors()
-        snapshotAndTile()
+        // enable/disable shifts every workspace's static home (the modulo
+        // formula counts enabled screens) — reconcile preserves workspace
+        // assignments instead of redistributing everything.
+        reconcileAfterDisplayChange()
     }
 
     // MARK: - tiling
@@ -1081,17 +1086,30 @@ class WindowManager {
     ///    workspace.
     /// 5. Distribute and tile.
     ///
-    /// Called from `start()` after the initial AX-settle delay, on screen
-    /// parameter changes, and from menu-driven "Retile All".
+    /// Called from `start()` after the initial AX-settle delay, from
+    /// menu-driven "Retile All", and on max-splits config changes. NOT
+    /// called on screen parameter changes — `reconcileAfterDisplayChange`
+    /// handles those without rewriting workspace assignments.
     func snapshotAndTile() {
         let allWindows = accessibility.getAllWindows()
+        classifyAndAssign(allWindows)
+        distributeWindowsAcrossWorkspaces()
+        tileAllVisibleSpaces()
+    }
+
+    /// Classification half of the snapshot: capture original frames,
+    /// register ownership, auto-float excluded apps and disabled-monitor
+    /// windows, and assign unassigned windows to their physical screen's
+    /// active workspace. Idempotent — already-known windows keep their
+    /// state and workspace assignment.
+    private func classifyAndAssign(_ allWindows: [HyprWindow]) {
         tilingEngine.primeMinimumSizes(allWindows)
         for w in allWindows {
             if let frame = w.frame, stateCache.originalFrames[w.windowID] == nil {
                 // only save if the frame is actually visible on some screen.
                 // after a restart, windows may still be at the previous session's hide corner.
                 let onScreen = displayManager.screens.contains { screen in
-                    isFrameVisible(frame, on: displayManager.cgRect(for: screen))
+                    frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
                 }
                 if onScreen {
                     stateCache.originalFrames[w.windowID] = frame
@@ -1120,8 +1138,47 @@ class WindowManager {
 
             assignToScreenWorkspace(w)
         }
-        distributeWindowsAcrossWorkspaces()
-        tileAllVisibleSpaces()
+    }
+
+    /// Non-destructive reaction to a monitor topology change.
+    ///
+    /// Unlike `snapshotAndTile`, workspace assignments and the floating
+    /// set are preserved: `initializeMonitors` remaps which workspace is
+    /// visible per screen, `handleDisplayChange` migrates BSP trees to
+    /// each workspace's current home, hidden-workspace windows are
+    /// re-parked (the global park corner moves when the rightmost
+    /// monitor changes), and visible workspaces retile onto their homes.
+    /// The previous behavior — full `snapshotAndTile` with
+    /// `distributeWindowsAcrossWorkspaces` — rewrote every window's
+    /// workspace assignment and un-floated manual floats on every
+    /// monitor connect/disconnect.
+    private func reconcileAfterDisplayChange() {
+        workspaceManager.initializeMonitors()
+        tilingEngine.handleDisplayChange(
+            currentScreens: displayManager.screens,
+            homeScreenForWorkspace: { [weak self] ws in
+                self?.workspaceManager.homeScreenForWorkspace(ws)
+            }
+        )
+        let allWindows = accessibility.getAllWindows()
+        classifyAndAssign(allWindows)
+        reparkHiddenWorkspaceWindows(allWindows)
+        tileAllVisibleSpaces(windows: allWindows)
+    }
+
+    /// Re-park every window assigned to a hidden workspace at the current
+    /// global hide position. After a monitor connect/disconnect the
+    /// rightmost screen — and with it the park corner — can move; windows
+    /// left at the old corner would sit fully visible mid-screen (or on a
+    /// dead coordinate) while their workspace is still hidden.
+    private func reparkHiddenWorkspaceWindows(_ allWindows: [HyprWindow]) {
+        for w in allWindows {
+            guard let ws = workspaceManager.workspaceFor(w.windowID),
+                  !workspaceManager.isWorkspaceVisible(ws),
+                  let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first
+            else { continue }
+            workspaceManager.hideInCorner(w, on: screen)
+        }
     }
 
     /// Tile each enabled screen's active workspace with the windows
@@ -1449,18 +1506,6 @@ class WindowManager {
         animatedRetile()
     }
 
-
-    /// `true` when at least 25% of `frame` overlaps `screenRect`. Used to
-    /// decide whether a captured frame represents a real on-screen position
-    /// or a hide-corner sliver from a previous session.
-    private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
-        let overlap = frame.intersection(screenRect)
-        guard !overlap.isNull else { return false }
-        let overlapArea = overlap.width * overlap.height
-        let frameArea = frame.width * frame.height
-        guard frameArea > 0 else { return false }
-        return overlapArea / frameArea > 0.25
-    }
 
     private func distanceSquared(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
         let dx = a.x - b.x
@@ -1826,34 +1871,38 @@ class WindowManager {
     @objc private func screenParametersChanged() {
         let names = displayManager.screens.map { $0.localizedName }.joined(separator: ", ")
         hyprLog(.notice, .lifecycle, "screenParametersChanged fired (current screens: [\(names)])")
+        // hold discovery off through the settle window. a poll between the
+        // topology change and the reconcile below reads windows at their
+        // OS-shuffled positions and drift-reassigns them to whatever
+        // workspace happens to own the screen they got dumped on.
+        suppressions.suppress("workspace-transition", for: 2.0)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
             guard let self else { return }
             // skip if nothing actually changed. macOS fires the notification
             // for things that don't alter the screen list (call init, app
-            // quits, color profile changes), and the redistribute below is
-            // destructive — it scrambles workspace assignments.
-            let fingerprint = self.displayManager.screens
-                .map { "\($0.localizedName)@\($0.frame)" }
-                .joined(separator: "|")
+            // quits, color profile changes).
+            let fingerprint = self.displayFingerprint()
             if fingerprint == self.lastDisplayFingerprint {
-                hyprLog(.notice, .lifecycle, "screen layout unchanged — skipping snapshotAndTile")
+                hyprLog(.notice, .lifecycle, "screen layout unchanged — skipping reconcile")
                 return
             }
             self.lastDisplayFingerprint = fingerprint
             self.focusBorder.primaryScreenHeight = self.displayManager.primaryScreenHeight
-            // ordering: DisplayManager.refresh runs automatically via the same
-            // notification; WorkspaceManager.initializeMonitors must run before
-            // TilingEngine.handleDisplayChange so the home-screen lookup is
-            // current. see plan §4.2.
-            self.workspaceManager.initializeMonitors()
-            self.tilingEngine.handleDisplayChange(
-                currentScreens: self.displayManager.screens,
-                homeScreenForWorkspace: { [weak self] ws in
-                    self?.workspaceManager.homeScreenForWorkspace(ws)
-                }
-            )
-            self.snapshotAndTile()
+            self.focusBrackets.primaryScreenHeight = self.displayManager.primaryScreenHeight
+            // ordering inside reconcileAfterDisplayChange: DisplayManager.refresh
+            // already ran via the same notification; initializeMonitors runs
+            // before TilingEngine.handleDisplayChange so the home-screen
+            // lookup the engine consults is current.
+            self.reconcileAfterDisplayChange()
         }
+    }
+
+    /// Stable string identity for the current monitor layout. Used to
+    /// drop spurious `didChangeScreenParameters` fires.
+    private func displayFingerprint() -> String {
+        displayManager.screens
+            .map { "\($0.localizedName)@\($0.frame)" }
+            .joined(separator: "|")
     }
 
     /// Handler for the `.hyprMacRetileAll` notification posted from the

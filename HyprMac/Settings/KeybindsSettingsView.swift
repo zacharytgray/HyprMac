@@ -221,7 +221,7 @@ struct KeybindEditorSheet: View {
                 .labelsHidden()
 
                 switch vm.selectedAction {
-                case .focusDirection, .swapDirection, .moveWorkspaceToMonitor:
+                case .focusDirection, .swapDirection, .moveWindowToMonitor:
                     DirectionPicker(direction: $vm.directionParam)
                 case .switchWorkspace, .moveToWorkspace:
                     WorkspacePicker(workspace: $vm.workspaceParam)

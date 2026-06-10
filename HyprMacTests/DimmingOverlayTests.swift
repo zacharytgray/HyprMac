@@ -13,19 +13,22 @@ import AppKit
 final class DimmingOverlayTests: XCTestCase {
 
     // helper: make an overlay whose screen-coordinate math lines up with
-    // whatever NSScreen.main reports, and whose tile rects we generate
-    // below will all land on the primary screen.
+    // production. DisplayManager anchors CG top-left conversion to the
+    // PRIMARY screen (NSScreen.screens.first, the one at NS origin) —
+    // NOT NSScreen.main, which is wherever the key window happens to be
+    // and broke these tests on multi-monitor rigs.
     private func makeOverlay() -> DimmingOverlay {
         let overlay = DimmingOverlay()
         overlay.enabled = true
         overlay.intensity = 0.25
-        overlay.primaryScreenHeight = NSScreen.main?.frame.height ?? 1080
+        overlay.primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 1080
         return overlay
     }
 
-    // helper: a CG-coords (top-left origin) rect that we know intersects
-    // the primary screen. inset 100px so multi-monitor offsets don't push
-    // it off the primary.
+    // helper: a CG-coords (top-left origin) rect near the primary
+    // screen's top-left. CG (0,0) is the primary's top-left corner, so
+    // small positive coords always land on the primary regardless of
+    // how external monitors are arranged.
     private func cgRectOnPrimary(x: CGFloat, y: CGFloat, w: CGFloat = 200, h: CGFloat = 200) -> CGRect {
         return CGRect(x: x, y: y, width: w, height: h)
     }

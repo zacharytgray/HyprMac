@@ -150,7 +150,7 @@ final class WindowDiscoveryService {
         for w in snapshot where !stateCache.knownWindowIDs.contains(w.windowID) {
             if let frame = w.frame {
                 let onScreen = displayManager.screens.contains { screen in
-                    isFrameVisible(frame, on: displayManager.cgRect(for: screen))
+                    frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
                 }
                 if onScreen {
                     stateCache.originalFrames[w.windowID] = frame
@@ -350,15 +350,4 @@ final class WindowDiscoveryService {
         return visibleArea / frameArea > 0.5
     }
 
-    /// `true` when at least 25 % of `frame` overlaps `screenRect`. Used
-    /// to decide whether a captured frame is on-screen for the purposes
-    /// of seeding `originalFrames`.
-    private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
-        let overlap = frame.intersection(screenRect)
-        guard !overlap.isNull else { return false }
-        let overlapArea = overlap.width * overlap.height
-        let frameArea = frame.width * frame.height
-        guard frameArea > 0 else { return false }
-        return overlapArea / frameArea > 0.25
-    }
 }

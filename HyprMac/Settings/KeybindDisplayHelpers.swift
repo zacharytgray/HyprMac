@@ -33,7 +33,7 @@ extension Keybind {
             return "number.circle"
         case .moveToWorkspace:
             return "arrow.up.right.square"
-        case .moveWorkspaceToMonitor:
+        case .moveWindowToMonitor:
             return "rectangle.2.swap"
         case .toggleFloating:
             return "macwindow.and.cursorarrow"
@@ -60,7 +60,7 @@ extension Keybind {
         case .swapDirection(let d):         return "Swap \(d.rawValue.capitalized)"
         case .switchWorkspace(let n):       return "Switch to Workspace \(n)"
         case .moveToWorkspace(let n):       return "Move to Workspace \(n)"
-        case .moveWorkspaceToMonitor(let d): return "Move Workspace \(d.rawValue.capitalized)"
+        case .moveWindowToMonitor(let d):   return "Move Window to \(d.rawValue.capitalized) Monitor"
         case .toggleFloating:               return "Toggle Floating"
         case .toggleSplit:                  return "Toggle Split Direction"
         case .showKeybinds:                 return "Show Keybind Overlay"

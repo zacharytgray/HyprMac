@@ -19,14 +19,24 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "app.dashed",
-            title: "Rounder Focus Corners",
-            description: "The focus border, corner brackets, and dim overlay now round to 16pt on macOS Tahoe — matching the system's own window corner radius — so HyprMac's chrome traces your window edges exactly instead of cutting across them."
+            icon: "display.2",
+            title: "Stable Across Monitor Changes",
+            description: "Plugging in or unplugging a display no longer scrambles your layout. Workspace assignments and floating windows are preserved across monitor changes — your trees migrate to each workspace's home screen instead of being redistributed from scratch."
         ),
         WhatsNewFeature(
-            icon: "exclamationmark.bubble",
-            title: "Rejection Messages",
-            description: "When a swap or workspace move is rejected, a short message now appears over the shaking window explaining why — \"Not enough room to swap here\", \"Workspace 3 is full\" — so it's no longer a mystery why an action didn't go through."
+            icon: "rectangle.2.swap",
+            title: "Send Windows Between Monitors",
+            description: "Hypr + Ctrl + Left/Right now throws the focused window to the next monitor, landing on whatever workspace is showing there. (Workspaces are pinned to their monitors, so this replaces the old move-workspace shortcut that could no longer do anything.)"
+        ),
+        WhatsNewFeature(
+            icon: "macwindow.on.rectangle",
+            title: "Reliable Window Moves",
+            description: "Sending a window to another workspace now places it correctly every time — floating windows that used to get stranded in the corner are carried to the right screen, and focus follows the move."
+        ),
+        WhatsNewFeature(
+            icon: "checkmark.shield",
+            title: "Smoother First Launch",
+            description: "HyprMac now starts the instant you grant Accessibility access — no relaunch, no dead-end retry button. The permission screen also explains the duplicate-entry cleanup that trips people up after an update."
         ),
     ]
 }

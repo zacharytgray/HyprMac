@@ -253,11 +253,20 @@ class WorkspaceManager {
     }
 
     /// Capture `window`'s current frame so it can be restored after a
-    /// workspace switch. No-op when the window has no readable frame.
+    /// workspace switch. No-op when the window has no readable frame or
+    /// when the frame is off-screen — saving a hide-corner park position
+    /// would strand the floater in the corner sliver on the next
+    /// restore. Keeps any previously-saved on-screen frame instead.
     func saveFloatingFrame(_ window: HyprWindow) {
-        if let frame = window.frame {
-            savedFloatingFrames[window.windowID] = frame
+        guard let frame = window.frame else { return }
+        let onScreen = displayManager.screens.contains { screen in
+            frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
         }
+        guard onScreen else {
+            hyprLog(.debug, .lifecycle, "saveFloatingFrame: skipped off-screen frame for \(window.windowID)")
+            return
+        }
+        savedFloatingFrames[window.windowID] = frame
     }
 
     /// Apply the saved floating frame to `window` and clear the saved
@@ -267,26 +276,6 @@ class WorkspaceManager {
             window.setFrame(frame)
             savedFloatingFrames.removeValue(forKey: window.windowID)
         }
-    }
-
-    /// Result of `moveWorkspace`: which workspace moved, which one
-    /// the source screen fell back to, and which one was displaced
-    /// off the target screen.
-    /// Result of `moveWorkspace`. Static anchoring makes this struct
-    /// effectively unused — kept for API compatibility with the
-    /// orchestrator's `moveCurrentWorkspaceToMonitor` flow which now
-    /// always rejects.
-    struct MoveResult {
-        let movedWs: Int
-        let fallbackWs: Int
-        let targetOldWs: Int
-    }
-
-    /// Always returns `nil` — workspaces are statically anchored and
-    /// cannot move between monitors.
-    func moveWorkspace(from sourceScreen: NSScreen, to targetScreen: NSScreen, monitorCount: Int) -> MoveResult? {
-        hyprLog(.debug, .lifecycle, "moveWorkspace: rejected (workspaces are statically anchored)")
-        return nil
     }
 
     /// Result of `switchWorkspace`. `toHide` and `toShow` are window

@@ -43,9 +43,10 @@ final class KeybindDecoderToleranceTests: XCTestCase {
     }
 
     func testMoveWorkspaceToMonitorWireFormatDecodes() throws {
+        // legacy wire key — decodes to the repurposed moveWindowToMonitor case
         let json = #"{"action":{"moveWorkspaceToMonitor":{"_0":"left"}},"keyCode":123,"modifiers":9}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
-        XCTAssertEqual(kb.action, .moveWorkspaceToMonitor(.left))
+        XCTAssertEqual(kb.action, .moveWindowToMonitor(.left))
         XCTAssertEqual(kb.modifiers, [.hypr, .control])
     }
 
@@ -121,7 +122,7 @@ final class KeybindDecoderToleranceTests: XCTestCase {
     func testMalformedMoveWorkspaceDirectionFallsBack() throws {
         let json = #"{"action":{"moveWorkspaceToMonitor":{"_0":"sideways"}},"keyCode":123,"modifiers":9}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
-        XCTAssertEqual(kb.action, .moveWorkspaceToMonitor(.right))
+        XCTAssertEqual(kb.action, .moveWindowToMonitor(.right))
     }
 
     // MARK: - mixed-shape arrays
@@ -208,6 +209,22 @@ final class KeybindDecoderToleranceTests: XCTestCase {
         let json = #"{"action":{"moveToWorkspace":{"_0":5}},"keyCode":23,"modifiers":3}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
         XCTAssertEqual(kb.action, .moveToWorkspace(5))
+    }
+
+    func testMoveWindowToMonitorAliasDecodes() throws {
+        // hand-edited configs may use the new in-code spelling
+        let json = #"{"action":{"moveWindowToMonitor":{"_0":"right"}},"keyCode":124,"modifiers":9}"#
+        let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
+        XCTAssertEqual(kb.action, .moveWindowToMonitor(.right))
+    }
+
+    func testEncoderProducesMoveWorkspaceToMonitorKey() throws {
+        // the legacy wire key is frozen — moveWindowToMonitor must encode
+        // under "moveWorkspaceToMonitor" so existing configs see no churn
+        let kb = Keybind(keyCode: 124, modifiers: [.hypr, .control], action: .moveWindowToMonitor(.right))
+        let s = String(data: try JSONEncoder().encode(kb), encoding: .utf8)!
+        XCTAssertTrue(s.contains(#""moveWorkspaceToMonitor":{"_0":"right"}"#),
+                      "expected moveWorkspaceToMonitor key in encoded JSON: \(s)")
     }
 
     func testEncoderDoesNotEmitWorkspaceAliases() throws {

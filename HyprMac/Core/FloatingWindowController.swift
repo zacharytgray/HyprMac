@@ -105,7 +105,7 @@ final class FloatingWindowController {
                     stateCache.floatingWindowIDs.insert(evicted.windowID)
                     let screenRect = displayManager.cgRect(for: screen)
                     if let original = stateCache.originalFrames[evicted.windowID],
-                       isFrameVisible(original, on: screenRect) {
+                       original.isSubstantiallyVisible(on: screenRect) {
                         evicted.setFrame(original)
                     } else {
                         let sz = evicted.size ?? CGSize(width: 800, height: 600)
@@ -128,7 +128,7 @@ final class FloatingWindowController {
 
                 let screenRect = displayManager.cgRect(for: screen)
                 if let original = stateCache.originalFrames[window.windowID],
-                   isFrameVisible(original, on: screenRect) {
+                   original.isSubstantiallyVisible(on: screenRect) {
                     window.position = original.origin
                     window.size = original.size
                     hyprLog(.debug, .floating, "floated window '\(window.title ?? "?")' → restored \(original)")
@@ -176,7 +176,7 @@ final class FloatingWindowController {
         // bring offscreen floaters to center of nearest screen
         if let frame = target.frame {
             let onScreen = displayManager.screens.contains { screen in
-                isFrameVisible(frame, on: displayManager.cgRect(for: screen))
+                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
             }
             if !onScreen {
                 let screen = displayManager.screens.first ?? NSScreen.main!
@@ -313,18 +313,4 @@ final class FloatingWindowController {
         return needsRaise
     }
 
-    // MARK: - private helpers
-
-    /// `true` when at least 25 % of `frame` overlaps `screenRect`.
-    /// Matches the duplicate in `WindowManager` and
-    /// `WindowDiscoveryService`; tracked as an extraction candidate but
-    /// kept inline until a third caller appears.
-    private func isFrameVisible(_ frame: CGRect, on screenRect: CGRect) -> Bool {
-        let overlap = frame.intersection(screenRect)
-        guard !overlap.isNull else { return false }
-        let overlapArea = overlap.width * overlap.height
-        let frameArea = frame.width * frame.height
-        guard frameArea > 0 else { return false }
-        return overlapArea / frameArea > 0.25
-    }
 }

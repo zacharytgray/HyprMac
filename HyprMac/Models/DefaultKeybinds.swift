@@ -45,11 +45,11 @@ extension Keybind {
                                  action: .moveToWorkspace(i + 1)))
         }
 
-        // hypr + ctrl + left/right: move current workspace to adjacent monitor
+        // hypr + ctrl + left/right: move focused window to adjacent monitor
         binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .control],
-                             action: .moveWorkspaceToMonitor(.left)))
+                             action: .moveWindowToMonitor(.left)))
         binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: [.hypr, .control],
-                             action: .moveWorkspaceToMonitor(.right)))
+                             action: .moveWindowToMonitor(.right)))
 
         // hypr + shift + t: toggle floating
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_T), modifiers: [.hypr, .shift],
