@@ -88,6 +88,19 @@ class WindowManager {
     // and that's prohibitively expensive.
     private var preDragFocusedID: CGWindowID = 0
 
+    // armed when a drag starts on a visible floating window while dim is on
+    // (normal mode). drives dimmingOverlay.setDragOverride so the bright carve
+    // hole tracks the floater live instead of trailing on the 1Hz poll.
+    private struct DimDragState {
+        let id: CGWindowID
+        let window: HyprWindow
+        let startFrame: CGRect      // CG top-left, captured at mouse-down
+        let downPointCG: CGPoint
+        var resizing = false        // flipped once a cheap AX size read shows a size change
+        var lastSizeCheck: TimeInterval = 0
+    }
+    private var dimDrag: DimDragState?
+
     // true while the Hypr key is physically held. drives focusBrackets — when held,
     // every focus change re-targets the brackets so they track Hypr+arrow even
     // across workspace switches (which transiently hide the focus border).
@@ -195,6 +208,11 @@ class WindowManager {
         scratchpad.animatedRetile = { [weak self] prepare, completion in
             self?.animatedRetile(prepare: prepare, completion: completion)
         }
+        scratchpad.raiseScrim = { [weak self] in
+            guard let self else { return }
+            self.refreshDimming()
+            self.dimmingOverlay.orderFrontAll()
+        }
         self.pollingScheduler = PollingScheduler { [weak self] in
             self?.pollWindowChanges()
         }
@@ -257,6 +275,7 @@ class WindowManager {
         floatingController.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        floatingController.adoptIntoScratchpad = { [weak self] w, frame in self?.scratchpad.adopt(w, preferredFrame: frame) }
 
         // drag-result handler
         self.dragSwapHandler = DragSwapHandler(
@@ -271,6 +290,7 @@ class WindowManager {
         )
         dragSwapHandler.updatePositionCache = { [weak self] windows in self?.updatePositionCache(windows: windows) }
         dragSwapHandler.tileAllVisibleSpaces = { [weak self] windows in self?.tileAllVisibleSpaces(windows: windows) }
+        dragSwapHandler.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
 
         // action dispatcher — owns the per-Action routing previously in handleAction.
         self.actionDispatcher = ActionDispatcher(
@@ -302,14 +322,13 @@ class WindowManager {
         // direction swaps both surface the same red-border + beep feedback.
         dragSwapHandler.rejectSwap = { [weak self] window, reason in self?.actionDispatcher.rejectSwap(window, reason: reason) }
 
+        // tree-fit failures spill into the scratchpad as floating members
+        // (overflow buffer) instead of floating in place. the pre-tile
+        // original frame is the summon-back frame. excluded-bundle and
+        // disabled-monitor floats do NOT route here — they stay plain floating.
         tilingEngine.onAutoFloat = { [weak self] window in
             guard let self = self else { return }
-            window.isFloating = true
-            self.stateCache.floatingWindowIDs.insert(window.windowID)
-            if let original = self.stateCache.originalFrames[window.windowID] {
-                window.setFrame(original)
-            }
-            hyprLog(.debug, .lifecycle, "auto-floated '\(window.title ?? "?")' — screen full")
+            self.scratchpad.adopt(window, preferredFrame: self.stateCache.originalFrames[window.windowID])
         }
 
         // react to enabled toggling (including mid-flight config rewrites from iCloud sync)
@@ -640,6 +659,7 @@ class WindowManager {
             self.mouseButtonDown = true
             self.mouseDraggedSinceDown = false
             self.captureMouseDownFrames()
+            self.armDimDragIfFloating()
             // a menu open at the OS level eats clicks before we'd see them
             // here, so a global mouseDown reaching us is unambiguous proof
             // there is no menu currently tracking. clears the flag if a
@@ -670,6 +690,7 @@ class WindowManager {
             if self.mouseDownFloatingWindowID != 0 {
                 self.focusBorder.hideFloatingBorder(for: self.mouseDownFloatingWindowID)
             }
+            self.updateDimDrag()
             guard self.preDragFocusedID == 0 else { return }
             guard let tid = self.focusBorder.trackedWindowID else { return }
             // only hide for floating windows — tiled windows can't be free-dragged
@@ -685,6 +706,10 @@ class WindowManager {
             self?.mouseDraggedSinceDown = false
             self?.mouseDownTiledFrames.removeAll()
             self?.mouseDownFloatingWindowID = 0
+            if self?.dimDrag != nil {
+                self?.dimDrag = nil
+                self?.dimmingOverlay.clearDragOverride()
+            }
             if shouldDetectDrag {
                 self?.handleMouseUp(startFrames: startFrames)
             }
@@ -726,6 +751,10 @@ class WindowManager {
         mouseUpMonitor = nil
         mouseDownTiledFrames.removeAll()
         mouseDownFloatingWindowID = 0
+        // teardown can land mid-drag — drop the overlay's override too or a
+        // stale carve hole survives until the next full update
+        dimDrag = nil
+        dimmingOverlay.clearDragOverride()
     }
 
     /// Apply focus-follows-mouse to `window` without changing z-order.
@@ -871,23 +900,24 @@ class WindowManager {
     /// - Parameter focusedID: Override for the "bright" window. Defaults to
     ///   `focusBorder.trackedWindowID`, then `focusController.lastFocusedID`.
     private func refreshDimming(focusedID: CGWindowID? = nil) {
-        // scratchpad scrim: dim every monitor edge-to-edge with the members
-        // carved out. runs regardless of the dim-inactive-windows setting —
-        // the scrim is what makes the layer read as a deliberate surface.
+        // scratchpad scrim: dim every monitor edge-to-edge at .normal level.
+        // members are raised ABOVE it at show time (stack recency, not
+        // carve-outs), so nothing is carved and member drags never touch the
+        // scrim. runs regardless of the dim-inactive-windows setting — the
+        // scrim is what makes the layer read as a deliberate surface.
         if scratchpad.isVisible {
             dimmingOverlay.enabled = true
+            dimmingOverlay.panelLevel = .normal
             dimmingOverlay.setIntensity(ScratchpadController.scrimIntensity)
             dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
             var screenCovers: [CGWindowID: CGRect] = [:]
             for (i, screen) in displayManager.screens.enumerated() {
                 screenCovers[CGWindowID(UInt32.max - 1 - UInt32(i))] = displayManager.cgRect(for: screen)
             }
-            let memberFrames = floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 2)
-                .filter { scratchpad.isSummoned($0.key) }
             dimmingOverlay.update(
                 focusedID: CGWindowID(UInt32.max),
                 tiledRects: screenCovers,
-                floatingRects: memberFrames,
+                floatingRects: [:],
                 screens: displayManager.screens
             )
             return
@@ -899,6 +929,7 @@ class WindowManager {
             return
         }
         dimmingOverlay.enabled = config.dimInactiveWindows
+        dimmingOverlay.panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
         dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
         dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
         dimmingOverlay.update(
@@ -1062,11 +1093,12 @@ class WindowManager {
             case .switchWorkspace, .cycleWorkspace:
                 scratchpad.hide(reason: .workspaceAction)
             case .toggleFloating:
-                // on a summoned member: eject back into tiling (the way OUT
-                // of the scratchpad). otherwise treat as a send.
-                if !scratchpad.ejectFocusedWindow() {
-                    scratchpad.sendFocusedWindow()
-                }
+                // Shift+T on a summoned member toggles it tiled<->floating
+                // within the layer (membership stays sticky — only Shift+S /
+                // Shift+N take a member out). non-member focus while the layer
+                // is up still treats the key as a send.
+                if scratchpad.toggleTilingOfFocusedMember() { return }
+                scratchpad.sendFocusedWindow()
                 return
             case .focusFloating:
                 scratchpad.cycleSummoned()
@@ -1395,6 +1427,11 @@ class WindowManager {
             }
         }
         for w in allWindows where !stateCache.floatingWindowIDs.contains(w.windowID) {
+            // tiled scratchpad members are non-floating but must survive Retile
+            // All — sweeping them into tilingWids would reassign them to 1-9 and
+            // dissolve the layer. (the unfloat loop above already guards floaters
+            // via scratchpad.contains; the tiled case only shows up here.)
+            if scratchpad.contains(w.windowID) { continue }
             if !tilingWids.contains(w.windowID) {
                 tilingWids.append(w.windowID)
             }
@@ -1566,6 +1603,58 @@ class WindowManager {
             }
             mouseDownTiledFrames[w.windowID] = frame
         }
+    }
+
+    /// Arm the live dim-carve override if the press landed on a visible
+    /// ordinary floating window and dim is active (normal mode). Reuses the
+    /// hit already done by captureMouseDownFrames — no new AX queries.
+    private func armDimDragIfFloating() {
+        dimDrag = nil
+        guard config.dimInactiveWindows, !scratchpad.isVisible,
+              mouseDownFloatingWindowID != 0 else { return }
+        let id = mouseDownFloatingWindowID
+        guard let w = stateCache.cachedWindows[id], let frame = w.frame else { return }
+
+        let mouseNS = NSEvent.mouseLocation
+        let downCG = CGPoint(x: mouseNS.x, y: displayManager.primaryScreenHeight - mouseNS.y)
+        dimDrag = DimDragState(id: id, window: w, startFrame: frame, downPointCG: downCG)
+    }
+
+    /// Push the live carve rect for the armed floater. Pure delta math for
+    /// moves (no AX read); a throttled AX size probe flips to full-frame AX
+    /// reads once the user is resizing (delta math is wrong then).
+    private func updateDimDrag() {
+        guard var drag = dimDrag else { return }
+
+        let mouseNS = NSEvent.mouseLocation
+        let curCG = CGPoint(x: mouseNS.x, y: displayManager.primaryScreenHeight - mouseNS.y)
+
+        let liveRect: CGRect
+        if drag.resizing {
+            // resize in progress — delta math can't model it, read the live frame
+            liveRect = drag.window.frame ?? drag.startFrame
+        } else {
+            // throttled cheap size read: if the window resized, switch modes
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - drag.lastSizeCheck > 0.1 {
+                drag.lastSizeCheck = now
+                if let sz = drag.window.size,
+                   abs(sz.width - drag.startFrame.width) > 2 || abs(sz.height - drag.startFrame.height) > 2 {
+                    drag.resizing = true
+                }
+            }
+            if drag.resizing {
+                liveRect = drag.window.frame ?? drag.startFrame
+            } else {
+                let dx = curCG.x - drag.downPointCG.x
+                let dy = curCG.y - drag.downPointCG.y
+                liveRect = drag.startFrame.offsetBy(dx: dx, dy: dy)
+            }
+        }
+        dimDrag = drag
+
+        // match floatingFrames(expandedBy: 2): negative inset enlarges
+        dimmingOverlay.setDragOverride(id: drag.id, rect: liveRect.insetBy(dx: -2, dy: -2))
     }
 
     /// Hit-test the cursor against floating and tiled windows and record

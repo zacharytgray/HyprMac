@@ -21,7 +21,7 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "tray.full",
             title: "Scratchpad for Floating Windows",
-            description: "Hypr + S summons a scratchpad — a layer of floating windows over a dimmed backdrop, with no tiling rules. Send the focused window there with Hypr + Shift + S, click anywhere else to dismiss, and Hypr + Shift + T pulls a window back into tiling. Perfect for a drop-down terminal, music, or chat you want on hand but out of the way."
+            description: "Hypr + S summons a scratchpad — a layer of floating windows over a dimmed backdrop, with no tiling rules. Send the focused window there with Hypr + Shift + S, click anywhere else to dismiss, and Hypr + Shift + S again pulls a window back into tiling. Perfect for a drop-down terminal, music, or chat you want on hand but out of the way."
         ),
         WhatsNewFeature(
             icon: "moon.zzz",

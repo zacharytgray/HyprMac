@@ -42,6 +42,8 @@ final class FloatingWindowController {
     var updateFocusBorder: ((HyprWindow) -> Void)?
     var updatePositionCache: (() -> Void)?
     var isMenuTracking: () -> Bool = { false }
+    // spill an evicted window into the scratchpad overflow buffer.
+    var adoptIntoScratchpad: ((HyprWindow, CGRect?) -> Void)?
 
     // same-stack-frame reentrancy guard for raiseBehind. paired with defer.
     // moved here from WindowManager (per §5.5 — not a SuppressionRegistry key).
@@ -101,18 +103,12 @@ final class FloatingWindowController {
                 window.isFloating = false
 
                 if let evicted = tilingEngine.forceInsertWindow(window, toWorkspace: workspace, on: screen) {
-                    evicted.isFloating = true
-                    stateCache.floatingWindowIDs.insert(evicted.windowID)
+                    // evicted tile spills into the scratchpad overflow buffer.
                     let screenRect = displayManager.cgRect(for: screen)
-                    if let original = stateCache.originalFrames[evicted.windowID],
-                       original.isSubstantiallyVisible(on: screenRect) {
-                        evicted.setFrame(original)
-                    } else {
-                        let sz = evicted.size ?? CGSize(width: 800, height: 600)
-                        evicted.position = CGPoint(x: screenRect.midX - sz.width / 2,
-                                                   y: screenRect.midY - sz.height / 2)
-                    }
-                    hyprLog(.debug, .floating, "tiling '\(window.title ?? "?")' — bumped '\(evicted.title ?? "?")' to floating")
+                    let original = stateCache.originalFrames[evicted.windowID]
+                    let preferred = original.flatMap { $0.isSubstantiallyVisible(on: screenRect) ? $0 : nil }
+                    adoptIntoScratchpad?(evicted, preferred)
+                    hyprLog(.debug, .floating, "tiling '\(window.title ?? "?")' — bumped '\(evicted.title ?? "?")' to scratchpad")
                 } else {
                     hyprLog(.debug, .floating, "tiling window '\(window.title ?? "?")'")
                 }

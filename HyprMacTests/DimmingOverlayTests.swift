@@ -213,4 +213,115 @@ final class DimmingOverlayTests: XCTestCase {
         // with enabled=false, update() never creates layers.
         XCTAssertTrue(overlay.currentStates().isEmpty)
     }
+
+    // MARK: - drag override
+
+    // setDragOverride re-stamps the affected tile's PATH (carve appears)
+    // without disturbing any opacity target. A floater dragged over a
+    // dimmed tile must punch a hole into that tile's dim path live.
+    func testDragOverrideRestampsPathWithoutChangingTargets() {
+        let overlay = makeOverlay()
+        let tileA: CGWindowID = 1, tileB: CGWindowID = 2
+        // two big side-by-side tiles, A focused (bright), B dimmed.
+        let tiles: [CGWindowID: CGRect] = [
+            tileA: cgRectOnPrimary(x: 0, y: 0, w: 400, h: 400),
+            tileB: cgRectOnPrimary(x: 400, y: 0, w: 400, h: 400),
+        ]
+        overlay.update(focusedID: tileA, tiledRects: tiles, floatingRects: [:], screens: screens)
+        let targetsBefore = overlay.currentStates()
+        let bPathBefore = overlay.currentPathBounds()[tileB]
+        XCTAssertNotNil(bPathBefore)
+
+        // drag a floater into the middle of tile B — the carve shrinks B's
+        // dim path (union bbox unchanged, but path is re-stamped: assert the
+        // override landed and no opacity target moved).
+        let floater = CGRect(x: 500, y: 100, width: 100, height: 100)
+        overlay.setDragOverride(id: 99, rect: floater)
+
+        XCTAssertEqual(overlay.currentDragOverride()?.id, 99)
+        XCTAssertEqual(overlay.currentDragOverride()?.rect, floater)
+        let targetsAfter = overlay.currentStates()
+        XCTAssertEqual(targetsBefore[tileA]?.target, targetsAfter[tileA]?.target, "focused target unchanged")
+        XCTAssertEqual(targetsBefore[tileB]?.target, targetsAfter[tileB]?.target, "dimmed target unchanged")
+        // B's dim path now has a hole → it degrades to axis-aligned strips,
+        // so it's no longer the single rounded rect. bounding box still the
+        // tile, but the presence of the override proves the re-stamp ran.
+        XCTAssertNotNil(overlay.currentPathBounds()[tileB])
+    }
+
+    // a full update() carrying STALE floatingRects must not stomp the live
+    // override rect — the merge inside update() keeps the drag rect.
+    func testFullUpdateHonorsOverrideMergeSemantics() {
+        let overlay = makeOverlay()
+        let tileA: CGWindowID = 1, tileB: CGWindowID = 2
+        let tiles: [CGWindowID: CGRect] = [
+            tileA: cgRectOnPrimary(x: 0, y: 0, w: 400, h: 400),
+            tileB: cgRectOnPrimary(x: 400, y: 0, w: 400, h: 400),
+        ]
+        let floaterID: CGWindowID = 99
+        let stale = CGRect(x: 420, y: 20, width: 100, height: 100)  // poll's old rect
+        overlay.update(focusedID: tileA, tiledRects: tiles,
+                       floatingRects: [floaterID: stale], screens: screens)
+
+        // live drag moved the floater further right
+        let live = CGRect(x: 600, y: 200, width: 100, height: 100)
+        overlay.setDragOverride(id: floaterID, rect: live)
+        XCTAssertEqual(overlay.currentDragOverride()?.rect, live)
+
+        // a 1Hz poll fires mid-drag with the STALE floater rect — the
+        // override must survive and the carve honor `live`, not `stale`.
+        overlay.update(focusedID: tileA, tiledRects: tiles,
+                       floatingRects: [floaterID: stale], screens: screens)
+        XCTAssertEqual(overlay.currentDragOverride()?.rect, live, "override survives a full update")
+
+        // B's dim path must carve out `live` (mapped to local NS coords),
+        // proving the merged rect — not the stale input — drove the geometry.
+        let liveLocalY = overlay.primaryScreenHeight - live.origin.y - live.height
+        let liveLocal = NSRect(x: live.origin.x, y: liveLocalY, width: live.width, height: live.height)
+        let bPath = overlay.currentPath(for: tileB)
+        XCTAssertNotNil(bPath)
+        XCTAssertFalse(bPath!.contains(CGPoint(x: liveLocal.midX, y: liveLocal.midY), using: .winding),
+                       "B's dim path must NOT cover the live floater center (it's carved out)")
+
+        // clearing drops the override; a subsequent update paints from caches.
+        overlay.clearDragOverride()
+        XCTAssertNil(overlay.currentDragOverride())
+    }
+
+    // MARK: - panel level
+
+    func testPanelLevelAppliesAndFlipsOnReusedPanels() {
+        let overlay = makeOverlay()
+        let a: CGWindowID = 1
+        let floatingMinus1 = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
+
+        // scrim mode: .normal
+        overlay.panelLevel = .normal
+        overlay.update(
+            focusedID: a,
+            tiledRects: [a: cgRectOnPrimary(x: 100, y: 100)],
+            floatingRects: [:],
+            screens: screens
+        )
+        let scrimLevels = overlay.currentPanelLevels()
+        XCTAssertFalse(scrimLevels.isEmpty)
+        for (_, level) in scrimLevels {
+            XCTAssertEqual(level, .normal, "scrim mode should put every panel at .normal")
+        }
+
+        // flip back to floating-1 — same reused panels must pick it up
+        overlay.panelLevel = floatingMinus1
+        overlay.update(
+            focusedID: a,
+            tiledRects: [a: cgRectOnPrimary(x: 100, y: 100)],
+            floatingRects: [:],
+            screens: screens
+        )
+        let normalLevels = overlay.currentPanelLevels()
+        XCTAssertEqual(normalLevels.keys.sorted(), scrimLevels.keys.sorted(),
+                       "same panels reused across the mode switch")
+        for (_, level) in normalLevels {
+            XCTAssertEqual(level, floatingMinus1, "normal mode should put every panel at floating-1")
+        }
+    }
 }

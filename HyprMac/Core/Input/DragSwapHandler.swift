@@ -36,6 +36,7 @@ final class DragSwapHandler {
     var updatePositionCache: (([HyprWindow]?) -> Void)?
     var rejectSwap: ((HyprWindow, String) -> Void)?
     var tileAllVisibleSpaces: (([HyprWindow]?) -> Void)?
+    var isScratchpadVisible: () -> Bool = { false }
 
     /// Empirical bound on the wall-clock cost of
     /// `TilingEngine.crossSwapWindows`: two back-to-back retile passes,
@@ -83,6 +84,13 @@ final class DragSwapHandler {
     /// adjacent tiles otherwise produce false snap-back retiles that disrupt
     /// the layout.
     private func applyDragResult(startFrames: [CGWindowID: CGRect]) {
+        // no drag semantics inside the scratchpad layer. a tiled member drag
+        // would otherwise classify as a resize/swap against the ACTIVE 1-9 tree
+        // (workspaceForScreen resolves to the visible workspace, not ws 0) and
+        // corrupt the wrong tree. v1: the window stays where dragged until the
+        // next layer retile.
+        if isScratchpadVisible() { return }
+
         // skip drag detection if the user was dragging a floating window —
         // floating windows can nudge tiled windows slightly, causing false
         // snapBack retiles that disrupt the layout.

@@ -26,6 +26,11 @@ private struct TilingKey: Hashable {
 ///
 /// Threading: main-thread only.
 class TilingEngine {
+    /// Pseudo-workspace the scratchpad layer's tree lives on. Matches
+    /// `ScratchpadController.workspace`; kept local so the engine has no
+    /// dependency on the controller.
+    static let scratchpadWorkspace = 0
+
     private var trees: [TilingKey: BSPTree] = [:]
     private var pendingInsertedWindowIDs: [TilingKey: [CGWindowID]] = [:]
     let displayManager: DisplayManager
@@ -141,6 +146,11 @@ class TilingEngine {
         // misses it and the window ends up duplicated across two trees, feeding
         // intendedTileRects a wrong-monitor rect and scrambling directional focus.
         for key in trees.keys {
+            // scratchpad (ws 0) tree has no static home (homeScreenForWorkspace(0)
+            // is nil) so it would land in orphans and get destroyed on every
+            // display change / wake. leave it alone — the next show() reconciles
+            // it (tileScratchpad clears any stale (0, deadScreen) tree).
+            if key.workspace == Self.scratchpadWorkspace { continue }
             let dest = homeScreenForWorkspace(key.workspace)
             let homeID = dest.map { TilingKey(workspace: key.workspace, screen: $0).screenID }
             if homeID == key.screenID { continue }
@@ -441,6 +451,74 @@ class TilingEngine {
                 trees.removeValue(forKey: key)
             }
         }
+    }
+
+    /// Tile scratchpad members into a caller-supplied `rect` on the layer's
+    /// `screen`, keyed on `TilingKey(workspace: 0, screen)`.
+    ///
+    /// Unlike `tileWindows`, the layout rect is passed in (the inset region
+    /// inside the layer's monitor) rather than derived from
+    /// `displayManager.cgRect(for:)`. Same membership-diff + two-pass min-size
+    /// resolution otherwise. Windows that can't be smart-inserted (tree full at
+    /// max depth) are returned as rejects — the caller keeps them floating.
+    /// Deliberately never calls `onAutoFloat`: routing a scratchpad reject
+    /// through the overflow-adopt path would loop back into the scratchpad.
+    /// - Returns: the windows that didn't fit (stay floating members).
+    @discardableResult
+    func tileScratchpad(_ windows: [HyprWindow], screen: NSScreen, in rect: CGRect) -> [HyprWindow] {
+        primeMinimumSizes(windows)
+        let key = TilingKey(workspace: Self.scratchpadWorkspace, screen: screen)
+        let t = tree(for: key)
+
+        // the layer migrated monitors: drop any other (0, *) trees. their
+        // windows re-enter here via the membership diff, since the caller
+        // passes every AX-present tiled member.
+        for other in trees.keys where other.workspace == Self.scratchpadWorkspace && other != key {
+            trees.removeValue(forKey: other)
+        }
+
+        let currentIDs = Set(windows.map { $0.windowID })
+        let treeWindows = t.allWindows
+        let treeIDs = Set(treeWindows.map { $0.windowID })
+
+        // membership diff: remove gone (sibling promotion keeps shape), insert new
+        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
+        t.root.pruneEmptyNodes()
+        t.root.resetSplitRatios()
+
+        var rejects: [HyprWindow] = []
+        for w in windows where !treeIDs.contains(w.windowID) {
+            if !smartInsertFitting(w, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
+                hyprLog(.notice, .tiling, "scratchpad tile: no fitting slot for '\(w.title ?? "?")' (\(w.windowID)) — stays floating")
+                rejects.append(w)
+            }
+        }
+
+        t.root.resetSplitRatios()
+        let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+        let conflicts = applyLayout(layouts)
+        if !conflicts.isEmpty {
+            let mapped = conflicts.map { (window: $0.window, actual: $0.actual) }
+            t.adjustForMinSizes(mapped, in: rect, gap: gapSize, padding: outerPadding)
+            let adjusted = t.layout(in: rect, gap: gapSize, padding: outerPadding)
+            applyLayoutFinal(adjusted)
+        }
+        return rejects
+    }
+
+    /// Intended layout rects for the scratchpad layer's ws-0 tree, laid out in
+    /// the caller's `rect` (the inset region) rather than the full screen.
+    /// `intendedTileRects` derives its rect from `displayManager.cgRect(for:)`,
+    /// so it's wrong for the layer — this is the layer-region equivalent the
+    /// controller reads into `lastShownFrames`.
+    func scratchpadTileRects(screen: NSScreen, in rect: CGRect) -> [CGWindowID: CGRect] {
+        let key = TilingKey(workspace: Self.scratchpadWorkspace, screen: screen)
+        guard let t = trees[key] else { return [:] }
+        var out: [CGWindowID: CGRect] = [:]
+        for (window, frame) in t.layout(in: rect, gap: gapSize, padding: outerPadding) {
+            out[window.windowID] = frame
+        }
+        return out
     }
 
     /// Mutate the (workspace, screen) tree to reflect `windows` and return

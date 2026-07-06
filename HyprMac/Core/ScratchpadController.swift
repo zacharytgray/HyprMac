@@ -5,9 +5,10 @@
 // forbids under SIP is designed out, not worked around).
 //
 // Two distinct id sets: `members` (assigned to ws 0, possibly parked) and
-// `summonedIDs` (actually on screen right now). Every focus/carve/click
-// decision consults summonedIDs so a parked member can never be raised or
-// carved while the layer is up.
+// `summonedIDs` (actually on screen right now). Every focus/click decision
+// consults summonedIDs so a parked member can never be raised while the
+// layer is up. The scrim dims every monitor at .normal level; members are
+// raised above it at show time (stack recency), so nothing is carved out.
 //
 // Frame decisions never trust a live AX read taken right after a write —
 // Tahoe AX reads lag writes by >1s. Show computes geometry from the saved
@@ -22,6 +23,10 @@ final class ScratchpadController {
     /// falls out of every switch / home-anchor / cycle path automatically.
     static let workspace = 0
     static let scrimIntensity: CGFloat = 0.45
+    /// Fraction of the layer monitor inset on each edge for the tiled
+    /// region — tiled members lay out inside this smaller frame so the
+    /// scrimmed border stays visible around them.
+    static let tiledRegionInset: CGFloat = 0.06
     private let showGraceSec: TimeInterval = 0.75
 
     /// Why the layer is being dismissed. Focus restore is conditional on
@@ -47,6 +52,7 @@ final class ScratchpadController {
     var updatePositionCache: () -> Void = {}
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var refocusUnderCursor: () -> Void = {}
+    var raiseScrim: () -> Void = {}
     var animatedRetile: ((() -> Void)?, (() -> Void)?) -> Void = { prepare, completion in
         prepare?(); completion?()
     }
@@ -63,6 +69,10 @@ final class ScratchpadController {
     /// Activation/click churn from our own show() must not read as
     /// dismiss-worthy while AX is still settling.
     private var shownAt = Date.distantPast
+    /// Monitor the layer is currently shown on — the tiled region and
+    /// every retile key off this. nil while hidden; fall back to
+    /// screenUnderCursor when unset.
+    private var shownScreen: NSScreen?
 
     var isVisible: Bool { workspaceManager.scratchpadVisible }
     var members: Set<CGWindowID> { workspaceManager.windowIDs(onWorkspace: Self.workspace) }
@@ -72,6 +82,11 @@ final class ScratchpadController {
     func isSummoned(_ id: CGWindowID) -> Bool { summonedIDs.contains(id) }
     func ownsPID(_ pid: pid_t) -> Bool {
         stateCache.windowOwners.contains { $0.value == pid && contains($0.key) }
+    }
+    /// A member is tiled when it's on ws 0 and NOT in the floating set —
+    /// no separate membership set, tiled-ness is derived state.
+    private func isTiled(_ id: CGWindowID) -> Bool {
+        contains(id) && !stateCache.floatingWindowIDs.contains(id)
     }
 
     init(workspaceManager: WorkspaceManager,
@@ -120,6 +135,12 @@ final class ScratchpadController {
         shownAt = Date()
         workspaceManager.scratchpadVisible = true
 
+        // ordering is load-bearing: within the normal level, stacking is
+        // recency, so the scrim must be above the tiles before the members
+        // are raised above the scrim. fine that summonedIDs isn't populated
+        // yet — the scrim no longer needs member rects.
+        raiseScrim()
+
         var windowsByID: [CGWindowID: HyprWindow] = [:]
         for w in accessibility.getAllWindows() where ids.contains(w.windowID) {
             windowsByID[w.windowID] = w
@@ -131,22 +152,51 @@ final class ScratchpadController {
         for id in windowsByID.keys.sorted() where !mruOrder.contains(id) { mruOrder.append(id) }
         if let preferredID, mruOrder.contains(preferredID) { noteFocus(preferredID) }
 
-        // place from the saved (intended) frame, not a live AX read — reads
-        // lag the park write. unpark + raise back-to-front so the MRU head
-        // lands on top.
-        let targetRect = (screenUnderCursor() ?? displayManager.screens.first)
-            .map { displayManager.cgRect(for: $0) }
+        // the monitor the layer lives on for this show. tiled region and
+        // retiles key off this; captured now so a later cursor move doesn't
+        // move the region out from under the tree.
+        let targetScreen = screenUnderCursor() ?? displayManager.screens.first
+        shownScreen = targetScreen
+        let targetRect = targetScreen.map { displayManager.cgRect(for: $0) }
+
+        // tile the tiled members first — the engine's setFrames ARE the unpark.
+        // done before the floating raise loop so the region rects are fresh.
+        let tiledRegionRect = targetScreen.map { tiledRegion(on: $0) }
+        if let targetScreen, let tiledRegionRect {
+            let tiledMembers = summonedIDs.filter { isTiled($0) }.compactMap { windowsByID[$0] }
+            if !tiledMembers.isEmpty {
+                tilingEngine.tileScratchpad(tiledMembers, screen: targetScreen, in: tiledRegionRect)
+            }
+        }
+
+        // place FLOATING members from the saved (intended) frame, not a live AX
+        // read — reads lag the park write. tiled members skip setFrame (the
+        // tile pass already placed them). unpark + raise back-to-front so the
+        // MRU head lands on top; raise every summoned member either way.
         for id in mruOrder.reversed() {
             guard let w = windowsByID[id] else { continue }
-            let base = workspaceManager.savedFloatingFrame(for: id) ?? w.frame ?? .zero
-            workspaceManager.clearSavedFloatingFrame(for: id)
-            if base != .zero {
-                let placed = targetRect.map { carriedRect(base, to: $0) } ?? base
-                w.setFrame(placed)
-                lastShownFrames[id] = placed
+            if !isTiled(id) {
+                let base = workspaceManager.savedFloatingFrame(for: id) ?? w.frame ?? .zero
+                workspaceManager.clearSavedFloatingFrame(for: id)
+                if base != .zero {
+                    let placed = targetRect.map { carriedRect(base, to: $0) } ?? base
+                    w.setFrame(placed)
+                    lastShownFrames[id] = placed
+                }
             }
             w.raise()
         }
+
+        // record the engine's intended region rects for the summoned tiled
+        // members — handleMouseDown containment and eject geometry read
+        // lastShownFrames.
+        if let targetScreen, let tiledRegionRect {
+            let intended = tilingEngine.scratchpadTileRects(screen: targetScreen, in: tiledRegionRect)
+            for id in summonedIDs where isTiled(id) {
+                if let r = intended[id] { lastShownFrames[id] = r }
+            }
+        }
+
         if let headID = mruOrder.first, let head = windowsByID[headID] {
             head.focus()
             focusController.recordFocus(headID, reason: "scratchpad-show")
@@ -167,6 +217,7 @@ final class ScratchpadController {
         workspaceManager.scratchpadVisible = false
         summonedIDs = []
         lastShownFrames = [:]
+        shownScreen = nil
         updatePositionCache()
         if reason == .toggle, focusBeforeShow != 0,
            let prev = stateCache.cachedWindows[focusBeforeShow] {
@@ -183,10 +234,16 @@ final class ScratchpadController {
     /// guard in saveFloatingFrame rejects park-corner reads), then park.
     private func savePlacementAndPark(_ w: HyprWindow, parkScreen: NSScreen?) {
         let id = w.windowID
-        workspaceManager.saveFloatingFrame(w)
-        if workspaceManager.savedFloatingFrame(for: id) == nil,
-           let intended = lastShownFrames[id] {
-            workspaceManager.setSavedFloatingFrame(intended, for: id)
+        // tiled member: the tile slot is transient — its savedFloatingFrame
+        // still holds the pre-tile free-form frame for toggle-back, so DON'T
+        // overwrite it with the slot rect. re-show re-tiles from the ws-0 tree,
+        // not from savedFloatingFrame. just park it.
+        if !isTiled(id) {
+            workspaceManager.saveFloatingFrame(w)
+            if workspaceManager.savedFloatingFrame(for: id) == nil,
+               let intended = lastShownFrames[id] {
+                workspaceManager.setSavedFloatingFrame(intended, for: id)
+            }
         }
         if let parkScreen { workspaceManager.hideInCorner(w, on: parkScreen) }
     }
@@ -195,8 +252,9 @@ final class ScratchpadController {
 
     /// Hypr+Shift+S. Symmetric toggle: sends the focused window into the
     /// scratchpad, or — on a window that's already summoned — takes it back
-    /// out into tiling (same exit as Hypr+Shift+T). The scratchpad is a
-    /// place windows go and return from, not a hold pen.
+    /// out into tiling. Shift+S and Shift+N are the only exits; Shift+T
+    /// never removes membership. The scratchpad is a place windows go and
+    /// return from, not a hold pen.
     func sendFocusedWindow() {
         guard let focused = currentFocusedWindow() else {
             NSSound.beep()
@@ -257,11 +315,57 @@ final class ScratchpadController {
         hyprLog(.notice, .lifecycle, "sent '\(focused.title ?? "?")' (\(id)) to scratchpad")
     }
 
+    /// Overflow buffer: adopt a window that failed to fit its workspace's
+    /// BSP tree as a FLOATING scratchpad member. Unlike sendFocusedWindow
+    /// this never steals focus or MRU head — it's not a user-summon, the
+    /// window just spilled here. `preferredFrame` is the pre-tile original
+    /// frame the fit-failure site wants restored; falls back to the live
+    /// frame. No updatePositionCache — onAutoFloat fires mid-tile-pass, the
+    /// caller's post-pass refresh covers it.
+    func adopt(_ window: HyprWindow, preferredFrame: CGRect? = nil) {
+        let id = window.windowID
+        guard !contains(id) else { return }
+        let frameBefore = window.frame
+
+        stateCache.floatingWindowIDs.insert(id)
+        window.isFloating = true
+        workspaceManager.assignWindow(id, toWorkspace: Self.workspace)
+
+        // saved frame for a later summon: prefer the pre-tile original, then
+        // the live frame. use the unconditional setter when saveFloatingFrame
+        // refuses (off-screen guard) so the frame is never lost.
+        if let preferredFrame {
+            workspaceManager.setSavedFloatingFrame(preferredFrame, for: id)
+        } else {
+            workspaceManager.saveFloatingFrame(window)
+            if workspaceManager.savedFloatingFrame(for: id) == nil, let f = frameBefore {
+                workspaceManager.setSavedFloatingFrame(f, for: id)
+            }
+        }
+
+        if isVisible {
+            summonedIDs.insert(id)
+            if let f = frameBefore { lastShownFrames[id] = f }
+            window.raise()
+        } else {
+            if let screen = displayManager.screens.first {
+                workspaceManager.hideInCorner(window, on: screen)
+            }
+            if let f = frameBefore {
+                focusBorder.flashInfo(message: "→ scratchpad", around: f, windowID: id)
+            }
+        }
+
+        // appended at END — not a user summon, don't steal the MRU head.
+        if !mruOrder.contains(id) { mruOrder.append(id) }
+        hyprLog(.notice, .lifecycle, "scratchpad: adopted overflow '\(window.title ?? "?")' (\(id))")
+    }
+
     /// Leave the scratchpad for good — dismiss the layer and tile the
     /// focused member into the workspace visible on the monitor it sits
-    /// on. The shared exit for Hypr+Shift+T and Hypr+Shift+S, and the
-    /// first step of a move-to-workspace out of the scratchpad. Returns
-    /// false when the focused window isn't an ejectable summoned member.
+    /// on. The exit behind Hypr+Shift+S, and the first step of a
+    /// move-to-workspace out of the scratchpad. Returns false when the
+    /// focused window isn't an ejectable summoned member.
     func ejectFocusedWindow() -> Bool {
         guard isVisible,
               let focused = currentFocusedWindow(),
@@ -272,6 +376,12 @@ final class ScratchpadController {
             ?? screenUnderCursor()
         guard let screen, !workspaceManager.isMonitorDisabled(screen) else { return false }
         let targetWs = workspaceManager.workspaceForScreen(screen)
+
+        // tiled member: pull it out of the ws-0 tree before reassigning, else
+        // a ghost node lingers in the layer tree after the eject.
+        if isTiled(id) {
+            tilingEngine.removeWindow(focused, fromWorkspace: Self.workspace)
+        }
 
         // drop membership first so hide() parks only the remaining members
         summonedIDs.remove(id)
@@ -293,6 +403,83 @@ final class ScratchpadController {
             updatePositionCache()
         })
         hyprLog(.notice, .lifecycle, "scratchpad: ejected '\(focused.title ?? "?")' (\(id)) → ws\(targetWs)")
+        return true
+    }
+
+    /// Hypr+Shift+T on a summoned member: toggle it between floating and
+    /// tiled-within-the-layer. Membership is untouched either way — the
+    /// member stays on ws 0. Returns true when the focused window was a
+    /// summoned member and the toggle was handled (including a rejected
+    /// float→tile, which flashes rather than changing state).
+    func toggleTilingOfFocusedMember() -> Bool {
+        guard isVisible,
+              let focused = currentFocusedWindow(),
+              isSummoned(focused.windowID) else { return false }
+        let id = focused.windowID
+        guard let screen = layerScreen() else { return false }
+
+        if isTiled(id) {
+            // tiled → floating: pull it out of the ws-0 tree, restore the
+            // pre-tile free-form frame, then close the gap left behind.
+            tilingEngine.removeWindow(focused, fromWorkspace: Self.workspace)
+            stateCache.floatingWindowIDs.insert(id)
+            focused.isFloating = true
+            let full = displayManager.cgRect(for: screen)
+            let base = workspaceManager.savedFloatingFrame(for: id) ?? focused.frame ?? .zero
+            if base != .zero {
+                let placed = carriedRect(base, to: full)
+                focused.setFrame(placed)
+                lastShownFrames[id] = placed
+            }
+            retileLayer()
+            focused.raise()
+            focused.focus()
+            focusController.recordFocus(id, reason: "scratchpad-untile")
+            updateFocusBorder(focused)
+            noteFocus(id)
+            updatePositionCache()
+            hyprLog(.notice, .lifecycle, "scratchpad: untiled '\(focused.title ?? "?")' (\(id)) → floating")
+            return true
+        }
+
+        // floating → tiled. save the current free-form frame first so the
+        // reverse toggle restores it (belt-and-suspenders: fall back to the
+        // live frame when the off-screen guard in saveFloatingFrame refuses).
+        let frameBefore = focused.frame
+        workspaceManager.saveFloatingFrame(focused)
+        if workspaceManager.savedFloatingFrame(for: id) == nil, let f = frameBefore {
+            workspaceManager.setSavedFloatingFrame(f, for: id)
+        }
+        stateCache.floatingWindowIDs.remove(id)
+        focused.isFloating = false
+
+        let region = tiledRegion(on: screen)
+        let tiledMembers = summonedIDs.filter { isTiled($0) }.compactMap { stateCache.cachedWindows[$0] }
+        let rejects = tilingEngine.tileScratchpad(tiledMembers, screen: screen, in: region)
+        if rejects.contains(where: { $0.windowID == id }) {
+            // layer tree is full — revert to floating and flash. deliberately
+            // no onAutoFloat: a scratchpad reject must never route into adopt.
+            stateCache.floatingWindowIDs.insert(id)
+            focused.isFloating = true
+            if let f = focused.frame {
+                focusBorder.flashError(around: f, windowID: id, window: focused)
+            } else {
+                NSSound.beep()
+            }
+            hyprLog(.notice, .lifecycle, "scratchpad: tile rejected (layer full) for '\(focused.title ?? "?")' (\(id)) — stays floating")
+            return true
+        }
+
+        let intended = tilingEngine.scratchpadTileRects(screen: screen, in: region)
+        for m in summonedIDs where isTiled(m) {
+            if let r = intended[m] { lastShownFrames[m] = r }
+        }
+        focused.focus()
+        focusController.recordFocus(id, reason: "scratchpad-tile")
+        updateFocusBorder(focused)
+        noteFocus(id)
+        updatePositionCache()
+        hyprLog(.notice, .lifecycle, "scratchpad: tiled '\(focused.title ?? "?")' (\(id)) into layer")
         return true
     }
 
@@ -348,15 +535,25 @@ final class ScratchpadController {
     /// Discovery forgot this id (app died). Called after WorkspaceManager
     /// dropped the assignment, so `members` already excludes it.
     func forget(_ id: CGWindowID) {
+        let wasSummoned = summonedIDs.contains(id)
         mruOrder.removeAll { $0 == id }
         summonedIDs.remove(id)
         lastShownFrames.removeValue(forKey: id)
+        // sweep the id from the ws-0 tree in case it was a tiled member. safe
+        // and idempotent — a no-op when WindowManager's gone-path already
+        // removed it (which it does via removeWindowID on goneIDs).
+        tilingEngine.removeWindowID(id)
         if isVisible && summonedIDs.isEmpty {
             workspaceManager.scratchpadVisible = false
             lastShownFrames = [:]
+            shownScreen = nil
             updatePositionCache()
             refocusUnderCursor()
             hyprLog(.notice, .lifecycle, "scratchpad: last summoned member gone — layer dropped")
+        } else if isVisible && wasSummoned {
+            // a tiled member may have died — close the gap in the layer tree.
+            retileLayer()
+            updatePositionCache()
         }
     }
 
@@ -367,6 +564,35 @@ final class ScratchpadController {
     }
 
     // MARK: - helpers
+
+    /// The monitor the tiled region and layer retiles key off. Prefers the
+    /// screen captured at show time; falls back to the cursor's screen.
+    private func layerScreen() -> NSScreen? {
+        shownScreen ?? screenUnderCursor() ?? displayManager.screens.first
+    }
+
+    /// Inset layout rect for the tiled region on `screen`.
+    private func tiledRegion(on screen: NSScreen) -> CGRect {
+        let full = displayManager.cgRect(for: screen)
+        return full.insetBy(dx: full.width * Self.tiledRegionInset,
+                            dy: full.height * Self.tiledRegionInset)
+    }
+
+    /// Re-run the layer's ws-0 tree against its current tiled members and
+    /// refresh `lastShownFrames` for the summoned tiled ids from the
+    /// engine's intended rects. No-op when the layer isn't visible.
+    private func retileLayer() {
+        guard isVisible, let screen = layerScreen() else { return }
+        let region = tiledRegion(on: screen)
+        let tiledMembers: [HyprWindow] = summonedIDs
+            .filter { isTiled($0) }
+            .compactMap { stateCache.cachedWindows[$0] }
+        tilingEngine.tileScratchpad(tiledMembers, screen: screen, in: region)
+        let rects = tilingEngine.scratchpadTileRects(screen: screen, in: region)
+        for id in summonedIDs where isTiled(id) {
+            if let r = rects[id] { lastShownFrames[id] = r }
+        }
+    }
 
     /// Pure carry math on the intended rect: keep it when it already sits
     /// substantially on the target screen, otherwise clamp it in with size

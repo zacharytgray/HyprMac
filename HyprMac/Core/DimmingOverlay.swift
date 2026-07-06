@@ -48,6 +48,17 @@ class DimmingOverlay {
 
     private var panels: [CGDirectDisplayID: PanelEntry] = [:]
     private var visible = false
+
+    // last update() inputs, cached so setDragOverride can re-stamp paths
+    // without the caller recomputing the whole world every mouse-dragged.
+    private var lastFocusedID: CGWindowID = 0
+    private var lastTiledRects: [CGWindowID: CGRect] = [:]
+    private var lastFloatingRects: [CGWindowID: CGRect] = [:]
+    private var lastScreens: [NSScreen] = []
+    // single live floater rect during a drag. merged over lastFloatingRects
+    // inside update() so a mid-drag full update doesn't stomp it, and
+    // re-stamped path-only by setDragOverride at mouse-drag rate.
+    private var dragOverride: (id: CGWindowID, rect: CGRect)?
     // bumped on each hideAll; the deferred orderOut closure captures the
     // token at schedule time and aborts if `update()` re-enabled the panel
     // before the fade-out wall-clock window expired.
@@ -56,6 +67,12 @@ class DimmingOverlay {
     var intensity: CGFloat = 0.2
     var enabled: Bool = false
     var primaryScreenHeight: CGFloat = 0
+
+    // panel window level. .floating - 1 (=2) for the normal focus dim, sits
+    // above all normal windows so carve-outs keep floaters bright. .normal
+    // for the scratchpad scrim, where the quasimodal-frozen stack lets the
+    // members be raised above it (stack recency, no carve-outs).
+    var panelLevel: NSWindow.Level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
 
     /// Fade duration for opacity transitions (focus traversal AND
     /// enable/disable). `easeInEaseOut` (set in `animateOpacity`) spreads
@@ -89,6 +106,17 @@ class DimmingOverlay {
         guard enabled, focusedID != 0 else { hideAll(); return }
         visible = true
 
+        // cache raw inputs so setDragOverride can re-stamp from them.
+        lastFocusedID = focusedID
+        lastTiledRects = tiledRects
+        lastFloatingRects = floatingRects
+        lastScreens = screens
+
+        // merge the live drag rect over the (possibly stale) floating input
+        // so a full update mid-drag doesn't snap the hole back to the poll rect.
+        var floatingRects = floatingRects
+        if let ov = dragOverride { floatingRects[ov.id] = ov.rect }
+
         let fillColor = NSColor.black.withAlphaComponent(intensity).cgColor
 
         // prune entries for displays that have been unplugged
@@ -101,6 +129,15 @@ class DimmingOverlay {
 
         for screen in screens {
             let entry = ensurePanel(for: screen)
+            // panels are reused across scrim/normal switches, so re-apply the
+            // level every update. instant on a live panel; isFloatingPanel
+            // false at .normal so visibility doesn't track app-active state.
+            // set isFloatingPanel FIRST — its setter coerces level to
+            // .floating, so level must be assigned after to stick.
+            if entry.panel.level != panelLevel {
+                entry.panel.isFloatingPanel = (panelLevel != .normal)
+                entry.panel.level = panelLevel
+            }
             let screenNS = screen.frame
             if entry.panel.frame != screenNS {
                 entry.panel.setFrame(screenNS, display: false)
@@ -210,6 +247,14 @@ class DimmingOverlay {
         }
     }
 
+    /// Restack every panel above the tiles. Unconditional (not gated on
+    /// visibility) — panels linger visible through the deferred fade-out, so
+    /// a rapid hide→show would otherwise skip the restack.
+    func orderFrontAll() {
+        mainThreadOnly()
+        for (_, entry) in panels { entry.panel.orderFrontRegardless() }
+    }
+
     /// Clamp `value` into `0...1`, apply it as the new dim alpha, and
     /// re-stamp the fillColor on every existing layer so the change is
     /// reflected immediately.
@@ -222,6 +267,61 @@ class DimmingOverlay {
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
                 layer.fillColor = fill
+                CATransaction.commit()
+            }
+        }
+    }
+
+    /// Set the single live drag-override rect and immediately re-stamp
+    /// affected paths from the cached inputs. Geometry only — no opacity,
+    /// no animations, no panel ordering. Cheap enough for per-drag calls.
+    func setDragOverride(id: CGWindowID, rect: CGRect) {
+        mainThreadOnly()
+        let prev = dragOverride?.rect
+        dragOverride = (id, rect)
+        // only re-stamp if a full update has run (we have cached inputs).
+        guard visible, enabled, lastFocusedID != 0 else { return }
+        restampPaths(dirty: prev == nil ? [rect] : [prev!, rect])
+    }
+
+    /// Drop the drag override. The next full update() paints from fresh
+    /// caches; nothing is re-stamped here (mouse-up triggers a real refresh).
+    func clearDragOverride() {
+        mainThreadOnly()
+        dragOverride = nil
+    }
+
+    /// Re-stamp tile dim paths from cached inputs + the current override,
+    /// without touching opacity or panel order. `dirty` rects gate which
+    /// tiles get rebuilt: a tile whose local rect can't intersect any dirty
+    /// rect keeps its old path (a handful of CGPath builds per drag event).
+    private func restampPaths(dirty: [CGRect]) {
+        let fillColor = NSColor.black.withAlphaComponent(intensity).cgColor
+        var floatingRects = lastFloatingRects
+        if let ov = dragOverride { floatingRects[ov.id] = ov.rect }
+
+        for screen in lastScreens {
+            guard let entry = panels[screen.displayID] else { continue }
+            let screenNS = screen.frame
+
+            let dirtyLocals = dirty.compactMap { localRect(cgRect: $0, screenNS: screenNS) }
+            let floaters = floatingRects.values.compactMap { localRect(cgRect: $0, screenNS: screenNS) }
+            let focusedLocal: NSRect? = lastTiledRects[lastFocusedID].flatMap {
+                localRect(cgRect: $0, screenNS: screenNS)
+            }
+
+            for (wid, cgRect) in lastTiledRects {
+                guard wid != lastFocusedID else { continue } // focused tile path never renders (opacity 0)
+                guard let layer = entry.windowLayers[wid],
+                      let local = localRect(cgRect: cgRect, screenNS: screenNS) else { continue }
+                // skip tiles the moved rect can't touch
+                guard dirtyLocals.contains(where: { $0.intersects(local) }) else { continue }
+
+                let path = buildPath(for: wid, local: local, focusedToExclude: focusedLocal, floaters: floaters)
+                CATransaction.begin()
+                CATransaction.setDisableActions(true)
+                layer.fillColor = fillColor
+                layer.path = path
                 CATransaction.commit()
             }
         }
@@ -252,6 +352,39 @@ class DimmingOverlay {
             }
         }
         return out
+    }
+
+    /// Live window level of each panel, keyed by display id.
+    func currentPanelLevels() -> [CGDirectDisplayID: NSWindow.Level] {
+        var out: [CGDirectDisplayID: NSWindow.Level] = [:]
+        for (id, entry) in panels { out[id] = entry.panel.level }
+        return out
+    }
+
+    /// The active drag-override rect, or nil. Tests assert it survives a
+    /// full update() that carries stale floatingRects (merge semantics).
+    func currentDragOverride() -> (id: CGWindowID, rect: CGRect)? { dragOverride }
+
+    /// Per-window dim-path bounding box (union of all subpaths), in
+    /// panel-local NS coords, keyed by window id. Tests use this to verify
+    /// a carve-out actually landed in the path geometry.
+    func currentPathBounds() -> [CGWindowID: CGRect] {
+        var out: [CGWindowID: CGRect] = [:]
+        for (_, entry) in panels {
+            for (wid, layer) in entry.windowLayers {
+                if let path = layer.path { out[wid] = path.boundingBoxOfPath }
+            }
+        }
+        return out
+    }
+
+    /// The raw dim CGPath for a window on the first panel that has it.
+    /// Tests use point-containment to prove a carve-out region is empty.
+    func currentPath(for wid: CGWindowID) -> CGPath? {
+        for (_, entry) in panels {
+            if let layer = entry.windowLayers[wid], let path = layer.path { return path }
+        }
+        return nil
     }
 
     // MARK: - internals
@@ -330,12 +463,14 @@ class DimmingOverlay {
         let p = NSPanel(contentRect: screen.frame,
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
-        p.isFloatingPanel = true
-        // Phase 5b: pin one tier below FocusBorder panels so the colored
-        // border always renders above the dim without orderFront-recency
-        // fights. .floating - 1 is integer 2 — above .normal (0) and
-        // below .floating (3).
-        p.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
+        // level is mode-dependent: .floating - 1 for the normal focus dim
+        // (above all normal windows so carve-outs keep floaters bright),
+        // .normal for the scratchpad scrim (stack once below the members;
+        // quasimodality freezes the stack so no carve-outs are needed).
+        // isFloatingPanel first — its setter coerces level to .floating, so
+        // level must be assigned after to stick.
+        p.isFloatingPanel = (panelLevel != .normal)
+        p.level = panelLevel
         p.backgroundColor = .clear
         p.isOpaque = false
         p.hasShadow = false

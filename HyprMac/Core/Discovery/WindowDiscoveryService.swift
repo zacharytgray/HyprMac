@@ -339,6 +339,11 @@ final class WindowDiscoveryService {
         var drifts: [(CGWindowID, Int, Int)] = []
         for w in allWindows {
             guard let recordedWs = workspaceManager.workspaceFor(w.windowID) else { continue }
+            // scratchpad members (ws 0) never drift — a tiled member is
+            // non-floating and passes the floater skip below, so it needs an
+            // explicit bail. (it's currently safe only by accident: ws 0 is
+            // never in monitorWorkspace.values.)
+            guard recordedWs != ScratchpadController.workspace else { continue }
             // floating windows can be anywhere by design — skip
             guard !stateCache.floatingWindowIDs.contains(w.windowID) else { continue }
             // majority frame overlap, not center-point: a min-size-crammed

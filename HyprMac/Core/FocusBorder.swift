@@ -589,10 +589,11 @@ class FocusBorder {
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isFloatingPanel = true
-        // Phase 5b: .floating tier guarantees borders sit above the dim panel
-        // (one tier below at .floating - 1) and above all .normal-level app
-        // windows. previously .normal + order(.above, relativeTo: windowID),
-        // which became undefined when the focused window closed.
+        // Phase 5b: .floating tier guarantees borders render above the dim
+        // panel — which sits at .floating - 1 in normal mode and .normal in
+        // scrim mode — and above all .normal-level app windows. previously
+        // .normal + order(.above, relativeTo: windowID), which became
+        // undefined when the focused window closed.
         p.level = .floating
         p.backgroundColor = .clear
         p.isOpaque = false
