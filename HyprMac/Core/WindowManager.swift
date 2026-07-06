@@ -213,6 +213,9 @@ class WindowManager {
             self.refreshDimming()
             self.dimmingOverlay.orderFrontAll()
         }
+        scratchpad.lowerScrimBelow = { [weak self] wid in
+            self?.dimmingOverlay.orderBelow(windowNumber: Int(wid))
+        }
         self.pollingScheduler = PollingScheduler { [weak self] in
             self?.pollWindowChanges()
         }

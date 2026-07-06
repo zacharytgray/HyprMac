@@ -53,6 +53,10 @@ final class ScratchpadController {
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var refocusUnderCursor: () -> Void = {}
     var raiseScrim: () -> Void = {}
+    /// Order the scrim panels directly below this window (cross-app window
+    /// number). The settle passes use it to tuck the scrim under the
+    /// backmost member instead of racing member raises against it.
+    var lowerScrimBelow: (CGWindowID) -> Void = { _ in }
     var animatedRetile: ((() -> Void)?, (() -> Void)?) -> Void = { prepare, completion in
         prepare?(); completion?()
     }
@@ -187,6 +191,22 @@ final class ScratchpadController {
             w.raise()
         }
 
+        // bare AXRaise can't lift a background app's window above another
+        // app's tiles on Tahoe — only app activation reorders across apps
+        // (which is why Hypr+F used to rescue buried members one at a time).
+        // activate every non-head member app back-to-front; head.focus()
+        // below activates the head's app last so the MRU head ends frontmost.
+        let headPID = mruOrder.first.flatMap { windowsByID[$0]?.ownerPID }
+        var activatedPIDs = Set<pid_t>()
+        for id in mruOrder.reversed() {
+            guard let w = windowsByID[id] else { continue }
+            let pid = w.ownerPID
+            guard pid != headPID, !activatedPIDs.contains(pid) else { continue }
+            activatedPIDs.insert(pid)
+            NSRunningApplication(processIdentifier: pid)?
+                .activate(options: [.activateIgnoringOtherApps])
+        }
+
         // record the engine's intended region rects for the summoned tiled
         // members — handleMouseDown containment and eject geometry read
         // lastShownFrames.
@@ -204,6 +224,16 @@ final class ScratchpadController {
         }
         updatePositionCache()
         hyprLog(.notice, .lifecycle, "scratchpad shown (\(summonedIDs.count) windows)")
+
+        // settle passes: activations land async, and orderFrontRegardless'd
+        // scrim panels can beat even an activation reorder. repeatedly tuck
+        // the scrim directly below the backmost member until the stack
+        // converges — idempotent, own windows only, no activation churn.
+        for delay in [0.15, 0.45, 0.9] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.settleScrimBelowMembers()
+            }
+        }
     }
 
     func hide(reason: DismissReason) {
@@ -564,6 +594,23 @@ final class ScratchpadController {
     }
 
     // MARK: - helpers
+
+    /// Find the backmost summoned member in the live level-0 z-order and
+    /// order the scrim panels directly below it: members lit above the
+    /// scrim, tiles dimmed below — regardless of who won the raise races.
+    private func settleScrimBelowMembers() {
+        guard isVisible, !summonedIDs.isEmpty else { return }
+        guard let info = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID)
+                as? [[String: Any]] else { return }
+        var backmost: CGWindowID?
+        for w in info {
+            guard let layer = w[kCGWindowLayer as String] as? Int, layer == 0,
+                  let id = w[kCGWindowNumber as String] as? CGWindowID else { continue }
+            // front→back list: the last summoned id seen is the backmost
+            if summonedIDs.contains(id) { backmost = id }
+        }
+        if let backmost { lowerScrimBelow(backmost) }
+    }
 
     /// The monitor the tiled region and layer retiles key off. Prefers the
     /// screen captured at show time; falls back to the cursor's screen.

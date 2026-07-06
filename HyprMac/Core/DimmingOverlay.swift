@@ -261,6 +261,16 @@ class DimmingOverlay {
         for (_, entry) in panels { entry.panel.orderFrontRegardless() }
     }
 
+    /// Order every visible panel directly below `windowNumber` — which may
+    /// be another process's window. Scratchpad settle uses this to tuck the
+    /// scrim under the backmost summoned member.
+    func orderBelow(windowNumber: Int) {
+        mainThreadOnly()
+        for (_, entry) in panels where entry.panel.isVisible {
+            entry.panel.order(.below, relativeTo: windowNumber)
+        }
+    }
+
     /// Clamp `value` into `0...1`, apply it as the new dim alpha, and
     /// re-stamp the fillColor on every existing layer so the change is
     /// reflected immediately.
@@ -428,36 +438,31 @@ class DimmingOverlay {
     }
 
     /// Path for one window's dim region: the window's rounded rect with
-    /// the focused-tile region and every floater rect carved out. When
-    /// no carve-outs apply, the path is a single rounded rect; once any
-    /// overlap subtracts, it degrades to axis-aligned strips (rounded
-    /// corners on a clipped shape would produce visible artifacts).
+    /// the focused-tile region and every floater rect carved out as
+    /// rounded rects via real boolean subtraction (CGPath.subtracting,
+    /// macOS 13+) — cutout corners match the unified window radius
+    /// instead of degrading to sharp axis-aligned strips.
     private func buildPath(
         for wid: CGWindowID,
         local: NSRect,
         focusedToExclude: NSRect?,
         floaters: [NSRect]
     ) -> CGPath {
-        let path = CGMutablePath()
-        var pieces = [local]
-        if let focused = focusedToExclude {
-            pieces = pieces.flatMap { subtract(focused, from: $0) }
-        }
-        for floater in floaters {
-            pieces = pieces.flatMap { subtract(floater, from: $0) }
-        }
-
-        if pieces.count == 1, pieces[0] == local {
-            let radius = WindowCornerRadius.resolve(for: wid)
-            if radius > 0 {
-                path.addRoundedRect(in: local, cornerWidth: radius, cornerHeight: radius)
-            } else {
-                path.addRect(local)
-            }
-        } else {
-            for piece in pieces { path.addRect(piece) }
+        var path = roundedPath(local, radius: WindowCornerRadius.resolve(for: wid))
+        var holes = floaters
+        if let focused = focusedToExclude { holes.append(focused) }
+        for hole in holes where hole.intersects(local) {
+            path = path.subtracting(roundedPath(hole, radius: WindowCornerRadius.global))
         }
         return path
+    }
+
+    // rounded-rect path with the radius clamped to the rect's half-size —
+    // CGPath asserts when a corner exceeds half the width/height.
+    private func roundedPath(_ rect: NSRect, radius: CGFloat) -> CGPath {
+        let r = min(radius, rect.width / 2, rect.height / 2)
+        guard r > 0 else { return CGPath(rect: rect, transform: nil) }
+        return CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
     }
 
     private func createWindowLayer(in container: NSView) -> CAShapeLayer {
@@ -504,34 +509,6 @@ class DimmingOverlay {
         let entry = PanelEntry(panel: p, container: container)
         panels[key] = entry
         return entry
-    }
-
-    // rect subtraction: returns up to 4 rects representing `rect` minus `hole`.
-    // if hole is nil or doesn't intersect rect, returns [rect] unchanged.
-    // produces top/bottom/left/right strips around the hole; any strip
-    // that collapses to zero area is skipped.
-    private func subtract(_ hole: NSRect?, from rect: NSRect) -> [NSRect] {
-        guard let hole, rect.intersects(hole) else { return [rect] }
-        let clipped = rect.intersection(hole)
-        if clipped == rect { return [] }
-        var pieces: [NSRect] = []
-        if rect.maxY > clipped.maxY {
-            pieces.append(NSRect(x: rect.minX, y: clipped.maxY,
-                                 width: rect.width, height: rect.maxY - clipped.maxY))
-        }
-        if clipped.minY > rect.minY {
-            pieces.append(NSRect(x: rect.minX, y: rect.minY,
-                                 width: rect.width, height: clipped.minY - rect.minY))
-        }
-        if clipped.minX > rect.minX {
-            pieces.append(NSRect(x: rect.minX, y: clipped.minY,
-                                 width: clipped.minX - rect.minX, height: clipped.height))
-        }
-        if rect.maxX > clipped.maxX {
-            pieces.append(NSRect(x: clipped.maxX, y: clipped.minY,
-                                 width: rect.maxX - clipped.maxX, height: clipped.height))
-        }
-        return pieces
     }
 
     // convert top-left CG rect to panel-local NS rect, clipped to the screen.
