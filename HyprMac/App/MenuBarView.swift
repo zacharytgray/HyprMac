@@ -186,7 +186,7 @@ struct MenuBarView: View {
 
     private var actions: some View {
         VStack(spacing: 1) {
-            MenuBarRow("Keybind cheat sheet", icon: "keyboard") {
+            MenuBarRow("Keybinds", icon: "keyboard") {
                 (NSApp.delegate as? AppDelegate)?.windowManager?.handleAction(.showKeybinds)
             } trailing: {
                 HStack(spacing: 3) {
