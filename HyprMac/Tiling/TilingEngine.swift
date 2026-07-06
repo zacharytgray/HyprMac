@@ -73,25 +73,18 @@ class TilingEngine {
     func forgetMinimumSize(windowID: CGWindowID) { minSizes.forget(windowID: windowID) }
 
     /// Defensive cleanup — drop `windowID` from whichever BSP tree
-    /// currently holds it, prune empties, and compact the surviving
-    /// windows on that tree. Called from the discovery gone path so a
-    /// closed window's node cannot outlive its AX presence even when the
-    /// owning workspace is hidden (and therefore skipped by
-    /// `tileAllVisibleSpaces`). The frame application happens later — this
-    /// only fixes tree topology so the next layout pass produces a gapless
-    /// result. No-op when no tree contains `windowID`.
+    /// currently holds it and prune empties. Called from the discovery
+    /// gone path so a closed window's node cannot outlive its AX presence
+    /// even when the owning workspace is hidden (and therefore skipped by
+    /// `tileAllVisibleSpaces`). Sibling promotion keeps the surviving
+    /// arrangement intact — no compact, so a transient disappearance
+    /// (Cmd-H, minimize, missed AX poll) doesn't reshuffle the tree.
+    /// No-op when no tree contains `windowID`.
     func removeWindowID(_ windowID: CGWindowID) {
-        for (key, t) in trees {
+        for (_, t) in trees {
             guard let w = t.allWindows.first(where: { $0.windowID == windowID }) else { continue }
             t.remove(w)
             t.root.pruneEmptyNodes()
-            if let screen = displayManager.screens.first(where: {
-                TilingKey(workspace: key.workspace, screen: $0) == key
-            }) {
-                let rect = displayManager.cgRect(for: screen)
-                t.compact(maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                          padding: outerPadding, minSlotDimension: minSlotDimension)
-            }
             return
         }
     }
@@ -162,10 +155,29 @@ class TilingEngine {
             guard let tree = trees.removeValue(forKey: oldKey) else { continue }
             let newKey = TilingKey(workspace: oldKey.workspace, screen: newScreen)
             // a tree may already exist on the destination if the workspace had
-            // been visited there before. prefer the larger one — it's most
-            // likely the active one the user expects to keep.
-            if let existing = trees[newKey], existing.allWindows.count >= tree.allWindows.count {
-                hyprLog(.notice, .lifecycle, "display change: ws\(oldKey.workspace) sid=\(oldKey.screenID) was misplaced/stale — kept home tree, dropped it (\(tree.allWindows.count) windows)")
+            // been visited there before. keep the larger one and merge the
+            // other's windows into it — dropping a tree wholesale orphaned its
+            // windows into arbitrary-order reinsertion (wake scramble).
+            if let existing = trees[newKey] {
+                let (keep, donor) = existing.allWindows.count >= tree.allWindows.count
+                    ? (existing, tree) : (tree, existing)
+                let keepIDs = Set(keep.allWindows.map { $0.windowID })
+                let rect = displayManager.cgRect(for: newScreen)
+                var merged = 0
+                for w in donor.allWindows where !keepIDs.contains(w.windowID) {
+                    if keep.smartInsert(w, maxDepth: maxDepth(for: newScreen), in: rect,
+                                        gap: gapSize, padding: outerPadding,
+                                        minSlotDimension: minSlotDimension) {
+                        merged += 1
+                    } else {
+                        // depth ceiling — the window keeps its workspace
+                        // assignment, so the next tile pass re-inserts or
+                        // auto-floats it instead of it silently vanishing.
+                        hyprLog(.notice, .lifecycle, "display change: no room to merge '\(w.title ?? "?")' (\(w.windowID)) into ws\(oldKey.workspace) tree — deferring to next tile pass")
+                    }
+                }
+                trees[newKey] = keep
+                hyprLog(.notice, .lifecycle, "display change: ws\(oldKey.workspace) tree collision at sid=\(newKey.screenID) — kept \(keep.allWindows.count - merged)-window tree, merged \(merged) from the other")
                 continue
             }
             trees[newKey] = tree
@@ -312,9 +324,9 @@ class TilingEngine {
     }
 
     // shared tree-update path between tileWindows and prepareTileLayout.
-    // primes min-sizes, removes gone windows (compacting if any vanished),
-    // smart-inserts new windows (auto-floating those that don't fit),
-    // clears userSetRatios on structural change, and resets split ratios.
+    // primes min-sizes, removes gone windows (sibling promotion keeps the
+    // tree shape), smart-inserts new windows in a stable order
+    // (auto-floating those that don't fit), and resets split ratios.
     // pure with respect to AX — only mutates the tree and engine state.
     private func updateTreeMembership(_ windows: [HyprWindow],
                                       onWorkspace workspace: Int,
@@ -329,18 +341,35 @@ class TilingEngine {
         let currentIDs = Set(tileWindows.map { $0.windowID })
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
-        let removedAny = treeWindows.contains { !currentIDs.contains($0.windowID) }
         for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
 
         t.root.pruneEmptyNodes()
+        // no compact on removal — BSPNode.remove promotes the sibling with
+        // ratios/overrides intact. compacting here rebuilt the whole tree,
+        // reshuffling unrelated windows every time anything closed or hid.
 
-        if removedAny {
-            t.compact(maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                      padding: outerPadding, minSlotDimension: minSlotDimension)
+        // reset before insert decisions: fittingLeaf judges candidate rects
+        // with live ratios, and a stale pass-2 adjustment (0.85/0.15) from a
+        // previous cycle would skew which leaf accepts the window.
+        t.root.resetSplitRatios()
+
+        // deterministic batch order: left-to-right by current frame, id
+        // tiebreak. AX enumeration order shifts with focus/z churn, which
+        // made multi-window inserts land differently every time.
+        var toInsert = tileWindows.filter { !treeIDs.contains($0.windowID) }
+        if toInsert.count > 1 {
+            let frames = Dictionary(uniqueKeysWithValues: toInsert.map { ($0.windowID, $0.frame ?? .zero) })
+            toInsert.sort { a, b in
+                let fa = frames[a.windowID] ?? .zero
+                let fb = frames[b.windowID] ?? .zero
+                if fa.origin.x != fb.origin.x { return fa.origin.x < fb.origin.x }
+                if fa.origin.y != fb.origin.y { return fa.origin.y < fb.origin.y }
+                return a.windowID < b.windowID
+            }
         }
 
         var insertedWindows: [HyprWindow] = []
-        for w in tileWindows where !treeIDs.contains(w.windowID) {
+        for w in toInsert {
             if !smartInsertFitting(w, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
                 hyprLog(.debug, .lifecycle, "no fitting tile slot — auto-floating '\(w.title ?? "?")'")
                 onAutoFloat?(w)
@@ -349,11 +378,10 @@ class TilingEngine {
             }
         }
 
-        if removedAny || !insertedWindows.isEmpty {
+        if !insertedWindows.isEmpty {
             t.root.clearUserSetRatios()
+            t.root.resetSplitRatios()
         }
-
-        t.root.resetSplitRatios()
         return TileMembershipResult(key: key, tree: t, rect: rect, insertedWindows: insertedWindows)
     }
 
@@ -479,6 +507,8 @@ class TilingEngine {
         let rect = displayManager.cgRect(for: screen)
         var inserted: [HyprWindow] = []
         if !t.contains(window) {
+            // judge fit against post-reset geometry, not stale pass-2 ratios
+            t.root.resetSplitRatios()
             if !smartInsertFitting(window, into: t, maxDepth: maxDepth(for: screen), rect: rect) {
                 hyprLog(.debug, .lifecycle, "no fitting tile slot — auto-floating '\(window.title ?? "?")'")
                 onAutoFloat?(window)
@@ -490,8 +520,8 @@ class TilingEngine {
     }
 
     /// Remove `window` from its workspace's tree on whichever screen
-    /// holds it. Compacts and prunes the tree, then retiles every
-    /// affected screen.
+    /// holds it. Prunes the tree (sibling promotion preserves the
+    /// surviving arrangement), then retiles the affected screen.
     func removeWindow(_ window: HyprWindow, fromWorkspace workspace: Int) {
         // search all trees for this workspace
         for (key, t) in trees where key.workspace == workspace {
@@ -501,9 +531,6 @@ class TilingEngine {
                 if let screen = displayManager.screens.first(where: {
                     TilingKey(workspace: workspace, screen: $0) == key
                 }) {
-                    let rect = displayManager.cgRect(for: screen)
-                    t.compact(maxDepth: maxDepth(for: screen), in: rect, gap: gapSize,
-                              padding: outerPadding, minSlotDimension: minSlotDimension)
                     retile(key: key, screen: screen)
                 }
                 return

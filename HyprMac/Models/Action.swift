@@ -37,6 +37,12 @@ enum Action: Equatable {
     /// Cycle through occupied workspaces on the current monitor.
     /// `+1` advances to the next occupied workspace; `-1` rewinds.
     case cycleWorkspace(Int)
+    /// Toggle the scratchpad layer — summon all scratchpad windows over a
+    /// scrim, or park them back.
+    case toggleScratchpad
+    /// Send the focused window to the scratchpad (or put a summoned
+    /// scratchpad window away — the key is symmetric).
+    case moveToScratchpad
 }
 
 // MARK: - Codable
@@ -71,6 +77,8 @@ extension Action: Codable {
         case focusFloating
         case closeWindow
         case cycleWorkspace
+        case toggleScratchpad
+        case moveToScratchpad
     }
 
     /// Accepted-but-not-emitted aliases. Lets a hand-edited config
@@ -127,6 +135,8 @@ extension Action: Codable {
         case .focusMenuBar:   self = .focusMenuBar
         case .focusFloating:  self = .focusFloating
         case .closeWindow:    self = .closeWindow
+        case .toggleScratchpad: self = .toggleScratchpad
+        case .moveToScratchpad: self = .moveToScratchpad
         }
     }
 
@@ -178,6 +188,10 @@ extension Action: Codable {
             _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .focusFloating)
         case .closeWindow:
             _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .closeWindow)
+        case .toggleScratchpad:
+            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .toggleScratchpad)
+        case .moveToScratchpad:
+            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .moveToScratchpad)
         }
     }
 }

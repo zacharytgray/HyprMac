@@ -44,6 +44,13 @@ class WorkspaceManager {
     /// Total number of virtual workspaces (1...9).
     let workspaceCount = 9
 
+    /// True while the scratchpad layer is summoned. Workspace 0 is the
+    /// scratchpad pseudo-workspace — never in `monitorWorkspace`, so its
+    /// visibility is this flag alone. Routing it through
+    /// `isWorkspaceVisible` propagates member behavior to FFM, floater
+    /// cycling, raise-behind, dim carve-outs, and discovery for free.
+    var scratchpadVisible = false
+
     init(displayManager: DisplayManager) {
         self.displayManager = displayManager
     }
@@ -156,8 +163,10 @@ class WorkspaceManager {
     }
 
     /// `true` when `workspace` is currently shown on any screen.
+    /// Workspace 0 (scratchpad) is visible only while summoned.
     func isWorkspaceVisible(_ workspace: Int) -> Bool {
-        monitorWorkspace.values.contains(workspace)
+        if workspace == 0 { return scratchpadVisible }
+        return monitorWorkspace.values.contains(workspace)
     }
 
     /// Assign `windowID` to `workspace`, removing it from any prior
@@ -276,6 +285,23 @@ class WorkspaceManager {
             window.setFrame(frame)
             savedFloatingFrames.removeValue(forKey: window.windowID)
         }
+    }
+
+    /// Peek without consuming — the scratchpad computes carry geometry
+    /// from the intended frame instead of a laggy AX read.
+    func savedFloatingFrame(for id: CGWindowID) -> CGRect? {
+        savedFloatingFrames[id]
+    }
+
+    func clearSavedFloatingFrame(for id: CGWindowID) {
+        savedFloatingFrames.removeValue(forKey: id)
+    }
+
+    /// Explicit unconditional save — used when a live AX read was stale
+    /// and `saveFloatingFrame`'s off-screen guard rejected it, so the
+    /// caller substitutes the frame it knows it placed.
+    func setSavedFloatingFrame(_ frame: CGRect, for id: CGWindowID) {
+        savedFloatingFrames[id] = frame
     }
 
     /// Result of `switchWorkspace`. `toHide` and `toShow` are window

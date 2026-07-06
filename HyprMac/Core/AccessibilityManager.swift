@@ -110,6 +110,28 @@ class AccessibilityManager {
     /// is defensive — it should not fire in practice.
     ///
     /// Returns an empty array when AX permission has not been granted.
+    /// Whether `windowID` is still alive in `pid`'s AX window list as a
+    /// minimized window, or the app itself is hidden (Cmd-H). Used by the
+    /// discovery gone path to distinguish user-hidden windows — which must
+    /// keep their workspace on return — from closed windows whose id a
+    /// later reopen may recycle. Returns nil when the AX list can't be
+    /// read (caller treats unknown as user-hidden, the conservative side).
+    func isWindowMinimizedOrAppHidden(windowID target: CGWindowID, pid: pid_t) -> Bool? {
+        if NSRunningApplication(processIdentifier: pid)?.isHidden == true { return true }
+        let appRef = AXUIElementCreateApplication(pid)
+        var value: AnyObject?
+        let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &value)
+        guard result == .success, let axWindows = value as? [AXUIElement] else { return nil }
+        for axWin in axWindows {
+            guard windowID(for: axWin) == target else { continue }
+            var minimized: AnyObject?
+            AXUIElementCopyAttributeValue(axWin, kAXMinimizedAttribute as CFString, &minimized)
+            return (minimized as? Bool) ?? false
+        }
+        // enumerated fine and the id is gone — genuinely closed
+        return false
+    }
+
     func getAllWindows() -> [HyprWindow] {
         guard AXIsProcessTrusted() else { return [] }
 

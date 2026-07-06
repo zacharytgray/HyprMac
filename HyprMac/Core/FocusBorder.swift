@@ -536,6 +536,32 @@ class FocusBorder {
         messageBanner = nil
     }
 
+    /// One-shot neutral flash: accent-stroked outline plus a message pill
+    /// at `rect` (CG coords). Independent of the border state machine —
+    /// safe to fire while the border tracks another window. No shake.
+    func flashInfo(message: String, around rect: CGRect, windowID: CGWindowID = 0) {
+        let frame = panelRect(for: rect, expansion: 0)
+        let panel = makeBasePanel(frame: frame)
+        panel.isReleasedWhenClosed = false
+        let content = NSView(frame: NSRect(origin: .zero, size: frame.size))
+        content.wantsLayer = true
+        if let layer = content.layer {
+            layer.borderColor = accentCGColor
+            layer.borderWidth = 2.0
+            layer.cornerRadius = WindowCornerRadius.resolve(for: windowID)
+        }
+        let pill = makeMessageBanner(message)
+        pill.setFrameOrigin(NSPoint(x: (frame.width - pill.frame.width) / 2,
+                                    y: (frame.height - pill.frame.height) / 2))
+        content.addSubview(pill)
+        panel.contentView?.addSubview(content)
+        panel.orderFrontRegardless()
+        fadeViewAlpha(content, from: 0, to: 1, duration: 0.12)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) { [self] in
+            fadeOutAndOrderOut(panel, layer: nil, duration: 0.3)
+        }
+    }
+
     /// Dark rounded pill holding a centered white reason string. Sized to
     /// fit the text plus padding; positioned by the caller.
     private func makeMessageBanner(_ text: String) -> NSView {

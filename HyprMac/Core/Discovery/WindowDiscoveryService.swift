@@ -88,6 +88,17 @@ final class WindowDiscoveryService {
     /// `NSRunningApplication`.
     private let bundleIDForPID: (pid_t) -> String?
 
+    /// Consecutive cycles skipped by the mass-gone guard. Bounded so a
+    /// genuine mass close is delayed, not deadlocked.
+    private var massGoneSkips = 0
+
+    /// Hidden ids that went gone via minimize / Cmd-H (or where AX
+    /// couldn't tell). These keep their workspace on return — only ids
+    /// that were verifiably CLOSED qualify for the recycled-id reopen
+    /// reassignment, otherwise un-minimizing a hidden-ws window would
+    /// teleport it to the foreground workspace.
+    private var userHiddenIDs: Set<CGWindowID> = []
+
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
          displayManager: DisplayManager,
@@ -130,6 +141,21 @@ final class WindowDiscoveryService {
                         excludedBundleIDs: Set<String>,
                         focusedWindowID: CGWindowID) -> WindowChanges {
         let currentIDs = Set(snapshot.map { $0.windowID })
+
+        // partial AX snapshots (post-wake, unresponsive apps) can report half
+        // the desktop gone in one cycle; real user actions never do. skip the
+        // whole cycle before mutating any cache state — but only a bounded
+        // number of times, so a genuine mass close still processes.
+        let apparentlyGone = stateCache.knownWindowIDs.subtracting(currentIDs)
+        if apparentlyGone.count >= 3, apparentlyGone.count * 2 > stateCache.knownWindowIDs.count,
+           massGoneSkips < 3 {
+            massGoneSkips += 1
+            hyprLog(.notice, .discovery, "mass-gone guard: \(apparentlyGone.count)/\(stateCache.knownWindowIDs.count) known windows missing from one snapshot — skipping cycle (\(massGoneSkips)/3)")
+            return WindowChanges(newWindows: [], newOnDisabledMonitor: [], returned: [],
+                                 goneIDs: [], fullyForgottenIDs: [], screenDrift: [],
+                                 focusedWindowGone: false)
+        }
+        massGoneSkips = 0
 
         var newWindows: [HyprWindow] = []
         var newOnDisabled: Set<CGWindowID> = []
@@ -195,6 +221,10 @@ final class WindowDiscoveryService {
                 // un-minimize comes back as "returned" not "new".
                 stateCache.knownWindowIDs.remove(id)
                 stateCache.hiddenWindowIDs.insert(id)
+                // nil (AX unreadable) counts as user-hidden — the safe side
+                if accessibility.isWindowMinimizedOrAppHidden(windowID: id, pid: pid) != false {
+                    userHiddenIDs.insert(id)
+                }
                 if workspaceManager.isWindowVisible(id) {
                     hyprLog(.debug, .discovery, "window hidden: \(id)")
                 } else {
@@ -212,8 +242,14 @@ final class WindowDiscoveryService {
         let swept = sweepStaleState(runningPIDs: runningPIDs)
         fullyForgotten.formUnion(swept)
 
-        // drift detection
-        let drift = detectScreenDrift(snapshot)
+        // drift detection. just-returned windows that were verifiably CLOSED
+        // (not minimized/Cmd-H'd) get special handling: a recycled-CGWindowID
+        // reopen (Teams, Mail) comes back "returned" with a stale assignment
+        // to a hidden workspace. user-hidden returns keep their workspace.
+        let reopened = Set(returned.map { $0.windowID }).subtracting(userHiddenIDs)
+        userHiddenIDs.subtract(returned.map { $0.windowID })
+        userHiddenIDs.formIntersection(stateCache.hiddenWindowIDs)
+        let drift = detectScreenDrift(snapshot, justReturned: reopened)
 
         let focusedGone = goneIDs.contains(focusedWindowID)
 
@@ -294,41 +330,68 @@ final class WindowDiscoveryService {
     /// assignment pointing at a now-hidden workspace.
     ///
     /// Floating windows are skipped (they can be anywhere by design).
-    /// Hide-corner parked windows are skipped — they "look" drifted onto
-    /// whatever workspace currently owns the screen, but they are
-    /// intentionally parked there.
-    private func detectScreenDrift(_ allWindows: [HyprWindow]) -> [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)] {
+    /// Windows without a substantially visible frame are skipped — that
+    /// covers hide-corner park slivers and stale/transient AX reads, so
+    /// drift only ever acts on a window the user can actually see.
+    private func detectScreenDrift(_ allWindows: [HyprWindow],
+                                   justReturned: Set<CGWindowID> = []) -> [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)] {
         let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
         var drifts: [(CGWindowID, Int, Int)] = []
         for w in allWindows {
             guard let recordedWs = workspaceManager.workspaceFor(w.windowID) else { continue }
             // floating windows can be anywhere by design — skip
             guard !stateCache.floatingWindowIDs.contains(w.windowID) else { continue }
-            guard let physicalScreen = displayManager.screen(for: w) else { continue }
+            // majority frame overlap, not center-point: a min-size-crammed
+            // window inflated across a monitor edge keeps a majority on its
+            // own screen, and park slivers / stale off-screen frames fail
+            // the substantial check entirely (the guard the doc above
+            // promises — previously dead code).
+            guard hasSubstantialOnScreenFrame(w),
+                  let physicalScreen = majorityOverlapScreen(w) else { continue }
             // skip if the window sits on a disabled monitor — handled elsewhere
             guard !workspaceManager.isMonitorDisabled(physicalScreen) else { continue }
             let physicalWs = workspaceManager.workspaceForScreen(physicalScreen)
             guard physicalWs != recordedWs else { continue }
-            // with static workspace anchoring, a window whose recorded
-            // workspace's home matches its physical screen is correctly
-            // placed — even if some other workspace happens to be visible
-            // on that screen right now.
-            if let homeScreen = workspaceManager.homeScreenForWorkspace(recordedWs),
-               homeScreen == physicalScreen { continue }
-            // recorded ws hidden: NEVER drift. on Tahoe, AX can return
-            // the old pre-hide frame for >1 sec after the actual position
-            // write, so hasSubstantialOnScreenFrame returns true against
-            // stale data and we falsely conclude the window drifted.
-            // when the recorded ws is shown again, the tile pass will
-            // place the window in its correct slot. drifting based on a
-            // stale read produces the bug where moveToWorkspace cascades
-            // into auto-floats and apps splattered across the wrong
-            // monitor (logs 2026-05-04 09:53:01.998).
-            if !visibleWorkspaces.contains(recordedWs) { continue }
+            // a window that just returned from hidden while its recorded ws
+            // is hidden is a recycled-id reopen — without reassignment it
+            // ghosts untiled over the current workspace (invisible to FFM
+            // and tiling) and teleports cross-monitor when clicked. bypass
+            // the placement guards so it lands where it visibly opened.
+            let reopenedOntoHiddenWs = justReturned.contains(w.windowID)
+                && !visibleWorkspaces.contains(recordedWs)
+            if !reopenedOntoHiddenWs {
+                // with static workspace anchoring, a window whose recorded
+                // workspace's home matches its physical screen is correctly
+                // placed — even if some other workspace happens to be visible
+                // on that screen right now.
+                if let homeScreen = workspaceManager.homeScreenForWorkspace(recordedWs),
+                   homeScreen == physicalScreen { continue }
+                // recorded ws hidden: never drift. on Tahoe, AX can return
+                // the old pre-hide frame for >1 sec after the position write,
+                // so a stale read would falsely conclude the window drifted
+                // (logs 2026-05-04 09:53:01.998). when the recorded ws is
+                // shown again, the tile pass places the window correctly.
+                if !visibleWorkspaces.contains(recordedWs) { continue }
+            }
             drifts.append((w.windowID, recordedWs, physicalWs))
-            hyprLog(.notice, .discovery, "drift: '\(w.title ?? "?")' (\(w.windowID)) ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))")
+            hyprLog(.notice, .discovery, "drift: '\(w.title ?? "?")' (\(w.windowID)) ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))\(reopenedOntoHiddenWs ? " [reopened onto hidden ws]" : "")")
         }
         return drifts
+    }
+
+    /// Screen with the largest overlap area with `w`'s frame, or nil when
+    /// the frame overlaps no screen. Center-point resolution misjudges
+    /// windows protruding across a monitor edge.
+    private func majorityOverlapScreen(_ w: HyprWindow) -> NSScreen? {
+        guard let frame = w.frame else { return nil }
+        var best: (screen: NSScreen, area: CGFloat)?
+        for screen in displayManager.screens {
+            let overlap = frame.intersection(displayManager.cgRect(for: screen))
+            guard !overlap.isNull else { continue }
+            let area = overlap.width * overlap.height
+            if area > (best?.area ?? 0) { best = (screen, area) }
+        }
+        return best?.screen
     }
 
     /// `true` when more than half of `w`'s frame is visible on any

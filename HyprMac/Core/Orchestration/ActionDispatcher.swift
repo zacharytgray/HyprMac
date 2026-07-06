@@ -55,6 +55,8 @@ final class ActionDispatcher {
     var animatedRetile: ([HyprWindow]) -> Void = { _ in }
     var refocusUnderCursor: () -> Void = {}
     var isMenuTracking: () -> Bool = { false }
+    var toggleScratchpad: () -> Void = {}
+    var moveToScratchpad: () -> Void = {}
 
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
@@ -180,6 +182,10 @@ final class ActionDispatcher {
             closeWindow()
         case .cycleWorkspace(let delta):
             cycleOccupiedWorkspace(delta: delta)
+        case .toggleScratchpad:
+            toggleScratchpad()
+        case .moveToScratchpad:
+            moveToScratchpad()
         }
     }
 

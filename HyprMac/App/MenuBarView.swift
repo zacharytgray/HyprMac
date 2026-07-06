@@ -240,6 +240,10 @@ class MenuBarState: ObservableObject {
     @Published var occupiedWorkspaces: Set<Int> = []
     @Published var floatingWorkspaces: Set<Int> = []
     @Published var hasData = false
+    /// Number of windows in the scratchpad (0 = hide the tray glyph).
+    @Published var scratchpadCount = 0
+    /// Whether the scratchpad layer is currently summoned (filled tray).
+    @Published var scratchpadVisible = false
 }
 
 // Compact dot-grid menu bar label, one symbol per workspace 1..N where N
@@ -250,16 +254,29 @@ class MenuBarState: ObservableObject {
 //   ◇  occupied + floating, not active
 //   ·  empty
 // String is computed by WindowManager.updateMenuBarState and pushed via
-// MenuBarState.labelText. Falls back to a static icon if disabled or if
-// no workspace data has been seen yet.
+// MenuBarState.labelText. A full-size tray glyph follows when the
+// scratchpad holds windows (filled while the layer is summoned). Falls
+// back to a static icon if disabled or if no workspace data yet.
 struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared
 
     var body: some View {
-        if config.showMenuBarIndicator, state.hasData, !state.labelText.isEmpty {
-            Text(state.labelText)
-                .font(.system(size: 12, weight: .regular))
+        if config.showMenuBarIndicator, state.hasData,
+           !state.labelText.isEmpty || state.scratchpadCount > 0 {
+            HStack(spacing: 5) {
+                if !state.labelText.isEmpty {
+                    Text(state.labelText)
+                        .font(.system(size: 12, weight: .regular))
+                }
+                if state.scratchpadCount > 0 {
+                    Image(systemName: state.scratchpadVisible ? "tray.fill" : "tray")
+                    if state.scratchpadCount > 1 {
+                        Text("\(state.scratchpadCount)")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+            }
         } else {
             Image(systemName: "rectangle.split.2x2")
         }

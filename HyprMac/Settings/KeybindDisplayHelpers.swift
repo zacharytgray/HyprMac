@@ -51,6 +51,10 @@ extension Keybind {
             return "xmark.circle"
         case .cycleWorkspace:
             return "arrow.clockwise.circle"
+        case .toggleScratchpad:
+            return "tray"
+        case .moveToScratchpad:
+            return "tray.and.arrow.down"
         }
     }
 
@@ -69,6 +73,8 @@ extension Keybind {
         case .focusFloating:                return "Cycle Floating Windows"
         case .closeWindow:                  return "Close Window"
         case .cycleWorkspace(let d):        return d > 0 ? "Next Workspace" : "Previous Workspace"
+        case .toggleScratchpad:             return "Toggle Scratchpad"
+        case .moveToScratchpad:             return "Send to Scratchpad"
         }
     }
 }

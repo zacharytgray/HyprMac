@@ -72,12 +72,20 @@ struct FrameReadbackPoller {
             var actual: CGRect
             var stableSamples: Int
             var elapsed: TimeInterval
+            var axFailed: Bool
         }
 
-        func read(_ window: HyprWindow, target: CGRect) -> CGRect {
-            let actualSize = window.size ?? target.size
-            let actualPos = window.position ?? target.origin
-            return CGRect(origin: actualPos, size: actualSize)
+        // axFailed: a failed SIZE read substitutes the target verbatim,
+        // which reads back as a perfect on-target resize. callers must not
+        // treat those as observed sizes (lowerIfAccepted would corrupt
+        // min-size memory below the app's true floor). a failed position
+        // read alone doesn't invalidate a genuinely observed size — only
+        // sizes feed min-size memory.
+        func read(_ window: HyprWindow, target: CGRect) -> (frame: CGRect, axFailed: Bool) {
+            let actualSize = window.size
+            let actualPos = window.position
+            return (CGRect(origin: actualPos ?? target.origin, size: actualSize ?? target.size),
+                    actualSize == nil)
         }
 
         func exceeds(_ actual: CGRect, _ target: CGRect) -> Bool {
@@ -100,10 +108,12 @@ struct FrameReadbackPoller {
         Thread.sleep(forTimeInterval: interval)
         elapsed += interval
         for (window, frame) in layouts {
+            let first = read(window, target: frame)
             readings.append(Reading(window: window, frame: frame,
-                                    actual: read(window, target: frame),
+                                    actual: first.frame,
                                     stableSamples: 0,
-                                    elapsed: elapsed))
+                                    elapsed: elapsed,
+                                    axFailed: first.axFailed))
         }
 
         // accepted layouts exit fast. over-target readings must settle for two
@@ -117,12 +127,13 @@ struct FrameReadbackPoller {
             var anyUnsettledConflict = false
             var anyUndersizedFrame = false
             for i in readings.indices {
-                let next = read(readings[i].window, target: readings[i].frame)
+                let (next, axFailed) = read(readings[i].window, target: readings[i].frame)
                 let stable = abs(next.width - readings[i].actual.width) <= stableTolerance
                     && abs(next.height - readings[i].actual.height) <= stableTolerance
                 readings[i].actual = next
                 readings[i].elapsed = elapsed
                 readings[i].stableSamples = stable ? readings[i].stableSamples + 1 : 0
+                readings[i].axFailed = axFailed
 
                 if undershoots(next, readings[i].frame) {
                     readings[i].window.setFrame(readings[i].frame)
@@ -166,6 +177,10 @@ struct FrameReadbackPoller {
                 r.window.setFrame(r.frame)
                 r.window.cachedFrame = r.frame
                 continue
+            } else if r.axFailed {
+                // fallback reading equals the target by construction — not an
+                // observed size, so it must not relax min-size memory.
+                hyprLog(.debug, .lifecycle, "AX read failed for '\(r.window.title ?? "?")' — excluding from accepted set")
             } else {
                 accepted.append((r.window, r.actual.size))
             }

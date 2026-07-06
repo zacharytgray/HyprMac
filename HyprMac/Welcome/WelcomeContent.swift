@@ -19,24 +19,29 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "display.2",
-            title: "Stable Across Monitor Changes",
-            description: "Plugging in or unplugging a display no longer scrambles your layout. Workspace assignments and floating windows are preserved across monitor changes — your trees migrate to each workspace's home screen instead of being redistributed from scratch."
+            icon: "tray.full",
+            title: "Scratchpad for Floating Windows",
+            description: "Hypr + S summons a scratchpad — a layer of floating windows over a dimmed backdrop, with no tiling rules. Send the focused window there with Hypr + Shift + S, click anywhere else to dismiss, and Hypr + Shift + T pulls a window back into tiling. Perfect for a drop-down terminal, music, or chat you want on hand but out of the way."
         ),
         WhatsNewFeature(
-            icon: "rectangle.2.swap",
-            title: "Send Windows Between Monitors",
-            description: "Hypr + Ctrl + Left/Right now throws the focused window to the next monitor, landing on whatever workspace is showing there. (Workspaces are pinned to their monitors, so this replaces the old move-workspace shortcut that could no longer do anything.)"
+            icon: "moon.zzz",
+            title: "Survives Sleep & Wake",
+            description: "Waking your Mac from sleep no longer rearranges windows across your monitors. Discovery pauses through the wake, transient display configurations are ignored until things settle, and stray windows re-park themselves instead of piling onto your layout."
         ),
         WhatsNewFeature(
-            icon: "macwindow.on.rectangle",
-            title: "Reliable Window Moves",
-            description: "Sending a window to another workspace now places it correctly every time — floating windows that used to get stranded in the corner are carried to the right screen, and focus follows the move."
+            icon: "rectangle.3.group",
+            title: "Layouts Stay Put",
+            description: "Closing, hiding, or minimizing a window no longer reshuffles everything around it — the neighbor simply grows into the space, and your split directions and sizes are kept. Rebuilds are now deterministic, so the tree stops decomposing in the wrong order."
         ),
         WhatsNewFeature(
-            icon: "checkmark.shield",
-            title: "Smoother First Launch",
-            description: "HyprMac now starts the instant you grant Accessibility access — no relaunch, no dead-end retry button. The permission screen also explains the duplicate-entry cleanup that trips people up after an update."
+            icon: "rectangle.badge.checkmark",
+            title: "Windows Open Where Expected",
+            description: "New and reopened windows land on the right screen instead of teleporting to another monitor. Apps that recycle window IDs (Teams, Mail) come back to where they belong, and a window crammed across a monitor edge no longer bounces to its neighbor."
+        ),
+        WhatsNewFeature(
+            icon: "menubar.rectangle",
+            title: "Scratchpad in the Menu Bar",
+            description: "A tray glyph in the menu bar shows how many windows are stashed in the scratchpad — filled while the layer is open, with a count when it holds more than one."
         ),
     ]
 }

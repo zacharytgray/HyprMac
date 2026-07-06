@@ -67,6 +67,14 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_F), modifiers: .hypr,
                              action: .focusFloating))
 
+        // hypr + s: toggle scratchpad layer
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_S), modifiers: .hypr,
+                             action: .toggleScratchpad))
+
+        // hypr + shift + s: send focused window to scratchpad
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_S), modifiers: [.hypr, .shift],
+                             action: .moveToScratchpad))
+
         // hypr + w: close window
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_W), modifiers: .hypr,
                              action: .closeWindow))

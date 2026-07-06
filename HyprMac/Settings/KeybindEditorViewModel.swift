@@ -35,6 +35,8 @@ final class KeybindEditorViewModel: ObservableObject {
         case focusFloating          = "Focus Floating"
         case closeWindow            = "Close Window"
         case cycleWorkspace         = "Cycle Workspace"
+        case toggleScratchpad       = "Toggle Scratchpad"
+        case moveToScratchpad       = "Send to Scratchpad"
     }
 
     var canSave: Bool { recordedKeyCode != 0 }
@@ -61,6 +63,8 @@ final class KeybindEditorViewModel: ObservableObject {
         case .focusFloating:                 selectedAction = .focusFloating
         case .closeWindow:                   selectedAction = .closeWindow
         case .cycleWorkspace(let d):         selectedAction = .cycleWorkspace;         workspaceParam = d
+        case .toggleScratchpad:              selectedAction = .toggleScratchpad
+        case .moveToScratchpad:              selectedAction = .moveToScratchpad
         }
     }
 
@@ -84,6 +88,8 @@ final class KeybindEditorViewModel: ObservableObject {
         case .focusFloating:          action = .focusFloating
         case .closeWindow:            action = .closeWindow
         case .cycleWorkspace:         action = .cycleWorkspace(workspaceParam)
+        case .toggleScratchpad:       action = .toggleScratchpad
+        case .moveToScratchpad:       action = .moveToScratchpad
         }
         return Keybind(keyCode: recordedKeyCode, modifiers: mods, action: action)
     }

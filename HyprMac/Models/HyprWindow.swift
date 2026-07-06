@@ -239,6 +239,13 @@ class HyprWindow: Equatable, Hashable {
         return CGPoint(x: f.midX, y: f.midY)
     }
 
+    /// Raise z-order only — no keyboard focus, no app activation.
+    /// Used when stacking several windows (scratchpad show) where only
+    /// the final one should take focus.
+    func raise() {
+        AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+    }
+
     /// Bring this window forward and give it keyboard focus, raising
     /// it above the other windows of its app and activating the app
     /// itself if it is not already frontmost.

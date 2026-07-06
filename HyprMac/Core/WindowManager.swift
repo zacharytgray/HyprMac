@@ -67,6 +67,7 @@ class WindowManager {
     // workspace switch / move / move-to-monitor workflows.
     // delegates to workspaceManager + tilingEngine; no new policy lives there.
     private var workspaceOrchestrator: WorkspaceOrchestrator!
+    private var scratchpad: ScratchpadController!
 
     // periodic discovery timer + coalesced notification-driven polls.
     // constructed in init() so the closure can capture self weakly.
@@ -111,6 +112,15 @@ class WindowManager {
     // deregister display callbacks, color profile bumps), and our handler
     // runs the destructive redistribute every time. guard against no-op fires.
     private var lastDisplayFingerprint: String = ""
+    /// Monotonic token for the display-change stability debounce — a newer
+    /// notification supersedes any pending stability check.
+    private var displayChangeGeneration = 0
+    /// True from a screen-parameters notification until the settled
+    /// reconcile (or unchanged-skip) runs. Retiles are deferred while set —
+    /// tiling against half-migrated trees spawns fresh z-ordered duplicates
+    /// that then win the migration over the real trees.
+    private var displayTransitionPending = false
+    private var retileSkippedDuringTransition = false
 
     /// Wire the dependency graph and configure every subsystem callback.
     ///
@@ -165,6 +175,24 @@ class WindowManager {
         self.workspaceOrchestrator.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] in self?.tileAllVisibleSpaces() }
         self.workspaceOrchestrator.animatedRetile = { [weak self] prepare, completion in
+            self?.animatedRetile(prepare: prepare, completion: completion)
+        }
+        self.scratchpad = ScratchpadController(
+            workspaceManager: workspaceManager,
+            stateCache: stateCache,
+            accessibility: accessibility,
+            displayManager: displayManager,
+            tilingEngine: tilingEngine,
+            focusController: focusController,
+            focusBorder: focusBorder,
+            suppressions: suppressions
+        )
+        scratchpad.screenUnderCursor = { [weak self] in self?.screenUnderCursor() }
+        scratchpad.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
+        scratchpad.updatePositionCache = { [weak self] in self?.updatePositionCache() }
+        scratchpad.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+        scratchpad.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
+        scratchpad.animatedRetile = { [weak self] prepare, completion in
             self?.animatedRetile(prepare: prepare, completion: completion)
         }
         self.pollingScheduler = PollingScheduler { [weak self] in
@@ -268,6 +296,8 @@ class WindowManager {
         actionDispatcher.animatedRetile = { [weak self] windows in self?.animatedRetile(windows: windows) }
         actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        actionDispatcher.toggleScratchpad = { [weak self] in self?.scratchpad.toggle() }
+        actionDispatcher.moveToScratchpad = { [weak self] in self?.scratchpad.sendFocusedWindow() }
         // DragSwapHandler shares the dispatcher's swap-rejection flash so cross-monitor and
         // direction swaps both surface the same red-border + beep feedback.
         dragSwapHandler.rejectSwap = { [weak self] window, reason in self?.actionDispatcher.rejectSwap(window, reason: reason) }
@@ -622,6 +652,14 @@ class WindowManager {
             // leave focusController.lastFocusedID stale and currentFocusedWindow() routes
             // commands to whatever was previously hovered, not what the user clicked
             self.syncFocusTrackerToCursor()
+            // scratchpad is quasimodal: a click outside every member dismisses
+            // it in the same tick, so the click lands on the tile it aimed at
+            if self.scratchpad.isVisible {
+                let mouseNS = NSEvent.mouseLocation
+                let cgPoint = CGPoint(x: mouseNS.x,
+                                      y: self.displayManager.primaryScreenHeight - mouseNS.y)
+                self.scratchpad.handleMouseDown(atCG: cgPoint)
+            }
         }
         // when the user drags a floating window, its frame changes 60Hz but our
         // border only repositions on poll (1Hz) — so it lags behind ugly. hide
@@ -702,6 +740,9 @@ class WindowManager {
     /// rest of the system (`AXFocused` queries, key-window state) sees the right
     /// window even before the click lands.
     private func focusForFFM(_ window: HyprWindow) {
+        // while the scratchpad is up, hovering the dimmed tiles behind it
+        // must not steal focus — the layer is quasimodal
+        if scratchpad.isVisible && !scratchpad.contains(window.windowID) { return }
         suppressions.suppress("activation-switch", for: 0.5)
         window.focusWithoutRaise()
         window.focusViaSyntheticClick()
@@ -830,6 +871,27 @@ class WindowManager {
     /// - Parameter focusedID: Override for the "bright" window. Defaults to
     ///   `focusBorder.trackedWindowID`, then `focusController.lastFocusedID`.
     private func refreshDimming(focusedID: CGWindowID? = nil) {
+        // scratchpad scrim: dim every monitor edge-to-edge with the members
+        // carved out. runs regardless of the dim-inactive-windows setting —
+        // the scrim is what makes the layer read as a deliberate surface.
+        if scratchpad.isVisible {
+            dimmingOverlay.enabled = true
+            dimmingOverlay.setIntensity(ScratchpadController.scrimIntensity)
+            dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
+            var screenCovers: [CGWindowID: CGRect] = [:]
+            for (i, screen) in displayManager.screens.enumerated() {
+                screenCovers[CGWindowID(UInt32.max - 1 - UInt32(i))] = displayManager.cgRect(for: screen)
+            }
+            let memberFrames = floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 2)
+                .filter { scratchpad.isSummoned($0.key) }
+            dimmingOverlay.update(
+                focusedID: CGWindowID(UInt32.max),
+                tiledRects: screenCovers,
+                floatingRects: memberFrames,
+                screens: displayManager.screens
+            )
+            return
+        }
         let fid = focusedID ?? focusBorder.trackedWindowID ?? focusController.lastFocusedID
         let focusedWindow = stateCache.cachedWindows[fid]
         if isFullscreenSuppressed(focused: focusedWindow) {
@@ -968,6 +1030,51 @@ class WindowManager {
     /// callback site stays terse and so subclasses or tests can intercept
     /// in one place.
     private func handleAction(_ action: Action) {
+        // workspace flows park/unpark and then focus+warp. mid-display-
+        // transition the tile pass is deferred, so the target workspace
+        // would stay parked with the cursor warped to the 1px park sliver.
+        // drop them for the settle window (a few seconds around wake).
+        if displayTransitionPending {
+            switch action {
+            case .switchWorkspace, .moveToWorkspace, .moveWindowToMonitor, .cycleWorkspace:
+                hyprLog(.notice, .lifecycle, "workspace action dropped mid-display-transition")
+                return
+            default:
+                break
+            }
+        }
+        // workspace flows dismiss the scratchpad first (Hyprland-style: the
+        // layer never survives a workspace change), then run normally —
+        // their own focus/warp supersedes any restore. float-toggle and
+        // floater-cycle get scratchpad semantics while the layer is up:
+        // toggling a member into the dimmed workspace's tree, or cycling
+        // into invisible floaters under the scrim, both read as broken.
+        if scratchpad.isVisible {
+            switch action {
+            case .moveToWorkspace, .moveWindowToMonitor:
+                // move a summoned member OUT to another workspace/monitor:
+                // eject it into tiling on the current monitor first (leaves
+                // it unfloated + focused + the layer dismissed), then let the
+                // normal move flow relocate it. non-member focus just dismisses.
+                if !scratchpad.ejectFocusedWindow() {
+                    scratchpad.hide(reason: .workspaceAction)
+                }
+            case .switchWorkspace, .cycleWorkspace:
+                scratchpad.hide(reason: .workspaceAction)
+            case .toggleFloating:
+                // on a summoned member: eject back into tiling (the way OUT
+                // of the scratchpad). otherwise treat as a send.
+                if !scratchpad.ejectFocusedWindow() {
+                    scratchpad.sendFocusedWindow()
+                }
+                return
+            case .focusFloating:
+                scratchpad.cycleSummoned()
+                return
+            default:
+                break
+            }
+        }
         actionDispatcher.dispatch(action)
     }
 
@@ -1191,6 +1298,16 @@ class WindowManager {
     ///   re-queried. Callers that already have a fresh list pass it to
     ///   avoid the round trip.
     func tileAllVisibleSpaces(windows: [HyprWindow]? = nil) {
+        // mid-display-transition, screens carry new origins but trees haven't
+        // migrated — tiling now creates fresh empty trees at the new keys and
+        // batch-inserts everything in snapshot order, and that duplicate then
+        // wins the migration over the real tree. reconcile retiles when the
+        // topology settles.
+        if displayTransitionPending {
+            retileSkippedDuringTransition = true
+            hyprLog(.notice, .lifecycle, "retile deferred mid-display-transition")
+            return
+        }
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
 
@@ -1260,6 +1377,9 @@ class WindowManager {
         let excluded = Set(config.excludedBundleIDs)
         let keepFloating = Set(allWindows.filter { floatingController.shouldAutoFloat($0, excludedBundleIDs: excluded) }.map { $0.windowID })
         for wid in stateCache.floatingWindowIDs where !keepFloating.contains(wid) && allWids.contains(wid) {
+            // scratchpad members survive Retile All — unfloating them would
+            // dissolve the layer and drag parked windows into the trees
+            if scratchpad.contains(wid) { continue }
             stateCache.floatingWindowIDs.remove(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = false
@@ -1281,6 +1401,18 @@ class WindowManager {
         }
 
         guard !tilingWids.isEmpty else { return }
+
+        // deterministic order: left-to-right by current frame, id tiebreak.
+        // set-iteration order made every explicit redistribute produce a
+        // different arrangement from the same windows.
+        let framesByID = Dictionary(uniqueKeysWithValues: allWindows.map { ($0.windowID, $0.frame ?? .zero) })
+        tilingWids.sort { a, b in
+            let fa = framesByID[a] ?? .zero
+            let fb = framesByID[b] ?? .zero
+            if fa.origin.x != fb.origin.x { return fa.origin.x < fb.origin.x }
+            if fa.origin.y != fb.origin.y { return fa.origin.y < fb.origin.y }
+            return a < b
+        }
 
         // focused window first so it lands on the first visible workspace
         if let fid = focusedID, let idx = tilingWids.firstIndex(of: fid), idx != 0 {
@@ -1476,6 +1608,7 @@ class WindowManager {
     private func applyForgottenIDExternalCleanup(_ id: CGWindowID) {
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
+        scratchpad.forget(id)
         if focusController.lastFocusedID == id {
             focusController.recordFocus(0, reason: "forgetWindow")
         }
@@ -1572,10 +1705,16 @@ class WindowManager {
     private func refreshFloatingBorders(windows: [HyprWindow]? = nil) {
         if config.showFocusBorder {
             let source = windows ?? Array(stateCache.cachedWindows.values)
-            let frames = floatingFrames(from: source)
+            var frames = floatingFrames(from: source)
             // prime the radius cache for each visible floater so the
             // bundle-id override table applies (otherwise resolve()
             // falls back to osDefault for every floating window).
+            // while the scratchpad is up, ordinary floaters sit beneath the
+            // scrim — their border panels (at .floating level) would glow
+            // above it. only members get outlines.
+            if scratchpad.isVisible {
+                frames = frames.filter { scratchpad.isSummoned($0.key) }
+            }
             for w in source where frames[w.windowID] != nil {
                 WindowCornerRadius.prime(for: w)
             }
@@ -1671,12 +1810,18 @@ class WindowManager {
             }
         }
         let text = parts.joined(separator: " ")
+        // scratchpad shows as a full-size tray glyph in the label, not a
+        // string glyph — a superscript marker was too small to read.
+        let scratchpadCount = scratchpad.members.count
+        let scratchpadVisible = scratchpad.isVisible
 
         DispatchQueue.main.async {
             let state = MenuBarState.shared
             state.labelText = text
             state.occupiedWorkspaces = occupied
             state.floatingWorkspaces = floatingWs
+            state.scratchpadCount = scratchpadCount
+            state.scratchpadVisible = scratchpadVisible
             state.hasData = true
         }
     }
@@ -1723,6 +1868,31 @@ class WindowManager {
             focusedWindowID: focusController.lastFocusedID
         )
         actionDispatcher.applyChanges(changes, allWindows: allWindows)
+        repairParkedWindows(allWindows)
+    }
+
+    /// Park self-repair: a hidden-workspace window the OS (or its own app)
+    /// moved back on-screen would otherwise sit visible forever — nothing
+    /// re-parks in steady state and drift deliberately ignores hidden-ws
+    /// windows. Runs after applyChanges so a just-reassigned returned
+    /// window (recycled-id reopen) is already on its visible workspace and
+    /// exempt. Re-parking is idempotent, so a stale AX read of a window
+    /// that is really parked just re-asserts the park.
+    private func repairParkedWindows(_ allWindows: [HyprWindow]) {
+        for w in allWindows {
+            guard let ws = workspaceManager.workspaceFor(w.windowID),
+                  !workspaceManager.isWorkspaceVisible(ws),
+                  let frame = w.frame
+            else { continue }
+            let substantiallyVisible = displayManager.screens.contains { screen in
+                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
+            }
+            guard substantiallyVisible,
+                  let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first
+            else { continue }
+            hyprLog(.notice, .lifecycle, "park repair: '\(w.title ?? "?")' (\(w.windowID)) on hidden ws\(ws) reads visible — re-parking")
+            workspaceManager.hideInCorner(w, on: screen)
+        }
     }
 
     // MARK: - observers
@@ -1758,6 +1928,13 @@ class WindowManager {
             }
         }
 
+        // scratchpad: an activation outside the layer dismisses it (Cmd-Tab,
+        // Dock click). member/self/dock activations and show-grace churn are
+        // filtered inside.
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            scratchpad.noteAppActivation(pid: app.processIdentifier, bundleID: app.bundleIdentifier)
+        }
+
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
         if !suppressions.isSuppressed("activation-switch") {
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
@@ -1769,10 +1946,23 @@ class WindowManager {
                     .filter { $0.value == pid && stateCache.knownWindowIDs.contains($0.key) && !stateCache.hiddenWindowIDs.contains($0.key) }
 
                 let appWorkspaces = appWindows.compactMap { (wid, _) in workspaceManager.workspaceFor(wid) }
-                let hasVisibleWindow = appWorkspaces.contains { visibleWorkspaces.contains($0) }
+                let hasVisibleWindow = appWorkspaces.contains {
+                    visibleWorkspaces.contains($0) || ($0 == ScratchpadController.workspace && scratchpad.isVisible)
+                }
 
                 if !hasVisibleWindow {
-                    if let targetWS = appWorkspaces.filter({ !visibleWorkspaces.contains($0) }).min() {
+                    // all of the app's windows live in the hidden scratchpad:
+                    // summon the layer instead of a workspace switch —
+                    // switchWorkspace(0) would range-guard into a no-op and
+                    // strand the activation.
+                    let hiddenWs = appWorkspaces.filter { !visibleWorkspaces.contains($0) }
+                    if hiddenWs.contains(ScratchpadController.workspace), !scratchpad.isVisible {
+                        let member = appWindows.keys.first { scratchpad.contains($0) }
+                        hyprLog(.notice, .lifecycle, "dock-affordance: \(app.bundleIdentifier ?? "?") lives in scratchpad — auto-showing layer")
+                        scratchpad.show(focusing: member)
+                        return
+                    }
+                    if let targetWS = hiddenWs.filter({ $0 != ScratchpadController.workspace }).min() {
                         let bid = app.bundleIdentifier ?? "?"
                         let wsSorted = appWorkspaces.sorted()
                         let widList = appWindows.map { "\($0.key)→ws\(workspaceManager.workspaceFor($0.key) ?? -1)" }.joined(separator: ",")
@@ -1834,6 +2024,16 @@ class WindowManager {
         if mouseTracker.menuTracking {
             mouseTracker.menuTrackingEnded()
         }
+        // hold discovery off around sleep/wake/lock. nothing else suppresses
+        // polling at wake, so a partial AX snapshot (apps not yet responsive)
+        // reads as mass-gone and OS-restored frames read as drift — both
+        // dismantle the layout off bad data before any display-change
+        // suppression arms.
+        suppressions.suppress("workspace-transition", for: 4.0)
+        hyprLog(.notice, .lifecycle, "discovery suppressed 4s around system interruption")
+        // park the scratchpad across sleep/lock so wake never finds visible
+        // members with a stale scrim
+        scratchpad.hide(reason: .displayChange)
     }
 
     /// React to a new app launch. Half-second delay gives the app time to
@@ -1871,24 +2071,58 @@ class WindowManager {
     @objc private func screenParametersChanged() {
         let names = displayManager.screens.map { $0.localizedName }.joined(separator: ", ")
         hyprLog(.notice, .lifecycle, "screenParametersChanged fired (current screens: [\(names)])")
+        // the scratchpad can't survive a topology change — reconcile would
+        // park its visible members under a live scrim
+        scratchpad.hide(reason: .displayChange)
         // hold discovery off through the settle window. a poll between the
         // topology change and the reconcile below reads windows at their
         // OS-shuffled positions and drift-reassigns them to whatever
         // workspace happens to own the screen they got dumped on.
-        suppressions.suppress("workspace-transition", for: 2.0)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+        suppressions.suppress("workspace-transition", for: 3.0)
+        displayTransitionPending = true
+        displayChangeGeneration += 1
+        scheduleDisplayReconcile()
+    }
+
+    /// Reconcile only once the topology has been stable for a beat. Wake
+    /// reattaches displays one at a time over several seconds — a fixed
+    /// short delay reconciled each transient config as real, re-homing
+    /// every workspace against a one-screen topology and back.
+    private func scheduleDisplayReconcile(stabilityWindow: TimeInterval = 2.0) {
+        let gen = displayChangeGeneration
+        let fingerprintAtSchedule = displayFingerprint()
+        DispatchQueue.main.asyncAfter(deadline: .now() + stabilityWindow) { [weak self] in
             guard let self else { return }
+            // a newer notification owns the debounce now
+            guard gen == self.displayChangeGeneration else { return }
+            let fingerprint = self.displayFingerprint()
+            if fingerprint != fingerprintAtSchedule {
+                // changed without a fresh notification — keep waiting
+                self.suppressions.suppress("workspace-transition", for: 3.0)
+                self.scheduleDisplayReconcile(stabilityWindow: stabilityWindow)
+                return
+            }
             // skip if nothing actually changed. macOS fires the notification
             // for things that don't alter the screen list (call init, app
             // quits, color profile changes).
-            let fingerprint = self.displayFingerprint()
             if fingerprint == self.lastDisplayFingerprint {
                 hyprLog(.notice, .lifecycle, "screen layout unchanged — skipping reconcile")
+                self.displayTransitionPending = false
+                if self.retileSkippedDuringTransition {
+                    self.retileSkippedDuringTransition = false
+                    self.tileAllVisibleSpaces()
+                }
                 return
             }
             self.lastDisplayFingerprint = fingerprint
             self.focusBorder.primaryScreenHeight = self.displayManager.primaryScreenHeight
             self.focusBrackets.primaryScreenHeight = self.displayManager.primaryScreenHeight
+            // cover the reconcile itself plus a settle tail — the retile it
+            // runs moves every window, and the first post-reconcile poll
+            // must not read those moves as drift.
+            self.suppressions.suppress("workspace-transition", for: 3.0)
+            self.displayTransitionPending = false
+            self.retileSkippedDuringTransition = false
             // ordering inside reconcileAfterDisplayChange: DisplayManager.refresh
             // already ran via the same notification; initializeMonitors runs
             // before TilingEngine.handleDisplayChange so the home-screen
@@ -1909,6 +2143,7 @@ class WindowManager {
     /// menu bar's "Retile All" action.
     @objc private func retileAllRequested() {
         hyprLog(.debug, .lifecycle, "retile all spaces requested")
+        scratchpad.hide(reason: .workspaceAction)
         snapshotAndTile()
     }
 }

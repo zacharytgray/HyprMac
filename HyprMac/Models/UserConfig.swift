@@ -171,13 +171,20 @@ class UserConfig: ObservableObject {
 
     // inject any default keybinds whose action doesn't exist in the saved set.
     // handles upgrades where new actions are added (e.g. focusFloating).
+    // never inject onto a chord the user already bound — the injected bind
+    // would silently shadow (or be shadowed by) the user's, and neither is
+    // discoverable. the user can bind the new action manually in Settings.
     private static func mergeNewDefaults(saved: [Keybind]) -> [Keybind] {
         let savedActions = Set(saved.map { "\($0.action)" })
+        let takenChords = Set(saved.map { "\($0.modifiers.rawValue)-\($0.keyCode)" })
         var merged = saved
         for bind in Keybind.defaults {
-            if !savedActions.contains("\(bind.action)") {
-                merged.append(bind)
+            guard !savedActions.contains("\(bind.action)") else { continue }
+            guard !takenChords.contains("\(bind.modifiers.rawValue)-\(bind.keyCode)") else {
+                hyprLog(.notice, .config, "default keybind for \(bind.action) not injected — chord already bound by user")
+                continue
             }
+            merged.append(bind)
         }
         return merged
     }

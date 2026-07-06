@@ -113,12 +113,11 @@ class BSPTree {
 
     /// Rebuild the tree from scratch in left-to-right window order.
     ///
-    /// Called after a removal where the surviving windows might now fit at
-    /// deeper dwindle positions than they currently occupy (e.g., a 2×2 grid
-    /// produced by smart-insert backtracking can collapse back to a normal
-    /// dwindle spiral once the constraint is gone). All split overrides and
-    /// user-set ratios are dropped — this is intentional, since a structural
-    /// rebuild voids both.
+    /// No longer called on removal — sibling promotion in `BSPNode.remove`
+    /// preserves the surviving arrangement, and rebuilding here reshuffled
+    /// unrelated windows on every close/hide. Kept for explicit rebuilds
+    /// (tests, potential future Retile All hook). All split overrides and
+    /// user-set ratios are dropped — a structural rebuild voids both.
     func compact(maxDepth: Int, in rect: CGRect, gap: CGFloat, padding: CGFloat, minSlotDimension: CGFloat) {
         let windows = allWindows // left-to-right preserves insertion order
         guard windows.count > 1 else { return }
