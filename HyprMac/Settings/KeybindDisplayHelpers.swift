@@ -58,6 +58,16 @@ extension Keybind {
         }
     }
 
+    // actions whose semantics touch the floating layer get the magenta ◇ suffix
+    var touchesFloatingLayer: Bool {
+        switch action {
+        case .toggleFloating, .focusFloating, .toggleScratchpad, .moveToScratchpad:
+            return true
+        default:
+            return false
+        }
+    }
+
     var actionDescription: String {
         switch action {
         case .focusDirection(let d):        return "Focus \(d.rawValue.capitalized)"

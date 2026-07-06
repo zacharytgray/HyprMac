@@ -10,23 +10,21 @@ struct SettingsView: View {
     @State private var selectedTab: SettingsTab = .general
 
     enum SettingsTab: String, CaseIterable, Hashable {
-        case general, keybinds, appLauncher, tiling
+        case general, keys, layout
 
         var label: String {
             switch self {
-            case .general:     return "General"
-            case .keybinds:    return "Keybinds"
-            case .appLauncher: return "App Launcher"
-            case .tiling:      return "Tiling"
+            case .general: return "General"
+            case .keys:    return "Keys"
+            case .layout:  return "Layout"
             }
         }
 
         var icon: String {
             switch self {
-            case .general:     return "gearshape"
-            case .keybinds:    return "command"
-            case .appLauncher: return "square.grid.2x2"
-            case .tiling:      return "rectangle.split.3x1"
+            case .general: return "gearshape"
+            case .keys:    return "command"
+            case .layout:  return "rectangle.split.2x2"
             }
         }
     }
@@ -110,10 +108,9 @@ struct SettingsView: View {
             ScrollView {
                 VStack(spacing: HyprSpacing.lg) {
                     switch selectedTab {
-                    case .general:     GeneralSettingsView()
-                    case .keybinds:    KeybindsSettingsView()
-                    case .appLauncher: AppLauncherSettingsView()
-                    case .tiling:      TilingSettingsView()
+                    case .general: GeneralSettingsView()
+                    case .keys:    KeybindsSettingsView()
+                    case .layout:  TilingSettingsView()
                     }
                 }
                 .padding(.horizontal, HyprSpacing.xl)

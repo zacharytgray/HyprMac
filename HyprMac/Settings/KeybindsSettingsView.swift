@@ -1,29 +1,34 @@
-// "Keybinds" tab. Lists every non-launcher keybind grouped by
-// category and offers an editor sheet for adding or modifying one.
+// "Keys" tab. Hypr hero panel, a search field + Add menu, and every
+// keybind (including app launchers) grouped by category.
 
 import SwiftUI
 import Carbon
 
-/// "Keybinds" tab.
+/// "Keys" tab.
 struct KeybindsSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var selectedBindID: String?
-    @State private var showingAddSheet = false
+    @State private var showingAddKeybind = false
+    @State private var showingAddLauncher = false
     @State private var editingBind: Keybind?
+    @State private var search = ""
 
     private static let visibleCategories: [KeybindCategory] = [
-        .focusNav, .windowManagement, .workspaces, .system
+        .focusNav, .windowManagement, .workspaces, .apps, .system
     ]
 
-    private var nonLauncherBinds: [Keybind] {
-        config.keybinds.filter {
-            if case .launchApp = $0.action { return false }
-            return true
-        }
+    // case-insensitive substring on the action description (launcher rows
+    // match on their app name via actionDescription = "Launch <App>").
+    private func matches(_ bind: Keybind) -> Bool {
+        let q = search.trimmingCharacters(in: .whitespaces)
+        if q.isEmpty { return true }
+        return bind.actionDescription.localizedCaseInsensitiveContains(q)
     }
 
     private var grouped: [(category: KeybindCategory, binds: [Keybind])] {
-        let pairs = nonLauncherBinds.map { ($0, KeybindCategory.from($0.action)) }
+        let pairs = config.keybinds
+            .filter(matches)
+            .map { ($0, KeybindCategory.from($0.action)) }
         return Self.visibleCategories.compactMap { cat in
             let binds = pairs.filter { $0.1 == cat }.map(\.0)
             return binds.isEmpty ? nil : (cat, binds)
@@ -32,7 +37,8 @@ struct KeybindsSettingsView: View {
 
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
-            hyprKeyPanel
+            headerRow
+            hyprHeroPanel
 
             ForEach(grouped, id: \.category) { group in
                 HyprPanel(group.category.rawValue) {
@@ -52,10 +58,19 @@ struct KeybindsSettingsView: View {
                 }
             }
 
-            actionsRow
+            Button("Reset to defaults") {
+                config.keybinds = Keybind.defaults
+            }
+            .controlSize(.small)
+            .foregroundStyle(Color.hyprTextSecondary)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, HyprSpacing.xs)
         }
-        .sheet(isPresented: $showingAddSheet) {
+        .sheet(isPresented: $showingAddKeybind) {
             KeybindEditorSheet(existingBind: nil) { config.keybinds.append($0) }
+        }
+        .sheet(isPresented: $showingAddLauncher) {
+            AppLauncherEditorSheet { config.keybinds.append($0) }
         }
         .sheet(item: $editingBind) { bind in
             KeybindEditorSheet(existingBind: bind) { updated in
@@ -66,65 +81,122 @@ struct KeybindsSettingsView: View {
         }
     }
 
-    private var hyprKeyPanel: some View {
-        HyprPanel("Hypr Key", footer: hyprKeyDescription) {
-            HyprRow("Physical key", icon: "command", divider: false) {
-                Picker("", selection: $config.hyprKey) {
-                    ForEach(HyprKey.allCases) { key in
-                        Text(key.displayName).tag(key)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 160)
-            }
-        }
-    }
+    // MARK: header — search + add
 
-    private var hyprKeyDescription: String {
-        if config.hyprKey.usesCapsLockRemap {
-            return "Caps Lock is remapped to F18 via hidutil while HyprMac is running, then restored when the app quits."
-        }
-        if config.hyprKey.nativeModifierFlag != nil {
-            return "\(config.hyprKey.displayName) acts as a dedicated Hypr key while HyprMac is running and is swallowed before apps see it."
-        }
-        return "\(config.hyprKey.displayName) acts as the Hypr key while HyprMac is running and is swallowed before apps see it."
-    }
-
-    private var actionsRow: some View {
+    private var headerRow: some View {
         HStack(spacing: HyprSpacing.sm) {
-            Button { showingAddSheet = true } label: {
-                Label("Add keybind", systemImage: "plus")
-            }
-            .controlSize(.small)
-
-            if let sel = selectedBindID,
-               let idx = config.keybinds.firstIndex(where: { $0.id == sel }) {
-                Button { editingBind = config.keybinds[idx] } label: {
-                    Label("Edit", systemImage: "pencil")
-                }
-                .controlSize(.small)
-
-                Button(role: .destructive) {
-                    config.keybinds.remove(at: idx)
-                    selectedBindID = nil
-                } label: {
-                    Label("Delete", systemImage: "trash")
-                }
-                .controlSize(.small)
-                .tint(.red)
-            }
-
             Spacer()
 
-            Button("Reset to defaults") {
-                config.keybinds = Keybind.defaults
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.hyprTextTertiary)
+                TextField("Search actions…", text: $search)
+                    .textFieldStyle(.plain)
+                    .font(.hyprCaption)
             }
-            .controlSize(.small)
-            .foregroundStyle(Color.hyprTextSecondary)
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .frame(width: 190)
+            .background(
+                RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                    .fill(Color.hyprSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                    .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)
+            )
+
+            Menu {
+                Button("Keybind…") { showingAddKeybind = true }
+                Button("App launcher…") { showingAddLauncher = true }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text("Add")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .foregroundStyle(Color.hyprBackground)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .fill(Color.hyprCyan)
+                )
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .fixedSize()
         }
         .padding(.horizontal, HyprSpacing.xs)
     }
+
+    // MARK: hypr hero
+
+    private var hyprHeroPanel: some View {
+        HStack(spacing: HyprSpacing.lg - 2) {
+            // 52×52 keycap glyph with a brighter bottom bevel
+            Text("⇪")
+                .font(.system(size: 22, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.hyprCyan)
+                .frame(width: 52, height: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .fill(Color.hyprSurfaceElevated)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [Color.hyprSeparator, Color.hyprTextPrimary.opacity(0.22)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                )
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Hypr key")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.hyprTextPrimary)
+                Text("Hold it, press a key, do a window thing. One key unlocks everything.")
+                    .font(.hyprCaption)
+                    .foregroundStyle(Color.hyprTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: HyprSpacing.sm)
+
+            Picker("", selection: $config.hyprKey) {
+                ForEach(HyprKey.allCases) { key in
+                    Text(key.displayName).tag(key)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 150)
+        }
+        .padding(.horizontal, HyprSpacing.lg)
+        .padding(.vertical, HyprSpacing.md + 2)
+        .background(
+            RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [Color.hyprCyan.opacity(0.09), Color.hyprMagenta.opacity(0.07)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
+                .strokeBorder(Color.hyprCyan.opacity(0.22), lineWidth: 1)
+        )
+    }
 }
+
+// MARK: - keybind row
 
 private struct KeybindRow: View {
     let bind: Keybind
@@ -134,17 +206,31 @@ private struct KeybindRow: View {
     let onDoubleTap: () -> Void
     let onDelete: () -> Void
 
+    private var isLauncher: Bool {
+        if case .launchApp = bind.action { return true }
+        return false
+    }
+
+    private var leadingInset: CGFloat {
+        // align divider under the label, past icon + gap
+        HyprSpacing.md + (isLauncher ? 20 : 16) + HyprSpacing.md
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: HyprSpacing.md) {
-                Image(systemName: bind.actionIcon)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color.hyprTextSecondary)
-                    .frame(width: 16)
+                icon
 
-                Text(bind.actionDescription)
-                    .font(.hyprBody)
-                    .foregroundStyle(Color.hyprTextPrimary)
+                HStack(spacing: 5) {
+                    Text(rowTitle)
+                        .font(.hyprBody)
+                        .foregroundStyle(Color.hyprTextPrimary)
+                    if bind.touchesFloatingLayer {
+                        Text("◇")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.hyprMagenta)
+                    }
+                }
 
                 Spacer()
 
@@ -154,9 +240,7 @@ private struct KeybindRow: View {
             .padding(.vertical, HyprSpacing.sm + 1)
             .contentShape(Rectangle())
             .background(
-                isSelected
-                    ? Color.hyprCyan.opacity(0.10)
-                    : Color.clear
+                isSelected ? Color.hyprCyan.opacity(0.10) : Color.clear
             )
             .onTapGesture(count: 2) { onDoubleTap() }
             .onTapGesture(count: 1) { onTap() }
@@ -170,9 +254,38 @@ private struct KeybindRow: View {
                 Rectangle()
                     .fill(Color.hyprSeparator)
                     .frame(height: 0.5)
-                    .padding(.leading, HyprSpacing.md + 16 + HyprSpacing.md)
+                    .padding(.leading, leadingInset)
             }
         }
+    }
+
+    @ViewBuilder private var icon: some View {
+        if case .launchApp(let bundleID) = bind.action {
+            Group {
+                if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
+                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                        .resizable()
+                } else {
+                    Image(systemName: "app")
+                        .resizable()
+                        .foregroundStyle(Color.hyprTextTertiary)
+                        .padding(3)
+                }
+            }
+            .frame(width: 20, height: 20)
+        } else {
+            Image(systemName: bind.actionIcon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.hyprTextSecondary)
+                .frame(width: 16)
+        }
+    }
+
+    private var rowTitle: String {
+        if case .launchApp(let bundleID) = bind.action {
+            return "Launch / focus \(appDisplayName(for: bundleID))"
+        }
+        return bind.actionDescription
     }
 }
 

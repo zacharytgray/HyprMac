@@ -3,8 +3,9 @@
 import SwiftUI
 
 /// "General" tab. Enable toggle, accessibility status,
-/// focus-follows-mouse, never-tile bundle list, menu bar indicator,
-/// iCloud sync, Hypr key picker, version, and reset.
+/// focus-follows-mouse, never-tile list, System panel (menu bar
+/// indicator, iCloud sync, launch-at-login), and a footer with
+/// replay-the-tour + reset.
 struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
@@ -14,10 +15,8 @@ struct GeneralSettingsView: View {
             statusPanel
             mousePanel
             neverTilePanel
-            menuBarPanel
-            iCloudPanel
-            startupPanel
-            aboutPanel
+            systemPanel
+            footerPanel
         }
         .onAppear {
             accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
@@ -135,75 +134,71 @@ struct GeneralSettingsView: View {
         }
     }
 
-    // MARK: menu bar
+    // MARK: system — menu bar + iCloud + login items
 
-    private var menuBarPanel: some View {
-        HyprPanel("Menu bar",
-                  footer: "Displays active workspaces and floating window status. When disabled, shows a static icon.") {
-            HyprRow("Workspace indicator", icon: "rectangle.fill.on.rectangle.fill", divider: false) {
+    private var systemPanel: some View {
+        HyprPanel("System",
+                  footer: "Add HyprMac to Login Items in System Settings → General → Login Items to launch at startup.") {
+            HyprRow("Menu bar workspace indicator", icon: "rectangle.fill.on.rectangle.fill") {
                 Toggle("", isOn: $config.showMenuBarIndicator)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             }
-        }
-    }
 
-    // MARK: iCloud
-
-    private var iCloudPanel: some View {
-        HyprPanel("iCloud sync",
-                  footer: "Syncs keybinds, tiling settings, and preferences across Macs. Requires iCloud Drive in System Settings.") {
             if config.isICloudDriveAvailable {
-                HyprRow("Sync via iCloud Drive", icon: "icloud", divider: false) {
+                HyprRow("Sync settings via iCloud", icon: "icloud") {
                     Toggle("", isOn: $config.iCloudSyncEnabled)
                         .toggleStyle(HyprToggleStyle())
                         .labelsHidden()
                 }
             } else {
-                HyprRow("iCloud Drive unavailable", icon: "xmark.icloud",
-                        subtitle: "Enable iCloud Drive in System Settings", divider: false) { EmptyView() }
+                HyprRow("Sync settings via iCloud", icon: "xmark.icloud",
+                        subtitle: "Enable iCloud Drive in System Settings") { EmptyView() }
             }
-        }
-    }
 
-    // MARK: startup
-
-    private var startupPanel: some View {
-        HyprPanel("Startup",
-                  footer: "Add HyprMac to Login Items in System Settings → General → Login Items to launch at startup.") {
-            HyprRow("Launch at login", icon: "power", divider: false) {
-                HyprChip("MANUAL")
-            }
-        }
-    }
-
-    // MARK: about
-
-    private var aboutPanel: some View {
-        HyprPanel("About") {
-            HyprRow("Version", icon: "tag") {
-                HyprChip(appVersion)
-            }
-            HyprRow("Getting started", icon: "sparkles") {
-                Button("Show") {
-                    (NSApp.delegate as? AppDelegate)?.showTour()
+            Button { openLoginItems() } label: {
+                HyprRow("Launch at login", icon: "power", divider: false) {
+                    HyprChip("MANUAL ↗")
                 }
-                .controlSize(.small)
+                .contentShape(Rectangle())
             }
-            HyprRow("Reset all settings", icon: "arrow.counterclockwise",
-                    subtitle: "Restores keybinds, tiling, exclusions to defaults",
-                    divider: false) {
-                Button("Reset") { config.resetToDefaults() }
-                    .controlSize(.small)
-                    .tint(.red)
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: footer — replay tour + reset
+
+    private var footerPanel: some View {
+        HyprPanel {
+            Button {
+                (NSApp.delegate as? AppDelegate)?.showTour()
+            } label: {
+                HyprRow("Replay the tour", icon: "sparkles") {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.hyprTextTertiary)
+                }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+
+            Button { config.resetToDefaults() } label: {
+                HyprRow("Reset all settings…",
+                        subtitle: "Restores keybinds, tiling, exclusions to defaults",
+                        divider: false) { EmptyView() }
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.red)
         }
     }
 
     // MARK: helpers
 
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    private func openLoginItems() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.LoginItems-Settings.extension") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     private func pickExcludedApp() {

@@ -20,34 +20,72 @@ struct TilingSettingsView: View {
         }
     }
 
-    // MARK: gaps
+    // MARK: gaps hero — sliders left, live preview right
 
     private var gapsPanel: some View {
-        HyprPanel("Window Gaps") {
-            HyprRow("Inner gap", icon: "rectangle.inset.filled.and.person.filled") {
-                HStack(spacing: HyprSpacing.sm) {
-                    Slider(value: $config.gapSize, in: 0...32, step: 2)
-                        .frame(width: 180)
-                    HyprChip("\(Int(config.gapSize))px")
-                        .frame(width: 56, alignment: .trailing)
+        VStack(alignment: .leading, spacing: HyprSpacing.sm) {
+            Text("Gaps")
+                .font(.hyprSection)
+                .foregroundStyle(Color.hyprTextSecondary)
+                .textCase(.uppercase)
+                .kerning(0.5)
+                .padding(.horizontal, HyprSpacing.md)
+
+            HStack(alignment: .top, spacing: HyprSpacing.lg + 2) {
+                VStack(alignment: .leading, spacing: HyprSpacing.md) {
+                    gapSlider(label: "Inner gap", value: $config.gapSize)
+                    gapSlider(label: "Outer padding", value: $config.outerPadding)
+                    Text("Preview updates live — the geometry is the design.")
+                        .font(.hyprCaption)
+                        .foregroundStyle(Color.hyprTextTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                DwindlePreview(
+                    windowCount: 4,
+                    aspectRatio: 16.0 / 10.0,
+                    gap: config.gapSize,
+                    padding: config.outerPadding
+                )
+                .frame(width: 280, height: 175)
+                .background(
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .fill(Color.hyprBackground)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)
+                )
             }
-            HyprRow("Outer padding", icon: "square.dashed", divider: false) {
-                HStack(spacing: HyprSpacing.sm) {
-                    Slider(value: $config.outerPadding, in: 0...32, step: 2)
-                        .frame(width: 180)
-                    HyprChip("\(Int(config.outerPadding))px")
-                        .frame(width: 56, alignment: .trailing)
-                }
+            .padding(HyprSpacing.md + 2)
+            .background(
+                RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
+                    .fill(Color.hyprSurface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
+                    .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)
+            )
+        }
+    }
+
+    private func gapSlider(label: String, value: Binding<CGFloat>) -> some View {
+        VStack(alignment: .leading, spacing: HyprSpacing.xs) {
+            HStack {
+                Text(label).font(.hyprBody)
+                Spacer()
+                HyprChip("\(Int(value.wrappedValue)) px")
             }
+            Slider(value: value, in: 0...32, step: 2)
         }
     }
 
     // MARK: focus indicator + dim
 
     private var focusPanel: some View {
-        HyprPanel("Focus Indicator",
-                  footer: "Corner brackets appear around the focused window while the Hypr key is held. Show focus border adds a persistent outline that tints during traversal and settles to a thin border. Both use the focus color. Dim darkens everything except the focused window — no SIP required.") {
+        HyprPanel("Focus Chrome",
+                  footer: "Corner brackets appear around the focused window while the Hypr key is held. Show focus border adds a persistent outline that tints during traversal and settles to a thin border. Dim darkens everything except the focused window — no SIP required.") {
             HyprRow("Focus color", icon: "paintpalette", divider: true) {
                 ColorPickerRow(
                     label: "",
@@ -56,29 +94,28 @@ struct TilingSettingsView: View {
                     color: Binding(
                         get: { Color(config.resolvedFocusBorderColor) },
                         set: { config.focusBorderColorHex = NSColor($0).hexString }
-                    )
+                    ),
+                    defaultLabel: "hyprCyan · default"
                 )
             }
-            HyprRow("Show focus border", icon: "rectangle.dashed",
-                    divider: config.showFocusBorder) {
+            // floating color is always shown — magenta ◇ marks it as
+            // floating-layer territory.
+            HyprRow("Floating color", icon: "paintpalette.fill", divider: true, floatingMarker: true) {
+                ColorPickerRow(
+                    label: "",
+                    isCustom: config.floatingBorderColorHex != nil,
+                    onReset: { config.floatingBorderColorHex = nil },
+                    color: Binding(
+                        get: { Color(config.resolvedFloatingBorderColor) },
+                        set: { config.floatingBorderColorHex = NSColor($0).hexString }
+                    ),
+                    defaultLabel: "hyprMagenta · default"
+                )
+            }
+            HyprRow("Show focus border", icon: "rectangle.dashed", divider: true) {
                 Toggle("", isOn: $config.showFocusBorder)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
-            }
-
-            if config.showFocusBorder {
-                HyprRow("Floating border color", icon: "paintpalette.fill",
-                        divider: true) {
-                    ColorPickerRow(
-                        label: "",
-                        isCustom: config.floatingBorderColorHex != nil,
-                        onReset: { config.floatingBorderColorHex = nil },
-                        color: Binding(
-                            get: { Color(config.resolvedFloatingBorderColor) },
-                            set: { config.floatingBorderColorHex = NSColor($0).hexString }
-                        )
-                    )
-                }
             }
 
             HyprRow("Dim inactive windows", icon: "moon",
@@ -97,9 +134,9 @@ struct TilingSettingsView: View {
                     }
                 }
             }
-            // shared between the focus border and dim overlay — they
-            // fade in lockstep so chrome appears/disappears together.
-            HyprRow("Animation duration", icon: "timer", divider: false) {
+            HyprRow("Chrome fade", icon: "timer",
+                    subtitle: "Shared by focus border, dimming, and the scratchpad scrim.",
+                    divider: false) {
                 HStack(spacing: HyprSpacing.sm) {
                     Slider(value: $config.chromeFadeDurationSec, in: 0.0...1.0, step: 0.01)
                         .frame(width: 180)
