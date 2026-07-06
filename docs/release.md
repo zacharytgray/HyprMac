@@ -12,16 +12,16 @@ prep, see CLAUDE.md "Release Feature List".
 ## Usage
 
 ```sh
-export PATH="/usr/local/bin:$PATH"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 export DEVELOPMENT_TEAM=WYY8494SWG
-source ~/OpenClaude/Secrets/.env
 ./scripts/release.sh <version>
 ```
 
-The `PATH` and `source` lines exist because `xcodegen`, `gh`, and
-`DEVELOPMENT_TEAM` live in places the script's invocation
-environment may not see by default. Match this exact pattern from
-within Claude Code or another sandboxed shell.
+The `PATH` line exists because `xcodegen` and `gh` live in places
+the script's invocation environment may not see by default. Match
+this exact pattern from within Claude Code or another sandboxed
+shell. Set `KEYCHAIN_PASSWORD` in the environment to skip the
+interactive keychain prompt.
 
 The script commits and pushes automatically. Commit any other
 in-flight changes first, then run the release.

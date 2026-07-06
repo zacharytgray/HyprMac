@@ -179,3 +179,39 @@ actions go in `DefaultKeybinds.swift`; the merge handles the rest.
 `NSColor.fromHex` returns `nil` on malformed input and logs a
 `.warning`. Invalid color strings fall back to the system default
 silently rather than crashing.
+
+## Hand-editing config.json
+
+Config lives at `~/Library/Application Support/HyprMac/config.json`
+(delete to reset to defaults). Keybind entries look like:
+
+```json
+{ "keyCode": 123, "modifiers": { "rawValue": 1 }, "action": { "focusDirection": { "_0": "left" } } }
+```
+
+Restart HyprMac after editing. Example — bind Hypr+B to launch Safari:
+
+```json
+{ "keyCode": 11, "modifiers": { "rawValue": 1 }, "action": { "launchApp": { "bundleID": "com.apple.Safari" } } }
+```
+
+**Modifier rawValues** (bitwise OR to combine — see
+`Models/Keybind.swift`): `1` Hypr, `2` Shift, `4` Option, `8`
+Control, `16` Command. Hypr+Shift = `3`, Hypr+Ctrl = `9`.
+
+**Key codes** (decimal, Carbon `kVK_*`):
+
+- Arrows: Left=123, Right=124, Up=126, Down=125
+- Letters: A=0, S=1, D=2, F=3, H=4, G=5, Z=6, X=7, C=8, V=9, B=11,
+  Q=12, W=13, E=14, R=15, Y=16, T=17, O=31, U=32, I=34, P=35, L=37,
+  J=38, K=40, N=45, M=46
+- Numbers: 1=18, 2=19, 3=20, 4=21, 5=23, 6=22, 7=26, 8=28, 9=25, 0=29
+- Return=36, Space=49, Tab=48, Delete=51, Escape=53, Grave/Backtick=50
+
+**Other config fields**: `gapSize`, `outerPadding`, `enabled`,
+`focusFollowsMouse`, `excludedBundleIDs` (bundle IDs that never
+tile — auto-float on discovery), `disabledMonitors` (monitor names
+matching `NSScreen.localizedName`, excluded from tiling entirely).
+
+Find any app's bundle ID:
+`mdls -name kMDItemCFBundleIdentifier /Applications/AppName.app`
