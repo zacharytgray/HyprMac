@@ -1,6 +1,4 @@
-// Data tables and reusable building blocks for the Welcome window.
-// `FeaturePage` lives here because it is shared by onboarding and
-// the welcome slideshow.
+// Data tables for the Welcome / Tour window.
 
 import SwiftUI
 
@@ -8,11 +6,18 @@ import SwiftUI
 // Update this array before each release with features from git log;
 // see CLAUDE.md "Release Feature List" for the workflow.
 
-/// One row in the "What's New" panel: icon, title, description.
+/// Accent used for a changelog row's icon tile.
+enum WhatsNewTint {
+    case cyan   // default
+    case magenta // floating / scratchpad features
+}
+
+/// One row in the "What's New" page: icon, title, description, tint.
 struct WhatsNewFeature {
     let icon: String
     let title: String
     let description: String
+    var tint: WhatsNewTint = .cyan
 }
 
 enum WhatsNewFeatures {
@@ -21,7 +26,8 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "tray.full",
             title: "Scratchpad for Floating Windows",
-            description: "Hypr + S summons a scratchpad — a layer of floating windows over a dimmed backdrop, with no tiling rules. Send the focused window there with Hypr + Shift + S, click anywhere else to dismiss, and Hypr + Shift + S again pulls a window back into tiling. Perfect for a drop-down terminal, music, or chat you want on hand but out of the way."
+            description: "Hypr + S summons a scratchpad — a layer of floating windows over a dimmed backdrop, with no tiling rules. Send the focused window there with Hypr + Shift + S, click anywhere else to dismiss, and Hypr + Shift + S again pulls a window back into tiling. Perfect for a drop-down terminal, music, or chat you want on hand but out of the way.",
+            tint: .magenta
         ),
         WhatsNewFeature(
             icon: "moon.zzz",
@@ -41,73 +47,14 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "menubar.rectangle",
             title: "Scratchpad in the Menu Bar",
-            description: "A tray glyph in the menu bar shows how many windows are stashed in the scratchpad — filled while the layer is open, with a count when it holds more than one."
+            description: "A tray glyph in the menu bar shows how many windows are stashed in the scratchpad — filled while the layer is open, with a count when it holds more than one.",
+            tint: .magenta
         ),
     ]
 }
 
-// MARK: - essential shortcuts shown on the welcome slideshow
-
 enum WelcomeContent {
-    static let essentialKeybinds: [(key: String, desc: String)] = [
-        ("Hypr + Arrow",         "Focus window in direction"),
-        ("Hypr + Shift + Arrow", "Swap window in direction"),
-        ("Hypr + 1-9",           "Switch workspace"),
-        ("Hypr + Shift + 1-9",   "Move window to workspace"),
-        ("Hypr + Shift + T",     "Toggle floating"),
-        ("Hypr + J",             "Toggle split direction"),
-        ("Hypr + F",             "Cycle floating windows"),
-        ("Hypr + K",             "Show keybind overlay"),
-    ]
-
     static var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
-}
-
-// MARK: - shared single feature page (icon + title + description + detail)
-
-struct FeaturePage: View {
-    let icon: String
-    let title: String
-    let description: String
-    let detail: String
-
-    var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 32))
-                .foregroundColor(.accentColor)
-            Text(title)
-                .font(.system(size: 15, weight: .semibold))
-            Text(description)
-                .font(.system(size: 12))
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-            Text(detail)
-                .font(.system(size: 11))
-                .foregroundColor(.secondary.opacity(0.7))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
-        }
-        .padding(.horizontal, 24)
-    }
-}
-
-// MARK: - vibrancy wrapper
-
-struct VisualEffectView: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let v = NSVisualEffectView()
-        v.material = material
-        v.blendingMode = blendingMode
-        v.state = .active
-        return v
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

@@ -2,34 +2,21 @@
 
 import SwiftUI
 
-/// Which welcome flow to render.
+/// Which Tour flow to render.
 enum WelcomeMode {
-    /// First-launch onboarding tutorial.
-    case onboarding
-    /// Post-install / upgrade slideshow.
-    case welcome
-    /// Post-update "What's New" panel.
+    /// First-launch walkthrough (4 pages).
+    case firstRun
+    /// Post-update / legacy "What's New" page.
     case whatsNew
 }
 
-/// Thin router that dispatches to one of three mode views inside a
-/// vibrancy-backed frame. Each mode owns its own pagination state.
+/// Thin router: both modes render the single `TourView` shell.
 struct WelcomeView: View {
     let mode: WelcomeMode
     let onDismiss: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            switch mode {
-            case .onboarding: OnboardingView(onDismiss: onDismiss)
-            case .welcome:    WelcomeSlideView(onDismiss: onDismiss)
-            case .whatsNew:   WhatsNewView(onDismiss: onDismiss)
-            }
-        }
-        .frame(width: 520, height: 440)
-        .background(
-            VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
-        )
+        TourView(mode: mode, onDismiss: onDismiss)
     }
 }
 

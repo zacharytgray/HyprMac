@@ -186,7 +186,7 @@ struct GeneralSettingsView: View {
             }
             HyprRow("Getting started", icon: "sparkles") {
                 Button("Show") {
-                    (NSApp.delegate as? AppDelegate)?.showOnboarding()
+                    (NSApp.delegate as? AppDelegate)?.showTour()
                 }
                 .controlSize(.small)
             }

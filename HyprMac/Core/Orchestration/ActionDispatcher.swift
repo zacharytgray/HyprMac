@@ -187,6 +187,33 @@ final class ActionDispatcher {
         case .moveToScratchpad:
             moveToScratchpad()
         }
+
+        // let the Tour try-it hint (and any future observers) react. cheap —
+        // one post per hotkey press. discriminator identifies the case.
+        NotificationCenter.default.post(
+            name: .hyprMacActionDispatched, object: nil,
+            userInfo: ["action": Self.discriminator(for: action)])
+    }
+
+    /// Stable string tag for an `Action` case, used as notification payload.
+    private static func discriminator(for action: Action) -> String {
+        switch action {
+        case .focusDirection:      return "focusDirection"
+        case .swapDirection:       return "swapDirection"
+        case .switchWorkspace:     return "switchWorkspace"
+        case .moveToWorkspace:     return "moveToWorkspace"
+        case .moveWindowToMonitor: return "moveWindowToMonitor"
+        case .toggleFloating:      return "toggleFloating"
+        case .toggleSplit:         return "toggleSplit"
+        case .showKeybinds:        return "showKeybinds"
+        case .launchApp:           return "launchApp"
+        case .focusMenuBar:        return "focusMenuBar"
+        case .focusFloating:       return "focusFloating"
+        case .closeWindow:         return "closeWindow"
+        case .cycleWorkspace:      return "cycleWorkspace"
+        case .toggleScratchpad:    return "toggleScratchpad"
+        case .moveToScratchpad:    return "moveToScratchpad"
+        }
     }
 
     // MARK: - apply-loop helpers

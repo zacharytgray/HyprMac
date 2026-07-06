@@ -109,12 +109,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 
         if !hasSeenOnboarding {
-            // first time ever — show onboarding tutorial
-            showWelcome(mode: .onboarding)
+            // first time ever — first-run walkthrough
+            showWelcome(mode: .firstRun)
             UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         } else if lastVersion == nil {
-            // existing user who never had version tracking — show welcome
-            showWelcome(mode: .welcome)
+            // existing user who never had version tracking — show what's new
+            showWelcome(mode: .whatsNew)
         } else if lastVersion != currentVersion {
             showWelcome(mode: .whatsNew)
         }
@@ -122,9 +122,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
     }
 
-    /// Public entry for the menu-bar "Show Onboarding" action.
-    func showOnboarding() {
-        showWelcome(mode: .onboarding)
+    /// Public entry for replaying the first-run tour from Settings.
+    func showTour() {
+        showWelcome(mode: .firstRun)
     }
 
     private func showWelcome(mode: WelcomeMode) {
