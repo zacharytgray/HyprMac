@@ -73,6 +73,9 @@ class MouseTrackingManager {
     var onHideFocusBorder: () -> Void = {}
     // routed to SuppressionRegistry["mouse-focus"] by WindowManager
     var isMouseFocusSuppressed: () -> Bool = { false }
+    // true while the scratchpad layer is up — FFM must not reach through the
+    // scrim to hover-focus a background tile (would dismiss the quasimodal layer)
+    var isScratchpadVisible: () -> Bool = { false }
     // user-configurable throttle override; falls back to Tuning.throttleInterval
     var hoverThrottleInterval: () -> CFAbsoluteTime = { Tuning.throttleInterval }
     // routed to FocusStateController by WindowManager (canonical "last focused" id)
@@ -120,6 +123,9 @@ class MouseTrackingManager {
     /// owned by `SuppressionRegistry["mouse-focus"]`.
     private func isFFMEligible() -> Bool {
         guard isFocusFollowsMouseEnabled() else { return false }
+        // scratchpad quasimodality freezes focus to summoned members; hovering
+        // the scrimmed background must not steal focus to a tile beneath it.
+        if isScratchpadVisible() { hyprLog(.debug, .mouse, "ffm-bail: scratchpad visible"); return false }
         if isMouseButtonDown() { hyprLog(.debug, .mouse, "ffm-bail: mouseButtonDown"); return false }
         if menuTracking {
             // watchdog: HIToolbox sometimes drops endMenuTrackingNotification on

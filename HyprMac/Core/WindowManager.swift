@@ -261,6 +261,7 @@ class WindowManager {
         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         mouseTracker.isMouseFocusSuppressed = { [weak self] in self?.suppressions.isSuppressed("mouse-focus") ?? false }
+        mouseTracker.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
         mouseTracker.lastFocusedID = { [weak self] in self?.focusController.lastFocusedID ?? 0 }
         mouseTracker.recordFocus = { [weak self] id, reason in self?.focusController.recordFocus(id, reason: reason) }
         mouseTracker.onHideFocusBorder = { [weak self] in
@@ -275,6 +276,7 @@ class WindowManager {
         floatingController.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
         floatingController.adoptIntoScratchpad = { [weak self] w, frame in self?.scratchpad.adopt(w, preferredFrame: frame) }
 
         // drag-result handler
@@ -998,6 +1000,20 @@ class WindowManager {
     private func ensureFocus() {
         suppressions.suppress("mouse-focus", for: 0.15)
 
+        // scratchpad is quasimodal: focus belongs to a summoned member. the
+        // resolver below is scoped to the cursor's *background* workspace
+        // (screenUnderCursor never maps to ws 0), so letting it run would
+        // focus — and front — a tile under the cursor, dismissing the layer.
+        // just re-assert the current member and stop.
+        if scratchpad.isVisible {
+            let current = focusBorder.trackedWindowID ?? focusController.lastFocusedID
+            if scratchpad.isSummoned(current), let w = stateCache.cachedWindows[current] {
+                w.focusWithoutRaise()
+                updateFocusBorder(for: w)
+            }
+            return
+        }
+
         let screen = screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
         let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
@@ -1596,6 +1612,11 @@ class WindowManager {
     /// `true` when `windowID` is a valid focus target right now: either
     /// assigned to the cursor's workspace or a visible floating window.
     private func isSelectableInCurrentContext(_ windowID: CGWindowID, workspaceWindows: Set<CGWindowID>) -> Bool {
+        // a summoned scratchpad member is a valid target while the layer is up,
+        // whether floating or tiled-within-the-layer. tiled members aren't in
+        // floatingWindowIDs, so without this the untile (Hypr+Shift+T) resolver
+        // can't find them and the toggle silently no-ops.
+        if scratchpad.isVisible && scratchpad.isSummoned(windowID) { return true }
         if workspaceWindows.contains(windowID) { return true }
         return stateCache.floatingWindowIDs.contains(windowID) && workspaceManager.isWindowVisible(windowID)
     }

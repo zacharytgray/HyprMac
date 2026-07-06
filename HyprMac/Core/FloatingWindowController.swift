@@ -42,6 +42,7 @@ final class FloatingWindowController {
     var updateFocusBorder: ((HyprWindow) -> Void)?
     var updatePositionCache: (() -> Void)?
     var isMenuTracking: () -> Bool = { false }
+    var isScratchpadVisible: () -> Bool = { false }
     // spill an evicted window into the scratchpad overflow buffer.
     var adoptIntoScratchpad: ((HyprWindow, CGRect?) -> Void)?
 
@@ -208,6 +209,10 @@ final class FloatingWindowController {
     /// raise itself does not hijack keyboard focus.
     func raiseBehind() {
         guard !isRaising else { return }
+        // scratchpad is quasimodal: it owns the level-0 stack (scrim below,
+        // members raised above) and the post-raise focusWithoutRaise would
+        // pull focus onto a background tiled window and dismiss the layer.
+        guard !isScratchpadVisible() else { return }
         // skip while a native menu is tracking — the post-raise focusWithoutRaise below
         // synthesizes key-focus events that dismiss context menus.
         guard !isMenuTracking() else { return }
