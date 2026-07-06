@@ -77,7 +77,38 @@ struct MenuBarView: View {
                         isLast: idx == NSScreen.screens.count - 1
                     )
                 }
+                workspaceLegend
             }
+        }
+    }
+
+    // glyph legend + optional stash chip, below the workspace rows and
+    // separated by a hairline top border.
+    private var workspaceLegend: some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(Color.hyprSeparator)
+                .frame(height: 0.5)
+            HStack(spacing: HyprSpacing.sm) {
+                HStack(spacing: 2) {
+                    Text("● active").foregroundStyle(Color.hyprTextTertiary)
+                    Text("○ occupied").foregroundStyle(Color.hyprTextTertiary)
+                    Text("◇ floating").foregroundStyle(Color.hyprMagenta)
+                }
+                .font(.hyprMonoXs)
+                Spacer(minLength: HyprSpacing.sm)
+                if MenuBarState.shared.scratchpadCount > 0 {
+                    HStack(spacing: 3) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 10))
+                        Text("\(MenuBarState.shared.scratchpadCount) stashed")
+                            .font(.hyprMonoXs)
+                    }
+                    .foregroundStyle(Color.hyprMagenta)
+                }
+            }
+            .padding(.horizontal, HyprSpacing.md)
+            .padding(.vertical, HyprSpacing.sm)
         }
     }
 
@@ -127,7 +158,8 @@ struct MenuBarView: View {
             Text("\(num)")
                 .font(.hyprMonoSm)
             if floating {
-                Text("◇").font(.system(size: 8))
+                // floating marker is always magenta, per accent semantics.
+                Text("◇").font(.system(size: 8)).foregroundStyle(Color.hyprMagenta)
             }
         }
         .frame(minWidth: 20, minHeight: 18)
@@ -154,7 +186,15 @@ struct MenuBarView: View {
 
     private var actions: some View {
         VStack(spacing: 1) {
-            MenuBarRow("Settings…", icon: "gearshape", shortcut: "⌘,") {
+            MenuBarRow("Keybind cheat sheet", icon: "keyboard") {
+                (NSApp.delegate as? AppDelegate)?.windowManager?.handleAction(.showKeybinds)
+            } trailing: {
+                HStack(spacing: 3) {
+                    KeyChip(config.hyprKey.badgeLabel)
+                    KeyChip("K")
+                }
+            }
+            MenuBarRow("Settings…", icon: "gearshape") {
                 openWindow(id: "settings")
                 NSApp.activate(ignoringOtherApps: true)
             }
@@ -163,6 +203,10 @@ struct MenuBarView: View {
             }
             MenuBarRow("Check for updates…", icon: "arrow.down.circle") {
                 updater.checkForUpdates()
+            } trailing: {
+                Text("v\(appVersion)")
+                    .font(.hyprMonoXs)
+                    .foregroundStyle(Color.hyprTextTertiary)
             }
             Rectangle()
                 .fill(Color.hyprSeparator)
@@ -173,16 +217,21 @@ struct MenuBarView: View {
             }
         }
     }
+
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
 }
 
 // MARK: - menu row
 
-private struct MenuBarRow: View {
+private struct MenuBarRow<Trailing: View>: View {
     let label: String
     let icon: String
     let shortcut: String?
     let destructive: Bool
     let action: () -> Void
+    let trailing: () -> Trailing
 
     @State private var hovering = false
 
@@ -190,12 +239,14 @@ private struct MenuBarRow: View {
          icon: String,
          shortcut: String? = nil,
          destructive: Bool = false,
-         action: @escaping () -> Void) {
+         action: @escaping () -> Void,
+         @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
         self.label = label
         self.icon = icon
         self.shortcut = shortcut
         self.destructive = destructive
         self.action = action
+        self.trailing = trailing
     }
 
     var body: some View {
@@ -214,6 +265,7 @@ private struct MenuBarRow: View {
                         .font(.hyprMono)
                         .foregroundStyle(Color.hyprTextSecondary)
                 }
+                trailing()
             }
             .padding(.horizontal, HyprSpacing.md)
             .padding(.vertical, HyprSpacing.sm - 1)

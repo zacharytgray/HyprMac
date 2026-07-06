@@ -892,6 +892,20 @@ class WindowManager {
         }
     }
 
+    // scratchpad scrim fill: 4% magenta composited over `intensity` black,
+    // flattened to one opaque-alpha color (black rgb is 0, so only magenta
+    // contributes color; result alpha is the over-composite of the two).
+    private static func scrimFill(intensity: CGFloat) -> NSColor {
+        let tintA: CGFloat = 0.04
+        let m = NSColor.hyprMagenta.usingColorSpace(.sRGB) ?? .magenta
+        let outA = tintA + intensity * (1 - tintA)
+        let scale = tintA / outA
+        return NSColor(srgbRed: m.redComponent * scale,
+                       green: m.greenComponent * scale,
+                       blue: m.blueComponent * scale,
+                       alpha: outA)
+    }
+
     /// Recompute the dim mask from the live tile positions and the current
     /// floating set, then push the result to `DimmingOverlay`. Called on
     /// focus change and after any tile update so the cutout shape tracks
@@ -908,6 +922,10 @@ class WindowManager {
         if scratchpad.isVisible {
             dimmingOverlay.enabled = true
             dimmingOverlay.panelLevel = .normal
+            // scrim = 45% black with a faint magenta tint over it, so the
+            // summoned floating layer reads as magenta territory. pre-blend
+            // 4% magenta over 45% black into one fill color.
+            dimmingOverlay.fillOverride = Self.scrimFill(intensity: ScratchpadController.scrimIntensity)
             dimmingOverlay.setIntensity(ScratchpadController.scrimIntensity)
             dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
             var screenCovers: [CGWindowID: CGRect] = [:]
@@ -922,6 +940,8 @@ class WindowManager {
             )
             return
         }
+        // not in scrim mode — back to pure black focus dim.
+        dimmingOverlay.fillOverride = nil
         let fid = focusedID ?? focusBorder.trackedWindowID ?? focusController.lastFocusedID
         let focusedWindow = stateCache.cachedWindows[fid]
         if isFullscreenSuppressed(focused: focusedWindow) {
@@ -1059,8 +1079,8 @@ class WindowManager {
 
     /// Hand an `Action` to the dispatcher. Wrapped here so the hotkey
     /// callback site stays terse and so subclasses or tests can intercept
-    /// in one place.
-    private func handleAction(_ action: Action) {
+    /// in one place. Also called from the menu bar (cheat-sheet row).
+    func handleAction(_ action: Action) {
         // workspace flows park/unpark and then focus+warp. mid-display-
         // transition the tile pass is deferred, so the target workspace
         // would stay parked with the cursor warped to the 1px park sliver.

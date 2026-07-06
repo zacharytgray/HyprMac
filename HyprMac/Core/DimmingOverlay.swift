@@ -68,6 +68,12 @@ class DimmingOverlay {
     var enabled: Bool = false
     var primaryScreenHeight: CGFloat = 0
 
+    // when set, replaces the pure-black fill (used by the scratchpad scrim to
+    // layer a faint magenta tint over the black). nil = normal focus-dim black.
+    // the caller pre-blends tint over black at the target alpha and passes one
+    // opaque-alpha color here; intensity is then ignored for the fill.
+    var fillOverride: NSColor?
+
     // panel window level. .floating - 1 (=2) for the normal focus dim, sits
     // above all normal windows so carve-outs keep floaters bright. .normal
     // for the scratchpad scrim, where the quasimodal-frozen stack lets the
@@ -117,7 +123,7 @@ class DimmingOverlay {
         var floatingRects = floatingRects
         if let ov = dragOverride { floatingRects[ov.id] = ov.rect }
 
-        let fillColor = NSColor.black.withAlphaComponent(intensity).cgColor
+        let fillColor = currentFillColor()
 
         // prune entries for displays that have been unplugged
         let currentDisplayIDs = Set(screens.compactMap { $0.displayID })
@@ -261,7 +267,7 @@ class DimmingOverlay {
     func setIntensity(_ value: CGFloat) {
         mainThreadOnly()
         intensity = max(0, min(1, value))
-        let fill = NSColor.black.withAlphaComponent(intensity).cgColor
+        let fill = currentFillColor()
         for (_, entry) in panels {
             for (_, layer) in entry.windowLayers {
                 CATransaction.begin()
@@ -296,7 +302,7 @@ class DimmingOverlay {
     /// tiles get rebuilt: a tile whose local rect can't intersect any dirty
     /// rect keeps its old path (a handful of CGPath builds per drag event).
     private func restampPaths(dirty: [CGRect]) {
-        let fillColor = NSColor.black.withAlphaComponent(intensity).cgColor
+        let fillColor = currentFillColor()
         var floatingRects = lastFloatingRects
         if let ov = dragOverride { floatingRects[ov.id] = ov.rect }
 
@@ -388,6 +394,12 @@ class DimmingOverlay {
     }
 
     // MARK: - internals
+
+    // the dim fill: scrim tint override if set, else black at `intensity`.
+    private func currentFillColor() -> CGColor {
+        if let ov = fillOverride { return ov.cgColor }
+        return NSColor.black.withAlphaComponent(intensity).cgColor
+    }
 
     private func animateOpacity(_ layer: CALayer, to target: Float) {
         layer.removeAnimation(forKey: "fade")

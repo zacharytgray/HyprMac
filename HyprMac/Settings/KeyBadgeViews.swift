@@ -34,11 +34,20 @@ struct KeyChip: View {
             .frame(minWidth: 28)
             .background(
                 RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                    .fill(Color.gray.opacity(0.18))
+                    .fill(Color.hyprSurfaceElevated)
             )
             .overlay(
+                // key-cap depth: separator on the sides/top, a touch brighter
+                // on the bottom edge so the chip reads as a raised key.
                 RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                    .strokeBorder(Color.hyprSeparator, lineWidth: 1)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [Color.hyprSeparator, Color.hyprTextPrimary.opacity(0.25)],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
             )
             .foregroundStyle(Color.hyprTextPrimary)
     }

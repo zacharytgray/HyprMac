@@ -244,16 +244,16 @@ class UserConfig: ObservableObject {
         chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
     }
 
-    // resolve the border color — custom hex or system accent
+    // resolve the border color — custom hex or brand cyan
     var resolvedFocusBorderColor: NSColor {
         if let hex = focusBorderColorHex, let c = NSColor.fromHex(hex) { return c }
-        return NSColor.controlAccentColor
+        return NSColor.hyprCyan
     }
 
-    // resolve floating border color — custom hex or default orange
+    // resolve floating border color — custom hex or brand magenta
     var resolvedFloatingBorderColor: NSColor {
         if let hex = floatingBorderColorHex, let c = NSColor.fromHex(hex) { return c }
-        return NSColor.systemOrange
+        return NSColor.hyprMagenta
     }
 
     func reloadFromDisk() {
