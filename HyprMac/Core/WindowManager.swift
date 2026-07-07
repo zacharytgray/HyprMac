@@ -82,6 +82,10 @@ class WindowManager {
     private var mouseDraggedSinceDown = false
     private var mouseDownTiledFrames: [CGWindowID: CGRect] = [:]
     private var mouseDownFloatingWindowID: CGWindowID = 0
+    // CG frame of that floater, read in the same mouse-down enumeration —
+    // the dim-drag anchor must come from here, not a fresh AX read at arm
+    // time (which pairs a pre-drag frame with a mid-flick cursor position)
+    private var mouseDownFloatingFrame: CGRect?
 
     // window whose focus border was hidden when a drag started — re-shown on mouseUp.
     // we hide rather than try to follow, because we'd need 60Hz AX polling per window
@@ -380,6 +384,8 @@ class WindowManager {
         tilingEngine.gapSize = config.gapSize
         tilingEngine.outerPadding = config.outerPadding
         tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
+        scratchpad.tiledRegionInset = config.scratchpadRegionInset
+        scratchpad.tileNewMembers = config.scratchpadTileByDefault
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
         focusBorder.fadeDurationSec = config.chromeFadeDurationSec
         focusBrackets.primaryScreenHeight = displayManager.primaryScreenHeight
@@ -567,6 +573,23 @@ class WindowManager {
                 self?.updatePositionCache()
             }.store(in: &configObservers)
 
+        config.$scratchpadRegionInset
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] inset in
+                guard let self else { return }
+                self.scratchpad.tiledRegionInset = inset
+                // live re-layout so the slider previews on an open layer
+                self.scratchpad.relayoutVisibleLayer()
+            }.store(in: &configObservers)
+
+        config.$scratchpadTileByDefault
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] on in
+                self?.scratchpad.tileNewMembers = on
+            }.store(in: &configObservers)
+
         hyprLog(.debug, .lifecycle, "started")
     }
 
@@ -659,12 +682,20 @@ class WindowManager {
         mouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             self?.mouseTracker.handleMouseMove()
         }
-        mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+        mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self else { return }
             self.mouseButtonDown = true
             self.mouseDraggedSinceDown = false
-            self.captureMouseDownFrames()
-            self.armDimDragIfFloating()
+            // the event carries the exact click location. sampling
+            // NSEvent.mouseLocation inside the handler instead reads
+            // wherever the cursor has moved to by the time the AX-heavy
+            // capture below finishes — on a fast grab-and-flick that
+            // mis-anchors the dim carve (permanent offset) and can make
+            // the floater hit-test miss entirely.
+            let downNS = event.window.map { $0.convertPoint(toScreen: event.locationInWindow) }
+                ?? event.locationInWindow
+            self.captureMouseDownFrames(at: downNS)
+            self.armDimDragIfFloating(downPointNS: downNS)
             // a menu open at the OS level eats clicks before we'd see them
             // here, so a global mouseDown reaching us is unambiguous proof
             // there is no menu currently tracking. clears the flag if a
@@ -676,13 +707,12 @@ class WindowManager {
             // sync our focus tracker with the click — without this, manual clicks
             // leave focusController.lastFocusedID stale and currentFocusedWindow() routes
             // commands to whatever was previously hovered, not what the user clicked
-            self.syncFocusTrackerToCursor()
+            self.syncFocusTrackerToCursor(at: downNS)
             // scratchpad is quasimodal: a click outside every member dismisses
             // it in the same tick, so the click lands on the tile it aimed at
             if self.scratchpad.isVisible {
-                let mouseNS = NSEvent.mouseLocation
-                let cgPoint = CGPoint(x: mouseNS.x,
-                                      y: self.displayManager.primaryScreenHeight - mouseNS.y)
+                let cgPoint = CGPoint(x: downNS.x,
+                                      y: self.displayManager.primaryScreenHeight - downNS.y)
                 self.scratchpad.handleMouseDown(atCG: cgPoint)
             }
         }
@@ -711,6 +741,7 @@ class WindowManager {
             self?.mouseDraggedSinceDown = false
             self?.mouseDownTiledFrames.removeAll()
             self?.mouseDownFloatingWindowID = 0
+            self?.mouseDownFloatingFrame = nil
             if self?.dimDrag != nil {
                 self?.dimDrag = nil
                 self?.dimmingOverlay.clearDragOverride()
@@ -756,6 +787,7 @@ class WindowManager {
         mouseUpMonitor = nil
         mouseDownTiledFrames.removeAll()
         mouseDownFloatingWindowID = 0
+        mouseDownFloatingFrame = nil
         // teardown can land mid-drag — drop the overlay's override too or a
         // stale carve hole survives until the next full update
         dimDrag = nil
@@ -1626,13 +1658,17 @@ class WindowManager {
 
     /// Snapshot tile frames at mouse-down so `DragSwapHandler` can compare
     /// against post-drag rects to detect a swap target. Also notes the
-    /// floating window under the cursor (if any) so the drag monitor knows
-    /// to hide that floater's border for the drag duration.
-    private func captureMouseDownFrames() {
+    /// floating window under the click (if any) — and its frame — so the
+    /// drag monitor knows to hide that floater's border for the drag
+    /// duration and the dim carve can anchor to a consistent pair.
+    /// `mouseNS` is the click location from the mouse-down event, not a
+    /// live cursor read — by the time this AX enumeration runs, a fast
+    /// drag has already moved the cursor off the click point.
+    private func captureMouseDownFrames(at mouseNS: NSPoint) {
         mouseDownTiledFrames.removeAll()
         mouseDownFloatingWindowID = 0
+        mouseDownFloatingFrame = nil
 
-        let mouseNS = NSEvent.mouseLocation
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
@@ -1642,6 +1678,7 @@ class WindowManager {
             if stateCache.floatingWindowIDs.contains(w.windowID) {
                 if mouseDownFloatingWindowID == 0, frame.contains(cgPoint) {
                     mouseDownFloatingWindowID = w.windowID
+                    mouseDownFloatingFrame = frame
                 }
                 continue
             }
@@ -1651,16 +1688,21 @@ class WindowManager {
 
     /// Arm the live dim-carve override if the press landed on a visible
     /// ordinary floating window and dim is active (normal mode). Reuses the
-    /// hit already done by captureMouseDownFrames — no new AX queries.
-    private func armDimDragIfFloating() {
+    /// hit AND the frame already read by captureMouseDownFrames — no new AX
+    /// queries. The anchor pair must be sampled consistently: the frame
+    /// from the mouse-down enumeration with the event's click point. A
+    /// fresh `w.frame` here still reports the pre-drag position (Tahoe AX
+    /// reads lag) while a live cursor read is already mid-flick — that
+    /// mismatch permanently offset the carve by the initial flick distance.
+    private func armDimDragIfFloating(downPointNS: NSPoint) {
         dimDrag = nil
         guard config.dimInactiveWindows, !scratchpad.isVisible,
               mouseDownFloatingWindowID != 0 else { return }
         let id = mouseDownFloatingWindowID
-        guard let w = stateCache.cachedWindows[id], let frame = w.frame else { return }
+        guard let w = stateCache.cachedWindows[id] else { return }
+        guard let frame = mouseDownFloatingFrame ?? w.frame else { return }
 
-        let mouseNS = NSEvent.mouseLocation
-        let downCG = CGPoint(x: mouseNS.x, y: displayManager.primaryScreenHeight - mouseNS.y)
+        let downCG = CGPoint(x: downPointNS.x, y: displayManager.primaryScreenHeight - downPointNS.y)
         dimDrag = DimDragState(id: id, window: w, startFrame: frame, downPointCG: downCG)
     }
 
@@ -1701,13 +1743,14 @@ class WindowManager {
         dimmingOverlay.setDragOverride(id: drag.id, rect: liveRect.insetBy(dx: -2, dy: -2))
     }
 
-    /// Hit-test the cursor against floating and tiled windows and record
-    /// the result in `focusController`. Called from `leftMouseDown` so a
-    /// manual click wins over any stale FFM tracker state — without this,
-    /// commands routed via `currentFocusedWindow()` would target the
+    /// Hit-test the click point against floating and tiled windows and
+    /// record the result in `focusController`. Called from `leftMouseDown`
+    /// so a manual click wins over any stale FFM tracker state — without
+    /// this, commands routed via `currentFocusedWindow()` would target the
     /// previously-hovered window instead of what the user just clicked.
-    private func syncFocusTrackerToCursor() {
-        let mouseNS = NSEvent.mouseLocation
+    /// Takes the event's click location so a fast post-click drag can't
+    /// move the hit test off the clicked window.
+    private func syncFocusTrackerToCursor(at mouseNS: NSPoint) {
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 

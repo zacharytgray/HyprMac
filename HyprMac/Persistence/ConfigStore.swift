@@ -230,6 +230,8 @@ struct SavedConfig: Codable {
     let dimIntensity: Double?
     let mouseHoverPollHz: Int?
     let chromeFadeDurationSec: Double?
+    let scratchpadTileByDefault: Bool?
+    let scratchpadRegionInset: CGFloat?
 }
 
 // monitor-specific settings — stored locally, never synced via iCloud

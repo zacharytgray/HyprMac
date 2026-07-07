@@ -99,6 +99,13 @@ final class WindowDiscoveryService {
     /// teleport it to the foreground workspace.
     private var userHiddenIDs: Set<CGWindowID> = []
 
+    /// When each id went gone-but-pid-alive. A return within seconds is a
+    /// flap — a stale/partial AX snapshot, not a real minimize — and each
+    /// flap cycle drives two retiles (sibling expands full-screen, then
+    /// shrinks back). Diag for the retile-flicker investigation.
+    private var hiddenAt: [CGWindowID: Date] = [:]
+    private static let flapWindowSec: TimeInterval = 5.0
+
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
          displayManager: DisplayManager,
@@ -169,7 +176,12 @@ final class WindowDiscoveryService {
             stateCache.knownWindowIDs.insert(w.windowID)
             stateCache.windowOwners[w.windowID] = w.ownerPID
             returned.append(w)
-            hyprLog(.debug, .discovery, "window returned: '\(w.title ?? "?")' (\(w.windowID))")
+            if let t = hiddenAt.removeValue(forKey: w.windowID),
+               Date().timeIntervalSince(t) < Self.flapWindowSec {
+                let ms = Int(Date().timeIntervalSince(t) * 1000)
+                hyprLog(.notice, .discovery, "FLAP: '\(w.title ?? "?")' (\(w.windowID)) returned \(ms)ms after vanishing — likely stale AX snapshot (busy app); each flap retiles the sibling full-screen and back")
+            }
+            hyprLog(.notice, .discovery, "window returned: '\(w.title ?? "?")' (\(w.windowID))")
         }
 
         // new
@@ -221,18 +233,21 @@ final class WindowDiscoveryService {
                 // un-minimize comes back as "returned" not "new".
                 stateCache.knownWindowIDs.remove(id)
                 stateCache.hiddenWindowIDs.insert(id)
+                hiddenAt[id] = Date()
                 // nil (AX unreadable) counts as user-hidden — the safe side
                 if accessibility.isWindowMinimizedOrAppHidden(windowID: id, pid: pid) != false {
                     userHiddenIDs.insert(id)
                 }
+                let bundle = bundleIDForPID(pid) ?? "pid \(pid)"
                 if workspaceManager.isWindowVisible(id) {
-                    hyprLog(.debug, .discovery, "window hidden: \(id)")
+                    hyprLog(.notice, .discovery, "window hidden: \(id) (\(bundle))")
                 } else {
-                    hyprLog(.debug, .discovery, "window hidden (inactive ws): \(id)")
+                    hyprLog(.notice, .discovery, "window hidden (inactive ws): \(id) (\(bundle))")
                 }
             } else {
                 stateCache.forget(id)
                 fullyForgotten.insert(id)
+                hiddenAt.removeValue(forKey: id)
                 hyprLog(.debug, .discovery, "window gone: \(id)")
             }
         }
@@ -298,6 +313,7 @@ final class WindowDiscoveryService {
             if let pid = stateCache.windowOwners[id], !runningPIDs.contains(pid) {
                 stateCache.forget(id)
                 forgotten.insert(id)
+                hiddenAt.removeValue(forKey: id)
             }
         }
         // workspace assignments for ids we no longer track at all

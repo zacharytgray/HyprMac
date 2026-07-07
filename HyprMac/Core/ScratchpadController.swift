@@ -25,8 +25,13 @@ final class ScratchpadController {
     static let scrimIntensity: CGFloat = 0.45
     /// Fraction of the layer monitor inset on each edge for the tiled
     /// region — tiled members lay out inside this smaller frame so the
-    /// scrimmed border stays visible around them.
-    static let tiledRegionInset: CGFloat = 0.06
+    /// scrimmed border stays visible around them. Pushed from
+    /// `UserConfig.scratchpadRegionInset` by WindowManager.
+    var tiledRegionInset: CGFloat = UserConfigDefaults.scratchpadRegionInset
+    /// When true, a window sent to the scratchpad enters the layer's
+    /// tiled tree instead of floating (fit permitting). Pushed from
+    /// `UserConfig.scratchpadTileByDefault`.
+    var tileNewMembers: Bool = UserConfigDefaults.scratchpadTileByDefault
     private let showGraceSec: TimeInterval = 0.75
 
     /// Why the layer is being dismissed. Focus restore is conditional on
@@ -165,11 +170,20 @@ final class ScratchpadController {
 
         // tile the tiled members first — the engine's setFrames ARE the unpark.
         // done before the floating raise loop so the region rects are fresh.
+        // rejects (no fitting slot — layer tree full or window min-size too
+        // big for the region) fall back to floating members BEFORE the
+        // floating placement loop below, which then places them from their
+        // saved free-form frame.
         let tiledRegionRect = targetScreen.map { tiledRegion(on: $0) }
         if let targetScreen, let tiledRegionRect {
             let tiledMembers = summonedIDs.filter { isTiled($0) }.compactMap { windowsByID[$0] }
             if !tiledMembers.isEmpty {
-                tilingEngine.tileScratchpad(tiledMembers, screen: targetScreen, in: tiledRegionRect)
+                let rejects = tilingEngine.tileScratchpad(tiledMembers, screen: targetScreen, in: tiledRegionRect)
+                for w in rejects {
+                    stateCache.floatingWindowIDs.insert(w.windowID)
+                    w.isFloating = true
+                    hyprLog(.notice, .lifecycle, "scratchpad show: no slot for '\(w.title ?? "?")' (\(w.windowID)) — falls back to floating")
+                }
             }
         }
 
@@ -312,19 +326,39 @@ final class ScratchpadController {
             if !wasFloating, let ws = sourceWs {
                 tilingEngine.removeWindow(focused, fromWorkspace: ws)
             }
-            stateCache.floatingWindowIDs.insert(id)
-            focused.isFloating = true
             workspaceManager.assignWindow(id, toWorkspace: Self.workspace)
-            if isVisible {
-                summonedIDs.insert(id)
-                if let f = frameBeforeSend { lastShownFrames[id] = f }
-            } else {
-                workspaceManager.saveFloatingFrame(focused)
-                if workspaceManager.savedFloatingFrame(for: id) == nil, let f = frameBeforeSend {
-                    workspaceManager.setSavedFloatingFrame(f, for: id)
-                }
-                if let screen = displayManager.screens.first {
+            if tileNewMembers {
+                // tile-by-default: the member enters the layer tree. save
+                // the pre-send frame first — it's the restore target for a
+                // later tiled→floating toggle (and the placement fallback
+                // if the tile is rejected).
+                saveFreeFormFrame(focused, fallback: frameBeforeSend)
+                stateCache.floatingWindowIDs.remove(id)
+                focused.isFloating = false
+                if isVisible {
+                    summonedIDs.insert(id)
+                    if !tileIntoVisibleLayer(focused) {
+                        // no fitting slot — stays a floating member
+                        stateCache.floatingWindowIDs.insert(id)
+                        focused.isFloating = true
+                        if let f = frameBeforeSend { lastShownFrames[id] = f }
+                        hyprLog(.notice, .lifecycle, "scratchpad send: no slot for '\(focused.title ?? "?")' (\(id)) — floating instead")
+                    }
+                } else if let screen = displayManager.screens.first {
+                    // parked as a tiled member; the next show() tiles it
                     workspaceManager.hideInCorner(focused, on: screen)
+                }
+            } else {
+                stateCache.floatingWindowIDs.insert(id)
+                focused.isFloating = true
+                if isVisible {
+                    summonedIDs.insert(id)
+                    if let f = frameBeforeSend { lastShownFrames[id] = f }
+                } else {
+                    saveFreeFormFrame(focused, fallback: frameBeforeSend)
+                    if let screen = displayManager.screens.first {
+                        workspaceManager.hideInCorner(focused, on: screen)
+                    }
                 }
             }
             noteFocus(id)
@@ -475,18 +509,11 @@ final class ScratchpadController {
         // floating → tiled. save the current free-form frame first so the
         // reverse toggle restores it (belt-and-suspenders: fall back to the
         // live frame when the off-screen guard in saveFloatingFrame refuses).
-        let frameBefore = focused.frame
-        workspaceManager.saveFloatingFrame(focused)
-        if workspaceManager.savedFloatingFrame(for: id) == nil, let f = frameBefore {
-            workspaceManager.setSavedFloatingFrame(f, for: id)
-        }
+        saveFreeFormFrame(focused, fallback: focused.frame)
         stateCache.floatingWindowIDs.remove(id)
         focused.isFloating = false
 
-        let region = tiledRegion(on: screen)
-        let tiledMembers = summonedIDs.filter { isTiled($0) }.compactMap { stateCache.cachedWindows[$0] }
-        let rejects = tilingEngine.tileScratchpad(tiledMembers, screen: screen, in: region)
-        if rejects.contains(where: { $0.windowID == id }) {
+        if !tileIntoVisibleLayer(focused) {
             // layer tree is full — revert to floating and flash. deliberately
             // no onAutoFloat: a scratchpad reject must never route into adopt.
             stateCache.floatingWindowIDs.insert(id)
@@ -498,11 +525,6 @@ final class ScratchpadController {
             }
             hyprLog(.notice, .lifecycle, "scratchpad: tile rejected (layer full) for '\(focused.title ?? "?")' (\(id)) — stays floating")
             return true
-        }
-
-        let intended = tilingEngine.scratchpadTileRects(screen: screen, in: region)
-        for m in summonedIDs where isTiled(m) {
-            if let r = intended[m] { lastShownFrames[m] = r }
         }
         focused.focus()
         focusController.recordFocus(id, reason: "scratchpad-tile")
@@ -618,11 +640,52 @@ final class ScratchpadController {
         shownScreen ?? screenUnderCursor() ?? displayManager.screens.first
     }
 
-    /// Inset layout rect for the tiled region on `screen`.
+    /// Inset layout rect for the tiled region on `screen`. The clamp
+    /// guards a hand-edited config — an inset ≥ 0.5 would invert the rect.
     private func tiledRegion(on screen: NSScreen) -> CGRect {
         let full = displayManager.cgRect(for: screen)
-        return full.insetBy(dx: full.width * Self.tiledRegionInset,
-                            dy: full.height * Self.tiledRegionInset)
+        let inset = min(max(tiledRegionInset, 0), 0.4)
+        return full.insetBy(dx: full.width * inset,
+                            dy: full.height * inset)
+    }
+
+    /// Persist the window's free-form frame for a later summon/untile:
+    /// prefer the live AX read (saveFloatingFrame's off-screen guard
+    /// rejects park slivers), fall back to `fallback` when it refuses.
+    private func saveFreeFormFrame(_ w: HyprWindow, fallback: CGRect?) {
+        workspaceManager.saveFloatingFrame(w)
+        if workspaceManager.savedFloatingFrame(for: w.windowID) == nil, let f = fallback {
+            workspaceManager.setSavedFloatingFrame(f, for: w.windowID)
+        }
+    }
+
+    /// Insert an already-non-floating summoned member into the visible
+    /// layer's tree, re-lay the region, and refresh intended rects for
+    /// every tiled member. Returns false when the tree has no fitting
+    /// slot — the caller reverts the member to floating. Deliberately
+    /// never routes through onAutoFloat (see tileScratchpad).
+    private func tileIntoVisibleLayer(_ window: HyprWindow) -> Bool {
+        guard let screen = layerScreen() else { return false }
+        let region = tiledRegion(on: screen)
+        var tiledMembers = summonedIDs.filter { isTiled($0) }.compactMap { stateCache.cachedWindows[$0] }
+        if !tiledMembers.contains(where: { $0.windowID == window.windowID }) {
+            tiledMembers.append(window)
+        }
+        let rejects = tilingEngine.tileScratchpad(tiledMembers, screen: screen, in: region)
+        if rejects.contains(where: { $0.windowID == window.windowID }) { return false }
+        let intended = tilingEngine.scratchpadTileRects(screen: screen, in: region)
+        for m in summonedIDs where isTiled(m) {
+            if let r = intended[m] { lastShownFrames[m] = r }
+        }
+        return true
+    }
+
+    /// Live re-layout after a region-inset change from Settings. No-op
+    /// while hidden — the next show() reads the new inset.
+    func relayoutVisibleLayer() {
+        guard isVisible else { return }
+        retileLayer()
+        updatePositionCache()
     }
 
     /// Re-run the layer's ws-0 tree against its current tiled members and

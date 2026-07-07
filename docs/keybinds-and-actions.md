@@ -211,7 +211,12 @@ Control, `16` Command. Hypr+Shift = `3`, Hypr+Ctrl = `9`.
 **Other config fields**: `gapSize`, `outerPadding`, `enabled`,
 `focusFollowsMouse`, `excludedBundleIDs` (bundle IDs that never
 tile — auto-float on discovery), `disabledMonitors` (monitor names
-matching `NSScreen.localizedName`, excluded from tiling entirely).
+matching `NSScreen.localizedName`, excluded from tiling entirely),
+`scratchpadTileByDefault` (windows sent to the scratchpad tile into
+the layer instead of floating; no-fit windows float regardless),
+`scratchpadRegionInset` (per-edge inset fraction of the scratchpad's
+tiled region, 0–0.15; 0.06 default keeps the scrimmed border visible,
+0 is edge-to-edge).
 
 Find any app's bundle ID:
 `mdls -name kMDItemCFBundleIdentifier /Applications/AppName.app`

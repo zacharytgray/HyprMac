@@ -44,6 +44,12 @@ class AccessibilityManager {
     private var cgWindowCacheData: [pid_t: [CGWindowInfo]] = [:]
     private let cgWindowCacheTTL: CFAbsoluteTime = 0.05  // 50ms
 
+    // consecutive getAllWindows cycles where an app's AX reads dropped
+    // windows that CG says are on screen. diag for the retile-flap
+    // investigation — logs fire on outage start/end, not per cycle.
+    private var axListFailures: [pid_t: Int] = [:]
+    private var axFrameDrops: [pid_t: Int] = [:]
+
     private func cgWindowsByPID() -> [pid_t: [CGWindowInfo]] {
         let now = CFAbsoluteTimeGetCurrent()
         if now - cgWindowCacheTime < cgWindowCacheTTL && !cgWindowCacheData.isEmpty {
@@ -152,17 +158,36 @@ class AccessibilityManager {
 
         for app in apps {
             let pid = app.processIdentifier
+            let candidates = cgWindows[pid] ?? []
             let appRef = AXUIElementCreateApplication(pid)
             var value: AnyObject?
             let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &value)
-            guard result == .success, let axWindows = value as? [AXUIElement] else { continue }
+            guard result == .success, let axWindows = value as? [AXUIElement] else {
+                // a busy app (main thread stalled) fails this read wholesale
+                // and every one of its windows drops from the snapshot for
+                // the cycle — discovery reads them as gone, the sibling tile
+                // expands full-screen, and the next cycle flaps them back.
+                // log the outage edges only, not every 1 Hz cycle.
+                if candidates.contains(where: { $0.alpha > 0.01 }) {
+                    let n = (axListFailures[pid] ?? 0) + 1
+                    axListFailures[pid] = n
+                    if n == 1 {
+                        hyprLog(.notice, .discovery, "AX window-list read FAILED for \(app.bundleIdentifier ?? "pid \(pid)") (err \(result.rawValue)) — \(candidates.count) on-screen window(s) drop from this snapshot")
+                    }
+                }
+                continue
+            }
+            if let n = axListFailures.removeValue(forKey: pid) {
+                hyprLog(.notice, .discovery, "AX window-list read recovered for \(app.bundleIdentifier ?? "pid \(pid)") after \(n) failed cycle(s)")
+            }
 
-            guard let candidates = cgWindows[pid], !candidates.isEmpty else { continue }
+            guard !candidates.isEmpty else { continue }
 
             // collect all real AX windows for this app. skip minimized, modal,
             // and non-standard subroles — those are sheets/dialogs/quick-look
             // hosts that shouldn't enter tiling or claim a CG window ID.
             var axEntries: [(element: AXUIElement, frame: CGRect)] = []
+            var frameDropCount = 0
             for axWin in axWindows {
                 var minimized: AnyObject?
                 AXUIElementCopyAttributeValue(axWin, kAXMinimizedAttribute as CFString, &minimized)
@@ -183,8 +208,24 @@ class AccessibilityManager {
 
                 if subroleNonStandard || isModal { continue }
 
-                guard let frame = axFrame(for: axWin) else { continue }
+                guard let frame = axFrame(for: axWin) else {
+                    frameDropCount += 1
+                    continue
+                }
                 axEntries.append((element: axWin, frame: frame))
+            }
+
+            // same flap risk as a failed window-list read, but per-window:
+            // a standard window whose position/size read fails silently
+            // vanishes from the snapshot. edge-logged like above.
+            if frameDropCount > 0 {
+                let n = (axFrameDrops[pid] ?? 0) + 1
+                axFrameDrops[pid] = n
+                if n == 1 {
+                    hyprLog(.notice, .discovery, "AX frame read FAILED for \(frameDropCount) window(s) of \(app.bundleIdentifier ?? "pid \(pid)") — dropped from this snapshot")
+                }
+            } else if let n = axFrameDrops.removeValue(forKey: pid) {
+                hyprLog(.notice, .discovery, "AX frame reads recovered for \(app.bundleIdentifier ?? "pid \(pid)") after \(n) affected cycle(s)")
             }
 
             let visibleCandidates = candidates.filter { $0.alpha > 0.01 }

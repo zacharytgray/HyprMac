@@ -131,6 +131,15 @@ final class ActionDispatcher {
         }
 
         if changes.needsRetile {
+            // one line per visual re-layout naming its cause — the timeline
+            // anchor for diagnosing retile churn (flap investigation).
+            let causes = [
+                changes.newWindows.isEmpty ? nil : "new=\(changes.newWindows.map(\.windowID).sorted())",
+                changes.goneIDs.isEmpty ? nil : "gone=\(changes.goneIDs.sorted())",
+                changes.returned.isEmpty ? nil : "returned=\(changes.returned.map(\.windowID).sorted())",
+                changes.screenDrift.isEmpty ? nil : "drift=\(changes.screenDrift.map(\.windowID).sorted())",
+            ].compactMap { $0 }.joined(separator: " ")
+            hyprLog(.notice, .discovery, "discovery retile: \(causes)")
             // animate surrounding windows sliding to fill gaps / make room.
             animatedRetile(allWindows)
         }

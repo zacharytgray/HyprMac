@@ -13,6 +13,7 @@ struct TilingSettingsView: View {
         VStack(spacing: HyprSpacing.lg) {
             gapsPanel
             focusPanel
+            scratchpadPanel
             monitorsPanel
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
@@ -141,6 +142,30 @@ struct TilingSettingsView: View {
                     Slider(value: $config.chromeFadeDurationSec, in: 0.0...1.0, step: 0.01)
                         .frame(width: 180)
                     HyprChip(String(format: "%.0fms", config.chromeFadeDurationSec * 1000))
+                        .frame(width: 56, alignment: .trailing)
+                }
+            }
+        }
+    }
+
+    // MARK: scratchpad
+
+    private var scratchpadPanel: some View {
+        HyprPanel("Scratchpad",
+                  footer: "Padding insets the tiled region from the screen edges so the dimmed border stays visible — set it to 0% to maximize space. Windows that can't fit the tiled layout stay floating either way.") {
+            HyprRow("Tile sent windows", icon: "square.grid.2x2",
+                    subtitle: "Windows sent to the scratchpad tile into the layer instead of floating.",
+                    divider: true, floatingMarker: true) {
+                Toggle("", isOn: $config.scratchpadTileByDefault)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+            HyprRow("Layer padding", icon: "rectangle.center.inset.filled",
+                    divider: false, floatingMarker: true) {
+                HStack(spacing: HyprSpacing.sm) {
+                    Slider(value: $config.scratchpadRegionInset, in: 0...0.15, step: 0.01)
+                        .frame(width: 180)
+                    HyprChip(String(format: "%.0f%%", config.scratchpadRegionInset * 100))
                         .frame(width: 56, alignment: .trailing)
                 }
             }

@@ -183,6 +183,33 @@ when the user un-hides it usually means it was forgotten too
 aggressively (e.g. on app terminate before the visibility change
 flowed through).
 
+## Retile churn / full-screen flicker
+
+Symptom: two tiled windows, one keeps snapping full-screen and back
+every ~1 s while the other stays put; dimming redraws with each snap.
+Mechanism: an app whose main thread stalls fails its AX reads for a
+poll cycle, all its windows drop from that `getAllWindows` snapshot,
+discovery marks them gone→hidden, the sibling's node is promoted and
+retiled to the full rect; the next healthy cycle returns them and
+retiles back. Notice-tier evidence chain (all `category: discovery`):
+
+- `AX window-list read FAILED for <bundle>` / `recovered after N
+  failed cycle(s)` — the root cause, logged on outage edges only.
+- `AX frame read FAILED for N window(s) of <bundle>` — per-window
+  variant of the same failure.
+- `window hidden: <id> (<bundle>)` / `window returned` — the
+  discovery transitions.
+- `FLAP: '<title>' returned <ms>ms after vanishing` — a return within
+  5 s of vanishing, i.e. almost certainly not a real minimize.
+- `discovery retile: gone=[...] returned=[...]` — one line per
+  discovery-driven re-layout naming its cause.
+
+Pull with:
+
+```bash
+/usr/bin/log show --predicate 'subsystem == "com.zachgray.HyprMac" AND category == "discovery"' --last 10m --info
+```
+
 ## Where the logs come from
 
 - `WindowManager` lifecycle — `category: lifecycle`.

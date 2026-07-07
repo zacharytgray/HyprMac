@@ -78,6 +78,16 @@ class UserConfig: ObservableObject {
     @Published var chromeFadeDurationSec: Double {
         didSet { if !isReloading { save() } }
     }
+    // windows sent to the scratchpad tile into the layer by default;
+    // ones that don't fit stay floating members either way
+    @Published var scratchpadTileByDefault: Bool {
+        didSet { if !isReloading { save() } }
+    }
+    // per-edge inset fraction of the scratchpad's tiled region (0 = edge
+    // to edge, 0.06 = classic scrimmed border)
+    @Published var scratchpadRegionInset: CGFloat {
+        didSet { if !isReloading { save() } }
+    }
 
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
@@ -131,6 +141,8 @@ class UserConfig: ObservableObject {
             self.dimInactiveWindows = saved.dimInactiveWindows ?? UserConfigDefaults.dimInactiveWindows
             self.dimIntensity = saved.dimIntensity ?? UserConfigDefaults.dimIntensity
             self.chromeFadeDurationSec = saved.chromeFadeDurationSec ?? UserConfigDefaults.chromeFadeDurationSec
+            self.scratchpadTileByDefault = saved.scratchpadTileByDefault ?? UserConfigDefaults.scratchpadTileByDefault
+            self.scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
         } else {
             self.keybinds = Keybind.defaults
             self.gapSize = UserConfigDefaults.gapSize
@@ -147,6 +159,8 @@ class UserConfig: ObservableObject {
             self.dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
             self.dimIntensity = UserConfigDefaults.dimIntensity
             self.chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
+            self.scratchpadTileByDefault = UserConfigDefaults.scratchpadTileByDefault
+            self.scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
         }
 
         // monitor settings: prefer the local file; fall back to (and migrate
@@ -221,7 +235,9 @@ class UserConfig: ObservableObject {
             dimInactiveWindows: dimInactiveWindows,
             dimIntensity: dimIntensity,
             mouseHoverPollHz: mouseHoverPollHz,
-            chromeFadeDurationSec: chromeFadeDurationSec)
+            chromeFadeDurationSec: chromeFadeDurationSec,
+            scratchpadTileByDefault: scratchpadTileByDefault,
+            scratchpadRegionInset: scratchpadRegionInset)
     }
 
     func resetToDefaults() {
@@ -242,6 +258,8 @@ class UserConfig: ObservableObject {
         dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
         dimIntensity = UserConfigDefaults.dimIntensity
         chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
+        scratchpadTileByDefault = UserConfigDefaults.scratchpadTileByDefault
+        scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
     }
 
     // resolve the border color — custom hex or brand cyan
@@ -274,6 +292,8 @@ class UserConfig: ObservableObject {
         dimInactiveWindows = saved.dimInactiveWindows ?? false
         dimIntensity = saved.dimIntensity ?? 0.2
         chromeFadeDurationSec = saved.chromeFadeDurationSec ?? UserConfigDefaults.chromeFadeDurationSec
+        scratchpadTileByDefault = saved.scratchpadTileByDefault ?? UserConfigDefaults.scratchpadTileByDefault
+        scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
 
         // monitor settings come from the local file, not the synced config
         if let mc = store.loadSavedMonitorConfig() {
@@ -309,7 +329,9 @@ extension SavedConfig {
             dimInactiveWindows: UserConfigDefaults.dimInactiveWindows,
             dimIntensity: UserConfigDefaults.dimIntensity,
             mouseHoverPollHz: UserConfigDefaults.mouseHoverPollHz,
-            chromeFadeDurationSec: UserConfigDefaults.chromeFadeDurationSec)
+            chromeFadeDurationSec: UserConfigDefaults.chromeFadeDurationSec,
+            scratchpadTileByDefault: UserConfigDefaults.scratchpadTileByDefault,
+            scratchpadRegionInset: UserConfigDefaults.scratchpadRegionInset)
     }
 }
 
