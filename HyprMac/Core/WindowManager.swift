@@ -229,12 +229,15 @@ class WindowManager {
         }
         // hold polling off while a cross-monitor drag-swap is in flight (Phase 4 step 5).
         // DragSwapHandler.applySwap registers the "cross-swap-in-flight" key for ~800ms;
-        // both the reconcile timer and event-driven schedule() calls drop until it expires.
         // workspace-transition is set by switchWorkspace and moveToWorkspace for 0.6s
         // so drift detection can't fire on stale-AX-read frames mid-transition.
+        // mouseButtonDown lives here (not as a drop-guard in pollWindowChanges)
+        // so a create/destroy event arriving mid-drag defers and fires on
+        // mouseUp instead of being lost until the 10s reconcile.
         pollingScheduler.isSuppressed = { [weak self] in
             guard let self else { return false }
-            return self.suppressions.isSuppressed("cross-swap-in-flight")
+            return self.mouseButtonDown
+                || self.suppressions.isSuppressed("cross-swap-in-flight")
                 || self.suppressions.isSuppressed("workspace-transition")
         }
 
@@ -2089,6 +2092,9 @@ class WindowManager {
     /// cross-monitor drag-swap completes without pollers stomping on its
     /// in-flight tree mutations.
     private func pollWindowChanges() {
+        // mouse-down is handled by the scheduler's isSuppressed closure so
+        // event polls defer instead of dropping; this guard only backstops
+        // a hypothetical direct call landing mid-drag.
         guard !mouseButtonDown else { return }
 
         let allWindows = accessibility.getAllWindows()

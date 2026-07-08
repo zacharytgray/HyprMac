@@ -69,6 +69,16 @@ final class AXNotificationService {
     // guards attach() against re-entry while the retry is pending.
     private var retrying: Set<pid_t> = []
 
+    // callbacks reach us through an unretained refcon — every run loop
+    // source must be gone before this object is. WindowManager holds the
+    // service for the app's lifetime, so this only backstops a future
+    // teardown path that forgets detachAll().
+    deinit {
+        for entry in entries.values {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(entry.observer), .commonModes)
+        }
+    }
+
     private let selfPID = ProcessInfo.processInfo.processIdentifier
 
     // MARK: - attach / detach
