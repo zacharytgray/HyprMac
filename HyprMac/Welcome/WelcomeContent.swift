@@ -24,21 +24,21 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "square.grid.2x2",
-            title: "Tile Sent Windows Automatically",
-            description: "New in Layout settings: turn on \"Tile sent windows\" and anything you send to the scratchpad snaps into the tiled grid instead of floating. Windows that can't fit still float, so nothing gets lost.",
-            tint: .magenta
+            icon: "bolt",
+            title: "Your Keyboard Never Waits",
+            description: "Hotkey handling moved to its own dedicated thread, so typing anywhere on your Mac stays instant even while HyprMac is mid-retile or talking to a busy app. The system-wide input lag is gone.",
+            tint: .cyan
         ),
         WhatsNewFeature(
-            icon: "rectangle.center.inset.filled",
-            title: "Adjustable Scratchpad Padding",
-            description: "A new slider sets how far the scratchpad's tiled region insets from the screen edge — keep the dimmed border for framing, or take it to zero to use every last pixel.",
-            tint: .magenta
+            icon: "dot.radiowaves.left.and.right",
+            title: "Event-Driven Window Detection",
+            description: "Apps now tell HyprMac the moment a window opens, closes, or minimizes — replacing the once-per-second desktop sweep. New windows tile faster, and every other app on your Mac feels smoother with the constant background polling gone.",
+            tint: .cyan
         ),
         WhatsNewFeature(
-            icon: "moon",
-            title: "Steadier Dimming While Dragging",
-            description: "With dimming on, the bright cutout around a dragged floating window now locks to it from the very first pixel — even on a fast flick — instead of trailing behind with an offset.",
+            icon: "hare",
+            title: "Immune to Busy Apps",
+            description: "A frozen or hard-working app (a compiling IDE, a hung Electron window) can no longer stall HyprMac — window queries are now strictly time-capped, matching how yabai and AeroSpace handle it.",
             tint: .cyan
         ),
     ]
