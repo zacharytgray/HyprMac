@@ -98,26 +98,38 @@ The slider structurally cannot touch the problem.
 ## Remediation plan (ranked)
 
 ### Phase 0 — quick wins, low risk, big felt impact
+### (implemented 2026-07-08, branch perf/phase0-input-latency)
 
-1. **`AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)`**
-   once at startup. One line. Bounds every worst-case stall 6 s → 1 s.
-2. **Move the event tap off the main run loop** onto a dedicated thread
-   (`CFRunLoopAddSource` on a `Thread` running `CFRunLoopRun()`). The callback
-   already defers all real work to main via `DispatchQueue.main.async`, so
-   this is a small, safe change — and it breaks the coupling that turns every
-   main-thread stall into a system-wide keyboard freeze. Keep the
-   tapDisabledByTimeout re-enable; add a periodic `tapIsEnabled` health check.
-3. **Kill the `Thread.sleep` loops in FrameReadbackPoller** — convert the
-   readback wait into a run-loop-scheduled state machine (repeating timer /
-   `asyncAfter` steps) so the main run loop keeps servicing sources between
-   samples. Same sampling cadence, no parked thread.
-4. **Drop the per-left-click `getAllWindows()`** (`captureMouseDownFrames`) —
-   serve it from `WindowStateCache`/`cachedFrame`, refresh lazily.
-5. Micro-fixes: use the existing `crossMonitor: false` fast path in
-   `FrameReadbackPoller.applyLayout/applyFinal` (saves one size-write per
-   window per retile); compute `currentTiledRects()` once per focus change
-   (currently twice: refreshDimming + refreshBorderOcclusion); share one
-   `CGWindowListCopyWindowInfo` snapshot per focus-change pass.
+1. **DONE — `AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)`**
+   at startup (`AppDelegate.startAfterPermissionGranted`). Bounds every
+   worst-case stall 6 s → 1 s.
+2. **DONE — event tap moved to a dedicated thread** (`HyprMac.EventTap`,
+   userInteractive QoS). Callback unchanged (O(1), defers to main); chord/
+   modifier state now lock-guarded. Added a 5 s `tapIsEnabled` health check
+   for the silent-disable case. This breaks the coupling that turned every
+   main-thread stall into a system-wide keyboard freeze.
+3. **DEFERRED to Phase 1 — de-sleep FrameReadbackPoller.** With the tap off
+   the main run loop, the `Thread.sleep` readback no longer stalls system
+   input — it only delays HyprMac's own queued work, which a synchronous
+   retile does anyway. The async state-machine refactor changes TilingEngine
+   control flow and isn't worth the regression risk in this pass.
+4. **DONE — per-left-click `getAllWindows()` dropped**
+   (`captureMouseDownFrames` now reads live frames of cached windows only).
+   Also removed the full-desktop enumerations on FFM focus-onto-floater
+   (`updateFocusBorder`) and on Hypr release (`reassertFocusBorderAfterHyprRelease`,
+   previously up to 3 walks per release).
+5. **DONE (partial) — `currentTiledRects()` memoized** (50 ms TTL,
+   invalidated at `updatePositionCache` entry) so one visual pass reads each
+   tile frame once instead of 2-3×.
+   **SKIPPED — `crossMonitor: false` fast path in the readback poller:**
+   callers can't cheaply tell which windows are genuinely crossing screens
+   (workspace switches arrive from the park corner on another monitor), the
+   saving is ~1 AX call per window, and the open retile-flicker
+   investigation shouldn't be contaminated with frame-write behavior changes.
+   **DEFERRED — `getFocusedWindow()` full-walk removal:** the walk guards
+   against sibling-window misresolution in multi-window apps (see comment at
+   AccessibilityManager.swift:281); replacing it with `_AXUIElementGetWindow`
+   + cache lookup needs a correctness study. Phase 1.
 
 ### Phase 1 — structural
 

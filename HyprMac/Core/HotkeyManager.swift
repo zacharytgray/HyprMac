@@ -13,11 +13,23 @@ import Carbon
 /// Bare press-and-release of the Hypr key fires `onHyprKeyDown` and
 /// `onHyprKeyUp` so the focus border can be re-asserted.
 ///
-/// Threading: the event tap callback runs on the main run loop. All
-/// public methods assume main thread.
+/// Threading: the tap is an ACTIVE tap — macOS holds every keystroke
+/// system-wide until the callback returns AND the hosting run loop
+/// services the source. It therefore lives on its own dedicated thread,
+/// not the main run loop: any main-thread stall (retile readback, AX
+/// enumeration into a busy app) would otherwise freeze all keyboard
+/// input on the machine until macOS kills the tap by timeout. The
+/// callback stays O(1) — chord matching only — and dispatches all real
+/// work to main. Mutable chord/modifier state is guarded by `stateLock`
+/// (written from main on config changes, read per-keystroke on the tap
+/// thread). Callbacks (`onAction` etc.) always fire on main.
 class HotkeyManager {
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var tapThread: Thread?
+    private var tapRunLoop: CFRunLoop?
+    private var healthCheckTimer: Timer?
+    fileprivate let stateLock = NSLock()
 
     /// Fires for every recognized chord (Hypr + bound key).
     var onAction: ((Action) -> Void)?
@@ -45,6 +57,8 @@ class HotkeyManager {
     /// matches the prior linear-scan behavior. Builds the O(1) lookup
     /// map keyed by packed keyCode + modifiers.
     func updateKeybinds(_ binds: [Keybind]) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         keybinds = binds
         // last-wins for duplicate key combos (matches old linear scan behavior)
         keybindMap = [:]
@@ -57,13 +71,15 @@ class HotkeyManager {
     /// in-progress modifier state so a key already down at the moment
     /// of the swap is not misinterpreted.
     func updateHyprKey(_ key: HyprKey) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         hyprKey = key
         hyprKeyDown = false
         pressedModifierKeyCodes.removeAll()
         hyprLog(.debug, .lifecycle, "hypr key set to \(key.displayName)")
     }
 
-    /// Install the event tap and add it to the main run loop.
+    /// Install the event tap on a dedicated thread's run loop.
     /// No-op if the tap fails to create — typically means AX
     /// permission is missing; the failure is logged and `isInstalled`
     /// remains `false`.
@@ -88,25 +104,71 @@ class HotkeyManager {
         }
 
         eventTap = tap
-        runLoopSource = CFMachPortCreateRunLoopSource(nil, tap, 0)
-        CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        CGEvent.tapEnable(tap: tap, enable: true)
-        hyprLog(.debug, .lifecycle, "event tap started, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
+        let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
+        runLoopSource = source
+
+        // dedicated run loop so a busy main thread can never delay
+        // keystroke delivery. published before start() returns so stop()
+        // always has a run loop to tear down.
+        let ready = DispatchSemaphore(value: 0)
+        let thread = Thread { [weak self] in
+            self?.tapRunLoop = CFRunLoopGetCurrent()
+            CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
+            CGEvent.tapEnable(tap: tap, enable: true)
+            ready.signal()
+            CFRunLoopRun()
+        }
+        thread.name = "HyprMac.EventTap"
+        thread.qualityOfService = .userInteractive
+        tapThread = thread
+        thread.start()
+        ready.wait()
+
+        startTapHealthCheck()
+        hyprLog(.debug, .lifecycle, "event tap started on dedicated thread, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
     }
 
-    /// Disable the tap, remove its run-loop source, and drop the tap
-    /// reference. Idempotent.
+    /// Disable the tap, stop its thread, and drop the tap reference.
+    /// Idempotent.
     func stop() {
+        healthCheckTimer?.invalidate()
+        healthCheckTimer = nil
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
-        if let source = runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        if let rl = tapRunLoop {
+            if let source = runLoopSource {
+                CFRunLoopRemoveSource(rl, source, .commonModes)
+            }
+            CFRunLoopStop(rl)
         }
         eventTap = nil
         runLoopSource = nil
+        tapRunLoop = nil
+        tapThread = nil
+        stateLock.lock()
         hyprKeyDown = false
         pressedModifierKeyCodes.removeAll()
+        stateLock.unlock()
+    }
+
+    /// Catch a silently dead tap. The callback re-enables on
+    /// `tapDisabledByTimeout`, but a tap can also stop delivering with
+    /// no disable event at all (re-sign race after rebuild, TCC flap) —
+    /// a non-nil tap is not a healthy tap. Cheap: one flag read per tick.
+    private func startTapHealthCheck() {
+        healthCheckTimer?.invalidate()
+        let timer = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
+            guard let self, let tap = self.eventTap else { return }
+            if !CGEvent.tapIsEnabled(tap: tap) {
+                hyprLog(.notice, .hotkey, "health check found event tap disabled — re-enabling")
+                CGEvent.tapEnable(tap: tap, enable: true)
+                self.resetTrackingAfterTapInterruption()
+            }
+        }
+        timer.tolerance = 1.0
+        RunLoop.main.add(timer, forMode: .common)
+        healthCheckTimer = timer
     }
 
     /// Drop tracked modifier state after a tap interruption.
@@ -122,6 +184,8 @@ class HotkeyManager {
     /// since those can drop the Hypr keyUp without triggering a tap-disabled
     /// event.
     func resetTrackingAfterTapInterruption() {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         if hyprKeyDown {
             hyprLog(.notice, .hotkey, "resetting stuck hyprKeyDown after tap interruption")
         }
@@ -143,7 +207,12 @@ class HotkeyManager {
         return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(hyprKey.keyCode))
     }
 
+    /// Runs on the tap thread, per keystroke. Holds `stateLock` for the
+    /// duration — pure dictionary/set work plus at most one IOKit query,
+    /// so hold times are microseconds.
     fileprivate func handleEvent(_ type: CGEventType, _ event: CGEvent) -> CGEvent? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         let keyCode = UInt16(event.getIntegerValueField(.keyboardEventKeycode))
         trackModifierState(type, keyCode)
 
@@ -188,6 +257,8 @@ class HotkeyManager {
         return event
     }
 
+    // assumes stateLock held. the onHyprKeyDown/Up callbacks fire async
+    // on main, outside the lock.
     private func setHyprKeyDown(_ isDown: Bool) {
         let wasDown = hyprKeyDown
         hyprKeyDown = isDown
