@@ -1,0 +1,1107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><style>body{margin:0;background:#ECEAE6;font-family:system-ui,sans-serif}.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 20px}.dv-tid{font:600 10px ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}.dv-tname{font:600 13px/1.2 system-ui,sans-serif;color:#1a1a1a}.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}.dv-oid{font:600 10.5px ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}.dv-olabel{display:flex;align-items:baseline;gap:8px;font:400 11px/1.3 system-ui,sans-serif;color:rgba(0,0,0,.55)}.dv-card{max-width:100%;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,.06);overflow:hidden}.dv-opt:target .dv-oid{background:#2a78d6;color:#fff}.dv-next{margin:22px 0 0;font:12px/1.5 system-ui,sans-serif;color:rgba(0,0,0,.5)}.dv-group{width:100%;font:600 11px system-ui,sans-serif;color:rgba(0,0,0,.45);text-transform:uppercase;letter-spacing:.08em;margin:10px 0 -14px}</style></helmet>
+
+<section class="dv-turn" id="t6">
+<div class="dv-thd"><a class="dv-tid" href="#t6">6</a><span class="dv-tname">Keycap depth studies on <a class="dv-oid" href="#5a">5a</a> — each shown at full size + 64px dock size</span></div>
+<div class="dv-opts" style="margin-top:8px">
+
+<div class="dv-opt" id="6a"><div class="dv-olabel"><a class="dv-oid" href="#6a">6a</a>Deeper bevel — thicker base, brighter lit top edge</div>
+<div class="dv-card" style="width:230px;background:#f4f2ee;padding:24px;display:flex;align-items:flex-end;gap:18px">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:98px;height:98px;border-radius:21px;background:linear-gradient(175deg,#34343c,#1f1f25);border:1px solid rgba(255,255,255,.16);border-top:2px solid rgba(255,255,255,.34);border-bottom:9px solid #0b0b0e;display:flex;align-items:center;justify-content:center">
+      <span style="font:500 66px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-8px">⇪</span>
+    </div>
+  </div>
+  <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:98px;height:98px;border-radius:21px;background:linear-gradient(175deg,#34343c,#1f1f25);border:1px solid rgba(255,255,255,.16);border-top:2px solid rgba(255,255,255,.34);border-bottom:9px solid #0b0b0e;display:flex;align-items:center;justify-content:center"><span style="font:500 66px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-8px">⇪</span></div></div></div>
+</div></div>
+
+<div class="dv-opt" id="6b"><div class="dv-olabel"><a class="dv-oid" href="#6b">6b</a>Cast shadow — cap floats above a lighter floor</div>
+<div class="dv-card" style="width:230px;background:#f4f2ee;padding:24px;display:flex;align-items:flex-end;gap:18px">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#2a2a30,#17171b);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:96px;height:96px;border-radius:21px;background:linear-gradient(175deg,#31313a,#1e1e24);border:1px solid rgba(255,255,255,.15);border-top-color:rgba(255,255,255,.3);border-bottom:6px solid #0d0d10;box-shadow:0 10px 20px rgba(0,0,0,.6),0 3px 6px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;margin-top:-6px">
+      <span style="font:500 66px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-6px">⇪</span>
+    </div>
+  </div>
+  <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#2a2a30,#17171b);display:flex;align-items:center;justify-content:center"><div style="width:96px;height:96px;border-radius:21px;background:linear-gradient(175deg,#31313a,#1e1e24);border:1px solid rgba(255,255,255,.15);border-top-color:rgba(255,255,255,.3);border-bottom:6px solid #0d0d10;box-shadow:0 10px 20px rgba(0,0,0,.6),0 3px 6px rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;margin-top:-6px"><span style="font:500 66px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-6px">⇪</span></div></div></div>
+</div></div>
+
+<div class="dv-opt" id="6c"><div class="dv-olabel"><a class="dv-oid" href="#6c">6c</a>Extruded — visible side wall, most physical</div>
+<div class="dv-card" style="width:230px;background:#f4f2ee;padding:24px;display:flex;align-items:flex-end;gap:18px">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:98px;height:96px;border-radius:21px;background:#111114;position:relative">
+      <div style="position:absolute;left:0;right:0;top:0;height:84px;border-radius:19px;background:linear-gradient(175deg,#36363f,#222228);border:1px solid rgba(255,255,255,.16);border-top-color:rgba(255,255,255,.32);display:flex;align-items:center;justify-content:center">
+        <span style="font:500 64px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span>
+      </div>
+    </div>
+  </div>
+  <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:98px;height:96px;border-radius:21px;background:#111114;position:relative"><div style="position:absolute;left:0;right:0;top:0;height:84px;border-radius:19px;background:linear-gradient(175deg,#36363f,#222228);border:1px solid rgba(255,255,255,.16);border-top-color:rgba(255,255,255,.32);display:flex;align-items:center;justify-content:center"><span style="font:500 64px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span></div></div></div></div>
+</div></div>
+
+<div class="dv-opt" id="6d"><div class="dv-olabel"><a class="dv-oid" href="#6d">6d</a>Recessed well — cap sits raised inside a sunken tray</div>
+<div class="dv-card" style="width:230px;background:#f4f2ee;padding:24px;display:flex;align-items:flex-end;gap:18px">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:102px;height:102px;border-radius:23px;background:#0e0e11;box-shadow:inset 0 3px 8px rgba(0,0,0,.8),inset 0 -1px 0 rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center">
+      <div style="width:88px;height:88px;border-radius:18px;background:linear-gradient(175deg,#32323b,#1f1f25);border:1px solid rgba(255,255,255,.16);border-top-color:rgba(255,255,255,.3);border-bottom:5px solid #0a0a0d;box-shadow:0 5px 12px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center">
+        <span style="font:500 60px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-5px">⇪</span>
+      </div>
+    </div>
+  </div>
+  <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:102px;height:102px;border-radius:23px;background:#0e0e11;box-shadow:inset 0 3px 8px rgba(0,0,0,.8),inset 0 -1px 0 rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><div style="width:88px;height:88px;border-radius:18px;background:linear-gradient(175deg,#32323b,#1f1f25);border:1px solid rgba(255,255,255,.16);border-top-color:rgba(255,255,255,.3);border-bottom:5px solid #0a0a0d;box-shadow:0 5px 12px rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center"><span style="font:500 60px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-5px">⇪</span></div></div></div></div>
+</div></div>
+
+</div>
+<p class="dv-next">Try next: "ship <a class="dv-oid" href="#6b">6b</a> as the 1024" · "combine <a class="dv-oid" href="#6b">6b</a>'s shadow with <a class="dv-oid" href="#6a">6a</a>'s bevel" · "try the well from <a class="dv-oid" href="#6d">6d</a> slightly shallower"</p>
+</section>
+
+<section class="dv-turn" id="t5">
+<div class="dv-thd"><a class="dv-tid" href="#t5">5</a><span class="dv-tname">Final icon — <a class="dv-oid" href="#4a">4a</a> with the glyph pushed to fill the cap</span></div>
+<div class="dv-opts" style="margin-top:8px">
+
+<div class="dv-opt" id="5a"><div class="dv-olabel"><a class="dv-oid" href="#5a">5a</a>4a, glyph enlarged — edge-to-edge inside the cap</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:98px;height:98px;border-radius:21px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center">
+      <span style="font:500 70px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-5px">⇪</span>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="5b"><div class="dv-olabel"><a class="dv-oid" href="#5b">5b</a>Size test — 128 · 64 · 32 · 16</div>
+<div class="dv-card" style="width:400px;background:#f4f2ee;padding:20px 24px;display:flex;align-items:flex-end;gap:20px">
+  <div style="width:128px;height:128px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(1.1034);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:98px;height:98px;border-radius:21px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center"><span style="font:500 70px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-5px">⇪</span></div></div></div>
+  <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:98px;height:98px;border-radius:21px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center"><span style="font:500 70px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-5px">⇪</span></div></div></div>
+  <div style="width:32px;height:32px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.2759);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:98px;height:98px;border-radius:21px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center"><span style="font:500 70px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-5px">⇪</span></div></div></div>
+  <div style="width:16px;height:16px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.1379);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:98px;height:98px;border-radius:21px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center"><span style="font:500 70px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-5px">⇪</span></div></div></div>
+</div></div>
+
+</div>
+<p class="dv-next">Try next: "ship <a class="dv-oid" href="#5a">5a</a> — render the 1024 asset" · "cap edge slightly thicker" · "try the glyph in white instead of cyan"</p>
+</section>
+
+<section class="dv-turn" id="t4">
+<div class="dv-thd"><a class="dv-tid" href="#t4">4</a><span class="dv-tname">Keycap icon, take 3 — <a class="dv-oid" href="#2d">2d</a>'s nested keycap kept, everything scaled up</span></div>
+<div class="dv-opts" style="margin-top:8px">
+
+<div class="dv-opt" id="4a"><div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>2d's keycap design, bigger — cap fills the squircle, glyph fills the cap</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:94px;height:94px;border-radius:20px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center">
+      <span style="font:500 52px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="4b"><div class="dv-olabel"><a class="dv-oid" href="#4b">4b</a>Glyph-only, bigger — <a class="dv-oid" href="#3c">3c</a> at full scale</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <span style="font:500 86px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-6px">⇪</span>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="4c"><div class="dv-olabel"><a class="dv-oid" href="#4c">4c</a>Size test — 64 · 32 · 16</div>
+<div class="dv-card" style="width:320px;background:#f4f2ee;padding:20px 24px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:flex-end;gap:18px">
+    <span style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.45);width:20px">4a</span>
+    <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:94px;height:94px;border-radius:20px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center"><span style="font:500 52px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span></div></div></div>
+    <div style="width:32px;height:32px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.2759);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:94px;height:94px;border-radius:20px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center"><span style="font:500 52px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span></div></div></div>
+    <div style="width:16px;height:16px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.1379);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:94px;height:94px;border-radius:20px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:5px solid #101013;display:flex;align-items:center;justify-content:center"><span style="font:500 52px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span></div></div></div>
+  </div>
+  <div style="display:flex;align-items:flex-end;gap:18px">
+    <span style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.45);width:20px">4b</span>
+    <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><span style="font:500 86px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-6px">⇪</span></div></div>
+    <div style="width:32px;height:32px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.2759);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><span style="font:500 86px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-6px">⇪</span></div></div>
+    <div style="width:16px;height:16px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.1379);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><span style="font:500 86px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-6px">⇪</span></div></div>
+  </div>
+</div></div>
+
+</div>
+<p class="dv-next">Try next: "ship <a class="dv-oid" href="#4a">4a</a>" · "4a with an even thicker cap edge" · "compare <a class="dv-oid" href="#3a">3a</a> vs <a class="dv-oid" href="#4a">4a</a> in a dock mock"</p>
+</section>
+
+<section class="dv-turn" id="t3">
+<div class="dv-thd"><a class="dv-tid" href="#t3">3</a><span class="dv-tname">Icon refinements — <a class="dv-oid" href="#2a">2a</a> with subtle pane shading, <a class="dv-oid" href="#2d">2d</a> with the glyph at real icon scale</span></div>
+<div class="dv-opts" style="margin-top:8px">
+
+<div class="dv-opt" id="3a"><div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>2a refined — a whisper of shading on the small panes, left pane stays brightest</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px">
+      <div style="grid-row:1/3;border-radius:7px;background:linear-gradient(170deg,#74e3f6,#4cc9e2)"></div>
+      <div style="border-radius:7px;background:linear-gradient(170deg,#63d9ee,#41c0da)"></div>
+      <div style="border-radius:7px;background:linear-gradient(170deg,#55cee6,#38b4d0)"></div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="3b"><div class="dv-olabel"><a class="dv-oid" href="#3b">3b</a>2d refined — the whole icon IS the keycap, glyph sized to dominate</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(175deg,#2c2c33,#1a1a1f);border-top:1px solid rgba(255,255,255,.22);border-left:1px solid rgba(255,255,255,.1);border-right:1px solid rgba(255,255,255,.08);border-bottom:5px solid #0e0e11;box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <span style="font:500 62px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="3c"><div class="dv-olabel"><a class="dv-oid" href="#3c">3c</a>2d alt — no keycap chrome, just the glyph, maximum simplicity</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <span style="font:500 68px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="3d"><div class="dv-olabel"><a class="dv-oid" href="#3d">3d</a>Size test — dock 64 · Spotlight 32 · list 16</div>
+<div class="dv-card" style="width:320px;background:#f4f2ee;padding:20px 24px;display:flex;flex-direction:column;gap:14px">
+  <div style="display:flex;align-items:flex-end;gap:18px">
+    <span style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.45);width:20px">3a</span>
+    <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px"><div style="grid-row:1/3;border-radius:7px;background:linear-gradient(170deg,#74e3f6,#4cc9e2)"></div><div style="border-radius:7px;background:linear-gradient(170deg,#63d9ee,#41c0da)"></div><div style="border-radius:7px;background:linear-gradient(170deg,#55cee6,#38b4d0)"></div></div></div></div>
+    <div style="width:32px;height:32px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.2759);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px"><div style="grid-row:1/3;border-radius:7px;background:linear-gradient(170deg,#74e3f6,#4cc9e2)"></div><div style="border-radius:7px;background:linear-gradient(170deg,#63d9ee,#41c0da)"></div><div style="border-radius:7px;background:linear-gradient(170deg,#55cee6,#38b4d0)"></div></div></div></div>
+    <div style="width:16px;height:16px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.1379);transform-origin:top left;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);display:flex;align-items:center;justify-content:center"><div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px"><div style="grid-row:1/3;border-radius:7px;background:linear-gradient(170deg,#74e3f6,#4cc9e2)"></div><div style="border-radius:7px;background:linear-gradient(170deg,#63d9ee,#41c0da)"></div><div style="border-radius:7px;background:linear-gradient(170deg,#55cee6,#38b4d0)"></div></div></div></div>
+  </div>
+  <div style="display:flex;align-items:flex-end;gap:18px">
+    <span style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.45);width:20px">3b</span>
+    <div style="width:64px;height:64px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.5517);transform-origin:top left;border-radius:26px;background:linear-gradient(175deg,#2c2c33,#1a1a1f);border-bottom:5px solid #0e0e11;display:flex;align-items:center;justify-content:center"><span style="font:500 62px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span></div></div>
+    <div style="width:32px;height:32px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.2759);transform-origin:top left;border-radius:26px;background:linear-gradient(175deg,#2c2c33,#1a1a1f);border-bottom:5px solid #0e0e11;display:flex;align-items:center;justify-content:center"><span style="font:500 62px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span></div></div>
+    <div style="width:16px;height:16px;overflow:hidden"><div style="width:116px;height:116px;transform:scale(.1379);transform-origin:top left;border-radius:26px;background:linear-gradient(175deg,#2c2c33,#1a1a1f);border-bottom:5px solid #0e0e11;display:flex;align-items:center;justify-content:center"><span style="font:500 62px ui-monospace,Menlo,monospace;color:#56D8F0;margin-top:-4px">⇪</span></div></div>
+  </div>
+  <div style="font:400 10px/1.5 system-ui,sans-serif;color:rgba(0,0,0,.5)">3a's geometry survives 16px; 3b's glyph stays legible because it fills the tile.</div>
+</div></div>
+
+</div>
+<p class="dv-next">Try next: "ship <a class="dv-oid" href="#3a">3a</a> — render it at 1024" · "try <a class="dv-oid" href="#3b">3b</a> with the glyph even bigger" · "show <a class="dv-oid" href="#3a">3a</a> in the dock next to real apps"</p>
+</section>
+
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Icon variations (no two-accent gradients) · menu bar fixed (shortcut removed) · no-color chrome ideas. Overlay locked to <a class="dv-oid" href="#1g">1g</a>.</span></div>
+
+<div class="dv-group">App icon — dark, single-accent takes (riffs on <a class="dv-oid" href="#1b">1b</a>-A)</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>All-cyan panes — accent + neutral shading only</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px">
+      <div style="grid-row:1/3;border-radius:7px;background:linear-gradient(170deg,#72e2f5,#38bcd8)"></div>
+      <div style="border-radius:7px;background:linear-gradient(170deg,#72e2f5,#44c6e0)"></div>
+      <div style="border-radius:7px;background:linear-gradient(170deg,#55cee6,#2fb2ce)"></div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="2b"><div class="dv-olabel"><a class="dv-oid" href="#2b">2b</a>One accent pane — "focus" semantics baked into the mark</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px">
+      <div style="grid-row:1/3;border-radius:7px;background:linear-gradient(170deg,#6ee0f4,#3bb8d6)"></div>
+      <div style="border-radius:7px;background:linear-gradient(170deg,#45454e,#33333a)"></div>
+      <div style="border-radius:7px;background:linear-gradient(170deg,#3d3d45,#2c2c33)"></div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="2c"><div class="dv-olabel"><a class="dv-oid" href="#2c">2c</a>Inverse — cyan chassis, dark glyph</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#68def3,#3cb9d6);box-shadow:0 8px 20px rgba(0,0,0,.28);display:flex;align-items:center;justify-content:center">
+    <div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px">
+      <div style="grid-row:1/3;border-radius:7px;background:rgba(14,16,20,.88)"></div>
+      <div style="border-radius:7px;background:rgba(14,16,20,.88)"></div>
+      <div style="border-radius:7px;background:rgba(14,16,20,.62)"></div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="2d"><div class="dv-olabel"><a class="dv-oid" href="#2d">2d</a>Keycap — brand the Hypr key itself</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:78px;height:78px;border-radius:16px;background:linear-gradient(175deg,#2e2e35,#202026);border:1px solid rgba(255,255,255,.14);border-top-color:rgba(255,255,255,.24);border-bottom:4px solid #121215;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+      <span style="font:500 30px ui-monospace,Menlo,monospace;color:#56D8F0">⇪</span>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="2e"><div class="dv-olabel"><a class="dv-oid" href="#2e">2e</a>Outline — panes as cyan strokes, terminal energy</div>
+<div class="dv-card" style="width:180px;background:#f4f2ee;padding:24px;display:flex;justify-content:center">
+  <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(170deg,#232328,#141417);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+    <div style="width:66px;height:66px;display:grid;grid-template-columns:36px 22px;grid-template-rows:1fr 1fr;gap:5px">
+      <div style="grid-row:1/3;border-radius:7px;border:3px solid #56D8F0"></div>
+      <div style="border-radius:7px;border:3px solid rgba(86,216,240,.55)"></div>
+      <div style="border-radius:7px;border:3px solid rgba(86,216,240,.55)"></div>
+    </div>
+  </div>
+</div></div>
+
+</div>
+
+<div class="dv-group">Menu bar — <a class="dv-oid" href="#1c">1c</a> depth, Settings shortcut removed, full light mode</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="2f"><div class="dv-olabel"><a class="dv-oid" href="#2f">2f</a>Dark — final content (no ⌘, on Settings)</div>
+<div class="dv-card" style="width:280px;background:#1c1c1f;border-color:rgba(255,255,255,.12);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.45);padding:10px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px">
+    <div>
+      <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#ececf1">HYPRMAC</div>
+      <div style="font:400 10.5px system-ui,sans-serif;color:#56D8F0;margin-top:2px">Tiling active</div>
+    </div>
+    <div style="width:34px;height:20px;border-radius:10px;background:rgba(86,216,240,.25);border:1px solid rgba(86,216,240,.5);position:relative">
+      <div style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#56D8F0"></div>
+    </div>
+  </div>
+  <div style="background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px">
+    <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4)">WORKSPACES</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.5);width:60px">Built-in</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:rgba(86,216,240,.16);border:1px solid rgba(86,216,240,.55);color:#56D8F0">1</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#2a2a2f;border:1px solid rgba(255,255,255,.06);color:rgba(236,236,241,.7)">2</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#2a2a2f;border:1px solid rgba(255,255,255,.06);color:rgba(236,236,241,.7);position:relative">3<i style="position:absolute;top:-4px;right:-4px;font:600 8px ui-monospace,Menlo,monospace;font-style:normal;color:#E84BCB">◇</i></span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;border:1px solid rgba(255,255,255,.05);color:rgba(236,236,241,.28)">4</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.5);width:60px">LG Ultra 2</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#2a2a2f;border:1px solid rgba(255,255,255,.06);color:rgba(236,236,241,.7)">1</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:rgba(86,216,240,.16);border:1px solid rgba(86,216,240,.55);color:#56D8F0">2</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)">
+      <span style="font:400 9px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">● active&nbsp;&nbsp;○ occupied&nbsp;&nbsp;<i style="font-style:normal;color:rgba(232,75,203,.75)">◇ floating</i></span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font:500 9px ui-monospace,Menlo,monospace;color:#E84BCB"><i style="font-style:normal">⬒</i> 2 stashed</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;margin-top:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px;background:rgba(255,255,255,.06)">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Keybind cheat sheet</span>
+      <span style="display:inline-flex;gap:3px"><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.75);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 5px">⇪</span><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.75);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 5px">K</span></span>
+    </div>
+    <div style="display:flex;align-items:center;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Settings…</span>
+    </div>
+    <div style="display:flex;align-items:center;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Retile all spaces</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Check for updates…</span>
+      <span style="font:400 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">v0.8.0</span>
+    </div>
+    <div style="height:1px;background:rgba(255,255,255,.07);margin:6px 8px"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ff6b6b">Quit HyprMac</span>
+      <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)">⌘ Q</span>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="2g"><div class="dv-olabel"><a class="dv-oid" href="#2g">2g</a>Light — same content, full depth</div>
+<div class="dv-card" style="width:280px;background:#f5f5f7;border-color:rgba(0,0,0,.1);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.18);padding:10px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px">
+    <div>
+      <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#1d1d1f">HYPRMAC</div>
+      <div style="font:400 10.5px system-ui,sans-serif;color:#007AAA;margin-top:2px">Tiling active</div>
+    </div>
+    <div style="width:34px;height:20px;border-radius:10px;background:rgba(0,122,170,.18);border:1px solid rgba(0,122,170,.45);position:relative">
+      <div style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#007AAA"></div>
+    </div>
+  </div>
+  <div style="background:#ffffff;border:1px solid rgba(0,0,0,.08);border-radius:8px;padding:10px">
+    <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(0,0,0,.4)">WORKSPACES</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(0,0,0,.5);width:60px">Built-in</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:rgba(0,122,170,.12);border:1px solid rgba(0,122,170,.5);color:#007AAA">1</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#eeeef0;border:1px solid rgba(0,0,0,.05);color:rgba(0,0,0,.65)">2</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#eeeef0;border:1px solid rgba(0,0,0,.05);color:rgba(0,0,0,.65);position:relative">3<i style="position:absolute;top:-4px;right:-4px;font:600 8px ui-monospace,Menlo,monospace;font-style:normal;color:#B7228F">◇</i></span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;border:1px solid rgba(0,0,0,.06);color:rgba(0,0,0,.3)">4</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(0,0,0,.5);width:60px">LG Ultra 2</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#eeeef0;border:1px solid rgba(0,0,0,.05);color:rgba(0,0,0,.65)">1</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:rgba(0,122,170,.12);border:1px solid rgba(0,122,170,.5);color:#007AAA">2</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid rgba(0,0,0,.06)">
+      <span style="font:400 9px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.38)">● active&nbsp;&nbsp;○ occupied&nbsp;&nbsp;<i style="font-style:normal;color:#B7228F">◇ floating</i></span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font:500 9px ui-monospace,Menlo,monospace;color:#B7228F"><i style="font-style:normal">⬒</i> 2 stashed</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;margin-top:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px;background:rgba(0,0,0,.05)">
+      <span style="font:400 12px system-ui,sans-serif;color:#1d1d1f">Keybind cheat sheet</span>
+      <span style="display:inline-flex;gap:3px"><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6);background:rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:1px 5px">⇪</span><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6);background:rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:1px 5px">K</span></span>
+    </div>
+    <div style="display:flex;align-items:center;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#1d1d1f">Settings…</span>
+    </div>
+    <div style="display:flex;align-items:center;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#1d1d1f">Retile all spaces</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#1d1d1f">Check for updates…</span>
+      <span style="font:400 10px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.35)">v0.8.0</span>
+    </div>
+    <div style="height:1px;background:rgba(0,0,0,.08);margin:6px 8px"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#d0342c">Quit HyprMac</span>
+      <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.4)">⌘ Q</span>
+    </div>
+  </div>
+</div></div>
+
+</div>
+
+<div class="dv-group">No-color focus language — ideas for the dim-only preference</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="2h"><div class="dv-olabel"><a class="dv-oid" href="#2h">2h</a>Three colorless focus treatments — all coexist with your color options in Settings</div>
+<div class="dv-card" style="width:880px;background:#0e0e11;border-color:rgba(255,255,255,.1);border-radius:12px;padding:16px;display:flex;gap:14px">
+  <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+    <div style="position:relative;aspect-ratio:16/10;border-radius:8px;background:linear-gradient(160deg,#17171c,#101014);padding:8px;display:flex;gap:6px">
+      <div style="flex:1.35;border-radius:6px;background:#26262c"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div style="flex:1;border-radius:6px;background:#1d1d22;position:relative;overflow:hidden"><div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div></div>
+        <div style="flex:1;border-radius:6px;background:#1d1d22;position:relative;overflow:hidden"><div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div></div>
+      </div>
+    </div>
+    <div style="font:600 10.5px system-ui,sans-serif;color:#ececf1">Dim-only <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.4)">· your preference</span></div>
+    <div style="font:400 10px/1.5 system-ui,sans-serif;color:rgba(236,236,241,.5)">No border at all. Idea: nudge dim from 20% → 25–30% default when border is off, so focus stays unambiguous on busy desktops.</div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+    <div style="position:relative;aspect-ratio:16/10;border-radius:8px;background:linear-gradient(160deg,#17171c,#101014);padding:8px;display:flex;gap:6px">
+      <div style="flex:1.35;position:relative;border-radius:6px;background:#26262c">
+        <div style="position:absolute;top:6px;left:6px;width:10px;height:10px;border-top:2.5px solid rgba(255,255,255,.75);border-left:2.5px solid rgba(255,255,255,.75);border-top-left-radius:3px"></div>
+        <div style="position:absolute;top:6px;right:6px;width:10px;height:10px;border-top:2.5px solid rgba(255,255,255,.75);border-right:2.5px solid rgba(255,255,255,.75);border-top-right-radius:3px"></div>
+        <div style="position:absolute;bottom:6px;left:6px;width:10px;height:10px;border-bottom:2.5px solid rgba(255,255,255,.75);border-left:2.5px solid rgba(255,255,255,.75);border-bottom-left-radius:3px"></div>
+        <div style="position:absolute;bottom:6px;right:6px;width:10px;height:10px;border-bottom:2.5px solid rgba(255,255,255,.75);border-right:2.5px solid rgba(255,255,255,.75);border-bottom-right-radius:3px"></div>
+      </div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div style="flex:1;border-radius:6px;background:#1d1d22;position:relative;overflow:hidden"><div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div></div>
+        <div style="flex:1;border-radius:6px;background:#1d1d22;position:relative;overflow:hidden"><div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div></div>
+      </div>
+    </div>
+    <div style="font:600 10.5px system-ui,sans-serif;color:#ececf1">Dim + neutral brackets while ⇪ held</div>
+    <div style="font:400 10px/1.5 system-ui,sans-serif;color:rgba(236,236,241,.5)">Steady state stays colorless; brackets appear in neutral white only during command mode, then vanish. Zero chrome except while you're acting.</div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+    <div style="position:relative;aspect-ratio:16/10;border-radius:8px;background:linear-gradient(160deg,#17171c,#101014);padding:8px;display:flex;gap:6px">
+      <div style="flex:1.35;border-radius:6px;background:#26262c;border:1.5px solid rgba(255,255,255,.35)"></div>
+      <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+        <div style="flex:1;border-radius:6px;background:#1d1d22;position:relative;overflow:hidden"><div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div></div>
+        <div style="flex:1;border-radius:6px;background:#1d1d22;position:relative;overflow:hidden"><div style="position:absolute;inset:0;background:rgba(0,0,0,.3)"></div></div>
+      </div>
+    </div>
+    <div style="font:600 10.5px system-ui,sans-serif;color:#ececf1">Neutral hairline</div>
+    <div style="font:400 10px/1.5 system-ui,sans-serif;color:rgba(236,236,241,.5)">1.5pt white @ 35% — reads as "lit edge", not a color. A good "None (border)" ↔ "Color" middle option in the focus-color picker.</div>
+  </div>
+</div></div>
+
+</div>
+
+<p class="dv-next">Try next: "pick icon <a class="dv-oid" href="#2b">2b</a> and render it at 1024" · "add the ⇪-held brackets idea from <a class="dv-oid" href="#2h">2h</a> as the default when border is off" · "polish <a class="dv-oid" href="#1g">1g</a> into its final spec"</p>
+</section>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">HyprMac overhaul — evolved mono/tech system, unified across every surface</span></div>
+
+<div style="max-width:760px;background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:8px;padding:18px 22px;margin:0 0 26px;font:12.5px/1.65 system-ui,sans-serif;color:#333">
+<div style="font-weight:600;font-size:13px;margin-bottom:6px;color:#1a1a1a">Direction &amp; reasoning</div>
+<div><b>Accent semantics, made systemic:</b> cyan = <i>focus &amp; active</i> (focus border, brackets, active workspace, toggles-on, primary buttons). Magenta earns one job: the <b>floating layer</b> — floating-window borders, scratchpad scrim + tray, and every ◇ floating marker. Two colors, two meanings, everywhere.</div>
+<div style="margin-top:6px"><b>Settings IA:</b> 4 tabs → 3. <b>General · Keys · Layout</b>. App Launcher merges into Keys as an "Apps" category (a launcher <i>is</i> a keybind). Focus indicator + dimming live in Layout with the gaps + per-monitor controls.</div>
+<div style="margin-top:6px"><b>Flows:</b> onboarding / welcome / what's-new collapse into one <b>Tour shell</b> — same window, same header/footer anatomy; only the page set differs per trigger.</div>
+<div style="margin-top:6px"><b>Hypr+K:</b> three explorations below — refined list (<a class="dv-oid" href="#1g">1g</a>), keyboard map (<a class="dv-oid" href="#1h">1h</a>), dense mono sheet (<a class="dv-oid" href="#1i">1i</a>).</div>
+<div style="margin-top:6px"><b>Chrome defaults:</b> focus color defaults to hyprCyan (not system accent), overridable. One shared motion table for border / brackets / dim / scrim.</div>
+</div>
+
+<div class="dv-group">Identity</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>System board — tokens + accent semantics</div>
+<div class="dv-card" style="width:420px;background:#1c1c1f;border-color:rgba(255,255,255,.1);padding:20px">
+  <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#ececf1">HYPRMAC</div>
+  <div style="font:400 10.5px system-ui,sans-serif;color:rgba(236,236,241,.45);margin-top:2px">design tokens v2 · dark chassis shown</div>
+  <div style="display:flex;gap:8px;margin-top:16px">
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <div style="height:34px;border-radius:6px;background:#1c1c1f;border:1px solid rgba(255,255,255,.12)"></div>
+      <div style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.45)">background</div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <div style="height:34px;border-radius:6px;background:#232327;border:1px solid rgba(255,255,255,.08)"></div>
+      <div style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.45)">surface</div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <div style="height:34px;border-radius:6px;background:#2a2a2f;border:1px solid rgba(255,255,255,.08)"></div>
+      <div style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.45)">elevated</div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <div style="height:34px;border-radius:6px;background:#56D8F0"></div>
+      <div style="font:500 9px ui-monospace,Menlo,monospace;color:#56D8F0">cyan · focus</div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px">
+      <div style="height:34px;border-radius:6px;background:#E84BCB"></div>
+      <div style="font:500 9px ui-monospace,Menlo,monospace;color:#E84BCB">magenta · float</div>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px;padding:12px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font:400 11.5px system-ui,sans-serif;color:#ececf1">Focus, active, on-state</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.3);border-radius:4px;padding:2px 7px">CYAN</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font:400 11.5px system-ui,sans-serif;color:#ececf1">Floating windows, scratchpad, ◇</span>
+      <span style="display:inline-flex;align-items:center;gap:5px;font:500 10px ui-monospace,Menlo,monospace;color:#E84BCB;background:rgba(232,75,203,.12);border:1px solid rgba(232,75,203,.3);border-radius:4px;padding:2px 7px">MAGENTA</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <span style="font:400 11.5px system-ui,sans-serif;color:#ececf1">Everything else</span>
+      <span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5);background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:2px 7px">MONO</span>
+    </div>
+  </div>
+  <div style="display:flex;gap:14px;margin-top:16px;align-items:baseline">
+    <span style="font:600 17px system-ui,sans-serif;color:#ececf1">Title 17</span>
+    <span style="font:600 12px system-ui,sans-serif;letter-spacing:.06em;color:rgba(236,236,241,.55)">SECTION 12</span>
+    <span style="font:400 13px system-ui,sans-serif;color:#ececf1">Body 13</span>
+    <span style="font:500 12px ui-monospace,Menlo,monospace;color:#ececf1">mono 12</span>
+  </div>
+  <div style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.4);margin-top:12px">radius 4 / 6 / 10 · spacing 4 / 8 / 12 / 16 / 24 / 32 · motion snap 0.12s · glide 0.20s</div>
+</div></div>
+
+<div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>App icon — reconciled with the brand accents (2 takes)</div>
+<div class="dv-card" style="width:340px;background:#f4f2ee;padding:24px;display:flex;gap:28px;justify-content:center;align-items:center">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+    <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(145deg,#232327,#141416);box-shadow:0 8px 20px rgba(0,0,0,.35);display:flex;align-items:center;justify-content:center">
+      <div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px">
+        <div style="grid-row:1/3;border-radius:7px;background:linear-gradient(160deg,#56D8F0,#3bb8d6)"></div>
+        <div style="border-radius:7px;background:linear-gradient(160deg,#9f7fe0,#c45fd6)"></div>
+        <div style="border-radius:7px;background:linear-gradient(160deg,#d94fcf,#E84BCB)"></div>
+      </div>
+    </div>
+    <div style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.5)">A · dark chassis</div>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:center;gap:8px">
+    <div style="width:116px;height:116px;border-radius:26px;background:linear-gradient(145deg,#56D8F0 0%,#7a8ee8 55%,#E84BCB 100%);box-shadow:0 8px 20px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center">
+      <div style="width:66px;height:66px;display:grid;grid-template-columns:38px 24px;grid-template-rows:1fr 1fr;gap:4px">
+        <div style="grid-row:1/3;border-radius:7px;background:rgba(16,16,20,.82)"></div>
+        <div style="border-radius:7px;background:rgba(16,16,20,.82)"></div>
+        <div style="border-radius:7px;background:rgba(16,16,20,.55)"></div>
+      </div>
+    </div>
+    <div style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.5)">B · gradient chassis</div>
+  </div>
+</div></div>
+
+</div>
+
+<div class="dv-group">Menu bar</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Menu bar dropdown · 280pt — legend added, keybinds surfaced</div>
+<div class="dv-card" style="width:280px;background:#1c1c1f;border-color:rgba(255,255,255,.12);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.45);padding:10px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px">
+    <div>
+      <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#ececf1">HYPRMAC</div>
+      <div style="font:400 10.5px system-ui,sans-serif;color:#56D8F0;margin-top:2px">Tiling active</div>
+    </div>
+    <div style="width:34px;height:20px;border-radius:10px;background:rgba(86,216,240,.25);border:1px solid rgba(86,216,240,.5);position:relative">
+      <div style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#56D8F0"></div>
+    </div>
+  </div>
+  <div style="background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:8px;padding:10px">
+    <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4)">WORKSPACES</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.5);width:60px">Built-in</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:rgba(86,216,240,.16);border:1px solid rgba(86,216,240,.55);color:#56D8F0">1</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#2a2a2f;border:1px solid rgba(255,255,255,.06);color:rgba(236,236,241,.7)">2</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#2a2a2f;border:1px solid rgba(255,255,255,.06);color:rgba(236,236,241,.7);position:relative">3<i style="position:absolute;top:-4px;right:-4px;font:600 8px ui-monospace,Menlo,monospace;font-style:normal;color:#E84BCB">◇</i></span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;border:1px solid rgba(255,255,255,.05);color:rgba(236,236,241,.28)">4</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.5);width:60px">LG Ultra 2</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#2a2a2f;border:1px solid rgba(255,255,255,.06);color:rgba(236,236,241,.7)">1</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:rgba(86,216,240,.16);border:1px solid rgba(86,216,240,.55);color:#56D8F0">2</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.06)">
+      <span style="font:400 9px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">● active&nbsp;&nbsp;○ occupied&nbsp;&nbsp;<i style="font-style:normal;color:rgba(232,75,203,.75)">◇ floating</i></span>
+      <span style="display:inline-flex;align-items:center;gap:4px;font:500 9px ui-monospace,Menlo,monospace;color:#E84BCB"><i style="font-style:normal">⬒</i> 2 stashed</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;margin-top:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px;background:rgba(255,255,255,.06)">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Keybind cheat sheet</span>
+      <span style="display:inline-flex;gap:3px"><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.75);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 5px">⇪</span><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.75);background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 5px">K</span></span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Settings…</span>
+      <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)">⌘ ,</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Retile all spaces</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ececf1">Check for updates…</span>
+      <span style="font:400 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">v0.8.0</span>
+    </div>
+    <div style="height:1px;background:rgba(255,255,255,.07);margin:6px 8px"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px">
+      <span style="font:400 12px system-ui,sans-serif;color:#ff6b6b">Quit HyprMac</span>
+      <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)">⌘ Q</span>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1d"><div class="dv-olabel"><a class="dv-oid" href="#1d">1d</a>Same dropdown, light mode — proves the chassis tracks macOS appearance</div>
+<div class="dv-card" style="width:280px;background:#f5f5f7;border-color:rgba(0,0,0,.1);border-radius:12px;box-shadow:0 16px 40px rgba(0,0,0,.18);padding:10px">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 6px 10px">
+    <div>
+      <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#1d1d1f">HYPRMAC</div>
+      <div style="font:400 10.5px system-ui,sans-serif;color:#007AAA;margin-top:2px">Tiling active</div>
+    </div>
+    <div style="width:34px;height:20px;border-radius:10px;background:rgba(0,122,170,.18);border:1px solid rgba(0,122,170,.45);position:relative">
+      <div style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#007AAA"></div>
+    </div>
+  </div>
+  <div style="background:#ffffff;border:1px solid rgba(0,0,0,.08);border-radius:8px;padding:10px">
+    <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(0,0,0,.4)">WORKSPACES</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:8px">
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(0,0,0,.5);width:60px">Built-in</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:rgba(0,122,170,.12);border:1px solid rgba(0,122,170,.5);color:#007AAA">1</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#eeeef0;border:1px solid rgba(0,0,0,.05);color:rgba(0,0,0,.65)">2</span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;background:#eeeef0;border:1px solid rgba(0,0,0,.05);color:rgba(0,0,0,.65);position:relative">3<i style="position:absolute;top:-4px;right:-4px;font:600 8px ui-monospace,Menlo,monospace;font-style:normal;color:#B7228F">◇</i></span>
+      <span style="width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;font:500 10.5px ui-monospace,Menlo,monospace;border:1px solid rgba(0,0,0,.06);color:rgba(0,0,0,.3)">4</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px solid rgba(0,0,0,.06)">
+      <span style="font:400 9px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.38)">● active&nbsp;&nbsp;○ occupied&nbsp;&nbsp;<i style="font-style:normal;color:#B7228F">◇ floating</i></span>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;margin-top:8px">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px;border-radius:6px;background:rgba(0,0,0,.05)">
+      <span style="font:400 12px system-ui,sans-serif;color:#1d1d1f">Keybind cheat sheet</span>
+      <span style="display:inline-flex;gap:3px"><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6);background:rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:1px 5px">⇪</span><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.6);background:rgba(0,0,0,.06);border:1px solid rgba(0,0,0,.12);border-radius:4px;padding:1px 5px">K</span></span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:7px 8px">
+      <span style="font:400 12px system-ui,sans-serif;color:#1d1d1f">Settings…</span>
+      <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(0,0,0,.4)">⌘ ,</span>
+    </div>
+  </div>
+</div></div>
+
+</div>
+
+<div class="dv-group">Settings — 3 tabs</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="1e"><div class="dv-olabel"><a class="dv-oid" href="#1e">1e</a>Settings · Keys — the centerpiece. Hypr hero + search + launchers merged in</div>
+<div class="dv-card" style="width:760px;height:600px;background:#1c1c1f;border-color:rgba(255,255,255,.12);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;overflow:hidden">
+  <div style="width:192px;flex:none;background:#19191c;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;padding:14px 0">
+    <div style="display:flex;gap:8px;padding:2px 16px 0">
+      <span style="width:11px;height:11px;border-radius:6px;background:#ff5f57"></span><span style="width:11px;height:11px;border-radius:6px;background:#febc2e"></span><span style="width:11px;height:11px;border-radius:6px;background:#28c840"></span>
+    </div>
+    <div style="padding:20px 16px 16px">
+      <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#ececf1">HYPRMAC</div>
+      <div style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35);margin-top:3px">v0.8.0</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;padding:0 8px">
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:rgba(236,236,241,.6);font:400 12.5px system-ui,sans-serif"><span style="font-size:12px">⚙</span> General</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;background:rgba(86,216,240,.1);color:#56D8F0;font:500 12.5px system-ui,sans-serif;box-shadow:inset 2px 0 0 #56D8F0"><span style="font-size:12px">⌘</span> Keys</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:rgba(236,236,241,.6);font:400 12.5px system-ui,sans-serif"><span style="font-size:12px">▦</span> Layout</div>
+    </div>
+    <div style="margin-top:auto;padding:12px 16px;border-top:1px solid rgba(255,255,255,.06)">
+      <div style="font:400 8.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3);line-height:1.5">~/Library/Application Support/<br>HyprMac/config.json ↗</div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:22px 24px 0">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div style="font:600 17px system-ui,sans-serif;color:#ececf1">Keys</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div style="display:flex;align-items:center;gap:6px;width:170px;padding:5px 9px;border-radius:6px;background:#232327;border:1px solid rgba(255,255,255,.1)"><span style="color:rgba(236,236,241,.35);font-size:10px">⌕</span><span style="font:400 11px system-ui,sans-serif;color:rgba(236,236,241,.35)">Search actions…</span></div>
+        <div style="font:500 11.5px system-ui,sans-serif;color:#0b1417;background:#56D8F0;border-radius:6px;padding:5px 11px">＋ Add</div>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:linear-gradient(135deg,rgba(86,216,240,.09),rgba(232,75,203,.07));border:1px solid rgba(86,216,240,.22);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:14px">
+      <div style="width:52px;height:52px;flex:none;border-radius:9px;background:#232327;border:1px solid rgba(255,255,255,.14);border-bottom:2.5px solid rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font:500 22px ui-monospace,Menlo,monospace;color:#56D8F0">⇪</div>
+      <div style="flex:1">
+        <div style="font:600 13px system-ui,sans-serif;color:#ececf1">Hypr key</div>
+        <div style="font:400 11px system-ui,sans-serif;color:rgba(236,236,241,.5);margin-top:2px">Hold it, press a key, do a window thing. One key unlocks everything.</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;font:500 11px ui-monospace,Menlo,monospace;color:#ececf1;background:#232327;border:1px solid rgba(255,255,255,.14);border-radius:6px;padding:6px 10px">Caps Lock <span style="color:rgba(236,236,241,.4)">▾</span></div>
+    </div>
+    <div style="margin-top:16px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4)">FOCUS &amp; NAVIGATION</div>
+    <div style="margin-top:6px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Focus window in direction</span>
+        <span style="display:inline-flex;gap:3px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇪</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">← ↑ ↓ →</span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Focus / cycle floating windows</span>
+        <span style="display:inline-flex;gap:3px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇪</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">F</span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;background:rgba(86,216,240,.07)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Warp cursor to menu bar</span>
+        <span style="display:inline-flex;gap:3px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇪</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">`</span></span>
+      </div>
+    </div>
+    <div style="margin-top:14px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4)">WINDOW MANAGEMENT</div>
+    <div style="margin-top:6px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Swap window in direction</span>
+        <span style="display:inline-flex;gap:3px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇪</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇧</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">← ↑ ↓ →</span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Toggle floating <i style="font-style:normal;color:#E84BCB;font-size:10px">◇</i></span>
+        <span style="display:inline-flex;gap:3px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇪</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇧</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">T</span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Toggle scratchpad <i style="font-style:normal;color:#E84BCB;font-size:10px">◇</i></span>
+        <span style="display:inline-flex;gap:3px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇪</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">S</span></span>
+      </div>
+    </div>
+    <div style="margin-top:14px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4)">APPS — LAUNCHERS LIVE HERE NOW</div>
+    <div style="margin-top:6px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px">
+        <span style="display:flex;align-items:center;gap:9px"><span style="width:20px;height:20px;border-radius:5px;background:linear-gradient(145deg,#3a3a40,#26262b);border:1px solid rgba(255,255,255,.1);display:inline-flex;align-items:center;justify-content:center;font-size:9px;color:rgba(236,236,241,.6)">›_</span><span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Launch / focus Ghostty</span></span>
+        <span style="display:inline-flex;gap:3px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⇪</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.8);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-bottom-color:rgba(255,255,255,.24);border-radius:4px;padding:2px 6px">⏎</span></span>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1f"><div class="dv-olabel"><a class="dv-oid" href="#1f">1f</a>Settings · Layout — dwindle preview promoted to hero, chrome controls consolidated</div>
+<div class="dv-card" style="width:760px;height:600px;background:#1c1c1f;border-color:rgba(255,255,255,.12);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;overflow:hidden">
+  <div style="width:192px;flex:none;background:#19191c;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;padding:14px 0">
+    <div style="display:flex;gap:8px;padding:2px 16px 0">
+      <span style="width:11px;height:11px;border-radius:6px;background:#ff5f57"></span><span style="width:11px;height:11px;border-radius:6px;background:#febc2e"></span><span style="width:11px;height:11px;border-radius:6px;background:#28c840"></span>
+    </div>
+    <div style="padding:20px 16px 16px">
+      <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#ececf1">HYPRMAC</div>
+      <div style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35);margin-top:3px">v0.8.0</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;padding:0 8px">
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:rgba(236,236,241,.6);font:400 12.5px system-ui,sans-serif"><span style="font-size:12px">⚙</span> General</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:rgba(236,236,241,.6);font:400 12.5px system-ui,sans-serif"><span style="font-size:12px">⌘</span> Keys</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;background:rgba(86,216,240,.1);color:#56D8F0;font:500 12.5px system-ui,sans-serif;box-shadow:inset 2px 0 0 #56D8F0"><span style="font-size:12px">▦</span> Layout</div>
+    </div>
+    <div style="margin-top:auto;padding:12px 16px;border-top:1px solid rgba(255,255,255,.06)">
+      <div style="font:400 8.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3);line-height:1.5">~/Library/Application Support/<br>HyprMac/config.json ↗</div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:22px 24px 0">
+    <div style="font:600 17px system-ui,sans-serif;color:#ececf1">Layout</div>
+    <div style="margin-top:14px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:14px 16px;display:flex;gap:18px">
+      <div style="flex:1">
+        <div style="font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4)">GAPS</div>
+        <div style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:400 12px system-ui,sans-serif;color:#ececf1">Inner gap</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.12);border-radius:4px;padding:1px 6px">8 px</span></div>
+          <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.1);margin-top:8px;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:25%;border-radius:2px;background:#56D8F0"></div><div style="position:absolute;left:25%;top:-4px;width:12px;height:12px;border-radius:6px;background:#ececf1;transform:translateX(-6px)"></div></div>
+        </div>
+        <div style="margin-top:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center"><span style="font:400 12px system-ui,sans-serif;color:#ececf1">Outer padding</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.12);border-radius:4px;padding:1px 6px">12 px</span></div>
+          <div style="height:4px;border-radius:2px;background:rgba(255,255,255,.1);margin-top:8px;position:relative"><div style="position:absolute;left:0;top:0;bottom:0;width:37%;border-radius:2px;background:#56D8F0"></div><div style="position:absolute;left:37%;top:-4px;width:12px;height:12px;border-radius:6px;background:#ececf1;transform:translateX(-6px)"></div></div>
+        </div>
+        <div style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.4);margin-top:14px">Preview updates live — the geometry <i>is</i> the design.</div>
+      </div>
+      <div style="width:280px;flex:none;aspect-ratio:16/10;background:#141416;border:1px solid rgba(255,255,255,.1);border-radius:8px;padding:10px;display:flex;gap:7px">
+        <div style="flex:1.4;border-radius:4px;background:rgba(86,216,240,.28);border:1.5px solid #56D8F0"></div>
+        <div style="flex:1;display:flex;flex-direction:column;gap:7px">
+          <div style="flex:1;border-radius:4px;background:rgba(86,216,240,.12);border:1px solid rgba(86,216,240,.3)"></div>
+          <div style="flex:1;display:flex;gap:7px">
+            <div style="flex:1;border-radius:4px;background:rgba(86,216,240,.12);border:1px solid rgba(86,216,240,.3)"></div>
+            <div style="flex:1;border-radius:4px;background:rgba(86,216,240,.12);border:1px solid rgba(86,216,240,.3)"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="padding:10px 14px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4);border-bottom:1px solid rgba(255,255,255,.05)">FOCUS CHROME</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Focus color</span>
+        <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:16px;height:16px;border-radius:8px;background:#56D8F0;border:2px solid rgba(255,255,255,.2)"></span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)">hyprCyan · default</span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Floating color <i style="font-style:normal;color:#E84BCB;font-size:10px">◇</i></span>
+        <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:16px;height:16px;border-radius:8px;background:#E84BCB;border:2px solid rgba(255,255,255,.2)"></span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)">hyprMagenta · default</span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Dim inactive windows</span>
+        <span style="display:inline-flex;align-items:center;gap:8px"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.12);border-radius:4px;padding:1px 6px">20 %</span><span style="width:30px;height:18px;border-radius:9px;background:rgba(86,216,240,.25);border:1px solid rgba(86,216,240,.5);position:relative"><span style="position:absolute;top:2px;right:2px;width:12px;height:12px;border-radius:6px;background:#56D8F0"></span></span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Chrome fade</span>
+        <span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)">220 ms · shared by border + dim + scrim</span>
+      </div>
+    </div>
+    <div style="margin-top:14px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4)">PER-MONITOR</div>
+    <div style="margin-top:6px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 14px">
+        <div style="flex:1">
+          <div style="font:400 12.5px system-ui,sans-serif;color:#ececf1">LG UltraFine <span style="font:400 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.4)">3440×1440</span></div>
+          <div style="display:inline-flex;gap:4px;margin-top:6px">
+            <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:1px 6px">2</span>
+            <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:#0b1417;background:#56D8F0;border-radius:4px;padding:1px 6px">3</span>
+            <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5);border:1px solid rgba(255,255,255,.12);border-radius:4px;padding:1px 6px">4</span>
+            <span style="font:400 9px system-ui,sans-serif;color:rgba(236,236,241,.35);margin-left:4px;align-self:center">max splits</span>
+          </div>
+        </div>
+        <div style="width:150px;flex:none;aspect-ratio:21/9;background:#141416;border:1px solid rgba(255,255,255,.1);border-radius:5px;padding:5px;display:flex;gap:4px">
+          <div style="flex:1.3;border-radius:2px;background:rgba(86,216,240,.25)"></div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:4px"><div style="flex:1;border-radius:2px;background:rgba(86,216,240,.12)"></div><div style="flex:1;border-radius:2px;background:rgba(86,216,240,.12)"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1j"><div class="dv-olabel"><a class="dv-oid" href="#1j">1j</a>Settings · General — consolidated to 5 panels (was 7)</div>
+<div class="dv-card" style="width:760px;height:600px;background:#1c1c1f;border-color:rgba(255,255,255,.12);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;overflow:hidden">
+  <div style="width:192px;flex:none;background:#19191c;border-right:1px solid rgba(255,255,255,.07);display:flex;flex-direction:column;padding:14px 0">
+    <div style="display:flex;gap:8px;padding:2px 16px 0">
+      <span style="width:11px;height:11px;border-radius:6px;background:#ff5f57"></span><span style="width:11px;height:11px;border-radius:6px;background:#febc2e"></span><span style="width:11px;height:11px;border-radius:6px;background:#28c840"></span>
+    </div>
+    <div style="padding:20px 16px 16px">
+      <div style="font:500 12px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:2px;color:#ececf1">HYPRMAC</div>
+      <div style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35);margin-top:3px">v0.8.0</div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:2px;padding:0 8px">
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;background:rgba(86,216,240,.1);color:#56D8F0;font:500 12.5px system-ui,sans-serif;box-shadow:inset 2px 0 0 #56D8F0"><span style="font-size:12px">⚙</span> General</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:rgba(236,236,241,.6);font:400 12.5px system-ui,sans-serif"><span style="font-size:12px">⌘</span> Keys</div>
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:6px;color:rgba(236,236,241,.6);font:400 12.5px system-ui,sans-serif"><span style="font-size:12px">▦</span> Layout</div>
+    </div>
+    <div style="margin-top:auto;padding:12px 16px;border-top:1px solid rgba(255,255,255,.06)">
+      <div style="font:400 8.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3);line-height:1.5">~/Library/Application Support/<br>HyprMac/config.json ↗</div>
+    </div>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding:22px 24px 0">
+    <div style="font:600 17px system-ui,sans-serif;color:#ececf1">General</div>
+    <div style="margin-top:14px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="display:flex;align-items:center;gap:8px"><span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">HyprMac</span><span style="font:600 8.5px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.3);border-radius:4px;padding:1px 6px;letter-spacing:.06em">ACTIVE</span></span>
+        <span style="width:34px;height:20px;border-radius:10px;background:rgba(86,216,240,.25);border:1px solid rgba(86,216,240,.5);position:relative"><span style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#56D8F0"></span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:11px 14px">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Accessibility permission</span>
+        <span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.55)">✓ granted</span>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="padding:10px 14px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4);border-bottom:1px solid rgba(255,255,255,.05)">MOUSE</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Focus follows mouse</span>
+        <span style="width:34px;height:20px;border-radius:10px;background:rgba(86,216,240,.25);border:1px solid rgba(86,216,240,.5);position:relative"><span style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#56D8F0"></span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Polling rate</span>
+        <span style="font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.12);border-radius:4px;padding:1px 6px">120 Hz</span>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="padding:10px 14px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4);border-bottom:1px solid rgba(255,255,255,.05)">NEVER TILE</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="display:flex;align-items:center;gap:9px"><span style="width:20px;height:20px;border-radius:5px;background:linear-gradient(145deg,#4a4a52,#2e2e34)"></span><span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Activity Monitor <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">com.apple.ActivityMonitor</span></span></span>
+        <span style="font:400 11px system-ui,sans-serif;color:rgba(236,236,241,.4)">✕</span>
+      </div>
+      <div style="padding:9px 14px;font:500 11.5px system-ui,sans-serif;color:#56D8F0">＋ Add app…</div>
+    </div>
+    <div style="margin-top:14px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="padding:10px 14px;font:600 10.5px system-ui,sans-serif;letter-spacing:.08em;color:rgba(236,236,241,.4);border-bottom:1px solid rgba(255,255,255,.05)">SYSTEM</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Menu bar workspace indicator</span>
+        <span style="width:34px;height:20px;border-radius:10px;background:rgba(86,216,240,.25);border:1px solid rgba(86,216,240,.5);position:relative"><span style="position:absolute;top:2px;right:2px;width:14px;height:14px;border-radius:7px;background:#56D8F0"></span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Sync settings via iCloud</span>
+        <span style="width:34px;height:20px;border-radius:10px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16);position:relative"><span style="position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:7px;background:rgba(236,236,241,.6)"></span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Launch at login</span>
+        <span style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 6px;letter-spacing:.06em">MANUAL ↗</span>
+      </div>
+    </div>
+    <div style="margin-top:14px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:10px;overflow:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ececf1">Replay the tour</span>
+        <span style="font:400 11px system-ui,sans-serif;color:rgba(236,236,241,.4)">›</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 14px">
+        <span style="font:400 12.5px system-ui,sans-serif;color:#ff6b6b">Reset all settings…</span>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+</div>
+
+<div class="dv-group">Unified Tour shell — replaces onboarding + welcome + what's new</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="1k"><div class="dv-olabel"><a class="dv-oid" href="#1k">1k</a>Tour · first-run page 1 — teach the Hypr key with a live try-it</div>
+<div class="dv-card" style="width:520px;height:440px;background:#1c1c1f;border-color:rgba(255,255,255,.12);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px 0">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:30px;height:30px;border-radius:7px;background:linear-gradient(145deg,#232327,#141416);display:flex;align-items:center;justify-content:center"><div style="width:16px;height:16px;display:grid;grid-template-columns:9px 5px;grid-template-rows:1fr 1fr;gap:1.5px"><div style="grid-row:1/3;border-radius:2px;background:#56D8F0"></div><div style="border-radius:2px;background:#a06fd8"></div><div style="border-radius:2px;background:#E84BCB"></div></div></div>
+      <span style="font:500 11px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:1.5px;color:rgba(236,236,241,.7)">HYPRMAC</span>
+    </div>
+    <span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">1 / 4</span>
+  </div>
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:0 48px">
+    <div style="width:150px;height:58px;border-radius:10px;background:#232327;border:1px solid rgba(86,216,240,.5);border-bottom:3px solid rgba(86,216,240,.7);box-shadow:0 0 34px rgba(86,216,240,.22);display:flex;align-items:center;justify-content:center;gap:8px">
+      <span style="font:500 16px ui-monospace,Menlo,monospace;color:#56D8F0">⇪</span>
+      <span style="font:500 11px ui-monospace,Menlo,monospace;letter-spacing:.1em;color:rgba(236,236,241,.7)">CAPS LOCK</span>
+    </div>
+    <div style="font:600 19px system-ui,sans-serif;color:#ececf1;margin-top:22px">Caps Lock is your superpower</div>
+    <div style="font:400 12.5px/1.6 system-ui,sans-serif;color:rgba(236,236,241,.55);margin-top:8px">It's the <b style="color:#56D8F0">Hypr key</b> now. Hold it and press a key to command your windows. Nothing else about Caps Lock changes — apps still see it as off.</div>
+    <div style="display:inline-flex;align-items:center;gap:8px;margin-top:18px;padding:8px 14px;border-radius:8px;background:rgba(86,216,240,.08);border:1px dashed rgba(86,216,240,.35)">
+      <span style="font:400 11px system-ui,sans-serif;color:rgba(236,236,241,.6)">Try it now — hold</span>
+      <span style="font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.12);border:1px solid rgba(86,216,240,.35);border-radius:4px;padding:2px 6px">⇪</span>
+      <span style="font:400 11px system-ui,sans-serif;color:rgba(236,236,241,.6)">and press</span>
+      <span style="font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.12);border:1px solid rgba(86,216,240,.35);border-radius:4px;padding:2px 6px">→</span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:0 20px 16px">
+    <span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.4)">Skip</span>
+    <span style="display:inline-flex;gap:6px;align-items:center">
+      <span style="width:6px;height:6px;border-radius:3px;background:#56D8F0"></span>
+      <span style="width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.18)"></span>
+      <span style="width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.18)"></span>
+      <span style="width:6px;height:6px;border-radius:3px;background:rgba(255,255,255,.18)"></span>
+    </span>
+    <span style="font:500 11.5px system-ui,sans-serif;color:#0b1417;background:#56D8F0;border-radius:6px;padding:6px 14px">Next</span>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1l"><div class="dv-olabel"><a class="dv-oid" href="#1l">1l</a>Tour · what's-new page — same shell, changelog content</div>
+<div class="dv-card" style="width:520px;height:440px;background:#1c1c1f;border-color:rgba(255,255,255,.12);border-radius:14px;box-shadow:0 24px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px 0">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:30px;height:30px;border-radius:7px;background:linear-gradient(145deg,#232327,#141416);display:flex;align-items:center;justify-content:center"><div style="width:16px;height:16px;display:grid;grid-template-columns:9px 5px;grid-template-rows:1fr 1fr;gap:1.5px"><div style="grid-row:1/3;border-radius:2px;background:#56D8F0"></div><div style="border-radius:2px;background:#a06fd8"></div><div style="border-radius:2px;background:#E84BCB"></div></div></div>
+      <span style="font:500 11px ui-monospace,'SF Mono',Menlo,monospace;letter-spacing:1.5px;color:rgba(236,236,241,.7)">HYPRMAC</span>
+    </div>
+    <span style="font:500 10px ui-monospace,Menlo,monospace;color:#56D8F0;background:rgba(86,216,240,.12);border:1px solid rgba(86,216,240,.3);border-radius:4px;padding:2px 7px">0.8.0</span>
+  </div>
+  <div style="flex:1;padding:18px 24px 0;overflow:hidden">
+    <div style="font:600 19px system-ui,sans-serif;color:#ececf1">What's new</div>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:14px">
+      <div style="display:flex;gap:12px;padding:11px 13px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:9px">
+        <span style="width:30px;height:30px;flex:none;border-radius:7px;background:rgba(86,216,240,.12);border:1px solid rgba(86,216,240,.3);display:flex;align-items:center;justify-content:center;color:#56D8F0;font-size:13px">▦</span>
+        <div><div style="font:600 12.5px system-ui,sans-serif;color:#ececf1">One design system, everywhere</div><div style="font:400 11px/1.5 system-ui,sans-serif;color:rgba(236,236,241,.5);margin-top:1px">Settings, tour, and the Hypr+K overlay finally speak one language.</div></div>
+      </div>
+      <div style="display:flex;gap:12px;padding:11px 13px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:9px">
+        <span style="width:30px;height:30px;flex:none;border-radius:7px;background:rgba(232,75,203,.12);border:1px solid rgba(232,75,203,.3);display:flex;align-items:center;justify-content:center;color:#E84BCB;font-size:13px">◇</span>
+        <div><div style="font:600 12.5px system-ui,sans-serif;color:#ececf1">Magenta means floating</div><div style="font:400 11px/1.5 system-ui,sans-serif;color:rgba(236,236,241,.5);margin-top:1px">Floating windows, scratchpad, and ◇ markers now share one color.</div></div>
+      </div>
+      <div style="display:flex;gap:12px;padding:11px 13px;background:#232327;border:1px solid rgba(255,255,255,.08);border-radius:9px">
+        <span style="width:30px;height:30px;flex:none;border-radius:7px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);display:flex;align-items:center;justify-content:center;color:rgba(236,236,241,.7);font-size:13px">⌘</span>
+        <div><div style="font:600 12.5px system-ui,sans-serif;color:#ececf1">Keys tab, unified</div><div style="font:400 11px/1.5 system-ui,sans-serif;color:rgba(236,236,241,.5);margin-top:1px">App launchers now live with your keybinds. One list, searchable.</div></div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:flex-end;padding:14px 20px 16px">
+    <span style="font:500 11.5px system-ui,sans-serif;color:#0b1417;background:#56D8F0;border-radius:6px;padding:6px 14px">Continue</span>
+  </div>
+</div></div>
+
+</div>
+
+<div class="dv-group">Hypr+K overlay — three explorations</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="1g"><div class="dv-olabel"><a class="dv-oid" href="#1g">1g</a>Overlay A · refined list — two columns, on-system, searchable</div>
+<div class="dv-card" style="width:560px;background:rgba(24,24,27,.96);border-color:rgba(255,255,255,.14);border-radius:14px;box-shadow:0 30px 70px rgba(0,0,0,.55);padding:16px 18px">
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="font:600 13px system-ui,sans-serif;color:#ececf1">Keybinds</span>
+      <span style="display:inline-flex;gap:3px"><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.7);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 5px">⇪</span><span style="font:500 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.7);background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:4px;padding:1px 5px">K</span></span>
+    </div>
+    <span style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.35)">type to filter · esc to close</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px">
+    <div>
+      <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:#56D8F0">FOCUS &amp; NAVIGATION</div>
+      <div style="display:flex;flex-direction:column;margin-top:6px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Focus direction</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ←↑↓→</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Cycle floating</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ F</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Warp to menu bar</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ `</span></div>
+      </div>
+      <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:#56D8F0;margin-top:12px">WORKSPACES</div>
+      <div style="display:flex;flex-direction:column;margin-top:6px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Go to workspace</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ 1–9</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Send window to workspace</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ⇧ 1–9</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Cycle workspaces</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ⇥</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Move to monitor</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ⌃ ←→</span></div>
+      </div>
+    </div>
+    <div>
+      <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:#56D8F0">WINDOW MANAGEMENT</div>
+      <div style="display:flex;flex-direction:column;margin-top:6px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Swap direction</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ⇧ ←↑↓→</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Toggle split</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ J</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Toggle floating <i style="font-style:normal;color:#E84BCB;font-size:9px">◇</i></span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ⇧ T</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Scratchpad <i style="font-style:normal;color:#E84BCB;font-size:9px">◇</i></span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ S</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Stash to scratchpad <i style="font-style:normal;color:#E84BCB;font-size:9px">◇</i></span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ⇧ S</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Close window</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ W</span></div>
+      </div>
+      <div style="font:600 9.5px system-ui,sans-serif;letter-spacing:.08em;color:#56D8F0;margin-top:12px">APPS &amp; SYSTEM</div>
+      <div style="display:flex;flex-direction:column;margin-top:6px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">Launch Ghostty</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ ⏎</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0"><span style="font:400 11.5px system-ui,sans-serif;color:rgba(236,236,241,.85)">This overlay</span><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)">⇪ K</span></div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1h"><div class="dv-olabel"><a class="dv-oid" href="#1h">1h</a>Overlay B · keyboard map — see the Hypr layer on your actual keys</div>
+<div class="dv-card" style="width:620px;background:rgba(24,24,27,.96);border-color:rgba(255,255,255,.14);border-radius:14px;box-shadow:0 30px 70px rgba(0,0,0,.55);padding:16px 18px">
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:9px">
+      <span style="font:600 13px system-ui,sans-serif;color:#ececf1">Hypr layer</span>
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.4)">what each key does while ⇪ is held</span>
+    </div>
+    <div style="display:inline-flex;border:1px solid rgba(255,255,255,.12);border-radius:6px;overflow:hidden">
+      <span style="font:500 10px ui-monospace,Menlo,monospace;color:#0b1417;background:#56D8F0;padding:3px 9px">base</span>
+      <span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.55);padding:3px 9px">+ ⇧ shift</span>
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:4px;margin-top:14px">
+    <div style="display:flex;gap:4px">
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">`</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">menu bar</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">1</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 1</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">2</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 2</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">3</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 3</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">4</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 4</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">5</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 5</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">6</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 6</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">7</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 7</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">8</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 8</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">9</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">ws 9</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">0</span></div>
+    </div>
+    <div style="display:flex;gap:4px">
+      <div style="flex:1.4;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">⇥</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">cycle ws</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">Q</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">W</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">close</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">E</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">R</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">T</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">Y</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">U</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">I</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">O</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">P</span></div>
+    </div>
+    <div style="display:flex;gap:4px">
+      <div style="flex:1.7;height:40px;border-radius:5px;background:rgba(232,75,203,.16);border:1.5px solid rgba(232,75,203,.65);box-shadow:0 0 18px rgba(232,75,203,.18);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#E84BCB">⇪ HYPR</span><span style="font:400 7px system-ui,sans-serif;color:rgba(232,75,203,.8)">held</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">A</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">S</span><span style="font:400 7px system-ui,sans-serif;color:#E84BCB">scratch ◇</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">D</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">F</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">floating</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">G</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">H</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">J</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">split</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">K</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">this</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">L</span></div>
+      <div style="flex:1.4;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">⏎</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">terminal</span></div>
+    </div>
+    <div style="display:flex;gap:4px">
+      <div style="flex:2.2;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.4)">⇧ <span style="font-size:7px;color:rgba(236,236,241,.35)">+ chord = move/send</span></span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">Z</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">X</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">C</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">V</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">B</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">N</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:#232327;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.3)">M</span></div>
+      <div style="flex:1;height:40px;border-radius:5px;background:rgba(86,216,240,.13);border:1px solid rgba(86,216,240,.4);display:flex;flex-direction:column;align-items:center;justify-content:center"><span style="font:500 10px ui-monospace,Menlo,monospace;color:#ececf1">←↑↓→</span><span style="font:400 7px system-ui,sans-serif;color:#56D8F0">focus</span></div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:14px;margin-top:12px">
+    <span style="display:inline-flex;align-items:center;gap:5px;font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.5)"><span style="width:9px;height:9px;border-radius:2px;background:rgba(86,216,240,.4)"></span>bound</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.5)"><span style="width:9px;height:9px;border-radius:2px;background:rgba(232,75,203,.5)"></span>Hypr key</span>
+    <span style="display:inline-flex;align-items:center;gap:5px;font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.5)"><span style="width:9px;height:9px;border-radius:2px;background:#232327;border:1px solid rgba(255,255,255,.14)"></span>free</span>
+    <span style="margin-left:auto;font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.35)">click a free key to bind it</span>
+  </div>
+</div></div>
+
+<div class="dv-opt" id="1i"><div class="dv-olabel"><a class="dv-oid" href="#1i">1i</a>Overlay C · dense mono sheet — max Hyprland heritage, one glance</div>
+<div class="dv-card" style="width:540px;background:rgba(20,20,23,.97);border-color:rgba(86,216,240,.25);border-radius:12px;box-shadow:0 30px 70px rgba(0,0,0,.55);padding:16px 20px;font-family:ui-monospace,'SF Mono',Menlo,monospace">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding-bottom:10px;border-bottom:1px solid rgba(255,255,255,.08)">
+    <span style="font:500 11px ui-monospace,Menlo,monospace;letter-spacing:2px;color:#ececf1">HYPRMAC <span style="color:rgba(236,236,241,.35);letter-spacing:0">· keymap</span></span>
+    <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">⇪ = hypr</span>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px;margin-top:10px">
+    <div>
+      <div style="font:600 9px ui-monospace,Menlo,monospace;letter-spacing:.12em;color:#56D8F0;padding:6px 0 4px">FOCUS</div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ ←↑↓→</span><span style="color:rgba(236,236,241,.7)">focus dir</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ F</span><span style="color:rgba(236,236,241,.7)">cycle floating</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ `</span><span style="color:rgba(236,236,241,.7)">warp menu bar</span></div>
+      <div style="font:600 9px ui-monospace,Menlo,monospace;letter-spacing:.12em;color:#56D8F0;padding:10px 0 4px">WORKSPACES</div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ 1-9</span><span style="color:rgba(236,236,241,.7)">go to ws</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ ⇧ 1-9</span><span style="color:rgba(236,236,241,.7)">send to ws</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ ⇥</span><span style="color:rgba(236,236,241,.7)">cycle ws</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ ⌃ ←→</span><span style="color:rgba(236,236,241,.7)">to monitor</span></div>
+    </div>
+    <div>
+      <div style="font:600 9px ui-monospace,Menlo,monospace;letter-spacing:.12em;color:#56D8F0;padding:6px 0 4px">WINDOWS</div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ ⇧ ←↑↓→</span><span style="color:rgba(236,236,241,.7)">swap dir</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ J</span><span style="color:rgba(236,236,241,.7)">toggle split</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ W</span><span style="color:rgba(236,236,241,.7)">close</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#E84BCB">⇪ ⇧ T</span><span style="color:rgba(236,236,241,.7)">float ◇</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#E84BCB">⇪ S</span><span style="color:rgba(236,236,241,.7)">scratchpad ◇</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#E84BCB">⇪ ⇧ S</span><span style="color:rgba(236,236,241,.7)">stash ◇</span></div>
+      <div style="font:600 9px ui-monospace,Menlo,monospace;letter-spacing:.12em;color:#56D8F0;padding:10px 0 4px">APPS · SYSTEM</div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ ⏎</span><span style="color:rgba(236,236,241,.7)">ghostty</span></div>
+      <div style="display:flex;justify-content:space-between;padding:2.5px 0;font:400 10.5px ui-monospace,Menlo,monospace"><span style="color:#56D8F0">⇪ K</span><span style="color:rgba(236,236,241,.7)">this sheet</span></div>
+    </div>
+  </div>
+</div></div>
+
+</div>
+
+<div class="dv-group">In-use chrome — the product's feel, unified</div>
+<div class="dv-opts" style="margin-top:24px">
+
+<div class="dv-opt" id="1m"><div class="dv-olabel"><a class="dv-oid" href="#1m">1m</a>Chrome system — cyan focus + brackets, magenta floating, dim, workspace glyph</div>
+<div class="dv-card" style="width:880px;background:#0e0e11;border-color:rgba(255,255,255,.1);border-radius:12px;overflow:hidden">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 14px;background:rgba(28,28,32,.9);border-bottom:1px solid rgba(255,255,255,.06)">
+    <span style="font:500 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.6)"> Finder&nbsp;&nbsp;File&nbsp;&nbsp;Edit&nbsp;&nbsp;View</span>
+    <span style="display:inline-flex;align-items:center;gap:10px">
+      <span style="font:500 10.5px ui-monospace,Menlo,monospace;letter-spacing:1px"><span style="color:#56D8F0">●</span> <span style="color:rgba(236,236,241,.55)">○</span> <span style="color:#E84BCB">◇</span> <span style="color:rgba(236,236,241,.25)">·</span> <span style="color:rgba(236,236,241,.25)">·</span></span>
+      <span style="font:500 9.5px ui-monospace,Menlo,monospace;color:#E84BCB">⬒2</span>
+      <span style="font:400 10px system-ui,sans-serif;color:rgba(236,236,241,.55)">Mon 6 Jul 21:04</span>
+    </span>
+  </div>
+  <div style="position:relative;height:430px;background:linear-gradient(160deg,#17171c,#101014);padding:12px;display:flex;gap:8px">
+    <div style="flex:1.35;position:relative;border-radius:9px;background:#1d1d22;border:2px solid #56D8F0;box-shadow:inset 0 0 0 100vmax rgba(86,216,240,.05)">
+      <div style="display:flex;gap:6px;padding:10px 12px"><span style="width:9px;height:9px;border-radius:5px;background:#ff5f57"></span><span style="width:9px;height:9px;border-radius:5px;background:#febc2e"></span><span style="width:9px;height:9px;border-radius:5px;background:#28c840"></span><span style="font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.45);margin-left:6px">Ghostty — focused</span></div>
+      <div style="padding:4px 14px;font:400 10px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.4);line-height:1.7">$ cargo test<br>&nbsp;&nbsp;Compiling hyprmac v0.8.0<br>&nbsp;&nbsp;<span style="color:rgba(86,216,240,.7)">Finished</span> in 2.31s</div>
+      <div style="position:absolute;top:14px;left:14px;width:16px;height:16px;border-top:3px solid #56D8F0;border-left:3px solid #56D8F0;border-top-left-radius:5px"></div>
+      <div style="position:absolute;top:14px;right:14px;width:16px;height:16px;border-top:3px solid #56D8F0;border-right:3px solid #56D8F0;border-top-right-radius:5px"></div>
+      <div style="position:absolute;bottom:14px;left:14px;width:16px;height:16px;border-bottom:3px solid #56D8F0;border-left:3px solid #56D8F0;border-bottom-left-radius:5px"></div>
+      <div style="position:absolute;bottom:14px;right:14px;width:16px;height:16px;border-bottom:3px solid #56D8F0;border-right:3px solid #56D8F0;border-bottom-right-radius:5px"></div>
+      <div style="position:absolute;bottom:14px;left:0;right:0;display:flex;justify-content:center"><span style="font:500 9px ui-monospace,Menlo,monospace;color:rgba(86,216,240,.8);background:rgba(20,20,24,.85);border:1px solid rgba(86,216,240,.3);border-radius:4px;padding:2px 8px">⇪ held — brackets on</span></div>
+    </div>
+    <div style="flex:1;display:flex;flex-direction:column;gap:8px">
+      <div style="flex:1;position:relative;border-radius:9px;background:#1d1d22;border:1px solid rgba(255,255,255,.07);overflow:hidden">
+        <div style="display:flex;gap:6px;padding:10px 12px"><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.15)"></span><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.15)"></span><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.15)"></span><span style="font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.35);margin-left:6px">Safari</span></div>
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,.25)"></div>
+        <div style="position:absolute;bottom:10px;left:12px;font:400 8.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.35)">dim 20%</div>
+      </div>
+      <div style="flex:1;position:relative;border-radius:9px;background:#1d1d22;border:1px solid rgba(255,255,255,.07);overflow:hidden">
+        <div style="display:flex;gap:6px;padding:10px 12px"><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.15)"></span><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.15)"></span><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.15)"></span><span style="font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.35);margin-left:6px">Notes</span></div>
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,.25)"></div>
+      </div>
+    </div>
+    <div style="position:absolute;right:52px;top:64px;width:250px;height:170px;border-radius:10px;background:#202026;border:1.5px solid #E84BCB;box-shadow:0 18px 44px rgba(0,0,0,.55),0 0 22px rgba(232,75,203,.14)">
+      <div style="display:flex;gap:6px;padding:10px 12px;align-items:center"><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.2)"></span><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.2)"></span><span style="width:9px;height:9px;border-radius:5px;background:rgba(255,255,255,.2)"></span><span style="font:400 9.5px system-ui,sans-serif;color:rgba(236,236,241,.5);margin-left:6px">Music — floating <i style="font-style:normal;color:#E84BCB">◇</i></span></div>
+      <div style="margin:6px 12px;height:6px;border-radius:3px;background:rgba(255,255,255,.08)"><div style="width:40%;height:6px;border-radius:3px;background:rgba(232,75,203,.6)"></div></div>
+    </div>
+  </div>
+  <div style="display:flex;gap:18px;padding:12px 16px;background:#141417;border-top:1px solid rgba(255,255,255,.07);flex-wrap:wrap">
+    <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)"><span style="color:#56D8F0">focus</span> 2pt → 1.5pt after 0.5s</span>
+    <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)"><span style="color:#56D8F0">brackets</span> while ⇪ held · in 0.10s / out 0.12s</span>
+    <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)"><span style="color:rgba(236,236,241,.75)">dim</span> 20% · shared fade 220ms</span>
+    <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)"><span style="color:#E84BCB">floating / scratchpad</span> 1.5pt magenta · scrim 45% + 4% magenta tint</span>
+    <span style="font:400 9.5px ui-monospace,Menlo,monospace;color:rgba(236,236,241,.5)"><span style="color:#ff6b6b">error</span> 2.5pt + 7-step shake</span>
+  </div>
+</div></div>
+
+</div>
+
+<p class="dv-next">Try next: "go deeper on overlay <a class="dv-oid" href="#1h">1h</a> with the shift layer shown" · "riff the tour with a darker, larger hero" · "write the SwiftUI spec doc for this direction" · "icon <a class="dv-oid" href="#1b">1b</a>-A at 1024 with more detail"</p>
+</section>
+</x-dc>
+</body>
+</html>
