@@ -159,6 +159,40 @@ The slider structurally cannot touch the problem.
    full-screen transparent panels; JankyBorders-style SLS drawing for
    FocusBorder if WindowServer load persists.
 
+### Measurement-gated (re-scoped 2026-07-08 after Phases 0–1 landed)
+
+The remaining items — **readback de-sleep**, **overlay diet (8)**,
+**AX-off-main (7)**, **parked-window read skip** — are all gated on a soak
+period with Phases 0–1 running, not scheduled work.
+
+Re-scoping rationale for the de-sleep specifically: the readback loop's
+while-condition exits immediately when every frame lands within tolerance,
+so a compliant retile pays ONE 30 ms sleep, not 360 ms. The 360 ms tail
+fires only on genuine min-size conflicts / cross-screen races, and since
+Phase 0 it cannot touch system input (tap is off main) — it only delays
+HyprMac-internal reactions during a retile whose windows are visibly moving
+anyway. Converting the two-pass settle to an async state machine would
+touch the most subtle machinery in the codebase (MinSizeMemory ratcheting,
+DragSwapHandler's 0.8 s suppression budget, every caller that sequences
+retile → focus → border) for that narrow tail. Do it only if soak
+measurements show retile-time jank that matters.
+
+### Soak measurement checklist (run after ~a day of normal use)
+
+```bash
+# 1. tap timeouts — was 15/day pre-fix; target 0
+/usr/bin/log show --last 1d --predicate 'subsystem == "com.zachgray.HyprMac"' --info \
+  | grep -c "event tap disabled (timeout)"
+# 2. WindowServer CPU-limit diagnostics — should stop appearing
+ls -lat /Library/Logs/DiagnosticReports/ | grep -i windowserver | head -5
+# 3. AX read failures + focus churn volume (context, not pass/fail)
+/usr/bin/log show --last 1d --predicate 'subsystem == "com.zachgray.HyprMac"' --info \
+  | grep -cE "AX window-list read FAILED|activate dropped"
+```
+
+Plus the subjective checks: typing latency while a retile / workspace
+switch is in flight, and whether other apps still hitch during idle.
+
 ### Verification metric
 
 Tap timeouts are directly countable — the before/after metric:
