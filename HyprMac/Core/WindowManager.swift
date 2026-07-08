@@ -872,11 +872,12 @@ class WindowManager {
                 : config.resolvedFocusBorderColor.cgColor
             WindowCornerRadius.prime(for: window)
             focusBorder.show(around: frame, windowID: window.windowID)
-            if stateCache.floatingWindowIDs.contains(window.windowID) {
-                refreshFloatingBorders(windows: accessibility.getAllWindows())
-            } else {
-                refreshFloatingBorders()
-            }
+            // cache-based on both paths — this runs on every FFM focus
+            // change, and the floating branch used to re-enumerate the
+            // whole desktop. floatingFrames reads live AX frames from the
+            // cached windows; a floater created since the last poll gets
+            // its outline on the next poll (<1s).
+            refreshFloatingBorders()
         } else {
             focusBorder.hide()
             focusBorder.hideFloatingBorders()
@@ -906,18 +907,20 @@ class WindowManager {
     /// re-raise paths.
     private func reassertFocusBorderAfterHyprRelease() {
         guard config.showFocusBorder else { return }
-        refreshFloatingBorders(windows: accessibility.getAllWindows())
+        // cache-based: this fires on every Hypr release and previously ran
+        // up to three full-desktop enumerations (one here + two delayed
+        // reasserts). the border geometry comes from live frame reads of
+        // cached windows either way.
+        refreshFloatingBorders()
 
         guard let tid = focusBorder.trackedWindowID,
               stateCache.floatingWindowIDs.contains(tid) else { return }
 
         func reassert() {
-            let windows = accessibility.getAllWindows()
-            if let window = windows.first(where: { $0.windowID == tid }) ?? stateCache.cachedWindows[tid] {
+            if let window = stateCache.cachedWindows[tid] {
                 window.isFloating = true
-                stateCache.cachedWindows[tid] = window
                 updateFocusBorder(for: window)
-                refreshFloatingBorders(windows: windows)
+                refreshFloatingBorders()
             }
         }
 
@@ -1011,7 +1014,19 @@ class WindowManager {
     ///
     /// Cost: one AX query per visible tile, paid on focus change, retile,
     /// and poll completion only.
+    ///
+    /// Short-TTL memo: a single visual pass (dim + border occlusion, and
+    /// the post-retile border reposition) calls this 2-3 times with no
+    /// geometry change in between — the memo collapses those to one AX
+    /// read per tile. `updatePositionCache` invalidates it at entry so a
+    /// pass that follows a retile always re-reads.
+    private var tiledRectsMemo: (rects: [CGWindowID: CGRect], at: TimeInterval)?
+
     private func currentTiledRects() -> [CGWindowID: CGRect] {
+        let now = ProcessInfo.processInfo.systemUptime
+        if let memo = tiledRectsMemo, now - memo.at < 0.05 {
+            return memo.rects
+        }
         var rects: [CGWindowID: CGRect] = [:]
         for id in stateCache.tiledPositions.keys {
             if let w = stateCache.cachedWindows[id], let live = w.frame ?? w.cachedFrame {
@@ -1020,6 +1035,7 @@ class WindowManager {
                 rects[id] = fallback
             }
         }
+        tiledRectsMemo = (rects, now)
         return rects
     }
 
@@ -1672,17 +1688,22 @@ class WindowManager {
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
-        for w in accessibility.getAllWindows() {
-            guard workspaceManager.isWindowVisible(w.windowID),
-                  let frame = w.frame else { continue }
-            if stateCache.floatingWindowIDs.contains(w.windowID) {
+        // live frame reads over cached windows, not a full getAllWindows()
+        // enumeration — that walked every app on every physical click
+        // (~8-9 AX round-trips per window, main thread). the cache only
+        // misses windows created since the last poll (<1s), which aren't
+        // tracked as swap candidates yet anyway.
+        for (id, w) in stateCache.cachedWindows {
+            guard workspaceManager.isWindowVisible(id),
+                  let frame = w.frame ?? w.cachedFrame else { continue }
+            if stateCache.floatingWindowIDs.contains(id) {
                 if mouseDownFloatingWindowID == 0, frame.contains(cgPoint) {
-                    mouseDownFloatingWindowID = w.windowID
+                    mouseDownFloatingWindowID = id
                     mouseDownFloatingFrame = frame
                 }
                 continue
             }
-            mouseDownTiledFrames[w.windowID] = frame
+            mouseDownTiledFrames[id] = frame
         }
     }
 
@@ -1845,6 +1866,7 @@ class WindowManager {
     /// downstream visual layer (border, dim, menu bar dots) in sync with
     /// the live tile state without re-running the tiling algorithm.
     private func updatePositionCache(windows: [HyprWindow]? = nil) {
+        tiledRectsMemo = nil // geometry may have changed — force live re-reads
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
         stateCache.tiledPositions.removeAll()

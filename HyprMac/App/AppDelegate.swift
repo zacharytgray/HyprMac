@@ -34,6 +34,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func startAfterPermissionGranted() {
+        // bound every synchronous AX round-trip for this process. the
+        // macOS default is ~6s per message — one busy app (compiler,
+        // hung Electron) parks our main thread that long per call.
+        // yabai and AeroSpace both run at 1s.
+        AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
         KeyRemapper.applyHyprKey(UserConfig.shared.hyprKey)
         startWindowManager()
     }

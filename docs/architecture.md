@@ -40,7 +40,7 @@ singleton except `UserConfig.shared` and `MenuBarState.shared`.
 | Service | Responsibility |
 |---|---|
 | `WindowManager` | Orchestrator. Wires services, drives lifecycle, owns mouse monitors and observers. |
-| `HotkeyManager` | Session-level CGEventTap. Translates Hypr-key chords into `Action` values. |
+| `HotkeyManager` | Session-level CGEventTap on a dedicated thread. Translates Hypr-key chords into `Action` values, dispatched to main. |
 | `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. |
 | `AccessibilityManager` | AX bridge. Enumerates windows, resolves the focused window, picks directional neighbors. |
 | `DisplayManager` | NSScreen tracking and CG ↔ NS coordinate conversion. |
@@ -139,10 +139,15 @@ PollingScheduler.timer or NSWorkspace notifications
 
 ## Threading
 
-Every public method runs on the main thread. The CGEventTap callback,
-mouse monitors, and `NSWorkspace` notifications all fire on the main
-run loop. UI-touching classes (`FocusBorder`, `DimmingOverlay`,
-`KeybindOverlayController`, `CursorManager`,
+Every public method runs on the main thread, with one exception: the
+CGEventTap lives on its own dedicated thread (`HyprMac.EventTap`). It
+is an *active* tap — macOS holds all system keyboard input until the
+hosting run loop services the callback — so it must never share a run
+loop with the synchronous AX work on main. The callback is O(1) chord
+matching (mutable state guarded by a lock) and dispatches every action
+to the main queue. Mouse monitors and `NSWorkspace` notifications
+still fire on the main run loop. UI-touching classes (`FocusBorder`,
+`DimmingOverlay`, `KeybindOverlayController`, `CursorManager`,
 `MouseTrackingManager`) call `mainThreadOnly()` on entry so an
 off-main caller crashes loudly in DEBUG.
 

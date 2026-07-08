@@ -34,3 +34,6 @@ REFACTOR_PLAN.md
 *.swo
 *~
 New Keybinds.txt
+
+# compiled standalone tools
+tools/space-test
