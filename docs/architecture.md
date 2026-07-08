@@ -72,12 +72,25 @@ These types decompose what would otherwise be a monolithic
 - **`SuppressionRegistry`** is a tiny date-gated key-value store for
   short-lived "don't react to X for Y seconds" flags
   (`activation-switch`, `mouse-focus`, `cross-swap-in-flight`).
-- **`PollingScheduler`** owns the 1 Hz periodic discovery timer plus a
-  coalescing token that funnels notification-driven `schedule(after:)`
-  requests down to a single in-flight call. Honors
+- **`PollingScheduler`** owns a slow (10s) reconcile timer plus a
+  coalescing token that funnels event-driven `schedule(after:)` requests
+  down to a single in-flight call. The timer is a safety net — it catches
+  apps that refuse AX observers, notifications the observer layer missed,
+  and external moves nothing else reports; `AXNotificationService` events
+  are the primary trigger. Honors
   `SuppressionRegistry["cross-swap-in-flight"]` so cross-monitor
   drag-swap can hold polling off for the duration of its two
   back-to-back retiles.
+- **`AXNotificationService`** owns one `AXObserver` per regular app and
+  translates their AX notifications (window created / destroyed /
+  miniaturized / deminiaturized, focused-window changed) into
+  `schedule(after:)` calls on `PollingScheduler`. This is the
+  event-driven front end that replaced the 1 Hz full-desktop AX walk:
+  apps report changes instead of being polled, so the discovery diff runs
+  only when something changed. App-level subscriptions attach on
+  `attachToRunningApps` / `attach(pid:)`; window-level ones attach lazily
+  via `ensureWindowSubscriptions(for:)` after each discovery pass. Same
+  architecture as yabai / AeroSpace.
 - **`WindowDiscoveryService`** runs the diff between the previous and
   current AX snapshot. Owns the lifecycle/classification cache
   mutations on the discovery path; surfaces the rest in a
@@ -95,7 +108,7 @@ These types decompose what would otherwise be a monolithic
 Hotkey trigger:
 
 ```
-HotkeyManager.eventTap (CGEventTap, main run loop)
+HotkeyManager.eventTap (CGEventTap, dedicated thread → dispatched to main)
   → WindowManager.handleAction
   → ActionDispatcher.dispatch
     ├ FocusStateController       (focus id + visual border)
@@ -114,11 +127,18 @@ FocusBorder, FocusBrackets, DimmingOverlay (visual layer)
 Polling / discovery (parallel):
 
 ```
-PollingScheduler.timer or NSWorkspace notifications
+AXNotificationService (per-app AXObserver)     ┐
+NSWorkspace notifications (launch/hide/…)       ├→ PollingScheduler.schedule(after:)
+PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
   → WindowManager.pollWindowChanges
-  → WindowDiscoveryService.computeChanges
-  → ActionDispatcher.applyChanges
+    → AccessibilityManager.getAllWindows
+    → AXNotificationService.ensureWindowSubscriptions   (window-level subs)
+    → WindowDiscoveryService.computeChanges
+    → ActionDispatcher.applyChanges
 ```
+
+Per-app AXObserver notifications are the primary discovery trigger; the
+10s timer only backstops missed events and observer-refusing apps.
 
 ## Ownership rules
 

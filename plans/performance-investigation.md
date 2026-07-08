@@ -133,11 +133,24 @@ The slider structurally cannot touch the problem.
 
 ### Phase 1 — structural
 
-6. **Event-driven discovery**: per-app `AXObserver` attached on NSWorkspace
-   launch notifications (created/moved/resized/destroyed/miniaturized/
-   focusChanged) + keep a slow reconcile poll (~10 s) as safety net. Skip AX
-   reads for windows parked on invisible workspaces. This removes the 1 Hz
-   full-desktop walk — the "other apps stall" half of the problem.
+6. **DONE (2026-07-08, branch perf/phase1-event-driven-discovery) —
+   event-driven discovery**: `AXNotificationService` owns one `AXObserver`
+   per regular app (created/focusChanged app-level; destroyed/miniaturized/
+   deminiaturized window-level, attached lazily post-discovery). Events
+   funnel into the existing coalescing `PollingScheduler.schedule(after:)`;
+   the timer is now a 10 s reconcile safety net. `getFocusedWindow()` gained
+   a windowID→cache fast path (full walk only on miss). Two fixes shaken out
+   by live testing: (a) suppressed polls now *defer* (0.3 s retry) instead of
+   dropping — with no 1 Hz timer behind them, a dropped event meant a window
+   went unmanaged until the reconcile; (b) `screenParametersChanged` bails
+   before suppressing when the display fingerprint is unchanged — macOS fires
+   it spuriously (1 px visibleFrame jitter), and each fire used to cost a 3 s
+   discovery suppression. Deliberately NOT subscribed: moved/resized (poll
+   storms during drags; the drag system + reconcile cover those).
+   Deferred within this item: skipping AX attribute reads for parked
+   hidden-workspace windows (needs a hidden-window cache that doesn't exist;
+   staleness risk in gone-detection — revisit only if measurements say the
+   per-event walks still hurt).
 7. **AX off the main thread**: serial AX work queue or AeroSpace-style
    thread-per-app with cancellable jobs. Most invasive (the codebase is
    main-thread-only by design) — do it after 1–6, only if needed; measure first.
@@ -145,6 +158,40 @@ The slider structurally cannot touch the problem.
    (`SLSSetWindowShape`-style or per-window shaped panels) instead of
    full-screen transparent panels; JankyBorders-style SLS drawing for
    FocusBorder if WindowServer load persists.
+
+### Measurement-gated (re-scoped 2026-07-08 after Phases 0–1 landed)
+
+The remaining items — **readback de-sleep**, **overlay diet (8)**,
+**AX-off-main (7)**, **parked-window read skip** — are all gated on a soak
+period with Phases 0–1 running, not scheduled work.
+
+Re-scoping rationale for the de-sleep specifically: the readback loop's
+while-condition exits immediately when every frame lands within tolerance,
+so a compliant retile pays ONE 30 ms sleep, not 360 ms. The 360 ms tail
+fires only on genuine min-size conflicts / cross-screen races, and since
+Phase 0 it cannot touch system input (tap is off main) — it only delays
+HyprMac-internal reactions during a retile whose windows are visibly moving
+anyway. Converting the two-pass settle to an async state machine would
+touch the most subtle machinery in the codebase (MinSizeMemory ratcheting,
+DragSwapHandler's 0.8 s suppression budget, every caller that sequences
+retile → focus → border) for that narrow tail. Do it only if soak
+measurements show retile-time jank that matters.
+
+### Soak measurement checklist (run after ~a day of normal use)
+
+```bash
+# 1. tap timeouts — was 15/day pre-fix; target 0
+/usr/bin/log show --last 1d --predicate 'subsystem == "com.zachgray.HyprMac"' --info \
+  | grep -c "event tap disabled (timeout)"
+# 2. WindowServer CPU-limit diagnostics — should stop appearing
+ls -lat /Library/Logs/DiagnosticReports/ | grep -i windowserver | head -5
+# 3. AX read failures + focus churn volume (context, not pass/fail)
+/usr/bin/log show --last 1d --predicate 'subsystem == "com.zachgray.HyprMac"' --info \
+  | grep -cE "AX window-list read FAILED|activate dropped"
+```
+
+Plus the subjective checks: typing latency while a retile / workspace
+switch is in flight, and whether other apps still hitch during idle.
 
 ### Verification metric
 
