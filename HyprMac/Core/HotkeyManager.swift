@@ -103,7 +103,9 @@ class HotkeyManager {
             return
         }
 
+        stateLock.lock()
         eventTap = tap
+        stateLock.unlock()
         let source = CFMachPortCreateRunLoopSource(nil, tap, 0)
         runLoopSource = source
 
@@ -142,14 +144,22 @@ class HotkeyManager {
             }
             CFRunLoopStop(rl)
         }
-        eventTap = nil
         runLoopSource = nil
         tapRunLoop = nil
         tapThread = nil
         stateLock.lock()
+        eventTap = nil
         hyprKeyDown = false
         pressedModifierKeyCodes.removeAll()
         stateLock.unlock()
+    }
+
+    /// Lock-guarded tap access for the callback — it runs on the tap
+    /// thread while `eventTap` is written from main in start()/stop().
+    fileprivate func tapForCallback() -> CFMachPort? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return eventTap
     }
 
     /// Catch a silently dead tap. The callback re-enables on
@@ -311,7 +321,7 @@ private func hotkeyCallback(
         hyprLog(.notice, .hotkey, "event tap disabled (\(reason)) — re-enabling and resetting tracked state")
         if let refcon = refcon {
             let mgr = Unmanaged<HotkeyManager>.fromOpaque(refcon).takeUnretainedValue()
-            if let tap = mgr.eventTap {
+            if let tap = mgr.tapForCallback() {
                 CGEvent.tapEnable(tap: tap, enable: true)
             }
             mgr.resetTrackingAfterTapInterruption()
