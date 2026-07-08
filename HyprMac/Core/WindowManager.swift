@@ -55,6 +55,10 @@ class WindowManager {
     // and surfaces the rest as a WindowChanges struct that this class applies.
     private var discovery: WindowDiscoveryService!
 
+    // per-app AXObserver fan-out. primary discovery trigger — its events
+    // funnel into pollingScheduler.schedule(after:); the timer is a safety net.
+    private let axNotifications = AXNotificationService()
+
     // floating-window lifecycle: float/tile toggle, cycle-focus, raise-behind, auto-float predicate.
     private(set) var floatingController: FloatingWindowController!
 
@@ -94,7 +98,7 @@ class WindowManager {
 
     // armed when a drag starts on a visible floating window while dim is on
     // (normal mode). drives dimmingOverlay.setDragOverride so the bright carve
-    // hole tracks the floater live instead of trailing on the 1Hz poll.
+    // hole tracks the floater live instead of trailing on the discovery poll.
     private struct DimDragState {
         let id: CGWindowID
         let window: HyprWindow
@@ -225,7 +229,7 @@ class WindowManager {
         }
         // hold polling off while a cross-monitor drag-swap is in flight (Phase 4 step 5).
         // DragSwapHandler.applySwap registers the "cross-swap-in-flight" key for ~800ms;
-        // both the 1Hz timer and notification-driven schedule() calls drop until it expires.
+        // both the reconcile timer and event-driven schedule() calls drop until it expires.
         // workspace-transition is set by switchWorkspace and moveToWorkspace for 0.6s
         // so drift detection can't fire on stale-AX-read frames mid-transition.
         pollingScheduler.isSuppressed = { [weak self] in
@@ -275,6 +279,11 @@ class WindowManager {
             self?.focusBorder.hide()
             self?.dimmingOverlay.hideAll()
         }
+
+        // fast path for getFocusedWindow: resolve the focused element's
+        // CGWindowID against the last discovery snapshot before falling back
+        // to a full AX walk.
+        accessibility.cachedWindowLookup = { [weak self] wid in self?.stateCache.cachedWindows[wid] }
 
         // wire up floating controller — closure handles for WM-side helpers.
         floatingController.animatedRetile = { [weak self] prepare in
@@ -381,6 +390,24 @@ class WindowManager {
         guard !isRunning else { return }
         isRunning = true
 
+        // route AX notifications into the coalescing scheduler. these are the
+        // primary discovery triggers; the scheduler's timer is a safety net.
+        // schedule() already re-checks suppressions at schedule and fire time,
+        // so no extra guards here. create/miniaturize/deminiaturize get a 0.2s
+        // debounce to let AX settle; focus is snappier at 0.15s; destroy uses
+        // the 0.2s default.
+        axNotifications.onEvent = { [weak self] kind, _ in
+            guard let self else { return }
+            switch kind {
+            case .windowDestroyed:
+                self.pollingScheduler.schedule()
+            case .windowCreated, .windowMiniaturized, .windowDeminiaturized:
+                self.pollingScheduler.schedule(after: 0.2)
+            case .focusedWindowChanged:
+                self.pollingScheduler.schedule(after: 0.15)
+            }
+        }
+
         tilingEngine.gapSize = config.gapSize
         tilingEngine.outerPadding = config.outerPadding
         tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
@@ -404,9 +431,17 @@ class WindowManager {
             // screen-parameters notification after launch is a no-op.
             self.lastDisplayFingerprint = self.displayFingerprint()
             self.snapshotAndTile()
-            // start polling only after the initial tile so pollWindowChanges can't
-            // race against snapshotAndTile, claim all windows as new, and trigger
-            // an animation that blocks the correct initial distribution
+            // attach AX observers after the initial tile so their events feed
+            // the same coalescing scheduler. this covers the app-level
+            // subscriptions (create / focus); window-level ones (destroy /
+            // miniaturize) get added on the first pollWindowChanges, which the
+            // app-level events or the reconcile timer trigger.
+            self.axNotifications.attachToRunningApps()
+            // start the reconcile timer only after the initial tile so
+            // pollWindowChanges can't race against snapshotAndTile, claim all
+            // windows as new, and trigger an animation that blocks the correct
+            // initial distribution. the timer is now a slow (10s) safety net;
+            // AX notifications above are the primary trigger.
             self.pollingScheduler.start()
         }
 
@@ -603,6 +638,7 @@ class WindowManager {
     func stop() {
         restoreAllWindows()
         isRunning = false
+        axNotifications.detachAll()
         pollingScheduler.stop()
         stopMouseTracking()
         hotkeyManager.stop()
@@ -675,8 +711,8 @@ class WindowManager {
     /// Each monitor delegates to `mouseTracker` (move) or local helpers
     /// (down/drag/up) that maintain the drag-detection scratchpad and the
     /// pre-drag focus-border state. The drag monitor hides the focus border
-    /// for floating windows because the border only repositions on the 1Hz
-    /// poll and would otherwise lag the live drag at 60Hz; mouseUp restores
+    /// for floating windows because the border only repositions on the
+    /// discovery poll and would otherwise lag the live drag at 60Hz; mouseUp restores
     /// it after a short settle delay.
     private func startMouseTracking() {
         mouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
@@ -717,7 +753,7 @@ class WindowManager {
             }
         }
         // when the user drags a floating window, its frame changes 60Hz but our
-        // border only repositions on poll (1Hz) — so it lags behind ugly. hide
+        // border only repositions on the discovery poll — so it lags behind ugly. hide
         // the border for the duration of the drag and restore it on mouseUp.
         mouseDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] _ in
             guard let self = self else { return }
@@ -1003,8 +1039,8 @@ class WindowManager {
     /// Read live AX frames for every visible tile before dim or border
     /// computations.
     ///
-    /// `stateCache.tiledPositions` only refreshes on poll/retile (1Hz timer
-    /// plus activation/launch notifications). Between those events a window
+    /// `stateCache.tiledPositions` only refreshes on poll/retile (the
+    /// reconcile timer plus AX / activation / launch notifications). Between those events a window
     /// can resize or move — app self-resize, AX min-size kick-in, manual
     /// drag, pass-2 layout responding to a constraint — and the cache goes
     /// stale. Without the live re-read, `refreshDimming` and the border
@@ -2056,6 +2092,9 @@ class WindowManager {
         guard !mouseButtonDown else { return }
 
         let allWindows = accessibility.getAllWindows()
+        // add window-level AX subscriptions (destroy / miniaturize) for any
+        // new windows in this snapshot — deduped by CGWindowID inside.
+        axNotifications.ensureWindowSubscriptions(for: allWindows)
         tilingEngine.primeMinimumSizes(allWindows)
         let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
 
@@ -2237,6 +2276,11 @@ class WindowManager {
     /// React to a new app launch. Half-second delay gives the app time to
     /// open its first window before discovery runs.
     @objc private func appDidLaunch(_ notification: Notification) {
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            // wire up event-driven discovery for the new app. attach is
+            // idempotent and retries once if the app isn't AX-ready yet.
+            axNotifications.attach(pid: app.processIdentifier)
+        }
         pollingScheduler.schedule(after: 0.5)
     }
 
@@ -2246,6 +2290,7 @@ class WindowManager {
     /// path can only see windows still in `knownWindowIDs`.
     @objc private func appDidTerminate(_ notification: Notification) {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            axNotifications.detach(pid: app.processIdentifier)
             forgetApp(app.processIdentifier)
         }
         pollingScheduler.schedule()
@@ -2267,6 +2312,18 @@ class WindowManager {
     /// order would prune the home-screen mapping first and orphan the
     /// migration.
     @objc private func screenParametersChanged() {
+        // macOS fires this for events that don't alter the layout — app
+        // quits, color profile changes, 1px visibleFrame jitter (the
+        // fingerprint keys on frame, not visibleFrame). those used to pay
+        // the full 3s discovery suppression + scratchpad hide before the
+        // debounce concluded "unchanged"; with event-driven discovery a
+        // spurious 3s suppression starves window ingestion, so bail first.
+        // mid-debounce fires (displayTransitionPending) must keep flowing
+        // through the generation machinery below.
+        if !displayTransitionPending && displayFingerprint() == lastDisplayFingerprint {
+            hyprLog(.debug, .lifecycle, "screenParametersChanged: fingerprint unchanged — ignoring spurious fire")
+            return
+        }
         let names = displayManager.screens.map { $0.localizedName }.joined(separator: ", ")
         hyprLog(.notice, .lifecycle, "screenParametersChanged fired (current screens: [\(names)])")
         // the scratchpad can't survive a topology change — reconcile would

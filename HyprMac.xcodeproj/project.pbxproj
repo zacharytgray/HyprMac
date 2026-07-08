@@ -99,6 +99,7 @@
 		F1A48B9952EDF68FE436A6AF /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE062173D513A1A60A3E704D /* ConfigStore.swift */; };
 		F2B3AC04608B7F92C811A44A /* BSPTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF9449D559067A61BBA8394 /* BSPTree.swift */; };
 		F2EFDD2E3E1E512D63BCCE74 /* BundleIDUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63E30549B7EABECD4FCDBC0F /* BundleIDUtils.swift */; };
+		F3955661BE1DE991B5D3743E /* AXNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */; };
 		F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772FFAF897AAC136F605737C /* TilingSettingsView.swift */; };
 /* End PBXBuildFile section */
 
@@ -208,6 +209,7 @@
 		F24369A83C38C9C3757A23FB /* KeyRemapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRemapper.swift; sourceTree = "<group>"; };
 		F356D39971D5A80B38494D15 /* DwindleLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwindleLayout.swift; sourceTree = "<group>"; };
 		F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRecorderView.swift; sourceTree = "<group>"; };
+		F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXNotificationService.swift; sourceTree = "<group>"; };
 		F548FEECDD35DFF1120E2553 /* ConfigMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigMigrationTests.swift; sourceTree = "<group>"; };
 		F95CD8FB8B25B86236401214 /* AppIcon.svg */ = {isa = PBXFileReference; path = AppIcon.svg; sourceTree = "<group>"; };
 		FA85C3347F1D7A782EA9EA39 /* HyprWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprWindow.swift; sourceTree = "<group>"; };
@@ -313,6 +315,7 @@
 		46404E9F47AD026DEE8E5EB3 /* Discovery */ = {
 			isa = PBXGroup;
 			children = (
+				F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */,
 				8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */,
 			);
 			path = Discovery;
@@ -574,6 +577,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F3955661BE1DE991B5D3743E /* AXNotificationService.swift in Sources */,
 				498931AB0DE01FD760A0C1DC /* AccessibilityManager.swift in Sources */,
 				2F7C20004633B3B6A8CCF6D6 /* Action.swift in Sources */,
 				4F7E79CBC44F654BDF24C05B /* ActionDispatcher.swift in Sources */,

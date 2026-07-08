@@ -50,6 +50,12 @@ class AccessibilityManager {
     private var axListFailures: [pid_t: Int] = [:]
     private var axFrameDrops: [pid_t: Int] = [:]
 
+    /// Look up a window in the last discovery snapshot by `CGWindowID`.
+    /// Wired by `WindowManager` to `stateCache.cachedWindows[id]`. Lets
+    /// `getFocusedWindow` skip a full AX walk when the focused window was
+    /// already matched on a prior pass. `nil` (unwired) forces the walk.
+    var cachedWindowLookup: ((CGWindowID) -> HyprWindow?)?
+
     private func cgWindowsByPID() -> [pid_t: [CGWindowInfo]] {
         let now = CFAbsoluteTimeGetCurrent()
         if now - cgWindowCacheTime < cgWindowCacheTTL && !cgWindowCacheData.isEmpty {
@@ -278,10 +284,17 @@ class AccessibilityManager {
     /// Resolve the AX-focused window of the frontmost app to a
     /// `HyprWindow`.
     ///
-    /// Routes through `getAllWindows` so the AX→CG matching pass is
-    /// identical — without this, multi-window apps (Finder, Teams) can
-    /// resolve the focused window to a sibling window's `CGWindowID`,
-    /// which silently routes swap/move/close to the wrong window.
+    /// Two paths:
+    /// - **Fast path:** ask AX for the focused element's `CGWindowID`
+    ///   (`_AXUIElementGetWindow`) and look it up in the last discovery
+    ///   snapshot via `cachedWindowLookup`. The snapshot came from a prior
+    ///   `getAllWindows` matching pass, so the result is identical to the
+    ///   full walk — without the ~100+ cross-process AX round-trips.
+    /// - **Fallback:** on a miss (the focused window is newer than the last
+    ///   discovery, or the SPI/lookup is unavailable) run the full
+    ///   `getAllWindows` walk and match by AX element identity. This is the
+    ///   path that avoids the sibling-window misresolution multi-window apps
+    ///   (Finder, Teams) hit when matched by position.
     func getFocusedWindow() -> HyprWindow? {
         guard AXIsProcessTrusted() else { return nil }
         guard let frontApp = NSWorkspace.shared.frontmostApplication else { return nil }
@@ -295,7 +308,13 @@ class AccessibilityManager {
               CFGetTypeID(val) == AXUIElementGetTypeID() else { return nil }
         let focusedAX = val as! AXUIElement
 
-        // look up by AX element identity — same matching pass as getAllWindows
+        // fast path: resolve the CGWindowID directly and hit the snapshot.
+        if let wid = windowID(for: focusedAX), let cached = cachedWindowLookup?(wid) {
+            return cached
+        }
+
+        // fallback: full walk, matched by AX element identity — same matching
+        // pass as getAllWindows so sibling windows don't misresolve.
         return getAllWindows().first { CFEqual($0.element, focusedAX) }
     }
 

@@ -133,11 +133,24 @@ The slider structurally cannot touch the problem.
 
 ### Phase 1 — structural
 
-6. **Event-driven discovery**: per-app `AXObserver` attached on NSWorkspace
-   launch notifications (created/moved/resized/destroyed/miniaturized/
-   focusChanged) + keep a slow reconcile poll (~10 s) as safety net. Skip AX
-   reads for windows parked on invisible workspaces. This removes the 1 Hz
-   full-desktop walk — the "other apps stall" half of the problem.
+6. **DONE (2026-07-08, branch perf/phase1-event-driven-discovery) —
+   event-driven discovery**: `AXNotificationService` owns one `AXObserver`
+   per regular app (created/focusChanged app-level; destroyed/miniaturized/
+   deminiaturized window-level, attached lazily post-discovery). Events
+   funnel into the existing coalescing `PollingScheduler.schedule(after:)`;
+   the timer is now a 10 s reconcile safety net. `getFocusedWindow()` gained
+   a windowID→cache fast path (full walk only on miss). Two fixes shaken out
+   by live testing: (a) suppressed polls now *defer* (0.3 s retry) instead of
+   dropping — with no 1 Hz timer behind them, a dropped event meant a window
+   went unmanaged until the reconcile; (b) `screenParametersChanged` bails
+   before suppressing when the display fingerprint is unchanged — macOS fires
+   it spuriously (1 px visibleFrame jitter), and each fire used to cost a 3 s
+   discovery suppression. Deliberately NOT subscribed: moved/resized (poll
+   storms during drags; the drag system + reconcile cover those).
+   Deferred within this item: skipping AX attribute reads for parked
+   hidden-workspace windows (needs a hidden-window cache that doesn't exist;
+   staleness risk in gone-detection — revisit only if measurements say the
+   per-event walks still hurt).
 7. **AX off the main thread**: serial AX work queue or AeroSpace-style
    thread-per-app with cancellable jobs. Most invasive (the codebase is
    main-thread-only by design) — do it after 1–6, only if needed; measure first.

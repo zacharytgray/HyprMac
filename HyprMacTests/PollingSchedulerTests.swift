@@ -72,45 +72,51 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertLessThanOrEqual(elapsed, 0.30)
     }
 
-    // MARK: - start / stop
+    // MARK: - reconcile timer
+
+    // the production reconcile interval is a slow 10s safety net now that
+    // AXObserver notifications drive discovery. these timer tests inject a
+    // short interval so they exercise the timer without a 10s wait; the
+    // production value is pinned separately in testDefaultReconcileIntervalIsSlow.
+
+    func testDefaultReconcileIntervalIsSlow() {
+        // contract: the timer is a slow reconcile net, not a 1 Hz poller.
+        XCTAssertEqual(PollingScheduler.defaultReconcileInterval, 10.0)
+    }
 
     func testStartFiresPeriodicTimer() {
         var fireCount = 0
-        let scheduler = PollingScheduler { fireCount += 1 }
-        let exp = expectation(description: "first periodic tick")
+        let scheduler = PollingScheduler(periodicInterval: 0.2) { fireCount += 1 }
+        let exp = expectation(description: "first reconcile tick")
 
         scheduler.start()
-        // periodic interval is 1.0s — wait long enough for one tick but cap
-        // the test runtime. periodicInterval is private; this asserts behavior,
-        // not the exact value.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 3.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
+        wait(for: [exp], timeout: 2.0)
         scheduler.stop()
         XCTAssertGreaterThanOrEqual(fireCount, 1)
     }
 
     func testStopHaltsPeriodicTicks() {
         var fireCount = 0
-        let scheduler = PollingScheduler { fireCount += 1 }
+        let scheduler = PollingScheduler(periodicInterval: 0.2) { fireCount += 1 }
         scheduler.start()
         scheduler.stop()
         let countAfterStop = fireCount
 
         let exp = expectation(description: "no further ticks after stop")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 3.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
+        wait(for: [exp], timeout: 2.0)
         XCTAssertEqual(fireCount, countAfterStop)
     }
 
-    func testStopClearsInFlightToken() {
+    func testStopCancelsInFlightPollAndClearsToken() {
         var fireCount = 0
         let scheduler = PollingScheduler { fireCount += 1 }
         let exp = expectation(description: "post-stop schedule fires")
 
-        // schedule a poll, immediately stop — the in-flight asyncAfter will still
-        // fire (we don't cancel it), but the token must clear on stop so a fresh
-        // schedule after start() goes through. the closure increments fireCount
-        // either way; we're asserting the token state, not closure invocation count.
+        // schedule a poll, immediately stop — clearing pendingPoll cancels
+        // the in-flight fire (the closure bails on a cleared token), and the
+        // token must clear so a fresh schedule after start() goes through.
         scheduler.schedule(after: 0.05)
         scheduler.stop()
 
@@ -122,75 +128,94 @@ final class PollingSchedulerTests: XCTestCase {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { exp.fulfill() }
         wait(for: [exp], timeout: 1.0)
         scheduler.stop()
-        // 1 from the pre-stop in-flight + 1 from the post-start schedule
-        XCTAssertGreaterThanOrEqual(fireCount, 2)
+        // only the post-start schedule fires; the pre-stop one was canceled
+        XCTAssertEqual(fireCount, 1)
     }
 
     // MARK: - suppression (Phase 4 step 5)
 
-    func testSuppressedScheduleIsDropped() {
-        var fireCount = 0
-        let scheduler = PollingScheduler { fireCount += 1 }
-        scheduler.isSuppressed = { true }
-
-        let exp = expectation(description: "no fire")
-        scheduler.schedule(after: 0.05)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) { exp.fulfill() }
-        wait(for: [exp], timeout: 1.0)
-        XCTAssertEqual(fireCount, 0, "suppressed schedule must not fire")
-    }
-
-    func testSuppressionStartedAfterScheduleStillBlocksFire() {
-        var fireCount = 0
-        var suppressed = false
-        let scheduler = PollingScheduler { fireCount += 1 }
-        scheduler.isSuppressed = { suppressed }
-
-        let exp = expectation(description: "no fire")
-        // schedule with no suppression, then suppress before the asyncAfter resolves.
-        // the fire-time re-check must drop the call — this is the cross-swap path:
-        // a 1Hz poll could land just as DragSwapHandler enters its critical section.
-        scheduler.schedule(after: 0.10)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { suppressed = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { exp.fulfill() }
-        wait(for: [exp], timeout: 1.0)
-        XCTAssertEqual(fireCount, 0, "suppression starting mid-flight must drop the fire")
-    }
-
-    func testTimerTickHonoursSuppression() {
+    func testSuppressedScheduleDefersUntilSuppressionLifts() {
         var fireCount = 0
         var suppressed = true
         let scheduler = PollingScheduler { fireCount += 1 }
         scheduler.isSuppressed = { suppressed }
 
+        // while suppressed the poll must not fire — but it must not be lost
+        // either. with event-driven triggers there's no 1 Hz timer to catch a
+        // dropped event (a windowCreated during a workspace transition would
+        // go unmanaged until the 10s reconcile), so the fire defers and lands
+        // once the suppression lifts.
+        let stillSuppressed = expectation(description: "no fire while suppressed")
+        scheduler.schedule(after: 0.05)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+            XCTAssertEqual(fireCount, 0, "suppressed poll must not fire")
+            suppressed = false
+            stillSuppressed.fulfill()
+        }
+        let fired = expectation(description: "deferred poll fired after lift")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.80) { fired.fulfill() }
+        wait(for: [stillSuppressed, fired], timeout: 2.0)
+        XCTAssertEqual(fireCount, 1, "deferred poll must fire exactly once after suppression lifts")
+    }
+
+    func testSuppressionStartedAfterScheduleDefersFire() {
+        var fireCount = 0
+        var suppressed = false
+        let scheduler = PollingScheduler { fireCount += 1 }
+        scheduler.isSuppressed = { suppressed }
+
+        // schedule with no suppression, then suppress before the asyncAfter
+        // resolves — the cross-swap path: a poll landing mid-critical-section
+        // must hold off, then fire once the suppression clears.
+        scheduler.schedule(after: 0.10)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { suppressed = true }
+        let stillSuppressed = expectation(description: "no fire while suppressed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.30) {
+            XCTAssertEqual(fireCount, 0, "suppression starting mid-flight must defer the fire")
+            suppressed = false
+            stillSuppressed.fulfill()
+        }
+        let fired = expectation(description: "deferred poll fired after lift")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.90) { fired.fulfill() }
+        wait(for: [stillSuppressed, fired], timeout: 2.0)
+        XCTAssertEqual(fireCount, 1, "deferred poll must fire exactly once after suppression lifts")
+    }
+
+    func testTimerTickHonoursSuppression() {
+        var fireCount = 0
+        var suppressed = true
+        let scheduler = PollingScheduler(periodicInterval: 0.2) { fireCount += 1 }
+        scheduler.isSuppressed = { suppressed }
+
         scheduler.start()
         // wait long enough for ~one tick. while suppressed, ticks must drop.
         let exp1 = expectation(description: "first window")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exp1.fulfill() }
-        wait(for: [exp1], timeout: 3.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exp1.fulfill() }
+        wait(for: [exp1], timeout: 2.0)
         XCTAssertEqual(fireCount, 0, "suppressed timer must not fire onPoll")
 
         // lift suppression and confirm subsequent ticks fire.
         suppressed = false
         let exp2 = expectation(description: "second window")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exp2.fulfill() }
-        wait(for: [exp2], timeout: 3.0)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exp2.fulfill() }
+        wait(for: [exp2], timeout: 2.0)
         scheduler.stop()
         XCTAssertGreaterThanOrEqual(fireCount, 1, "post-suppression timer must resume firing")
     }
 
     func testDoubleStartIsIdempotent() {
         var fireCount = 0
-        let scheduler = PollingScheduler { fireCount += 1 }
+        let scheduler = PollingScheduler(periodicInterval: 0.3) { fireCount += 1 }
         let exp = expectation(description: "tick")
 
         scheduler.start()
         scheduler.start() // second start must not install a second timer
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 3.0)
+        // one timer fires once in a 0.5s window (next tick lands at ~0.6s);
+        // a second timer would double the count to 2.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
+        wait(for: [exp], timeout: 2.0)
         scheduler.stop()
-        // exactly one timer means roughly one tick in 1.5s, not two
         XCTAssertEqual(fireCount, 1)
     }
 }
