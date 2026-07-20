@@ -13,13 +13,14 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
     private var welcomeController: WelcomeWindowController?
+    private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
 
     /// AX permission gate plus the rest of startup. Trusted →
     /// applies the Hypr key remap and starts the manager. Not
-    /// trusted → prompts for AX and polls until the grant lands,
-    /// then starts automatically. No relaunch needed: TCC flips
-    /// `AXIsProcessTrusted` live for a running process.
+    /// trusted → shows the permissions gate and polls until the
+    /// grant lands, then starts automatically. No relaunch needed:
+    /// TCC flips `AXIsProcessTrusted` live for a running process.
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
@@ -29,7 +30,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if AXIsProcessTrusted() {
             startAfterPermissionGranted()
         } else {
-            promptForAccessibility()
+            showPermissionsGate()
         }
     }
 
@@ -43,57 +44,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startWindowManager()
     }
 
-    /// Show the system AX prompt plus an explanatory alert, and poll
-    /// for the grant once per second. The poll runs in `.common` mode
-    /// so it fires while the alert's modal session is up — granting
-    /// in System Settings dismisses the alert and starts HyprMac with
-    /// no further clicks.
-    private func promptForAccessibility() {
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-        AXIsProcessTrustedWithOptions(opts)
-
+    /// Show the non-modal permissions gate and poll for the AX grant
+    /// once per second. The gate shows live status with a Grant button;
+    /// on grant the poll live-starts HyprMac and dismisses the gate —
+    /// no relaunch, no further clicks. The gate's Quit button terminates.
+    private func showPermissionsGate() {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard AXIsProcessTrusted() else { return }
             hyprLog(.notice, .lifecycle, "AX permission granted — starting")
             self?.permissionPollTimer?.invalidate()
             self?.permissionPollTimer = nil
-            NSApp.abortModal()
             self?.startAfterPermissionGranted()
+            self?.permissionsGate?.markAccessibilityGrantedAndDismiss()
         }
         RunLoop.main.add(timer, forMode: .common)
         permissionPollTimer = timer
 
-        let alert = NSAlert()
-        alert.messageText = "HyprMac Needs Accessibility Permission"
-        alert.informativeText = """
-        Enable HyprMac in System Settings → Privacy & Security → Accessibility. \
-        HyprMac starts automatically as soon as access is granted — no relaunch needed.
-
-        If the toggle is already on, turn it off and back on: macOS invalidates \
-        the grant when the app is rebuilt or updated. If there are multiple \
-        HyprMac entries, remove the stale ones with the − button.
-        """
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Quit")
-        let response = alert.runModal()
-
-        switch response {
-        case .alertFirstButtonReturn:
-            // keep running — the poll starts HyprMac when the grant lands
-            let pane = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
-            if let url = URL(string: pane) {
-                NSWorkspace.shared.open(url)
-            }
-        case .alertSecondButtonReturn:
-            permissionPollTimer?.invalidate()
-            permissionPollTimer = nil
+        let gate = PermissionsGateWindowController()
+        gate.show { [weak self] in
+            self?.permissionPollTimer?.invalidate()
+            self?.permissionPollTimer = nil
             NSApp.terminate(nil)
-        default:
-            // .abort — the poll detected the grant and dismissed the alert;
-            // startAfterPermissionGranted already ran from the timer.
-            break
         }
+        permissionsGate = gate
     }
 
     /// Construct `WindowManager`, start it when the user has not

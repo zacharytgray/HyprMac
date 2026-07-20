@@ -47,6 +47,7 @@
 		557EC1265B83BD0ACFB2564C /* FrameReadbackPoller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */; };
 		577FBDB77676F37630FAF0FE /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = D52156D6AEACDCE26A6370BF /* Sparkle */; };
 		5986B98949D5F866D27EADEC /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF93D6331BC4826814BB7007 /* Constants.swift */; };
+		59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE53329CB188DC5E31735E1 /* PermissionsGate.swift */; };
 		5C5F0598475E4DEDB6DC82AC /* DwindleLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F356D39971D5A80B38494D15 /* DwindleLayout.swift */; };
 		5FF99C0D46DC4EABB4B00EE4 /* TourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EDEEE13B637CED75A9FD8A9 /* TourView.swift */; };
 		696EB6B8B6A4A823B6DBBCD0 /* WindowDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */; };
@@ -141,6 +142,7 @@
 		43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandleDisplayChangeTests.swift; sourceTree = "<group>"; };
 		4461955B9373BBC5DD00DB15 /* ScratchpadController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScratchpadController.swift; sourceTree = "<group>"; };
 		4DC1746711F81E185BA81143 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
+		4EE53329CB188DC5E31735E1 /* PermissionsGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsGate.swift; sourceTree = "<group>"; };
 		50C7530C4625DFB387DEB0CF /* SuppressionRegistry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuppressionRegistry.swift; sourceTree = "<group>"; };
 		54EA610EADBFADA21DC625C3 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		556C506B51F8050F6F5E22A4 /* DimmingOverlayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DimmingOverlayTests.swift; sourceTree = "<group>"; };
@@ -277,6 +279,7 @@
 				54EA610EADBFADA21DC625C3 /* AppDelegate.swift */,
 				A034E555A586C182E187021F /* HyprMacApp.swift */,
 				23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */,
+				4EE53329CB188DC5E31735E1 /* PermissionsGate.swift */,
 				BB697B2619BEB7E2434E157E /* WelcomeView.swift */,
 			);
 			path = App;
@@ -627,6 +630,7 @@
 				1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */,
 				C59F755D984292EB1E5B57CD /* MinSizeMemory.swift in Sources */,
 				94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */,
+				59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */,
 				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
 				D181B66CA786C3A32097B09D /* ScratchpadController.swift in Sources */,
 				8C3306FE7A9CD13A28CA5C87 /* SettingsComponents.swift in Sources */,
