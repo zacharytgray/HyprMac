@@ -100,11 +100,20 @@ class WindowManager {
     // (normal mode). drives dimmingOverlay.setDragOverride so the bright carve
     // hole tracks the floater live instead of trailing on the discovery poll.
     private struct DimDragState {
+        // startFrame + downPointCG are the tracking anchor and MUST be a
+        // consistent pair, both sampled at mouse-down (frame from the
+        // mouse-down enumeration, point from the event). during a title-bar
+        // drag the OS keeps windowOrigin == startOrigin + (cursor − downPoint)
+        // exactly, so delta math off this pair is lag-free. never re-anchor
+        // to an AX position read mid-drag — those lag a fast drag, and pairing
+        // a stale origin with a live cursor bakes the lag in as a permanent
+        // carve offset for the rest of the drag.
         let id: CGWindowID
         let window: HyprWindow
-        let startFrame: CGRect      // CG top-left, captured at mouse-down
-        let downPointCG: CGPoint
-        var resizing = false        // flipped once a cheap AX size read shows a size change
+        let startFrame: CGRect       // CG top-left frame at mouse-down
+        let downPointCG: CGPoint     // click point from the mouse-down event
+        var confirmed = false        // an AX read saw the window actually moving
+        var resizing = false         // classified as a resize → track the live frame
         var lastSizeCheck: TimeInterval = 0
     }
     private var dimDrag: DimDragState?
@@ -1766,39 +1775,66 @@ class WindowManager {
         dimDrag = DimDragState(id: id, window: w, startFrame: frame, downPointCG: downCG)
     }
 
-    /// Push the live carve rect for the armed floater. Pure delta math for
-    /// moves (no AX read); a throttled AX size probe flips to full-frame AX
-    /// reads once the user is resizing (delta math is wrong then).
+    /// Push the live carve rect for the armed floater.
+    ///
+    /// Confirmation gate: the carve holds still until an AX read sees the
+    /// window's origin actually moving under this press. Content drags (text
+    /// selection, scrollbar, a click on a window merely overlapping this
+    /// floater's frame) never move the window, so they never confirm and the
+    /// cursor can't pull the carve off a stationary window.
+    ///
+    /// Once confirmed, tracking is pure delta math off the MOUSE-DOWN anchor
+    /// pair (`startFrame` + `downPointCG`) — not the position that confirmed.
+    /// The confirming AX read lags a fast drag; the down-event pair is exact,
+    /// so the carve lands on the window's true position regardless of how far
+    /// the flick outran AX. No AX reads remain in the confirmed-move hot path.
+    /// A throttled size probe flips to live-frame reads once a resize is
+    /// detected (delta math can't model resizes).
     private func updateDimDrag() {
         guard var drag = dimDrag else { return }
-
         let mouseNS = NSEvent.mouseLocation
         let curCG = CGPoint(x: mouseNS.x, y: displayManager.primaryScreenHeight - mouseNS.y)
 
-        let liveRect: CGRect
-        if drag.resizing {
-            // resize in progress — delta math can't model it, read the live frame
-            liveRect = drag.window.frame ?? drag.startFrame
-        } else {
-            // throttled cheap size read: if the window resized, switch modes
+        // resize probe (~10Hz) runs confirmed or not: a left/top-edge resize
+        // moves the origin too and would otherwise confirm as a move and
+        // delta-track with a frozen size.
+        if !drag.resizing {
             let now = ProcessInfo.processInfo.systemUptime
             if now - drag.lastSizeCheck > 0.1 {
                 drag.lastSizeCheck = now
                 if let sz = drag.window.size,
-                   abs(sz.width - drag.startFrame.width) > 2 || abs(sz.height - drag.startFrame.height) > 2 {
+                   abs(sz.width - drag.startFrame.width) > 2 ||
+                   abs(sz.height - drag.startFrame.height) > 2 {
                     drag.resizing = true
+                    drag.confirmed = true
                 }
             }
-            if drag.resizing {
-                liveRect = drag.window.frame ?? drag.startFrame
+        }
+
+        if !drag.confirmed {
+            // per-event position probe until confirmed — a real drag confirms
+            // within the first couple events, a content drag keeps the carve
+            // parked. 3px guard clears AX position noise so a stationary
+            // window never false-confirms.
+            if let pos = drag.window.position,
+               hypot(pos.x - drag.startFrame.origin.x, pos.y - drag.startFrame.origin.y) > 3 {
+                drag.confirmed = true
             } else {
-                let dx = curCG.x - drag.downPointCG.x
-                let dy = curCG.y - drag.downPointCG.y
-                liveRect = drag.startFrame.offsetBy(dx: dx, dy: dy)
+                // window hasn't moved: the carve stays where the last full
+                // update painted it (on the window). nothing to stamp.
+                dimDrag = drag
+                return
             }
         }
-        dimDrag = drag
 
+        let liveRect: CGRect
+        if drag.resizing {
+            liveRect = drag.window.frame ?? drag.startFrame
+        } else {
+            liveRect = drag.startFrame.offsetBy(dx: curCG.x - drag.downPointCG.x,
+                                                dy: curCG.y - drag.downPointCG.y)
+        }
+        dimDrag = drag
         // match floatingFrames(expandedBy: 2): negative inset enlarges
         dimmingOverlay.setDragOverride(id: drag.id, rect: liveRect.insetBy(dx: -2, dy: -2))
     }

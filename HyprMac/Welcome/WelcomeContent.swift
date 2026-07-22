@@ -24,10 +24,10 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "lock.shield",
-            title: "A Friendlier Permissions Setup",
-            description: "Granting Accessibility on first launch now happens in a clean, non-blocking window that tracks your permission status live — HyprMac starts the moment you grant access, with no alert to dismiss and no relaunch needed.",
-            tint: .cyan
+            icon: "macwindow.on.rectangle",
+            title: "Steadier Floating Window Dimming",
+            description: "The bright cut-out around a focused floating window now stays locked to the window as you drag it — and can no longer be nudged out of place on its own. Dragging inside a window's content no longer pulls the dimming away, and fast drags track cleanly.",
+            tint: .magenta
         ),
     ]
 }
