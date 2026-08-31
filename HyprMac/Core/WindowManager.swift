@@ -598,6 +598,16 @@ class WindowManager {
                 self.dimmingOverlay.fadeDurationSec = duration
             }.store(in: &configObservers)
 
+        config.$windowCornerRadius
+            .dropFirst()
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.focusBorder.refreshCornerRadius()
+                self.focusBrackets.refreshCornerRadius()
+                self.refreshDimming()
+            }.store(in: &configObservers)
+
         config.$showFocusBorder
             .dropFirst()
             .removeDuplicates()
