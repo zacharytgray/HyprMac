@@ -78,6 +78,10 @@ class UserConfig: ObservableObject {
     @Published var chromeFadeDurationSec: Double {
         didSet { if !isReloading { save() } }
     }
+    // corner curvature shared by focus borders, brackets, and dim cut-outs
+    @Published var windowCornerRadius: CGFloat {
+        didSet { if !isReloading { save() } }
+    }
     // windows sent to the scratchpad tile into the layer by default;
     // ones that don't fit stay floating members either way
     @Published var scratchpadTileByDefault: Bool {
@@ -141,6 +145,7 @@ class UserConfig: ObservableObject {
             self.dimInactiveWindows = saved.dimInactiveWindows ?? UserConfigDefaults.dimInactiveWindows
             self.dimIntensity = saved.dimIntensity ?? UserConfigDefaults.dimIntensity
             self.chromeFadeDurationSec = saved.chromeFadeDurationSec ?? UserConfigDefaults.chromeFadeDurationSec
+            self.windowCornerRadius = saved.windowCornerRadius ?? UserConfigDefaults.windowCornerRadius
             self.scratchpadTileByDefault = saved.scratchpadTileByDefault ?? UserConfigDefaults.scratchpadTileByDefault
             self.scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
         } else {
@@ -159,6 +164,7 @@ class UserConfig: ObservableObject {
             self.dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
             self.dimIntensity = UserConfigDefaults.dimIntensity
             self.chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
+            self.windowCornerRadius = UserConfigDefaults.windowCornerRadius
             self.scratchpadTileByDefault = UserConfigDefaults.scratchpadTileByDefault
             self.scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
         }
@@ -236,6 +242,7 @@ class UserConfig: ObservableObject {
             dimIntensity: dimIntensity,
             mouseHoverPollHz: mouseHoverPollHz,
             chromeFadeDurationSec: chromeFadeDurationSec,
+            windowCornerRadius: windowCornerRadius,
             scratchpadTileByDefault: scratchpadTileByDefault,
             scratchpadRegionInset: scratchpadRegionInset)
     }
@@ -258,6 +265,7 @@ class UserConfig: ObservableObject {
         dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
         dimIntensity = UserConfigDefaults.dimIntensity
         chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
+        windowCornerRadius = UserConfigDefaults.windowCornerRadius
         scratchpadTileByDefault = UserConfigDefaults.scratchpadTileByDefault
         scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
     }
@@ -292,6 +300,7 @@ class UserConfig: ObservableObject {
         dimInactiveWindows = saved.dimInactiveWindows ?? false
         dimIntensity = saved.dimIntensity ?? 0.2
         chromeFadeDurationSec = saved.chromeFadeDurationSec ?? UserConfigDefaults.chromeFadeDurationSec
+        windowCornerRadius = saved.windowCornerRadius ?? UserConfigDefaults.windowCornerRadius
         scratchpadTileByDefault = saved.scratchpadTileByDefault ?? UserConfigDefaults.scratchpadTileByDefault
         scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
 
@@ -330,6 +339,7 @@ extension SavedConfig {
             dimIntensity: UserConfigDefaults.dimIntensity,
             mouseHoverPollHz: UserConfigDefaults.mouseHoverPollHz,
             chromeFadeDurationSec: UserConfigDefaults.chromeFadeDurationSec,
+            windowCornerRadius: UserConfigDefaults.windowCornerRadius,
             scratchpadTileByDefault: UserConfigDefaults.scratchpadTileByDefault,
             scratchpadRegionInset: UserConfigDefaults.scratchpadRegionInset)
     }

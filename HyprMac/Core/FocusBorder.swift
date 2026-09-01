@@ -191,6 +191,22 @@ class FocusBorder {
         trackedWindowFrame = rect
     }
 
+    /// Re-stamp the configured curvature without replaying show animations.
+    func refreshCornerRadius() {
+        mainThreadOnly()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if let windowID = trackedWindowID, let layer = glowView?.layer {
+            layer.cornerRadius = WindowCornerRadius.resolve(for: windowID)
+                + Tuning.activeBorderWidth / 2
+        }
+        for (windowID, border) in floatingPanels {
+            border.glowView.layer?.cornerRadius = WindowCornerRadius.resolve(for: windowID)
+                + Tuning.floatingBorderWidth / 2
+        }
+        CATransaction.commit()
+    }
+
     /// Sync the floating-border panels to `frames`. Creates panels for
     /// new ids, repositions existing ones, and orders out any panel
     /// whose id is not present in the input — so a single call brings

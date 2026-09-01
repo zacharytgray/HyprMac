@@ -3,22 +3,18 @@
 // macOS apps render their corners themselves and there's no public AX
 // attribute to read the actual radius. Per-bundle override tables and
 // dynamic probing both produced inconsistent results across apps, so
-// we pick one global radius keyed only on the macOS version. Same
-// value used by FocusBorder and DimmingOverlay so they stay in sync.
+// we use one user-configurable global radius. Its default remains keyed
+// to the macOS version so existing installations keep their appearance.
+// The same value drives all focus chrome so its curves stay in sync.
 
 import Cocoa
 
 enum WindowCornerRadius {
 
-    // Tahoe (macOS 26) renders noticeably rounder corners than Sequoia
-    // (15). 16pt is Tahoe's default window corner radius; 10pt matches
-    // Sequoia and earlier.
-    static let global: CGFloat = {
-        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 {
-            return 16
-        }
-        return 10
-    }()
+    /// Current user-selected radius. `UserConfigDefaults` preserves the
+    /// previous 16pt Tahoe / 10pt earlier-version behavior when the saved
+    /// config predates this setting.
+    static var global: CGFloat { UserConfig.shared.windowCornerRadius }
 
     /// Resolve the radius for `wid`. Currently returns the same global
     /// value for every window — the API shape is preserved so the

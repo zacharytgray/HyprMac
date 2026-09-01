@@ -115,6 +115,13 @@ class FocusBrackets {
         trackedFrame = rect
     }
 
+    /// Rebuild visible bracket paths after the configured radius changes.
+    func refreshCornerRadius() {
+        mainThreadOnly()
+        guard isVisible else { return }
+        stampCornerPaths()
+    }
+
     /// Fade out and order out. Cheap to call repeatedly — no-op when
     /// already hidden.
     func hide() {

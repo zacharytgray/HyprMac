@@ -27,6 +27,13 @@ enum UserConfigDefaults {
     // global enable/disable). settle and shake on FocusBorder stay at
     // their own constants.
     static let chromeFadeDurationSec: Double = 0.22
+    // Match the hard-coded radius used before this became configurable:
+    // Tahoe windows are rounder than windows on Sequoia and earlier.
+    static func windowCornerRadius(forOSMajorVersion majorVersion: Int) -> CGFloat {
+        majorVersion >= 26 ? 16 : 10
+    }
+    static let windowCornerRadius: CGFloat = windowCornerRadius(
+        forOSMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
     // windows sent to the scratchpad tile into the layer instead of
     // floating. off preserves the original floating-first behavior.
     static let scratchpadTileByDefault: Bool = false

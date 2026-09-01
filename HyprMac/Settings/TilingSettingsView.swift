@@ -119,6 +119,17 @@ struct TilingSettingsView: View {
                     .labelsHidden()
             }
 
+            HyprRow("Corner radius", icon: "rectangle.roundedtop",
+                    subtitle: "Matches focus borders, brackets, and dim cut-outs.",
+                    divider: true) {
+                HStack(spacing: HyprSpacing.sm) {
+                    Slider(value: $config.windowCornerRadius, in: 0...32, step: 1)
+                        .frame(width: 180)
+                    HyprChip("\(Int(config.windowCornerRadius)) px")
+                        .frame(width: 56, alignment: .trailing)
+                }
+            }
+
             HyprRow("Dim inactive windows", icon: "moon",
                     divider: config.dimInactiveWindows) {
                 Toggle("", isOn: $config.dimInactiveWindows)
