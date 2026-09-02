@@ -65,6 +65,16 @@ class TilingEngine {
 
     private let minSizes = MinSizeMemory()
 
+    /// Per-window saved split ratio. When a window leaves the tree
+    /// (tab switch, hide), its parent's `splitRatio` and the window's
+    /// child position are recorded here. On re-insert the ratio is
+    /// restored so the user's manual resize survives tab switches.
+    private struct SavedRatio {
+        let ratio: CGFloat
+        let wasLeftChild: Bool
+    }
+    private var savedRatios: [CGWindowID: SavedRatio] = [:]
+
     init(displayManager: DisplayManager) {
         self.displayManager = displayManager
     }
@@ -88,9 +98,35 @@ class TilingEngine {
     func removeWindowID(_ windowID: CGWindowID) {
         for (_, t) in trees {
             guard let w = t.allWindows.first(where: { $0.windowID == windowID }) else { continue }
+            saveRatioBeforeRemoval(window: w, in: t)
             t.remove(w)
             t.root.pruneEmptyNodes()
             return
+        }
+    }
+
+    /// Drop any saved ratio for `windowID`. Called alongside
+    /// `forgetMinimumSize` when a window is truly gone (app quit).
+    func forgetSavedRatio(windowID: CGWindowID) { savedRatios.removeValue(forKey: windowID) }
+
+    private func saveRatioBeforeRemoval(window: HyprWindow, in tree: BSPTree) {
+        guard let node = tree.root.find(window) else { return }
+        guard let parent = node.parent else { return }
+        guard parent.splitRatio != TilingConfig.defaultRatio || parent.userSetRatio else { return }
+        let isLeft = parent.left === node
+        savedRatios[window.windowID] = SavedRatio(ratio: parent.splitRatio, wasLeftChild: isLeft)
+    }
+
+    /// Restore saved ratios for windows present in the tree.
+    /// Called after insert + ratio reset so restored ratios are not wiped.
+    private func restoreSavedRatios(in tree: BSPTree) {
+        for window in tree.allWindows {
+            guard let saved = savedRatios.removeValue(forKey: window.windowID) else { continue }
+            guard let node = tree.root.find(window), let parent = node.parent else { continue }
+            let isLeft = parent.left === node
+            let ratio = (isLeft == saved.wasLeftChild) ? saved.ratio : (1.0 - saved.ratio)
+            parent.splitRatio = ratio
+            parent.userSetRatio = true
         }
     }
 
@@ -351,7 +387,10 @@ class TilingEngine {
         let currentIDs = Set(tileWindows.map { $0.windowID })
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
-        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
+        for w in treeWindows where !currentIDs.contains(w.windowID) {
+            saveRatioBeforeRemoval(window: w, in: t)
+            t.remove(w)
+        }
 
         t.root.pruneEmptyNodes()
         // no compact on removal — BSPNode.remove promotes the sibling with
@@ -392,6 +431,7 @@ class TilingEngine {
             t.root.clearUserSetRatios()
             t.root.resetSplitRatios()
         }
+        restoreSavedRatios(in: t)
         return TileMembershipResult(key: key, tree: t, rect: rect, insertedWindows: insertedWindows)
     }
 
@@ -482,7 +522,10 @@ class TilingEngine {
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
         // membership diff: remove gone (sibling promotion keeps shape), insert new
-        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
+        for w in treeWindows where !currentIDs.contains(w.windowID) {
+            saveRatioBeforeRemoval(window: w, in: t)
+            t.remove(w)
+        }
         t.root.pruneEmptyNodes()
         t.root.resetSplitRatios()
 
@@ -495,6 +538,7 @@ class TilingEngine {
         }
 
         t.root.resetSplitRatios()
+        restoreSavedRatios(in: t)
         let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
         let conflicts = applyLayout(layouts)
         if !conflicts.isEmpty {
