@@ -43,7 +43,7 @@ targets:
         INFOPLIST_FILE: HyprMac/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: com.zachgray.HyprMac
         MARKETING_VERSION: "0.11.0"
-        CURRENT_PROJECT_VERSION: "77"
+        CURRENT_PROJECT_VERSION: "80"
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_STYLE: Automatic
         DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
