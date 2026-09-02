@@ -320,6 +320,7 @@ class FocusBorder {
         shakeTimer = nil
         trackedWindowID = nil
         trackedWindowFrame = nil
+        focusedCornerRadiusExpansion = Tuning.activeBorderWidth / 2
         removeMessageBanner()
         guard let p = panel, state != .hidden else { return }
         state = .hidden

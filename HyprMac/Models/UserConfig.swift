@@ -84,7 +84,9 @@ class UserConfig: ObservableObject {
         didSet { if !isReloading { save() } }
     }
     var windowCornerRadius: CGFloat {
-        windowCornerRadiusOverride ?? UserConfigDefaults.windowCornerRadius
+        UserConfigDefaults.resolvedWindowCornerRadius(
+            override: windowCornerRadiusOverride,
+            forOSMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion)
     }
     // windows sent to the scratchpad tile into the layer by default;
     // ones that don't fit stay floating members either way
