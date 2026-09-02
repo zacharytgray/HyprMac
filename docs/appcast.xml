@@ -3,12 +3,23 @@
     <channel>
         <title>HyprMac</title>
         <item>
+            <title>0.11.1</title>
+            <pubDate>Wed, 02 Sep 2026 14:22:26 -0500</pubDate>
+            <sparkle:version>81</sparkle:version>
+            <sparkle:shortVersionString>0.11.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.11.1/HyprMac-0.11.1.dmg" length="3799182" type="application/octet-stream" sparkle:edSignature="IEpE9q1EhE6oUy5hmuOPxJXjkZXvj93JhEE/eep/EkGvJq/sBCE0GqM9Hm9sOHlpjUq71FkBCOR8ywCW7wUeAA=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.11.1/HyprMac81-80.delta" sparkle:deltaFrom="80" length="128934" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="tRrtcgXaTvVqnJw7LQBODjJCX5u8C57SuNbhdoKZ0CqUiNo9cZG0iGg+yIK4u21Bn1xipD/rCf2Sui2cXibuDg=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.11.0</title>
             <pubDate>Wed, 02 Sep 2026 14:03:40 -0500</pubDate>
             <sparkle:version>80</sparkle:version>
             <sparkle:shortVersionString>0.11.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.11.0/HyprMac-0.11.0.dmg" length="3799280" type="application/octet-stream" sparkle:edSignature="wFQg1bmiSJhNZWqf2hipkXUOEeoYCZvjZOP6xqKYlyx13xS3Oai4TnhIIHx+Qvddx5JOc/IXO1gNQVyr0UZMDw=="/>
+            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.11.1/HyprMac-0.11.0.dmg" length="3799280" type="application/octet-stream" sparkle:edSignature="wFQg1bmiSJhNZWqf2hipkXUOEeoYCZvjZOP6xqKYlyx13xS3Oai4TnhIIHx+Qvddx5JOc/IXO1gNQVyr0UZMDw=="/>
         </item>
     </channel>
 </rss>
