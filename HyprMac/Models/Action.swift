@@ -43,9 +43,8 @@ enum Action: Equatable {
     /// Send the focused window to the scratchpad (or put a summoned
     /// scratchpad window away — the key is symmetric).
     case moveToScratchpad
-    /// Resize the focused window in a cardinal direction by adjusting the
-    /// nearest matching-axis split ratio in the BSP tree. Hyprland parity:
-    /// `resizeactive`.
+    /// Resize the focused window by moving the nearest matching-axis split
+    /// boundary in the BSP tree one step in that direction.
     case resizeDirection(Direction)
 }
 

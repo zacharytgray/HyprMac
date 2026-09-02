@@ -28,7 +28,7 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "arrow.up.left.and.arrow.down.right",
             title: "Keyboard Window Resizing",
-            description: "Resize the focused tiled window from the keyboard with Hypr+Ctrl+Shift+Arrow. Right and down grow the window, left and up shrink it, on whichever side of the split it sits — the same model as Hyprland's resizeactive. Rebindable in Settings → Keybinds.",
+            description: "Resize the focused tiled window from the keyboard with Hypr+Ctrl+Shift+Arrow. Each press moves the window's edge on that axis one step in the arrow direction, wherever the window sits in the layout. Rebindable in Settings → Keybinds.",
             credit: "@joops"
         ),
         WhatsNewFeature(

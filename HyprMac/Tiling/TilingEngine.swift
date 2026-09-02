@@ -940,11 +940,11 @@ class TilingEngine {
         retile(key: key, screen: screen)
     }
 
-    /// Resize the focused window by adjusting the nearest matching-axis
-    /// split ratio. Walks from the leaf upward to find the first ancestor
-    /// whose split direction matches the resize axis, then nudges its
-    /// `splitRatio` by `step`. Flags the ancestor `userSetRatio = true`
-    /// so the adjustment survives retiles.
+    /// Resize the focused window by moving the nearest matching-axis split
+    /// boundary in `direction`. Walks from the leaf upward to find the first
+    /// ancestor whose split direction matches the resize axis, then shifts
+    /// its `splitRatio` by `resizeStep` toward the arrow. Flags the ancestor
+    /// `userSetRatio = true` so the adjustment survives retiles.
     func resizeInDirection(_ window: HyprWindow, direction: Direction,
                            onWorkspace workspace: Int, screen: NSScreen) {
         let key = TilingKey(workspace: workspace, screen: screen)
@@ -968,9 +968,11 @@ class TilingEngine {
                 continue
             }
 
-            let isLeft = parent.left === node
-            let grow = isLeft == positive
-            let delta: CGFloat = grow ? TilingConfig.resizeStep : -TilingConfig.resizeStep
+            // move the split boundary in the arrow direction. ratio is the
+            // left/top fraction, so right/down = +, left/up = -. position
+            // independent: the focused window's edge on that axis follows
+            // the arrow, growing or shrinking as geometry allows.
+            let delta: CGFloat = positive ? TilingConfig.resizeStep : -TilingConfig.resizeStep
             let newRatio = min(max(parent.splitRatio + delta, TilingConfig.minRatio), TilingConfig.maxRatio)
             guard newRatio != parent.splitRatio else { break }
             parent.splitRatio = newRatio

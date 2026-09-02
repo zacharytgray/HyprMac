@@ -62,7 +62,7 @@ final class ResizeDirectionTests: XCTestCase {
 
     // MARK: - right child resize
 
-    func testRightChildResizeRightGrowsRightChild() {
+    func testRightChildResizeRightMovesBoundaryRight() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
         _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
@@ -72,11 +72,11 @@ final class ResizeDirectionTests: XCTestCase {
 
         engine.resizeInDirection(b, direction: .right, onWorkspace: 1, screen: screen)
 
-        XCTAssertLessThan(tree.root.splitRatio, ratioBefore,
-                          "right child pressing right should decrease ratio (grow right child)")
+        XCTAssertGreaterThan(tree.root.splitRatio, ratioBefore,
+                             "right arrow moves the boundary right regardless of side (right child shrinks)")
     }
 
-    func testRightChildResizeLeftShrinksRightChild() {
+    func testRightChildResizeLeftMovesBoundaryLeft() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
         _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
@@ -86,8 +86,8 @@ final class ResizeDirectionTests: XCTestCase {
 
         engine.resizeInDirection(b, direction: .left, onWorkspace: 1, screen: screen)
 
-        XCTAssertGreaterThan(tree.root.splitRatio, ratioBefore,
-                             "right child pressing left should increase ratio (shrink right child)")
+        XCTAssertLessThan(tree.root.splitRatio, ratioBefore,
+                          "left arrow moves the boundary left regardless of side (right child grows)")
     }
 
     // MARK: - axis matching
@@ -109,18 +109,14 @@ final class ResizeDirectionTests: XCTestCase {
         parent.splitOverride = .vertical
         let parentRatioBefore = parent.splitRatio
         let rootRatioBefore = tree.root.splitRatio
-        let cIsInLeftSubtree = tree.root.left === parent
 
         engine.resizeInDirection(c, direction: .right, onWorkspace: 1, screen: screen)
 
         XCTAssertEqual(parent.splitRatio, parentRatioBefore, accuracy: 0.001,
                        "mismatched-axis parent must be left alone")
         XCTAssertFalse(parent.userSetRatio)
-        if cIsInLeftSubtree {
-            XCTAssertGreaterThan(tree.root.splitRatio, rootRatioBefore)
-        } else {
-            XCTAssertLessThan(tree.root.splitRatio, rootRatioBefore)
-        }
+        XCTAssertGreaterThan(tree.root.splitRatio, rootRatioBefore,
+                             "root boundary moves right whichever subtree c is in")
         XCTAssertTrue(tree.root.userSetRatio)
     }
 
@@ -181,7 +177,7 @@ final class ResizeDirectionTests: XCTestCase {
 
     // MARK: - vertical split
 
-    func testVerticalSplitTopChildDownGrowsTopChild() {
+    func testVerticalSplitTopChildDownMovesBoundaryDown() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
         _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
@@ -190,7 +186,7 @@ final class ResizeDirectionTests: XCTestCase {
         tree.root.splitOverride = .vertical
         let ratioBefore = tree.root.splitRatio
 
-        // a is the top child; down grows it, up shrinks it
+        // a is the top child; down pushes the boundary down (a grows), up pulls it back
         engine.resizeInDirection(a, direction: .down, onWorkspace: 1, screen: screen)
         XCTAssertGreaterThan(tree.root.splitRatio, ratioBefore)
         XCTAssertTrue(tree.root.userSetRatio)
@@ -199,7 +195,7 @@ final class ResizeDirectionTests: XCTestCase {
         XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
     }
 
-    func testVerticalSplitBottomChildDownGrowsBottomChild() {
+    func testVerticalSplitBottomChildUpMovesBoundaryUp() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
         _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
@@ -208,12 +204,12 @@ final class ResizeDirectionTests: XCTestCase {
         tree.root.splitOverride = .vertical
         let ratioBefore = tree.root.splitRatio
 
-        // b is the bottom child; down grows it (ratio drops), up shrinks it
-        engine.resizeInDirection(b, direction: .down, onWorkspace: 1, screen: screen)
-        XCTAssertLessThan(tree.root.splitRatio, ratioBefore,
-                          "bottom child pressing down should decrease ratio (grow bottom child)")
-
+        // b is the bottom child; up pulls the boundary up (b grows, ratio drops), down pushes it back
         engine.resizeInDirection(b, direction: .up, onWorkspace: 1, screen: screen)
+        XCTAssertLessThan(tree.root.splitRatio, ratioBefore,
+                          "bottom child pressing up should decrease ratio (boundary moves up, bottom grows)")
+
+        engine.resizeInDirection(b, direction: .down, onWorkspace: 1, screen: screen)
         XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
     }
 
@@ -229,6 +225,45 @@ final class ResizeDirectionTests: XCTestCase {
         engine.resizeInDirection(a, direction: .right, onWorkspace: 1, screen: screen)
         XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
         XCTAssertFalse(tree.root.userSetRatio)
+    }
+
+    // MARK: - 2x2 grid (release 0.11.0 bug report)
+
+    func testGridEveryWindowFollowsArrowDirection() {
+        // root horizontal, each column vertical. every window's arrow must
+        // move the matching boundary in the arrow direction.
+        let a = makeWindow(id: 1), b = makeWindow(id: 2)
+        let c = makeWindow(id: 3), d = makeWindow(id: 4)
+        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
+        guard let left = tree.root.left, let right = tree.root.right else {
+            XCTFail("expected root split"); return
+        }
+        // build the grid by hand: a/c in the left column, b/d in the right
+        left.insert(c)
+        right.insert(d)
+        tree.root.splitOverride = .horizontal
+        left.splitOverride = .vertical
+        right.splitOverride = .vertical
+        let windows = [a, b, c, d]
+
+        for w in windows {
+            for (dir, node, positive) in [(Direction.right, tree.root, true), (.left, tree.root, false)] {
+                let before = node.splitRatio
+                engine.resizeInDirection(w, direction: dir, onWorkspace: 1, screen: screen)
+                if positive { XCTAssertGreaterThan(node.splitRatio, before, "\(w.windowID) \(dir)") }
+                else { XCTAssertLessThan(node.splitRatio, before, "\(w.windowID) \(dir)") }
+            }
+            guard let col = tree.root.find(w)?.parent, col !== tree.root else {
+                XCTFail("window \(w.windowID) not in a column"); return
+            }
+            for (dir, positive) in [(Direction.down, true), (.up, false)] {
+                let before = col.splitRatio
+                engine.resizeInDirection(w, direction: dir, onWorkspace: 1, screen: screen)
+                if positive { XCTAssertGreaterThan(col.splitRatio, before, "\(w.windowID) \(dir)") }
+                else { XCTAssertLessThan(col.splitRatio, before, "\(w.windowID) \(dir)") }
+            }
+        }
     }
 
     // MARK: - defaults coverage
