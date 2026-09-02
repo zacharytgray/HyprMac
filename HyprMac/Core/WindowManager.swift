@@ -598,7 +598,7 @@ class WindowManager {
                 self.dimmingOverlay.fadeDurationSec = duration
             }.store(in: &configObservers)
 
-        config.$windowCornerRadius
+        config.$windowCornerRadiusOverride
             .dropFirst()
             .removeDuplicates()
             .sink { [weak self] _ in
