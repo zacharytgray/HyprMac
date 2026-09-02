@@ -88,6 +88,7 @@ The physical Hypr key is configurable in Settings → General. Options include C
 | `⇪ + 1–9` | Switch to workspace N |
 | `⇪ + ⇧ + 1–9` | Move window to workspace N |
 | `⇪ + ⌃ + ←/→` | Move window to adjacent monitor |
+| `⇪ + ⌃ + ⇧ + ←/→/↑/↓` | Resize focused window in direction |
 | `⇪ + ⇥` / `⇪ + ⇧ + ⇥` | Cycle occupied workspaces on current monitor |
 | `⇪ + W` | Close window |
 | `⇪ + K` | Show keybind overlay |

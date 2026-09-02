@@ -22,6 +22,7 @@ enum Action: Equatable {
     case focusFloating
     case closeWindow
     case cycleWorkspace(Int)
+    case resizeDirection(Direction)
 }
 ```
 

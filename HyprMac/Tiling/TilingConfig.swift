@@ -41,6 +41,9 @@ enum TilingConfig {
     // avoids no-op AX writes triggered by sub-pixel jitter during manual resize.
     static let manualResizeRatioTolerance: CGFloat = 0.01
 
+    // step size for keyboard-driven resize (resizeDirection action).
+    static let resizeStep: CGFloat = 0.05
+
     // MARK: - min-size memory
 
     // slack on min-size conflict comparisons in BSPTree.adjustForMinSizes.

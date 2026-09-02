@@ -68,6 +68,7 @@
 		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
+		A78F1FAAB49BEEEAE2A1844D /* ResizeDirectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E97E23BFC7B85A7E6BF506 /* ResizeDirectionTests.swift */; };
 		AC01521BE9F2030CF901A2C9 /* DragSwapHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */; };
 		B44C416E3958C82361083048 /* KeybindOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7BD70717FD497B0899FBCE5 /* KeybindOverlayController.swift */; };
 		B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
@@ -151,6 +152,7 @@
 		5C0116BE6F796AC619B0BD6B /* CoordinateSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateSpace.swift; sourceTree = "<group>"; };
 		61E1DEE768A398E963AAB1CA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		63E30549B7EABECD4FCDBC0F /* BundleIDUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleIDUtils.swift; sourceTree = "<group>"; };
+		64E97E23BFC7B85A7E6BF506 /* ResizeDirectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeDirectionTests.swift; sourceTree = "<group>"; };
 		65F2F88E3A815333F6542EEA /* ColorPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorPickerRow.swift; sourceTree = "<group>"; };
 		6B23E3313247FD77173D35DD /* DefaultKeybindsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultKeybindsTests.swift; sourceTree = "<group>"; };
 		6E4E656D3CA021B130775CC3 /* Keybind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keybind.swift; sourceTree = "<group>"; };
@@ -423,6 +425,7 @@
 				298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */,
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */,
+				64E97E23BFC7B85A7E6BF506 /* ResizeDirectionTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
 				3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */,
 				DC08AAC03ABC15E772214598 /* ToggleSplitFallthroughRegressionTests.swift */,
@@ -674,6 +677,7 @@
 				15AB8B9331E6A03CDD991F3C /* LayoutEngineTests.swift in Sources */,
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */,
+				A78F1FAAB49BEEEAE2A1844D /* ResizeDirectionTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,
 				8456B287CD1B9AC9E86336E5 /* TileScratchpadTests.swift in Sources */,
 				860959AD6A92DB57753D655E /* ToggleSplitFallthroughRegressionTests.swift in Sources */,

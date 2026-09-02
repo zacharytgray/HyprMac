@@ -51,6 +51,16 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: [.hypr, .control],
                              action: .moveWindowToMonitor(.right)))
 
+        // hypr + ctrl + shift + arrow: resize focused window in direction
+        binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .control, .shift],
+                             action: .resizeDirection(.left)))
+        binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: [.hypr, .control, .shift],
+                             action: .resizeDirection(.right)))
+        binds.append(Keybind(keyCode: UInt16(kVK_UpArrow), modifiers: [.hypr, .control, .shift],
+                             action: .resizeDirection(.up)))
+        binds.append(Keybind(keyCode: UInt16(kVK_DownArrow), modifiers: [.hypr, .control, .shift],
+                             action: .resizeDirection(.down)))
+
         // hypr + shift + t: toggle floating
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_T), modifiers: [.hypr, .shift],
                              action: .toggleFloating))

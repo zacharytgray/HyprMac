@@ -55,6 +55,8 @@ extension Keybind {
             return "tray"
         case .moveToScratchpad:
             return "tray.and.arrow.down"
+        case .resizeDirection:
+            return "arrow.up.left.and.arrow.down.right"
         }
     }
 
@@ -85,6 +87,7 @@ extension Keybind {
         case .cycleWorkspace(let d):        return d > 0 ? "Next Workspace" : "Previous Workspace"
         case .toggleScratchpad:             return "Toggle Scratchpad"
         case .moveToScratchpad:             return "Send to Scratchpad"
+        case .resizeDirection(let d):       return "Resize \(d.rawValue.capitalized)"
         }
     }
 }
