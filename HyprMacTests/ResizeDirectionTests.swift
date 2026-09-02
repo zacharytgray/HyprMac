@@ -92,24 +92,51 @@ final class ResizeDirectionTests: XCTestCase {
 
     // MARK: - axis matching
 
-    func testResizeWalksUpToMatchingAxis() {
-        // three windows: root splits horizontal, one child splits vertical.
-        // resizing vertically on the deeper child should walk past the
-        // horizontal root to find a vertical ancestor — but with only
-        // horizontal splits, a vertical resize is a no-op.
+    func testResizeWalksUpPastMismatchedAxis() {
+        // three windows: c's parent split is forced vertical, the root
+        // horizontal. a horizontal resize on c must skip the parent and
+        // adjust the root instead.
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        let c = makeWindow(id: 3)
+        _ = engine.prepareTileLayout([a, b, c], onWorkspace: 1, screen: screen)
+
+        let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
+        guard let leaf = tree.root.find(c), let parent = leaf.parent, parent !== tree.root else {
+            XCTFail("expected c under a non-root split"); return
+        }
+        tree.root.splitOverride = .horizontal
+        parent.splitOverride = .vertical
+        let parentRatioBefore = parent.splitRatio
+        let rootRatioBefore = tree.root.splitRatio
+        let cIsInLeftSubtree = tree.root.left === parent
+
+        engine.resizeInDirection(c, direction: .right, onWorkspace: 1, screen: screen)
+
+        XCTAssertEqual(parent.splitRatio, parentRatioBefore, accuracy: 0.001,
+                       "mismatched-axis parent must be left alone")
+        XCTAssertFalse(parent.userSetRatio)
+        if cIsInLeftSubtree {
+            XCTAssertGreaterThan(tree.root.splitRatio, rootRatioBefore)
+        } else {
+            XCTAssertLessThan(tree.root.splitRatio, rootRatioBefore)
+        }
+        XCTAssertTrue(tree.root.userSetRatio)
+    }
+
+    func testPerpendicularResizeWithNoMatchingAncestorIsNoop() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
         _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
+        tree.root.splitOverride = .horizontal
         let ratioBefore = tree.root.splitRatio
 
-        // on a wide screen the root splits horizontally.
-        // resizing up/down should find no vertical ancestor — ratio unchanged.
         engine.resizeInDirection(a, direction: .up, onWorkspace: 1, screen: screen)
 
-        XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001,
-                       "perpendicular resize should be a no-op when no matching axis ancestor exists")
+        XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
+        XCTAssertFalse(tree.root.userSetRatio)
     }
 
     // MARK: - clamping
@@ -150,6 +177,58 @@ final class ResizeDirectionTests: XCTestCase {
         engine.resizeInDirection(stranger, direction: .right, onWorkspace: 1, screen: screen)
 
         XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
+    }
+
+    // MARK: - vertical split
+
+    func testVerticalSplitTopChildDownGrowsTopChild() {
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+
+        let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
+        tree.root.splitOverride = .vertical
+        let ratioBefore = tree.root.splitRatio
+
+        // a is the top child; down grows it, up shrinks it
+        engine.resizeInDirection(a, direction: .down, onWorkspace: 1, screen: screen)
+        XCTAssertGreaterThan(tree.root.splitRatio, ratioBefore)
+        XCTAssertTrue(tree.root.userSetRatio)
+
+        engine.resizeInDirection(a, direction: .up, onWorkspace: 1, screen: screen)
+        XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
+    }
+
+    func testVerticalSplitBottomChildDownGrowsBottomChild() {
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+
+        let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
+        tree.root.splitOverride = .vertical
+        let ratioBefore = tree.root.splitRatio
+
+        // b is the bottom child; down grows it (ratio drops), up shrinks it
+        engine.resizeInDirection(b, direction: .down, onWorkspace: 1, screen: screen)
+        XCTAssertLessThan(tree.root.splitRatio, ratioBefore,
+                          "bottom child pressing down should decrease ratio (grow bottom child)")
+
+        engine.resizeInDirection(b, direction: .up, onWorkspace: 1, screen: screen)
+        XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
+    }
+
+    func testHorizontalResizeOnVerticalSplitIsNoop() {
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+
+        let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
+        tree.root.splitOverride = .vertical
+        let ratioBefore = tree.root.splitRatio
+
+        engine.resizeInDirection(a, direction: .right, onWorkspace: 1, screen: screen)
+        XCTAssertEqual(tree.root.splitRatio, ratioBefore, accuracy: 0.001)
+        XCTAssertFalse(tree.root.userSetRatio)
     }
 
     // MARK: - defaults coverage

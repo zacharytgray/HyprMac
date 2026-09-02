@@ -518,6 +518,12 @@ private struct WhatsNewPage: View {
                     .lineSpacing(3)
                     .foregroundStyle(Color.hyprTextPrimary.opacity(0.5))
                     .fixedSize(horizontal: false, vertical: true)
+                if let credit = feature.credit {
+                    Text("Contributed by \(credit)")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundStyle(tint.opacity(0.85))
+                        .padding(.top, 3)
+                }
             }
             Spacer(minLength: 0)
         }

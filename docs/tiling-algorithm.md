@@ -233,7 +233,7 @@ home-screen migration path in `handleDisplayChange`.
 `TilingEngine` is over the 350-line target documented in the
 refactor plan. The action-method cluster (`tileWindows`,
 `prepareTileLayout`, `addWindow`, `removeWindow`, `applyResize`,
-`swapWindows`, `crossSwapWindows`, `toggleSplit`,
+`swapWindows`, `crossSwapWindows`, `toggleSplit`, `resizeInDirection`,
 `prepareSwapLayout`, `prepareToggleSplitLayout`,
 `forceInsertWindow`, `canFitWindow`) plus `retile` and the
 `autoFloatOverflow` fallback is the engine's external API;

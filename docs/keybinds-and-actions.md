@@ -198,7 +198,8 @@ Restart HyprMac after editing. Example — bind Hypr+B to launch Safari:
 
 **Modifier rawValues** (bitwise OR to combine — see
 `Models/Keybind.swift`): `1` Hypr, `2` Shift, `4` Option, `8`
-Control, `16` Command. Hypr+Shift = `3`, Hypr+Ctrl = `9`.
+Control, `16` Command. Hypr+Shift = `3`, Hypr+Ctrl = `9`,
+Hypr+Ctrl+Shift = `11`.
 
 **Key codes** (decimal, Carbon `kVK_*`):
 

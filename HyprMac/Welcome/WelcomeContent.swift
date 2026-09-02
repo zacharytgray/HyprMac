@@ -18,16 +18,24 @@ struct WhatsNewFeature {
     let title: String
     let description: String
     var tint: WhatsNewTint = .cyan
+    /// github handle of an outside contributor, shown under the description
+    var credit: String? = nil
 }
 
 enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "macwindow.on.rectangle",
-            title: "Steadier Floating Window Dimming",
-            description: "The bright cut-out around a focused floating window now stays locked to the window as you drag it — and can no longer be nudged out of place on its own. Dragging inside a window's content no longer pulls the dimming away, and fast drags track cleanly.",
-            tint: .magenta
+            icon: "arrow.up.left.and.arrow.down.right",
+            title: "Keyboard Window Resizing",
+            description: "Resize the focused tiled window from the keyboard with Hypr+Ctrl+Shift+Arrow. Right and down grow the window, left and up shrink it, on whichever side of the split it sits — the same model as Hyprland's resizeactive. Rebindable in Settings → Keybinds.",
+            credit: "@joops"
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.roundedtop",
+            title: "Configurable Window Corner Radius",
+            description: "A new slider in Settings → Tiling → Focus Chrome sets the corner radius (0–32 px) used by focus borders, floating borders, focus brackets, and dim-overlay cut-outs. Existing setups keep the previous default (16 px on macOS 26 and later, 10 px before).",
+            credit: "@Amin-El-Sayed"
         ),
     ]
 }
