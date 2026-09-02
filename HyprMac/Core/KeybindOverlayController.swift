@@ -304,13 +304,14 @@ private struct KeybindOverlayView: View {
     }
 
     // direction-bind families that coalesce into one arrow row
-    private enum DirFamily { case focus, swap, monitor }
+    private enum DirFamily { case focus, swap, monitor, resize }
 
     private func dirFamily(_ action: Action) -> DirFamily? {
         switch action {
         case .focusDirection:      return .focus
         case .swapDirection:       return .swap
         case .moveWindowToMonitor: return .monitor
+        case .resizeDirection:     return .resize
         default:                   return nil
         }
     }
@@ -319,7 +320,7 @@ private struct KeybindOverlayView: View {
     private func coalescedRow(from bind: Keybind, in binds: [Keybind],
                               consuming consumed: inout Set<Int>) -> OverlayRow? {
         switch bind.action {
-        case .focusDirection, .swapDirection, .moveWindowToMonitor:
+        case .focusDirection, .swapDirection, .moveWindowToMonitor, .resizeDirection:
             return directionRow(matching: bind, in: binds, consuming: &consumed)
         case .switchWorkspace, .moveToWorkspace:
             return workspaceRow(matching: bind, in: binds, consuming: &consumed)
@@ -342,6 +343,7 @@ private struct KeybindOverlayView: View {
             case .focusDirection(let d):      dir = d
             case .swapDirection(let d):       dir = d
             case .moveWindowToMonitor(let d): dir = d
+            case .resizeDirection(let d):     dir = d
             default:                          dir = nil
             }
             if let dir { arrows.append(dir); indices.append(j) }
@@ -357,6 +359,7 @@ private struct KeybindOverlayView: View {
         case .focus:   desc = "Focus direction"
         case .swap:    desc = "Swap direction"
         case .monitor: desc = "Move to monitor"
+        case .resize:  desc = "Resize window"
         }
         return OverlayRow(description: desc, chord: chord, isFloating: false)
     }
