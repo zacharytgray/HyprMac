@@ -19,7 +19,7 @@ struct AppLauncherEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: HyprSpacing.lg) {
-            Text("Add App Launcher")
+            Text("Open App with HyprMac")
                 .font(.hyprTitle)
 
             // app picker

@@ -36,6 +36,49 @@ adjacent monitor's visible workspace — the case was repurposed from
 the old workspace-to-monitor move, which static anchoring made a
 permanent no-op; its wire key is unchanged (see below).
 
+## Opening apps with hotkeys, Spotlight, and Shortcuts
+
+App hotkeys (`launchApp(bundleID:)`) and **Open App with HyprMac** use
+the same activation service. It opens a stopped app, focuses an existing
+window, restores a hidden or minimized window, and follows HyprMac's
+workspace/scratchpad routing. A running app is not blindly relaunched.
+App hotkeys are configured in Settings → Keybinds as before.
+
+On **macOS Tahoe 26 or later**, press Command-Space and search for
+**Open App with HyprMac**. Command-3 narrows the results to actions.
+Choose the action, select the application, and press Return. The app
+parameter searches installed app names and bundle IDs; there is no
+separate HyprMac action to maintain for every installed app.
+
+To make the action easier to reach, use Spotlight's **Add quick keys**
+control next to the action and assign an abbreviation such as `hm`.
+Typing that abbreviation brings up the action and its app parameter.
+Quick Keys belong to macOS: HyprMac cannot assign them, sync them in
+`config.json`, or force this action above normal app results. Opening a
+normal Spotlight app result or clicking a Dock icon does not run the
+HyprMac action. Apple's [Spotlight actions guide](https://support.apple.com/en-mide/guide/mac-help/mchl4953dfeb/mac)
+describes assigning and editing Quick Keys.
+
+On **macOS 15 or later**, the same action is available in Shortcuts.
+Add it to a shortcut and select an app there if a saved, app-specific
+entry point is preferable. macOS 13 and 14 retain the existing app
+hotkeys; the minimum OS version for HyprMac itself is unchanged.
+
+Cold launches first attempt a geometric slot reservation: affected
+existing tiles move and their frames are checked before the app starts.
+The app then receives a hidden-start request so real windows can be
+positioned before reveal when it cooperates. Unknown restored window
+counts or minimum sizes can require replanning. This is best-effort,
+not a promise of an invisible first frame. Failure or user override
+releases the reservation by retiling current state, and bounded
+fail-open cleanup releases HyprMac's hidden-launch request if
+preparation cannot finish. Scratchpad restoration keeps its existing
+reveal and stacking behavior. See [the activation architecture](architecture.md#application-activation-and-spotlight)
+for lifecycle and safety details.
+
+No new persisted settings are needed. Existing app hotkeys keep their
+`launchApp` wire format, so this change requires no config migration.
+
 ## JSON wire format
 
 The `Codable` implementation in `Models/Action.swift` preserves the

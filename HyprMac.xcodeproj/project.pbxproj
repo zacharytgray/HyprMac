@@ -67,6 +67,15 @@
 		96FC11AF63A197C78BBE9E40 /* KeybindEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */; };
 		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
+		A100D762AD3341A583020001 /* AppIntentApplicationActivationBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020001 /* AppIntentApplicationActivationBridge.swift */; };
+		A100D762AD3341A583020002 /* HyprMacAppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020002 /* HyprMacAppShortcuts.swift */; };
+		A100D762AD3341A583020003 /* InstalledApplicationCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020003 /* InstalledApplicationCatalog.swift */; };
+		A100D762AD3341A583020004 /* InstalledApplicationEntity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020004 /* InstalledApplicationEntity.swift */; };
+		A100D762AD3341A583020005 /* OpenApplicationWithHyprMacIntent.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020005 /* OpenApplicationWithHyprMacIntent.swift */; };
+		A100D762AD3341A583020006 /* ApplicationLaunchVisibilityGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020006 /* ApplicationLaunchVisibilityGuard.swift */; };
+		A100D762AD3341A583020007 /* ApplicationActivationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020007 /* ApplicationActivationCoordinatorTests.swift */; };
+		A100D762AD3341A583020008 /* LaunchLayoutReservationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020008 /* LaunchLayoutReservationTests.swift */; };
+		A100D762AD3341A583020009 /* ApplicationLaunchVisibilityGuardTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200D762AD3341A583020009 /* ApplicationLaunchVisibilityGuardTests.swift */; };
 		A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
 		A78F1FAAB49BEEEAE2A1844D /* ResizeDirectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E97E23BFC7B85A7E6BF506 /* ResizeDirectionTests.swift */; };
 		AC01521BE9F2030CF901A2C9 /* DragSwapHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */; };
@@ -177,6 +186,15 @@
 		9EBC04818743A6F6231119AB /* WelcomeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeContent.swift; sourceTree = "<group>"; };
 		9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameReadbackPoller.swift; sourceTree = "<group>"; };
 		A034E555A586C182E187021F /* HyprMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprMacApp.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020001 /* AppIntentApplicationActivationBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntentApplicationActivationBridge.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020002 /* HyprMacAppShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprMacAppShortcuts.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020003 /* InstalledApplicationCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledApplicationCatalog.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020004 /* InstalledApplicationEntity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledApplicationEntity.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020005 /* OpenApplicationWithHyprMacIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenApplicationWithHyprMacIntent.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020006 /* ApplicationLaunchVisibilityGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationLaunchVisibilityGuard.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020007 /* ApplicationActivationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationActivationCoordinatorTests.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020008 /* LaunchLayoutReservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchLayoutReservationTests.swift; sourceTree = "<group>"; };
+		A200D762AD3341A583020009 /* ApplicationLaunchVisibilityGuardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ApplicationLaunchVisibilityGuardTests.swift; sourceTree = "<group>"; };
 		A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherManager.swift; sourceTree = "<group>"; };
 		A7BD70717FD497B0899FBCE5 /* KeybindOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindOverlayController.swift; sourceTree = "<group>"; };
 		AF93D6331BC4826814BB7007 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
@@ -239,6 +257,7 @@
 				3F5155705392561940307378 /* HyprMac.entitlements */,
 				E5557F0D5040AE48CF5031E4 /* Info.plist */,
 				0FDAA32D76C8731CF9963ED4 /* App */,
+				A300D762AD3341A583020001 /* AppIntents */,
 				2D672DB6C1094B3A58DB9AD7 /* Core */,
 				98EADA0C8EECA495751C4BA5 /* Models */,
 				94F32CDCB78265FB55BA2241 /* Persistence */,
@@ -292,6 +311,7 @@
 			children = (
 				8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */,
 				A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */,
+				A200D762AD3341A583020006 /* ApplicationLaunchVisibilityGuard.swift */,
 				1BB92BD985DAC4292DE1C57F /* CursorManager.swift */,
 				84FD66866CE44F180CAA03C7 /* DimmingOverlay.swift */,
 				593D96A7340421A4588DE5D5 /* DisplayManager.swift */,
@@ -408,9 +428,23 @@
 			);
 			sourceTree = "<group>";
 		};
+		A300D762AD3341A583020001 /* AppIntents */ = {
+			isa = PBXGroup;
+			children = (
+				A200D762AD3341A583020001 /* AppIntentApplicationActivationBridge.swift */,
+				A200D762AD3341A583020002 /* HyprMacAppShortcuts.swift */,
+				A200D762AD3341A583020003 /* InstalledApplicationCatalog.swift */,
+				A200D762AD3341A583020004 /* InstalledApplicationEntity.swift */,
+				A200D762AD3341A583020005 /* OpenApplicationWithHyprMacIntent.swift */,
+			);
+			path = AppIntents;
+			sourceTree = "<group>";
+		};
 		B0A0AB76785D9D6DA70BB530 /* HyprMacTests */ = {
 			isa = PBXGroup;
 			children = (
+				A200D762AD3341A583020007 /* ApplicationActivationCoordinatorTests.swift */,
+				A200D762AD3341A583020009 /* ApplicationLaunchVisibilityGuardTests.swift */,
 				16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */,
 				1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */,
 				2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */,
@@ -422,6 +456,7 @@
 				C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */,
 				43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */,
 				D3521F94E7B0FCC0E03B50D3 /* KeybindDecoderToleranceTests.swift */,
+				A200D762AD3341A583020008 /* LaunchLayoutReservationTests.swift */,
 				298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */,
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */,
@@ -588,8 +623,10 @@
 				2F7C20004633B3B6A8CCF6D6 /* Action.swift in Sources */,
 				4F7E79CBC44F654BDF24C05B /* ActionDispatcher.swift in Sources */,
 				29EF01F22534CC2B51FE0390 /* AppDelegate.swift in Sources */,
+				A100D762AD3341A583020001 /* AppIntentApplicationActivationBridge.swift in Sources */,
 				E916A4BC377A1C882DB198AD /* AppLauncherEditorSheet.swift in Sources */,
 				440732216A02AA6BC39588CC /* AppLauncherManager.swift in Sources */,
+				A100D762AD3341A583020006 /* ApplicationLaunchVisibilityGuard.swift in Sources */,
 				F085027AE374E48959DEEB48 /* BSPNode.swift in Sources */,
 				F2B3AC04608B7F92C811A44A /* BSPTree.swift in Sources */,
 				7FB049BFF3F0B8E61B5D9177 /* BundleIDPicker.swift in Sources */,
@@ -617,7 +654,10 @@
 				33D18D1F45F3CB1C3E2FDA03 /* HotkeyManager.swift in Sources */,
 				3564F2FDA0E1E1BEA5FDFCA8 /* HyprKey.swift in Sources */,
 				E75F4991C42DA20A1A207121 /* HyprMacApp.swift in Sources */,
+				A100D762AD3341A583020002 /* HyprMacAppShortcuts.swift in Sources */,
 				DFB503500879F243DD9C3FC1 /* HyprWindow.swift in Sources */,
+				A100D762AD3341A583020003 /* InstalledApplicationCatalog.swift in Sources */,
+				A100D762AD3341A583020004 /* InstalledApplicationEntity.swift in Sources */,
 				28BD7C8DD76D02FBC83769F7 /* KeyBadgeViews.swift in Sources */,
 				D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */,
 				E49C450CFEE3A7BC692AA590 /* KeyRecorderView.swift in Sources */,
@@ -633,6 +673,7 @@
 				1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */,
 				C59F755D984292EB1E5B57CD /* MinSizeMemory.swift in Sources */,
 				94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */,
+				A100D762AD3341A583020005 /* OpenApplicationWithHyprMacIntent.swift in Sources */,
 				59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */,
 				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
 				D181B66CA786C3A32097B09D /* ScratchpadController.swift in Sources */,
@@ -663,6 +704,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A100D762AD3341A583020007 /* ApplicationActivationCoordinatorTests.swift in Sources */,
+				A100D762AD3341A583020009 /* ApplicationLaunchVisibilityGuardTests.swift in Sources */,
 				049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */,
 				0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */,
 				4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */,
@@ -674,6 +717,7 @@
 				EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */,
 				C1CCA6C07D0B273CF3AB3D6C /* HandleDisplayChangeTests.swift in Sources */,
 				D380E4A1BDD2AD4281299E72 /* KeybindDecoderToleranceTests.swift in Sources */,
+				A100D762AD3341A583020008 /* LaunchLayoutReservationTests.swift in Sources */,
 				15AB8B9331E6A03CDD991F3C /* LayoutEngineTests.swift in Sources */,
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */,

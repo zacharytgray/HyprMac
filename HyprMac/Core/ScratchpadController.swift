@@ -122,10 +122,14 @@ final class ScratchpadController {
         if isVisible { hide(reason: .toggle) } else { show() }
     }
 
-    func show(focusing preferredID: CGWindowID? = nil) {
-        if isVisible {
+    func show(
+        focusing preferredID: CGWindowID? = nil,
+        focusReassertionAllowed: @escaping () -> Bool = { true }
+    ) {
+        let preferredAlreadySummoned = preferredID.map { isSummoned($0) } ?? true
+        if isVisible, preferredAlreadySummoned {
             if let preferredID, let w = stateCache.cachedWindows[preferredID] {
-                w.focus()
+                w.focus(reassertIf: focusReassertionAllowed)
                 noteFocus(preferredID)
                 focusController.recordFocus(preferredID, reason: "scratchpad-refocus")
             }
@@ -140,7 +144,7 @@ final class ScratchpadController {
         suppressions.suppress("workspace-transition", for: 1.5)
         suppressions.suppress("activation-switch", for: 0.5)
         suppressions.suppress("mouse-focus", for: 0.15)
-        focusBeforeShow = focusController.lastFocusedID
+        if !isVisible { focusBeforeShow = focusController.lastFocusedID }
         shownAt = Date()
         workspaceManager.scratchpadVisible = true
 
@@ -232,7 +236,7 @@ final class ScratchpadController {
         }
 
         if let headID = mruOrder.first, let head = windowsByID[headID] {
-            head.focus()
+            head.focus(reassertIf: focusReassertionAllowed)
             focusController.recordFocus(headID, reason: "scratchpad-show")
             updateFocusBorder(head)
         }

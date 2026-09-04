@@ -104,6 +104,18 @@ The physical Hypr key is configurable in Settings → General. Options include C
 
 ---
 
+## Spotlight and Shortcuts
+
+On macOS Tahoe 26+, search Spotlight for **Open App with HyprMac** and choose an app. This uses the same activation workflow as HyprMac's app hotkeys, including existing, hidden, and minimized windows. The action is also available in Shortcuts on macOS 15+; HyprMac itself still supports macOS 13+.
+
+For quick access, assign an abbreviation such as `hm` using Spotlight's **Add quick keys** control. Quick Keys and result ranking are managed by macOS, not HyprMac. Ordinary Spotlight app results and Dock launches are not intercepted.
+
+Before a cold launch, HyprMac predicts a tile and reflows only existing windows that need to move, with a short asynchronous frame check before starting the app. The slot is geometric, not a fake window or saved setting. The app then receives a hidden-start request so its real windows can be laid out before reveal when it cooperates; restored window counts or minimum sizes can still require a new layout. Failures or user overrides release the reservation and retile current state. Scratchpad restoration keeps its existing reveal and stacking path.
+
+This is best-effort, with bounded fail-open cleanup—not a guarantee that another app's first frame can never appear. No config migration is needed. See [setup and limitations](docs/keybinds-and-actions.md#opening-apps-with-hotkeys-spotlight-and-shortcuts) and [the reservation lifecycle](docs/architecture.md#application-activation-and-spotlight).
+
+---
+
 ## Menu Bar Access
 
 Focus-follows-mouse and the macOS menu bar don't always play nicely together — mousing up to the menu bar can accidentally shift focus to a window underneath. HyprMac handles this two ways:
@@ -140,7 +152,7 @@ HotkeyManager (CGEventTap)
             ├→ WorkspaceOrchestrator      (workspace switch / move)
             ├→ FloatingWindowController   (toggle / cycle / raise)
             ├→ TilingEngine               (swap / split toggle / retile)
-            └→ AppLauncherManager         (launch / focus)
+            └→ ApplicationActivationCoordinator (open / reveal)
                 ↓
         WindowStateCache mutations
                 ↓
@@ -159,7 +171,7 @@ PollingScheduler (1 Hz timer + coalesced notification triggers)
 
 Window-keyed state lives in `WindowStateCache`; focus state in `FocusStateController`; date-gated suppressions (`activation-switch`, `mouse-focus`, `cross-swap-in-flight`) in `SuppressionRegistry`. BSP trees live in `TilingEngine` (one per `(workspace, screen)` pair) with smart insert backtracking on constrained monitors and two-pass min-size resolution via `FrameReadbackPoller`.
 
-Everything runs on the main thread. UI-touching classes (`FocusBorder`, `DimmingOverlay`, `KeybindOverlayController`, `CursorManager`, `MouseTrackingManager`) assert this in DEBUG via `mainThreadOnly()`.
+Window management and UI mutation run on the main thread. UI-touching classes (`FocusBorder`, `DimmingOverlay`, `KeybindOverlayController`, `CursorManager`, `MouseTrackingManager`) assert this in DEBUG via `mainThreadOnly()`. The event tap has its own thread; Spotlight's installed-app catalog is actor-isolated, and its activation bridge calls the same main-thread coordinator used by app hotkeys.
 
 For deeper reading:
 

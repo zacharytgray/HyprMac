@@ -92,6 +92,13 @@ class HyprWindow: Equatable, Hashable {
         }
     }
 
+    /// A launch reservation has no AX window yet. Use the same conservative
+    /// bundle estimate as normal discovery, then validate the real window.
+    static func estimatedMinimumSize(for bundleIdentifier: String) -> CGSize {
+        heuristicMinimumSizes[bundleIdentifier]
+            ?? CGSize(width: TilingConfig.minSlotDimension, height: TilingConfig.minSlotDimension)
+    }
+
     private func axMinimumSize() -> CGSize? {
         for attribute in ["AXMinimumSize", "AXMinSize"] {
             var value: AnyObject?
@@ -254,7 +261,7 @@ class HyprWindow: Equatable, Hashable {
     /// the app and re-asserts focus 50 ms later — single-pass focus
     /// is unreliable when the app was not already active because the
     /// AX writes can race the activation.
-    func focus() {
+    func focus(reassertIf shouldReassert: @escaping () -> Bool = { true }) {
         let app = NSRunningApplication(processIdentifier: ownerPID)
         let alreadyActive = app?.isActive ?? false
         let wid = windowID
@@ -279,6 +286,10 @@ class HyprWindow: Equatable, Hashable {
             }
             let el = element
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                guard shouldReassert() else {
+                    hyprLog(.debug, .focus, "focus(\(wid)) re-assert cancelled by newer user intent")
+                    return
+                }
                 let r2 = AXUIElementPerformAction(el, kAXRaiseAction as CFString)
                 let m2 = AXUIElementSetAttributeValue(el, kAXMainAttribute as CFString, kCFBooleanTrue)
                 let f2 = AXUIElementSetAttributeValue(el, kAXFocusedAttribute as CFString, kCFBooleanTrue)

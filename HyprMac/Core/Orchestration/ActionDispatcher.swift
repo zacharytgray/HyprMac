@@ -40,7 +40,7 @@ final class ActionDispatcher {
     private let focusController: FocusStateController
     private let focusBorder: FocusBorder
     private let keybindOverlay: KeybindOverlayController
-    private let appLauncher: AppLauncherManager
+    private let appLauncher: ApplicationActivating
     private let workspaceOrchestrator: WorkspaceOrchestrator
     private let floatingController: FloatingWindowController
     private let config: UserConfig
@@ -67,7 +67,7 @@ final class ActionDispatcher {
          focusController: FocusStateController,
          focusBorder: FocusBorder,
          keybindOverlay: KeybindOverlayController,
-         appLauncher: AppLauncherManager,
+         appLauncher: ApplicationActivating,
          workspaceOrchestrator: WorkspaceOrchestrator,
          floatingController: FloatingWindowController,
          config: UserConfig) {
@@ -102,12 +102,18 @@ final class ActionDispatcher {
     /// - Parameter allWindows: the same window snapshot
     ///   `WindowDiscoveryService` consumed; passed through so
     ///   `animatedRetile` and workspace assignment do not re-query AX.
-    func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow]) {
+    func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow],
+                      workspaceOverrides: [CGWindowID: Int] = [:],
+                      performFocusUpdates: Bool = true) {
         // workspace assignment for new windows that didn't auto-float onto a
         // disabled monitor. assigning by physical screen — cursor-based was
         // unreliable under multi-monitor + display-reconfig churn.
         for w in changes.newWindows where !changes.newOnDisabledMonitor.contains(w.windowID) {
-            assignNewWindow(w)
+            if let workspace = workspaceOverrides[w.windowID] {
+                workspaceManager.assignWindow(w.windowID, toWorkspace: workspace)
+            } else {
+                assignNewWindow(w)
+            }
         }
 
         // engine/workspace/focus cleanup for ids the service forgot.
@@ -143,6 +149,9 @@ final class ActionDispatcher {
             // animate surrounding windows sliding to fill gaps / make room.
             animatedRetile(allWindows)
         }
+
+        // A controlled reveal prepares geometry before transferring focus.
+        guard performFocusUpdates else { return }
 
         // if the FFM-tracked window disappeared, refocus to whatever tiled window
         // is under the cursor now. without this, focus gets stuck because
@@ -182,7 +191,18 @@ final class ActionDispatcher {
         case .showKeybinds:
             keybindOverlay.toggle(keybinds: config.keybinds)
         case .launchApp(let bundleID):
-            appLauncher.launchOrFocus(bundleID: bundleID)
+            appLauncher.activate(bundleID: bundleID, source: .hotkey) { result in
+                switch result {
+                case .failed(let message):
+                    hyprLog(.notice, .lifecycle, "app activation failed for \(bundleID): \(message)")
+                case .timedOut:
+                    hyprLog(.notice, .lifecycle, "app activation timed out for \(bundleID) — failed open")
+                case .unavailable:
+                    hyprLog(.notice, .lifecycle, "app activation unavailable for \(bundleID)")
+                case .activated, .openedWithoutWindow, .cancelled:
+                    break
+                }
+            }
         case .focusMenuBar:
             warpToMenuBar()
         case .focusFloating:

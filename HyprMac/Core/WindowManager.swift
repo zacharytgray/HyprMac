@@ -30,7 +30,7 @@ class WindowManager {
     let spaceManager = SpaceManager()
     let displayManager = DisplayManager()
     let cursorManager = CursorManager()
-    let appLauncher = AppLauncherManager()
+    let activationCoordinator: ApplicationActivationCoordinator
     let config: UserConfig
     let focusBorder = FocusBorder()
     let focusBrackets = FocusBrackets()
@@ -80,6 +80,8 @@ class WindowManager {
     // mouse tracking
     private var mouseMoveMonitor: Any?
     private var mouseDownMonitor: Any?
+    private var otherMouseDownMonitor: Any?
+    private var localInputMonitor: Any?
     private var mouseUpMonitor: Any?
     private var mouseDragMonitor: Any?
     private var mouseButtonDown = false
@@ -135,6 +137,30 @@ class WindowManager {
     // live config reload
     private var configObservers: Set<AnyCancellable> = []
     private var isRunning = false
+    private var hasInitialSnapshot = false
+
+    private final class LaunchReservation {
+        let requestID: UInt64
+        let bundleID: String
+        let workspace: Int
+        let displayFingerprint: String
+        let reservedFrame: CGRect
+        let changedSiblings: [(HyprWindow, CGRect)]
+        let startedAt = ProcessInfo.processInfo.systemUptime
+        var verificationTask: DispatchWorkItem?
+
+        init(requestID: UInt64, bundleID: String, workspace: Int,
+             displayFingerprint: String, reservedFrame: CGRect,
+             changedSiblings: [(HyprWindow, CGRect)]) {
+            self.requestID = requestID
+            self.bundleID = bundleID
+            self.workspace = workspace
+            self.displayFingerprint = displayFingerprint
+            self.reservedFrame = reservedFrame
+            self.changedSiblings = changedSiblings
+        }
+    }
+    private var launchReservation: LaunchReservation?
 
     // fingerprint of the last display layout we acted on. macOS posts
     // didChangeScreenParametersNotification for things that don't actually
@@ -168,6 +194,7 @@ class WindowManager {
     init(config: UserConfig) {
         self.config = config
         self.focusController = FocusStateController(focusBorder: focusBorder)
+        self.activationCoordinator = ApplicationActivationCoordinator(accessibility: accessibility)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
         self.tilingEngine = TilingEngine(displayManager: displayManager)
         self.discovery = WindowDiscoveryService(
@@ -233,8 +260,37 @@ class WindowManager {
         scratchpad.lowerScrimBelow = { [weak self] wid in
             self?.dimmingOverlay.orderBelow(windowNumber: Int(wid))
         }
+
+        // Hotkeys and Spotlight converge here. The coordinator owns request
+        // ordering; these callbacks keep workspace/discovery ownership in the
+        // existing services instead of duplicating tiling policy.
+        activationCoordinator.prepareWindowsForReveal = { [weak self] pid, ids, selectedID in
+            self?.prepareApplicationWindowsForReveal(
+                pid: pid, windowIDs: ids, selectedWindowID: selectedID
+            ) ?? false
+        }
+        activationCoordinator.routeWindow = { [weak self] pid, id, requestID in
+            self?.routeActivatedWindow(pid: pid, windowID: id, requestID: requestID) ?? false
+        }
+        activationCoordinator.lastFocusedWindowID = { [weak self] in
+            self?.focusController.lastFocusedID ?? 0
+        }
+        activationCoordinator.isAvailable = { [weak self] in
+            self?.isRunning == true && self?.hasInitialSnapshot == true && AXIsProcessTrusted()
+        }
+        activationCoordinator.reserveSpaceBeforeLaunch = { [weak self] bundleID, requestID, completion in
+            guard let self else { completion(); return }
+            self.reserveApplicationSpace(bundleID: bundleID, requestID: requestID, completion: completion)
+        }
+        activationCoordinator.finishLaunchReservation = { [weak self] requestID, result in
+            self?.finishApplicationReservation(requestID: requestID, result: result)
+        }
+
         self.pollingScheduler = PollingScheduler { [weak self] in
             self?.pollWindowChanges()
+        }
+        activationCoordinator.requestDiscovery = { [weak self] delay in
+            self?.pollingScheduler.schedule(after: delay)
         }
         // hold polling off while a cross-monitor drag-swap is in flight (Phase 4 step 5).
         // DragSwapHandler.applySwap registers the "cross-swap-in-flight" key for ~800ms;
@@ -246,6 +302,7 @@ class WindowManager {
         pollingScheduler.isSuppressed = { [weak self] in
             guard let self else { return false }
             return self.mouseButtonDown
+                || self.suppressions.isSuppressed("activation-reservation")
                 || self.suppressions.isSuppressed("cross-swap-in-flight")
                 || self.suppressions.isSuppressed("workspace-transition")
         }
@@ -253,6 +310,9 @@ class WindowManager {
         hotkeyManager.onAction = { [weak self] action in
             self?.suppressions.suppress("mouse-focus", for: 0.15)
             self?.handleAction(action)
+        }
+        hotkeyManager.onPassthroughKeyDown = { [weak self] timestamp in
+            self?.activationCoordinator.cancelForUserOverride(eventTimestamp: timestamp)
         }
 
         hotkeyManager.onHyprKeyDown = { [weak self] in
@@ -333,7 +393,7 @@ class WindowManager {
             focusController: focusController,
             focusBorder: focusBorder,
             keybindOverlay: keybindOverlay,
-            appLauncher: appLauncher,
+            appLauncher: activationCoordinator,
             workspaceOrchestrator: workspaceOrchestrator,
             floatingController: floatingController,
             config: config
@@ -401,6 +461,11 @@ class WindowManager {
     func start() {
         guard !isRunning else { return }
         isRunning = true
+        if #available(macOS 15.0, *) {
+            MainActor.assumeIsolated {
+                AppIntentApplicationActivationBridge.install(activationCoordinator, ready: false)
+            }
+        }
 
         // route AX notifications into the coalescing scheduler. these are the
         // primary discovery triggers; the scheduler's timer is a safety net.
@@ -408,8 +473,9 @@ class WindowManager {
         // so no extra guards here. create/miniaturize/deminiaturize get a 0.2s
         // debounce to let AX settle; focus is snappier at 0.15s; destroy uses
         // the 0.2s default.
-        axNotifications.onEvent = { [weak self] kind, _ in
+        axNotifications.onEvent = { [weak self] kind, pid in
             guard let self else { return }
+            self.activationCoordinator.noteAXEvent(pid: pid)
             switch kind {
             case .windowDestroyed:
                 self.pollingScheduler.schedule()
@@ -443,6 +509,12 @@ class WindowManager {
             // screen-parameters notification after launch is a no-op.
             self.lastDisplayFingerprint = self.displayFingerprint()
             self.snapshotAndTile()
+            self.hasInitialSnapshot = true
+            if #available(macOS 15.0, *) {
+                MainActor.assumeIsolated {
+                    AppIntentApplicationActivationBridge.markReady(self.activationCoordinator)
+                }
+            }
             // attach AX observers after the initial tile so their events feed
             // the same coalescing scheduler. this covers the app-level
             // subscriptions (create / focus); window-level ones (destroy /
@@ -532,6 +604,7 @@ class WindowManager {
             .removeDuplicates()
             .sink { [weak self] newGap in
                 guard let self = self else { return }
+                self.activationCoordinator.cancelForUserOverride()
                 self.tilingEngine.gapSize = newGap
                 self.animatedRetile()
             }.store(in: &configObservers)
@@ -541,6 +614,7 @@ class WindowManager {
             .removeDuplicates()
             .sink { [weak self] newPadding in
                 guard let self = self else { return }
+                self.activationCoordinator.cancelForUserOverride()
                 self.tilingEngine.outerPadding = newPadding
                 self.animatedRetile()
             }.store(in: &configObservers)
@@ -550,6 +624,7 @@ class WindowManager {
             .removeDuplicates()
             .sink { [weak self] newSplits in
                 guard let self = self else { return }
+                self.activationCoordinator.cancelForUserOverride()
                 self.tilingEngine.maxSplitsPerMonitor = newSplits
                 self.snapshotAndTile()
                 hyprLog(.debug, .lifecycle, "max splits updated: \(newSplits)")
@@ -560,6 +635,7 @@ class WindowManager {
             .removeDuplicates()
             .sink { [weak self] newDisabled in
                 guard let self = self else { return }
+                self.activationCoordinator.cancelForUserOverride()
                 self.workspaceManager.disabledMonitors = newDisabled
                 // unfloat windows on newly-disabled monitors from their tiling trees
                 self.handleDisabledMonitorChange()
@@ -658,8 +734,15 @@ class WindowManager {
     /// the polling scheduler, removes mouse monitors, halts the hotkey tap,
     /// and hides every focus indicator. Safe to call when not running.
     func stop() {
-        restoreAllWindows()
         isRunning = false
+        hasInitialSnapshot = false
+        activationCoordinator.stop()
+        if #available(macOS 15.0, *) {
+            MainActor.assumeIsolated {
+                AppIntentApplicationActivationBridge.remove(activationCoordinator)
+            }
+        }
+        restoreAllWindows()
         axNotifications.detachAll()
         pollingScheduler.stop()
         stopMouseTracking()
@@ -710,6 +793,7 @@ class WindowManager {
     /// (app menu, status item, context menu) opens. Suppresses FFM so the
     /// user can scrub through menu items without focus jumping behind.
     @objc private func menuTrackingBegan(_ note: Notification) {
+        activationCoordinator.cancelForUserOverride()
         mouseTracker.menuTrackingBegan()
     }
 
@@ -737,11 +821,24 @@ class WindowManager {
     /// discovery poll and would otherwise lag the live drag at 60Hz; mouseUp restores
     /// it after a short settle delay.
     private func startMouseTracking() {
+        otherMouseDownMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            self?.activationCoordinator.cancelForUserOverride(eventTimestamp: event.timestamp)
+        }
+        // Global monitors exclude HyprMac's own Settings/menu windows.
+        localInputMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            self?.activationCoordinator.cancelForUserOverride(eventTimestamp: event.timestamp)
+            return event
+        }
         mouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             self?.mouseTracker.handleMouseMove()
         }
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self else { return }
+            self.activationCoordinator.cancelForUserOverride(eventTimestamp: event.timestamp)
             self.mouseButtonDown = true
             self.mouseDraggedSinceDown = false
             // the event carries the exact click location. sampling
@@ -837,10 +934,14 @@ class WindowManager {
     private func stopMouseTracking() {
         if let m = mouseMoveMonitor { NSEvent.removeMonitor(m) }
         if let m = mouseDownMonitor { NSEvent.removeMonitor(m) }
+        if let m = otherMouseDownMonitor { NSEvent.removeMonitor(m) }
+        if let m = localInputMonitor { NSEvent.removeMonitor(m) }
         if let m = mouseDragMonitor { NSEvent.removeMonitor(m) }
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m) }
         mouseMoveMonitor = nil
         mouseDownMonitor = nil
+        otherMouseDownMonitor = nil
+        localInputMonitor = nil
         mouseDragMonitor = nil
         mouseUpMonitor = nil
         mouseDownTiledFrames.removeAll()
@@ -1206,6 +1307,12 @@ class WindowManager {
     /// callback site stays terse and so subclasses or tests can intercept
     /// in one place. Also called from the menu bar (cheat-sheet row).
     func handleAction(_ action: Action) {
+        if case .launchApp = action {
+            // Repeated requests for the same app are coalesced by the
+            // coordinator; a different app supersedes the prior request.
+        } else {
+            activationCoordinator.cancelForUserOverride()
+        }
         // workspace flows park/unpark and then focus+warp. mid-display-
         // transition the tile pass is deferred, so the target workspace
         // would stay parked with the cursor warped to the 1px park sliver.
@@ -2124,6 +2231,282 @@ class WindowManager {
         return result
     }
 
+    // MARK: - application activation
+
+    /// Preflow one speculative tile before starting the app. This touches
+    /// only siblings whose planned frame changes, not every desktop window.
+    /// No placeholder enters the BSP tree or persistent configuration.
+    private func reserveApplicationSpace(bundleID: String, requestID: UInt64,
+                                         completion: @escaping () -> Void) {
+        guard isRunning, hasInitialSnapshot, !displayTransitionPending, !mouseButtonDown,
+              !config.excludedBundleIDs.contains(bundleID) else { completion(); return }
+        let screen = screenUnderCursor()
+        guard !workspaceManager.isMonitorDisabled(screen) else { completion(); return }
+        let workspace = workspaceManager.workspaceForScreen(screen)
+        guard let plan = tilingEngine.planApplicationLaunch(
+            onWorkspace: workspace, screen: screen,
+            estimatedMinimumSize: HyprWindow.estimatedMinimumSize(for: bundleID)
+        ) else {
+            hyprLog(.debug, .lifecycle, "launch reservation: no safe predicted slot for \(bundleID)")
+            completion()
+            return
+        }
+
+        let changed = plan.siblingLayouts.filter { window, target in
+            !activationFrameMatches(window.cachedFrame ?? window.frame, target)
+        }
+        guard changed.allSatisfy({ accessibility.canSetFrame(of: $0.0) }) else {
+            completion()
+            return
+        }
+        let reservation = LaunchReservation(
+            requestID: requestID, bundleID: bundleID, workspace: workspace,
+            displayFingerprint: displayFingerprint(), reservedFrame: plan.reservedFrame,
+            changedSiblings: changed
+        )
+        launchReservation = reservation
+        // Normal discovery must not immediately fill our deliberately empty
+        // gap. AX events still reach the coordinator; its preparation pass
+        // explicitly includes the real hidden window before releasing this.
+        suppressions.suppress("activation-reservation", for: 3.0)
+        for (window, frame) in changed { window.setFrame(frame, crossMonitor: false) }
+        verifyApplicationReservation(reservation, completion: completion)
+    }
+
+    private func verifyApplicationReservation(_ reservation: LaunchReservation,
+                                              completion: @escaping () -> Void) {
+        guard launchReservation === reservation else { return }
+        let task = DispatchWorkItem { [weak self] in
+            guard let self, self.launchReservation === reservation else { return }
+            let accepted = reservation.changedSiblings.allSatisfy {
+                self.activationFrameMatches($0.0.frame, $0.1)
+            }
+            if accepted {
+                reservation.verificationTask = nil
+                hyprLog(.debug, .lifecycle, "launch reservation: \(reservation.changedSiblings.count) sibling(s) ready before app start")
+                completion()
+            } else if ProcessInfo.processInfo.systemUptime - reservation.startedAt < 0.35 {
+                self.verifyApplicationReservation(reservation, completion: completion)
+            } else {
+                // A reluctant sibling must not block launching an app. Give
+                // back the gap and use the normal controlled-launch fallback.
+                hyprLog(.notice, .lifecycle, "launch reservation: sibling readback did not settle — reverting speculative gap")
+                self.finishApplicationReservation(requestID: reservation.requestID,
+                                                  result: .openedWithoutWindow)
+                completion()
+            }
+        }
+        reservation.verificationTask = task
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04, execute: task)
+    }
+
+    private func finishApplicationReservation(requestID: UInt64,
+                                              result: ApplicationActivationResult) {
+        guard let reservation = launchReservation, reservation.requestID == requestID else { return }
+        reservation.verificationTask?.cancel()
+        reservation.verificationTask = nil
+        launchReservation = nil
+        suppressions.clear("activation-reservation")
+        guard isRunning else { return }
+        if case .activated = result {
+            // The real window already owns the gap and has been laid out.
+        } else {
+            // Reflow current live state, not saved frames/topology that may
+            // now conflict with a user action or a display reconfiguration.
+            tileAllVisibleSpaces()
+        }
+        pollingScheduler.schedule(after: 0.06)
+    }
+
+    private func activationFrameMatches(_ actual: CGRect?, _ expected: CGRect) -> Bool {
+        guard let actual else { return false }
+        return abs(actual.minX - expected.minX) <= 4
+            && abs(actual.minY - expected.minY) <= 4
+            && abs(actual.width - expected.width) <= TilingConfig.frameToleranceXPx
+            && abs(actual.height - expected.height) <= TilingConfig.frameToleranceXPx
+    }
+
+    /// Feed hidden/minimized windows through the same discovery and tiling
+    /// pipeline used for ordinary AX events. This is the controlled-reveal
+    /// seam: no parallel workspace or BSP bookkeeping is introduced.
+    private func prepareApplicationWindowsForReveal(
+        pid: pid_t,
+        windowIDs: Set<CGWindowID>,
+        selectedWindowID: CGWindowID
+    ) -> Bool {
+        guard isRunning, !displayTransitionPending, !mouseButtonDown,
+              !windowIDs.isEmpty else { return false }
+
+        let activationWindows = accessibility.activationWindows(
+            for: pid, matching: windowIDs
+        )
+        guard Set(activationWindows.map(\.windowID)) == windowIDs,
+              activationWindows.allSatisfy(accessibility.canSetFrame(of:)) else {
+            hyprLog(.notice, .lifecycle, "controlled reveal: AX could not safely address every target window — failing open")
+            return false
+        }
+        // The scratchpad owns its separate region and stacking sequence.
+        // Restore through that existing path instead of inventing a second
+        // hidden-layer layout policy here.
+        if workspaceManager.workspaceFor(selectedWindowID) == ScratchpadController.workspace {
+            return false
+        }
+
+        let reservation = launchReservation.flatMap { candidate -> LaunchReservation? in
+            guard candidate.bundleID == NSRunningApplication(processIdentifier: pid)?.bundleIdentifier,
+                  candidate.displayFingerprint == displayFingerprint(),
+                  workspaceManager.isWorkspaceVisible(candidate.workspace) else { return nil }
+            return candidate
+        }
+        if let reservation,
+           workspaceManager.workspaceFor(selectedWindowID) == nil,
+           let selected = activationWindows.first(where: { $0.windowID == selectedWindowID }) {
+            // The reservation's screen/workspace is authoritative for this
+            // controlled cold launch, not the app's remembered old position.
+            selected.setFrame(reservation.reservedFrame)
+        }
+
+        // Prefer the activation copy for duplicate IDs: it remains usable
+        // while the app is hidden/minimized, whereas the on-screen snapshot
+        // can carry a just-stale element from the prior discovery pass.
+        var windowsByID = Dictionary(accessibility.getAllWindows().map { ($0.windowID, $0) },
+                                     uniquingKeysWith: { _, latest in latest })
+        for window in activationWindows { windowsByID[window.windowID] = window }
+        let combined = windowsByID.values.sorted { $0.windowID < $1.windowID }
+
+        // Switch ownership first. A returned window's BSP leaf may have
+        // been removed while minimized, so only the now-visible workspace
+        // can reinsert and lay it out before the OS reveal.
+        if let workspace = workspaceManager.workspaceFor(selectedWindowID),
+           !workspaceManager.isWorkspaceVisible(workspace) {
+            if scratchpad.isVisible { scratchpad.hide(reason: .activationChange) }
+            guard workspaceOrchestrator.prepareWorkspaceForReveal(workspace, windows: combined) else {
+                return false
+            }
+        }
+
+        axNotifications.ensureWindowSubscriptions(for: combined)
+        tilingEngine.primeMinimumSizes(combined)
+        let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
+        let changes = discovery.computeChanges(
+            snapshot: combined,
+            runningPIDs: runningPIDs,
+            excludedBundleIDs: Set(config.excludedBundleIDs),
+            focusedWindowID: focusController.lastFocusedID
+        )
+        var workspaceOverrides: [CGWindowID: Int] = [:]
+        if let reservation {
+            for window in changes.newWindows where window.ownerPID == pid {
+                workspaceOverrides[window.windowID] = reservation.workspace
+            }
+        }
+        actionDispatcher.applyChanges(changes, allWindows: combined,
+                                      workspaceOverrides: workspaceOverrides,
+                                      performFocusUpdates: false)
+
+        // A window can already be lifecycle-known if Cmd-H and this trigger
+        // race the next poll. Ensure that no-op discovery case still lays it
+        // out before reveal.
+        if !changes.needsRetile {
+            tileAllVisibleSpaces(windows: combined)
+        }
+        repairParkedWindows(combined)
+
+        let intended = tilingEngine.intendedTileRects()
+        let originTolerance: CGFloat = 4
+        let sizeTolerance = TilingConfig.frameToleranceXPx
+
+        for window in activationWindows {
+            if let workspace = workspaceManager.workspaceFor(window.windowID),
+               !workspaceManager.isWorkspaceVisible(workspace) {
+                // Unhiding an app reveals all of its windows. Its unselected
+                // windows on other Hypr workspaces must remain parked.
+                guard let actual = window.position else { return false }
+                let parked = workspaceManager.hidePosition()
+                guard abs(actual.x - parked.x) <= originTolerance,
+                      abs(actual.y - parked.y) <= originTolerance else { return false }
+                continue
+            }
+            if stateCache.floatingWindowIDs.contains(window.windowID) {
+                continue
+            }
+            guard let expected = intended[window.windowID] else {
+                hyprLog(.notice, .lifecycle, "controlled reveal: no intended frame for \(window.windowID) — failing open")
+                return false
+            }
+
+            let actual = window.frame ?? .zero
+
+            let frameMatches = abs(actual.minX - expected.minX) <= originTolerance
+                && abs(actual.minY - expected.minY) <= originTolerance
+                && abs(actual.width - expected.width) <= sizeTolerance
+                && abs(actual.height - expected.height) <= sizeTolerance
+            guard frameMatches else {
+                hyprLog(.notice, .lifecycle, "controlled reveal: frame verification failed for \(window.windowID) — failing open")
+                return false
+            }
+        }
+
+        hyprLog(.debug, .lifecycle, "controlled reveal: prepared \(activationWindows.count) window(s) for pid=\(pid)")
+        return true
+    }
+
+    /// Focus the exact candidate selected by the activation coordinator.
+    /// Returning false asks the coordinator to wait for the next discovery
+    /// pass rather than guessing from stale workspace state.
+    private func routeActivatedWindow(
+        pid: pid_t,
+        windowID: CGWindowID,
+        requestID: UInt64
+    ) -> Bool {
+        guard isRunning, !displayTransitionPending else { return false }
+
+        guard let window = accessibility.visibleActivationWindow(
+            for: pid, windowID: windowID
+        ) else { return false }
+        if workspaceManager.workspaceFor(windowID) == nil {
+            // A just-opened window is not ready until normal discovery has
+            // assigned and tiled it. Disabled monitors intentionally have
+            // no workspace ownership and remain ordinary floating windows.
+            guard let screen = displayManager.screen(for: window),
+                  workspaceManager.isMonitorDisabled(screen) else { return false }
+        }
+
+        let focusGuard = { [weak self] in
+            self?.activationCoordinator.allowsFocusReassertion(for: requestID) ?? false
+        }
+        suppressions.suppress("activation-switch", for: 0.5)
+        suppressions.suppress("mouse-focus", for: 0.15)
+
+        if workspaceManager.workspaceFor(windowID) == ScratchpadController.workspace {
+            scratchpad.show(
+                focusing: windowID,
+                focusReassertionAllowed: focusGuard
+            )
+            return scratchpad.isVisible && scratchpad.isSummoned(windowID)
+        }
+
+        if scratchpad.isVisible {
+            scratchpad.hide(reason: .activationChange)
+        }
+
+        if let workspace = workspaceManager.workspaceFor(windowID),
+           !workspaceManager.isWorkspaceVisible(workspace) {
+            workspaceOrchestrator.switchWorkspace(
+                workspace,
+                preferredWindowID: windowID,
+                preferredWindow: window,
+                focusReassertionAllowed: focusGuard
+            )
+            return true
+        }
+
+        window.focus(reassertIf: focusGuard)
+        focusController.recordFocus(windowID, reason: "application-activation")
+        updateFocusBorder(for: window)
+        return true
+    }
+
     // MARK: - poll
 
     /// Run a single discovery diff and hand the result to the dispatcher's
@@ -2158,6 +2541,7 @@ class WindowManager {
         )
         actionDispatcher.applyChanges(changes, allWindows: allWindows)
         repairParkedWindows(allWindows)
+        activationCoordinator.noteDiscoveryCompleted()
     }
 
     /// Park self-repair: a hidden-workspace window the OS (or its own app)
@@ -2215,6 +2599,25 @@ class WindowManager {
                     self.mouseTracker.dockIsActive = false
                 }
             }
+        }
+
+        // A request-correlated activation must not fall through to the Dock
+        // affordance below: that path can inspect an older parked window and
+        // switch to the wrong workspace before the requested window is
+        // discovered. A foreign activation
+        // cancels the request and continues through the normal user path.
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+           activationCoordinator.noteApplicationActivated(
+               bundleID: app.bundleIdentifier,
+               pid: app.processIdentifier
+           ) == .claimed {
+            pollingScheduler.schedule()
+            if !stateCache.floatingWindowIDs.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.floatingController.raiseBehind()
+                }
+            }
+            return
         }
 
         // scratchpad: an activation outside the layer dismisses it (Cmd-Tab,
@@ -2306,6 +2709,7 @@ class WindowManager {
     /// Hypr modifier (the "sticky Caps Lock" bug from a different angle).
     @objc private func systemInterruption(_ notification: Notification) {
         hyprLog(.notice, .hotkey, "system interruption (\(notification.name.rawValue)) — resetting hotkey state")
+        activationCoordinator.cancelForUserOverride()
         hotkeyManager.resetTrackingAfterTapInterruption()
         // also clear stuck dock flag and menu-tracking flag — sleep dialogs
         // and screen lock can leave either stale.
@@ -2332,6 +2736,10 @@ class WindowManager {
             // wire up event-driven discovery for the new app. attach is
             // idempotent and retries once if the app isn't AX-ready yet.
             axNotifications.attach(pid: app.processIdentifier)
+            activationCoordinator.noteApplicationLaunched(
+                bundleID: app.bundleIdentifier,
+                pid: app.processIdentifier
+            )
         }
         pollingScheduler.schedule(after: 0.5)
     }
@@ -2342,6 +2750,10 @@ class WindowManager {
     /// path can only see windows still in `knownWindowIDs`.
     @objc private func appDidTerminate(_ notification: Notification) {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            activationCoordinator.noteApplicationTerminated(
+                bundleID: app.bundleIdentifier,
+                pid: app.processIdentifier
+            )
             axNotifications.detach(pid: app.processIdentifier)
             forgetApp(app.processIdentifier)
         }
@@ -2351,6 +2763,9 @@ class WindowManager {
     /// React to an app being hidden or unhidden (Cmd-H, Hide Others, etc.).
     /// Short delay lets AX settle before discovery picks up the change.
     @objc private func appVisibilityChanged(_ notification: Notification) {
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            activationCoordinator.noteAXEvent(pid: app.processIdentifier)
+        }
         pollingScheduler.schedule(after: 0.3)
     }
 
@@ -2376,6 +2791,10 @@ class WindowManager {
             hyprLog(.debug, .lifecycle, "screenParametersChanged: fingerprint unchanged — ignoring spurious fire")
             return
         }
+        // Cancellation can roll back a speculative launch layout. Defer
+        // that tiling until monitor/workspace reconciliation finishes too.
+        displayTransitionPending = true
+        activationCoordinator.cancelForUserOverride()
         let names = displayManager.screens.map { $0.localizedName }.joined(separator: ", ")
         hyprLog(.notice, .lifecycle, "screenParametersChanged fired (current screens: [\(names)])")
         // the scratchpad can't survive a topology change — reconcile would
@@ -2386,7 +2805,6 @@ class WindowManager {
         // OS-shuffled positions and drift-reassigns them to whatever
         // workspace happens to own the screen they got dumped on.
         suppressions.suppress("workspace-transition", for: 3.0)
-        displayTransitionPending = true
         displayChangeGeneration += 1
         scheduleDisplayReconcile()
     }
@@ -2449,6 +2867,7 @@ class WindowManager {
     /// Handler for the `.hyprMacRetileAll` notification posted from the
     /// menu bar's "Retile All" action.
     @objc private func retileAllRequested() {
+        activationCoordinator.cancelForUserOverride()
         hyprLog(.debug, .lifecycle, "retile all spaces requested")
         scratchpad.hide(reason: .workspaceAction)
         snapshotAndTile()

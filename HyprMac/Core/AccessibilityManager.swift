@@ -5,6 +5,25 @@
 
 import Cocoa
 
+/// A window visible to the app-activation workflow, including windows that
+/// are currently minimized or belong to a hidden application.
+struct ApplicationWindowCandidate: Equatable {
+    let windowID: CGWindowID
+    let isMinimized: Bool
+    let isMain: Bool
+    let isFocused: Bool
+}
+
+/// AX distinguishes a confirmed empty window list from an unreadable one.
+/// The activation workflow must never reopen an app merely because AX was
+/// temporarily unavailable; doing so can create duplicate documents.
+enum ApplicationWindowInventory: Equatable {
+    // Includes non-standard/modal windows: a filtered list is not evidence
+    // that the app has no window and should receive another reopen event.
+    case available(windows: [ApplicationWindowCandidate], hasUnaddressableWindows: Bool)
+    case unavailable
+}
+
 /// Wrapper around the macOS Accessibility (AX) API.
 ///
 /// Owns the AX↔CG mapping path: each visible window is enumerated via
@@ -110,6 +129,132 @@ class AccessibilityManager {
         var wid: CGWindowID = 0
         let err = _AXUIElementGetWindow(element, &wid)
         return err == .success && wid != 0 ? wid : nil
+    }
+
+    /// Enumerate standard windows for one app without requiring them to be
+    /// on-screen. This is intentionally separate from `getAllWindows()`: the
+    /// latter is the visible-desktop discovery source, while activation also
+    /// needs to reason about Cmd-H and minimized windows.
+    func activationWindowInventory(for pid: pid_t) -> ApplicationWindowInventory {
+        guard AXIsProcessTrusted() else { return .unavailable }
+
+        let appElement = AXUIElementCreateApplication(pid)
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            appElement, kAXWindowsAttribute as CFString, &value
+        ) == .success, let windows = value as? [AXUIElement] else {
+            return .unavailable
+        }
+
+        var candidates: [ApplicationWindowCandidate] = []
+        var hasUnaddressableWindows = false
+        for window in windows {
+            guard isStandardActivationWindow(window) else {
+                hasUnaddressableWindows = true
+                continue
+            }
+            guard let id = windowID(for: window) else {
+                // A real standard window exists, but cannot safely be routed.
+                // Preserve that distinction from a confirmed empty list.
+                hasUnaddressableWindows = true
+                continue
+            }
+            candidates.append(ApplicationWindowCandidate(
+                windowID: id,
+                isMinimized: boolAttribute(kAXMinimizedAttribute, of: window),
+                isMain: boolAttribute(kAXMainAttribute, of: window),
+                isFocused: boolAttribute(kAXFocusedAttribute, of: window)
+            ))
+        }
+
+        candidates.sort { $0.windowID < $1.windowID }
+        return .available(windows: candidates, hasUnaddressableWindows: hasUnaddressableWindows)
+    }
+
+    /// Resolve selected activation candidates back to `HyprWindow` values.
+    /// Unlike `getAllWindows()`, this works while the app is hidden or its
+    /// windows are minimized, which lets the normal discovery/tiling pipeline
+    /// prepare them before a controlled reveal.
+    func activationWindows(for pid: pid_t,
+                           matching ids: Set<CGWindowID>) -> [HyprWindow] {
+        guard AXIsProcessTrusted(), !ids.isEmpty else { return [] }
+
+        let appElement = AXUIElementCreateApplication(pid)
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            appElement, kAXWindowsAttribute as CFString, &value
+        ) == .success, let windows = value as? [AXUIElement] else {
+            return []
+        }
+
+        let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier
+        var result: [HyprWindow] = []
+        for element in windows where isStandardActivationWindow(element) {
+            guard let id = windowID(for: element), ids.contains(id) else { continue }
+            let window = HyprWindow(element: element, windowID: id, ownerPID: pid)
+            window.cachedFrame = axFrame(for: element)
+            window.seedMinimumSize(bundleIdentifier: bundleID)
+            result.append(window)
+        }
+        return result.sorted { $0.windowID < $1.windowID }
+    }
+
+    /// Resolve one selected window after reveal without walking every app's
+    /// AX tree on each retry. Keep normal discovery's on-screen/alpha checks;
+    /// a window on a different native Space is not ready for this route.
+    func visibleActivationWindow(for pid: pid_t, windowID: CGWindowID) -> HyprWindow? {
+        guard let app = NSRunningApplication(processIdentifier: pid),
+              app.activationPolicy == .regular, !app.isHidden, !app.isTerminated,
+              cgWindowsByPID()[pid]?.contains(where: {
+                  $0.windowID == windowID && $0.alpha > 0.01
+              }) == true,
+              let window = activationWindows(for: pid, matching: [windowID]).first,
+              window.cachedFrame != nil,
+              !boolAttribute(kAXMinimizedAttribute, of: window.element) else { return nil }
+        return window
+    }
+
+    /// Whether both geometry attributes can be set for a window. A hidden
+    /// pre-layout is attempted only when AX explicitly confirms this.
+    func canSetFrame(of window: HyprWindow) -> Bool {
+        var positionSettable = DarwinBoolean(false)
+        var sizeSettable = DarwinBoolean(false)
+        let positionResult = AXUIElementIsAttributeSettable(
+            window.element, kAXPositionAttribute as CFString, &positionSettable
+        )
+        let sizeResult = AXUIElementIsAttributeSettable(
+            window.element, kAXSizeAttribute as CFString, &sizeSettable
+        )
+        return positionResult == .success && positionSettable.boolValue
+            && sizeResult == .success && sizeSettable.boolValue
+    }
+
+    private func boolAttribute(_ name: String, of element: AXUIElement) -> Bool {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success else {
+            return false
+        }
+        return (value as? NSNumber)?.boolValue ?? false
+    }
+
+    private func isStandardActivationWindow(_ element: AXUIElement) -> Bool {
+        var roleValue: AnyObject?
+        guard AXUIElementCopyAttributeValue(
+            element, kAXRoleAttribute as CFString, &roleValue
+        ) == .success, roleValue as? String == kAXWindowRole as String else {
+            return false
+        }
+
+        var subroleValue: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleValue)
+        if let subrole = subroleValue as? String,
+           subrole != kAXStandardWindowSubrole as String {
+            return false
+        }
+
+        var modalValue: AnyObject?
+        AXUIElementCopyAttributeValue(element, kAXModalAttribute as CFString, &modalValue)
+        return !((modalValue as? NSNumber)?.boolValue ?? false)
     }
 
     /// Snapshot every visible normal window across all running apps.

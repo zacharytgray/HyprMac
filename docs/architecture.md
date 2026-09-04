@@ -14,6 +14,7 @@ the build / run / style guide; this is the structural narrative.
 ```
 HyprMac/
 ├── App/                      lifecycle, settings shell, menu bar
+├── AppIntents/               Spotlight/Shortcuts entry point, app catalog
 ├── Core/
 │   ├── Discovery/            window discovery service
 │   ├── Input/                drag-swap result application
@@ -34,8 +35,10 @@ HyprMac/
 
 `WindowManager` constructs the dependency graph at app launch and
 holds the only strong reference to most subsystems. The graph stays
-live for the entire app lifetime; nothing in HyprMac is process-wide
-singleton except `UserConfig.shared` and `MenuBarState.shared`.
+live for the app lifetime. `UserConfig.shared`, `MenuBarState.shared`,
+and the installed-app catalog are shared entry points. The App Intent
+bridge holds only a weak reference to the activation service owned by
+`WindowManager`.
 
 | Service | Responsibility |
 |---|---|
@@ -55,7 +58,9 @@ singleton except `UserConfig.shared` and `MenuBarState.shared`.
 | `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. |
 | `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. |
 | `CursorManager` | Cursor warp via `CGWarpMouseCursorPosition` + reassociate dance. |
-| `AppLauncherManager` | Launch-or-focus path for the `launchApp` action. |
+| `ApplicationActivationCoordinator` | Shared open-or-reveal workflow for app hotkeys and Spotlight/Shortcuts; implemented in `AppLauncherManager.swift`. |
+| `ApplicationLaunchVisibilityGuard` | Bounded fail-open cleanup for an app HyprMac requested to launch hidden. |
+| `InstalledApplicationCatalog` | Actor-isolated, cached public-API app discovery for the App Intent parameter. |
 | `KeybindOverlayController` | HUD panel listing every active keybind (`Hypr+K`). |
 
 ## Orchestration layer (Core/Orchestration + Core/State + Core/Discovery)
@@ -115,7 +120,7 @@ HotkeyManager.eventTap (CGEventTap, dedicated thread → dispatched to main)
     ├ WorkspaceOrchestrator      (workspace switch / move)
     ├ FloatingWindowController   (toggle / cycle / raise)
     ├ TilingEngine               (swap / split toggle / retile)
-    └ AppLauncherManager         (launch / focus)
+    └ ApplicationActivationCoordinator (open / reveal)
         ↓
 WindowStateCache mutations
         ↓
@@ -140,6 +145,102 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
 Per-app AXObserver notifications are the primary discovery trigger; the
 10s timer only backstops missed events and observer-refusing apps.
 
+## Application activation and Spotlight
+
+The `launchApp(bundleID:)` hotkey and the **Open App with HyprMac** App
+Intent call the same `ApplicationActivating` service. The intent never
+launches a second, independent `NSWorkspace` workflow:
+
+```
+Hotkey → ActionDispatcher ──────────────────────────────┐
+Spotlight / Shortcuts → App Intent → main-actor bridge ─┤
+                                                      ↓
+                         ApplicationActivationCoordinator
+                           → cold launch: reserve / reflow → launch
+                           → AX inventory / preparation / restoration
+                           → exact-window workspace or scratchpad routing
+                           → focus
+```
+
+The coordinator pins a request to one process and one selected window.
+It prefers a non-minimized window, then the last-focused, AX-focused,
+or main window, using the window ID as a stable tie-breaker. Existing
+windows are restored and routed through the normal workspace or
+scratchpad path. A running app receives a reopen request only when AX
+successfully reports no windows; an unavailable AX inventory is not
+treated as an empty one.
+
+For a cold launch, the coordinator first asks the tiling layer for a
+**geometric slot plan** on the target workspace. This plan is transient:
+it creates neither a fake window nor a placeholder in the live BSP
+tree, and nothing is persisted. Existing tiled siblings are reflowed
+before Launch Services is called; only siblings whose target frame
+changes receive AX writes. Frame readback is checked asynchronously
+at 40 ms intervals with a 350 ms verification budget. A sibling that
+does not accept its frame causes the speculative gap to be released
+and the launch to continue through the safe fallback. These are
+readback scheduling bounds, not guarantees about AX call latency.
+
+Normal discovery polling is held off for a bounded reservation period
+so it does not immediately fill the deliberately empty gap. AX events
+still reach the coordinator. After verification, Launch Services
+receives `NSWorkspace.OpenConfiguration` with `activates = false` and
+`hides = true`. If the app cooperates, the coordinator waits for a
+bounded window-creation burst and prepares its addressable windows
+before reveal. Actual windows enter ordinary discovery and BSP
+insertion; they do not replace fake nodes. The initial slot is only a
+prediction: restored window count and real minimum sizes can require
+another layout before reveal. Scratchpad windows use their existing
+reveal and stacking sequence rather than a second speculative layout.
+
+This is best-effort preparation, **not a pre-map interception
+guarantee**: public macOS APIs do not let HyprMac suspend another app
+before its first window appears. Apps can ignore the hidden launch
+request or reject geometry changes; already-visible apps are never
+hidden to compensate.
+
+Requests have a deadline, cancellation, and stale-callback checks.
+Repeated requests for the same app share the pending operation; a new
+app request or an explicit user override cancels it. The visibility
+guard outlives request cancellation when necessary and provides bounded
+fail-open cleanup, including late launch completion. The safety rule
+is to undo HyprMac's hidden-launch request without stealing focus back
+after the user moves on, even if layout preparation fails.
+The guard has a separate serial queue and only uses the documented
+thread-safe `NSRunningApplication` unhide API there; AX work and view
+mutation stay on the main thread. This gives cleanup an independent
+chance to run while main-thread AX calls are busy, not a no-jank or
+visibility guarantee. Once a reveal has been observed, the guard is
+irreversibly disarmed so a later intentional Cmd-H is not undone.
+On failure, timeout, or user override, the speculative reservation is
+discarded and current live geometry is retiled. Rollback never restores
+an old tree or saved frames over a newer user action or display change.
+
+The App Intent and App Shortcut provider live in the main app target;
+there is no extension or private launch interception API. They are
+availability-gated to macOS 15, while direct Spotlight actions require
+macOS Tahoe 26. The rest of HyprMac still targets macOS 13. The intent
+keeps HyprMac itself in the background and awaits the shared service;
+only activation or the explicit no-manageable-window fallback counts
+as success. If Spotlight starts HyprMac, the bridge waits asynchronously
+for service installation and the initial window snapshot, up to two
+seconds. It never activates an app through a partially initialized
+manager. Cancellation and errors propagate to the caller.
+
+`InstalledApplicationEntity` uses bundle IDs as stable identifiers.
+Its query scans standard application folders, skips background-only and
+agent apps, deduplicates IDs deterministically, and caches the results
+for five minutes. Suggestions are alphabetic rather than dependent on
+which apps happen to be running. Saved IDs outside those folders can
+also resolve through public `NSWorkspace` lookup. This is not an
+exhaustive index of every app in arbitrary filesystem locations.
+
+Spotlight owns ranking and Quick Keys; HyprMac does not overwrite its
+preferences or promise first-place results. The existing `launchApp`
+JSON format is unchanged, and this integration needs no config
+migration. See [keybinds and actions](keybinds-and-actions.md#opening-apps-with-hotkeys-spotlight-and-shortcuts)
+for setup and platform limits.
+
 ## Ownership rules
 
 - **`WindowStateCache`** is the only owner of window-keyed
@@ -159,7 +260,7 @@ Per-app AXObserver notifications are the primary discovery trigger; the
 
 ## Threading
 
-Every public method runs on the main thread, with one exception: the
+Window management and UI mutation run on the main thread. The
 CGEventTap lives on its own dedicated thread (`HyprMac.EventTap`). It
 is an *active* tap — macOS holds all system keyboard input until the
 hosting run loop services the callback — so it must never share a run
@@ -171,7 +272,12 @@ still fire on the main run loop. UI-touching classes (`FocusBorder`,
 `MouseTrackingManager`) call `mainThreadOnly()` on entry so an
 off-main caller crashes loudly in DEBUG.
 
-There is no `async/await` in HyprMac today.
+App Intent queries use `async/await` and an actor-isolated installed-app
+catalog, so filesystem scans do not run on the main actor. The
+`@MainActor` activation bridge adapts the intent's async completion and
+cancellation to the main-thread coordinator's callback interface.
+The visibility guard's separate serial queue performs bounded public
+unhide requests only; it does not move AX calls off the main thread.
 
 ## Logging
 

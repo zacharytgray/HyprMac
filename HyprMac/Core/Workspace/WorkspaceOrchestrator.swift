@@ -72,7 +72,12 @@ final class WorkspaceOrchestrator {
     /// Suppresses `activation-switch` and `mouse-focus` for the duration
     /// (and a tail) of the switch — `best.focus()` queues asynchronous
     /// notifications that would otherwise re-bounce focus.
-    func switchWorkspace(_ number: Int) {
+    func switchWorkspace(
+        _ number: Int,
+        preferredWindowID: CGWindowID? = nil,
+        preferredWindow: HyprWindow? = nil,
+        focusReassertionAllowed: @escaping () -> Bool = { true }
+    ) {
         // hold polls off for the duration of the transition. Tahoe AX
         // writes lag, so a poll mid-transition reads stale frames and
         // drift detection can falsely reassign windows.
@@ -88,9 +93,13 @@ final class WorkspaceOrchestrator {
         if result.alreadyVisible {
             // workspace is showing on result.screen — just focus it
             let visibleWindows = allWindows.filter { result.toShow.contains($0.windowID) }
-            if let best = visibleWindows.first(where: { !stateCache.floatingWindowIDs.contains($0.windowID) })
+            if let best = resolvedPreferredWindow(in: visibleWindows,
+                                                  resultIDs: result.toShow,
+                                                  preferredID: preferredWindowID,
+                                                  fallback: preferredWindow)
+                ?? visibleWindows.first(where: { !stateCache.floatingWindowIDs.contains($0.windowID) })
                 ?? visibleWindows.first {
-                best.focus()
+                best.focus(reassertIf: focusReassertionAllowed)
                 cursorManager.warpToCenter(of: best)
                 focusController.recordFocus(best.windowID, reason: "switchWorkspace-already-visible")
                 updateFocusBorder(best)
@@ -102,18 +111,7 @@ final class WorkspaceOrchestrator {
             return
         }
 
-        // batch: hide old + restore floating new in one tight pass
-        for wid in result.toHide {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
-                workspaceManager.hideInCorner(w, on: result.screen)
-            }
-        }
-        for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                workspaceManager.restoreFloatingFrame(w)
-            }
-        }
+        applyWorkspaceVisibility(result, windows: allWindows)
 
         // retile immediately — no delay between hide and show
         tileAllVisibleSpaces()
@@ -122,8 +120,12 @@ final class WorkspaceOrchestrator {
         // any floating window before giving up. only warp+hide if truly empty.
         let newWorkspaceWindows = allWindows.filter { result.toShow.contains($0.windowID) }
         let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }
-        if let best = tiled ?? newWorkspaceWindows.first {
-            best.focus()
+        if let best = resolvedPreferredWindow(in: newWorkspaceWindows,
+                                              resultIDs: result.toShow,
+                                              preferredID: preferredWindowID,
+                                              fallback: preferredWindow)
+            ?? tiled ?? newWorkspaceWindows.first {
+            best.focus(reassertIf: focusReassertionAllowed)
             cursorManager.warpToCenter(of: best)
             focusController.recordFocus(best.windowID, reason: "switchWorkspace-after-show")
             updateFocusBorder(best)
@@ -134,6 +136,50 @@ final class WorkspaceOrchestrator {
         }
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
+    }
+
+    /// Change workspace visibility without activating or focusing a window.
+    /// The caller supplies hidden/minimized AX candidates and immediately
+    /// tiles that snapshot before asking macOS to reveal the selected app.
+    @discardableResult
+    func prepareWorkspaceForReveal(_ number: Int, windows: [HyprWindow]) -> Bool {
+        guard workspaceManager.homeScreenForWorkspace(number) != nil else { return false }
+        suppressions.suppress("workspace-transition", for: 1.5)
+        suppressions.suppress("activation-switch", for: 0.5)
+        suppressions.suppress("mouse-focus", for: 0.15)
+        let result = workspaceManager.switchWorkspace(number, cursorScreen: screenUnderCursor())
+        if !result.alreadyVisible {
+            applyWorkspaceVisibility(result, windows: windows)
+            NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
+        }
+        return workspaceManager.isWorkspaceVisible(number)
+    }
+
+    private func applyWorkspaceVisibility(_ result: WorkspaceManager.SwitchResult,
+                                          windows: [HyprWindow]) {
+        let windowsByID = Dictionary(windows.map { ($0.windowID, $0) },
+                                     uniquingKeysWith: { _, latest in latest })
+        for wid in result.toHide {
+            if let w = windowsByID[wid] ?? stateCache.cachedWindows[wid] {
+                if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
+                workspaceManager.hideInCorner(w, on: result.screen)
+            }
+        }
+        for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
+            if let w = windowsByID[wid] ?? stateCache.cachedWindows[wid] {
+                workspaceManager.restoreFloatingFrame(w)
+            }
+        }
+    }
+
+    private func resolvedPreferredWindow(in visibleWindows: [HyprWindow],
+                                         resultIDs: Set<CGWindowID>,
+                                         preferredID: CGWindowID?,
+                                         fallback: HyprWindow?) -> HyprWindow? {
+        guard let preferredID, resultIDs.contains(preferredID) else { return nil }
+        return visibleWindows.first { $0.windowID == preferredID }
+            ?? (fallback?.windowID == preferredID ? fallback : nil)
+            ?? stateCache.cachedWindows[preferredID]
     }
 
     // MARK: - move focused window to workspace

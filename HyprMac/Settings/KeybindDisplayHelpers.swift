@@ -80,7 +80,7 @@ extension Keybind {
         case .toggleFloating:               return "Toggle Floating"
         case .toggleSplit:                  return "Toggle Split Direction"
         case .showKeybinds:                 return "Show Keybind Overlay"
-        case .launchApp(let b):             return "Launch \(appDisplayName(for: b))"
+        case .launchApp(let b):             return "Open \(appDisplayName(for: b)) with HyprMac"
         case .focusMenuBar:                 return "Focus Menu Bar"
         case .focusFloating:                return "Cycle Floating Windows"
         case .closeWindow:                  return "Close Window"

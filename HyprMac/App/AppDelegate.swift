@@ -24,6 +24,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
+        if #available(macOS 15.0, *) {
+            // Refresh dynamic app-entity phrases on launch. Spotlight owns
+            // ranking and Quick Keys; this only publishes the public action.
+            HyprMacAppShortcuts.updateAppShortcutParameters()
+        }
+
         hyprLog(.debug, .lifecycle, "bundle: \(Bundle.main.bundleIdentifier ?? "?")")
         hyprLog(.debug, .lifecycle, "AXIsProcessTrusted=\(AXIsProcessTrusted())")
 
@@ -74,9 +80,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// version-bump welcome decision.
     func startWindowManager() {
         let config = UserConfig.shared
-        windowManager = WindowManager(config: config)
+        let manager = WindowManager(config: config)
+        windowManager = manager
         if config.enabled {
-            windowManager?.start()
+            manager.start()
         }
         checkFirstLaunchOrUpdate()
     }

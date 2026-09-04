@@ -111,6 +111,21 @@ class TilingEngine {
         trees[TilingKey(workspace: workspace, screen: screen)]
     }
 
+    /// Predict one incoming tile without adding a fake window or changing
+    /// the live BSP tree. The caller writes only changed sibling frames and
+    /// later feeds the real window through ordinary discovery and tiling.
+    func planApplicationLaunch(onWorkspace workspace: Int, screen: NSScreen,
+                               estimatedMinimumSize: CGSize) -> LaunchLayoutPlan? {
+        let existing = trees[TilingKey(workspace: workspace, screen: screen)] ?? BSPTree()
+        return layoutEngine.planLaunchReservation(
+            in: existing,
+            maxDepth: maxDepth(for: screen),
+            rect: displayManager.cgRect(for: screen),
+            incomingMinimumSize: estimatedMinimumSize,
+            minimumSize: { [self] in minimumSize(for: $0) }
+        )
+    }
+
     /// Reconcile `trees` with the current monitor topology.
     ///
     /// When a screen is disconnected (e.g., laptop lid close, dock unplug), every

@@ -2,6 +2,16 @@ import XCTest
 import Cocoa
 @testable import HyprMac
 
+private final class NoOpApplicationActivator: ApplicationActivating {
+    func activate(bundleID: String,
+                  source: ApplicationActivationSource,
+                  completion: @escaping (ApplicationActivationResult) -> Void)
+        -> ApplicationActivationHandle {
+        completion(.unavailable)
+        return ApplicationActivationHandle()
+    }
+}
+
 // pins the WindowManager.toggleSplit single-mutation behavior. with animation
 // stripped, the dispatcher just calls tilingEngine.toggleSplit directly — but
 // the regression test stays as a guard against future reintroduction of a
@@ -20,7 +30,7 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
     private var accessibility: AccessibilityManager!
     private var cursorManager: CursorManager!
     private var keybindOverlay: KeybindOverlayController!
-    private var appLauncher: AppLauncherManager!
+    private var appLauncher: ApplicationActivating!
     private var workspaceOrchestrator: WorkspaceOrchestrator!
     private var floatingController: FloatingWindowController!
     private var dispatcher: ActionDispatcher!
@@ -51,7 +61,7 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
         accessibility = AccessibilityManager()
         cursorManager = CursorManager()
         keybindOverlay = KeybindOverlayController()
-        appLauncher = AppLauncherManager()
+        appLauncher = NoOpApplicationActivator()
 
         workspaceManager = WorkspaceManager(displayManager: displayManager)
         tilingEngine = TilingEngine(displayManager: displayManager)

@@ -39,6 +39,7 @@ struct KeybindsSettingsView: View {
         VStack(spacing: HyprSpacing.lg) {
             headerRow
             hyprHeroPanel
+            spotlightPanel
 
             ForEach(grouped, id: \.category) { group in
                 HyprPanel(group.category.rawValue) {
@@ -109,7 +110,7 @@ struct KeybindsSettingsView: View {
 
             Menu {
                 Button("Keybind…") { showingAddKeybind = true }
-                Button("App launcher…") { showingAddLauncher = true }
+                Button("Open app with HyprMac…") { showingAddLauncher = true }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "plus")
@@ -193,6 +194,52 @@ struct KeybindsSettingsView: View {
             RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
                 .strokeBorder(Color.hyprCyan.opacity(0.22), lineWidth: 1)
         )
+    }
+
+    // MARK: Spotlight
+
+    private var spotlightPanel: some View {
+        HyprPanel("Spotlight") {
+            HStack(alignment: .top, spacing: HyprSpacing.md) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(Color.hyprCyan)
+                    .frame(width: 26)
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Open App with HyprMac")
+                        .font(.hyprBody)
+                        .foregroundStyle(Color.hyprTextPrimary)
+
+                    if #available(macOS 26.0, *) {
+                        Text("Search for this action in Spotlight, choose an application, and run it. Spotlight learns from use and lets you assign its own Quick Key from the action menu.")
+                            .font(.hyprCaption)
+                            .foregroundStyle(Color.hyprTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Text("Quick Keys are managed by macOS. Apple does not provide apps with a public API to assign or change them here.")
+                            .font(.hyprCaption)
+                            .foregroundStyle(Color.hyprTextTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text("Direct App Actions in Spotlight require macOS Tahoe 26 or later. The app hotkeys below use the same HyprMac activation path on this Mac.")
+                            .font(.hyprCaption)
+                            .foregroundStyle(Color.hyprTextSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                Spacer(minLength: HyprSpacing.sm)
+
+                Link(
+                    "Quick Key help",
+                    destination: URL(string: "https://support.apple.com/guide/mac-help/mchl4953dfeb/mac")!
+                )
+                .font(.hyprCaption)
+            }
+            .padding(.horizontal, HyprSpacing.md)
+            .padding(.vertical, HyprSpacing.md)
+        }
     }
 }
 

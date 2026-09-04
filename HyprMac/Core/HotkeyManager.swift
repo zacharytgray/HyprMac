@@ -34,6 +34,11 @@ class HotkeyManager {
     /// Fires for every recognized chord (Hypr + bound key).
     var onAction: ((Action) -> Void)?
 
+    /// Ordinary typing/Cmd-Tab supersedes pending app activation. Matched
+    /// chords dispatch through onAction instead, so a launch hotkey cannot
+    /// cancel the request it just started.
+    var onPassthroughKeyDown: ((TimeInterval) -> Void)?
+
     /// Fires when the Hypr key transitions from up to down.
     var onHyprKeyDown: (() -> Void)?
 
@@ -264,6 +269,10 @@ class HotkeyManager {
             return nil
         }
 
+        let eventTimestamp = TimeInterval(event.timestamp) / 1_000_000_000
+        DispatchQueue.main.async { [weak self] in
+            self?.onPassthroughKeyDown?(eventTimestamp)
+        }
         return event
     }
 

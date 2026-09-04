@@ -4,12 +4,19 @@
 
 import Cocoa
 
+/// A temporary layout proposal; no placeholder window enters the BSP tree.
+struct LaunchLayoutPlan {
+    let siblingLayouts: [(HyprWindow, CGRect)]
+    let reservedFrame: CGRect
+}
+
 /// Geometric helpers for the tiling subsystem.
 ///
-/// Pure with respect to AX and animation. The only impure surface is
-/// `fittingLeaf` / `smartInsertFitting`, which need to look up
-/// min-sizes for windows already in the tree; callers pass that lookup
-/// in as a closure so this type does not depend on `MinSizeMemory`.
+/// Pure with respect to AX and animation. Callers supply minimum-size
+/// lookups so this type does not depend on `MinSizeMemory`. Smart insertion
+/// changes the tree; reservation planning temporarily normalizes its knobs
+/// and restores them before returning. Both run synchronously on the tree
+/// owner's queue, with no concurrent tree readers or mutations.
 struct LayoutEngine {
     let gapSize: CGFloat
     let outerPadding: CGFloat
@@ -97,6 +104,70 @@ struct LayoutEngine {
             }
         }
         return nil
+    }
+
+    /// Preview a cold-launch insertion before a real window exists. The
+    /// caller may move siblings, but must still validate the actual window's
+    /// minimum size and membership before revealing it. This conservative
+    /// midpoint proposal is not a promise of the final adaptive layout.
+    func planLaunchReservation(in tree: BSPTree,
+                               maxDepth: Int,
+                               rect: CGRect,
+                               incomingMinimumSize: CGSize,
+                               minimumSize: (HyprWindow?) -> CGSize) -> LaunchLayoutPlan? {
+        let slack = TilingConfig.rectComparisonSlackPx
+        func fits(_ size: CGSize, in frame: CGRect) -> Bool {
+            size.width.isFinite && size.height.isFinite
+                && size.width >= 0 && size.height >= 0
+                && frame.origin.x.isFinite && frame.origin.y.isFinite
+                && frame.width.isFinite && frame.height.isFinite
+                && frame.width > 0 && frame.height > 0
+                && size.width <= frame.width + slack
+                && size.height <= frame.height + slack
+        }
+
+        guard gapSize.isFinite, gapSize >= 0,
+              outerPadding.isFinite, outerPadding >= 0,
+              rect.width > 2 * outerPadding,
+              rect.height > 2 * outerPadding else { return nil }
+        let padded = rect.insetBy(dx: outerPadding, dy: outerPadding)
+        guard fits(incomingMinimumSize, in: padded) else { return nil }
+        if tree.root.isEmpty {
+            return LaunchLayoutPlan(siblingLayouts: [], reservedFrame: padded)
+        }
+
+        // Structural insertion clears user ratios, then starts its layout at
+        // default ratios. Reuse the tree's reversible knob snapshot without
+        // creating windows, making AX calls, or changing topology.
+        let saved = tree.snapshot()
+        defer { tree.restore(saved) }
+        tree.root.clearUserSetRatios()
+        tree.root.resetSplitRatios()
+        // insert() clears the selected leaf's override. Ignore stale leaf
+        // overrides during selection as well; internal overrides survive.
+        for leaf in tree.root.allLeavesRightToLeft() {
+            leaf.splitOverride = nil
+        }
+
+        let proposedMinimum: (HyprWindow?) -> CGSize = { window in
+            window == nil ? incomingMinimumSize : minimumSize(window)
+        }
+        guard let leaf = fittingLeaf(for: nil, in: tree, maxDepth: maxDepth,
+                                     rect: rect, minimumSize: proposedMinimum),
+              let tenant = leaf.window,
+              let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding)
+        else { return nil }
+        let direction: SplitDirection = leafRect.width >= leafRect.height ? .horizontal : .vertical
+        let (tenantFrame, reservedFrame) = splitRects(leafRect, dir: direction)
+        guard fits(incomingMinimumSize, in: reservedFrame) else { return nil }
+
+        let siblings = tree.layout(in: rect, gap: gapSize, padding: outerPadding).map { window, frame in
+            (window, window === tenant ? tenantFrame : frame)
+        }
+        // pairFits permits unequal ratios; a reservation promises the exact
+        // midpoint rectangles, so validate every sibling after normalization.
+        guard siblings.allSatisfy({ fits(minimumSize($0.0), in: $0.1) }) else { return nil }
+        return LaunchLayoutPlan(siblingLayouts: siblings, reservedFrame: reservedFrame)
     }
 
     /// Smart-insert via `fittingLeaf`. Returns false if no leaf accepts the
