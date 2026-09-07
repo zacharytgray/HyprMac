@@ -400,7 +400,9 @@ class BSPTree {
     // MARK: - snapshot / restore
 
     /// Opaque snapshot of every per-node knob (window, splitRatio, userSetRatio,
-    /// splitOverride). Pair with `restore(_:)` to scope a speculative mutation —
+    /// splitOverride, and both halves of the ratio memory: the saved boundary a
+    /// leaf carries and the pending restore a fresh split is waiting on).
+    /// Pair with `restore(_:)` to scope a speculative mutation —
     /// e.g., `canSwapWindows` mutates the tree to test a hypothetical layout
     /// and rewinds via the snapshot.
     ///
@@ -416,6 +418,11 @@ class BSPTree {
             let userSetRatio: Bool
             let splitOverride: SplitDirection?
             let window: HyprWindow?
+            let savedSplitRatio: CGFloat?
+            let savedChildWasLeft: Bool?
+            let savedSplitOverride: SplitDirection?
+            let pendingSplitRatio: CGFloat?
+            let pendingSplitOverride: SplitDirection?
         }
     }
 
@@ -426,7 +433,12 @@ class BSPTree {
                                              splitRatio: node.splitRatio,
                                              userSetRatio: node.userSetRatio,
                                              splitOverride: node.splitOverride,
-                                             window: node.window))
+                                             window: node.window,
+                                             savedSplitRatio: node.savedSplitRatio,
+                                             savedChildWasLeft: node.savedChildWasLeft,
+                                             savedSplitOverride: node.savedSplitOverride,
+                                             pendingSplitRatio: node.pendingSplitRatio,
+                                             pendingSplitOverride: node.pendingSplitOverride))
             if let left = node.left { walk(left) }
             if let right = node.right { walk(right) }
         }
@@ -440,6 +452,11 @@ class BSPTree {
             state.node.userSetRatio = state.userSetRatio
             state.node.splitOverride = state.splitOverride
             state.node.window = state.window
+            state.node.savedSplitRatio = state.savedSplitRatio
+            state.node.savedChildWasLeft = state.savedChildWasLeft
+            state.node.savedSplitOverride = state.savedSplitOverride
+            state.node.pendingSplitRatio = state.pendingSplitRatio
+            state.node.pendingSplitOverride = state.pendingSplitOverride
         }
     }
 }

@@ -392,6 +392,8 @@ class TilingEngine {
             t.root.clearUserSetRatios()
             t.root.resetSplitRatios()
         }
+        t.root.applySavedRatios()
+
         return TileMembershipResult(key: key, tree: t, rect: rect, insertedWindows: insertedWindows)
     }
 
@@ -495,6 +497,8 @@ class TilingEngine {
         }
 
         t.root.resetSplitRatios()
+        t.root.applySavedRatios()
+
         let layouts = t.layout(in: rect, gap: gapSize, padding: outerPadding)
         let conflicts = applyLayout(layouts)
         if !conflicts.isEmpty {

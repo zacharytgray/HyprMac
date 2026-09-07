@@ -26,8 +26,10 @@ ratios would put the layout math into states it is not designed for.
 
 Each split picks the longer axis of the parent rect. By default the
 new window goes on the right (horizontal split) or bottom (vertical
-split). The pattern produces the characteristic dwindle spiral on
-wide monitors:
+split); the one exception is a slot restoring a remembered boundary,
+where the new window takes the side the old one vacated (see
+**Ratio memory**). The pattern produces the characteristic dwindle
+spiral on wide monitors:
 
 ```
    +---------+
@@ -44,6 +46,38 @@ wide monitors:
 `togglesplit` (`Hypr+J`) overrides the dwindle direction on the
 focused leaf's parent via `splitOverride`. The override survives
 until the next sibling restructure (insert / remove on that node).
+
+## Ratio memory
+
+A native tab switch or a Cmd-H looks like a close followed by an open
+a poll or two later. Without help, the window comes back at 50/50 and
+the user's manual resize is gone.
+
+When a leaf leaves a split, `BSPNode.remove` promotes the sibling and,
+if the vanishing split was user-set and the sibling is a leaf, records
+the boundary on it: `savedSplitRatio`, `savedChildWasLeft`, and
+`savedSplitOverride`. The next `insert` on that leaf puts the new
+window on the side the old one vacated and stashes the ratio in
+`pendingSplitRatio` / `pendingSplitOverride`.
+`TilingEngine.updateTreeMembership` calls `applySavedRatios` last, after
+`clearUserSetRatios` and `resetSplitRatios`, so the restored boundary
+survives the reset and comes back flagged `userSetRatio`.
+
+Three limits are deliberate:
+
+- **Only user-set ratios.** `adjustAxisRatio` writes min-size fudges
+  without setting `userSetRatio`, and removals run before
+  `resetSplitRatios`. Remembering those would pin a fudge forever.
+- **Only leaves.** An internal sibling already carries its own split.
+  Saving the outer ratio onto it would push the boundary into an
+  unrelated pair of windows.
+- **Only the pending fields are consumed.** A node that inherited a
+  leaf's saved boundary on the way up is never a restore target, so a
+  promoted subtree keeps the split it already had.
+
+The memory has no expiry, so a Cmd-H and an unhide seconds later both
+work. Whichever window next lands in that slot takes the boundary,
+which is the intended trade: the slot is remembered, not the window.
 
 ## Smart insert
 
@@ -217,6 +251,14 @@ on a 1200 px monitor is a legitimate split, not a comfort
 violation. The behavior is acceptable for now; future work would
 either learn a per-app comfort minimum from accepted layouts or
 expose a per-app override.
+
+### Restored ratio versus the smart-insert fit check
+
+Smart insert judges whether a leaf has room by splitting its rect
+50/50, but a restored boundary is applied afterwards by
+`applySavedRatios`. A remembered 0.85 can therefore starve the small
+side of a slot that the fit check passed. This is the same exposure a
+manual resize already has, so it is left alone.
 
 ### Tiling tree keying
 

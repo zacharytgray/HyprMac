@@ -49,6 +49,37 @@ class BSPNode {
     var left: BSPNode?
     var right: BSPNode?
 
+    /// Boundary a leaf remembers after its sibling left the split.
+    /// Written by `remove` on the promoted node, but only when the
+    /// vanishing split was user-set and the promoted node is a leaf.
+    /// Consumed by `insert` when this leaf splits again. Persists
+    /// across polls, so a Cmd-H then unhide seconds later still lands
+    /// on the old boundary.
+    var savedSplitRatio: CGFloat?
+
+    /// Which side the departed window occupied. `true` means it was
+    /// the left/top child, so the next window inserted here takes the
+    /// left/top slot instead of the dwindle default. Always written
+    /// and cleared together with `savedSplitRatio`.
+    var savedChildWasLeft: Bool?
+
+    /// The `togglesplit` override the vanishing split carried, so a
+    /// flipped axis comes back with the ratio. `nil` means the split
+    /// had no override. Written and cleared with `savedSplitRatio`.
+    var savedSplitOverride: SplitDirection?
+
+    /// Ratio the node should adopt once it has children again. Set by
+    /// `insert` on the node it just split, consumed by
+    /// `applySavedRatios` after the reset pass. Kept separate from
+    /// `savedSplitRatio` so an internal node that inherited a leaf's
+    /// memory can never be mistaken for a restore target.
+    var pendingSplitRatio: CGFloat?
+
+    /// Override to restore alongside `pendingSplitRatio`. `nil` is a
+    /// real value here (the old split had no override), so
+    /// `pendingSplitRatio` is the gate for both.
+    var pendingSplitOverride: SplitDirection?
+
     /// `true` for terminal nodes — see file-level invariants.
     var isLeaf: Bool { window != nil || (left == nil && right == nil) }
 
@@ -72,20 +103,47 @@ class BSPNode {
     /// `splitRatio`, `splitOverride`, and `userSetRatio` to defaults
     /// so the freshly-promoted internal node does not inherit stale
     /// knobs. No-op on internal nodes.
+    ///
+    /// When this leaf carries a saved boundary (its sibling left a
+    /// user-set split earlier), the new window takes the slot the old
+    /// one vacated and the ratio plus override are stashed in the
+    /// pending fields for `applySavedRatios`.
     func insert(_ newWindow: HyprWindow) {
         guard isLeaf else { return }
 
         let existing = self.window
+
+        // the three saved fields are only ever written together, so
+        // savedSplitRatio alone says whether a restore is pending
+        let restoredRatio = self.savedSplitRatio
+        let restoredOverride = self.savedSplitOverride
+        let newWindowGoesLeft = restoredRatio != nil && self.savedChildWasLeft == true
+
         self.window = nil
         self.splitRatio = TilingConfig.defaultRatio
         self.userSetRatio = false
         self.splitOverride = nil
+        self.savedSplitRatio = nil
+        self.savedChildWasLeft = nil
+        self.savedSplitOverride = nil
+        self.pendingSplitRatio = nil
+        self.pendingSplitOverride = nil
 
-        self.left = BSPNode(window: existing)
+        if newWindowGoesLeft {
+            self.left = BSPNode(window: newWindow)
+            self.right = BSPNode(window: existing)
+        } else {
+            // dwindle default: new window right/bottom
+            self.left = BSPNode(window: existing)
+            self.right = BSPNode(window: newWindow)
+        }
         self.left?.parent = self
-
-        self.right = BSPNode(window: newWindow)
         self.right?.parent = self
+
+        if let ratio = restoredRatio {
+            self.pendingSplitRatio = ratio
+            self.pendingSplitOverride = restoredOverride
+        }
     }
 
     /// Remove this leaf and promote its sibling into the parent slot.
@@ -93,10 +151,25 @@ class BSPNode {
     /// The sibling's subtree, ratio, override, and user-set flag all
     /// carry upward — the parent effectively becomes the sibling.
     /// No-op on the root; `BSPTree.remove` handles root replacement.
+    ///
+    /// A leaf sibling also remembers the boundary it just lost, so the
+    /// next window to land in that slot restores it (see
+    /// `savedSplitRatio`).
     func remove() {
         guard let parent = parent else { return }
 
-        let sibling = (parent.left === self) ? parent.right : parent.left
+        let wasLeft = parent.left === self
+        let sibling = wasLeft ? parent.right : parent.left
+
+        // only remember a boundary the user set by hand. transient ratios
+        // written by adjustAxisRatio for min-size conflicts never set the
+        // flag, and pinning one would make a fudge permanent.
+        //
+        // only a leaf can hold the memory. an internal sibling already has
+        // its own split, and the outer ratio would leak into it on the way up.
+        let remembers = parent.userSetRatio && sibling?.isLeaf == true
+        let lostRatio = parent.splitRatio
+        let lostOverride = parent.splitOverride
 
         parent.window = sibling?.window
         parent.left = sibling?.left
@@ -104,6 +177,19 @@ class BSPNode {
         parent.splitRatio = sibling?.splitRatio ?? TilingConfig.defaultRatio
         parent.userSetRatio = sibling?.userSetRatio ?? false
         parent.splitOverride = sibling?.splitOverride
+        parent.pendingSplitRatio = sibling?.pendingSplitRatio
+        parent.pendingSplitOverride = sibling?.pendingSplitOverride
+
+        if remembers {
+            parent.savedSplitRatio = lostRatio
+            parent.savedChildWasLeft = wasLeft
+            parent.savedSplitOverride = lostOverride
+        } else {
+            // the promoted node keeps whatever it was already remembering
+            parent.savedSplitRatio = sibling?.savedSplitRatio
+            parent.savedChildWasLeft = sibling?.savedChildWasLeft
+            parent.savedSplitOverride = sibling?.savedSplitOverride
+        }
 
         parent.left?.parent = parent
         parent.right?.parent = parent
@@ -114,6 +200,25 @@ class BSPNode {
     func find(_ target: HyprWindow) -> BSPNode? {
         if window == target { return self }
         return left?.find(target) ?? right?.find(target)
+    }
+
+    /// Apply the boundary `insert` stashed on the node it just split,
+    /// then recurse into children. Called after clearUserSetRatios +
+    /// resetSplitRatios so a restored ratio survives the reset.
+    ///
+    /// Only the pending fields are consumed here, so a node that
+    /// merely inherited a leaf's `savedSplitRatio` on the way up is
+    /// never a target.
+    func applySavedRatios() {
+        if !isLeaf, let ratio = pendingSplitRatio {
+            self.splitRatio = ratio
+            self.userSetRatio = true
+            self.splitOverride = pendingSplitOverride
+            self.pendingSplitRatio = nil
+            self.pendingSplitOverride = nil
+        }
+        left?.applySavedRatios()
+        right?.applySavedRatios()
     }
 
     /// Reset every internal node's `splitRatio` to the default, except
