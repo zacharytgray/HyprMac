@@ -316,19 +316,9 @@ private struct FailableKeybind: Decodable {
             keybind = try Keybind(from: decoder)
         } catch {
             keybind = nil
-            hyprLog(.warning, .config,
-                    "skipping keybind that failed to decode (action '\(Self.actionKey(decoder))')")
+            // the action key is hand-editable text, so it stays out of the log
+            hyprLog(.warning, .config, "skipping keybind with an unknown or malformed action")
         }
-    }
-
-    // peek at the action's case key so the log names the culprit. truncated
-    // because the key comes from a file the user can hand-edit.
-    private static func actionKey(_ decoder: Decoder) -> String {
-        guard let outer = try? decoder.container(keyedBy: AnyKey.self),
-              let key = AnyKey(stringValue: "action"),
-              let inner = try? outer.nestedContainer(keyedBy: AnyKey.self, forKey: key),
-              let first = inner.allKeys.first else { return "unknown" }
-        return String(first.stringValue.prefix(40))
     }
 }
 

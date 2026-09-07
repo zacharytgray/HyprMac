@@ -207,9 +207,7 @@ extension Action: Codable {
 
 /// Dynamic `CodingKey` used to read the action's outer case-name key
 /// without pre-declaring every accepted alias as a `CodingKey` case.
-/// Also used by `SavedConfig`'s decoder to name a skipped keybind's
-/// action in the log.
-struct AnyKey: CodingKey {
+private struct AnyKey: CodingKey {
     var stringValue: String
     var intValue: Int? { nil }
     init?(stringValue: String) { self.stringValue = stringValue }

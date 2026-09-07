@@ -83,13 +83,12 @@ alias entry rather than break the wire format.
 
 ## `AnyKey`
 
-`Action.swift` declares a small `AnyKey: CodingKey` type that lets
-the decoder read the outer case-name key without pre-declaring
-every accepted alias as a `CodingKey` case. It is five lines and
-earns its keep by enabling the alias-map lookup. `SavedConfig`'s
-decoder reuses it to name a skipped keybind's action in the log,
-which is why it is internal rather than file-private. If it picks
-up a third user, it can move to `Shared/`.
+`Action.swift` declares a small file-private `AnyKey: CodingKey`
+type that lets the decoder read the outer case-name key without
+pre-declaring every accepted alias as a `CodingKey` case. It is
+five lines and earns its keep by enabling the alias-map lookup. If
+a similar dynamic-key reader appears elsewhere, it can move to
+`Shared/`.
 
 ## Decoder tolerance
 
@@ -111,9 +110,9 @@ Malformed payloads are handled defensively rather than crashing.
 ## Per-element tolerance
 
 `SavedConfig` decodes its `keybinds` array one element at a time.
-An element that throws is skipped with a `.warning` log naming its
-action key; every other keybind and every other field decodes
-normally. The custom `init(from:)` lives in an extension in
+An element that throws is skipped with a `.warning` log (the
+action key itself stays out of the log because it is hand-editable
+text); every other keybind and every other field decodes normally. The custom `init(from:)` lives in an extension in
 `Persistence/ConfigStore.swift`, so the memberwise initializer
 still exists and `encode(to:)` is still synthesized. The wire
 format is untouched.
