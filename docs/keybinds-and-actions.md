@@ -100,25 +100,47 @@ Malformed payloads are handled defensively rather than crashing.
   in a hand-edited config does not take the app down.
 - **Action case**: a payload key that matches neither the canonical
   spelling nor an alias throws a `DecodingError.dataCorruptedError`.
-  At the top level the array decoder (synthesized for `[Keybind]`)
-  rejects the whole array on the first bad entry — see "Per-element
-  tolerance" below.
+  One `Keybind` either decodes exactly or not at all. The
+  containing `SavedConfig` then drops just that keybind. See
+  "Per-element tolerance" below.
 - **Optional `SavedConfig` fields**: missing fields decode as `nil`
   and the runtime applies the matching default from
   `UserConfigDefaults`.
 
-## Per-element tolerance (known limitation)
+## Per-element tolerance
 
-The `[Keybind]` array decode is the synthesized one — it throws on
-the first bad keybind and rejects every subsequent entry. A safer
-behavior — skip the bad keybind, keep the rest — is tracked but not
-implemented. The right place to add it is when `ConfigStore` grows
-a custom `loadSavedConfig` with explicit per-element decoding,
-likely as part of a future schema migration.
+`SavedConfig` decodes its `keybinds` array one element at a time.
+An element that throws is skipped with a `.warning` log (the
+action key itself stays out of the log because it is hand-editable
+text); every other keybind and every other field decodes normally. The custom `init(from:)` lives in an extension in
+`Persistence/ConfigStore.swift`, so the memberwise initializer
+still exists and `encode(to:)` is still synthesized. The wire
+format is untouched.
 
-`KeybindDecoderToleranceTests.testUnknownActionKeyThrows` pins the
-strict behavior so a regression to silent-skip would fail the
-suite.
+This matters because `config.json` is shared across machines over
+iCloud Drive. When a newer build adds an `Action` case and
+`UserConfig.mergeNewDefaults` injects its default keybind, an older
+build sharing the file meets a case key it has never heard of.
+Before per-element tolerance, that one unknown key threw, the
+`try?` in `ConfigStore.loadSavedConfig` returned `nil`, and the
+older machine silently reset gaps, colors, excluded bundles and
+every keybind to defaults, then pushed the reset back through
+iCloud on its next save.
+
+If every keybind is skipped, `keybinds` is empty and
+`UserConfig.mergeNewDefaults` repopulates the full default table,
+so the user gets working binds rather than none.
+
+Remaining caveat: an older build that skips a newer action and then
+saves writes the shared file without that keybind. The newer
+build's `mergeNewDefaults` re-injects the default bind on its next
+launch, but a *customized* chord for that action is lost. Nothing
+else in the config is touched.
+
+`KeybindDecoderToleranceTests` pins both halves:
+`testUnknownActionKeyThrows` for the strict single-keybind decode,
+and the `testSavedConfig...` cases for the skip-and-keep-going
+behavior plus the unchanged encoded key set.
 
 ## Schema versioning
 

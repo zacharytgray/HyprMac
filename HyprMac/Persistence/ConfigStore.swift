@@ -235,6 +235,93 @@ struct SavedConfig: Codable {
     let scratchpadRegionInset: CGFloat?
 }
 
+// MARK: - per-keybind decode tolerance
+
+// SavedConfig decodes its keybinds one element at a time, so one bad entry
+// can't take the whole config with it. config.json is shared between machines
+// over iCloud, so an older build will meet actions a newer build wrote and
+// knows nothing about. before this, a single unknown action key threw, the
+// `try?` in loadSavedConfig returned nil, and every setting on the older
+// machine reset to defaults. its next save then pushed the reset back out.
+//
+// the decoder lives in an extension so the memberwise init stays available to
+// callers and tests, and encoding stays synthesized: the wire format does not
+// change.
+extension SavedConfig {
+
+    enum CodingKeys: String, CodingKey {
+        case version, keybinds, gapSize, outerPadding, enabled
+        case focusFollowsMouse, hyprKey, excludedBundleIDs, showMenuBarIndicator
+        case maxSplitsPerMonitor, disabledMonitors
+        case showFocusBorder, focusBorderColorHex, floatingBorderColorHex
+        case dimInactiveWindows, dimIntensity, mouseHoverPollHz
+        case chromeFadeDurationSec, windowCornerRadius
+        case scratchpadTileByDefault, scratchpadRegionInset
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+
+        // keep every keybind that decodes; skip and log the rest. an empty
+        // result is fine: UserConfig.mergeNewDefaults re-injects the defaults.
+        var kept: [Keybind] = []
+        var arr = try c.nestedUnkeyedContainer(forKey: .keybinds)
+        while !arr.isAtEnd {
+            // decodeNil advances past a null element; decode() would not.
+            if (try? arr.decodeNil()) == true {
+                hyprLog(.warning, .config, "skipping null entry in keybinds")
+                continue
+            }
+            guard let element = try? arr.decode(FailableKeybind.self) else {
+                // shouldn't happen, FailableKeybind swallows its own errors.
+                // bail out rather than spin on an index that never advances.
+                hyprLog(.warning, .config, "stopped decoding keybinds early on an unreadable element")
+                break
+            }
+            if let kb = element.keybind { kept.append(kb) }
+        }
+        self.keybinds = kept
+
+        self.version = try c.decodeIfPresent(Int.self, forKey: .version)
+        self.gapSize = try c.decode(CGFloat.self, forKey: .gapSize)
+        self.outerPadding = try c.decode(CGFloat.self, forKey: .outerPadding)
+        self.enabled = try c.decode(Bool.self, forKey: .enabled)
+        self.focusFollowsMouse = try c.decodeIfPresent(Bool.self, forKey: .focusFollowsMouse)
+        self.hyprKey = try c.decodeIfPresent(HyprKey.self, forKey: .hyprKey)
+        self.excludedBundleIDs = try c.decodeIfPresent([String].self, forKey: .excludedBundleIDs)
+        self.showMenuBarIndicator = try c.decodeIfPresent(Bool.self, forKey: .showMenuBarIndicator)
+        self.maxSplitsPerMonitor = try c.decodeIfPresent([String: Int].self, forKey: .maxSplitsPerMonitor)
+        self.disabledMonitors = try c.decodeIfPresent([String].self, forKey: .disabledMonitors)
+        self.showFocusBorder = try c.decodeIfPresent(Bool.self, forKey: .showFocusBorder)
+        self.focusBorderColorHex = try c.decodeIfPresent(String.self, forKey: .focusBorderColorHex)
+        self.floatingBorderColorHex = try c.decodeIfPresent(String.self, forKey: .floatingBorderColorHex)
+        self.dimInactiveWindows = try c.decodeIfPresent(Bool.self, forKey: .dimInactiveWindows)
+        self.dimIntensity = try c.decodeIfPresent(Double.self, forKey: .dimIntensity)
+        self.mouseHoverPollHz = try c.decodeIfPresent(Int.self, forKey: .mouseHoverPollHz)
+        self.chromeFadeDurationSec = try c.decodeIfPresent(Double.self, forKey: .chromeFadeDurationSec)
+        self.windowCornerRadius = try c.decodeIfPresent(CGFloat.self, forKey: .windowCornerRadius)
+        self.scratchpadTileByDefault = try c.decodeIfPresent(Bool.self, forKey: .scratchpadTileByDefault)
+        self.scratchpadRegionInset = try c.decodeIfPresent(CGFloat.self, forKey: .scratchpadRegionInset)
+    }
+}
+
+// one keybind, or nil when it doesn't decode. catching the error in here is
+// the whole trick: the array's decode() call succeeds, so the unkeyed
+// container moves past the bad element instead of throwing out of the array.
+private struct FailableKeybind: Decodable {
+    let keybind: Keybind?
+
+    init(from decoder: Decoder) throws {
+        do {
+            keybind = try Keybind(from: decoder)
+        } catch {
+            keybind = nil
+            // the action key is hand-editable text, so it stays out of the log
+            hyprLog(.warning, .config, "skipping keybind with an unknown or malformed action")
+        }
+    }
+}
+
 // monitor-specific settings — stored locally, never synced via iCloud
 struct SavedMonitorConfig: Codable {
     let maxSplitsPerMonitor: [String: Int]?
