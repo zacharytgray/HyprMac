@@ -64,11 +64,13 @@
 		87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */; };
 		8C3306FE7A9CD13A28CA5C87 /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49CB059612127CA6F3E7766 /* SettingsComponents.swift */; };
 		94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CD84800A82DD5466833975C /* MouseTrackingManager.swift */; };
+		953A5EFB15AA059279D52EFA /* RatioMemoryEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091BAD650A42E0A20E0E19BD /* RatioMemoryEngineTests.swift */; };
 		96D7C04382452A795D840940 /* FocusBrackets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8680AE34CAB9F0BAA3C9D8F0 /* FocusBrackets.swift */; };
 		96FC11AF63A197C78BBE9E40 /* KeybindEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */; };
 		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		A34F6208901205B1100F08AE /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
+		A78F1FAAB49BEEEAE2A1844D /* ResizeDirectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E97E23BFC7B85A7E6BF506 /* ResizeDirectionTests.swift */; };
 		AC01521BE9F2030CF901A2C9 /* DragSwapHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */; };
 		B44C416E3958C82361083048 /* KeybindOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7BD70717FD497B0899FBCE5 /* KeybindOverlayController.swift */; };
 		B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
@@ -119,6 +121,7 @@
 		02E56F3B2C9834C78368323D /* DragManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragManager.swift; sourceTree = "<group>"; };
 		05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngine.swift; sourceTree = "<group>"; };
 		084CC77D9BC9594A5E7DE366 /* FocusStateControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusStateControllerTests.swift; sourceTree = "<group>"; };
+		091BAD650A42E0A20E0E19BD /* RatioMemoryEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatioMemoryEngineTests.swift; sourceTree = "<group>"; };
 		0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindsSettingsView.swift; sourceTree = "<group>"; };
 		12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrepareLayoutMutationTests.swift; sourceTree = "<group>"; };
 		16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNodeTests.swift; sourceTree = "<group>"; };
@@ -152,6 +155,7 @@
 		5C0116BE6F796AC619B0BD6B /* CoordinateSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateSpace.swift; sourceTree = "<group>"; };
 		61E1DEE768A398E963AAB1CA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		63E30549B7EABECD4FCDBC0F /* BundleIDUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleIDUtils.swift; sourceTree = "<group>"; };
+		64E97E23BFC7B85A7E6BF506 /* ResizeDirectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResizeDirectionTests.swift; sourceTree = "<group>"; };
 		65F2F88E3A815333F6542EEA /* ColorPickerRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorPickerRow.swift; sourceTree = "<group>"; };
 		6B23E3313247FD77173D35DD /* DefaultKeybindsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultKeybindsTests.swift; sourceTree = "<group>"; };
 		6E4E656D3CA021B130775CC3 /* Keybind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keybind.swift; sourceTree = "<group>"; };
@@ -425,7 +429,9 @@
 				298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */,
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */,
+				091BAD650A42E0A20E0E19BD /* RatioMemoryEngineTests.swift */,
 				B508954B7CC67DE0AB417D2E /* RatioMemoryTests.swift */,
+				64E97E23BFC7B85A7E6BF506 /* ResizeDirectionTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
 				3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */,
 				DC08AAC03ABC15E772214598 /* ToggleSplitFallthroughRegressionTests.swift */,
@@ -677,7 +683,9 @@
 				15AB8B9331E6A03CDD991F3C /* LayoutEngineTests.swift in Sources */,
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */,
+				953A5EFB15AA059279D52EFA /* RatioMemoryEngineTests.swift in Sources */,
 				192896C26681E7F32D0A8EE3 /* RatioMemoryTests.swift in Sources */,
+				A78F1FAAB49BEEEAE2A1844D /* ResizeDirectionTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,
 				8456B287CD1B9AC9E86336E5 /* TileScratchpadTests.swift in Sources */,
 				860959AD6A92DB57753D655E /* ToggleSplitFallthroughRegressionTests.swift in Sources */,
@@ -868,7 +876,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = HyprMac/Info.plist;
@@ -876,7 +884,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.2;
+				MARKETING_VERSION = 0.11.1;
 				OTHER_LDFLAGS = (
 					"-F/System/Library/PrivateFrameworks",
 					"-framework",
@@ -895,7 +903,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 77;
+				CURRENT_PROJECT_VERSION = 81;
 				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = HyprMac/Info.plist;
@@ -903,7 +911,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.2;
+				MARKETING_VERSION = 0.11.1;
 				OTHER_LDFLAGS = (
 					"-F/System/Library/PrivateFrameworks",
 					"-framework",

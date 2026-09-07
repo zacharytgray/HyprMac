@@ -65,7 +65,6 @@ class TilingEngine {
 
     private let minSizes = MinSizeMemory()
 
-
     init(displayManager: DisplayManager) {
         self.displayManager = displayManager
     }
@@ -352,9 +351,7 @@ class TilingEngine {
         let currentIDs = Set(tileWindows.map { $0.windowID })
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
-        for w in treeWindows where !currentIDs.contains(w.windowID) {
-            t.remove(w)
-        }
+        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
 
         t.root.pruneEmptyNodes()
         // no compact on removal — BSPNode.remove promotes the sibling with
@@ -487,9 +484,7 @@ class TilingEngine {
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
         // membership diff: remove gone (sibling promotion keeps shape), insert new
-        for w in treeWindows where !currentIDs.contains(w.windowID) {
-            t.remove(w)
-        }
+        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
         t.root.pruneEmptyNodes()
         t.root.resetSplitRatios()
 

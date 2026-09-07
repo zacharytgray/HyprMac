@@ -30,7 +30,7 @@ final class RatioMemoryTests: XCTestCase {
         XCTAssertTrue(tree.root.userSetRatio)
     }
 
-    // MARK: - left child removed (exercises 1.0-ratio flip)
+    // MARK: - left child removed (new window takes the vacated left slot)
 
     func testRemoveLeftChildPreservesRatioOnReinsert() {
         let tree = BSPTree()
@@ -85,6 +85,8 @@ final class RatioMemoryTests: XCTestCase {
 
         XCTAssertNil(tree.root.savedSplitRatio,
                      "saved ratio should be consumed on apply, not linger")
+        XCTAssertNil(tree.root.pendingSplitRatio,
+                     "pending restore should be consumed on apply, not linger")
     }
 
     // MARK: - single window removal (root)
@@ -148,5 +150,131 @@ final class RatioMemoryTests: XCTestCase {
         insertAndApply(makeWindow(id: 4), into: tree)
         XCTAssertEqual(tree.root.splitRatio, 0.65, accuracy: 0.001,
                        "ratio should survive multiple remove/reinsert cycles")
+    }
+
+    // MARK: - the memory belongs to leaves only
+
+    func testPromotedSubtreeKeepsItsOwnInnerSplit() {
+        let tree = BSPTree()
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        let c = makeWindow(id: 3)
+        tree.insert(a)
+        tree.insert(b)
+        tree.insert(c)
+        // root(a | inner(b, c))
+
+        tree.root.splitRatio = 0.7
+        tree.root.userSetRatio = true
+        let inner = tree.root.right!
+        inner.splitRatio = 0.6
+        inner.userSetRatio = true
+
+        tree.remove(a)
+        tree.root.applySavedRatios()
+
+        XCTAssertEqual(tree.root.left?.window, b)
+        XCTAssertEqual(tree.root.right?.window, c)
+        XCTAssertEqual(tree.root.splitRatio, 0.6, accuracy: 0.001,
+                       "the promoted b|c split keeps its own boundary, not the outer 0.7")
+        XCTAssertNil(tree.root.savedSplitRatio,
+                     "an internal sibling never picks up the vanishing ratio")
+        XCTAssertNil(tree.root.pendingSplitRatio)
+    }
+
+    func testBothChildrenOfOneSplitRemovedDoesNotLeakOuterRatio() {
+        let tree = BSPTree()
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        let c = makeWindow(id: 3)
+        let d = makeWindow(id: 4)
+        tree.insert(a)
+        tree.insert(b)
+        tree.root.left?.insert(c)
+        tree.root.right?.insert(d)
+        // root(P(a, c) | Q(b, d))
+
+        tree.root.splitRatio = 0.7
+        tree.root.userSetRatio = true
+
+        // Cmd-H on a two-window app: both of P's leaves go in one pass
+        tree.remove(a)
+        tree.remove(c)
+        tree.root.applySavedRatios()
+
+        XCTAssertEqual(tree.root.left?.window, b)
+        XCTAssertEqual(tree.root.right?.window, d)
+        XCTAssertEqual(tree.root.splitRatio, TilingConfig.defaultRatio, accuracy: 0.001,
+                       "Q's own split must not inherit the outer 0.7")
+        XCTAssertFalse(tree.root.userSetRatio,
+                       "and must not be pinned as a user resize")
+    }
+
+    // MARK: - only user-set boundaries are remembered
+
+    func testTransientRatioIsNotRemembered() {
+        let tree = BSPTree()
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        tree.insert(a)
+        tree.insert(b)
+
+        // a min-size fudge from adjustAxisRatio never sets userSetRatio
+        tree.root.splitRatio = 0.8
+        XCTAssertFalse(tree.root.userSetRatio)
+
+        tree.remove(b)
+        XCTAssertNil(tree.root.savedSplitRatio, "a transient ratio is not worth remembering")
+
+        insertAndApply(makeWindow(id: 3), into: tree)
+
+        XCTAssertEqual(tree.root.splitRatio, TilingConfig.defaultRatio, accuracy: 0.001)
+        XCTAssertFalse(tree.root.userSetRatio,
+                       "a fudged ratio must not come back pinned as a user resize")
+    }
+
+    // MARK: - dwindle default without a memory
+
+    func testNewWindowStaysOnTheRightWithoutAMemory() {
+        let tree = BSPTree()
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        tree.insert(a)
+        tree.insert(b)
+
+        // no user ratio, so removing the left child saves nothing
+        tree.remove(a)
+        XCTAssertEqual(tree.root.window, b)
+
+        let c = makeWindow(id: 3)
+        insertAndApply(c, into: tree)
+
+        XCTAssertEqual(tree.root.left?.window, b)
+        XCTAssertEqual(tree.root.right?.window, c,
+                       "with nothing saved the new window keeps the dwindle default")
+    }
+
+    // MARK: - split override rides along with the ratio
+
+    func testSplitOverrideSurvivesRemoveAndResplit() {
+        let tree = BSPTree()
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        tree.insert(a)
+        tree.insert(b)
+
+        tree.root.splitRatio = 0.7
+        tree.root.userSetRatio = true
+        tree.root.splitOverride = .vertical
+
+        tree.remove(b)
+        XCTAssertNil(tree.root.splitOverride, "the promoted leaf has no split of its own")
+        XCTAssertEqual(tree.root.savedSplitOverride, .vertical)
+
+        insertAndApply(makeWindow(id: 3), into: tree)
+
+        XCTAssertEqual(tree.root.splitOverride, .vertical,
+                       "a togglesplit'd split comes back on the same axis")
+        XCTAssertEqual(tree.root.splitRatio, 0.7, accuracy: 0.001)
     }
 }
