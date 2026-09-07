@@ -76,6 +76,11 @@ class FocusBorder {
         static let errorFillAlpha: CGFloat = 0.12
     }
 
+    // The settled border keeps the active panel geometry, while an error
+    // flash uses its wider stroke. Refreshes must preserve whichever
+    // expansion was used when the focused border was last stamped.
+    private var focusedCornerRadiusExpansion = Tuning.activeBorderWidth / 2
+
     // resolved from config — call updateColor() when config changes
     var accentCGColor: CGColor = NSColor.controlAccentColor.cgColor
 
@@ -135,6 +140,7 @@ class FocusBorder {
         let shouldFadeIn = isFreshAppearance || isWindowSwitch
 
         let expansion = Tuning.activeBorderWidth / 2
+        focusedCornerRadiusExpansion = expansion
         let nsRect = panelRect(for: rect, expansion: expansion)
         let windowRadius = WindowCornerRadius.resolve(for: windowID)
 
@@ -198,13 +204,18 @@ class FocusBorder {
         CATransaction.setDisableActions(true)
         if let windowID = trackedWindowID, let layer = glowView?.layer {
             layer.cornerRadius = WindowCornerRadius.resolve(for: windowID)
-                + Tuning.activeBorderWidth / 2
+                + focusedCornerRadiusExpansion
         }
         for (windowID, border) in floatingPanels {
             border.glowView.layer?.cornerRadius = WindowCornerRadius.resolve(for: windowID)
                 + Tuning.floatingBorderWidth / 2
         }
         CATransaction.commit()
+    }
+
+    /// Synchronous style snapshot used by regression tests and diagnostics.
+    func currentFocusedBorderCornerRadius() -> CGFloat? {
+        glowView?.layer?.cornerRadius
     }
 
     /// Sync the floating-border panels to `frames`. Creates panels for
@@ -339,6 +350,7 @@ class FocusBorder {
         shakeTimer?.cancel()
 
         let expansion = Tuning.errorBorderWidth / 2
+        focusedCornerRadiusExpansion = expansion
         let nsRect = panelRect(for: rect, expansion: expansion)
         let windowRadius = WindowCornerRadius.resolve(for: windowID)
         let p: NSPanel

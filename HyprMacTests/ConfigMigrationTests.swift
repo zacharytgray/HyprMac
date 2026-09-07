@@ -10,6 +10,7 @@ import AppKit
 //   configs from hand-edited files or older releases must not crash)
 // - encoder omits the version field when nil, preserving the byte-equal
 //   contract for unchanged settings
+// - a nil corner-radius override stays omitted so OS defaults remain adaptive
 // - ConfigMigration.resolveMonitorConfig handles the local-only / migrated /
 //   embedded variants
 // - NSColor.fromHex returns nil + does not crash on malformed input
@@ -171,6 +172,29 @@ final class ConfigMigrationTests: XCTestCase {
     func testWindowCornerRadiusDefaultsPreservePreviousBehavior() {
         XCTAssertEqual(UserConfigDefaults.windowCornerRadius(forOSMajorVersion: 15), 10)
         XCTAssertEqual(UserConfigDefaults.windowCornerRadius(forOSMajorVersion: 26), 16)
+    }
+
+    func testUnsetWindowCornerRadiusTracksOSVersion() {
+        XCTAssertEqual(UserConfigDefaults.resolvedWindowCornerRadius(
+            override: nil, forOSMajorVersion: 15), 10)
+        XCTAssertEqual(UserConfigDefaults.resolvedWindowCornerRadius(
+            override: nil, forOSMajorVersion: 26), 16)
+    }
+
+    func testExplicitWindowCornerRadiusOverridesOSDefault() {
+        XCTAssertEqual(UserConfigDefaults.resolvedWindowCornerRadius(
+            override: 13, forOSMajorVersion: 15), 13)
+        XCTAssertEqual(UserConfigDefaults.resolvedWindowCornerRadius(
+            override: 13, forOSMajorVersion: 26), 13)
+    }
+
+    func testOSDefaultWindowCornerRadiusIsNotPersisted() throws {
+        let saved = SavedConfig.empty
+        XCTAssertNil(saved.windowCornerRadius)
+
+        let json = String(data: try JSONEncoder().encode(saved), encoding: .utf8)!
+        XCTAssertFalse(json.contains("\"windowCornerRadius\""),
+                       "OS-default mode must stay adaptive instead of pinning a resolved value: \(json)")
     }
 
     func testFromHexEmptyReturnsNil() {

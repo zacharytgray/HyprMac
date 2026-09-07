@@ -120,13 +120,21 @@ struct TilingSettingsView: View {
             }
 
             HyprRow("Corner radius", icon: "rectangle.roundedtop",
-                    subtitle: "Matches focus borders, brackets, and dim cut-outs.",
+                    subtitle: "Matches focus borders, brackets, and dim cut-outs. OS default adapts after macOS upgrades.",
                     divider: true) {
                 HStack(spacing: HyprSpacing.sm) {
-                    Slider(value: $config.windowCornerRadius, in: 0...32, step: 1)
+                    Slider(value: Binding(
+                        get: { config.windowCornerRadius },
+                        set: { config.windowCornerRadiusOverride = $0 }
+                    ), in: 0...32, step: 1)
                         .frame(width: 180)
                     HyprChip("\(Int(config.windowCornerRadius)) px")
                         .frame(width: 56, alignment: .trailing)
+                    Button("OS default") {
+                        config.windowCornerRadiusOverride = nil
+                    }
+                    .controlSize(.small)
+                    .disabled(config.windowCornerRadiusOverride == nil)
                 }
             }
 

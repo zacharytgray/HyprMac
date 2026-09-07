@@ -11,9 +11,8 @@ import Cocoa
 
 enum WindowCornerRadius {
 
-    /// Current user-selected radius. `UserConfigDefaults` preserves the
-    /// previous 16pt Tahoe / 10pt earlier-version behavior when the saved
-    /// config predates this setting.
+    /// Current effective radius: an explicit user override, or the
+    /// OS-version-dependent default when no override is persisted.
     static var global: CGFloat { UserConfig.shared.windowCornerRadius }
 
     /// Resolve the radius for `wid`. Currently returns the same global

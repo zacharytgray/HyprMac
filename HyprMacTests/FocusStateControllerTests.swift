@@ -1,4 +1,5 @@
 import XCTest
+import Cocoa
 @testable import HyprMac
 
 // FocusStateControllerTests pin focus transition semantics and idempotence.
@@ -59,5 +60,24 @@ final class FocusStateControllerTests: XCTestCase {
         c.recordFocus(42, reason: "first")
         c.recordFocus(42, reason: "redundant")
         XCTAssertEqual(c.lastFocusedID, 42)
+    }
+}
+
+final class FocusBorderCornerRadiusTests: XCTestCase {
+
+    func testRefreshPreservesErrorBorderWidthExpansion() throws {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        defer { border.hide() }
+
+        let windowID: CGWindowID = 42
+        border.flashError(
+            around: CGRect(x: 100, y: 100, width: 400, height: 300),
+            windowID: windowID)
+        border.refreshCornerRadius()
+
+        let renderedRadius = try XCTUnwrap(border.currentFocusedBorderCornerRadius())
+        let expectedRadius = WindowCornerRadius.resolve(for: windowID) + 1.25
+        XCTAssertEqual(renderedRadius, expectedRadius, accuracy: 0.001)
     }
 }
