@@ -26,16 +26,22 @@ enum WhatsNewFeatures {
     // update this before each release — see CLAUDE.md instructions
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "arrow.up.left.and.arrow.down.right",
-            title: "Keyboard Window Resizing",
-            description: "Resize the focused tiled window from the keyboard with Hypr+Ctrl+Shift+Arrow. Each press moves the window's edge on that axis one step in the arrow direction, wherever the window sits in the layout. Rebindable in Settings → Keybinds.",
+            icon: "rectangle.split.2x1",
+            title: "Splits Survive Tab Switches",
+            description: "Resize a split, switch native tabs in Ghostty or Chrome, and the split stays where you put it. Hiding an app with Cmd+H and bringing it back keeps the split too. Before, the hidden window left the layout and the returning one came back at 50/50.",
             credit: "@joops"
         ),
         WhatsNewFeature(
             icon: "rectangle.roundedtop",
-            title: "Configurable Window Corner Radius",
-            description: "A new slider in Settings → Tiling → Focus Chrome sets the corner radius (0–32 px) used by focus borders, floating borders, focus brackets, and dim-overlay cut-outs. Existing setups keep the previous default (16 px on macOS 26 and later, 10 px before).",
+            title: "Corner Radius Follows the OS Again",
+            description: "The corner radius now tracks the macOS default (16 px on macOS 26 and later, 10 px before) until you set one yourself. A new OS Default button next to the slider clears your override, and the red swap-rejection border keeps its width when the radius changes.",
             credit: "@Amin-El-Sayed"
+        ),
+        WhatsNewFeature(
+            icon: "checkmark.shield",
+            title: "Config Survives Version Mismatches",
+            description: "A keybind that an older HyprMac build does not recognise is now skipped instead of resetting the whole config. This matters when config.json is synced over iCloud between Macs running different versions.",
+            tint: .magenta
         ),
     ]
 }
