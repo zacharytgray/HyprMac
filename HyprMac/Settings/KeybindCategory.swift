@@ -24,7 +24,7 @@ enum KeybindCategory: String, CaseIterable {
             return .workspaces
         case .launchApp:
             return .apps
-        case .showKeybinds:
+        case .showKeybinds, .saveLayout, .restoreLayout:
             return .system
         }
     }

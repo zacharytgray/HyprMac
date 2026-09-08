@@ -142,6 +142,7 @@ class WindowManager {
     // deregister display callbacks, color profile bumps), and our handler
     // runs the destructive redistribute every time. guard against no-op fires.
     private var lastDisplayFingerprint: String = ""
+    private var lastSnapshotDisplayKey: String = ""
     /// Monotonic token for the display-change stability debounce — a newer
     /// notification supersedes any pending stability check.
     private var displayChangeGeneration = 0
@@ -348,6 +349,8 @@ class WindowManager {
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         actionDispatcher.toggleScratchpad = { [weak self] in self?.scratchpad.toggle() }
         actionDispatcher.moveToScratchpad = { [weak self] in self?.scratchpad.sendFocusedWindow() }
+        actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot() }
+        actionDispatcher.restoreLayout = { [weak self] in self?.restoreLayoutSnapshot() }
         // DragSwapHandler shares the dispatcher's swap-rejection flash so cross-monitor and
         // direction swaps both surface the same red-border + beep feedback.
         dragSwapHandler.rejectSwap = { [weak self] window, reason in self?.actionDispatcher.rejectSwap(window, reason: reason) }
@@ -442,7 +445,11 @@ class WindowManager {
             // seed the fingerprint so the first (often spurious)
             // screen-parameters notification after launch is a no-op.
             self.lastDisplayFingerprint = self.displayFingerprint()
+            self.lastSnapshotDisplayKey = LayoutSnapshotStore.displayKey(screens: self.displayManager.screens)
             self.snapshotAndTile()
+            if UserConfig.shared.restoreLayoutOnLaunch {
+                self.restoreLayoutSnapshot()
+            }
             // attach AX observers after the initial tile so their events feed
             // the same coalescing scheduler. this covers the app-level
             // subscriptions (create / focus); window-level ones (destroy /
@@ -1437,6 +1444,9 @@ class WindowManager {
     /// workspace assignment and un-floated manual floats on every
     /// monitor connect/disconnect.
     private func reconcileAfterDisplayChange() {
+        // auto-save moved to screenParametersChanged (captures frames
+        // before macOS shuffles windows to surviving screens).
+
         workspaceManager.initializeMonitors()
         tilingEngine.handleDisplayChange(
             currentScreens: displayManager.screens,
@@ -1447,7 +1457,206 @@ class WindowManager {
         let allWindows = accessibility.getAllWindows()
         classifyAndAssign(allWindows)
         reparkHiddenWorkspaceWindows(allWindows)
-        tileAllVisibleSpaces(windows: allWindows)
+
+        // auto-restore if the NEW display config has a saved layout;
+        // restore retiles internally, so skip the final retile when it ran.
+        if !restoreLayoutSnapshot(windows: allWindows) {
+            tileAllVisibleSpaces(windows: allWindows)
+        }
+    }
+
+    // MARK: - Layout snapshot save / restore
+
+    /// Save the current window→workspace layout for the active display
+    /// configuration. Called automatically before display reconcile and
+    /// manually via `Hypr+Ctrl+S`.
+    private var suppressLayoutSave = false
+
+    private func saveLayoutSnapshot(manual: Bool = true, displayKeyOverride: String? = nil) {
+        guard !suppressLayoutSave else { return }
+        let displayKey = displayKeyOverride ?? LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        let allWorkspaces = workspaceManager.allWindowWorkspaces()
+        var assignments: [WindowAssignment] = []
+        let allWindows = accessibility.getAllWindows()
+        for window in allWindows {
+            let workspace = allWorkspaces[window.windowID]
+                ?? workspaceManager.workspaceFor(window.windowID)
+                ?? 1
+            guard workspace != ScratchpadController.workspace else { continue }
+            let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier ?? ""
+            let title = window.title ?? ""
+            let frame = window.frame
+            assignments.append(WindowAssignment(
+                bundleID: bundleID, windowTitle: title, workspace: workspace,
+                x: frame?.origin.x, y: frame?.origin.y,
+                w: frame?.size.width, h: frame?.size.height
+            ))
+        }
+        LayoutSnapshotStore.shared.save(displayKey: displayKey, assignments: assignments, manual: manual)
+        hyprLog(.notice, .lifecycle,
+                "\(manual ? "layout saved" : "auto-save"): \(assignments.count) windows for '\(displayKey)'")
+        if manual {
+            flashScreenBorders(color: NSColor(calibratedRed: 0.13, green: 1.0, blue: 0.25, alpha: 0.8))
+        }
+    }
+
+    /// Restore saved window→workspace assignments for the current
+    /// display configuration. Moves windows to their saved workspaces
+    /// using the same matching logic as the manual keybind.
+    ///
+    /// - Parameter windows: Pre-fetched window list. When `nil`, reads
+    ///   from the accessibility layer.
+    @discardableResult
+    private func restoreLayoutSnapshot(windows: [HyprWindow]? = nil) -> Bool {
+        let displayKey = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        guard let snapshot = LayoutSnapshotStore.shared.snapshot(for: displayKey) else {
+            hyprLog(.debug, .lifecycle, "no saved layout for '\(displayKey)'")
+            return false
+        }
+
+        suppressLayoutSave = true
+        defer { suppressLayoutSave = false }
+
+        let focusedBefore = accessibility.getFocusedWindow()
+        let allWindows = windows ?? accessibility.getAllWindows()
+        var claimed = Set<Int>()
+        var moved = 0
+
+        hyprLog(.notice, .lifecycle,
+                "restore: \(allWindows.count) windows, \(snapshot.assignments.count) saved for '\(displayKey)'")
+
+        for window in allWindows {
+            let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier ?? ""
+            let title = window.title ?? ""
+            let currentWs = workspaceManager.workspaceFor(window.windowID)
+
+            var bestIdx: Int?
+            var bestScore = -1
+            for (idx, saved) in snapshot.assignments.enumerated() {
+                guard !claimed.contains(idx), saved.bundleID == bundleID else { continue }
+                var score = 1
+                if saved.windowTitle == title && !title.isEmpty { score += 10 }
+                if saved.workspace == currentWs { score += 5 }
+                if score > bestScore {
+                    bestScore = score
+                    bestIdx = idx
+                }
+            }
+
+            guard let matchIdx = bestIdx else {
+                hyprLog(.debug, .lifecycle,
+                        "restore: no match for \(bundleID.split(separator: ".").last.map(String.init) ?? bundleID)")
+                continue
+            }
+            claimed.insert(matchIdx)
+
+            let targetWs = snapshot.assignments[matchIdx].workspace
+            if currentWs != targetWs {
+                workspaceManager.moveWindow(window.windowID, toWorkspace: targetWs)
+                if !workspaceManager.isWorkspaceVisible(targetWs) {
+                    if let screen = workspaceManager.homeScreenForWorkspace(targetWs) ?? displayManager.screens.first {
+                        workspaceManager.hideInCorner(window, on: screen)
+                    }
+                }
+                moved += 1
+            }
+        }
+
+        hyprLog(.notice, .lifecycle,
+                "restore: \(moved) moved — applying swap + ratio corrections")
+        if moved > 0 {
+            tileAllVisibleSpaces()
+        }
+
+        // post-retile: fix window order (swap if on wrong side) then set ratios
+        let postWindows = allWindows
+
+        func savedPos(for window: HyprWindow) -> (idx: Int, x: CGFloat, y: CGFloat)? {
+            let bid = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier ?? ""
+            let title = window.title ?? ""
+            for (idx, saved) in snapshot.assignments.enumerated() {
+                guard claimed.contains(idx), saved.bundleID == bid,
+                      let sx = saved.x, let sy = saved.y else { continue }
+                if saved.windowTitle == title || saved.workspace == workspaceManager.workspaceFor(window.windowID) {
+                    return (idx, sx, sy)
+                }
+            }
+            return nil
+        }
+
+        var swapped = Set<ObjectIdentifier>()
+        for window in postWindows {
+            let ws = workspaceManager.workspaceFor(window.windowID) ?? 1
+            guard let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first else { continue }
+            guard let tree = tilingEngine.existingTree(forWorkspace: ws, screen: screen) else { continue }
+            guard let leaf = tree.root.find(window), let parent = leaf.parent else { continue }
+            let parentID = ObjectIdentifier(parent)
+            guard !swapped.contains(parentID) else { continue }
+            guard let leftChild = parent.left, let rightChild = parent.right else { continue }
+            guard let leftWin = leftChild.window, let rightWin = rightChild.window else { continue }
+            guard let leftPos = savedPos(for: leftWin), let rightPos = savedPos(for: rightWin) else { continue }
+
+            let screenRect = tilingEngine.displayManager.cgRect(for: screen)
+            let gap = tilingEngine.gapSize
+            let padding = tilingEngine.outerPadding
+            guard let parentRect = tree.rectForNode(parent, in: screenRect, gap: gap, padding: padding) else { continue }
+            let dir = parent.direction(for: parentRect)
+
+            let needsSwap = dir == .horizontal ? leftPos.x > rightPos.x : leftPos.y > rightPos.y
+            if needsSwap {
+                parent.left = rightChild
+                parent.right = leftChild
+                rightChild.parent = parent
+                leftChild.parent = parent
+                swapped.insert(parentID)
+            }
+        }
+
+        var ratioClaimedIdx = Set<Int>()
+        for window in postWindows {
+            guard let match = savedPos(for: window), !ratioClaimedIdx.contains(match.idx) else { continue }
+            let saved = snapshot.assignments[match.idx]
+            guard let sw = saved.w else { continue }
+            let ws = workspaceManager.workspaceFor(window.windowID) ?? 1
+            guard let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first else { continue }
+            guard let tree = tilingEngine.existingTree(forWorkspace: ws, screen: screen) else { continue }
+            guard let leaf = tree.root.find(window), let parent = leaf.parent else { continue }
+
+            let screenRect = tilingEngine.displayManager.cgRect(for: screen)
+            let gap = tilingEngine.gapSize
+            let padding = tilingEngine.outerPadding
+            if let parentRect = tree.rectForNode(parent, in: screenRect, gap: gap, padding: padding) {
+                let dir = parent.direction(for: parentRect)
+                let isLeft = parent.left === leaf
+                let ratio: CGFloat
+                if dir == .horizontal {
+                    let totalW = parentRect.width
+                    guard totalW > 0 else { continue }
+                    ratio = isLeft ? (sw + gap / 2) / totalW : (totalW - sw - gap / 2) / totalW
+                } else {
+                    let sh = saved.h ?? 0
+                    let totalH = parentRect.height
+                    guard totalH > 0 else { continue }
+                    ratio = isLeft ? (sh + gap / 2) / totalH : (totalH - sh - gap / 2) / totalH
+                }
+                let clamped = min(max(ratio, TilingConfig.minRatio), TilingConfig.maxRatio)
+                if abs(clamped - TilingConfig.defaultRatio) > 0.02 {
+                    parent.splitRatio = clamped
+                    parent.userSetRatio = true
+                }
+            }
+            ratioClaimedIdx.insert(match.idx)
+        }
+
+        tileAllVisibleSpaces()
+
+        if let focused = focusedBefore ?? postWindows.first {
+            focused.focus()
+            updateFocusBorder(for: focused)
+        }
+
+        flashScreenBorders(color: NSColor(calibratedRed: 0.4, green: 0.7, blue: 1.0, alpha: 0.8))
+        return true
     }
 
     /// Re-park every window assigned to a hidden workspace at the current
@@ -2378,6 +2587,12 @@ class WindowManager {
         }
         let names = displayManager.screens.map { $0.localizedName }.joined(separator: ", ")
         hyprLog(.notice, .lifecycle, "screenParametersChanged fired (current screens: [\(names)])")
+        // eagerly snapshot the current layout BEFORE macOS moves windows
+        // to surviving screens — the 2s settle delay would capture
+        // post-shuffle frames under the old display key.
+        if !lastSnapshotDisplayKey.isEmpty {
+            saveLayoutSnapshot(manual: false, displayKeyOverride: lastSnapshotDisplayKey)
+        }
         // the scratchpad can't survive a topology change — reconcile would
         // park its visible members under a live scrim
         scratchpad.hide(reason: .displayChange)
@@ -2422,6 +2637,7 @@ class WindowManager {
                 return
             }
             self.lastDisplayFingerprint = fingerprint
+            self.lastSnapshotDisplayKey = LayoutSnapshotStore.displayKey(screens: self.displayManager.screens)
             self.focusBorder.primaryScreenHeight = self.displayManager.primaryScreenHeight
             self.focusBrackets.primaryScreenHeight = self.displayManager.primaryScreenHeight
             // cover the reconcile itself plus a settle tail — the retile it
@@ -2452,5 +2668,47 @@ class WindowManager {
         hyprLog(.debug, .lifecycle, "retile all spaces requested")
         scratchpad.hide(reason: .workspaceAction)
         snapshotAndTile()
+    }
+
+    // MARK: - visual feedback
+
+    private var flashPanels: [NSPanel] = []
+
+    private func flashScreenBorders(color: NSColor) {
+        for panel in flashPanels { panel.close() }
+        flashPanels.removeAll()
+
+        for screen in displayManager.screens {
+            let f = screen.frame
+            let borderWidth: CGFloat = 4
+            let panel = NSPanel(
+                contentRect: f,
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered, defer: false)
+            panel.isOpaque = false
+            panel.backgroundColor = .clear
+            panel.hasShadow = false
+            panel.level = .screenSaver
+            panel.ignoresMouseEvents = true
+            panel.collectionBehavior = [.canJoinAllSpaces, .stationary]
+
+            let border = NSView(frame: NSRect(x: 0, y: 0, width: f.width, height: f.height))
+            border.wantsLayer = true
+            border.layer?.borderColor = color.cgColor
+            border.layer?.borderWidth = borderWidth
+            border.layer?.cornerRadius = 10
+            panel.contentView = border
+
+            panel.orderFrontRegardless()
+            flashPanels.append(panel)
+        }
+
+        let panelsToClose = flashPanels
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            for panel in panelsToClose {
+                panel.orderOut(nil)
+            }
+            self?.flashPanels.removeAll(where: { panelsToClose.contains($0) })
+        }
     }
 }

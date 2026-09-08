@@ -46,6 +46,7 @@ enum UserConfigDefaults {
     // tiled region — 0.06 keeps a visible scrimmed border, 0 maximizes
     // usable area.
     static let scratchpadRegionInset: CGFloat = 0.06
+    static let restoreLayoutOnLaunch: Bool = false
     // focusBorderColorHex / floatingBorderColorHex are nil by default —
     // resolvedFocusBorderColor / resolvedFloatingBorderColor compute the
     // system color when nil.

@@ -233,6 +233,7 @@ struct SavedConfig: Codable {
     let windowCornerRadius: CGFloat?
     let scratchpadTileByDefault: Bool?
     let scratchpadRegionInset: CGFloat?
+    let restoreLayoutOnLaunch: Bool?
 }
 
 // MARK: - per-keybind decode tolerance

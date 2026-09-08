@@ -83,7 +83,7 @@ final class ConfigMigrationTests: XCTestCase {
             dimInactiveWindows: true, dimIntensity: 0.5,
             mouseHoverPollHz: nil, chromeFadeDurationSec: nil,
             windowCornerRadius: 13,
-            scratchpadTileByDefault: true, scratchpadRegionInset: 0.03)
+            scratchpadTileByDefault: true, scratchpadRegionInset: 0.03, restoreLayoutOnLaunch: nil)
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(SavedConfig.self, from: data)
         XCTAssertEqual(decoded.keybinds.first?.action, .switchWorkspace(1))
@@ -112,7 +112,7 @@ final class ConfigMigrationTests: XCTestCase {
             floatingBorderColorHex: nil, dimInactiveWindows: nil, dimIntensity: nil,
             mouseHoverPollHz: nil, chromeFadeDurationSec: nil,
             windowCornerRadius: nil,
-            scratchpadTileByDefault: nil, scratchpadRegionInset: nil)
+            scratchpadTileByDefault: nil, scratchpadRegionInset: nil, restoreLayoutOnLaunch: nil)
         let r = ConfigMigration.resolveMonitorConfig(local: local, embedded: embedded)
         XCTAssertEqual(r.maxSplits, ["Display A": 4])
         XCTAssertEqual(r.disabled, ["Display B"])
@@ -131,7 +131,7 @@ final class ConfigMigrationTests: XCTestCase {
             floatingBorderColorHex: nil, dimInactiveWindows: nil, dimIntensity: nil,
             mouseHoverPollHz: nil, chromeFadeDurationSec: nil,
             windowCornerRadius: nil,
-            scratchpadTileByDefault: nil, scratchpadRegionInset: nil)
+            scratchpadTileByDefault: nil, scratchpadRegionInset: nil, restoreLayoutOnLaunch: nil)
         let r = ConfigMigration.resolveMonitorConfig(local: nil, embedded: embedded)
         XCTAssertEqual(r.maxSplits, ["DELL U2723QE": 2])
         XCTAssertEqual(r.disabled, ["External"])
@@ -156,7 +156,7 @@ final class ConfigMigrationTests: XCTestCase {
             floatingBorderColorHex: nil, dimInactiveWindows: nil, dimIntensity: nil,
             mouseHoverPollHz: nil, chromeFadeDurationSec: nil,
             windowCornerRadius: nil,
-            scratchpadTileByDefault: nil, scratchpadRegionInset: nil)
+            scratchpadTileByDefault: nil, scratchpadRegionInset: nil, restoreLayoutOnLaunch: nil)
         let r = ConfigMigration.resolveMonitorConfig(local: nil, embedded: embedded)
         XCTAssertFalse(r.needsLocalWrite,
                        "no monitor data anywhere — nothing to write")

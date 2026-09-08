@@ -46,6 +46,11 @@ enum Action: Equatable {
     /// Resize the focused window by moving the nearest matching-axis split
     /// boundary in the BSP tree one step in that direction.
     case resizeDirection(Direction)
+    /// Save the current window→workspace layout for the active display
+    /// configuration.
+    case saveLayout
+    /// Restore the saved layout for the active display configuration.
+    case restoreLayout
 }
 
 // MARK: - Codable
@@ -83,6 +88,8 @@ extension Action: Codable {
         case toggleScratchpad
         case moveToScratchpad
         case resizeDirection
+        case saveLayout
+        case restoreLayout
     }
 
     /// Accepted-but-not-emitted aliases. Lets a hand-edited config
@@ -143,6 +150,8 @@ extension Action: Codable {
         case .moveToScratchpad: self = .moveToScratchpad
         case .resizeDirection:
             self = .resizeDirection(try Self.decodeDirection(inner, field: "resizeDirection"))
+        case .saveLayout:    self = .saveLayout
+        case .restoreLayout: self = .restoreLayout
         }
     }
 
@@ -201,6 +210,10 @@ extension Action: Codable {
         case .resizeDirection(let d):
             var p = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .resizeDirection)
             try p.encode(d.rawValue, forKey: ._0)
+        case .saveLayout:
+            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .saveLayout)
+        case .restoreLayout:
+            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .restoreLayout)
         }
     }
 }
