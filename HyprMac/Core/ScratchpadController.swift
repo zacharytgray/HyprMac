@@ -19,6 +19,13 @@ import Cocoa
 
 final class ScratchpadController {
 
+    enum EntryMode: Equatable { case preserve, tiled, floating }
+
+    static func entryMode(isExistingMember: Bool, tileByDefault: Bool) -> EntryMode {
+        if isExistingMember { return .preserve }
+        return tileByDefault ? .tiled : .floating
+    }
+
     /// Pseudo-workspace id for scratchpad membership. Outside 1...9, so it
     /// falls out of every switch / home-anchor / cycle path automatically.
     static let workspace = 0
@@ -309,7 +316,9 @@ final class ScratchpadController {
             _ = ejectFocusedWindow()
             return
         }
-        if contains(id) {
+        let entryMode = Self.entryMode(isExistingMember: contains(id),
+                                       tileByDefault: tileNewMembers)
+        if entryMode == .preserve {
             // parked member (layer hidden, or minimized through a show) —
             // already where it belongs
             NSSound.beep()
@@ -327,7 +336,7 @@ final class ScratchpadController {
                 tilingEngine.removeWindow(focused, fromWorkspace: ws)
             }
             workspaceManager.assignWindow(id, toWorkspace: Self.workspace)
-            if tileNewMembers {
+            if entryMode == .tiled {
                 // tile-by-default: the member enters the layer tree. save
                 // the pre-send frame first — it's the restore target for a
                 // later tiled→floating toggle (and the placement fallback

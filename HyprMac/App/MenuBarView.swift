@@ -2,7 +2,9 @@
 // lives in the menu bar itself.
 
 import SwiftUI
+#if !HYPRMAC_DEBUG_VARIANT
 import Sparkle
+#endif
 
 /// `MenuBarExtra` dropdown contents: status header, per-screen
 /// workspace badges, and standard actions (Settings, Retile, Check
@@ -14,7 +16,9 @@ struct MenuBarView: View {
     @ObservedObject var config = UserConfig.shared
     @Environment(\.openWindow) private var openWindow
     @State private var refreshID = UUID()
+    #if !HYPRMAC_DEBUG_VARIANT
     let updater: SPUUpdater
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: HyprSpacing.md) {
@@ -201,6 +205,7 @@ struct MenuBarView: View {
             MenuBarRow("Retile all spaces", icon: "rectangle.3.group") {
                 NotificationCenter.default.post(name: .hyprMacRetileAll, object: nil)
             }
+            #if !HYPRMAC_DEBUG_VARIANT
             MenuBarRow("Check for updates…", icon: "arrow.down.circle") {
                 updater.checkForUpdates()
             } trailing: {
@@ -208,6 +213,7 @@ struct MenuBarView: View {
                     .font(.hyprMonoXs)
                     .foregroundStyle(Color.hyprTextTertiary)
             }
+            #endif
             Rectangle()
                 .fill(Color.hyprSeparator)
                 .frame(height: 0.5)

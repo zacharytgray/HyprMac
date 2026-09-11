@@ -31,6 +31,15 @@ import Cocoa
 /// main run loop, so every callback lands on main by construction.
 final class AXNotificationService {
 
+    static func activateInitialSubscriptions<Window>(
+        initialWindows: [Window],
+        attach: () -> Void,
+        subscribe: ([Window]) -> Void
+    ) {
+        attach()
+        subscribe(initialWindows)
+    }
+
     /// The AX notifications we translate and forward. Each maps to one or
     /// more `kAX…Notification` strings on the app or window element.
     enum Kind {
@@ -193,7 +202,16 @@ final class AXNotificationService {
 
     /// Route a raw AX notification (from the C callback) to `onEvent`. The
     /// firing element gives us the pid regardless of app- vs window-level.
-    fileprivate func handle(notification: String, element: AXUIElement) {
+    fileprivate func handle(notification: String, element: AXUIElement, observer: AXObserver) {
+        var pid: pid_t = 0
+        let elementPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
+        let observerPID = entries.first { CFEqual($0.value.observer, observer) }?.key
+        route(notification: notification, elementPID: elementPID, observerPID: observerPID)
+    }
+
+    /// Pure routing seam used to pin event translation and unavailable AX
+    /// metadata without constructing system-owned observer objects.
+    func route(notification: String, elementPID: pid_t?, observerPID: pid_t?) {
         let kind: Kind
         switch notification {
         case kAXWindowCreatedNotification as String:        kind = .windowCreated
@@ -203,8 +221,7 @@ final class AXNotificationService {
         case kAXFocusedWindowChangedNotification as String: kind = .focusedWindowChanged
         default: return
         }
-        var pid: pid_t = 0
-        guard AXUIElementGetPid(element, &pid) == .success else { return }
+        guard let pid = elementPID ?? observerPID else { return }
         onEvent?(kind, pid)
     }
 }
@@ -219,5 +236,5 @@ private func axNotificationCallback(
 ) {
     guard let refcon else { return }
     let service = Unmanaged<AXNotificationService>.fromOpaque(refcon).takeUnretainedValue()
-    service.handle(notification: notification as String, element: element)
+    service.handle(notification: notification as String, element: element, observer: observer)
 }

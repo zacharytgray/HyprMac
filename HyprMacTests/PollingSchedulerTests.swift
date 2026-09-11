@@ -110,9 +110,17 @@ final class PollingSchedulerTests: XCTestCase {
     }
 
     func testStopCancelsInFlightPollAndClearsToken() {
-        var fireCount = 0
-        let scheduler = PollingScheduler { fireCount += 1 }
-        let exp = expectation(description: "post-stop schedule fires")
+        var awaitingRestartedPoll = false
+        let canceled = expectation(description: "pre-stop schedule stays canceled")
+        canceled.isInverted = true
+        let restarted = expectation(description: "post-stop schedule fires")
+        let scheduler = PollingScheduler {
+            if awaitingRestartedPoll {
+                restarted.fulfill()
+            } else {
+                canceled.fulfill()
+            }
+        }
 
         // schedule a poll, immediately stop — clearing pendingPoll cancels
         // the in-flight fire (the closure bails on a cleared token), and the
@@ -120,16 +128,36 @@ final class PollingSchedulerTests: XCTestCase {
         scheduler.schedule(after: 0.05)
         scheduler.stop()
 
-        // wait past the original asyncAfter, then start + schedule again.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
-            scheduler.start()
-            scheduler.schedule(after: 0.05)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { exp.fulfill() }
-        wait(for: [exp], timeout: 1.0)
+        wait(for: [canceled], timeout: 0.10)
+
+        awaitingRestartedPoll = true
+        scheduler.start()
+        scheduler.schedule(after: 0.05)
+        wait(for: [restarted], timeout: 1.0)
         scheduler.stop()
-        // only the post-start schedule fires; the pre-stop one was canceled
-        XCTAssertEqual(fireCount, 1)
+    }
+
+    func testStoppedClosureCannotConsumeNewSchedule() {
+        var fireCount = 0
+        let scheduler = PollingScheduler { fireCount += 1 }
+
+        scheduler.schedule(after: 0.10)
+        scheduler.stop()
+        scheduler.schedule(after: 0.30)
+
+        let oldDeadlinePassed = expectation(description: "old deadline passed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
+            XCTAssertEqual(fireCount, 0, "pre-stop closure must not fire the new schedule")
+            oldDeadlinePassed.fulfill()
+        }
+        let newDeadlinePassed = expectation(description: "new deadline passed")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.40) {
+            XCTAssertEqual(fireCount, 1, "post-stop schedule must keep its own deadline")
+            newDeadlinePassed.fulfill()
+        }
+
+        wait(for: [oldDeadlinePassed, newDeadlinePassed], timeout: 1.0)
+        scheduler.stop()
     }
 
     // MARK: - suppression (Phase 4 step 5)
@@ -204,18 +232,23 @@ final class PollingSchedulerTests: XCTestCase {
     }
 
     func testDoubleStartIsIdempotent() {
-        var fireCount = 0
-        let scheduler = PollingScheduler(periodicInterval: 0.3) { fireCount += 1 }
-        let exp = expectation(description: "tick")
+        let scheduler = PollingScheduler(periodicInterval: 10) {}
+
+        func installedTimer() -> Timer? {
+            guard let optional = Mirror(reflecting: scheduler).children
+                .first(where: { $0.label == "timer" })?.value else { return nil }
+            return Mirror(reflecting: optional).children.first?.value as? Timer
+        }
 
         scheduler.start()
+        let first = installedTimer()
         scheduler.start() // second start must not install a second timer
+        let second = installedTimer()
 
-        // one timer fires once in a 0.5s window (next tick lands at ~0.6s);
-        // a second timer would double the count to 2.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exp.fulfill() }
-        wait(for: [exp], timeout: 2.0)
+        XCTAssertNotNil(first)
+        XCTAssertTrue(first === second)
+        XCTAssertTrue(first?.isValid == true)
         scheduler.stop()
-        XCTAssertEqual(fireCount, 1)
+        XCTAssertFalse(first?.isValid == true)
     }
 }

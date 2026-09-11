@@ -15,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var welcomeController: WelcomeWindowController?
     private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
+    private var diagnosticOnly = false
 
     /// AX permission gate plus the rest of startup. Trusted →
     /// applies the Hypr key remap and starts the manager. Not
@@ -26,6 +27,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         hyprLog(.debug, .lifecycle, "bundle: \(Bundle.main.bundleIdentifier ?? "?")")
         hyprLog(.debug, .lifecycle, "AXIsProcessTrusted=\(AXIsProcessTrusted())")
+
+        #if HYPRMAC_DEBUG_VARIANT
+        if CommandLine.arguments.contains("--request-accessibility") {
+            diagnosticOnly = true
+            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
+            print("HyprMac accessibility request trusted=\(trusted) bundle=\(Bundle.main.bundleIdentifier ?? "?")")
+            fflush(stdout)
+            NSApp.terminate(nil)
+            return
+        }
+
+        if CommandLine.arguments.contains("--check-accessibility") {
+            diagnosticOnly = true
+            let trusted = AXIsProcessTrusted()
+            print("HyprMac accessibility trusted=\(trusted) bundle=\(Bundle.main.bundleIdentifier ?? "?")")
+            fflush(stdout)
+            NSApp.terminate(nil)
+            return
+        }
+        #endif
 
         if AXIsProcessTrusted() {
             startAfterPermissionGranted()
@@ -82,19 +104,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkFirstLaunchOrUpdate() {
-        let hasSeenOnboarding = UserDefaults.standard.bool(forKey: "hasSeenOnboarding")
+        let hasSeenOnboarding = RuntimeVariant.inheritedBool(forKey: "hasSeenOnboarding")
         let lastVersion = UserDefaults.standard.string(forKey: "lastSeenVersion")
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
 
+        if let mode = RuntimeVariant.shouldShowWelcome(
+            hasSeenOnboarding: hasSeenOnboarding,
+            lastVersion: lastVersion,
+            currentVersion: currentVersion
+        ) {
+            showWelcome(mode: mode)
+        }
         if !hasSeenOnboarding {
-            // first time ever — first-run walkthrough
-            showWelcome(mode: .firstRun)
             UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
-        } else if lastVersion == nil {
-            // existing user who never had version tracking — show what's new
-            showWelcome(mode: .whatsNew)
-        } else if lastVersion != currentVersion {
-            showWelcome(mode: .whatsNew)
         }
 
         UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
@@ -115,6 +137,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        guard !diagnosticOnly else { return }
         windowManager?.stop()
         // restore caps lock to normal when quitting
         KeyRemapper.restoreCapsLock()

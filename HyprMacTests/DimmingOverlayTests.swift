@@ -12,6 +12,12 @@ import AppKit
 
 final class DimmingOverlayTests: XCTestCase {
 
+    override func setUpWithError() throws {
+        guard !NSScreen.screens.isEmpty else {
+            throw XCTSkip("no NSScreen available — dimming tests require a display")
+        }
+    }
+
     // helper: make an overlay whose screen-coordinate math lines up with
     // production. DisplayManager anchors CG top-left conversion to the
     // PRIMARY screen (NSScreen.screens.first, the one at NS origin) —

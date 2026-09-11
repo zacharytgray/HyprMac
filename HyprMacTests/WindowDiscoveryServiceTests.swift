@@ -113,6 +113,24 @@ final class WindowDiscoveryServiceTests: XCTestCase {
 
     // MARK: - gone (alive pid → hidden)
 
+    func testMassGoneGuardRequestsPromptRecheck() {
+        let (svc, cache, _) = makeService()
+        cache.knownWindowIDs = [1, 2, 3, 4]
+        cache.windowOwners = [1: 8000, 2: 8000, 3: 8000, 4: 8000]
+
+        let first = compute(svc, snapshot: [], runningPIDs: [8000])
+
+        XCTAssertTrue(first.goneIDs.isEmpty)
+        XCTAssertTrue(first.requestsRecheck)
+
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
+        let fourth = compute(svc, snapshot: [], runningPIDs: [8000])
+        XCTAssertEqual(fourth.goneIDs, [1, 2, 3, 4])
+        XCTAssertTrue(fourth.needsRetile)
+        XCTAssertFalse(fourth.requestsRecheck)
+    }
+
     func testGoneWindowWithLivePIDMovesToHidden() {
         let (svc, cache, _) = makeService()
         cache.knownWindowIDs = [10]

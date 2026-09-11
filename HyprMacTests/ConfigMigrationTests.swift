@@ -19,6 +19,32 @@ import AppKit
 
 final class ConfigMigrationTests: XCTestCase {
 
+    func testScratchpadTilesNewMembersByDefault() {
+        XCTAssertTrue(UserConfigDefaults.scratchpadTileByDefault)
+        XCTAssertTrue(SavedConfig.empty.scratchpadTileByDefault == true)
+    }
+
+    func testExplicitFloatingScratchpadPreferenceRoundTrips() throws {
+        var json = try JSONEncoder().encode(SavedConfig.empty)
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: json) as? [String: Any])
+        object["scratchpadTileByDefault"] = false
+        json = try JSONSerialization.data(withJSONObject: object)
+
+        let decoded = try JSONDecoder().decode(SavedConfig.self, from: json)
+        XCTAssertEqual(decoded.scratchpadTileByDefault, false)
+    }
+
+    func testScratchpadEntryModeUsesDefaultAndPreservesExistingMembers() {
+        XCTAssertEqual(ScratchpadController.entryMode(
+            isExistingMember: false, tileByDefault: true), .tiled)
+        XCTAssertEqual(ScratchpadController.entryMode(
+            isExistingMember: false, tileByDefault: false), .floating)
+        XCTAssertEqual(ScratchpadController.entryMode(
+            isExistingMember: true, tileByDefault: true), .preserve)
+        XCTAssertEqual(ScratchpadController.entryMode(
+            isExistingMember: true, tileByDefault: false), .preserve)
+    }
+
     // MARK: - schema versioning
 
     func testSavedConfigWithoutVersionDecodesAsV1() throws {

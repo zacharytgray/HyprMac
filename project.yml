@@ -29,6 +29,12 @@ schemes:
       config: Debug
       targets:
         - HyprMacTests
+  HyprMac Debug:
+    build:
+      targets:
+        HyprMac Debug: all
+    run:
+      config: Debug
 
 targets:
   HyprMac:
@@ -49,6 +55,31 @@ targets:
         DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
         CODE_SIGN_ENTITLEMENTS: HyprMac/HyprMac.entitlements
         ENABLE_HARDENED_RUNTIME: false
+        OTHER_LDFLAGS:
+          - "-F/System/Library/PrivateFrameworks"
+          - "-framework"
+          - "SkyLight"
+
+  HyprMac Debug:
+    type: application
+    platform: macOS
+    sources:
+      - HyprMac
+    settings:
+      base:
+        INFOPLIST_FILE: HyprMac/Info.plist
+        PRODUCT_NAME: HyprMac Debug
+        PRODUCT_MODULE_NAME: HyprMac
+        PRODUCT_BUNDLE_IDENTIFIER: com.zachgray.HyprMac.debug
+        MARKETING_VERSION: "0.12.0"
+        CURRENT_PROJECT_VERSION: "82.1"
+        HYPRMAC_SOURCE_REVISION: unknown
+        SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) DEBUG HYPRMAC_DEBUG_VARIANT"
+        CODE_SIGN_IDENTITY: "Developer ID Application"
+        CODE_SIGN_STYLE: Manual
+        DEVELOPMENT_TEAM: WYY8494SWG
+        CODE_SIGN_ENTITLEMENTS: HyprMac/HyprMac-Release.entitlements
+        ENABLE_HARDENED_RUNTIME: true
         OTHER_LDFLAGS:
           - "-F/System/Library/PrivateFrameworks"
           - "-framework"

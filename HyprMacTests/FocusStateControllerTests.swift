@@ -65,6 +65,84 @@ final class FocusStateControllerTests: XCTestCase {
 
 final class FocusBorderCornerRadiusTests: XCTestCase {
 
+    func testDisabledBorderRejectsEveryPublicRenderPath() {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        border.isEnabled = false
+        let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
+
+        border.show(around: frame, windowID: 41)
+        border.updateFloatingBorders([42: frame], color: NSColor.systemPink.cgColor)
+        border.flashInfo(message: "→ scratchpad", around: frame, windowID: 43)
+        border.flashError(around: frame, windowID: 44)
+
+        XCTAssertNil(border.trackedWindowID)
+        XCTAssertEqual(border.visibleOwnedPanelCount, 0)
+    }
+
+    func testDisablingOrdersOutFocusedPanelSynchronously() {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        border.fadeDurationSec = 10
+        border.show(around: CGRect(x: 100, y: 100, width: 400, height: 300), windowID: 45)
+        XCTAssertEqual(border.visibleOwnedPanelCount, 1)
+
+        border.isEnabled = false
+
+        XCTAssertNil(border.trackedWindowID)
+        XCTAssertEqual(border.visibleOwnedPanelCount, 0)
+    }
+
+    func testDisablingCancelsErrorShakeAndRunsRestore() {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        var restoreCount = 0
+        border.onShakeRestore = { restoreCount += 1 }
+        border.flashError(around: CGRect(x: 100, y: 100, width: 400, height: 300),
+                          windowID: 47)
+
+        border.isEnabled = false
+
+        XCTAssertEqual(restoreCount, 1)
+        XCTAssertEqual(border.visibleOwnedPanelCount, 0)
+    }
+
+    @MainActor
+    func testSameFrameShowDoesNotStrandErrorFlash() async {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
+        border.flashError(around: frame, windowID: 48)
+        border.show(around: frame, windowID: 48)
+
+        let deadline = Date().addingTimeInterval(2)
+        while border.trackedWindowID != nil, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertNil(border.trackedWindowID)
+        // Headless Core Animation may defer the fade completion that orders
+        // out the panel. Disable provides deterministic cleanup after the
+        // callback-routing assertion above.
+        border.isEnabled = false
+        XCTAssertEqual(border.visibleOwnedPanelCount, 0)
+    }
+
+    @MainActor
+    func testDisablingOrdersOutInfoPanelAfterItsFadeStarts() async {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        border.flashInfo(message: "→ scratchpad",
+                         around: CGRect(x: 100, y: 100, width: 400, height: 300),
+                         windowID: 46)
+        XCTAssertEqual(border.visibleOwnedPanelCount, 1)
+        try? await Task.sleep(nanoseconds: 950_000_000)
+
+        border.isEnabled = false
+
+        XCTAssertEqual(border.visibleOwnedPanelCount, 0)
+    }
+
     func testRefreshPreservesErrorBorderWidthExpansion() throws {
         let border = FocusBorder()
         border.primaryScreenHeight = 1080

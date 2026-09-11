@@ -40,8 +40,8 @@ enum UserConfigDefaults {
         override ?? windowCornerRadius(forOSMajorVersion: majorVersion)
     }
     // windows sent to the scratchpad tile into the layer instead of
-    // floating. off preserves the original floating-first behavior.
-    static let scratchpadTileByDefault: Bool = false
+    // floating. an explicit saved false still preserves floating-first mode.
+    static let scratchpadTileByDefault: Bool = true
     // fraction of the layer monitor inset on each edge for the scratchpad's
     // tiled region — 0.06 keeps a visible scrimmed border, 0 maximizes
     // usable area.

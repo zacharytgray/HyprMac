@@ -130,7 +130,7 @@ class UserConfig: ObservableObject {
 
     init() {
         self.store = ConfigStore()
-        self.iCloudSyncEnabled = UserDefaults.standard.bool(forKey: "iCloudSyncEnabled")
+        self.iCloudSyncEnabled = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled")
 
         let monitorConfig = store.loadSavedMonitorConfig()
         let savedConfig = store.loadSavedConfig()

@@ -425,6 +425,7 @@ class WindowManager {
         tilingEngine.maxSplitsPerMonitor = config.maxSplitsPerMonitor
         scratchpad.tiledRegionInset = config.scratchpadRegionInset
         scratchpad.tileNewMembers = config.scratchpadTileByDefault
+        focusBorder.isEnabled = config.showFocusBorder
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
         focusBorder.fadeDurationSec = config.chromeFadeDurationSec
         focusBrackets.primaryScreenHeight = displayManager.primaryScreenHeight
@@ -442,13 +443,16 @@ class WindowManager {
             // seed the fingerprint so the first (often spurious)
             // screen-parameters notification after launch is a no-op.
             self.lastDisplayFingerprint = self.displayFingerprint()
-            self.snapshotAndTile()
+            let initialWindows = self.snapshotAndTile()
             // attach AX observers after the initial tile so their events feed
             // the same coalescing scheduler. this covers the app-level
-            // subscriptions (create / focus); window-level ones (destroy /
-            // miniaturize) get added on the first pollWindowChanges, which the
-            // app-level events or the reconcile timer trigger.
-            self.axNotifications.attachToRunningApps()
+            // subscriptions (create / focus), then immediately adds window-level
+            // subscriptions (destroy / miniaturize) for the initial snapshot.
+            AXNotificationService.activateInitialSubscriptions(
+                initialWindows: initialWindows,
+                attach: self.axNotifications.attachToRunningApps,
+                subscribe: self.axNotifications.ensureWindowSubscriptions
+            )
             // start the reconcile timer only after the initial tile so
             // pollWindowChanges can't race against snapshotAndTile, claim all
             // windows as new, and trigger an animation that blocks the correct
@@ -613,6 +617,7 @@ class WindowManager {
             .removeDuplicates()
             .sink { [weak self] enabled in
                 guard let self else { return }
+                self.focusBorder.isEnabled = enabled
                 if enabled {
                     self.updatePositionCache()
                 } else {
@@ -1374,11 +1379,13 @@ class WindowManager {
     /// menu-driven "Retile All", and on max-splits config changes. NOT
     /// called on screen parameter changes — `reconcileAfterDisplayChange`
     /// handles those without rewriting workspace assignments.
-    func snapshotAndTile() {
+    @discardableResult
+    func snapshotAndTile() -> [HyprWindow] {
         let allWindows = accessibility.getAllWindows()
         classifyAndAssign(allWindows)
-        distributeWindowsAcrossWorkspaces()
+        distributeWindowsAcrossWorkspaces(allWindows)
         tileAllVisibleSpaces()
+        return allWindows
     }
 
     /// Classification half of the snapshot: capture original frames,
@@ -1532,27 +1539,28 @@ class WindowManager {
     /// Spread every tiling-eligible window across workspaces so no single
     /// workspace is forced past its dwindle depth.
     ///
-    /// Visible workspaces (one per enabled screen, left-to-right) fill
-    /// first; further workspaces cycle through screens for spillover. The
-    /// focused window is moved to slot zero so it lands on the first
-    /// visible workspace. Anything that does not fit even in the ninth
-    /// workspace is auto-floated. Called once at startup and from "Retile
-    /// All" so a fresh launch with many windows produces a balanced layout
-    /// instead of piling everything on the primary screen.
-    private func distributeWindowsAcrossWorkspaces() {
+    /// Workspaces fill in numeric order, with each workspace's capacity
+    /// derived from its statically anchored monitor. Anything that does not
+    /// fit even in the ninth workspace is auto-floated. Called once at
+    /// startup and from "Retile All" so a fresh launch with many windows
+    /// produces a compact layout instead of piling everything on one screen.
+    private func distributeWindowsAcrossWorkspaces(_ allWindows: [HyprWindow]) {
         hyprLog(.notice, .lifecycle, "distributeWindowsAcrossWorkspaces ENTER — full redistribute about to run (this rewrites workspace assignments)")
         let screens = displayManager.screens.filter { !workspaceManager.isMonitorDisabled($0) }
             .sorted { $0.frame.origin.x < $1.frame.origin.x }
         guard !screens.isEmpty else { return }
 
-        let allWindows = accessibility.getAllWindows()
-        let focusedID = accessibility.getFocusedWindow()?.windowID
         let allWids = Set(allWindows.map { $0.windowID })
 
         // full redistribution: un-float everything except excluded apps and
         // non-standard windows (dialogs, sheets, floating panels).
         let excluded = Set(config.excludedBundleIDs)
-        let keepFloating = Set(allWindows.filter { floatingController.shouldAutoFloat($0, excludedBundleIDs: excluded) }.map { $0.windowID })
+        let keepFloating = Set(allWindows.filter {
+            RetileAllPlanner.shouldRemainFloating(
+                isAutoFloat: floatingController.shouldAutoFloat($0, excludedBundleIDs: excluded),
+                isOnDisabledMonitor: displayManager.screen(for: $0).map(workspaceManager.isMonitorDisabled) == true
+            )
+        }.map { $0.windowID })
         for wid in stateCache.floatingWindowIDs where !keepFloating.contains(wid) && allWids.contains(wid) {
             // scratchpad members survive Retile All — unfloating them would
             // dissolve the layer and drag parked windows into the trees
@@ -1563,85 +1571,41 @@ class WindowManager {
             }
         }
 
-        // gather all tiling window IDs (from visible workspaces + unassigned)
-        var tilingWids: [CGWindowID] = []
-        for screen in screens {
-            let ws = workspaceManager.workspaceForScreen(screen)
-            for wid in workspaceManager.windowIDs(onWorkspace: ws) where !stateCache.floatingWindowIDs.contains(wid) {
-                tilingWids.append(wid)
-            }
-        }
-        for w in allWindows where !stateCache.floatingWindowIDs.contains(w.windowID) {
-            // tiled scratchpad members are non-floating but must survive Retile
-            // All — sweeping them into tilingWids would reassign them to 1-9 and
-            // dissolve the layer. (the unfloat loop above already guards floaters
-            // via scratchpad.contains; the tiled case only shows up here.)
-            if scratchpad.contains(w.windowID) { continue }
-            if !tilingWids.contains(w.windowID) {
-                tilingWids.append(w.windowID)
-            }
-        }
+        // Include every tracked regular workspace, including parked windows
+        // that AX omits, and globally sort with newly discovered windows.
+        let excludedWids = stateCache.floatingWindowIDs
+            .union(stateCache.hiddenWindowIDs)
+            .union(scratchpad.members)
+        let tilingWids = RetileAllPlanner.eligibleWindowIDs(
+            workspaceAssignments: workspaceManager.regularWorkspaceWindowIDs(),
+            discoveredWindowIDs: allWids,
+            excludedWindowIDs: excludedWids
+        )
 
         guard !tilingWids.isEmpty else { return }
 
-        // deterministic order: left-to-right by current frame, id tiebreak.
-        // set-iteration order made every explicit redistribute produce a
-        // different arrangement from the same windows.
-        let framesByID = Dictionary(uniqueKeysWithValues: allWindows.map { ($0.windowID, $0.frame ?? .zero) })
-        tilingWids.sort { a, b in
-            let fa = framesByID[a] ?? .zero
-            let fb = framesByID[b] ?? .zero
-            if fa.origin.x != fb.origin.x { return fa.origin.x < fb.origin.x }
-            if fa.origin.y != fb.origin.y { return fa.origin.y < fb.origin.y }
-            return a < b
-        }
-
-        // focused window first so it lands on the first visible workspace
-        if let fid = focusedID, let idx = tilingWids.firstIndex(of: fid), idx != 0 {
-            tilingWids.swapAt(0, idx)
-        }
-
-        // build ordered (workspace, screen) slots.
-        // visible workspaces first (left-to-right), then spillover cycling screens.
-        var slots: [(ws: Int, screen: NSScreen)] = []
-        var usedWs = Set<Int>()
-
-        for screen in screens {
-            let ws = workspaceManager.workspaceForScreen(screen)
-            slots.append((ws, screen))
-            usedWs.insert(ws)
-        }
-
-        // spillover slots: workspaces not currently visible. each spills
-        // to its static home monitor, computed by `homeScreenForWorkspace`.
-        for ws in 1...workspaceManager.workspaceCount where !usedWs.contains(ws) {
-            guard let screen = workspaceManager.homeScreenForWorkspace(ws) else { continue }
-            slots.append((ws, screen))
-        }
-
-        // fill slots in order — each slot = one workspace on one screen
-        var widIdx = 0
-        var slotsUsed = 0
-        for slot in slots {
-            guard widIdx < tilingWids.count else { break }
-            let cap = tilingEngine.maxDepth(for: slot.screen) + 1 // dwindle depth, no backtracking on distribute
-            for _ in 0..<cap where widIdx < tilingWids.count {
-                workspaceManager.assignWindow(tilingWids[widIdx], toWorkspace: slot.ws)
-                widIdx += 1
+        let plan = RetileAllPlanner.pack(
+            windowIDs: tilingWids,
+            workspaceCount: workspaceManager.workspaceCount,
+            capacityForWorkspace: { [self] workspace in
+                guard let screen = workspaceManager.homeScreenForWorkspace(workspace) else { return 0 }
+                return tilingEngine.maxDepth(for: screen) + 1
             }
-            slotsUsed += 1
+        )
+        for workspace in plan.assignments.keys.sorted() {
+            for windowID in plan.assignments[workspace] ?? [] {
+                workspaceManager.assignWindow(windowID, toWorkspace: workspace)
+            }
         }
 
         // any remaining (all 9 workspaces full) — auto-float
-        while widIdx < tilingWids.count {
-            let wid = tilingWids[widIdx]
+        for wid in plan.overflow {
             stateCache.floatingWindowIDs.insert(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = true
                 if let original = stateCache.originalFrames[wid] { w.setFrame(original) }
                 hyprLog(.debug, .lifecycle, "all workspaces full — auto-floating '\(w.title ?? "?")'")
             }
-            widIdx += 1
         }
 
         // hide windows on non-visible workspaces
@@ -1654,7 +1618,7 @@ class WindowManager {
             }
         }
 
-        hyprLog(.debug, .lifecycle, "distributed \(tilingWids.count) windows across \(slotsUsed) slot(s), \(screens.count) monitor(s)")
+        hyprLog(.debug, .lifecycle, "distributed \(tilingWids.count) windows across \(plan.assignments.count) slot(s), \(screens.count) monitor(s)")
     }
 
     /// Resolve a window by ID against a fresh list, falling back to the
@@ -2158,6 +2122,9 @@ class WindowManager {
         )
         actionDispatcher.applyChanges(changes, allWindows: allWindows)
         repairParkedWindows(allWindows)
+        if changes.requestsRecheck {
+            pollingScheduler.schedule(after: 0.1)
+        }
     }
 
     /// Park self-repair: a hidden-workspace window the OS (or its own app)

@@ -34,6 +34,7 @@ final class PollingScheduler {
     private let periodicInterval: TimeInterval
     private var timer: Timer?
     private var pendingPoll = false
+    private var scheduleGeneration: UInt64 = 0
     private let onPoll: () -> Void
 
     /// Optional suppression check. When the closure returns `true`, both
@@ -68,6 +69,7 @@ final class PollingScheduler {
         timer?.invalidate()
         timer = nil
         pendingPoll = false
+        scheduleGeneration &+= 1
     }
 
     /// Schedule a single coalesced poll `delay` seconds from now.
@@ -83,15 +85,18 @@ final class PollingScheduler {
     func schedule(after delay: TimeInterval = 0.2) {
         guard !pendingPoll else { return }
         pendingPoll = true
-        armFire(after: delay)
+        scheduleGeneration &+= 1
+        armFire(after: delay, generation: scheduleGeneration)
     }
 
-    private func armFire(after delay: TimeInterval) {
+    private func armFire(after delay: TimeInterval, generation: UInt64) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self = self, self.pendingPoll else { return }
+            guard let self = self,
+                  self.pendingPoll,
+                  self.scheduleGeneration == generation else { return }
             // suppression re-checked at every fire attempt — defer, don't drop.
             guard !self.isSuppressed() else {
-                self.armFire(after: 0.3)
+                self.armFire(after: 0.3, generation: generation)
                 return
             }
             self.pendingPoll = false

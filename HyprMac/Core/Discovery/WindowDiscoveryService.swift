@@ -52,6 +52,9 @@ struct WindowChanges {
     /// (whether moved to hidden or fully forgotten). The caller should
     /// re-focus a window under the cursor.
     let focusedWindowGone: Bool
+    /// `true` when a guarded partial snapshot should be checked again soon
+    /// instead of waiting for the slow reconcile timer.
+    let requestsRecheck: Bool
 
     /// `true` when at least one observed change warrants a retile.
     /// Stale-state sweeps do not bump this — they are silent state
@@ -160,7 +163,7 @@ final class WindowDiscoveryService {
             hyprLog(.notice, .discovery, "mass-gone guard: \(apparentlyGone.count)/\(stateCache.knownWindowIDs.count) known windows missing from one snapshot — skipping cycle (\(massGoneSkips)/3)")
             return WindowChanges(newWindows: [], newOnDisabledMonitor: [], returned: [],
                                  goneIDs: [], fullyForgottenIDs: [], screenDrift: [],
-                                 focusedWindowGone: false)
+                                 focusedWindowGone: false, requestsRecheck: true)
         }
         massGoneSkips = 0
 
@@ -275,7 +278,8 @@ final class WindowDiscoveryService {
             goneIDs: goneIDs,
             fullyForgottenIDs: fullyForgotten,
             screenDrift: drift,
-            focusedWindowGone: focusedGone
+            focusedWindowGone: focusedGone,
+            requestsRecheck: false
         )
     }
 
