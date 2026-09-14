@@ -378,6 +378,132 @@ class TilingEngine {
         return nil
     }
 
+    /// Outcome of `rebuildTree`.
+    enum LayoutRebuildOutcome: Equatable {
+        /// Tree published. `inserted` counts live windows the snapshot did
+        /// not name that were smart-inserted around the restored shape.
+        case rebuilt(inserted: Int)
+        /// A saved leaf sits deeper than the screen allows; live tree untouched.
+        case exceedsMaxDepth(Int)
+        /// Frame verification refused the shape (or a newer layout
+        /// superseded it, `nil`); live tree untouched.
+        case rejected(FrameSizingFailure?)
+    }
+
+    /// Replace `workspace`'s tree on `screen` with the shape in `root`.
+    ///
+    /// `resolve` names the live window for each saved leaf — called in
+    /// left-to-right leaf order, so a caller with two same-ref leaves
+    /// can hand out two different windows. A `nil`, a window not in
+    /// `windows`, a floater, or a window already placed collapses that
+    /// leaf's split exactly as closing it would. Every window in
+    /// `windows` the snapshot did not name is smart-inserted around the
+    /// restored shape. Ratios, user-set flags and overrides come through
+    /// verbatim — nothing is reset.
+    ///
+    /// With `applyFrames` the layout runs the same verified sizing as
+    /// `tileWindows` and publishes only on acceptance. Pass `false` for a
+    /// hidden workspace: its windows are parked, so the shape is
+    /// published unverified and the next show verifies it.
+    func rebuildTree(forWorkspace workspace: Int, screen: NSScreen, from root: LayoutNode,
+                     windows: [HyprWindow], applyFrames: Bool,
+                     resolve: (SavedWindowRef) -> HyprWindow?) -> LayoutRebuildOutcome {
+        let generation = beginLayoutGeneration()
+        pendingSwapRevert = nil
+        let key = TilingKey(workspace: workspace, screen: screen)
+        let rect = displayManager.cgRect(for: screen)
+        let tileable = windows.filter { !$0.isFloating }
+        let tileableIDs = Set(tileable.map(\.windowID))
+        primeMinimumSizes(tileable)
+
+        var placed = Set<CGWindowID>()
+        let candidate = BSPTree()
+        if let built = Self.build(root, resolve: { ref in
+            guard let w = resolve(ref), tileableIDs.contains(w.windowID),
+                  placed.insert(w.windowID).inserted else { return nil }
+            return w
+        }) {
+            candidate.root = built
+        }
+
+        let limit = maxDepth(for: screen)
+        let deepest = Self.maxLeafDepth(candidate.root)
+        guard deepest <= limit else {
+            hyprLog(.notice, .lifecycle, "layout rebuild ws\(workspace): saved depth \(deepest) exceeds max \(limit) — kept live tree")
+            return .exceedsMaxDepth(deepest)
+        }
+
+        // windows the snapshot never named take a slot around the restored
+        // shape; one that finds no fitting slot stays where it is, as an
+        // ordinary tile pass leaves a refused newcomer.
+        var insertedIDs: [CGWindowID] = []
+        var refused = 0
+        for w in tileable where !placed.contains(w.windowID) {
+            if smartInsertFitting(w, into: candidate, maxDepth: limit, rect: rect) {
+                insertedIDs.append(w.windowID)
+            } else {
+                refused += 1
+                hyprLog(.notice, .tiling, "layout rebuild: no fitting tile slot: wid=\(w.windowID) ws\(workspace) — staying in place")
+            }
+        }
+
+        if applyFrames {
+            let outcome = applyTrackedLayout(candidate, in: rect, generation: generation,
+                                             key: key, inserted: insertedIDs)
+            guard publishes(outcome), layoutGeneration == generation else {
+                let reason = layoutGeneration == generation ? Self.failure(of: outcome) : nil
+                hyprLog(.notice, .lifecycle, "layout rebuild ws\(workspace): verification refused — kept live tree (\(reason.map { "\($0)" } ?? "superseded"))")
+                return .rejected(reason)
+            }
+            admittedWindowIDs[workspace, default: []].formUnion(candidate.allWindows.map(\.windowID))
+        }
+
+        if let live = trees[key] { live.root = candidate.root } else { trees[key] = candidate }
+        for (other, t) in trees where other.workspace == workspace && other != key && t.allWindows.isEmpty {
+            trees.removeValue(forKey: other)
+            unverified.removeValue(forKey: other)
+        }
+        hyprLog(.debug, .lifecycle, "layout rebuild ws\(workspace): \(placed.count) placed, \(insertedIDs.count) inserted, \(refused) refused, frames \(applyFrames ? "verified" : "deferred")")
+        return .rebuilt(inserted: insertedIDs.count)
+    }
+
+    private static func build(_ node: LayoutNode, resolve: (SavedWindowRef) -> HyprWindow?) -> BSPNode? {
+        switch node {
+        case .leaf(let ref):
+            return resolve(ref).map { BSPNode(window: $0) }
+        case let .split(override, ratio, userSet, left, right):
+            switch (build(left, resolve: resolve), build(right, resolve: resolve)) {
+            case (nil, nil):
+                return nil
+            case (let only?, nil), (nil, let only?):
+                return only
+            case (let l?, let r?):
+                let n = BSPNode()
+                n.left = l
+                n.right = r
+                l.parent = n
+                r.parent = n
+                n.splitOverride = override
+                n.splitRatio = ratio
+                n.userSetRatio = userSet
+                return n
+            }
+        }
+    }
+
+    private static func maxLeafDepth(_ node: BSPNode, depth: Int = 0) -> Int {
+        guard let l = node.left, let r = node.right else { return depth }
+        return max(maxLeafDepth(l, depth: depth + 1), maxLeafDepth(r, depth: depth + 1))
+    }
+
+    private static func failure(of outcome: LayoutApplicationOutcome) -> FrameSizingFailure? {
+        switch outcome {
+        case .accepted: return nil
+        case let .rejectedRestored(reason, _, _): return reason
+        case let .degraded(reason, _, _, _, _): return reason
+        }
+    }
+
     private static func serialize(_ node: BSPNode, ref: (HyprWindow) -> SavedWindowRef?) -> LayoutNode? {
         if let window = node.window {
             return ref(window).map(LayoutNode.leaf)

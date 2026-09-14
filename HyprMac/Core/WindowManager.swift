@@ -1625,11 +1625,12 @@ class WindowManager {
         return saved
     }
 
-    /// Move windows back to the workspaces the saved layout for the
-    /// current topology had them on. Matching goes through `LayoutMatcher`
-    /// and the moves through `WorkspaceOrchestrator.moveWindows`, so the
-    /// same suppression, tree removal, and park/place sequence applies as
-    /// for a user `Hypr+Shift+N`. Tree shape is not restored here.
+    /// Bring back the saved layout for the current topology: windows go
+    /// to their saved workspaces, then each workspace's tree is rebuilt
+    /// to the saved shape. Matching goes through `LayoutMatcher`, the
+    /// moves through `WorkspaceOrchestrator.moveWindows` (same
+    /// suppression, tree removal and park/place sequence as a user
+    /// `Hypr+Shift+N`), and the shape through `TilingEngine.rebuildTree`.
     ///
     /// - Parameter windows: pre-fetched window list; AX is queried when nil.
     /// - Returns: `false` when there is no snapshot for this topology.
@@ -1659,10 +1660,49 @@ class WindowManager {
             }
             .sorted { $0.window.windowID < $1.window.windowID }
         let moved = workspaceOrchestrator.moveWindows(moves)
+
+        // shape pass: rebuild each saved workspace's tree around the
+        // windows now on it. the engine is the only thing that touches
+        // nodes; visible workspaces verify frames, hidden ones publish the
+        // shape and verify on their next show.
+        var rebuilt = 0
+        var shapeFailures: [String] = []
+        for layout in snapshot.workspaces {
+            let ws = layout.workspace
+            guard let screen = workspaceManager.homeScreenForWorkspace(ws),
+                  !workspaceManager.isMonitorDisabled(screen) else { continue }
+            let onWorkspace = allWindows.filter {
+                workspaceManager.workspaceFor($0.windowID) == ws
+                    && !stateCache.floatingWindowIDs.contains($0.windowID)
+                    && !scratchpad.contains($0.windowID)
+            }
+            guard !onWorkspace.isEmpty else { continue }
+            var queues = plan.windowsByRef[ws] ?? [:]
+            let outcome = tilingEngine.rebuildTree(
+                forWorkspace: ws, screen: screen, from: layout.root,
+                windows: onWorkspace, applyFrames: workspaceManager.isWorkspaceVisible(ws)
+            ) { ref in
+                guard var queue = queues[ref], !queue.isEmpty else { return nil }
+                let id = queue.removeFirst()
+                queues[ref] = queue
+                return byID[id]
+            }
+            switch outcome {
+            case .rebuilt:
+                rebuilt += 1
+            case .exceedsMaxDepth(let depth):
+                shapeFailures.append("ws\(ws) depth \(depth)")
+            case .rejected(let reason):
+                shapeFailures.append("ws\(ws) \(reason.map { "\($0)" } ?? "superseded")")
+            }
+        }
+        if rebuilt > 0 { updatePositionCache(windows: allWindows) }
+
         hyprLog(.notice, .lifecycle,
-                "layout restore '\(key)': \(plan.workspaceByWindow.count) matched, \(moved) moved, \(plan.unmatchedRefs.count) saved windows absent")
+                "layout restore '\(key)': \(plan.workspaceByWindow.count) matched, \(moved) moved, \(rebuilt) trees rebuilt, \(plan.unmatchedRefs.count) saved windows absent"
+                + (shapeFailures.isEmpty ? "" : "; shape kept live for \(shapeFailures.joined(separator: ", "))"))
         if manual {
-            flashLayoutMessage(moved == 0 ? "Layout already in place" : "Layout restored")
+            flashLayoutMessage(moved == 0 && rebuilt == 0 ? "Layout already in place" : "Layout restored")
         }
         return true
     }

@@ -182,8 +182,15 @@ saved leaves with live windows — bundle ID required, then exact title,
 then current workspace; every window claimed once — and
 `WorkspaceOrchestrator.moveWindows` applies the workspace moves with
 the same suppression / tree-removal / park sequence as `Hypr+Shift+N`.
-The Settings monitor toggle reuses the reconcile under an unchanged key
-and does not restore.
+Then `TilingEngine.rebuildTree` replaces each saved workspace's tree
+with the saved shape: a leaf whose window is gone collapses its split
+as a close would, windows the snapshot never named smart-insert around
+the restored shape, and a saved tree deeper than the screen's max
+depth is left alone. Visible workspaces go through the same verified
+sizing as any tile and publish only on acceptance; a hidden
+workspace's windows are parked, so its shape is published unverified
+and verified on the next show. The Settings monitor toggle reuses the
+reconcile under an unchanged key and does not restore.
 
 ## Threading
 
