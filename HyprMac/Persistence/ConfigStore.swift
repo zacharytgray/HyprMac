@@ -237,6 +237,9 @@ struct SavedConfig: Codable {
     let windowCornerRadius: CGFloat?
     let scratchpadTileByDefault: Bool?
     let scratchpadRegionInset: CGFloat?
+    // `var` with a default so the synthesized memberwise init takes it as a
+    // trailing optional — existing `SavedConfig(...)` call sites keep compiling.
+    var restoreLayoutOnLaunch: Bool? = nil
 }
 
 // MARK: - per-keybind decode tolerance
@@ -262,6 +265,7 @@ extension SavedConfig {
         case dimInactiveWindows, dimIntensity, mouseHoverPollHz
         case chromeFadeDurationSec, windowCornerRadius
         case scratchpadTileByDefault, scratchpadRegionInset
+        case restoreLayoutOnLaunch
     }
 
     init(from decoder: Decoder) throws {
@@ -320,6 +324,7 @@ extension SavedConfig {
         self.windowCornerRadius = try c.decodeIfPresent(CGFloat.self, forKey: .windowCornerRadius)
         self.scratchpadTileByDefault = try c.decodeIfPresent(Bool.self, forKey: .scratchpadTileByDefault)
         self.scratchpadRegionInset = try c.decodeIfPresent(CGFloat.self, forKey: .scratchpadRegionInset)
+        self.restoreLayoutOnLaunch = try c.decodeIfPresent(Bool.self, forKey: .restoreLayoutOnLaunch)
     }
 }
 

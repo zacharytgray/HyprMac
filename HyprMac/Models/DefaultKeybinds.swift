@@ -61,6 +61,14 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_DownArrow), modifiers: [.hypr, .control, .shift],
                              action: .resizeDirection(.down)))
 
+        // hypr + ctrl + s: save layout for current display config
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_S), modifiers: [.hypr, .control],
+                             action: .saveLayout))
+
+        // hypr + ctrl + r: restore layout for current display config
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_R), modifiers: [.hypr, .control],
+                             action: .restoreLayout))
+
         // hypr + shift + t: toggle floating
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_T), modifiers: [.hypr, .shift],
                              action: .toggleFloating))
