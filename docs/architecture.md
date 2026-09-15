@@ -157,6 +157,40 @@ Per-app AXObserver notifications are the primary discovery trigger; the
   `tree.root`.
 - **`WorkspaceManager`** owns the workspace↔screen mapping. Nothing
   else writes `monitorWorkspace` or `workspaceHomeScreen`.
+- **`LayoutSnapshotStore`** owns `layout-snapshots.json`. It never
+  sees a tree — `TilingEngine.layoutTree` serialises one and
+  `WindowManager` hands the result across.
+
+## Layout persistence
+
+A snapshot is the BSP shape of every regular workspace — a
+`LayoutNode` (leaf, or split with override / ratio / user-set flag)
+per workspace — keyed by a fingerprint of the connected displays.
+Frames are not stored. Floaters, scratchpad members and
+disabled-monitor windows are in no tree, so they are never saved.
+
+`Hypr+Ctrl+S` saves manually. The first `didChangeScreenParameters`
+notification of a transition auto-saves under the departing key —
+before macOS shuffles windows onto surviving screens and before the
+trees migrate; later fires in the same debounce do not save again. An
+automatic save never replaces a manual snapshot, and pruning evicts
+automatic snapshots first.
+
+`Hypr+Ctrl+R`, a settled reconcile onto a known key, and launch
+(opt-in via `restoreLayoutOnLaunch`) restore. `LayoutMatcher` pairs
+saved leaves with live windows — bundle ID required, then exact title,
+then current workspace; every window claimed once — and
+`WorkspaceOrchestrator.moveWindows` applies the workspace moves with
+the same suppression / tree-removal / park sequence as `Hypr+Shift+N`.
+Then `TilingEngine.rebuildTree` replaces each saved workspace's tree
+with the saved shape: a leaf whose window is gone collapses its split
+as a close would, windows the snapshot never named smart-insert around
+the restored shape, and a saved tree deeper than the screen's max
+depth is left alone. Visible workspaces go through the same verified
+sizing as any tile and publish only on acceptance; a hidden
+workspace's windows are parked, so its shape is published unverified
+and verified on the next show. The Settings monitor toggle reuses the
+reconcile under an unchanged key and does not restore.
 
 ## Threading
 

@@ -17,6 +17,7 @@ struct GeneralSettingsView: View {
             mousePanel
             neverTilePanel
             systemPanel
+            layoutsPanel
             footerPanel
         }
         .onAppear {
@@ -162,6 +163,19 @@ struct GeneralSettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: layouts
+
+    private var layoutsPanel: some View {
+        HyprPanel("Layouts",
+                  footer: "Hypr+Ctrl+S saves the window arrangement for the current display setup; Hypr+Ctrl+R brings it back. A saved layout also restores on its own when that display setup reconnects.") {
+            HyprRow("Restore saved layout at launch", icon: "arrow.counterclockwise", divider: false) {
+                Toggle("", isOn: $config.restoreLayoutOnLaunch)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
         }
     }
 

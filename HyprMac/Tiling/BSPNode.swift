@@ -4,8 +4,9 @@
 
 import Foundation
 
-/// Direction in which a node's children divide its rect.
-enum SplitDirection: Equatable {
+/// Direction in which a node's children divide its rect. Raw values are
+/// the wire form in `layout-snapshots.json`.
+enum SplitDirection: String, Codable, Equatable {
     /// Left | right.
     case horizontal
     /// Top / bottom.
