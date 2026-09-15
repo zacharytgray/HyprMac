@@ -186,6 +186,11 @@ class WindowManager {
     /// that then win the migration over the real trees.
     private var displayTransitionPending = false
     private var retileSkippedDuringTransition = false
+    /// Display key of the last settled topology. The auto-save on the first
+    /// notification of a transition files the departing layout under this
+    /// key — by then `displayManager.screens` already reflects the new one.
+    private var settledDisplayKey = ""
+    private let layoutStore = LayoutSnapshotStore.shared
 
     /// Wire the dependency graph and configure every subsystem callback.
     ///
@@ -400,6 +405,9 @@ class WindowManager {
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         actionDispatcher.toggleScratchpad = { [weak self] in self?.scratchpad.toggle() }
         actionDispatcher.moveToScratchpad = { [weak self] in self?.scratchpad.sendFocusedWindow() }
+        actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }
+        actionDispatcher.restoreLayout = { [weak self] in self?.restoreLayoutSnapshot(manual: true) }
+
         configureLiveConfigUpdates()
         hotkeyManager.updateHyprKey(config.hyprKey)
         hotkeyManager.updateKeybinds(config.keybinds)
@@ -578,7 +586,11 @@ class WindowManager {
             guard let self, self.isRunning else { return }
             self.spaceManager.setup()
             self.workspaceManager.initializeMonitors()
+            self.settledDisplayKey = LayoutSnapshotStore.displayKey(screens: self.displayManager.screens)
             let initialWindows = self.snapshotAndTile()
+            if self.config.restoreLayoutOnLaunch {
+                self.restoreLayoutSnapshot(manual: false, windows: initialWindows)
+            }
             // attach AX observers after the initial tile so their events feed
             // the same coalescing scheduler. this covers the app-level
             // subscriptions (create / focus), then immediately adds window-level
@@ -1333,7 +1345,8 @@ class WindowManager {
         // drop them for the settle window (a few seconds around wake).
         if displayTransitionPending {
             switch action {
-            case .switchWorkspace, .moveToWorkspace, .moveWindowToMonitor, .cycleWorkspace:
+            case .switchWorkspace, .moveToWorkspace, .moveWindowToMonitor, .cycleWorkspace,
+                 .saveLayout, .restoreLayout:
                 hyprLog(.notice, .lifecycle, "workspace action dropped mid-display-transition")
                 return
             default:
@@ -1560,7 +1573,7 @@ class WindowManager {
     /// `distributeWindowsAcrossWorkspaces` — rewrote every window's
     /// workspace assignment and un-floated manual floats on every
     /// monitor connect/disconnect.
-    private func reconcileAfterDisplayChange() {
+    private func reconcileAfterDisplayChange(restoreSavedLayout: Bool = false) {
         // every pending recovery captured a screen that may no longer own
         // its workspace
         admissionRecovery.cancelAll(reason: "display change")
@@ -1577,6 +1590,95 @@ class WindowManager {
         classifyAndAssign(allWindows)
         reparkHiddenWorkspaceWindows(allWindows)
         tileAllVisibleSpaces(windows: allWindows)
+        // a known display configuration came back — put windows on the
+        // workspaces the saved layout had them on. only the settled
+        // reconcile asks for this: the Settings monitor toggle reuses the
+        // reconcile under an unchanged key and must not undo itself.
+        if restoreSavedLayout {
+            restoreLayoutSnapshot(manual: false, windows: allWindows)
+        }
+    }
+
+    // MARK: - layout snapshots
+
+    /// Serialise every regular workspace's tree under `displayKey`
+    /// (default: the current topology). Floaters, scratchpad members, and
+    /// windows without a workspace are in no tree, so they are never saved.
+    ///
+    /// - Returns: `false` when nothing was saved — no tiled windows, or an
+    ///   automatic save yielding to a manual snapshot.
+    @discardableResult
+    private func saveLayoutSnapshot(manual: Bool, displayKey: String? = nil) -> Bool {
+        let key = displayKey ?? LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        let workspaces = workspaceManager.regularWorkspaceWindowIDs().keys.sorted().compactMap { ws -> WorkspaceLayout? in
+            guard let root = tilingEngine.layoutTree(forWorkspace: ws, ref: { [self] in windowRef(for: $0) }) else { return nil }
+            return WorkspaceLayout(workspace: ws, root: root)
+        }
+        guard !workspaces.isEmpty else {
+            hyprLog(.debug, .lifecycle, "layout save skipped — no tiled windows for '\(key)'")
+            return false
+        }
+        let saved = layoutStore.save(displayKey: key, workspaces: workspaces, manual: manual)
+        if manual {
+            flashLayoutMessage("Layout saved")
+        }
+        return saved
+    }
+
+    /// Move windows back to the workspaces the saved layout for the
+    /// current topology had them on. Matching goes through `LayoutMatcher`
+    /// and the moves through `WorkspaceOrchestrator.moveWindows`, so the
+    /// same suppression, tree removal, and park/place sequence applies as
+    /// for a user `Hypr+Shift+N`. Tree shape is not restored here.
+    ///
+    /// - Parameter windows: pre-fetched window list; AX is queried when nil.
+    /// - Returns: `false` when there is no snapshot for this topology.
+    @discardableResult
+    private func restoreLayoutSnapshot(manual: Bool, windows: [HyprWindow]? = nil) -> Bool {
+        let key = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        guard let snapshot = layoutStore.snapshot(for: key) else {
+            hyprLog(.debug, .lifecycle, "no saved layout for '\(key)'")
+            if manual { flashLayoutMessage("No saved layout for this display setup") }
+            return false
+        }
+        let allWindows = windows ?? accessibility.getAllWindows()
+        let candidates = allWindows.compactMap { w -> LayoutMatcher.Candidate? in
+            guard !stateCache.floatingWindowIDs.contains(w.windowID),
+                  !scratchpad.contains(w.windowID),
+                  let ws = workspaceManager.workspaceFor(w.windowID),
+                  let ref = windowRef(for: w) else { return nil }
+            return LayoutMatcher.Candidate(windowID: w.windowID, bundleID: ref.bundleID,
+                                           title: ref.title, workspace: ws)
+        }
+        let plan = LayoutMatcher.plan(snapshot, candidates: candidates)
+        let byID = Dictionary(allWindows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        let moves: [(window: HyprWindow, workspace: Int)] = plan.workspaceByWindow
+            .compactMap { wid, ws in
+                guard let w = byID[wid], workspaceManager.workspaceFor(wid) != ws else { return nil }
+                return (w, ws)
+            }
+            .sorted { $0.window.windowID < $1.window.windowID }
+        let moved = workspaceOrchestrator.moveWindows(moves)
+        hyprLog(.notice, .lifecycle,
+                "layout restore '\(key)': \(plan.workspaceByWindow.count) matched, \(moved) moved, \(plan.unmatchedRefs.count) saved windows absent")
+        if manual {
+            flashLayoutMessage(moved == 0 ? "Layout already in place" : "Layout restored")
+        }
+        return true
+    }
+
+    private func windowRef(for window: HyprWindow) -> SavedWindowRef? {
+        guard let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier,
+              !bundleID.isEmpty else { return nil }
+        return SavedWindowRef(bundleID: bundleID, title: window.title ?? "")
+    }
+
+    /// Labelled pill on every enabled screen. Manual save/restore only —
+    /// the automatic paths stay silent.
+    private func flashLayoutMessage(_ message: String) {
+        for screen in displayManager.screens where !workspaceManager.isMonitorDisabled(screen) {
+            focusBorder.flashInfo(message: message, around: displayManager.cgRect(for: screen))
+        }
     }
 
     /// Re-park every window assigned to a hidden workspace at the current
@@ -2534,6 +2636,13 @@ class WindowManager {
         }
         let names = displayManager.screens.map { $0.localizedName }.joined(separator: ", ")
         hyprLog(.notice, .lifecycle, "screenParametersChanged fired (current screens: [\(names)])")
+        // snapshot the departing layout on the FIRST notification of a
+        // transition — before macOS shuffles windows onto surviving screens
+        // and before the trees migrate. later fires in the same debounce
+        // would re-save the piled-up state under the same key.
+        if !displayTransitionPending, !settledDisplayKey.isEmpty {
+            saveLayoutSnapshot(manual: false, displayKey: settledDisplayKey)
+        }
         // the scratchpad can't survive a topology change — reconcile would
         // park its visible members under a live scrim
         scratchpad.hide(reason: .displayChange)
@@ -2578,6 +2687,7 @@ class WindowManager {
                 return
             }
             self.lastDisplayFingerprint = fingerprint
+            self.settledDisplayKey = LayoutSnapshotStore.displayKey(screens: self.displayManager.screens)
             self.focusBorder.primaryScreenHeight = self.displayManager.primaryScreenHeight
             self.focusBrackets.primaryScreenHeight = self.displayManager.primaryScreenHeight
             // cover the reconcile itself plus a settle tail — the retile it
@@ -2589,7 +2699,7 @@ class WindowManager {
             // the fingerprint refreshed DisplayManager; initializeMonitors runs
             // before TilingEngine.handleDisplayChange so the home-screen
             // lookup the engine consults is current.
-            self.reconcileAfterDisplayChange()
+            self.reconcileAfterDisplayChange(restoreSavedLayout: true)
         }
     }
 

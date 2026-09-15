@@ -59,6 +59,10 @@ extension Keybind {
             return "arrow.up.left.and.arrow.down.right"
         case .toggleTiling:
             return "pause.circle"
+        case .saveLayout:
+            return "square.and.arrow.down"
+        case .restoreLayout:
+            return "square.and.arrow.up"
         }
     }
 
@@ -91,6 +95,8 @@ extension Keybind {
         case .moveToScratchpad:             return "Send to Scratchpad"
         case .resizeDirection(let d):       return "Resize \(d.rawValue.capitalized)"
         case .toggleTiling:                 return "Pause / Resume Tiling"
+        case .saveLayout:                   return "Save Layout"
+        case .restoreLayout:                return "Restore Layout"
         }
     }
 }

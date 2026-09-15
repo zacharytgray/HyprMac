@@ -363,6 +363,37 @@ class TilingEngine {
         existingTree(forWorkspace: workspace, screen: screen)?.allWindows.map(\.windowID) ?? []
     }
 
+    // MARK: - layout persistence
+
+    /// Serialised shape of `workspace`'s tree on whichever screen holds
+    /// it, or `nil` when the workspace has no tiled windows. `ref` names
+    /// each window in a restart-stable way; a window it declines (no
+    /// bundle ID) is dropped and its split collapses, exactly as if it
+    /// had closed. Read-only — the engine stays the only thing that
+    /// walks nodes (`docs/architecture.md`).
+    func layoutTree(forWorkspace workspace: Int, ref: (HyprWindow) -> SavedWindowRef?) -> LayoutNode? {
+        for (key, t) in trees where key.workspace == workspace && !t.allWindows.isEmpty {
+            if let root = Self.serialize(t.root, ref: ref) { return root }
+        }
+        return nil
+    }
+
+    private static func serialize(_ node: BSPNode, ref: (HyprWindow) -> SavedWindowRef?) -> LayoutNode? {
+        if let window = node.window {
+            return ref(window).map(LayoutNode.leaf)
+        }
+        guard let left = node.left, let right = node.right else { return nil }
+        switch (serialize(left, ref: ref), serialize(right, ref: ref)) {
+        case (nil, nil):
+            return nil
+        case (let only?, nil), (nil, let only?):
+            return only
+        case (let l?, let r?):
+            return .split(override: node.splitOverride, ratio: node.splitRatio,
+                          userSet: node.userSetRatio, left: l, right: r)
+        }
+    }
+
     func captureTiledDrag(draggedID: CGWindowID, workspace: Int, screen: NSScreen,
                           floatingIDs: Set<CGWindowID>) -> TiledDragCaptureResult {
         let key = TilingKey(workspace: workspace, screen: screen)
