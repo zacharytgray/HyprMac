@@ -81,6 +81,8 @@ final class ActionDispatcher {
     var isMenuTracking: () -> Bool = { false }
     var toggleScratchpad: () -> Void = {}
     var moveToScratchpad: () -> Void = {}
+    var saveLayout: () -> Void = {}
+    var restoreLayout: () -> Void = {}
 
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
@@ -235,6 +237,10 @@ final class ActionDispatcher {
             resizeInDirection(dir)
         case .toggleTiling:
             break // handled by WindowManager so it remains available while paused
+        case .saveLayout:
+            saveLayout()
+        case .restoreLayout:
+            restoreLayout()
         }
 
         // let the Tour try-it hint (and any future observers) react. cheap —
@@ -264,6 +270,8 @@ final class ActionDispatcher {
         case .moveToScratchpad:    return "moveToScratchpad"
         case .resizeDirection:     return "resizeDirection"
         case .toggleTiling:        return "toggleTiling"
+        case .saveLayout:          return "saveLayout"
+        case .restoreLayout:       return "restoreLayout"
         }
     }
 

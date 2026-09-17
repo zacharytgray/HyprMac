@@ -96,6 +96,8 @@ The physical Hypr key is configurable in Settings → General. Options include C
 | `⇪ + K` | Show keybind overlay |
 | `⇪ + ↵` | Launch/focus Terminal |
 | `⇪ + \`` | Warp cursor to menu bar |
+| `⇪ + ⌃ + S` | Save layout for the current display setup |
+| `⇪ + ⌃ + R` | Restore layout for the current display setup |
 
 ### Mouse
 
