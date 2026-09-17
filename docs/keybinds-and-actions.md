@@ -23,6 +23,10 @@ enum Action: Equatable {
     case closeWindow
     case cycleWorkspace(Int)
     case resizeDirection(Direction)
+    case toggleScratchpad
+    case moveToScratchpad
+    case saveLayout
+    case restoreLayout
 }
 ```
 
