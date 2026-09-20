@@ -47,9 +47,11 @@ macOS doesn't ship with a tiling window manager. Third-party options either requ
 ### Homebrew (recommended)
 
 ```sh
-brew tap zacharytgray/hyprmac
-brew install --cask hyprmac
+brew trust --cask zacharytgray/hyprmac/hyprmac
+brew install --cask zacharytgray/hyprmac/hyprmac
 ```
+
+Homebrew refuses to load casks from third-party taps until you trust them. The first line trusts only the HyprMac cask, which also lets `brew upgrade --cask hyprmac` work later.
 
 ### Manual Download
 
