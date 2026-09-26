@@ -446,13 +446,15 @@ this list is the index.
   within that app can put the tile back above its sibling and cause a loop.
   It raises only floaters a tile overlaps, stands down while the frontmost
   app has a menu open, and cools a pair down when the raise does nothing
-  (Tahoe often refuses a cross-app AXRaise) or loops. Hover and Hypr+Arrow
+  (macOS 27 ignores a cross-app AXRaise, seen live) or loops. A managed
+  floater counts on layer 0 or on the floating level (3), since AppKit
+  moves floating panels between the two as their app activates. Hover and Hypr+Arrow
   focus avoid burying floaters in the first place through
   `TiledFocusRouter`; workspace switches, window moves and the scratchpad
   do not yet. A click on a tile still lifts it natively; the click re-raise
   puts the floater back about 40 ms after mouse-up and hands focus back to
   the tile without lifting it, so the covered part of the floater blinks
-  once per click. When a raise does nothing, the dim shows the floater only
+  once per click. That works only for a floater of the tile's own app. When a raise does nothing, the dim shows the floater only
   where it is in front. See `docs/debugging.md` "Floaters, open menus and
   no-raise focus".
 - **Squishy-sibling swap rejection** — when a swap squishes a

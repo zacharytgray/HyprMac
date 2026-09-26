@@ -708,9 +708,9 @@ Log lines, all at notice level:
 | `raise behind restore: wid=<id> (front moved <pid> → <pid>)` | floating | the raised app took focus; it went back |
 | `raise behind restore skipped: popup wid=<id> layer=<n>` | floating | a menu opened meanwhile, so focus stayed where it was |
 | `raise behind cooldown: pair=<floater>/<tile> reason=loop\|burst for <n>s` | floating | loop or burst stopped |
-| `no-raise focus: wid=<id> pid=<pid> reason=<why> floaters=[…] front=<pid> prevKey=<id>` | focus | a covered tile was focused without activate or click |
-| `no-raise focus verify: wid=<id> … front=<pid> (want <pid>) key=<id> floatersAbove=[…] buried=[…] → landed\|missed` | focus | whether it worked |
-| `no-raise focus fallback: wid=<id> path=activate\|activate+click` | focus | it did not; the usual path ran |
+| `no-raise focus: wid=<id> pid=<pid> reason=<why> floaters=[…] layers=[…] front=<pid> crossApp=<bool> prevKey=<id>` | focus | a covered tile was focused without activate or click. `layers` 3 means the floater was at the floating level; `crossApp=true` means SkyLight had to switch the front process |
+| `no-raise focus verify: wid=<id> … front=<pid> (want <pid>) key=<id> floatersAbove=[…] layers=[…] buried=[…] → landed\|missed, floaters kept above\|buried` | focus | whether focus landed, and whether the floaters stayed above the tile |
+| `no-raise focus fallback: wid=<id> path=activate\|activate+click after a miss (front=<pid> want <pid>, key=<id>); this lifts the tile over […]` | focus | it did not land; the usual path ran and lifts the tile |
 | `no-raise focus superseded: wid=<id>` | focus | a newer focus replaced a same-app hand-off |
 | `no-raise focus verify: wid=<id> superseded` | focus | a newer focus came before the check |
 | `no-raise focus fallback skipped: …` | focus | a menu opened, or the user switched apps, meanwhile |
@@ -729,14 +729,50 @@ there. If it says `missed` and a `fallback` line follows, Tahoe refused it
 and hover onto a covered tile still lifts the tile, as before. On the
 MacBook (macOS 27, Safari only, September 26) hover, Hypr+Arrow and typing
 into a covered tile all logged `landed` with the floater in
-`floatersAbove`. Cross-app no-raise focus is still unproven.
+`floatersAbove`. Every one of those had the target's app already in
+front. No-raise focus that has to switch the front process
+(`crossApp=true`) has not been seen live yet.
+
+Cross-app AXRaise does not work on macOS 27. The same day, a Messages
+Quick Look preview under a Safari tile logged `raise behind: wids=[5252]
+under=[71889]` and then `raise behind ineffective: wid=5252 still under
+71889`. So raise-behind and the click re-raise can only lift a floater of
+the tile's own app. A floater of another app stays in front only if focus
+never lifts the tile over it, which is the no-raise path's job.
+
+Floating-level floaters. AppKit puts a floating panel (a Quick Look
+preview, an inspector) at the floating level, CG layer 3, while its app is
+active, and drops it to layer 0 when the app deactivates. The floater rules
+used to look at layer 0 only. After a click on the preview made Messages
+active, the preview sat at layer 3 and hover onto a Safari tile saw no
+covering floater. It took the usual path, activated Safari, the preview
+dropped to layer 0, and the tile came up over it. Now a window HyprMac
+manages as a floater counts on layer 0 or layer 3 in the router,
+raise-behind, the click re-raise and the dim cutouts. A layer-3 floater is
+above every tile, so its cutout is whole. Unmanaged layer-3 windows are
+still ignored, and a raised window of the front app that we do not manage
+still blocks hover. Hovering a managed floater at layer 3 is a hit on that
+floater, and so is a click on it.
+
+For that repro, click the preview, then hover a Safari tile. It should log
+`no-raise focus: wid=<tile> pid=<safari> reason=ffm floaters=[<preview>]
+layers=[3] front=<messages> crossApp=true`. Then one of:
+
+- `no-raise focus verify: … front=<safari> (want <safari>) key=<tile> …
+  → landed, floaters kept above`: the process switch worked and the
+  preview stayed in front after dropping to layer 0.
+- `… → landed, floaters buried`: focus moved, but the preview fell under
+  the tile. A `raise behind … ineffective` line usually follows.
+- `… → missed, …` then `no-raise focus fallback: … after a miss (…)`:
+  SkyLight would not switch the front process. The usual path ran and
+  lifted the tile, as before this fix.
 
 For the click re-raise, click a tile beside a floater. Same app should log
 `click re-raise: … sameApp=true → on top`, then `no-raise focus: …
-reason=click-reraise` and `no-raise focus verify: … → landed` with the
-floater in `floatersAbove`. A cross-app pair logs `→ on top` if Tahoe
-honours the AXRaise, or `→ ineffective — cooldown 30s` once if not; the tile
-then stays on top and the dim shows the floater only where it is in front.
+reason=click-reraise` and `no-raise focus verify: … → landed, floaters
+kept above`. A cross-app pair logs `→ ineffective — cooldown 30s` once per
+30 s, as on macOS 27. The tile then stays on top, and the dim shows the
+floater only where it is in front.
 
 ### Rejected drag feedback and source restoration
 
