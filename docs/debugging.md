@@ -220,6 +220,27 @@ the line is only reached inside a rejected candidate or adjusted pass,
 and a restoration pass classifies nothing, so it logs no `min evidence:`
 lines at all.
 
+Every candidate that is refused also logs one line at `.notice` under
+`tiling`, so Console shows it without the file log or the trace tier:
+
+```
+verified layout candidate failed: reason=geometryMismatch(74) phase=candidate off=[74: target=(1724.0, 38.0, 1708.0, 1394.0) actual=(1724.0, 38.0, 1708.0, 1136.0)] actual=[115: (8.0, 38.0, 1708.0, 1394.0), 74: (1724.0, 38.0, 1708.0, 1136.0)]
+verified layout rollback leaves newcomers in place: ids=[74] — their originals are outside the restoration rect
+```
+
+`off` lists each window that read back more than a point from its target,
+or `actual=unread` when the readback never got it. `phase` is the pass that
+failed last: `candidate`, or `adjusted` after a min-size ratio adjustment.
+The `verified layout rejected and restored:` and `verified layout
+degraded:` lines that follow print the frames after the rollback, which is
+why this line exists. The second line names newcomers whose captured
+original was off the restoration rect — a window moved in from another
+screen, or a parked one. The rollback puts the incumbents back and leaves
+those wherever the candidate left them: on the destination if their writes
+went out, where they were if the candidate failed before reaching them. An
+ordinary tiling pass then reports them stranded, and the admission
+recovery's lines follow.
+
 `MinSizeMemory` then logs what it did with that evidence under
 `category: lifecycle`, in three shapes:
 

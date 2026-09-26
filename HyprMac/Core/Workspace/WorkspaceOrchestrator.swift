@@ -574,11 +574,10 @@ final class WorkspaceOrchestrator {
     ///
     /// `sourceScreen` is not decoration. A visible destination is always
     /// another screen, so the window is standing on `sourceScreen` when the
-    /// attempt captures it, and a captured original outside the restoration
-    /// rect cancels the whole rollback — the incumbents would keep the failed
-    /// candidate's frames and the window would be left on a screen it is not
-    /// assigned to, which the next poll reads as drift and acts on. The
-    /// engine is told to reach both screens.
+    /// attempt captures it. Without the reach the rollback leaves a newcomer
+    /// from outside the restoration rect where the candidate put it — on a
+    /// screen it is not assigned to, which the next poll reads as drift and
+    /// acts on. The engine is told to reach both screens.
     ///
     /// - Returns: whether the screen accepted a layout holding `window`.
     private func revalidateVisibleDestination(_ window: HyprWindow, workspace: Int,
@@ -928,10 +927,10 @@ final class WorkspaceOrchestrator {
             hyprLog(.notice, .workspace, "moveWindows: ws\(workspace) refused its arrivals"
                     + " [\(arriving.sorted().map(String.init).joined(separator: ", "))]"
                     + " \(layout.failure.map { "\($0)" } ?? "no slot")")
-            // the refused candidate may have been published in part, or its
-            // frames left in place when a parked arrival put the rollback out
-            // of reach. record what was tried so the next round lays the
-            // destination out again without these arrivals
+            // the refused candidate may have been published in part, or a
+            // parked arrival left where the candidate put it while the rest
+            // were rolled back. record what was tried so the next round lays
+            // the destination out again without these arrivals
             laidOut[workspace] = (screen, ids)
             return workspace
         }
