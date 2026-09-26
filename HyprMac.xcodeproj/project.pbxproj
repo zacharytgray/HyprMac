@@ -85,6 +85,7 @@
 		440732216A02AA6BC39588CC /* AppLauncherManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */; };
 		446BF26414F6821D08738E80 /* WorkspaceOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCF579F05A2DFBB28DF945A /* WorkspaceOrchestrator.swift */; };
 		45AA3F81F877E4CDA2BBB0D3 /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = F95CD8FB8B25B86236401214 /* AppIcon.svg */; };
+		492F188FFE5E7E9FCCAF42BB /* HyprKeyPickerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D568478EEC93DE00AEA47C7 /* HyprKeyPickerTests.swift */; };
 		498931AB0DE01FD760A0C1DC /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */; };
 		49B97DA976D5A62FE5B243DC /* ColorPickerRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65F2F88E3A815333F6542EEA /* ColorPickerRow.swift */; };
 		4A37B52F419B3A889E40BC98 /* WelcomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB697B2619BEB7E2434E157E /* WelcomeView.swift */; };
@@ -386,6 +387,7 @@
 		8B20DF87F29CD5B1164F1E80 /* Action.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Action.swift; sourceTree = "<group>"; };
 		8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
 		8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityManager.swift; sourceTree = "<group>"; };
+		8D568478EEC93DE00AEA47C7 /* HyprKeyPickerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprKeyPickerTests.swift; sourceTree = "<group>"; };
 		8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDiscoveryService.swift; sourceTree = "<group>"; };
 		901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCacheTests.swift; sourceTree = "<group>"; };
 		913F7521CBE5FF04365D18D8 /* SpaceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceManager.swift; sourceTree = "<group>"; };
@@ -706,6 +708,7 @@
 				56823428D522E6724F9CB840 /* FullscreenWorkspaceTransferTests.swift */,
 				43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */,
 				075CB706E42649E175CB784A /* HoverResponseRateTests.swift */,
+				8D568478EEC93DE00AEA47C7 /* HyprKeyPickerTests.swift */,
 				4DE1252424844EA3C4E1B709 /* HyprKeySystemGuidanceTests.swift */,
 				31EF3D85D0E0F9BCD33F6455 /* HyprWindowAXReadTests.swift */,
 				07CBA6B4C81BE27EE321B8B4 /* InterfaceSnapshotTests.swift */,
@@ -1175,6 +1178,7 @@
 				F9857D1EBAD4EB6F9113B6E1 /* FullscreenWorkspaceTransferTests.swift in Sources */,
 				C1CCA6C07D0B273CF3AB3D6C /* HandleDisplayChangeTests.swift in Sources */,
 				D1DF9408D40B20ADFE58C85D /* HoverResponseRateTests.swift in Sources */,
+				492F188FFE5E7E9FCCAF42BB /* HyprKeyPickerTests.swift in Sources */,
 				DFE89755AA5CF65CC6319D33 /* HyprKeySystemGuidanceTests.swift in Sources */,
 				E8EB88F6C13061D33ECC0B59 /* HyprWindowAXReadTests.swift in Sources */,
 				4A73DDEB709BF9394E68F420 /* InterfaceSnapshotTests.swift in Sources */,

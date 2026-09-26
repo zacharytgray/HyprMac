@@ -282,8 +282,10 @@ struct KeybindsSettingsView: View {
 
                 Spacer(minLength: HyprSpacing.sm)
 
+                // a saved key that is no longer offered keeps its row until
+                // the user picks another one
                 Picker("", selection: $config.hyprKey) {
-                    ForEach(HyprKey.allCases) { key in
+                    ForEach(HyprKey.pickerRows(for: config.hyprKey)) { key in
                         Text(key.displayName).tag(key)
                     }
                 }
@@ -292,6 +294,24 @@ struct KeybindsSettingsView: View {
             }
             .padding(.horizontal, HyprSpacing.lg)
             .padding(.vertical, HyprSpacing.md)
+
+            if let note = config.hyprKey.notRecommendedNote {
+                Rectangle()
+                    .fill(Color.hyprCyan.opacity(0.18))
+                    .frame(height: 0.5)
+                keyNoteRow(note, icon: "exclamationmark.circle")
+                    .padding(.horizontal, HyprSpacing.lg)
+                    .padding(.vertical, HyprSpacing.sm)
+            }
+
+            if let note = config.hyprKey.leftModifierNote {
+                Rectangle()
+                    .fill(Color.hyprCyan.opacity(0.18))
+                    .frame(height: 0.5)
+                keyNoteRow(note, icon: "info.circle")
+                    .padding(.horizontal, HyprSpacing.lg)
+                    .padding(.vertical, HyprSpacing.sm)
+            }
 
             if let guidance = HyprKeySystemGuidance.forKey(config.hyprKey) {
                 Rectangle()
@@ -316,6 +336,21 @@ struct KeybindsSettingsView: View {
             RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
                 .strokeBorder(Color.hyprCyan.opacity(0.22), lineWidth: 1)
         )
+    }
+
+    private func keyNoteRow(_ note: String, icon: String) -> some View {
+        HStack(spacing: HyprSpacing.sm) {
+            Image(systemName: icon)
+                .font(.system(size: 11))
+                .foregroundStyle(Color.hyprTextSecondary)
+                .frame(width: 40)
+                .accessibilityHidden(true)
+            Text(note)
+                .font(.hyprCaption)
+                .foregroundStyle(Color.hyprTextSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
     }
 
     // one line + button; the full explanation sits behind the info button
