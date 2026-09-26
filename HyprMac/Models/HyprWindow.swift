@@ -61,6 +61,11 @@ class HyprWindow: Equatable, Hashable {
     /// next Outlook window the same probe.
     var bundleID: String?
 
+    /// `true` for a Quick Look preview panel admitted by
+    /// `WindowAdmissionFilter`. The panel belongs to whichever app opened
+    /// it and always floats (`FloatingAdmissionPolicy`).
+    var isQuickLookPanel = false
+
     init(element: AXUIElement, windowID: CGWindowID, ownerPID: pid_t) {
         self.element = element
         self.windowID = windowID

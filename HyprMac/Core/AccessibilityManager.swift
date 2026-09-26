@@ -36,6 +36,7 @@ class AccessibilityManager {
         let bounds: CGRect
         let alpha: CGFloat
         let name: String?
+        let layer: Int
     }
 
     // short-lived cache for CGWindowListCopyWindowInfo — avoids duplicate
@@ -49,6 +50,13 @@ class AccessibilityManager {
     // investigation — logs fire on outage start/end, not per cycle.
     private var axListFailures: [pid_t: Int] = [:]
     private var axFrameDrops: [pid_t: Int] = [:]
+
+    // windows the AX filter dropped that have been logged once this launch.
+    // keyed by window id, or by pid+role+subrole when the id is unreadable.
+    private var loggedDrops: Set<String> = []
+    // last logged verdict per quick look panel id, so a panel logs when it
+    // is admitted or refused, not on every poll
+    private var quickLookVerdicts: [CGWindowID: String] = [:]
 
     /// Look up a window in the last discovery snapshot by `CGWindowID`.
     /// Wired by `WindowManager` to `stateCache.cachedWindows[id]`. Lets
@@ -66,9 +74,13 @@ class AccessibilityManager {
             return result
         }
         for info in windowList {
+            // layer 0 for ordinary windows. a quick look panel also sits at
+            // the floating layer while its app is active; getAllWindows keeps
+            // those entries for that panel alone.
             guard let pid = info[kCGWindowOwnerPID as String] as? pid_t,
                   let wid = info[kCGWindowNumber as String] as? CGWindowID,
-                  let layer = info[kCGWindowLayer as String] as? Int, layer == 0,
+                  let layer = info[kCGWindowLayer as String] as? Int,
+                  WindowAdmissionFilter.quickLookLayers.contains(layer),
                   let boundsDict = info[kCGWindowBounds as String] as? [String: CGFloat] else { continue }
 
             let alpha = info[kCGWindowAlpha as String] as? CGFloat ?? 1.0
@@ -78,7 +90,8 @@ class AccessibilityManager {
                 x: boundsDict["X"] ?? 0, y: boundsDict["Y"] ?? 0,
                 width: boundsDict["Width"] ?? 0, height: boundsDict["Height"] ?? 0
             )
-            result[pid, default: []].append(CGWindowInfo(windowID: wid, bounds: bounds, alpha: alpha, name: name))
+            result[pid, default: []].append(CGWindowInfo(windowID: wid, bounds: bounds, alpha: alpha,
+                                                         name: name, layer: layer))
         }
         cgWindowCacheData = result
         cgWindowCacheTime = now
@@ -100,6 +113,79 @@ class AccessibilityManager {
         AXValueGetValue(posVal as! AXValue, .cgPoint, &pos)
         AXValueGetValue(sizeVal as! AXValue, .cgSize, &size)
         return CGRect(origin: pos, size: size)
+    }
+
+    private func stringAttribute(_ element: AXUIElement, _ attribute: String) -> String? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        return value as? String
+    }
+
+    private func boolAttribute(_ element: AXUIElement, _ attribute: String) -> Bool? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success else {
+            return nil
+        }
+        return (value as? NSNumber)?.boolValue
+    }
+
+    private static func text(_ frame: CGRect?) -> String {
+        guard let f = frame else { return "none" }
+        return "(\(Int(f.minX)),\(Int(f.minY)),\(Int(f.width)),\(Int(f.height)))"
+    }
+
+    /// Log a window the AX filter kept out, once per window id per launch.
+    ///
+    /// This is how an unknown window kind gets identified on a real machine:
+    /// the line carries everything the filter looked at, plus the role
+    /// description, identifier, title and CG layer for context. Each pass
+    /// pays one `_AXUIElementGetWindow` call per dropped window for the key;
+    /// the rest is read only the first time.
+    private func logDropOnce(_ element: AXUIElement, pid: pid_t, bundle: String,
+                             role: String?, subrole: String?, isModal: Bool,
+                             reason: WindowAdmissionFilter.DropReason,
+                             cgEntries: [CGWindowInfo]) {
+        let wid = windowID(for: element)
+        let key = wid.map { "\($0)" } ?? "\(pid):\(role ?? "nil"):\(subrole ?? "nil")"
+        guard loggedDrops.insert(key).inserted else { return }
+        let title = stringAttribute(element, kAXTitleAttribute).map { String($0.prefix(80)) } ?? ""
+        let roleDescription = stringAttribute(element, kAXRoleDescriptionAttribute) ?? "nil"
+        let identifier = stringAttribute(element, kAXIdentifierAttribute) ?? "nil"
+        let cg = wid.flatMap { id in cgEntries.first { $0.windowID == id } }
+        let cgText = cg.map { String(format: "layer%d alpha=%.2f", $0.layer, Double($0.alpha)) } ?? "none"
+        // a role drop skipped the subrole and modal reads; the log reads them
+        let subroleText = reason == .role ? stringAttribute(element, kAXSubroleAttribute) : subrole
+        let modal = reason == .role ? (boolAttribute(element, kAXModalAttribute) ?? false) : isModal
+        hyprLog(.notice, .discovery, "AX filter dropped: wid=\(wid.map { "\($0)" } ?? "none") pid=\(pid) "
+                + "bundle=\(bundle) reason=\(reason.rawValue) role=\(role ?? "nil") "
+                + "subrole=\(subroleText ?? "nil") roleDesc=\(roleDescription) ident=\(identifier) "
+                + "modal=\(modal) title='\(title)' frame=\(Self.text(axFrame(for: element))) cg=\(cgText)")
+    }
+
+    /// Log a Quick Look panel's verdict when it changes: on the first pass
+    /// that sees it, and whenever it goes from admitted to refused or back.
+    /// A panel that stays admitted logs once per opening.
+    private func noteQuickLookVerdict(_ verdict: WindowAdmissionFilter.Verdict,
+                                      windowID: CGWindowID, pid: pid_t, bundle: String,
+                                      frame: () -> CGRect?, cg: CGWindowInfo?) {
+        let key: String
+        switch verdict {
+        case .quickLookPanel: key = "admitted"
+        case .dropped(let reason): key = reason.rawValue
+        case .standard: return
+        }
+        guard quickLookVerdicts[windowID] != key else { return }
+        quickLookVerdicts[windowID] = key
+        let cgText = cg.map { String(format: "layer%d alpha=%.2f", $0.layer, Double($0.alpha)) } ?? "none"
+        if key == "admitted" {
+            hyprLog(.notice, .discovery, "quick look panel admitted: wid=\(windowID) pid=\(pid) "
+                    + "bundle=\(bundle) cg=\(cgText) frame=\(Self.text(frame())) — floats")
+        } else {
+            hyprLog(.notice, .discovery, "quick look panel not admitted: wid=\(windowID) pid=\(pid) "
+                    + "bundle=\(bundle) reason=\(key) cg=\(cgText) frame=\(Self.text(frame()))")
+        }
     }
 
     // ask the AX system directly for the CGWindowID backing this element.
@@ -131,16 +217,6 @@ class AccessibilityManager {
         return (element, pid)
     }
 
-    /// Snapshot every visible normal window across all running apps.
-    ///
-    /// Walks every regular-activation app's `kAXWindowsAttribute`,
-    /// filters out minimized / non-standard / modal windows, then maps
-    /// each AX element to a `CGWindowID` by calling
-    /// `_AXUIElementGetWindow` first and falling back to greedy
-    /// nearest-position matching only when the SPI fails. The fallback
-    /// is defensive — it should not fire in practice.
-    ///
-    /// Returns an empty array when AX permission has not been granted.
     /// Where a window that left the on-screen snapshot actually is.
     /// `present` means the app still lists it and it is not minimized —
     /// another Space or native full-screen — so it can come back on its
@@ -170,6 +246,19 @@ class AccessibilityManager {
         return .absent
     }
 
+    /// Snapshot every visible normal window across all running apps.
+    ///
+    /// Walks every regular-activation app's `kAXWindowsAttribute`, skips
+    /// minimized windows, and lets `WindowAdmissionFilter` decide the rest:
+    /// standard windows and Quick Look panels get in; sheets, dialogs and
+    /// other panels do not. Each standard window maps to a `CGWindowID` by
+    /// calling `_AXUIElementGetWindow` first and falling back to greedy
+    /// nearest-position matching only when the SPI fails. The fallback is
+    /// defensive — it should not fire in practice. A Quick Look panel is
+    /// matched by the SPI alone, and its id is claimed before the fallback
+    /// runs.
+    ///
+    /// Returns an empty array when AX permission has not been granted.
     func getAllWindows() -> [HyprWindow] {
         guard AXIsProcessTrusted() else { return [] }
 
@@ -188,9 +277,18 @@ class AccessibilityManager {
             !excludedBundleIDs.contains($0.bundleIdentifier ?? "")
         }
 
+        // quick look panel ids seen this pass, so a panel that went away
+        // logs again the next time it opens
+        var quickLookSeen: Set<CGWindowID> = []
+
         for app in apps {
             let pid = app.processIdentifier
-            let candidates = cgWindows[pid] ?? []
+            let bundle = app.bundleIdentifier ?? "pid \(pid)"
+            // layer-0 entries feed ordinary matching exactly as before. the
+            // floating layer is only ever matched to a quick look panel, by
+            // that panel's own id.
+            let cgEntries = cgWindows[pid] ?? []
+            let candidates = cgEntries.filter { $0.layer == 0 }
             let appRef = AXUIElementCreateApplication(pid)
             var value: AnyObject?
             let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &value)
@@ -204,47 +302,78 @@ class AccessibilityManager {
                     let n = (axListFailures[pid] ?? 0) + 1
                     axListFailures[pid] = n
                     if n == 1 {
-                        hyprLog(.notice, .discovery, "AX window-list read FAILED for \(app.bundleIdentifier ?? "pid \(pid)") (err \(result.rawValue)) — \(candidates.count) on-screen window(s) drop from this snapshot")
+                        hyprLog(.notice, .discovery, "AX window-list read FAILED for \(bundle) (err \(result.rawValue)) — \(candidates.count) on-screen window(s) drop from this snapshot")
                     }
                 }
                 continue
             }
             if let n = axListFailures.removeValue(forKey: pid) {
-                hyprLog(.notice, .discovery, "AX window-list read recovered for \(app.bundleIdentifier ?? "pid \(pid)") after \(n) failed cycle(s)")
+                hyprLog(.notice, .discovery, "AX window-list read recovered for \(bundle) after \(n) failed cycle(s)")
             }
 
-            guard !candidates.isEmpty else { continue }
+            // a quick look panel opened from the desktop can be the app's
+            // only on-screen window, and it may sit on the floating layer
+            guard !cgEntries.isEmpty else { continue }
 
-            // collect all real AX windows for this app. skip minimized, modal,
-            // and non-standard subroles — those are sheets/dialogs/quick-look
-            // hosts that shouldn't enter tiling or claim a CG window ID.
+            // collect the AX windows discovery keeps. WindowAdmissionFilter
+            // decides: standard windows, plus quick look panels (which always
+            // float). sheets, dialogs and other panels stay out and never
+            // claim a CG id.
             var axEntries: [(element: AXUIElement, frame: CGRect)] = []
+            var quickLookEntries: [(element: AXUIElement, windowID: CGWindowID, frame: CGRect)] = []
+            // every quick look panel's own id, admitted or not. none of them
+            // may be handed to another window by the position fallback.
+            var quickLookOwnIDs: Set<CGWindowID> = []
             var frameDropCount = 0
             for axWin in axWindows {
                 var minimized: AnyObject?
                 AXUIElementCopyAttributeValue(axWin, kAXMinimizedAttribute as CFString, &minimized)
                 if let min = minimized as? Bool, min { continue }
 
-                var role: AnyObject?
-                AXUIElementCopyAttributeValue(axWin, kAXRoleAttribute as CFString, &role)
-                guard let roleStr = role as? String, roleStr == kAXWindowRole as String else { continue }
+                // subrole and modal only matter for a window, so a role drop
+                // costs one read, as before
+                let role = stringAttribute(axWin, kAXRoleAttribute)
+                let isWindowRole = role == kAXWindowRole as String
+                let subrole = isWindowRole ? stringAttribute(axWin, kAXSubroleAttribute) : nil
+                let isModal = isWindowRole ? (boolAttribute(axWin, kAXModalAttribute) ?? false) : false
+                let isQuickLook = WindowAdmissionFilter.isQuickLookSubrole(subrole)
+                // the panel is matched by its own id only, never by position
+                let ownID = isQuickLook ? windowID(for: axWin) : nil
+                let ownCG = ownID.flatMap { id in cgEntries.first { $0.windowID == id } }
+                if let ownID { quickLookOwnIDs.insert(ownID) }
 
-                var subrole: AnyObject?
-                AXUIElementCopyAttributeValue(axWin, kAXSubroleAttribute as CFString, &subrole)
-                let subroleStr = subrole as? String
-                let subroleNonStandard = subroleStr != nil && subroleStr != (kAXStandardWindowSubrole as String)
+                let verdict = WindowAdmissionFilter.classify(
+                    role: role, subrole: subrole, isModal: isModal,
+                    isFullScreen: { self.boolAttribute(axWin, "AXFullScreen") == true },
+                    cgWindow: { ownCG.map { .init(layer: $0.layer, alpha: $0.alpha) } }
+                )
 
-                var modalValue: AnyObject?
-                AXUIElementCopyAttributeValue(axWin, kAXModalAttribute as CFString, &modalValue)
-                let isModal = (modalValue as? Bool) ?? false
-
-                if subroleNonStandard || isModal { continue }
-
-                guard let frame = axFrame(for: axWin) else {
-                    frameDropCount += 1
-                    continue
+                switch verdict {
+                case .standard:
+                    guard let frame = axFrame(for: axWin) else {
+                        frameDropCount += 1
+                        continue
+                    }
+                    axEntries.append((element: axWin, frame: frame))
+                case .quickLookPanel:
+                    guard let id = ownID, let frame = axFrame(for: axWin) else {
+                        frameDropCount += 1
+                        continue
+                    }
+                    quickLookSeen.insert(id)
+                    noteQuickLookVerdict(verdict, windowID: id, pid: pid, bundle: bundle,
+                                         frame: { frame }, cg: ownCG)
+                    quickLookEntries.append((element: axWin, windowID: id, frame: frame))
+                case .dropped(let reason):
+                    if isQuickLook, let id = ownID {
+                        quickLookSeen.insert(id)
+                        noteQuickLookVerdict(verdict, windowID: id, pid: pid, bundle: bundle,
+                                             frame: { self.axFrame(for: axWin) }, cg: ownCG)
+                    } else {
+                        logDropOnce(axWin, pid: pid, bundle: bundle, role: role, subrole: subrole,
+                                    isModal: isModal, reason: reason, cgEntries: cgEntries)
+                    }
                 }
-                axEntries.append((element: axWin, frame: frame))
             }
 
             // same flap risk as a failed window-list read, but per-window:
@@ -254,11 +383,23 @@ class AccessibilityManager {
                 let n = (axFrameDrops[pid] ?? 0) + 1
                 axFrameDrops[pid] = n
                 if n == 1 {
-                    hyprLog(.notice, .discovery, "AX frame read FAILED for \(frameDropCount) window(s) of \(app.bundleIdentifier ?? "pid \(pid)") — dropped from this snapshot")
+                    hyprLog(.notice, .discovery, "AX frame read FAILED for \(frameDropCount) window(s) of \(bundle) — dropped from this snapshot")
                 }
             } else if let n = axFrameDrops.removeValue(forKey: pid) {
-                hyprLog(.notice, .discovery, "AX frame reads recovered for \(app.bundleIdentifier ?? "pid \(pid)") after \(n) affected cycle(s)")
+                hyprLog(.notice, .discovery, "AX frame reads recovered for \(bundle) after \(n) affected cycle(s)")
             }
+
+            // quick look panels first, so the position fallback below can
+            // never hand a panel's id to another window
+            for entry in quickLookEntries where !usedIDs.contains(entry.windowID) {
+                let hw = HyprWindow(element: entry.element, windowID: entry.windowID, ownerPID: pid)
+                hw.isQuickLookPanel = true
+                hw.cachedFrame = entry.frame
+                hw.seedMinimumSize(bundleIdentifier: app.bundleIdentifier)
+                windows.append(hw)
+                usedIDs.insert(entry.windowID)
+            }
+            usedIDs.formUnion(quickLookOwnIDs)
 
             let visibleCandidates = candidates.filter { $0.alpha > 0.01 }
             let validCGIDs = Set(visibleCandidates.map { $0.windowID })
@@ -304,6 +445,7 @@ class AccessibilityManager {
                 }
             }
         }
+        quickLookVerdicts = quickLookVerdicts.filter { quickLookSeen.contains($0.key) }
         return windows
     }
 

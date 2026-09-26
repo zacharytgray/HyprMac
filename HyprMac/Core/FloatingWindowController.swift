@@ -9,9 +9,13 @@ enum FloatingAdmissionPolicy {
     enum Reason: String {
         case excludedApp = "excluded app"
         case fixedSize = "window is not resizable"
+        case quickLook = "quick look preview"
     }
 
-    static func reason(isExcluded: Bool, isSizeSettable: Bool?) -> Reason? {
+    static func reason(isExcluded: Bool, isSizeSettable: Bool?,
+                       isQuickLookPanel: Bool = false) -> Reason? {
+        // a preview always floats: it sizes itself to each file
+        if isQuickLookPanel { return .quickLook }
         if isExcluded { return .excludedApp }
         if isSizeSettable == false { return .fixedSize }
         return nil
@@ -250,8 +254,9 @@ final class FloatingWindowController {
     /// fallback. Floating → tiled: the window enters the BSP tree at the
     /// best-fit slot; if the tree is full, the window stays floating.
     ///
-    /// On disabled monitors the call is a no-op — everything floats
-    /// there by definition. The actual retile is wrapped in
+    /// A Quick Look preview is refused with the red shake and stays
+    /// floating. On disabled monitors the call is a no-op — everything
+    /// floats there by definition. The actual retile is wrapped in
     /// `animatedRetile` so the surrounding tiles slide instead of
     /// snapping.
     func toggle(_ window: HyprWindow, on screen: NSScreen, in workspace: Int) {
@@ -261,6 +266,15 @@ final class FloatingWindowController {
         }
 
         let wasFloating = stateCache.floatingWindowIDs.contains(window.windowID)
+        if wasFloating && window.isQuickLookPanel {
+            // a preview never enters a tree. say so instead of doing nothing.
+            hyprLog(.notice, .floating, "float→tile refused: \(window.windowID) is a quick look preview")
+            if let frame = window.frame ?? stateCache.cachedWindows[window.windowID]?.frame {
+                focusBorder.flashError(around: frame, windowID: window.windowID, window: window,
+                                       message: "Quick Look previews stay floating")
+            }
+            return
+        }
         guard let animatedRetile = animatedRetile else { return }
 
         if wasFloating {
@@ -708,7 +722,8 @@ final class FloatingWindowController {
         let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier
         return FloatingAdmissionPolicy.reason(
             isExcluded: bundleID.map(excludedBundleIDs.contains) ?? false,
-            isSizeSettable: isWindowSizeSettable(window)
+            isSizeSettable: isWindowSizeSettable(window),
+            isQuickLookPanel: window.isQuickLookPanel
         )
     }
 

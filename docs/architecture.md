@@ -372,6 +372,58 @@ ratchet the floor down.
 
 See `docs/tiling-algorithm.md` for the full algorithm walkthrough.
 
+## Quick Look previews
+
+A Quick Look preview (select a file, press Space) is a `QLPreviewPanel`.
+It is one long-lived panel inside whichever app opened it (Finder,
+Messages, Mail), not a window of a Quick Look process. Discovery used to
+drop it along with every other non-standard subrole, so it was unmanaged:
+focus-follows-mouse buried it under the hovered tile, and Hypr+Shift+T
+could not find it.
+
+`WindowAdmissionFilter` (`Core/Discovery`) is the one place that decides
+which AX windows discovery keeps. It admits a Quick Look panel when all
+of these hold:
+
+- role `AXWindow` and subrole exactly `Quick Look`. That is what the panel
+  reported on macOS 15.7. Its role description (`window`), identifier,
+  title and document are generic or empty, so the subrole is the only
+  Quick Look signal;
+- not modal, and not in native full screen (`AXFullScreen`);
+- its own CG window, found through `_AXUIElementGetWindow` and never by
+  position, is visible on layer 0 or layer 3. The panel sits at the
+  floating level (layer 3) while its app is active.
+
+An admitted panel is always a floater (`FloatingAdmissionPolicy` reason
+`quick look preview`) and never enters a BSP tree:
+
+- **Opening** is a new floating window, assigned to the visible workspace
+  on the screen where it opened. Floaters use no tile slot, so a full
+  workspace does not route it anywhere. Startup and Retile All ask the same
+  policy, so they keep it floating too.
+- **Floating logic** treats it like any floater: Hypr+Shift+T cycles to it,
+  and raise-behind lifts it when a tile covers it. While its app is active
+  it sits on layer 3, above every tile, so nothing covers it then.
+- **Hypr+T** does not tile it. The toggle refuses up front with the red
+  shake ("Quick Look previews stay floating") and nothing is laid out.
+  Sending it to the scratchpad beeps, and moving it off a disabled monitor
+  keeps it floating.
+- **Arrowing to another file** resizes the panel to fit the item. That is
+  left alone: floaters get no drift re-apply.
+- **Closing** (Space, Esc, the close button) orders the panel out. The app
+  stops listing it, and the next preview comes back with the same id.
+  Discovery forgets it outright, floating flag and all, instead of keeping
+  a ghost, so the next preview is new. The same happens if it disappears
+  for any other reason: its app hidden or deactivated, or Quick Look's own
+  full-screen view.
+- **Full screen** is never managed. Native full screen is refused by the
+  rule. Quick Look's own full-screen view sets the panel's alpha to 0 and
+  draws on higher layers, so the panel leaves the snapshot until it
+  returns.
+
+macOS 27 behaviour is unconfirmed. `docs/debugging.md` lists the log lines
+that show what the panel reports there.
+
 ## Coordinate systems
 
 CG (CoreGraphics) uses a top-left origin; NS (AppKit) uses
