@@ -312,6 +312,11 @@ final class ScratchpadController {
             return
         }
         let id = focused.windowID
+        // a preview always floats and never joins the layer's tree
+        guard !focused.isQuickLookPanel else {
+            NSSound.beep()
+            return
+        }
         if isSummoned(id) {
             _ = ejectFocusedWindow()
             return

@@ -31,15 +31,16 @@ struct WindowChanges {
     let returned: [HyprWindow]
 
     /// Windows that disappeared. Each id is either in
-    /// `fullyForgottenIDs` (pid dead) or moved to `hiddenWindowIDs` (pid
-    /// alive, app minimized or window closed but app still running).
+    /// `fullyForgottenIDs` (pid dead, or a Quick Look panel) or moved to
+    /// `hiddenWindowIDs` (pid alive, app minimized or window closed but
+    /// app still running).
     let goneIDs: Set<CGWindowID>
 
     /// Every id the service called `stateCache.forget(_:)` on this
-    /// cycle. Includes pid-dead windows from the gone path plus ids
-    /// swept during stale-state reconciliation. The caller runs external
-    /// cleanup for each: engine min-size memory, workspace assignment,
-    /// focus + border + dim state.
+    /// cycle. Includes pid-dead windows and Quick Look panels from the
+    /// gone path, plus ids swept during stale-state reconciliation. The
+    /// caller runs external cleanup for each: engine min-size memory,
+    /// workspace assignment, focus + border + dim state.
     let fullyForgottenIDs: Set<CGWindowID>
 
     /// Windows whose physical screen no longer matches their recorded
@@ -116,6 +117,17 @@ final class WindowDiscoveryService {
     /// shrinks back). Diag for the retile-flicker investigation.
     private var hiddenAt: [CGWindowID: Date] = [:]
     private static let flapWindowSec: TimeInterval = 5.0
+
+    /// Quick Look panels in the last snapshot. The panel is one long-lived
+    /// window per app: closing it orders it out, the app stops listing it,
+    /// and the next preview brings back the same id. Left to the ordinary
+    /// gone path it would become a ghost that keeps its workspace and its
+    /// floating flag, and the next preview would come back "returned" to
+    /// wherever the last one was. So a panel that leaves the snapshot is
+    /// forgotten outright, for any reason — closed, its app hidden or
+    /// deactivated, Quick Look's full-screen view — and each opening is a
+    /// new floating window.
+    private var quickLookPanelIDs: Set<CGWindowID> = []
 
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
@@ -212,11 +224,13 @@ final class WindowDiscoveryService {
             stateCache.knownWindowIDs.insert(w.windowID)
             stateCache.windowOwners[w.windowID] = w.ownerPID
 
-            // auto-float excluded apps and explicitly fixed-size windows
+            // auto-float excluded apps, explicitly fixed-size windows and
+            // quick look previews
             let excluded = bundleIDForPID(w.ownerPID).map(excludedBundleIDs.contains) ?? false
             if let reason = FloatingAdmissionPolicy.reason(
                 isExcluded: excluded,
-                isSizeSettable: isWindowSizeSettable(w)
+                isSizeSettable: isWindowSizeSettable(w),
+                isQuickLookPanel: w.isQuickLookPanel
             ) {
                 stateCache.floatingWindowIDs.insert(w.windowID)
                 w.isFloating = true
@@ -243,10 +257,22 @@ final class WindowDiscoveryService {
         let gone = stateCache.knownWindowIDs.subtracting(currentIDs)
         for id in gone {
             goneIDs.insert(id)
+            // startup and Retile All register windows without a discovery
+            // pass, so the cached window is the other place a panel shows up
+            let isQuickLookPanel = quickLookPanelIDs.contains(id)
+                || stateCache.cachedWindows[id]?.isQuickLookPanel == true
             stateCache.tiledPositions.removeValue(forKey: id)
             stateCache.cachedWindows.removeValue(forKey: id)
 
-            if let pid = stateCache.windowOwners[id], runningPIDs.contains(pid) {
+            if isQuickLookPanel {
+                // never a ghost and never reserved; its floating flag goes
+                // with it
+                let bundle = stateCache.windowOwners[id].flatMap(bundleIDForPID) ?? "?"
+                stateCache.forget(id)
+                fullyForgotten.insert(id)
+                hiddenAt.removeValue(forKey: id)
+                hyprLog(.notice, .discovery, "quick look panel gone: \(id) (\(bundle)) — forgotten with its floating state, no ghost")
+            } else if let pid = stateCache.windowOwners[id], runningPIDs.contains(pid) {
                 // app still running — window minimized/hidden/closed-but-app-alive.
                 // keep cache state intact apart from moving to hidden, so an
                 // un-minimize comes back as "returned" not "new".
@@ -295,6 +321,8 @@ final class WindowDiscoveryService {
         stateCache.reservedHiddenWindowIDs.formIntersection(stateCache.hiddenWindowIDs)
         unverifiedReservedIDs = unverifiedReservedIDs.filter { stateCache.hiddenWindowIDs.contains($0.key) }
         let drift = detectScreenDrift(snapshot, justReturned: reopened)
+
+        quickLookPanelIDs = Set(snapshot.lazy.filter(\.isQuickLookPanel).map(\.windowID))
 
         let focusedGone = goneIDs.contains(focusedWindowID)
 

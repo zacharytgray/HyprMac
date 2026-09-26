@@ -428,8 +428,9 @@ final class WorkspaceOrchestrator {
 
         hyprLog(.notice, .workspace, "moveToWorkspace(\(number)): '\(focused.title ?? "?")' (\(focused.windowID)) floating=\(isFloating) currentWs=\(currentWorkspace.map(String.init) ?? "nil") srcScreen=\(screen.localizedName)")
 
-        // when coming from disabled monitor, unfloat so it enters tiling on target
-        let willTile = onDisabledMonitor || !isFloating
+        // when coming from disabled monitor, unfloat so it enters tiling on
+        // target. a quick look preview stays floating wherever it goes.
+        let willTile = (onDisabledMonitor || !isFloating) && !focused.isQuickLookPanel
 
         // target screen is the workspace's static home — same answer
         // whether the workspace is currently visible or hidden.
@@ -506,7 +507,7 @@ final class WorkspaceOrchestrator {
         }
 
         // unfloat if coming from disabled monitor
-        if onDisabledMonitor && isFloating {
+        if onDisabledMonitor && isFloating && !focused.isQuickLookPanel {
             stateCache.floatingWindowIDs.remove(focused.windowID)
             focused.isFloating = false
             hyprLog(.debug, .workspace, "unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
