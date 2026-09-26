@@ -194,7 +194,7 @@ if [[ "$SOURCE_COMMIT" != "$(git rev-parse origin/main)" ]]; then
 fi
 git add project.yml HyprMac.xcodeproj/project.pbxproj Casks/hyprmac.rb docs/appcast.xml \
     scripts/release.sh scripts/test-release-pipeline.sh docs/release.md
-git commit -m "I release HyprMac v$NEW_VERSION"
+git commit -m "Released HyprMac v$NEW_VERSION"
 RELEASE_COMMIT=$(git rev-parse HEAD)
 git push origin "$RELEASE_COMMIT:refs/heads/main"
 git tag -a "v$NEW_VERSION" -m "HyprMac v$NEW_VERSION" "$RELEASE_COMMIT"
@@ -215,7 +215,7 @@ TEMP_TAP=$(mktemp -d "${TMPDIR:-/tmp}/homebrew-hyprmac.XXXXXX")
 git clone --depth 1 "https://github.com/zacharytgray/homebrew-hyprmac.git" "$TEMP_TAP"
 cp Casks/hyprmac.rb "$TEMP_TAP/Casks/hyprmac.rb"
 git -C "$TEMP_TAP" add Casks/hyprmac.rb
-git -C "$TEMP_TAP" commit -m "I update HyprMac to v$NEW_VERSION"
+git -C "$TEMP_TAP" commit -m "Updated HyprMac to v$NEW_VERSION"
 git -C "$TEMP_TAP" push origin HEAD:main
 rm -rf "$TEMP_TAP"
 
