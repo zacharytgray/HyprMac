@@ -753,7 +753,23 @@ final class FloatingRaiseRegressionTests: XCTestCase {
             ]
         }
         controller.windowFrameForZOrder = { $0.cachedFrame }
+        // the tile's app is in front unless a test says otherwise
+        controller.frontmostPID = { tiledPID }
         return (controller, cache, workspaces, focus)
+    }
+
+    private static let coveredStack: [[String: Any]] = [
+        [kCGWindowNumber as String: CGWindowID(11)],
+        [kCGWindowNumber as String: CGWindowID(12)],
+    ]
+    private static let raisedStack: [[String: Any]] = [
+        [kCGWindowNumber as String: CGWindowID(12)],
+        [kCGWindowNumber as String: CGWindowID(11)],
+    ]
+    private static func popup(pid: pid_t) -> [String: Any] {
+        [kCGWindowNumber as String: CGWindowID(99), kCGWindowOwnerPID as String: pid,
+         kCGWindowLayer as String: 101,
+         kCGWindowBounds as String: CGRect(x: 40, y: 20, width: 220, height: 300).dictionaryRepresentation]
     }
 
     func testRepeatedPollsDoNotRaiseOrRestoreSameAppFloatingSibling() {
@@ -776,11 +792,13 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         XCTAssertEqual(queued, 0)
     }
 
-    func testCrossAppFloaterRaisesOnceAndRestoresCapturedFocus() {
+    func testCrossAppRaiseThatTakesFocusRestoresCapturedFocus() {
         let (controller, cache, _, _) = makeController(tiledPID: 100, floatingPID: 200)
         var raises: [CGWindowID] = []
         var restores: [CGWindowID] = []
         var queued: (() -> Void)?
+        var front: pid_t = 100
+        controller.frontmostPID = { front }
         controller.performRaise = { raises.append($0.windowID); return .success }
         controller.restoreFocusWithoutRaise = { restores.append($0.windowID) }
         controller.scheduleAfter = { _, body in queued = body }
@@ -790,21 +808,59 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         ), [12])
 
         controller.raiseBehind()
+        // the floater's app activated itself when raised
+        front = 200
         queued?()
 
         XCTAssertEqual(raises, [12])
         XCTAssertEqual(restores, [11])
     }
 
-    func testHyprFocusChangeInvalidatesQueuedRestoreIncludingABA() {
-        let (controller, _, _, focus) = makeController(tiledPID: 100, floatingPID: 200)
+    func testCrossAppRaiseThatKeepsFocusSendsNoRestore() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
         var restores: [CGWindowID] = []
         var queued: (() -> Void)?
+        controller.performRaise = { raises.append($0.windowID); return .success }
+        controller.restoreFocusWithoutRaise = { restores.append($0.windowID) }
+        controller.scheduleAfter = { _, body in queued = body }
+
+        controller.raiseBehind()
+        queued?()
+
+        XCTAssertEqual(raises, [12])
+        XCTAssertEqual(restores, [], "key-window events would close a menu the tile has open")
+    }
+
+    func testRaiseAfterTheUserActivatedAnotherAppRestoresNothing() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var restores: [CGWindowID] = []
+        var queued: (() -> Void)?
+        var front: pid_t = 300
+        controller.frontmostPID = { front }
         controller.performRaise = { _ in .success }
         controller.restoreFocusWithoutRaise = { restores.append($0.windowID) }
         controller.scheduleAfter = { _, body in queued = body }
 
         controller.raiseBehind()
+        front = 200
+        queued?()
+
+        XCTAssertEqual(restores, [], "focus was not the tile's to give back")
+    }
+
+    func testHyprFocusChangeInvalidatesQueuedRestoreIncludingABA() {
+        let (controller, _, _, focus) = makeController(tiledPID: 100, floatingPID: 200)
+        var restores: [CGWindowID] = []
+        var queued: (() -> Void)?
+        var front: pid_t = 100
+        controller.frontmostPID = { front }
+        controller.performRaise = { _ in .success }
+        controller.restoreFocusWithoutRaise = { restores.append($0.windowID) }
+        controller.scheduleAfter = { _, body in queued = body }
+
+        controller.raiseBehind()
+        front = 200
         focus.recordFocus(12, reason: "cycleFocus")
         focus.recordFocus(11, reason: "ABA")
         queued?()
@@ -819,21 +875,160 @@ final class FloatingRaiseRegressionTests: XCTestCase {
             let (controller, cache, workspaces, _) = makeController(tiledPID: 100, floatingPID: 200)
             var restores = 0
             var queued: (() -> Void)?
+            var front: pid_t = 100
+            controller.frontmostPID = { front }
             controller.performRaise = { _ in .success }
             controller.restoreFocusWithoutRaise = { _ in restores += 1 }
             controller.scheduleAfter = { _, body in queued = body }
             controller.raiseBehind()
             XCTAssertNotNil(queued, "the cross-app raise must queue a restore before invalidation")
+            front = 200
             mutate(cache, workspaces, controller)
             queued?()
             return restores
         }
 
+        XCTAssertEqual(restoreCount { _, _, _ in }, 1, "unmutated, the stolen focus goes back")
         XCTAssertEqual(restoreCount { cache, _, _ in cache.knownWindowIDs.remove(11) }, 0)
         XCTAssertEqual(restoreCount { cache, _, _ in cache.hiddenWindowIDs.insert(11) }, 0)
         XCTAssertEqual(restoreCount { _, workspaces, _ in workspaces.removeWindow(11) }, 0)
         XCTAssertEqual(restoreCount { _, _, controller in controller.isMenuTracking = { true } }, 0)
         XCTAssertEqual(restoreCount { _, _, controller in controller.isScratchpadVisible = { true } }, 0)
+        XCTAssertEqual(restoreCount { _, _, controller in
+            controller.windowListForZOrder = { Self.coveredStack + [Self.popup(pid: 200)] }
+        }, 0, "a popup opened in the new front app")
+    }
+
+    func testOpenPopupDefersTheRaiseAndRetriesOnce() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
+        var restores: [CGWindowID] = []
+        var queued: [(TimeInterval, () -> Void)] = []
+        var stack = [Self.popup(pid: 100)] + Self.coveredStack
+        controller.windowListForZOrder = { stack }
+        controller.performRaise = { raises.append($0.windowID); return .success }
+        controller.restoreFocusWithoutRaise = { restores.append($0.windowID) }
+        controller.scheduleAfter = { delay, body in queued.append((delay, body)) }
+
+        controller.raiseBehind()
+        controller.raiseBehind()
+
+        XCTAssertEqual(raises, [])
+        XCTAssertEqual(restores, [])
+        XCTAssertEqual(queued.map(\.0), [FloatingWindowController.popupRetryDelay],
+                       "one pending retry, not one per call")
+
+        // the menu closed before the retry fired
+        stack = Self.coveredStack
+        let retry = queued.removeFirst().1
+        retry()
+
+        XCTAssertEqual(raises, [12])
+    }
+
+    func testAPopupOfAnotherAppDoesNotBlockTheRaise() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
+        controller.windowListForZOrder = { [Self.popup(pid: 300)] + Self.coveredStack }
+        controller.performRaise = { raises.append($0.windowID); return .success }
+        controller.scheduleAfter = { _, _ in }
+
+        controller.raiseBehind()
+
+        XCTAssertEqual(raises, [12])
+    }
+
+    func testAnIneffectiveRaiseCoolsThePairDown() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
+        var queued: (() -> Void)?
+        var clock: TimeInterval = 1000
+        controller.now = { clock }
+        controller.performRaise = { raises.append($0.windowID); return .success }
+        controller.scheduleAfter = { _, body in queued = body }
+
+        // the stack never changes: tahoe refused the cross-app raise
+        controller.raiseBehind()
+        queued?()
+        for _ in 0..<5 {
+            clock += 1
+            controller.raiseBehind()
+        }
+        XCTAssertEqual(raises, [12], "no retry on every activation and poll")
+
+        clock += controller.throttle.ineffectiveCooldown
+        controller.raiseBehind()
+        XCTAssertEqual(raises, [12, 12], "the pair gets another try after the cooldown")
+    }
+
+    func testAnEffectiveRaiseLeavesThePairFree() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
+        var queued: (() -> Void)?
+        var clock: TimeInterval = 1000
+        var stack = Self.coveredStack
+        controller.now = { clock }
+        controller.windowListForZOrder = { stack }
+        controller.performRaise = { raises.append($0.windowID); stack = Self.raisedStack; return .success }
+        controller.scheduleAfter = { _, body in queued = body }
+
+        controller.raiseBehind()
+        queued?()
+        // the user clicks the tile later and covers the floater again
+        clock += 3
+        stack = Self.coveredStack
+        controller.raiseBehind()
+
+        XCTAssertEqual(raises, [12, 12])
+    }
+
+    func testARaiseRightAfterOurOwnRestoreIsALoopAndCoolsDown() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
+        var restores: [CGWindowID] = []
+        var queued: (() -> Void)?
+        var clock: TimeInterval = 1000
+        var front: pid_t = 100
+        var stack = Self.coveredStack
+        controller.now = { clock }
+        controller.frontmostPID = { front }
+        controller.windowListForZOrder = { stack }
+        controller.performRaise = { w in
+            raises.append(w.windowID)
+            // the floater's app activates itself and comes up
+            stack = Self.raisedStack
+            front = 200
+            return .success
+        }
+        controller.restoreFocusWithoutRaise = { w in
+            // the restore lifted the tile back over the floater
+            restores.append(w.windowID)
+            stack = Self.coveredStack
+            front = 100
+        }
+        controller.scheduleAfter = { _, body in queued = body }
+
+        controller.raiseBehind()
+        queued?()
+        clock += 0.2
+        queued = nil
+        controller.raiseBehind()
+
+        XCTAssertEqual(raises, [12])
+        XCTAssertEqual(restores, [11])
+        XCTAssertNil(queued, "the loop stops instead of raising again")
+    }
+
+    func testAFloaterBehindATileItDoesNotTouchIsLeftAlone() {
+        let (controller, cache, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
+        cache.cachedWindows[12]?.cachedFrame = CGRect(x: 700, y: 50, width: 300, height: 300)
+        controller.performRaise = { raises.append($0.windowID); return .success }
+        controller.scheduleAfter = { _, _ in }
+
+        controller.raiseBehind()
+
+        XCTAssertEqual(raises, [])
     }
 }
 

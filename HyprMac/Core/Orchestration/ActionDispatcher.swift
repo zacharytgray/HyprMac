@@ -82,6 +82,14 @@ final class ActionDispatcher {
     var animatedRetile: ([HyprWindow]) -> [TilingEngine.AdmissionResult] = { _ in [] }
     var refocusUnderCursor: () -> Void = {}
     var isMenuTracking: () -> Bool = { false }
+    // the frontmost app's open popup-level window (a menu), if any
+    var openPopup: () -> StackedWindow? = { nil }
+    // HyprMac-initiated focus. WindowManager routes it through TiledFocusRouter
+    // so a tile under a floater is not lifted over it.
+    var focusWindow: (HyprWindow, String) -> TiledFocusRouter.Route = { window, _ in
+        window.focusWithoutRaise()
+        return TiledFocusRouter.Route(path: .usual, targetFrame: nil, coveringFrames: [])
+    }
     var toggleScratchpad: () -> Void = {}
     var moveToScratchpad: () -> Void = {}
     var saveLayout: () -> Void = {}
@@ -372,8 +380,9 @@ final class ActionDispatcher {
     /// actual mouse motion. Resolution order: AX's reported focused
     /// window if it belongs to this workspace, then any tiled window on
     /// this workspace, then any visible window on this workspace.
-    /// No-ops when a menu is tracking (refocusing would dismiss it) or
-    /// when the focus border is already showing on a live window.
+    /// No-ops when a menu is tracking or the frontmost app has a popup open
+    /// (refocusing would dismiss it), or when the focus border is already
+    /// showing on a live window.
     private func ensureFocusInvariant() {
         guard config.showFocusBorder else { return }
         // don't steal focus from a native menu that's currently tracking —
@@ -381,6 +390,11 @@ final class ActionDispatcher {
         guard !isMenuTracking() else { return }
         // border is already showing on a live window — nothing to do
         if let tid = focusBorder.trackedWindowID, stateCache.cachedWindows[tid] != nil {
+            return
+        }
+        // app-drawn menus (chrome's bookmark folders) never set menu tracking
+        if let popup = openPopup() {
+            hyprLog(.notice, .focus, "focus invariant skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
             return
         }
         let screen = screenUnderCursor()
@@ -400,8 +414,8 @@ final class ActionDispatcher {
         // any tiled window on this workspace
         for (wid, _) in stateCache.tiledPositions where wsWindows.contains(wid) {
             if let w = stateCache.cachedWindows[wid] {
-                w.focusWithoutRaise()
                 focusController.recordFocus(wid, reason: "ensureInvariant-tiled")
+                _ = focusWindow(w, "ensureInvariant")
                 updateFocusBorder(w)
                 return
             }
@@ -409,8 +423,8 @@ final class ActionDispatcher {
         // fall back to any visible window on this workspace (floating, etc.)
         for wid in wsWindows {
             if let w = stateCache.cachedWindows[wid] {
-                w.focusWithoutRaise()
                 focusController.recordFocus(wid, reason: "ensureInvariant-fallback")
+                _ = focusWindow(w, "ensureInvariant")
                 updateFocusBorder(w)
                 return
             }
@@ -442,9 +456,16 @@ final class ActionDispatcher {
         hyprLog(.debug, .orchestration, "focus \(direction): src '\(focused.title ?? "?")' (\(focused.windowID)) intended=\(intended[focused.windowID].map { "\($0)" } ?? "nil") live=\(focused.frame.map { "\($0)" } ?? "nil") screen=\(displayManager.screen(for: focused)?.localizedName ?? "?")")
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor) {
             hyprLog(.debug, .orchestration, "focus \(direction): -> '\(target.title ?? "?")' (\(target.windowID)) frameFor=\(frameFor(target).map { "\($0)" } ?? "nil") live=\(target.frame.map { "\($0)" } ?? "nil") screen=\(displayManager.screen(for: target)?.localizedName ?? "?")")
-            target.focusWithoutRaise()
-            cursorManager.warpToCenter(of: target)
             focusController.recordFocus(target.windowID, reason: "focusInDirection")
+            let route = focusWindow(target, "focusInDirection")
+            // with a floater over the target, land the cursor on the part of the
+            // target it leaves uncovered. landing on the floater would hand it
+            // focus on the next mouse move.
+            if route.path != .usual, let point = route.warpPoint {
+                cursorManager.warp(to: point)
+            } else {
+                cursorManager.warpToCenter(of: target)
+            }
             updateFocusBorder(target)
         }
     }

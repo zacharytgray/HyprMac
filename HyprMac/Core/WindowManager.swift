@@ -62,6 +62,10 @@ class WindowManager {
     // floating-window lifecycle: float/tile toggle, cycle-focus, raise-behind, auto-float predicate.
     private(set) var floatingController: FloatingWindowController!
 
+    // focus for HyprMac-initiated focus changes. a tile a floater covers is
+    // focused without being lifted over the floater.
+    private let tiledFocusRouter = TiledFocusRouter()
+
     // verified tiled drag capture and completion.
     private var tiledDragHandler: TiledDragHandler!
     private var tiledDragFeedback = TiledDragFeedbackReconciler()
@@ -342,7 +346,16 @@ class WindowManager {
             // Do not repair focus while a mouse gesture is in flight. A stale
             // tracker can otherwise focus a fallback window and redirect the
             // native title-bar drag when Hypr is pressed mid-gesture.
-            if !mousePressActive { self.ensureFocus() }
+            // Nor while a menu is open: a bare Hypr press must not close it.
+            if !mousePressActive {
+                if self.mouseTracker.menuTracking {
+                    hyprLog(.debug, .focus, "ensureFocus skipped: menu tracking")
+                } else if let popup = self.mouseTracker.openPopup(maxAge: 0) {
+                    hyprLog(.notice, .focus, "ensureFocus skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
+                } else {
+                    self.ensureFocus()
+                }
+            }
             // visual cue: corner brackets snap inward around the focused
             // window so the user sees which window the next Hypr action
             // will target. shown regardless of focus-border setting.
@@ -391,11 +404,30 @@ class WindowManager {
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
+        floatingController.findPopup = { [weak self] windows, front in
+            self?.mouseTracker.livePopup(in: windows, frontmostPID: front)
+        }
         floatingController.rejectFloatToTile = { [weak self] w, reason in
             guard let self, let frame = w.frame ?? self.stateCache.cachedWindows[w.windowID]?.frame else { return }
             self.focusBorder.flashError(around: frame, windowID: w.windowID, window: w,
                                         message: FloatToTileRejectionMessage.text(for: reason))
         }
+
+        // the restore must not lift the tile back over the floater it just raised
+        floatingController.restoreFocusWithoutRaise = { [weak self] w in
+            self?.tiledFocusRouter.focus(w, reason: "raise-restore", fallback: .activate)
+        }
+
+        // hover, Hypr+Arrow and focus repair go through the router
+        tiledFocusRouter.visibleFloaterIDs = { [weak self] in
+            guard let self else { return [] }
+            return self.stateCache.floatingWindowIDs.filter { self.workspaceManager.isWindowVisible($0) }
+        }
+        tiledFocusRouter.isTiled = { [weak self] wid in self?.stateCache.tiledPositions[wid] != nil }
+        tiledFocusRouter.lastFocusedID = { [weak self] in self?.focusController.lastFocusedID ?? 0 }
+        tiledFocusRouter.focusGeneration = { [weak self] in self?.focusController.generation ?? 0 }
+        tiledFocusRouter.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
+        tiledFocusRouter.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
 
         wireAdmissionRecovery()
         admissionRecovery.terminalOutcome = { [weak self] workspace, screen, result in
@@ -454,6 +486,11 @@ class WindowManager {
         }
         actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        actionDispatcher.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
+        actionDispatcher.focusWindow = { [weak self] w, reason in
+            self?.tiledFocusRouter.focus(w, reason: reason, fallback: .activate)
+                ?? TiledFocusRouter.Route(path: .usual, targetFrame: nil, coveringFrames: [])
+        }
         actionDispatcher.toggleScratchpad = { [weak self] in self?.scratchpad.toggle() }
         actionDispatcher.moveToScratchpad = { [weak self] in self?.scratchpad.sendFocusedWindow() }
         actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }
@@ -909,6 +946,8 @@ class WindowManager {
             let downNS = CGPoint(x: downCG.x,
                                  y: self.displayManager.primaryScreenHeight - downCG.y)
             self.mouseDownPointCG = downCG
+            // a press is what opens a menu, so the next hover must read a fresh list
+            self.mouseTracker.invalidateWindowListCache()
             self.tiledDragHandler.handleMouseDown(at: downCG)
             self.armDimDragIfFloating(downPointNS: downNS)
             // a menu open at the OS level eats clicks before we'd see them
@@ -921,8 +960,14 @@ class WindowManager {
             }
             // sync our focus tracker with the click — without this, manual clicks
             // leave focusController.lastFocusedID stale and currentFocusedWindow() routes
-            // commands to whatever was previously hovered, not what the user clicked
-            self.syncFocusTrackerToCursor(at: downNS)
+            // commands to whatever was previously hovered, not what the user clicked.
+            // a click on a menu item or panel of the frontmost app is not a click
+            // on the window under it.
+            if case .blocked = self.mouseTracker.hitTest(at: downCG, maxAge: 0) {
+                hyprLog(.debug, .mouse, "click on a raised window of the front app — focus tracker left alone")
+            } else {
+                self.syncFocusTrackerToCursor(at: downNS)
+            }
             // scratchpad is quasimodal: a click outside every member dismisses
             // it in the same tick, so the click lands on the tile it aimed at
             if self.scratchpad.isVisible {
@@ -975,6 +1020,7 @@ class WindowManager {
                 self.tiledDragHandler.handleMouseUp(release)
             }
             self?.mouseDragLifecycle.finishPress()
+            self?.mouseTracker.invalidateWindowListCache()
             self?.mouseDownPointCG = nil
             self?.mouseDownFloatingWindowID = 0
             self?.mouseDownFloatingFrame = nil
@@ -1028,24 +1074,23 @@ class WindowManager {
         dimmingOverlay.clearDragOverride()
     }
 
-    /// Apply focus-follows-mouse to `window` without changing z-order.
+    /// Apply focus-follows-mouse to `window`.
     /// Suppresses the dock-click workspace switch for half a second so the
     /// app activation kicked off by the AX focus call doesn't bounce the
     /// user to a different workspace.
     ///
     /// On Tahoe, AX writes + SkyLight + `NSRunningApplication.activate()` are all
     /// silently rejected from a `.accessory` app's mouse-move handler context, so
-    /// `focusViaSyntheticClick` posts a leftMouseDown/Up directly into the target
-    /// process — the only reliable activator. AX/SkyLight calls remain so the
-    /// rest of the system (`AXFocused` queries, key-window state) sees the right
-    /// window even before the click lands.
+    /// the usual path adds `focusViaSyntheticClick`, which posts a leftMouseDown/Up
+    /// directly into the target process. That path lifts the window. When a
+    /// floater covers the target tile, `TiledFocusRouter` first tries SkyLight
+    /// alone, checks whether focus landed, and only then falls back.
     private func focusForFFM(_ window: HyprWindow) {
         // while the scratchpad is up, hovering the dimmed tiles behind it
         // must not steal focus — the layer is quasimodal
         if scratchpad.isVisible && !scratchpad.contains(window.windowID) { return }
         suppressions.suppress("activation-switch", for: 0.5)
-        window.focusWithoutRaise()
-        window.focusViaSyntheticClick()
+        tiledFocusRouter.focus(window, reason: "ffm", fallback: .activateAndClick)
         updateFocusBorder(for: window)
     }
 
@@ -1332,8 +1377,8 @@ class WindowManager {
         if let tid = focusBorder.trackedWindowID,
            isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[tid] {
-            w.focusWithoutRaise()
             focusController.recordFocus(tid, reason: "ensureFocus-trackedID")
+            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
             updateFocusBorder(for: w)
             return
         }
@@ -1341,7 +1386,7 @@ class WindowManager {
         if focusController.lastFocusedID != 0,
            isSelectableInCurrentContext(focusController.lastFocusedID, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[focusController.lastFocusedID] {
-            w.focusWithoutRaise()
+            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
             updateFocusBorder(for: w)
             return
         }
@@ -1366,8 +1411,8 @@ class WindowManager {
         for (wid, rect) in stateCache.tiledPositions {
             if wsWindows.contains(wid), rect.contains(cgPoint),
                let w = stateCache.cachedWindows[wid] {
-                w.focusWithoutRaise()
                 focusController.recordFocus(wid, reason: "ensureFocus-tiled")
+                tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
                 updateFocusBorder(for: w)
                 return
             }
@@ -1390,8 +1435,8 @@ class WindowManager {
                 return distanceSquared(lhsCenter, cgPoint) < distanceSquared(rhsCenter, cgPoint)
             }
         if let (wid, _) = fallback, let w = stateCache.cachedWindows[wid] {
-            w.focusWithoutRaise()
             focusController.recordFocus(wid, reason: "ensureFocus-fallback")
+            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
             updateFocusBorder(for: w)
         }
     }

@@ -13,6 +13,7 @@
 		017A249199B7F80BF9F3D051 /* MinimaRevalidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52AE2F150AC11707C98A4D91 /* MinimaRevalidation.swift */; };
 		03AFF96F6D3A915C68251C5D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
 		049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */; };
+		0590157898015CA6B47E1C0B /* WindowStacking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A139BBB5E4E8AF38923E2D0 /* WindowStacking.swift */; };
 		05955F6C4EAB83E825C3F531 /* LayoutSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D13627D56EAF1DA752EAAFC /* LayoutSnapshotStoreTests.swift */; };
 		06154C5AE91D00CA53B12C9C /* LayoutSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8522F7A5DE8D91C7F61FFF /* LayoutSnapshotStore.swift */; };
 		0882360B3E354269543B3183 /* KeyRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F24369A83C38C9C3757A23FB /* KeyRemapper.swift */; };
@@ -36,6 +37,7 @@
 		192896C26681E7F32D0A8EE3 /* RatioMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B508954B7CC67DE0AB417D2E /* RatioMemoryTests.swift */; };
 		19A5EB4FD50CE7FF439CA151 /* TiledDriftMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8425DC47E2604936890FF01 /* TiledDriftMonitor.swift */; };
 		19AA6221B0B55BFAC6065DE0 /* CommandRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D180FDED47AD57DF35C3858C /* CommandRunnerTests.swift */; };
+		1A4B5F0F12CBBB85131440AB /* TiledFocusRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */; };
 		1AB9B2043A23A0FB662ECB30 /* RuntimeVariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE740E91A8A260E9F899EB51 /* RuntimeVariant.swift */; };
 		1B637997E721C7D6BF0FC307 /* DirectionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 301C7EDAAD234FC3DDCBAADC /* DirectionPicker.swift */; };
 		1C09D1112018B2B6DDA753F3 /* WorkspaceSwitchAnnouncementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3DB9C9425DBA2D12D58CAF7 /* WorkspaceSwitchAnnouncementTests.swift */; };
@@ -159,6 +161,7 @@
 		9540D5E1BBF47D714DEE6CD8 /* AXNotificationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F54AABB9F5D654E82FF741A /* AXNotificationServiceTests.swift */; };
 		95AF23F08DD358F2C15BCBEF /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		96D7C04382452A795D840940 /* FocusBrackets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8680AE34CAB9F0BAA3C9D8F0 /* FocusBrackets.swift */; };
+		96F355A5556E7972080C2183 /* WindowStacking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A139BBB5E4E8AF38923E2D0 /* WindowStacking.swift */; };
 		96FC11AF63A197C78BBE9E40 /* KeybindEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */; };
 		96FE6F4A503490B05934FE5B /* KeybindDisplayHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7681B5C6FAEC2BFB53A30743 /* KeybindDisplayHelpers.swift */; };
 		981B76EFF94EFE641AF42778 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F06CFE0CDB28ECDC9411EEB1 /* HotkeyManager.swift */; };
@@ -195,6 +198,7 @@
 		B7C740B8E2778EB4330ACAF4 /* RunCommandKeybindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AFC5423BCB8E65F59C907F4 /* RunCommandKeybindTests.swift */; };
 		B82265C32A87C7C47C0921AE /* ConfigMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F548FEECDD35DFF1120E2553 /* ConfigMigrationTests.swift */; };
 		BA09E0BFB424D226994E6A4C /* WelcomeContent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EBC04818743A6F6231119AB /* WelcomeContent.swift */; };
+		BC3FDA5074F38001F6917FBB /* FloatingFocusStackingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C3932D77600EA8C6056C2E3 /* FloatingFocusStackingTests.swift */; };
 		BF9B651B475474AE92319DE4 /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593D96A7340421A4588DE5D5 /* DisplayManager.swift */; };
 		C1CCA6C07D0B273CF3AB3D6C /* HandleDisplayChangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */; };
 		C4C0FB5F11923E54D785E16B /* ConfigUpdateCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27E1D4391AFE7A5802FF00C4 /* ConfigUpdateCoordinatorTests.swift */; };
@@ -205,6 +209,7 @@
 		C77DE1995895F9C4FC7A77C6 /* RuntimeVariantTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6988D3019CAFAAAE262E388E /* RuntimeVariantTests.swift */; };
 		C842B6F9AAC01B6A047253B1 /* Keybind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E656D3CA021B130775CC3 /* Keybind.swift */; };
 		C90986ED07B24EC5077BC016 /* AXNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */; };
+		C9590D525F741515354B259B /* TiledFocusRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */; };
 		CA98F4C2A6C5FED1DB51B390 /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = F95CD8FB8B25B86236401214 /* AppIcon.svg */; };
 		CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */; };
 		CF85EEA5C6929AE2E15E53DC /* LayoutTreeRebuildTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE3FC5B95249CF81BC8F117 /* LayoutTreeRebuildTests.swift */; };
@@ -351,7 +356,9 @@
 		5867C8BC4A0B38BC15E47DE2 /* ProbeFrameArgumentsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProbeFrameArgumentsTests.swift; sourceTree = "<group>"; };
 		58A1ECEE0D6160C61FD6636C /* TilingEngineTiledDragTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineTiledDragTests.swift; sourceTree = "<group>"; };
 		593D96A7340421A4588DE5D5 /* DisplayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayManager.swift; sourceTree = "<group>"; };
+		5A139BBB5E4E8AF38923E2D0 /* WindowStacking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStacking.swift; sourceTree = "<group>"; };
 		5C0116BE6F796AC619B0BD6B /* CoordinateSpace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateSpace.swift; sourceTree = "<group>"; };
+		5C3932D77600EA8C6056C2E3 /* FloatingFocusStackingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingFocusStackingTests.swift; sourceTree = "<group>"; };
 		5D8E6D4FE4C4E6D244C14D76 /* CommandRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRunner.swift; sourceTree = "<group>"; };
 		61E1DEE768A398E963AAB1CA /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		62C7EA1B257E580577FE04BD /* LayoutRestorer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutRestorer.swift; sourceTree = "<group>"; };
@@ -406,6 +413,7 @@
 		BB697B2619BEB7E2434E157E /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BB8DE37F0110F3E975EE8BB9 /* StateDumpFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDumpFormatterTests.swift; sourceTree = "<group>"; };
 		BE062173D513A1A60A3E704D /* ConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
+		C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledFocusRouter.swift; sourceTree = "<group>"; };
 		C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceInsertWindowFallbackTests.swift; sourceTree = "<group>"; };
 		C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingScheduler.swift; sourceTree = "<group>"; };
 		C52D4D8F0D171A4757C5951A /* TilingEngineMembershipTransactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineMembershipTransactionTests.swift; sourceTree = "<group>"; };
@@ -555,8 +563,10 @@
 				2CD84800A82DD5466833975C /* MouseTrackingManager.swift */,
 				4461955B9373BBC5DD00DB15 /* ScratchpadController.swift */,
 				913F7521CBE5FF04365D18D8 /* SpaceManager.swift */,
+				C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */,
 				B6FC3298BBD003F3AD7DAC44 /* WindowCornerRadius.swift */,
 				2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */,
+				5A139BBB5E4E8AF38923E2D0 /* WindowStacking.swift */,
 				8A0BF8AF7796AE4F9F114B7C /* WorkspaceManager.swift */,
 				4409646A5AA8442EA2A0A34C /* WorkspaceOverviewController.swift */,
 				46404E9F47AD026DEE8E5EB3 /* Discovery */,
@@ -688,6 +698,7 @@
 				2D4C2638F2735ACBB733C2C4 /* DirectionalFocusGeometryTests.swift */,
 				B9C3A29473C9D3ECD870EB22 /* DragSwapHandlerInsertionTests.swift */,
 				26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */,
+				5C3932D77600EA8C6056C2E3 /* FloatingFocusStackingTests.swift */,
 				084CC77D9BC9594A5E7DE366 /* FocusStateControllerTests.swift */,
 				C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */,
 				3E74E9F8AA97C6653000640F /* FrameReadbackPollerTests.swift */,
@@ -1007,6 +1018,7 @@
 				8BEC65B84A975386F95AA087 /* TiledDragTarget.swift in Sources */,
 				B7B452BA5C221D28C3A8CA4E /* TiledDragTransaction.swift in Sources */,
 				5953698B05EC33E530C72A12 /* TiledDriftMonitor.swift in Sources */,
+				1A4B5F0F12CBBB85131440AB /* TiledFocusRouter.swift in Sources */,
 				418CEE0D45A22A4854CBF801 /* TilingConfig.swift in Sources */,
 				321ED983E085852543CE66E5 /* TilingEngine.swift in Sources */,
 				F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */,
@@ -1018,6 +1030,7 @@
 				EBAA92AE4FF80ED33B39219A /* WindowCornerRadius.swift in Sources */,
 				696EB6B8B6A4A823B6DBBCD0 /* WindowDiscoveryService.swift in Sources */,
 				DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */,
+				0590157898015CA6B47E1C0B /* WindowStacking.swift in Sources */,
 				1276120B1D8BE4DEEDCF8EF3 /* WindowStateCache.swift in Sources */,
 				42778D615628483A357572DF /* WorkspaceManager.swift in Sources */,
 				446BF26414F6821D08738E80 /* WorkspaceOrchestrator.swift in Sources */,
@@ -1111,6 +1124,7 @@
 				D79FC29758B8999CB1D4BD05 /* TiledDragTarget.swift in Sources */,
 				E94B82A62C0BFE40FA50BAC8 /* TiledDragTransaction.swift in Sources */,
 				19A5EB4FD50CE7FF439CA151 /* TiledDriftMonitor.swift in Sources */,
+				C9590D525F741515354B259B /* TiledFocusRouter.swift in Sources */,
 				3955A053C485588A5CF09D76 /* TilingConfig.swift in Sources */,
 				E0EC87378AAEFCEB313B283E /* TilingEngine.swift in Sources */,
 				3AAB922B85C5906E5A96D580 /* TilingSettingsView.swift in Sources */,
@@ -1122,6 +1136,7 @@
 				56A699943F7EF9287C3CD27F /* WindowCornerRadius.swift in Sources */,
 				C6D72EF1AA9C3A89ADF2B62A /* WindowDiscoveryService.swift in Sources */,
 				5BFEE37024EB0F1C1B643FE7 /* WindowManager.swift in Sources */,
+				96F355A5556E7972080C2183 /* WindowStacking.swift in Sources */,
 				63156863AFDB39FBF469DFFE /* WindowStateCache.swift in Sources */,
 				F77406C0EB205AD6F1959A82 /* WorkspaceManager.swift in Sources */,
 				D01C12241132BDCD8C95E2D0 /* WorkspaceOrchestrator.swift in Sources */,
@@ -1152,6 +1167,7 @@
 				B1ACB629A1DDE243422217A9 /* DirectionalFocusGeometryTests.swift in Sources */,
 				8A7450A0AEBA21F9865B5BEA /* DragSwapHandlerInsertionTests.swift in Sources */,
 				7A66C97726B539669E56D8DD /* DwindleLayoutTests.swift in Sources */,
+				BC3FDA5074F38001F6917FBB /* FloatingFocusStackingTests.swift in Sources */,
 				EDF1F6BE9094C220921182DC /* FocusStateControllerTests.swift in Sources */,
 				EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */,
 				12B84235B0C9B244D9366F35 /* FrameReadbackPollerTests.swift in Sources */,

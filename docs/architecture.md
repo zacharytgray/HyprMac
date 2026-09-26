@@ -49,8 +49,10 @@ singleton except `UserConfig.shared` and `MenuBarState.shared`.
 | `SpaceManager` | macOS native Spaces enumeration via private CGS APIs (read-only). |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
-| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind, auto-float predicate. |
-| `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu-tracking suppression. |
+| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), auto-float predicate. |
+| `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
+| `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown, the focus invariant and the raise restore. A tile a floater covers is focused through SkyLight alone, checked, and falls back to the usual path. |
+| `WindowStacking` | Pure rules over the CG window list: the frontmost app's open popup, pointer hit-test, floater/tile overlap. |
 | `TiledDragHandler` | Owns captured press/release state, cancellation, and verified cache updates. |
 | `TiledDragTransaction` | Builds isolated insertion, swap, or resize candidates and verifies frames before commit. |
 | `FrameSizingAttempt` | Bounded AX writes and complete frame readback through an injected clock and IO surface. |
@@ -446,6 +448,13 @@ this list is the index.
   automatically on app activation and discovery reconciliation. It leaves
   floating siblings of the focused tiled app alone, because restoring focus
   within that app can put the tile back above its sibling and cause a loop.
+  It raises only floaters a tile overlaps, stands down while the frontmost
+  app has a menu open, and cools a pair down when the raise does nothing
+  (Tahoe often refuses a cross-app AXRaise) or loops. Hover and Hypr+Arrow
+  focus avoid burying floaters in the first place through
+  `TiledFocusRouter`; workspace switches, window moves and the scratchpad
+  do not yet. See `docs/debugging.md` "Floaters, open menus and no-raise
+  focus".
 - **Squishy-sibling swap rejection** — when a swap squishes a
   sibling app that has no AX-reported or readback-confirmed minimum
   size (the canonical case in the user's setup is Sidenote), the
