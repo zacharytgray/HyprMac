@@ -251,6 +251,7 @@
 		E8EB88F6C13061D33ECC0B59 /* HyprWindowAXReadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31EF3D85D0E0F9BCD33F6455 /* HyprWindowAXReadTests.swift */; };
 		E916A4BC377A1C882DB198AD /* AppLauncherEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D1C99A7D03B871E0141DF0 /* AppLauncherEditorSheet.swift */; };
 		E94B82A62C0BFE40FA50BAC8 /* TiledDragTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC27FADCFF305913BD49A6CA /* TiledDragTransaction.swift */; };
+		E9B464343591A43FD09B3807 /* KeyRemapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E2AB7E29CE5CACDE9EE308 /* KeyRemapperTests.swift */; };
 		EA8FC0F77CB146BAD8B35CBE /* WindowStateCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */; };
 		EABEFF5EE2EE6EEABE6956EB /* FrameSizingTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8F5AAFA837B55AEB2831E8 /* FrameSizingTransaction.swift */; };
 		EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */; };
@@ -406,6 +407,7 @@
 		9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameReadbackPoller.swift; sourceTree = "<group>"; };
 		9F54AABB9F5D654E82FF741A /* AXNotificationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXNotificationServiceTests.swift; sourceTree = "<group>"; };
 		A034E555A586C182E187021F /* HyprMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprMacApp.swift; sourceTree = "<group>"; };
+		A0E2AB7E29CE5CACDE9EE308 /* KeyRemapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRemapperTests.swift; sourceTree = "<group>"; };
 		A202B01AD893174E99223B4E /* LoginItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItemController.swift; sourceTree = "<group>"; };
 		A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherManager.swift; sourceTree = "<group>"; };
 		A7BD70717FD497B0899FBCE5 /* KeybindOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindOverlayController.swift; sourceTree = "<group>"; };
@@ -719,6 +721,7 @@
 				31EF3D85D0E0F9BCD33F6455 /* HyprWindowAXReadTests.swift */,
 				07CBA6B4C81BE27EE321B8B4 /* InterfaceSnapshotTests.swift */,
 				D3521F94E7B0FCC0E03B50D3 /* KeybindDecoderToleranceTests.swift */,
+				A0E2AB7E29CE5CACDE9EE308 /* KeyRemapperTests.swift */,
 				298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */,
 				C5A885FA2020A2EFF24C41A7 /* LayoutMatcherTests.swift */,
 				D7B55D3C4457B095922C6112 /* LayoutPersistencePerformanceTests.swift */,
@@ -1191,6 +1194,7 @@
 				DFE89755AA5CF65CC6319D33 /* HyprKeySystemGuidanceTests.swift in Sources */,
 				E8EB88F6C13061D33ECC0B59 /* HyprWindowAXReadTests.swift in Sources */,
 				4A73DDEB709BF9394E68F420 /* InterfaceSnapshotTests.swift in Sources */,
+				E9B464343591A43FD09B3807 /* KeyRemapperTests.swift in Sources */,
 				D380E4A1BDD2AD4281299E72 /* KeybindDecoderToleranceTests.swift in Sources */,
 				15AB8B9331E6A03CDD991F3C /* LayoutEngineTests.swift in Sources */,
 				EF5E84BE94D926986D99AF89 /* LayoutMatcherTests.swift in Sources */,
