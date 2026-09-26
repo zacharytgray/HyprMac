@@ -682,8 +682,8 @@ final class WorkspaceOrchestrator {
                              y: targetRect.minY + relY * targetRect.height - size.height / 2)
         origin.x = max(targetRect.minX, min(origin.x, targetRect.maxX - size.width))
         origin.y = max(targetRect.minY, min(origin.y, targetRect.maxY - size.height))
-        let carried = CGRect(origin: origin, size: size)
-        window.setFrame(carried)
+        let carried = window.placeFloating(CGRect(origin: origin, size: size), reason: "carry to another screen",
+                                           on: screen, from: frame, displayManager: displayManager)
         return carried
     }
 

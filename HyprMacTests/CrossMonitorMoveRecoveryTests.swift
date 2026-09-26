@@ -10,16 +10,20 @@ import XCTest
 // source screen, outside the destination's restoration rect.
 
 /// DELL-shaped primary on the left, a built-in-shaped screen on the right.
-/// the scale factor is not modelled; the engine only sees points.
+/// The engine only sees points. The backing scale is 1 unless a test sets
+/// it, and only the sizing budget reads it.
 private final class HopScreen: NSScreen {
     private let bounds: NSRect
     private let menuBar: CGFloat
     private let name: String
+    private let scale: CGFloat
 
-    init(x: CGFloat, width: CGFloat, height: CGFloat, menuBar: CGFloat, name: String) {
+    init(x: CGFloat, width: CGFloat, height: CGFloat, menuBar: CGFloat, name: String,
+         scale: CGFloat = 1) {
         bounds = NSRect(x: x, y: 0, width: width, height: height)
         self.menuBar = menuBar
         self.name = name
+        self.scale = scale
         super.init()
     }
 
@@ -30,6 +34,7 @@ private final class HopScreen: NSScreen {
         NSRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height - menuBar)
     }
     override var localizedName: String { name }
+    override var backingScaleFactor: CGFloat { scale }
 }
 
 /// Frame i/o across two screens. A window whose position write lands it on
@@ -43,8 +48,23 @@ private final class HopTrace {
     var hopShortfall: [CGWindowID: CGFloat] = [:]
     var heightCap: [CGWindowID: CGFloat] = [:]
     var failNextSizeWriteID: CGWindowID?
+    /// seconds every AX call on a window costs once its position write has
+    /// hopped it to another screen, until its next batch: the app redrawing
+    /// at the new scale while our calls wait. each call stays under the
+    /// 0.1 s messaging timeout, so none of them fails on its own.
+    var hopCallLatency: [CGWindowID: TimeInterval] = [:]
+    /// seconds every read of a window costs, always
+    var readLatency: [CGWindowID: TimeInterval] = [:]
+    /// windows whose height never holds still between reads, like an app
+    /// still animating its resize. their readback never settles.
+    var jitter: Set<CGWindowID> = []
+    private var jitterReads = 0
     private var hopped: Set<CGWindowID> = []
-    private var now: TimeInterval = 0
+    private(set) var now: TimeInterval = 0
+
+    private func cost(_ id: CGWindowID) {
+        if hopped.contains(id) { now += hopCallLatency[id] ?? 0 }
+    }
 
     private func screenIndex(of point: CGPoint) -> Int? {
         screens.firstIndex { $0.contains(point) }
@@ -58,6 +78,7 @@ private final class HopTrace {
                     failNextSizeWriteID = nil
                     return .cannotComplete
                 }
+                cost(id)
                 var height = size.height - (hopped.contains(id) ? hopShortfall[id] ?? 0 : 0)
                 if let cap = heightCap[id] { height = min(height, cap) }
                 frames[id]?.size = CGSize(width: size.width, height: height)
@@ -67,11 +88,25 @@ private final class HopTrace {
                 if let old = frames[id]?.origin, screenIndex(of: old) != screenIndex(of: position) {
                     hopped.insert(id)
                 }
+                cost(id)
                 frames[id]?.origin = position
                 return .success
             },
-            readPosition: { [self] id, _ in (.success, frames[id]?.origin) },
-            readSize: { [self] id, _ in (.success, frames[id]?.size) },
+            readPosition: { [self] id, _ in
+                cost(id)
+                now += readLatency[id] ?? 0
+                return (.success, frames[id]?.origin)
+            },
+            readSize: { [self] id, _ in
+                cost(id)
+                now += readLatency[id] ?? 0
+                guard jitter.contains(id), var size = frames[id]?.size else {
+                    return (.success, frames[id]?.size)
+                }
+                jitterReads += 1
+                size.height += CGFloat(jitterReads % 2)
+                return (.success, size)
+            },
             now: { [self] in now }, sleep: { [self] in now += $0 },
             currentGeneration: generation)
         // a new batch is a new write: the app has settled on its new screen
@@ -84,15 +119,19 @@ private final class HopTrace {
 }
 
 private final class HopRig {
-    let dell = HopScreen(x: 0, width: 3440, height: 1440, menuBar: 30, name: "DELL U3423WE")
-    let builtIn = HopScreen(x: 3440, width: 1512, height: 982, menuBar: 38, name: "Built-in Retina Display")
+    let dell: HopScreen
+    let builtIn: HopScreen
     let displayManager: DisplayManager
     let workspaceManager: WorkspaceManager
     let engine: TilingEngine
     let trace = HopTrace()
     var windows: [CGWindowID: HyprWindow] = [:]
 
-    init() {
+    init(dellScale: CGFloat = 1, builtInScale: CGFloat = 1) {
+        dell = HopScreen(x: 0, width: 3440, height: 1440, menuBar: 30, name: "DELL U3423WE",
+                         scale: dellScale)
+        builtIn = HopScreen(x: 3440, width: 1512, height: 982, menuBar: 38,
+                            name: "Built-in Retina Display", scale: builtInScale)
         let screens: [NSScreen] = [dell, builtIn]
         displayManager = DisplayManager(screenSource: { screens })
         workspaceManager = WorkspaceManager(displayManager: displayManager)
@@ -213,6 +252,91 @@ final class CrossMonitorArrivalEngineTests: XCTestCase {
         XCTAssertTrue(rig.engine.clearUnverifiedGeometry(forWorkspace: 1, screen: rig.dell))
     }
 
+    // MARK: - an app that does not answer in time
+
+    func testTheLastRetryKeepsATimedOutArrivalTiledAndUnverified() throws {
+        // the mover's readback never settles, so every pass runs out of time
+        // with its frames sent and nothing verified
+        rig.trace.hopShortfall = [:]
+        rig.trace.jitter = [74]
+        let first = arrive()
+        XCTAssertEqual(first.failure.map(\.isTimeout), true, "\(String(describing: first.failure))")
+        XCTAssertEqual(first.strandedIDs, [74])
+
+        let kept = rig.engine.retryAdmission([incumbent, mover], onWorkspace: 1, screen: rig.dell,
+                                             bypassingMinimaBefore: [74: first.generation],
+                                             refusingImpossibleArrangements: true,
+                                             keepingUnverifiedOnTimeout: true)
+
+        XCTAssertEqual(kept.failure.map(\.isTimeout), true, "nothing was verified")
+        XCTAssertTrue(kept.strandedIDs.isEmpty, "the mover is in the tree")
+        XCTAssertEqual(rig.treeIDs(1, rig.dell), [115, 74])
+        let mark = try XCTUnwrap(rig.engine.unverifiedLayouts.first { $0.workspace == 1 })
+        XCTAssertTrue(mark.windowIDs.isSuperset(of: [115, 74]))
+        XCTAssertFalse(rig.engine.clearUnverifiedGeometry(forWorkspace: 1, screen: rig.dell),
+                       "only an accepted layout clears the mark")
+        let tiles = try XCTUnwrap(rig.engine.existingTree(forWorkspace: 1, screen: rig.dell))
+            .layout(in: rig.dellRect, gap: rig.engine.gapSize, padding: rig.engine.outerPadding)
+        for (window, tile) in tiles {
+            XCTAssertEqual(rig.trace.frames[window.windowID], tile,
+                           "no rollback: \(window.windowID) keeps the frame the tree describes")
+        }
+    }
+
+    func testAnOrdinaryRetryStillRollsBackATimeout() {
+        rig.trace.hopShortfall = [:]
+        rig.trace.jitter = [74]
+        let first = arrive()
+
+        let retry = rig.engine.retryAdmission([incumbent, mover], onWorkspace: 1, screen: rig.dell,
+                                              bypassingMinimaBefore: [74: first.generation],
+                                              refusingImpossibleArrangements: true)
+
+        XCTAssertEqual(retry.strandedIDs, [74])
+        XCTAssertEqual(rig.treeIDs(1, rig.dell), [115])
+        XCTAssertEqual(rig.trace.frames[115], incumbentOriginal)
+    }
+
+    func testALastRetryCutOffMidWriteKeepsNothing() {
+        // the hop makes every call after the mover's position write slow, so
+        // the deadline lands after its second size write went out but before
+        // it came back. the mover never got its whole frame, so there is no
+        // tile to keep: the tree would place it where nothing sent it
+        rig.trace.hopShortfall = [:]
+        rig.trace.hopCallLatency[74] = 0.2
+
+        let retry = rig.engine.retryAdmission([incumbent, mover], onWorkspace: 1, screen: rig.dell,
+                                              bypassingMinimaBefore: [74: 0],
+                                              refusingImpossibleArrangements: true,
+                                              keepingUnverifiedOnTimeout: true)
+
+        XCTAssertEqual(retry.failure, .deadlineExceeded)
+        XCTAssertEqual(retry.strandedIDs, [74], "left for the recovery to hold")
+        XCTAssertEqual(rig.treeIDs(1, rig.dell), [115])
+        XCTAssertEqual(rig.trace.frames[115], incumbentOriginal, "the incumbent was rolled back")
+    }
+
+    func testALastRetryThatTimesOutBeforeWritingKeepsNothing() {
+        // every read of the mover is slow, so even the capture runs out of
+        // time. nothing is sent, and a tree must not describe frames nobody
+        // sent
+        rig.trace.hopShortfall = [:]
+        rig.trace.readLatency[74] = 0.2
+        let moverOriginal = rig.trace.frames[74]
+        let first = arrive()
+        XCTAssertEqual(first.failure, .deadlineExceeded)
+
+        let retry = rig.engine.retryAdmission([incumbent, mover], onWorkspace: 1, screen: rig.dell,
+                                              bypassingMinimaBefore: [74: first.generation],
+                                              refusingImpossibleArrangements: true,
+                                              keepingUnverifiedOnTimeout: true)
+
+        XCTAssertEqual(retry.failure, .deadlineExceeded)
+        XCTAssertEqual(retry.strandedIDs, [74], "left for the recovery to hold")
+        XCTAssertEqual(rig.treeIDs(1, rig.dell), [115])
+        XCTAssertEqual(rig.trace.frames[74], moverOriginal)
+    }
+
     func testWithTheReachTheMoverStillGoesBackToTheScreenItCameFrom() {
         // the layout-first paths (revalidation, batch restore) have not
         // reassigned the window yet, so the rollback must take it home.
@@ -266,10 +390,11 @@ final class CrossMonitorMoveRecoveryTests: XCTestCase {
         recovery.isFloating = { [unowned self] in floating.contains($0) }
         recovery.liveWindow = { rig.windows[$0] }
         recovery.isReadable = { rig.trace.frames[$0.windowID] != nil }
-        recovery.attempt = { [unowned self] workspace, screen, bypass in
+        recovery.attempt = { [unowned self] workspace, screen, bypass, keepOnTimeout in
             let result = rig.engine.retryAdmission(tileable(workspace), onWorkspace: workspace,
                                                    screen: screen, bypassingMinimaBefore: bypass,
-                                                   refusingImpossibleArrangements: true)
+                                                   refusingImpossibleArrangements: true,
+                                                   keepingUnverifiedOnTimeout: keepOnTimeout)
             return AdmissionRecovery.AttemptResult(placed: result.publishedIDs.intersection(bypass.keys),
                                                    failure: result.failure, admission: result)
         }
@@ -361,6 +486,29 @@ final class CrossMonitorMoveRecoveryTests: XCTestCase {
         XCTAssertEqual(rig.treeIDs(2, rig.builtIn), [74])
     }
 
+    func testAMoveWhoseLayoutsKeepTimingOutEndsTiledAndUnverifiedNotFloated() {
+        rig.trace.jitter = [74]
+
+        moveGhosttyToTheDell()
+        XCTAssertEqual(recovery.pendingWindowIDs, [74])
+
+        fire()
+        XCTAssertEqual(recovery.phase(of: 74), .awaitingRetry, "a timeout backs off")
+        XCTAssertTrue(floated.isEmpty)
+        fire()
+        fire()
+
+        XCTAssertTrue(floated.isEmpty, "a timeout never floats the window")
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+        XCTAssertTrue(scheduled.isEmpty, "bounded: nothing is armed after the keep")
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(74), 1)
+        XCTAssertEqual(rig.treeIDs(1, rig.dell), [115, 74], "tiled on the destination")
+        XCTAssertTrue(rig.dellRect.contains(rig.trace.frames[74]!))
+        XCTAssertTrue(rig.engine.unverifiedLayouts.contains {
+            $0.workspace == 1 && $0.windowIDs.contains(74)
+        }, "and its key says the geometry is unverified")
+    }
+
     func testAMoveThatKeepsFailingFloatsOnTheDestinationNotTheSource() {
         rig.trace.heightCap[74] = 1136
 
@@ -376,5 +524,91 @@ final class CrossMonitorMoveRecoveryTests: XCTestCase {
                        "the fallback retile gives the incumbent its whole screen back")
         XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
         XCTAssertTrue(rig.engine.unverifiedLayouts.isEmpty, "every key is back to verified geometry")
+    }
+}
+
+
+/// A window that crosses to a screen with a different backing scale. Its
+/// app redraws at the new scale while the attempt's calls queue behind it.
+/// On the MacBook every Hypr+Shift+N onto the 2x panel missed the 0.36 s
+/// budget with nothing read back, and the retry 250 ms later usually tiled.
+final class ScaleChangeArrivalTests: XCTestCase {
+    /// Safari on the 1x DELL, sent to the built-in's empty workspace. Every
+    /// call after the hop costs 95 ms, under the messaging timeout, so only
+    /// the attempt's budget can run out.
+    private func sendSafariToTheBuiltIn(builtInScale: CGFloat)
+        -> (rig: HopRig, result: TilingEngine.AdmissionResult) {
+        let rig = HopRig(builtInScale: builtInScale)
+        XCTAssertEqual(rig.workspaceManager.workspaceForScreen(rig.builtIn), 2)
+        let safari = rig.window(59300, on: rig.dellRect, workspace: 1)
+        rig.trace.hopCallLatency[59300] = 0.095
+        rig.workspaceManager.moveWindow(59300, toWorkspace: 2)
+        let result = rig.engine.tileWindows([safari], onWorkspace: 2, screen: rig.builtIn)
+        return (rig, result)
+    }
+
+    func testAScaleChangingArrivalGetsTheLongerBudgetAndVerifies() throws {
+        let (rig, result) = sendSafariToTheBuiltIn(builtInScale: 2)
+
+        XCTAssertTrue(result.published, "\(String(describing: result.failure))")
+        XCTAssertEqual(rig.treeIDs(2, rig.builtIn), [59300])
+        let tile = try XCTUnwrap(rig.engine.existingTree(forWorkspace: 2, screen: rig.builtIn))
+            .layout(in: rig.builtInRect, gap: rig.engine.gapSize, padding: rig.engine.outerPadding)[0].1
+        XCTAssertEqual(rig.trace.frames[59300], tile)
+        XCTAssertGreaterThan(rig.trace.now, FrameSizingConfiguration().deadline,
+                             "it needed more than the ordinary budget")
+        XCTAssertTrue(rig.engine.unverifiedLayouts.isEmpty)
+    }
+
+    func testTheSameSlowArrivalWithoutAScaleChangeKeepsTheOrdinaryBudget() {
+        let (rig, result) = sendSafariToTheBuiltIn(builtInScale: 1)
+
+        XCTAssertEqual(result.failure, .deadlineExceeded)
+        XCTAssertEqual(result.strandedIDs, [59300], "the recovery takes it from here")
+        XCTAssertTrue(rig.builtInRect.contains(rig.trace.frames[59300]!),
+                      "left on the screen the candidate sent it to")
+    }
+
+    /// Hidden windows park in one global corner on the rightmost screen. A
+    /// reveal on a screen of another scale moves them across the boundary,
+    /// so it gets the longer budget too.
+    private func revealFromTheHideCorner(dellScale: CGFloat)
+        -> (rig: HopRig, result: TilingEngine.AdmissionResult) {
+        let rig = HopRig(dellScale: dellScale, builtInScale: 1)
+        let window = rig.window(4100, on: rig.dellRect, workspace: 1)
+        let corner = rig.workspaceManager.hidePosition()
+        XCTAssertTrue(rig.builtInRect.contains(corner), "the built-in is the rightmost screen")
+        rig.trace.frames[4100] = CGRect(origin: corner, size: CGSize(width: 900, height: 700))
+        rig.trace.hopCallLatency[4100] = 0.06
+        let result = rig.engine.tileWindows([window], onWorkspace: 1, screen: rig.dell)
+        return (rig, result)
+    }
+
+    func testARevealFromTheHideCornerOntoAnotherScaleGetsTheLongerBudget() {
+        let (rig, result) = revealFromTheHideCorner(dellScale: 2)
+
+        XCTAssertTrue(result.published, "\(String(describing: result.failure))")
+        XCTAssertEqual(rig.treeIDs(1, rig.dell), [4100])
+        XCTAssertGreaterThan(rig.trace.now, FrameSizingConfiguration().deadline)
+    }
+
+    func testARevealFromTheHideCornerOnTheSameScaleKeepsTheOrdinaryBudget() {
+        let (_, result) = revealFromTheHideCorner(dellScale: 1)
+
+        XCTAssertEqual(result.failure, .deadlineExceeded)
+    }
+
+    func testTheBudgetOnlyGrows() {
+        let ordinary = FrameSizingConfiguration()
+        let extended = ordinary.withScaleChangeBudget
+        XCTAssertEqual(extended.deadline, 1.0, accuracy: 0.0001)
+        XCTAssertGreaterThanOrEqual(Double(extended.maximumAttempts) * extended.pollInterval,
+                                    extended.deadline, "the settle loop can use the time")
+        XCTAssertEqual(extended.perCallTimeout, ordinary.perCallTimeout,
+                       "one call still fails at the same messaging timeout")
+
+        var generous = ordinary
+        generous.deadline = 2
+        XCTAssertEqual(generous.withScaleChangeBudget.deadline, 2, accuracy: 0.0001)
     }
 }

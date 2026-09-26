@@ -204,9 +204,10 @@ final class ScratchpadController {
                 let base = workspaceManager.savedFloatingFrame(for: id) ?? w.frame ?? .zero
                 workspaceManager.clearSavedFloatingFrame(for: id)
                 if base != .zero {
-                    let placed = targetRect.map { carriedRect(base, to: $0) } ?? base
-                    w.setFrame(placed)
-                    lastShownFrames[id] = placed
+                    let carried = targetRect.map { carriedRect(base, to: $0) } ?? base
+                    lastShownFrames[id] = w.placeFloating(carried, reason: "scratchpad show",
+                                                          on: targetScreen,
+                                                          displayManager: displayManager)
                 }
             }
             w.raise()
@@ -505,9 +506,10 @@ final class ScratchpadController {
             let full = displayManager.cgRect(for: screen)
             let base = workspaceManager.savedFloatingFrame(for: id) ?? focused.frame ?? .zero
             if base != .zero {
-                let placed = carriedRect(base, to: full)
-                focused.setFrame(placed)
-                lastShownFrames[id] = placed
+                lastShownFrames[id] = focused.placeFloating(carriedRect(base, to: full),
+                                                            reason: "scratchpad untile",
+                                                            on: screen,
+                                                            displayManager: displayManager)
             }
             retileLayer()
             focused.raise()

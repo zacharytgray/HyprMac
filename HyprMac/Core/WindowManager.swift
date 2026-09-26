@@ -903,17 +903,20 @@ class WindowManager {
             guard !workspaceManager.isWorkspaceVisible(ws) else { continue }
             guard let window = allWindows.first(where: { $0.windowID == wid }) else { continue }
 
+            // once HyprMac stops every window is a free window, so these
+            // go through the same clamp as a floater
             if let original = stateCache.originalFrames[wid] {
-                window.setFrame(original)
-                hyprLog(.debug, .lifecycle, "restored '\(window.title ?? "?")' to original frame")
+                window.placeFloating(original, reason: "stop, original frame",
+                                     displayManager: displayManager)
             } else {
                 // cascade onto main screen
                 let x = screenRect.origin.x + 50
                 let y = screenRect.origin.y + 50
                 let w = min(screenRect.width * 0.6, 1200)
                 let h = min(screenRect.height * 0.6, 800)
-                window.setFrame(CGRect(x: x, y: y, width: w, height: h))
-                hyprLog(.debug, .lifecycle, "restored '\(window.title ?? "?")' to main screen")
+                window.placeFloating(CGRect(x: x, y: y, width: w, height: h),
+                                     reason: "stop, cascade onto the main screen",
+                                     on: mainScreen, displayManager: displayManager)
             }
         }
 
@@ -1028,6 +1031,8 @@ class WindowManager {
         mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let shouldDetectDrag = self?.mouseDraggedSinceDown ?? false
             let draggedFloatingID = self?.mouseDownFloatingWindowID ?? 0
+            let draggedFloatingFrame = self?.mouseDownFloatingFrame
+            var floaterDragged = false
             if let self {
                 let primaryHeight = self.displayManager.primaryScreenHeight
                 let releasePoint = TiledDragEvent.point(event: event, primaryHeight: primaryHeight)
@@ -1042,6 +1047,7 @@ class WindowManager {
                         + "travel=\(travel.map { String(format: "%.1f", Double($0)) } ?? "?") "
                         + "threshold=\(String(format: "%g", Double(TilingConfig.dragThresholdPx))) "
                         + "drag=\(isDrag)")
+                floaterDragged = isDrag && draggedFloatingID != 0
                 let release = TiledDragEvent.release(
                     event: event,
                     primaryHeight: primaryHeight,
@@ -1073,8 +1079,12 @@ class WindowManager {
                 self?.dimmingOverlay.clearDragOverride()
             }
             if draggedFloatingID != 0 {
+                let noteDrag = floaterDragged
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
                     self?.updatePositionCache()
+                    if noteDrag {
+                        self?.noteFloaterDrag(draggedFloatingID, from: draggedFloatingFrame)
+                    }
                 }
             }
             // restore the focus border on whatever floating window we hid it for,
@@ -2049,7 +2059,10 @@ class WindowManager {
             stateCache.floatingWindowIDs.insert(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
                 w.isFloating = true
-                if let original = stateCache.originalFrames[wid] { w.setFrame(original) }
+                if let original = stateCache.originalFrames[wid] {
+                    w.placeFloating(original, reason: "all workspaces full, original frame",
+                                    displayManager: displayManager)
+                }
                 hyprLog(.debug, .lifecycle, "all workspaces full — auto-floating '\(w.title ?? "?")'")
             }
         }
@@ -2154,6 +2167,33 @@ class WindowManager {
         guard hits.count == 1, let hit = hits.first else { return }
         mouseDownFloatingWindowID = hit.key
         mouseDownFloatingFrame = hit.value
+    }
+
+    /// One notice line per floater drag, read once the drop has settled,
+    /// and a second one if the frame is still changing a second later.
+    /// HyprMac writes no frame for a plain floater drag, so a size change
+    /// here came from the app or macOS. Any frame HyprMac writes to a
+    /// floater logs its own `floating frame write:` line.
+    private func noteFloaterDrag(_ id: CGWindowID, from start: CGRect?, settled: Bool = false) {
+        guard let window = stateCache.cachedWindows[id], let frame = window.frame else { return }
+        let destination = displayManager.screen(containingMostOf: frame)
+        let fits = destination.map { frame.clamped(into: displayManager.cgRect(for: $0)) == frame } ?? false
+        let resized = start.map { abs($0.width - frame.width) > 1 || abs($0.height - frame.height) > 1 }
+        let startText = start.map {
+            FloatingFramePlacement.describe($0) + " on "
+                + FloatingFramePlacement.describe(displayManager.screen(containingMostOf: $0))
+        } ?? "unread"
+        hyprLog(.notice, .floating, "floater drag\(settled ? " +1s" : ""): wid=\(id)"
+                + " from=\(startText)"
+                + " to=\(FloatingFramePlacement.describe(frame))"
+                + " on \(FloatingFramePlacement.describe(destination))"
+                + " resized=\(resized.map(String.init) ?? "unknown") fitsUsable=\(fits)")
+        guard !settled else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self, let later = self.stateCache.cachedWindows[id]?.frame,
+                  later != frame else { return }
+            self.noteFloaterDrag(id, from: start, settled: true)
+        }
     }
 
     private func visibleFloatingWindows() -> [HyprWindow] {
@@ -3388,7 +3428,7 @@ private extension WindowManager {
             else { return nil }
             return window
         }
-        admissionRecovery.attempt = { [weak self] workspace, screen, bypass in
+        admissionRecovery.attempt = { [weak self] workspace, screen, bypass, keepOnTimeout in
             guard let self else { return AdmissionRecovery.AttemptResult() }
             let allWindows = self.accessibility.getAllWindows()
             self.tilingEngine.primeMinimumSizes(allWindows)
@@ -3400,7 +3440,8 @@ private extension WindowManager {
             let result = self.tilingEngine.retryAdmission(
                 windows, onWorkspace: workspace, screen: screen,
                 bypassingMinimaBefore: bypass,
-                refusingImpossibleArrangements: true)
+                refusingImpossibleArrangements: true,
+                keepingUnverifiedOnTimeout: keepOnTimeout)
             self.updatePositionCache(windows: allWindows)
             return AdmissionRecovery.AttemptResult(
                 placed: result.publishedIDs.intersection(bypass.keys),

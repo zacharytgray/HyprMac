@@ -259,6 +259,10 @@ class TilingEngine {
     /// One bounded topology retry for automatic admission recovery. This is
     /// never enabled for ordinary retiles, explicit insertion, or drag.
     private var admissionTopologyRecovery = false
+    /// The admission recovery's last retry after timeouts. A pass that times
+    /// out under it keeps what it wrote and publishes the tree unverified
+    /// instead of rolling back. Set for that one retry only.
+    private var keepsTimedOutAdmission = false
     private var layoutGeneration: UInt64 = 0
     var currentLayoutGeneration: UInt64 { layoutGeneration }
     private let frameSizingIOFactory: ([CGWindowID: HyprWindow], @escaping () -> UInt64) -> FrameSizingIO
@@ -1189,16 +1193,30 @@ class TilingEngine {
 
         let candidate = tree.deepClone()
         let firstLayouts = candidate.layout(in: rect, gap: gapSize, padding: outerPadding)
+        // a window arriving from a screen with a different backing scale
+        // makes its app redraw at the new scale while our calls queue behind
+        // it. that pass, and a rollback carrying it back, get the longer
+        // budget; nothing else does.
+        let scaleChanges = scaleChanges(originalFrames, destination: rect)
+        let poller = scaleChanges.isEmpty ? readbackPoller : readbackPoller.withScaleChangeBudget()
+        if !scaleChanges.isEmpty {
+            hyprLog(.notice, .tiling, "verified layout scale change: ids=["
+                    + scaleChanges.keys.sorted().map { id in
+                        let change = scaleChanges[id]!
+                        return "\(id):\(Self.scale(change.from))→\(Self.scale(change.to))"
+                    }.joined(separator: ", ")
+                    + "] deadline=\(Int((poller.deadline * 1000).rounded()))ms")
+        }
         let parkedWindowIDs = Set(originalFrames.compactMap { windowID, frame in
             frame.isSubstantiallyVisible(on: rect, threshold: 0.5) ? nil : windowID
         })
         let first = !parkedWindowIDs.isEmpty
-            ? reconcile(readbackPoller.applyWorkspaceReveal(firstLayouts,
-                                                            parkedWindowIDs: parkedWindowIDs,
-                                                            usableFrame: rect, gap: gapSize,
-                                                            generation: generation),
+            ? reconcile(poller.applyWorkspaceReveal(firstLayouts,
+                                                    parkedWindowIDs: parkedWindowIDs,
+                                                    usableFrame: rect, gap: gapSize,
+                                                    generation: generation),
                         generation: generation)
-            : applyLayout(firstLayouts, usableFrame: rect, generation: generation)
+            : applyLayout(firstLayouts, usableFrame: rect, generation: generation, poller: poller)
         if case .accepted = first.verdict {
             return .accepted(actualFrames: first.actualFrames,
                              progress: FrameSizingProgressReport(candidate: first.progress))
@@ -1206,6 +1224,9 @@ class TilingEngine {
 
         var terminal = first
         var terminalLayouts = firstLayouts
+        // what publishing the terminal pass unverified would have to carry
+        // over to `tree`: its adjusted ratios, or its rebuilt topology
+        var adoptTerminal: () -> Void = {}
         if case .rejected = first.verdict, !first.conflicts.isEmpty,
            layoutGeneration == generation {
             let conflicts = first.conflicts.map { (window: $0.window, actual: $0.actual) }
@@ -1220,7 +1241,9 @@ class TilingEngine {
             }
             if resolves {
                 terminalLayouts = adjusted
-                terminal = applyLayoutFinal(adjusted, usableFrame: rect, generation: generation)
+                terminal = applyLayoutFinal(adjusted, usableFrame: rect, generation: generation,
+                                            poller: poller)
+                adoptTerminal = { self.copyVerifiedRatios(from: candidate.root, to: tree.root) }
                 if case .accepted = terminal.verdict {
                     copyVerifiedRatios(from: candidate.root, to: tree.root)
                     return .accepted(actualFrames: terminal.actualFrames,
@@ -1238,7 +1261,9 @@ class TilingEngine {
                         + "[" + windows.map { String($0.windowID) }.joined(separator: ", ") + "]")
                 let layouts = recovered.layout(in: rect, gap: gapSize, padding: outerPadding)
                 terminalLayouts = layouts
-                terminal = applyLayoutFinal(layouts, usableFrame: rect, generation: generation)
+                terminal = applyLayoutFinal(layouts, usableFrame: rect, generation: generation,
+                                            poller: poller)
+                adoptTerminal = { tree.root = recovered.root }
                 if case .accepted = terminal.verdict {
                     tree.root = recovered.root
                     hyprLog(.notice, .tiling, "admission topology recovery accepted")
@@ -1262,6 +1287,21 @@ class TilingEngine {
                 + " phase=\(terminal.progress.phase.rawValue)"
                 + Self.offTargetTrace(terminalLayouts, actual: terminal.actualFrames)
                 + " actual=\(terminal.actualFrames)")
+        // the admission recovery's last retry. the app did not answer in time,
+        // which is not a refusal, so the frames it was sent stay where they
+        // are and the caller publishes the tree unverified. a rollback here
+        // would be one more batch of calls to an app that is not answering.
+        if keepsTimedOutAdmission, reason.isTimeout, Self.wroteEveryTarget(terminal.progress) {
+            adoptTerminal()
+            hyprLog(.notice, .tiling, "verified layout kept unverified: reason=\(reason)"
+                    + " phase=\(terminal.progress.phase.rawValue) ids=["
+                    + windows.map { String($0.windowID) }.joined(separator: ", ")
+                    + "] — a timeout, not a refusal; no rollback")
+            return .degraded(candidateReason: reason, restorationReason: nil,
+                             restorationAttempted: false,
+                             actualFrames: terminal.actualFrames,
+                             progress: candidateProgress)
+        }
         // a newcomer whose original is off the restoration rect — it stood on
         // the screen it was moved from, or was parked — was never part of the
         // tree being rolled back. writing it back there would put an assigned
@@ -1296,8 +1336,12 @@ class TilingEngine {
             leftInPlace.contains(window.windowID)
                 ? nil : originalFrames[window.windowID].map { (window, $0) }
         }
-        let restored = readbackPoller.applyRestoration(originals, usableFrame: restorationFrame,
-                                                        gap: gapSize, generation: generation)
+        // only a rollback that carries a window back across the scale
+        // boundary is slow for the same reason the candidate was
+        let restoresAcrossScales = originals.contains { scaleChanges[$0.0.windowID] != nil }
+        let restorationPoller = restoresAcrossScales ? poller : readbackPoller
+        let restored = restorationPoller.applyRestoration(originals, usableFrame: restorationFrame,
+                                                          gap: gapSize, generation: generation)
         var progress = candidateProgress
         progress.restoration = restored.progress
         progress.restorationOverlaps = restored.overlaps
@@ -1308,7 +1352,11 @@ class TilingEngine {
                layoutGeneration == generation {
                 hyprLog(.notice, .tiling, "verified layout AX timeout recovery: reason=\(reason) ids="
                         + "[" + windows.map { String($0.windowID) }.joined(separator: ", ") + "]")
-                let retry = timeoutRecoveryPoller.applyLayout(
+                let relaxedPoller = scaleChanges.isEmpty
+                    ? timeoutRecoveryPoller : timeoutRecoveryPoller.withScaleChangeBudget()
+                let relaxedRestorationPoller = restoresAcrossScales
+                    ? relaxedPoller : timeoutRecoveryPoller
+                let retry = relaxedPoller.applyLayout(
                     firstLayouts, usableFrame: rect, gap: gapSize, generation: generation
                 )
                 if case .accepted = retry.verdict {
@@ -1329,7 +1377,7 @@ class TilingEngine {
                                      actualFrames: retry.actualFrames,
                                      progress: retryProgress)
                 }
-                let retryRestoration = timeoutRecoveryPoller.applyRestoration(
+                let retryRestoration = relaxedRestorationPoller.applyRestoration(
                     originals, usableFrame: restorationFrame, gap: gapSize,
                     generation: generation
                 )
@@ -1397,17 +1445,40 @@ class TilingEngine {
     // min-size memory. returns the conflicts the engine should pass into
     // BSPTree.adjustForMinSizes.
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
-                             generation: UInt64) -> FrameReadbackPoller.Result {
-        reconcile(readbackPoller.applyLayout(layouts, usableFrame: usableFrame,
-                                             gap: gapSize, generation: generation),
+                             generation: UInt64,
+                             poller: FrameReadbackPoller) -> FrameReadbackPoller.Result {
+        reconcile(poller.applyLayout(layouts, usableFrame: usableFrame,
+                                     gap: gapSize, generation: generation),
                   generation: generation)
     }
 
     private func applyLayoutFinal(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
-                                  generation: UInt64) -> FrameReadbackPoller.Result {
-        reconcile(readbackPoller.applyFinal(layouts, usableFrame: usableFrame,
-                                            gap: gapSize, generation: generation),
+                                  generation: UInt64,
+                                  poller: FrameReadbackPoller) -> FrameReadbackPoller.Result {
+        reconcile(poller.applyFinal(layouts, usableFrame: usableFrame,
+                                    gap: gapSize, generation: generation),
                   generation: generation)
+    }
+
+    /// Windows whose captured original stands on a screen with a different
+    /// backing scale factor than the screen `rect` belongs to, with both
+    /// factors. A parked original counts for the screen it is parked on.
+    private func scaleChanges(_ originals: [CGWindowID: CGRect],
+                              destination rect: CGRect) -> [CGWindowID: (from: CGFloat, to: CGFloat)] {
+        guard displayManager.screens.count > 1,
+              let destination = displayManager.screen(containingMostOf: rect) else { return [:] }
+        let to = destination.backingScaleFactor
+        var changes: [CGWindowID: (from: CGFloat, to: CGFloat)] = [:]
+        for (windowID, frame) in originals {
+            guard let source = displayManager.screen(containingMostOf: frame) else { continue }
+            let from = source.backingScaleFactor
+            if from != to { changes[windowID] = (from, to) }
+        }
+        return changes
+    }
+
+    private static func scale(_ factor: CGFloat) -> String {
+        String(format: "%gx", Double(factor))
     }
 
     // both passes teach the same memory. the adjusted pass is where a
@@ -1659,9 +1730,17 @@ class TilingEngine {
                                              && m.insertedWindows.count
                                                 == windows.filter { !$0.isFloating }.count
                                              ? maxDepth(for: screen) : nil)
-        if publishes(outcome), layoutGeneration == generation {
+        let keptTimeout = keepsTimedOutAdmission ? Self.timeoutWithoutRollback(outcome) : nil
+        if publishes(outcome) || keptTimeout != nil, layoutGeneration == generation {
             if let live { live.root = candidate.root } else { trees[key] = candidate }
             admit(candidate.allWindows.map(\.windowID), toWorkspace: workspace)
+            if let keptTimeout {
+                // applyTrackedLayout already marked the key, and only an
+                // accepted layout clears that mark
+                hyprLog(.notice, .tiling, "admission kept unverified: ws\(workspace) ids=["
+                        + candidate.allWindows.map { String($0.windowID) }.joined(separator: ", ")
+                        + "] reason=\(keptTimeout) — tiled, key marked unverified")
+            }
         }
 
         // clean up empty trees for this workspace on other screens
@@ -1677,6 +1756,26 @@ class TilingEngine {
                                generation: generation,
                                inserted: Set(m.insertedWindows.map(\.windowID)).subtracting(incumbents),
                                refused: Set(m.refusedWindows.map(\.windowID)).subtracting(incumbents))
+    }
+
+    /// The timeout behind a pass that sent every window its frame and
+    /// rolled nothing back: what `applyVerifiedLayoutAttempt` returns under
+    /// `keepsTimedOutAdmission`. Nil for every other outcome.
+    private static func timeoutWithoutRollback(_ outcome: LayoutApplicationOutcome) -> FrameSizingFailure? {
+        guard case let .degraded(reason, nil, false, _, progress) = outcome, reason.isTimeout,
+              wroteEveryTarget(progress.candidate) else { return nil }
+        return reason
+    }
+
+    /// All three setters returned success for every window the pass lays
+    /// out. Not proof any frame landed — only that each window was sent its
+    /// whole frame, so there is something to keep. A pass cut off after the
+    /// first size write would leave a newcomer resized but still on the
+    /// screen it came from, and a capture that timed out wrote nothing; a
+    /// tree must not describe either.
+    private static func wroteEveryTarget(_ progress: FrameSizingAttempt.Progress) -> Bool {
+        progress.phase != .capture && !progress.targetIDs.isEmpty
+            && progress.targetIDs.allSatisfy(progress.writesCompleted.contains)
     }
 
     /// Build the typed admission result from what the live tree holds now.
@@ -1721,18 +1820,27 @@ class TilingEngine {
     /// retrying, so writing the same frames again would only repeat the
     /// resize the user just watched. An explicit revalidation does not set
     /// it — the user asking by hand is asking for a real attempt.
+    ///
+    /// `keepingUnverifiedOnTimeout` is the recovery's last retry after
+    /// timeouts. A pass that times out then keeps its writes, publishes its
+    /// tree and leaves the key marked unverified: the app never answered,
+    /// which is not the app refusing the frames.
     @discardableResult
     func retryAdmission(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen,
                         bypassingMinimaBefore bypass: [CGWindowID: UInt64],
                         refusingImpossibleArrangements: Bool = false,
+                        keepingUnverifiedOnTimeout: Bool = false,
                         restorationReach: CGRect? = nil) -> AdmissionResult {
         let previous = minimaBypass
         let previousTopologyRecovery = admissionTopologyRecovery
+        let previousKeep = keepsTimedOutAdmission
         minimaBypass = bypass
         admissionTopologyRecovery = refusingImpossibleArrangements
+        keepsTimedOutAdmission = keepingUnverifiedOnTimeout
         defer {
             minimaBypass = previous
             admissionTopologyRecovery = previousTopologyRecovery
+            keepsTimedOutAdmission = previousKeep
         }
         if refusingImpossibleArrangements {
             // only the newcomers this retry is for, against the live tree's
