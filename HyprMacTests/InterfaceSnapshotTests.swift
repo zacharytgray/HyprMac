@@ -3,9 +3,10 @@ import SwiftUI
 import Carbon
 @testable import HyprMac
 
-// renders the settings, tour, gate and menu views offscreen into 2x pngs.
-// opt-in: set HYPRMAC_RENDER_UI to an output directory. needs the isolated
-// home from scripts/test-isolated.sh because it flips the saved hypr key.
+// renders the settings, tour, gate, menu and keybind overlay views offscreen
+// into 2x pngs. opt-in: set HYPRMAC_RENDER_UI to an output directory. needs
+// the isolated home from scripts/test-isolated.sh because it flips the saved
+// hypr key.
 @MainActor
 final class InterfaceSnapshotTests: XCTestCase {
     private var outputDir: URL!
@@ -104,6 +105,22 @@ final class InterfaceSnapshotTests: XCTestCase {
         let editor = KeybindEditorSheet(existingBind: binds[1]) { _ in }
             .background(Color.hyprBackground)
         try render("keybind-editor-dark", editor, width: 480)
+    }
+
+    func testRenderKeybindOverlay() throws {
+        UserConfig.shared.hyprKey = .capsLock
+        let width = KeybindOverlayView.preferredWidth
+        func overlay(_ text: String) -> some View {
+            let input = OverlayInput()
+            input.text = text
+            return KeybindOverlayView(keybinds: Keybind.defaults, cardWidth: width,
+                                      listHeight: OverlayListLayout.preferredHeight) {}
+                .environmentObject(input)
+        }
+        try render("keybind-overlay-dark", overlay(""), width: width + 128)
+        try render("keybind-overlay-light", overlay(""), width: width + 128, dark: false)
+        try render("keybind-overlay-filter-dark", overlay("work"), width: width + 128)
+        try render("keybind-overlay-nomatch-dark", overlay("zzz"), width: width + 128)
     }
 
     // MARK: helpers

@@ -103,9 +103,11 @@ class OverlayHostingView<Content: View>: NSHostingView<Content> {
 struct OverlayPalette {
     let scheme: ColorScheme
     var isDark: Bool { scheme == .dark }
-    var background: Color {
-        isDark ? Color(red: 0.025, green: 0.032, blue: 0.075).opacity(0.98)
-            : Color(red: 0.94, green: 0.95, blue: 0.97).opacity(0.98)
+    var background: Color { opaqueBackground.opacity(0.98) }
+    /// `background` with no transparency, for chrome that covers scrolling rows
+    var opaqueBackground: Color {
+        isDark ? Color(red: 0.025, green: 0.032, blue: 0.075)
+            : Color(red: 0.94, green: 0.95, blue: 0.97)
     }
     var surface: Color { isDark ? .white.opacity(0.055) : .black.opacity(0.045) }
     var activeSurface: Color { isDark ? .white.opacity(0.10) : .black.opacity(0.08) }
