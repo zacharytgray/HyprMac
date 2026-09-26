@@ -165,11 +165,14 @@ final class HyprKeyPickerTests: XCTestCase {
         }
     }
 
-    // why the cases stay: an unknown value fails the whole config decode
-    func testUnknownHyprKeyFailsTheWholeDecode() {
+    // why the cases stay: an unknown value falls back to the default Hypr
+    // key, so removing a case would quietly move its users to Caps Lock
+    func testUnknownHyprKeyFallsBackToTheDefaultKey() throws {
         let json = """
         {"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true,"hyprKey":"leftHyper"}
         """
-        XCTAssertThrowsError(try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8)))
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        XCTAssertNil(saved.hyprKey)
+        XCTAssertEqual(saved.hyprKey ?? UserConfigDefaults.hyprKey, .capsLock)
     }
 }
