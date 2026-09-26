@@ -432,6 +432,13 @@ final class WorkspaceOrchestrator {
     /// hides the source (same monitor) or retiles it (other monitor) in its
     /// one pass, and focuses the moved window. A refused move never switches.
     func moveToWorkspace(_ number: Int, follow: Bool = false) {
+        // a hand-edited keybind can name any number. 0 is the scratchpad's
+        // internal id and nothing past 10 exists, so neither is a destination.
+        guard Constants.workspaceRange.contains(number) else {
+            hyprLog(.notice, .workspace, "moveToWorkspace(\(number)): no such workspace — ignored")
+            NSSound.beep()
+            return
+        }
         guard let focused = currentFocusedWindow() else { return }
         // hold polls off for the duration of the transition. Tahoe AX
         // writes lag, so a poll mid-transition reads the moved window

@@ -85,7 +85,8 @@ with the same payload as `moveToDesktop`. The key is frozen like the others.
 `WorkspaceOrchestrator.moveToWorkspace(N, follow: true)` runs the same checks
 as the silent move and never switches when the move does not happen: a
 refusal beeps and shakes, and no focused window or a window already on N
-does nothing. After that:
+does nothing. Both moves ignore a number outside 1–10 with a beep; a hand
+edit is the only way to get one. After that:
 
 - **Destination showing on another monitor:** the same as the silent move.
   The window is placed there, focused, and the cursor follows. No switch HUD.

@@ -385,6 +385,24 @@ final class WorkspaceFollowTests: XCTestCase {
         XCTAssertEqual(rig.focusController.lastFocusedID, 0)
     }
 
+    // 0 is the scratchpad's internal id and 11 does not exist. a hand edit
+    // can still put either in a keybind; neither moves or switches anything.
+    func testAMoveToANumberOutsideOneToTenDoesNothing() {
+        let (mover, sibling, source) = seedSource()
+
+        for number in [0, 11] {
+            rig.orchestrator.moveToWorkspace(number, follow: true)
+            rig.orchestrator.moveToWorkspace(number)
+        }
+
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(mover.windowID), source)
+        XCTAssertEqual(rig.treeIDs(source), [mover.windowID, sibling.windowID])
+        XCTAssertEqual(rig.visible(on: 0), source)
+        XCTAssertTrue(rig.announced.isEmpty)
+        XCTAssertTrue(rig.warps.isEmpty)
+        XCTAssertTrue(rig.bordered.isEmpty)
+    }
+
     func testAFloatingWindowFollowsAndStaysFloating() {
         let source = rig.visible(on: 0)
         let mover = rig.add(11, to: source, floating: true)
