@@ -321,6 +321,10 @@ class WindowManager {
 
         hotkeyManager.onAction = { [weak self] action in
             guard let self else { return }
+            // hotkeys arrive through an event tap, which the lock screen's
+            // secure input keeps key events from, so one firing means the
+            // session is in use again
+            self.discovery.endSessionInterruption(evidence: "hotkey press")
             if action == .toggleTiling {
                 self.config.enabled.toggle()
                 return
@@ -695,6 +699,8 @@ class WindowManager {
         wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
                          name: NSWorkspace.screensDidWakeNotification, object: nil)
         wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
+                         name: NSWorkspace.screensDidSleepNotification, object: nil)
+        wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
                          name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
                          name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
@@ -754,6 +760,8 @@ class WindowManager {
         focusBrackets.hide()
         admissionRecovery.cancelAll(reason: "stop")
         minimaRevalidation.cancelAll(reason: "stop")
+        // the observers go below, so no end notification would reach a span
+        discovery.endSessionInterruption(evidence: "stop")
         driftMonitor.reset()
         dumpStateSignalSource?.cancel()
         dumpStateSignalSource = nil
@@ -1394,6 +1402,8 @@ class WindowManager {
     /// callback site stays terse and so subclasses or tests can intercept
     /// in one place. Also called from the menu bar (cheat-sheet row).
     func handleAction(_ action: Action) {
+        // the menu bar calls in here too, and nobody reaches it while locked
+        discovery.endSessionInterruption(evidence: "action")
         if action == .showWorkspaceOverview {
             let overview = workspaceOverviewSnapshots()
             workspaceOverview.toggle(snapshots: overview.workspaces, scratchpad: overview.scratchpad)
@@ -2495,6 +2505,10 @@ class WindowManager {
             excludedBundleIDs: Set(config.excludedBundleIDs),
             focusedWindowID: focusController.lastFocusedID
         )
+        // locked or asleep: this snapshot is not the desktop. a drift
+        // re-apply or a recovery attempt from it would lay the trees out
+        // without the windows it is missing
+        if changes.heldForInterruption { return }
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
         // a poll is the real event that says a window came back, became
         // readable, or went away — the only thing that can unblock a
@@ -2739,6 +2753,9 @@ class WindowManager {
         // suppression arms.
         suppressions.suppress("workspace-transition", for: 4.0)
         hyprLog(.notice, .lifecycle, "discovery suppressed 4s around system interruption")
+        // lock and display sleep last longer than that. discovery holds
+        // every missing window from the start of the span to its end
+        discovery.noteSystemInterruption(notification.name.rawValue)
         // park the scratchpad across sleep/lock so wake never finds visible
         // members with a stale scrim
         scratchpad.hide(reason: .displayChange)

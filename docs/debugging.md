@@ -782,6 +782,35 @@ looked", which only the file log keeps:
   `pollWindowChanges`, with the snapshot size and the elapsed wall
   clock since the previous poll.
 
+### Windows rearranged after a lock or sleep
+
+A locked session, sleeping displays and a switched-out user session all
+empty the on-screen window list. `WindowDiscoveryService` holds every
+missing window from the start of such a span to its end. A poll that finds
+a known window missing does nothing else: nothing is marked hidden, nothing
+leaves its tree, and no retile, drift re-apply, park repair or recovery
+attempt runs from it. All `[notice] [discovery]`:
+
+```
+session interruption began (locked) — missing windows are not marked gone until it ends
+session interruption: 5/5 known windows missing — holding them, nothing marked gone
+session interruption: screens asleep ended after 142s, still locked
+session interruption ended (locked) after 205s
+session interruption ended by hotkey press (was locked)
+session interruption ended by action (was locked)
+session interruption cap reached after 43200s (locked) — missing windows count again
+```
+
+The spans are `com.apple.screenIsLocked` to `screenIsUnlocked`,
+`screensDidSleep` to `screensDidWake`, and `sessionDidResignActive` to
+`sessionDidBecomeActive`. The span ends when every reason has ended. The
+holding line is `.notice` once per span and `.debug` after that. A span
+whose end notification never came ends on any hotkey press, a menu-bar
+action, a stop, or the 12-hour cap. The 4-second `discovery suppressed` hold after each
+notification is unchanged. Before this, a lock that outlasted it and the
+three mass-gone skips marked every window hidden, and the unlock rebuilt
+each tree in reading order with default ratios.
+
 ## Retile churn / full-screen flicker
 
 Symptom: two tiled windows, one keeps snapping full-screen and back

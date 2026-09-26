@@ -143,6 +143,10 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
 
 Per-app AXObserver notifications are the primary discovery trigger; the
 10s timer only backstops missed events and observer-refusing apps.
+While the session is locked, the displays sleep, or the user session is
+switched out, `computeChanges` treats a missing window as no evidence and
+skips the cycle, and `pollWindowChanges` stops there;
+`WindowManager.systemInterruption` opens and closes that span.
 
 ## Ownership rules
 
