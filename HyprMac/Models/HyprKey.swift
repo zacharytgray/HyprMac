@@ -152,3 +152,47 @@ enum HyprKey: String, Codable, CaseIterable, Identifiable {
         keyCode != excludedKeyCode && nativeModifierFlag(for: keyCode) == flag
     }
 }
+
+// MARK: - picker choices
+
+extension HyprKey {
+    /// Keys the Settings → Keys picker offers, in picker order.
+    ///
+    /// Shift and Control are left out because default binds add them on
+    /// top of Hypr. Left Option and Left Command are left out because they
+    /// carry everyday macOS shortcuts. Those cases stay in the enum so an
+    /// existing config still decodes and keeps its key.
+    static let pickerChoices: [HyprKey] = [
+        .capsLock, .tab, .grave, .backslash,
+        .f13, .f14, .f15, .f16, .f17, .f18, .f19, .f20,
+        .rightOption, .rightCommand
+    ]
+
+    var isOffered: Bool { Self.pickerChoices.contains(self) }
+
+    /// Picker rows for a config whose key is `current`. A key that is no
+    /// longer offered is appended so the picker still has a matching tag.
+    /// It drops out once the user picks something else.
+    static func pickerRows(for current: HyprKey) -> [HyprKey] {
+        current.isOffered ? pickerChoices : pickerChoices + [current]
+    }
+
+    /// One sentence shown under the picker when the saved key is no longer
+    /// offered. nil for offered keys.
+    var notRecommendedNote: String? {
+        let reason: String
+        switch self {
+        case .leftShift, .rightShift:
+            reason = "many default shortcuts add Shift to Hypr"
+        case .leftControl, .rightControl:
+            reason = "several default shortcuts add Control to Hypr"
+        case .leftOption:
+            reason = "it takes over everyday shortcuts like ⌥← to jump a word"
+        case .leftCommand:
+            reason = "it takes over everyday shortcuts like ⌘W, ⌘T and ⌘1–9"
+        default:
+            return nil
+        }
+        return "\(displayName) is no longer recommended as the Hypr key because \(reason)."
+    }
+}

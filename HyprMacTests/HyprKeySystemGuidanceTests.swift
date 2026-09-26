@@ -36,6 +36,20 @@ final class HyprKeySystemGuidanceTests: XCTestCase {
         XCTAssertEqual(needsNothing.count + expected.count, HyprKey.allCases.count)
     }
 
+    // tab, backtick, backslash and F13–F20 are not in the Modifier Keys pane
+    func testOfferedKeysNeedingGuidanceAreCapsLockAndTheRightModifiers() {
+        let needing = HyprKey.pickerChoices.filter { HyprKeySystemGuidance.forKey($0) != nil }
+        XCTAssertEqual(needing, [.capsLock, .rightOption, .rightCommand])
+    }
+
+    func testCapsLockGuidanceWording() {
+        let guidance = HyprKeySystemGuidance.forKey(.capsLock)
+        XCTAssertEqual(guidance?.title,
+                       "Keep Caps Lock set to \"⇪ Caps Lock\" in Modifier Keys on each keyboard.")
+        XCTAssertEqual(guidance?.detail,
+                       "Check System Settings → Keyboard → Keyboard Shortcuts… → Modifier Keys for each keyboard you use. \"No Action\" or any other choice hides Caps Lock from HyprMac. HyprMac can't check it for you.")
+    }
+
     func testTitleNamesTheKeyAndTheRequiredAction() {
         for (key, (keyName, requiredAction)) in expected {
             guard let guidance = HyprKeySystemGuidance.forKey(key) else {
