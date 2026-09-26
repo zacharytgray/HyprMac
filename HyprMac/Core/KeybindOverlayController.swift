@@ -176,6 +176,50 @@ private struct OverlaySection: Identifiable {
 }
 
 enum KeybindOverlayGrouping {
+    /// Workspace-number actions that fold into one "… workspace N" row.
+    /// The raw value is the Settings disclosure id.
+    enum WorkspaceFamily: String, CaseIterable {
+        case switchTo = "switch"
+        case move
+        case moveAndFollow
+
+        var title: String {
+            switch self {
+            case .switchTo:      return "Switch to workspace N"
+            case .move:          return "Move window to workspace N"
+            case .moveAndFollow: return "Move window to workspace N and follow"
+            }
+        }
+    }
+
+    static func workspaceFamily(of action: Action) -> (family: WorkspaceFamily, number: Int)? {
+        switch action {
+        case .switchWorkspace(let n):          return (.switchTo, n)
+        case .moveToWorkspace(let n):          return (.move, n)
+        case .moveToWorkspaceAndFollow(let n): return (.moveAndFollow, n)
+        default:                               return nil
+        }
+    }
+
+    /// Indices of the binds that fold into one row with `seed`: the same
+    /// family and modifiers, each on its own number key, covering every
+    /// workspace. nil when the run is incomplete or `seed` is customized.
+    static func workspaceRun(seededBy seed: Keybind,
+                             in binds: [Keybind]) -> (family: WorkspaceFamily, indices: [Int])? {
+        guard let seedMember = workspaceFamily(of: seed.action),
+              usesCanonicalWorkspaceKey(seed, number: seedMember.number) else { return nil }
+        var numbers: [Int] = []
+        var indices: [Int] = []
+        for (j, other) in binds.enumerated() where other.modifiers == seed.modifiers {
+            guard let member = workspaceFamily(of: other.action), member.family == seedMember.family,
+                  usesCanonicalWorkspaceKey(other, number: member.number) else { continue }
+            numbers.append(member.number)
+            indices.append(j)
+        }
+        guard isCompleteWorkspaceRange(numbers) else { return nil }
+        return (seedMember.family, indices)
+    }
+
     static func usesCanonicalWorkspaceKey(_ bind: Keybind, number: Int) -> Bool {
         bind.keyCodeName == (number == Constants.workspaceCount ? "0" : String(number))
     }
@@ -393,7 +437,7 @@ private struct KeybindOverlayView: View {
         switch bind.action {
         case .focusDirection, .swapDirection, .moveWindowToMonitor, .resizeDirection:
             return directionRow(matching: bind, in: binds, consuming: &consumed)
-        case .switchWorkspace, .moveToWorkspace:
+        case .switchWorkspace, .moveToWorkspace, .moveToWorkspaceAndFollow:
             return workspaceRow(matching: bind, in: binds, consuming: &consumed)
         default:
             return nil
@@ -449,41 +493,11 @@ private struct KeybindOverlayView: View {
     // collect the full workspace run sharing modifiers
     private func workspaceRow(matching seed: Keybind, in binds: [Keybind],
                               consuming consumed: inout Set<Int>) -> OverlayRow? {
-        let isSwitch: Bool
-        let seedNumber: Int
-        if case .switchWorkspace(let n) = seed.action {
-            isSwitch = true
-            seedNumber = n
-        } else if case .moveToWorkspace(let n) = seed.action {
-            isSwitch = false
-            seedNumber = n
-        } else {
-            return nil
-        }
-        guard KeybindOverlayGrouping.usesCanonicalWorkspaceKey(
-            seed, number: seedNumber) else { return nil }
-
-        var numbers: [Int] = []
-        var indices: [Int] = []
-        for (j, other) in binds.enumerated() where other.modifiers == seed.modifiers {
-            let n: Int?
-            switch other.action {
-            case .switchWorkspace(let v) where isSwitch:  n = v
-            case .moveToWorkspace(let v) where !isSwitch: n = v
-            default: n = nil
-            }
-            if let n, KeybindOverlayGrouping.usesCanonicalWorkspaceKey(other, number: n) {
-                numbers.append(n)
-                indices.append(j)
-            }
-        }
-        let sorted = numbers.sorted()
-        guard KeybindOverlayGrouping.isCompleteWorkspaceRange(sorted) else { return nil }
-        indices.forEach { consumed.insert($0) }
+        guard let run = KeybindOverlayGrouping.workspaceRun(seededBy: seed, in: binds) else { return nil }
+        run.indices.forEach { consumed.insert($0) }
 
         let chord = chordString(modifiers: seed.modifiers, key: "N")
-        let desc = isSwitch ? "Switch to workspace N" : "Move window to workspace N"
-        return OverlayRow(description: desc, chord: chord, isFloating: false)
+        return OverlayRow(description: run.family.title, chord: chord, isFloating: false)
     }
 
     private func plainRow(_ bind: Keybind) -> OverlayRow {

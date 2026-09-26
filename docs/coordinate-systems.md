@@ -156,6 +156,12 @@ the best available request and read the frame back to find out what happened
 Same-screen tile updates pass `crossMonitor: false` and skip step 3
 to save one AX call per window per retile.
 
+Step 1 assumes the source screen can hold the target size. A verified layout
+moves a window first instead when it is parked or when its target is bigger
+than the screen it stands on, since step 1 would be clamped there. See the
+write order paragraph under "Two-pass layout" in
+[tiling-algorithm.md](tiling-algorithm.md).
+
 ### Hide-corner sliver
 
 Hidden workspace windows park at

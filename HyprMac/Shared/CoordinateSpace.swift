@@ -26,4 +26,14 @@ extension CGRect {
         guard area > 0 else { return false }
         return (overlap.width * overlap.height) / area > threshold
     }
+
+    /// This rect shrunk to fit `bounds` and then moved the least distance
+    /// that puts all of it inside. Unchanged when it already fits.
+    func clamped(into bounds: CGRect) -> CGRect {
+        let width = min(self.width, bounds.width)
+        let height = min(self.height, bounds.height)
+        let x = max(bounds.minX, min(minX, bounds.maxX - width))
+        let y = max(bounds.minY, min(minY, bounds.maxY - height))
+        return CGRect(x: x, y: y, width: width, height: height)
+    }
 }

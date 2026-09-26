@@ -179,6 +179,43 @@ the Swift deadline. Stable off-target frames wait at least 0.24 seconds
 before becoming a geometry rejection. Failed reads and superseded work
 never become accepted geometry.
 
+A pass that moves a window onto a screen with a different backing scale
+factor gets a 1-second deadline instead, with the sample limit raised to
+match. The engine compares the scale of the screen holding most of each
+captured original with the scale of the destination screen. The app redraws
+everything at the new scale while the attempt's calls wait behind it. On the
+MacBook (2x panel, 1x externals) every Hypr+Shift+N onto the panel ran out of
+the 0.36 s budget with nothing read back, and the retry 250 ms later usually
+verified. The per-call messaging timeout does not change. A rollback gets the
+longer deadline only when it carries such a window back. A parked window
+counts for the screen it is parked on, and hidden windows all park in one
+corner of the rightmost screen, so on the MacBook desk every reveal onto the
+2x panel gets the longer deadline and logs the scale change. The budget only
+costs time when the app is slow to answer.
+
+A window crossing screens picks its write order per window. It is crossing
+when its captured original is less than half on the destination. Each one
+logs a `write order:` notice. Resize-move-resize stays the default: when the
+target size fits the usable frame of the screen holding most of the
+original, the window is resized there, moved whole, and resized again. It
+moves first only when it is parked, hidden or on no screen, or when its
+target is bigger than that screen. A size written there would be clamped by
+it, which is how a parked reveal onto the portrait settled 1528 tall against
+1874. The size-first default exists for the other case: a 3424-wide
+ultrawide window moved first onto the 1512-wide panel lay over the portrait
+next to it on the way.
+
+A position-first window waits for two stable on-target position reads
+before its size goes out, but for at most a third of the deadline. After
+that the size goes out anyway and the readback judges. Without the cap, a
+position that never read back steady used the whole deadline with no size
+written, and the attempt could only time out. The cap is per window, so a
+reveal of three or more windows whose positions never settle can still run
+out of time. A cut wait also changes how a failure is counted. The attempt
+used to end as `attemptsExhausted`, a timeout that the admission recovery
+retries. It now ends with the readback's verdict, and a
+`geometryMismatch` there is a refusal, which can float the window.
+
 Only a known, stable size conflict permits a second pass.
 `BSPTree.adjustForMinSizes` adjusts constrained ratios, and the final
 adjusted layout goes through the same complete verification. The second
@@ -267,7 +304,8 @@ fails on whichever window refused its frame, and that is usually an
 incumbent: Safari 21611 refused while 26016 was the window that had just
 opened.
 
-`AdmissionRecovery` finishes those windows in at most two steps.
+`AdmissionRecovery` finishes those windows in at most two steps, or a few
+more when the app does not answer in time (step 3).
 
 1. **One retry, about 250 ms later**, through an injected scheduler and
    under a fresh generation. It honours everything the failed attempt
@@ -310,9 +348,31 @@ opened.
    one faithfully restores wherever that left the incumbents. The mark then
    stands until a layout for the key is accepted, which is the one thing
    that redeems it.
+3. **A timeout is not a refusal.** `FrameSizingFailure.isTimeout` covers
+   `deadlineExceeded`, `attemptsExhausted`, and read, write or cleanup
+   failures with `cannotComplete`, which is what an AX messaging timeout
+   returns. A retry that fails that way gets another retry, 500 ms later,
+   and then one more after 1 s (`timeoutRetryDelays`). The last one runs
+   with `keepingUnverifiedOnTimeout`. If it times out too, and all three
+   setters returned success for every window it lays out, the engine skips
+   the rollback,
+   publishes the tree with the newcomer in it and leaves the key marked
+   unverified. Only an accepted layout clears that mark. A last retry that
+   timed out before every window got its whole frame (in the capture, or
+   after a newcomer's first size write) has nothing to keep: the window is
+   held, as below, and never floated. A held window is a newcomer to every
+   later pass on its key, so the next one that tiles it releases it.
+   Two limits: a readback that never settles counts as a timeout, so an app
+   that refuses its size too slowly to settle is kept rather than floated;
+   and keeping skips the AX timeout recovery's relaxed retry. A
+   refusal on any retry, before or after a timeout, still takes step 2.
+   The live case was Safari moved onto the MacBook's 2x panel: the move's
+   layout and the 250 ms retry both timed out, and the window was floated
+   at a size that did not fill the screen.
 
-The retry cannot re-arm itself, and a window already in recovery does not
-collect a second one from a later failed pass. A newcomer that is
+The retry cannot re-arm itself except after a timeout, which step 3
+bounds, and a window already in recovery does not collect a second one from
+a later failed pass. A newcomer that is
 unreadable, or whose workspace is hidden, when its turn comes keeps its
 place in the pending set and waits for a real discovery event or a
 workspace reveal rather than a renewed timer; no frame is invented for it.
@@ -626,7 +686,8 @@ asked for. The move follows the existing assignment and parking, and
 the source. The first retile after that workspace is shown spends the
 marker, as one `revalidateAdmission` pass. Accepted, the disproved bound is
 lowered. Refused, the newcomer is stranded and the bounded admission
-recovery takes it from there — one retry, then a float in place.
+recovery takes it from there — one retry, then a float in place, or the
+timeout path in step 3 when the app did not answer in time.
 
 The marker is spent by that one reveal whatever the answer, and only by a
 pass that can actually judge the window: an id AX did not return keeps its

@@ -1,3 +1,4 @@
+import Cocoa
 import XCTest
 @testable import HyprMac
 
@@ -746,5 +747,116 @@ final class MouseTrackingPopupTests: XCTestCase {
         tracker.handleMouseMove()
 
         XCTAssertEqual(focused, [12, 11])
+    }
+}
+
+/// Zach's desk: the built-in panel at 2x, the S34C65xT ultrawide and the
+/// BL450 portrait at 1x, left to right.
+private final class DeskScreen: NSScreen {
+    private let bounds: NSRect
+    private let menuBar: CGFloat
+    private let name: String
+    private let scale: CGFloat
+
+    init(x: CGFloat, width: CGFloat, height: CGFloat, menuBar: CGFloat, name: String, scale: CGFloat) {
+        bounds = NSRect(x: x, y: 0, width: width, height: height)
+        self.menuBar = menuBar
+        self.name = name
+        self.scale = scale
+        super.init()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override var frame: NSRect { bounds }
+    override var visibleFrame: NSRect {
+        NSRect(x: bounds.minX, y: bounds.minY, width: bounds.width, height: bounds.height - menuBar)
+    }
+    override var localizedName: String { name }
+    override var backingScaleFactor: CGFloat { scale }
+}
+
+final class FloatingFramePlacementTests: XCTestCase {
+    private let builtIn = DeskScreen(x: 0, width: 1512, height: 982, menuBar: 38,
+                                     name: "Built-in Retina Display", scale: 2)
+    private let ultrawide = DeskScreen(x: 1512, width: 3440, height: 1440, menuBar: 25,
+                                       name: "S34C65xT", scale: 1)
+    private let portrait = DeskScreen(x: 4952, width: 1080, height: 1920, menuBar: 25,
+                                      name: "BL450", scale: 1)
+    private var displayManager: DisplayManager!
+
+    override func setUp() {
+        let screens: [NSScreen] = [builtIn, ultrawide, portrait]
+        displayManager = DisplayManager(screenSource: { screens })
+    }
+
+    private var ultrawideUsable: CGRect { displayManager.cgRect(for: ultrawide) }
+
+    func testAFrameThreeTimesTheUltrawideIsShrunkIntoItsUsableFrame() {
+        let usable = ultrawideUsable
+        // the portrait's width scaled by 3440/1080, the shape Zach saw
+        let huge = CGRect(x: usable.minX + 200, y: usable.minY + 40,
+                          width: usable.width * 3.19, height: usable.height + 600)
+
+        let plan = FloatingFramePlacement.plan(huge, from: nil, on: ultrawide,
+                                               displayManager: displayManager)
+
+        XCTAssertTrue(plan.clamped)
+        XCTAssertEqual(plan.target, usable, "no bigger than the screen, and all of it on it")
+    }
+
+    func testAFrameHangingOffAnEdgeIsMovedInWithItsSizeKept() {
+        let usable = ultrawideUsable
+        let hanging = CGRect(x: usable.maxX - 300, y: usable.maxY - 200, width: 1000, height: 800)
+
+        let plan = FloatingFramePlacement.plan(hanging, from: nil, on: ultrawide,
+                                               displayManager: displayManager)
+
+        XCTAssertEqual(plan.target.size, hanging.size)
+        XCTAssertEqual(plan.target.maxX, usable.maxX)
+        XCTAssertEqual(plan.target.maxY, usable.maxY)
+        XCTAssertTrue(usable.contains(plan.target))
+    }
+
+    func testAFrameThatFitsIsWrittenAsAsked() {
+        let usable = ultrawideUsable
+        let inside = CGRect(x: usable.minX + 100, y: usable.minY + 100, width: 1200, height: 900)
+
+        let plan = FloatingFramePlacement.plan(inside, from: nil, on: ultrawide,
+                                               displayManager: displayManager)
+
+        XCTAssertFalse(plan.clamped)
+        XCTAssertEqual(plan.target, inside)
+    }
+
+    func testWithNoScreenNamedTheDestinationHoldsMostOfTheFrame() {
+        let portraitUsable = displayManager.cgRect(for: portrait)
+        // mostly on the portrait, a strip over the ultrawide's right edge
+        let frame = CGRect(x: portraitUsable.minX - 100, y: portraitUsable.minY + 50,
+                           width: 900, height: 700)
+
+        let plan = FloatingFramePlacement.plan(frame, from: nil, on: nil,
+                                               displayManager: displayManager)
+
+        XCTAssertEqual(plan.destination, portrait)
+        XCTAssertEqual(plan.target.minX, portraitUsable.minX)
+        XCTAssertEqual(plan.target.size, frame.size)
+    }
+
+    func testTheLogLineNamesBothScreensAndBothScales() {
+        let usable = ultrawideUsable
+        let current = CGRect(x: 40, y: 60, width: 1000, height: 700)
+        let huge = CGRect(x: usable.minX, y: usable.minY, width: usable.width * 3, height: usable.height)
+
+        let plan = FloatingFramePlacement.plan(huge, from: current, on: ultrawide,
+                                               displayManager: displayManager)
+        let line = FloatingFramePlacement.logLine(windowID: 59300, reason: "carry to another screen",
+                                                  from: current, plan: plan)
+
+        XCTAssertEqual(plan.source, builtIn)
+        XCTAssertTrue(line.hasPrefix("floating frame write: wid=59300 reason=carry to another screen"), line)
+        XCTAssertTrue(line.contains("from=(40, 60, 1000, 700) on 'Built-in Retina Display' @2x"), line)
+        XCTAssertTrue(line.contains("on 'S34C65xT' @1x"), line)
+        XCTAssertTrue(line.contains("clamped from"), line)
     }
 }

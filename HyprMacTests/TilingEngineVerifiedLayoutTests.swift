@@ -641,6 +641,9 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         )
     }
 
+    // a position that never lands on target no longer holds the size back
+    // until the deadline. the settle budget runs out, the sizes go out, and
+    // the readback refuses the frames
     func testHiddenOriginalsAreNotRestoredAfterKnownPositionRefusal() {
         let fixture = hiddenOriginalFixture(mode: .positionRefusal)
 
@@ -649,14 +652,14 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         )
         let reasons = degradedReasons(outcome)
 
-        XCTAssertEqual(reasons.candidate, .attemptsExhausted)
+        XCTAssertEqual(reasons.candidate, .geometryMismatch(401))
         XCTAssertEqual(reasons.restoration, .outsideUsableFrame(401))
         XCTAssertFalse(reasons.attempted, "the hidden original must not be restored")
-        XCTAssertEqual(fixture.trace.sizeWriteCount, 0,
-                       "a refused destination position must stop before resizing")
+        XCTAssertEqual(fixture.trace.sizeWriteCount, 4,
+                       "each window was sized once its settle budget ran out")
         XCTAssertTrue(fixture.trace.hiddenPositionWrites.isEmpty)
-        XCTAssertEqual(fixture.trace.frames[402], fixture.trace.originalFrame(for: 402),
-                       "later parked windows must remain untouched after the first refusal")
+        XCTAssertTrue(fixture.trace.frames.values.allSatisfy { fixture.usable.contains($0) },
+                      "the candidate writes stay visible")
     }
 
     func testHiddenOriginalsCanCompleteVerifiedReveal() {
@@ -745,8 +748,10 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
             402: CGRect(x: 999, y: 699, width: 480, height: 620)
         ]
         let trace = HiddenOriginalTrace(frames: hidden, hiddenFrames: hidden, mode: mode)
+        // no screens, so the originals are on none and every write moves
+        // first, whatever display the test host has
         let engine = TilingEngine(
-            displayManager: DisplayManager(),
+            displayManager: DisplayManager(screenSource: { [] }),
             frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
         )
         let targets = Dictionary(uniqueKeysWithValues: tree.layout(
@@ -1168,8 +1173,6 @@ private final class HiddenOriginalTrace {
         self.hiddenFrames = hiddenFrames
         self.mode = mode
     }
-
-    func originalFrame(for windowID: CGWindowID) -> CGRect? { hiddenFrames[windowID] }
 
     func io(generation: @escaping () -> UInt64) -> FrameSizingIO {
         FrameSizingIO(

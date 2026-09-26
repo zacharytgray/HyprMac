@@ -184,3 +184,9 @@ two stable on-target positions, then sizes and runs the unchanged strict
 frame validation. The same deadline and generation checks cover every step.
 Other windows in the layout retain the existing resize-move-resize ordering.
 This avoids treating a refused or unreadable move as permission to resize.
+
+Later change (2026-09-26): a crossing window moves first only when it is
+parked or its target does not fit the screen it stands on. The position wait
+is capped at a third of the deadline. A move that has not read back on target
+by then is sized anyway, so a refused move no longer holds back the resize;
+the readback judges the result. See "Two-pass layout" in `tiling-algorithm.md`.

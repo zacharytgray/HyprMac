@@ -138,6 +138,24 @@ class DisplayManager {
         return best ?? screens.first
     }
 
+    /// The screen holding the largest part of `frame` (CG). A frame on no
+    /// screen at all falls back to the screen nearest its origin, so a window
+    /// parked in the hide corner counts for the screen it is parked on.
+    func screen(containingMostOf frame: CGRect) -> NSScreen? {
+        var best: NSScreen?
+        var bestArea: CGFloat = 0
+        for screen in screens {
+            let overlap = frame.intersection(cgFullRect(for: screen))
+            guard !overlap.isNull else { continue }
+            let area = overlap.width * overlap.height
+            if area > bestArea {
+                bestArea = area
+                best = screen
+            }
+        }
+        return best ?? screen(at: frame.origin)
+    }
+
     /// Resolve which screen `window` lives on, using its center point
     /// (or top-left position when the size is unknown).
     func screen(for window: HyprWindow) -> NSScreen? {

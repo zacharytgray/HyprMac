@@ -105,6 +105,7 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 | `Hypr + Ctrl + Shift + ←/→/↑/↓` | Resize focused window in direction |
 | `Hypr + 1–9` / `Hypr + 0` | Switch to workspace 1–9 / workspace 10 |
 | `Hypr + Shift + 1–9` / `Hypr + Shift + 0` | Move window to workspace 1–9 / workspace 10 |
+| `Hypr + Ctrl + Shift + 1–9` / `Hypr + Ctrl + Shift + 0` | Move window to workspace 1–9 / 10 and switch there with it |
 | `Hypr + Tab` / `Hypr + Shift + Tab` | Cycle occupied workspaces on this monitor |
 | `Hypr + F` | Move window to a dedicated workspace on its display |
 | `Hypr + T` | Toggle floating and tiled |

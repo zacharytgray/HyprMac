@@ -181,6 +181,8 @@ logs no trace line; it appears only in typed results. Four line names:
   — once per window after its writes, listing every AX setter that went
   out with its raw `AXError` code (0 is success) and how long it took.
   `size2` is the second size write of the resize-move-resize pattern.
+  A window that moves first lists `position` first, then
+  `settle:ok/<n>ms` or `settle:cut/<n>ms` for the wait on its position.
   `complete=true` means all three setters returned success; it is
   evidence that the writes were issued, not proof the app applied them.
   A window that never got past the EnhancedUI bracket logs `steps=none`.
@@ -202,7 +204,8 @@ logs no trace line; it appears only in typed results. Four line names:
   for, `complete` every window whose three setters all returned
   success. `write` covers the write pass, `read` the settle loop,
   `settle` just the sleeps inside it, and `headroom` is what was left
-  of the 0.36 s deadline.
+  of the attempt's deadline: 0.36 s, or 1 s for a pass that moves a window
+  across a backing scale change.
 
 `FrameReadbackPoller` logs one `min evidence:` line per window it treats
 as a min-size conflict, under the same category and tier:
@@ -240,6 +243,60 @@ those wherever the candidate left them: on the destination if their writes
 went out, where they were if the candidate failed before reaching them. An
 ordinary tiling pass then reports them stranded, and the admission
 recovery's lines follow.
+
+An attempt that times out also logs one `.notice` line with its timings, so
+Console shows which call used up the budget without the file log (the numbers
+here are made up):
+
+```
+frame attempt timed out: phase=candidate gen=812 wids=[59300] reason=deadlineExceeded written=[59300] complete=[59300] read=[] write=190ms readLoop=190ms settle=0ms elapsed=380ms deadline=360ms samples=1 slowestRead=190ms steps=[59300:size:0/2ms,position:0/95ms,size2:0/95ms/total=192ms]
+```
+
+`read` lists the windows that read back before the budget ran out.
+`steps` is per window: each setter with its raw AX code and duration, then
+the window's total, which also covers the Enhanced UI begin. `slowestRead` is the
+longest single position-plus-size read. Timeouts are `deadlineExceeded`,
+`attemptsExhausted` and `cannotComplete` failures.
+
+A pass that moves a window onto a screen with a different backing scale
+logs, before its first write:
+
+```
+verified layout scale change: ids=[59300:1x→2x] deadline=1000ms
+```
+
+A window crossing onto another screen logs its write order once per attempt,
+before its first write. The reason names the screen holding most of its
+original:
+
+```
+write order: wid=77803 size-first (fits source S34C65xT) target=1496x841
+write order: wid=5100 position-first (does not fit source LG BL450) target=3424x1399
+write order: wid=5300 position-first (parked) target=1496x928
+```
+
+A position-first window whose position does not read back on target twice
+within a third of the deadline is sized anyway, and says so:
+
+```
+position settle cut short: wid=<id> phase=candidate after=<n>ms samples=<n> last=(x,y) target=(x,y) — writing size anyway
+```
+
+The admission recovery's timeout lines, all `[notice] [tiling]`:
+
+- `admission retry timed out: ids=[…] ws<N> cause=<failure> — not a refusal,
+  retrying in <ms>ms` — another retry is armed (500 ms, then 1000 ms).
+- `admission retry attempt: ws<N> bypassMinimaBefore=[…] keepOnTimeout=true`
+  — the last retry the bound allows.
+- `verified layout kept unverified: reason=<failure> phase=<…> ids=[…] — a
+  timeout, not a refusal; no rollback`, then `admission kept unverified:
+  ws<N> ids=[…] reason=<failure> — tiled, key marked unverified`, then
+  `admission recovery resolved: <id> (kept tiled unverified after <n>
+  timed-out retries, last=<failure>)`.
+- `admission recovery held: ids=[<id>] ws<N> — last retry timed out without
+  a complete write (<failure>); in no tree, not floated` — some window did
+  not get all three setters back, so the last retry had nothing to keep. A
+  later layout that tiles the window releases it.
 
 `MinSizeMemory` then logs what it did with that evidence under
 `category: lifecycle`, in three shapes:
@@ -795,6 +852,44 @@ reason=click-reraise` and `no-raise focus verify: … → landed, floaters
 kept above`. A cross-app pair logs `→ ineffective — cooldown 30s` once per
 30 s, as on macOS 27. The tile then stays on top, and the dim shows the
 floater only where it is in front.
+
+### A floater changed size or left the screen
+
+The report (September 26): a floating window dragged onto the S34C65xT
+ultrawide grew far past the screen and off its edge. The notice log showed
+only the drag. The cause is not confirmed. Reading the source found no code
+that scales a floater's size by a ratio between screens, and no frame write
+at all for a plain title-bar drag of a floater: the drag capture is
+ineligible under a floater, discovery's screen drift skips floaters, and the
+floater keeps its workspace.
+
+Every frame HyprMac writes to a floater now goes through
+`FloatingFramePlacement` (`HyprWindow.placeFloating`). It logs one
+`[notice] [floating]` line and clamps the frame into the destination
+screen's usable frame, shrinking it if it is too big and moving it in if it
+hangs off an edge:
+
+```
+floating frame write: wid=<id> reason=<why> from=(x, y, w, h) on '<screen>' @<n>x to=(x, y, w, h) on '<screen>' @<n>x [clamped from (x, y, w, h) into usable (x, y, w, h)]
+```
+
+The reasons are `workspace reveal, saved frame`, `carry to another screen`,
+`float toggle, original frame`, `float toggle, centered (no usable
+original)`, `focus cycle, off-screen floater`, `scratchpad show`,
+`scratchpad untile`, `all workspaces full, original frame`, `stop, original
+frame` and `stop, cascade onto the main screen`. Parking in the hide corner
+is position-only and does not log here.
+
+A floater drag also logs, 0.18 s after the release:
+
+```
+floater drag: wid=<id> from=(x, y, w, h) on '<screen>' @<n>x to=(x, y, w, h) on '<screen>' @<n>x resized=<bool> fitsUsable=<bool>
+```
+
+and `floater drag +1s: …` if the frame is still changing a second later. On
+the next repro: a `floater drag` line with `resized=true` and no `floating
+frame write` line before it means the app or macOS changed the size, not
+HyprMac. A `floating frame write` line names the path that did it.
 
 ### Rejected drag feedback and source restoration
 

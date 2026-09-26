@@ -134,6 +134,93 @@ final class DefaultKeybindsTests: XCTestCase {
         })
     }
 
+    // Hypr+Ctrl+Shift+1..9 and +0 move the window and follow it. Ctrl+Shift
+    // on a digit was free: that modifier pair only ever went with the arrows.
+    func testMoveAndFollowDefaultsUseHyprControlShiftDigits() throws {
+        let digits = [kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_5,
+                      kVK_ANSI_6, kVK_ANSI_7, kVK_ANSI_8, kVK_ANSI_9, kVK_ANSI_0].map { UInt16($0) }
+        for (index, key) in digits.enumerated() {
+            let n = index + 1
+            let binds = Keybind.defaults.filter { $0.action == .moveToWorkspaceAndFollow(n) }
+            XCTAssertEqual(binds.count, 1, "workspace \(n)")
+            let bind = try XCTUnwrap(binds.first)
+            XCTAssertEqual(bind.keyCode, key, "workspace \(n)")
+            XCTAssertEqual(bind.modifiers, [.hypr, .control, .shift], "workspace \(n)")
+        }
+        let followers = Keybind.defaults.filter {
+            if case .moveToWorkspaceAndFollow = $0.action { return true }
+            return false
+        }
+        XCTAssertEqual(followers.count, 10)
+
+        let third = try XCTUnwrap(Keybind.defaults.first { $0.action == .moveToWorkspaceAndFollow(3) })
+        XCTAssertEqual(third.overlayChord, "HYPR ⌃ ⇧ 3")
+        XCTAssertEqual(third.actionDescription, "Move to Workspace 3 and Follow")
+        XCTAssertEqual(KeybindCategory.from(third.action), .workspaces)
+
+        // the only other Hypr+Ctrl+Shift defaults are the resize arrows
+        let others = Keybind.defaults.filter {
+            $0.modifiers == [.hypr, .control, .shift] && !followers.contains($0)
+        }
+        XCTAssertEqual(others.map(\.keyCode).sorted(), [123, 124, 125, 126])
+    }
+
+    func testMoveAndFollowAndSilentMoveDispatchOnDistinctChords() {
+        let manager = HotkeyManager()
+        manager.updateKeybinds(Keybind.defaults)
+        let dispatched = expectation(description: "both workspace moves dispatched")
+        dispatched.expectedFulfillmentCount = 2
+        var actions: [Action] = []
+        manager.onAction = { actions.append($0); dispatched.fulfill() }
+
+        let hypr = CGEvent(keyboardEventSource: nil,
+                           virtualKey: CGKeyCode(HyprKey.capsLock.keyCode), keyDown: true)!
+        XCTAssertNil(manager.handleEvent(.keyDown, hypr))
+        let follow = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_3), keyDown: true)!
+        follow.flags = [.maskControl, .maskShift]
+        XCTAssertNil(manager.handleEvent(.keyDown, follow))
+        let silent = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_3), keyDown: true)!
+        silent.flags = .maskShift
+        XCTAssertNil(manager.handleEvent(.keyDown, silent))
+
+        wait(for: [dispatched], timeout: 1)
+        XCTAssertEqual(actions, [.moveToWorkspaceAndFollow(3), .moveToWorkspace(3)])
+    }
+
+    // an upgrade injects the ten follow binds onto free chords only. a chord
+    // the user already bound keeps the user's bind, and that one number has
+    // no follow bind until the user adds it in Settings.
+    func testDefaultMergeSkipsAFollowChordTheUserAlreadyBound() {
+        let custom = Keybind(keyCode: UInt16(kVK_ANSI_3), modifiers: [.hypr, .control, .shift],
+                             action: .runCommand(label: "Notes", command: "/usr/bin/open -a Notes"))
+        let saved = Keybind.defaults.filter {
+            if case .moveToWorkspaceAndFollow = $0.action { return false }
+            return true
+        } + [custom]
+
+        let merged = UserConfig.mergeNewDefaults(saved: saved)
+
+        XCTAssertEqual(merged.filter { $0.id == custom.id }, [custom])
+        XCTAssertFalse(merged.contains { $0.action == .moveToWorkspaceAndFollow(3) })
+        for n in [1, 2, 4, 5, 6, 7, 8, 9, 10] {
+            XCTAssertEqual(merged.filter { $0.action == .moveToWorkspaceAndFollow(n) }.count, 1,
+                           "workspace \(n)")
+        }
+        XCTAssertEqual(merged.count, Keybind.defaults.count, "nine injected beside the custom bind")
+        XCTAssertEqual(UserConfig.mergeNewDefaults(saved: merged), merged)
+    }
+
+    // a follow action the user already bound elsewhere is not injected again
+    func testDefaultMergeKeepsACustomFollowChord() {
+        let custom = Keybind(keyCode: UInt16(kVK_ANSI_3), modifiers: [.hypr, .option],
+                             action: .moveToWorkspaceAndFollow(3))
+
+        let merged = UserConfig.mergeNewDefaults(saved: [custom])
+
+        XCTAssertEqual(merged.filter { $0.action == .moveToWorkspaceAndFollow(3) }, [custom])
+        XCTAssertTrue(merged.contains { $0.action == .moveToWorkspaceAndFollow(4) })
+    }
+
     func testDefaultsContainAllDirectionsForFocusAndSwap() {
         var focusDirs: Set<Direction> = []
         var swapDirs: Set<Direction> = []

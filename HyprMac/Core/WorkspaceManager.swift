@@ -306,7 +306,10 @@ class WorkspaceManager {
     /// entry. No-op when no frame was captured.
     func restoreFloatingFrame(_ window: HyprWindow) {
         if let frame = savedFloatingFrames[window.windowID] {
-            window.setFrame(frame)
+            // the saved frame may belong to a screen layout that has since
+            // changed, so it is clamped like every other floater write
+            window.placeFloating(frame, reason: "workspace reveal, saved frame",
+                                 displayManager: displayManager)
             savedFloatingFrames.removeValue(forKey: window.windowID)
         }
     }

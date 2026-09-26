@@ -62,6 +62,15 @@ struct FrameReadbackPoller {
         self.ioFactory = ioFactory
     }
 
+    /// The same poller with the scale-change budget, for a pass that moves a
+    /// window onto a screen with a different backing scale factor.
+    func withScaleChangeBudget() -> FrameReadbackPoller {
+        FrameReadbackPoller(configuration: configuration.withScaleChangeBudget,
+                            generation: generation, ioFactory: ioFactory)
+    }
+
+    var deadline: TimeInterval { configuration.deadline }
+
     func applyLayout(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
                      gap: CGFloat, generation requestedGeneration: UInt64) -> Result {
         applyLayout(layouts, usableFrame: usableFrame, gap: gap,
@@ -69,11 +78,15 @@ struct FrameReadbackPoller {
                     phase: .candidate)
     }
 
-    func applyWorkspaceReveal(_ layouts: [(HyprWindow, CGRect)], parkedWindowIDs: Set<CGWindowID>,
+    /// A candidate pass where `positionFirstWindowIDs` move before they are
+    /// sized: windows revealed from the hide corner, or crossing from a
+    /// screen too small for their target. See `positionSettleWindowIDs`.
+    func applyWorkspaceReveal(_ layouts: [(HyprWindow, CGRect)],
+                              positionFirstWindowIDs: Set<CGWindowID>,
                               usableFrame: CGRect, gap: CGFloat,
                               generation requestedGeneration: UInt64) -> Result {
         var revealConfiguration = configuration
-        revealConfiguration.positionSettleWindowIDs = parkedWindowIDs
+        revealConfiguration.positionSettleWindowIDs = positionFirstWindowIDs
         return applyLayout(layouts, usableFrame: usableFrame, gap: gap,
                            generation: requestedGeneration, configuration: revealConfiguration,
                            phase: .candidate)

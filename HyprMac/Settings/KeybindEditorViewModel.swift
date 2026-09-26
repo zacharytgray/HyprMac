@@ -28,6 +28,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case swapDirection          = "Swap Direction"
         case switchWorkspace        = "Switch Workspace"
         case moveToWorkspace        = "Move to Workspace"
+        case moveToWorkspaceAndFollow = "Move to Workspace and Follow"
         case moveWindowToMonitor    = "Move Window to Monitor"
         case toggleFloating         = "Toggle Floating"
         case toggleSplit            = "Toggle Split"
@@ -70,6 +71,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .swapDirection(let d):          selectedAction = .swapDirection;          directionParam = d
         case .switchWorkspace(let n):        selectedAction = .switchWorkspace;        workspaceParam = n
         case .moveToWorkspace(let n):        selectedAction = .moveToWorkspace;        workspaceParam = n
+        case .moveToWorkspaceAndFollow(let n): selectedAction = .moveToWorkspaceAndFollow; workspaceParam = n
         case .moveWindowToMonitor(let d):    selectedAction = .moveWindowToMonitor;    directionParam = d
         case .toggleFloating:                selectedAction = .toggleFloating
         case .toggleSplit:                   selectedAction = .toggleSplit
@@ -105,6 +107,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .swapDirection:          action = .swapDirection(directionParam)
         case .switchWorkspace:        action = .switchWorkspace(workspaceParam)
         case .moveToWorkspace:        action = .moveToWorkspace(workspaceParam)
+        case .moveToWorkspaceAndFollow: action = .moveToWorkspaceAndFollow(workspaceParam)
         case .moveWindowToMonitor:    action = .moveWindowToMonitor(directionParam)
         case .toggleFloating:         action = .toggleFloating
         case .toggleSplit:            action = .toggleSplit

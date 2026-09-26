@@ -222,6 +222,8 @@ final class ActionDispatcher {
             workspaceOrchestrator.switchWorkspace(num)
         case .moveToWorkspace(let num):
             workspaceOrchestrator.moveToWorkspace(num)
+        case .moveToWorkspaceAndFollow(let num):
+            workspaceOrchestrator.moveToWorkspace(num, follow: true)
         case .moveWindowToMonitor(let dir):
             workspaceOrchestrator.moveWindowToMonitor(dir)
         case .toggleFloating:
@@ -276,6 +278,7 @@ final class ActionDispatcher {
         case .swapDirection:       return "swapDirection"
         case .switchWorkspace:     return "switchWorkspace"
         case .moveToWorkspace:     return "moveToWorkspace"
+        case .moveToWorkspaceAndFollow: return "moveToWorkspaceAndFollow"
         case .moveWindowToMonitor: return "moveWindowToMonitor"
         case .toggleFloating:      return "toggleFloating"
         case .toggleSplit:         return "toggleSplit"
