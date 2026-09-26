@@ -3388,7 +3388,7 @@ private extension WindowManager {
             else { return nil }
             return window
         }
-        admissionRecovery.attempt = { [weak self] workspace, screen, bypass in
+        admissionRecovery.attempt = { [weak self] workspace, screen, bypass, keepOnTimeout in
             guard let self else { return AdmissionRecovery.AttemptResult() }
             let allWindows = self.accessibility.getAllWindows()
             self.tilingEngine.primeMinimumSizes(allWindows)
@@ -3400,7 +3400,8 @@ private extension WindowManager {
             let result = self.tilingEngine.retryAdmission(
                 windows, onWorkspace: workspace, screen: screen,
                 bypassingMinimaBefore: bypass,
-                refusingImpossibleArrangements: true)
+                refusingImpossibleArrangements: true,
+                keepingUnverifiedOnTimeout: keepOnTimeout)
             self.updatePositionCache(windows: allWindows)
             return AdmissionRecovery.AttemptResult(
                 placed: result.publishedIDs.intersection(bypass.keys),

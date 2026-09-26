@@ -161,12 +161,137 @@ final class AdmissionRecoveryTests: XCTestCase {
     }
 
     func testRepeatedIOFailureFloatsTheNewcomerInPlace() {
-        harness.failure = .readFailed(26, .cannotComplete)
-        recovery.note(failedAdmission([26], failure: .writeFailed(11, .cannotComplete)))
+        // an i/o error that is not a timeout. `cannotComplete` is what an AX
+        // messaging timeout returns, so it counts as a timeout below
+        harness.failure = .readFailed(26, .failure)
+        recovery.note(failedAdmission([26], failure: .writeFailed(11, .failure)))
         harness.fire()
 
         XCTAssertEqual(harness.floated.map(\.id), [26])
         XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
+    // MARK: - timeouts are not refusals
+
+    func testTimeoutsAreTheFailuresNobodyRefused() {
+        let timeouts: [FrameSizingFailure] = [
+            .deadlineExceeded, .attemptsExhausted,
+            .readFailed(26, .cannotComplete), .writeFailed(26, .cannotComplete),
+            .cleanupFailed(26, primary: .deadlineExceeded, error: .failure),
+            .cleanupFailed(26, primary: nil, error: .cannotComplete)
+        ]
+        let refusals: [FrameSizingFailure] = [
+            .geometryMismatch(26), .outsideUsableFrame(26), .overlap(26, 11),
+            .gapViolation(26, 11), .noFittingSlot(26), .readFailed(26, .failure),
+            .writeFailed(26, .failure), .windowUnavailable(26), .invalidFrame(26),
+            .superseded, .cleanupFailed(26, primary: .writeFailed(26, .failure), error: .cannotComplete)
+        ]
+        for failure in timeouts { XCTAssertTrue(failure.isTimeout, "\(failure)") }
+        for failure in refusals { XCTAssertFalse(failure.isTimeout, "\(failure)") }
+    }
+
+    func testTwoTimeoutsBackOffInsteadOfFloating() throws {
+        // the MacBook case: the move's own layout and the 250 ms retry both
+        // ran out of time with nothing read back
+        harness.failure = .deadlineExceeded
+        recovery.note(failedAdmission([26], failure: .deadlineExceeded))
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty, "a timeout is not a refusal")
+        XCTAssertEqual(recovery.pendingWindowIDs, [26], "still tracked, not orphaned")
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingRetry)
+        XCTAssertEqual(harness.scheduled.map(\.delay), [0.25, 0.5], "the next retry waits longer")
+        XCTAssertEqual(try XCTUnwrap(harness.attempts.first).keepOnTimeout, false)
+        XCTAssertTrue(harness.clearedUnverified.isEmpty)
+    }
+
+    func testRetriesThatKeepTimingOutEndTiledAndUnverifiedNeverFloated() {
+        harness.failure = .deadlineExceeded
+        recovery.note(failedAdmission([26], failure: .deadlineExceeded))
+        for _ in 0...recovery.timeoutRetryDelays.count { harness.fire() }
+
+        XCTAssertEqual(harness.attempts.map(\.keepOnTimeout), [false, false, true],
+                       "only the last retry the bound allows keeps a timeout")
+        XCTAssertEqual(harness.attempts.map(\.bypass), [[26: 7], [26: 7], [26: 7]],
+                       "every retry still reaches back to the admission's own generation")
+        XCTAssertEqual(harness.scheduled.map(\.delay), [0.25, 0.5, 1.0])
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty, "the engine kept it tiled")
+        XCTAssertFalse(harness.calls.contains("clearUnverified"),
+                       "the key stays marked until a layout is accepted")
+        XCTAssertFalse(harness.calls.contains("retileAfterFallback"))
+
+        harness.fire()
+        XCTAssertEqual(harness.attempts.count, 3, "bounded: nothing re-arms after the keep")
+    }
+
+    func testAnAXMessagingTimeoutBacksOffToo() {
+        harness.failure = .readFailed(26, .cannotComplete)
+        recovery.note(failedAdmission([26], failure: .deadlineExceeded))
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingRetry)
+    }
+
+    func testARefusalAfterATimeoutStillFloats() {
+        harness.failures = [.deadlineExceeded, .geometryMismatch(26)]
+        recovery.note(failedAdmission([26], failure: .deadlineExceeded))
+        harness.fire()
+        XCTAssertTrue(harness.floated.isEmpty)
+
+        harness.fire()
+
+        XCTAssertEqual(harness.floated.map(\.id), [26], "the app answered, and it said no")
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+        XCTAssertEqual(harness.calls,
+                       ["attempt", "attempt", "floatInPlace", "clearUnverified", "retileAfterFallback"])
+    }
+
+    func testAGeometryRefusalAfterATimedOutAdmissionStillFloats() {
+        // the refusal policy is unchanged whatever the admission ran into
+        harness.failure = .geometryMismatch(26)
+        recovery.note(failedAdmission([26], failure: .deadlineExceeded))
+        harness.fire()
+
+        XCTAssertEqual(harness.floated.map(\.id), [26])
+        XCTAssertEqual(harness.scheduled.count, 1, "no backoff for a refusal")
+    }
+
+    func testALastTimeoutWithNothingWrittenIsHeldNotFloated() {
+        // the engine keeps only a pass that sent every window its frame. one
+        // that timed out before that has no tile to keep, and a timeout still
+        // floats nothing
+        harness.failure = .deadlineExceeded
+        harness.keepsTimeouts = false
+        recovery.note(failedAdmission([26], failure: .deadlineExceeded))
+        for _ in 0...recovery.timeoutRetryDelays.count { harness.fire() }
+
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertEqual(recovery.pendingWindowIDs, [26], "tracked: in no tree, but not orphaned")
+        XCTAssertEqual(recovery.phase(of: 26), .held)
+
+        harness.fire()
+        recovery.noteEvidence(for: 26)
+        XCTAssertEqual(harness.attempts.count, 3, "held means no timer and no attempt of its own")
+
+        recovery.note(TilingEngine.AdmissionResult(
+            workspace: 2, screen: screen, generation: 30, insertedIDs: [26],
+            publishedIDs: [11, 26], failure: nil, restoredIDs: [], refusedIDs: []))
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty, "a layout that tiles it releases it")
+    }
+
+    func testAUserFloatDuringTheBackoffCancelsIt() {
+        harness.failure = .deadlineExceeded
+        recovery.note(failedAdmission([26], failure: .deadlineExceeded))
+        harness.fire()
+        harness.floatingIDs.insert(26)
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.count, 1)
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+        XCTAssertTrue(harness.floated.isEmpty, "the user already floated it")
     }
 
     func testTheFallbackAsksTheEngineToClearTheMark() {
@@ -608,6 +733,7 @@ private final class RecoveryHarness {
     struct Attempt {
         let workspace: Int
         let bypass: [CGWindowID: UInt64]
+        var keepOnTimeout = false
         var newcomers: Set<CGWindowID> { Set(bypass.keys) }
     }
 
@@ -621,6 +747,11 @@ private final class RecoveryHarness {
 
     /// ids the next attempt manages to tile
     var place: Set<CGWindowID> = []
+    /// failures for the next attempts, in order; `failure` once it runs out
+    var failures: [FrameSizingFailure?] = []
+    /// the engine keeping a timed-out tile: a keepOnTimeout attempt that
+    /// times out places every newcomer it was given
+    var keepsTimeouts = true
     /// ids the fallback retile leaves visible, nonfloating and in no tree
     var leftovers: Set<CGWindowID> = []
     var failure: FrameSizingFailure? = .geometryMismatch(11)
@@ -661,11 +792,16 @@ private final class RecoveryHarness {
         recovery.isSessionInterrupted = { [weak self] in
             self?.sessionInterrupted ?? false
         }
-        recovery.attempt = { [weak self] workspace, _, bypass in
+        recovery.attempt = { [weak self] workspace, _, bypass, keepOnTimeout in
             guard let self else { return AdmissionRecovery.AttemptResult() }
             self.calls.append("attempt")
-            self.attempts.append(Attempt(workspace: workspace, bypass: bypass))
-            return AdmissionRecovery.AttemptResult(placed: self.place, failure: self.failure)
+            self.attempts.append(Attempt(workspace: workspace, bypass: bypass,
+                                         keepOnTimeout: keepOnTimeout))
+            let failure = self.failures.isEmpty ? self.failure : self.failures.removeFirst()
+            if keepOnTimeout, self.keepsTimeouts, let failure, failure.isTimeout {
+                return AdmissionRecovery.AttemptResult(placed: Set(bypass.keys), failure: failure)
+            }
+            return AdmissionRecovery.AttemptResult(placed: self.place, failure: failure)
         }
         recovery.floatInPlace = { [weak self] window, reason in
             self?.calls.append("floatInPlace")

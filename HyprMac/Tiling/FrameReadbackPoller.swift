@@ -62,6 +62,15 @@ struct FrameReadbackPoller {
         self.ioFactory = ioFactory
     }
 
+    /// The same poller with the scale-change budget, for a pass that moves a
+    /// window onto a screen with a different backing scale factor.
+    func withScaleChangeBudget() -> FrameReadbackPoller {
+        FrameReadbackPoller(configuration: configuration.withScaleChangeBudget,
+                            generation: generation, ioFactory: ioFactory)
+    }
+
+    var deadline: TimeInterval { configuration.deadline }
+
     func applyLayout(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
                      gap: CGFloat, generation requestedGeneration: UInt64) -> Result {
         applyLayout(layouts, usableFrame: usableFrame, gap: gap,

@@ -17,6 +17,25 @@ enum FrameSizingFailure: Equatable {
     case superseded
 }
 
+extension FrameSizingFailure {
+    /// The app did not answer in time: the attempt ran out of budget, the
+    /// readback never settled, or AX gave up waiting (`cannotComplete` is
+    /// what a messaging timeout returns). None of these says the app refused
+    /// the frames. Admission recovery retries them instead of floating.
+    var isTimeout: Bool {
+        switch self {
+        case .deadlineExceeded, .attemptsExhausted:
+            return true
+        case let .writeFailed(_, error), let .readFailed(_, error):
+            return error == .cannotComplete
+        case let .cleanupFailed(_, primary, error):
+            return primary?.isTimeout ?? (error == .cannotComplete)
+        default:
+            return false
+        }
+    }
+}
+
 struct FrameSizingIO {
     let setMessagingTimeout: (CGWindowID, TimeInterval) -> AXError
     let writeSize: (CGWindowID, CGSize, TimeInterval) -> AXError
@@ -92,6 +111,22 @@ struct FrameSizingConfiguration {
     /// not a failed rollback — the overlap is reported on the result
     /// instead of rejecting it.
     var correspondenceOnly = false
+    /// The budget for a pass that moves a window onto a screen with a
+    /// different backing scale factor. The app redraws everything at the
+    /// new scale while our AX calls wait behind it. On the MacBook's 2x
+    /// panel the first write after a hop from a 1x external missed 0.36 s on
+    /// every move, and the retry 250 ms later usually verified.
+    var scaleChangeDeadline: TimeInterval = 1.0
+
+    /// This configuration with the scale-change budget. The sample limit
+    /// grows with the deadline so the settle loop can use the extra time.
+    var withScaleChangeBudget: FrameSizingConfiguration {
+        var extended = self
+        extended.deadline = max(deadline, scaleChangeDeadline)
+        extended.maximumAttempts = max(maximumAttempts,
+                                       Int((extended.deadline / pollInterval).rounded(.up)))
+        return extended
+    }
 }
 
 /// Two windows that sit on top of each other. Only the restoration phase
@@ -151,6 +186,11 @@ struct FrameSizingAttempt {
         var write: TimeInterval = 0
         var read: TimeInterval = 0
         var settle: TimeInterval = 0
+        /// per window, every setter with its raw AX code and duration
+        var steps: [String] = []
+        /// readback samples taken, and the slowest single-window read
+        var samples = 0
+        var slowestRead: TimeInterval = 0
     }
 
     struct Result: Equatable {
@@ -268,6 +308,24 @@ struct FrameSizingAttempt {
                 + "write=\(Self.ms(timings.write)) read=\(Self.ms(timings.read)) "
                 + "settle=\(Self.ms(timings.settle)) elapsed=\(Self.ms(elapsed)) "
                 + "headroom=\(Self.ms(configuration.deadline - elapsed))")
+        // a timeout is the one failure whose cause the notice lines could
+        // not show: which call ate the budget. say it where Console keeps it
+        switch result.verdict {
+        case let .rejected(failure) where failure.isTimeout,
+             let .unknown(failure) where failure.isTimeout:
+            hyprLog(.notice, .tiling, "frame attempt timed out: phase=\(phase.rawValue) "
+                    + "gen=\(generation) wids=\(targets.map(\.windowID)) reason=\(failure) "
+                    + "written=\(Self.ids(progress.possiblyWritten)) "
+                    + "complete=\(Self.ids(progress.writesCompleted)) "
+                    + "read=\(result.actualFrames.keys.sorted()) "
+                    + "write=\(Self.ms(timings.write)) readLoop=\(Self.ms(timings.read)) "
+                    + "settle=\(Self.ms(timings.settle)) elapsed=\(Self.ms(elapsed)) "
+                    + "deadline=\(Self.ms(configuration.deadline)) samples=\(timings.samples) "
+                    + "slowestRead=\(Self.ms(timings.slowestRead)) "
+                    + "steps=[\(timings.steps.joined(separator: " "))]")
+        default:
+            break
+        }
         return result
     }
 
@@ -320,7 +378,7 @@ struct FrameSizingAttempt {
 
         for target in targets {
             let result = write(target, actualFrames: actualFrames, progress: &progress,
-                               checkpoint: interruption)
+                               timings: &timings, checkpoint: interruption)
             timings.write = io.now() - started
             if let result { return out(result) }
         }
@@ -329,9 +387,13 @@ struct FrameSizingAttempt {
 
         var stableAnchors: [CGWindowID: CGRect] = [:]
         for attemptIndex in 0..<configuration.maximumAttempts {
+            timings.samples = attemptIndex + 1
             for target in targets {
-                if let result = read(target, actualFrames: &actualFrames, progress: &progress,
-                                     checkpoint: interruption) {
+                let readCallStarted = io.now()
+                let failed = read(target, actualFrames: &actualFrames, progress: &progress,
+                                  checkpoint: interruption)
+                timings.slowestRead = max(timings.slowestRead, io.now() - readCallStarted)
+                if let result = failed {
                     timings.read = io.now() - readStarted
                     return out(result)
                 }
@@ -412,16 +474,20 @@ struct FrameSizingAttempt {
     }
 
     private func write(_ target: Target, actualFrames: [CGWindowID: CGRect],
-                       progress: inout Progress,
+                       progress: inout Progress, timings: inout Timings,
                        checkpoint: () -> FrameSizingFailure?) -> Result? {
         let phase = progress.phase
+        let writeStarted = io.now()
         var steps: [String] = []
         // one line per window listing every setter that went out, with its
         // raw AX code and how long it took
         func traceSteps(_ complete: Bool) {
+            let listed = steps.isEmpty ? "none" : steps.joined(separator: ",")
+            // total also covers the enhanced-ui begin and the timeout
+            // setup, so total minus the setters is what those cost
+            timings.steps.append("\(target.windowID):\(listed)/total=\(Self.ms(io.now() - writeStarted))")
             hyprLog(.debug, .tiling, "frame write: wid=\(target.windowID) phase=\(phase.rawValue) "
-                    + "steps=\(steps.isEmpty ? "none" : steps.joined(separator: ",")) "
-                    + "complete=\(complete)")
+                    + "steps=\(listed) complete=\(complete)")
         }
         hyprLog(.debug, .tiling,
                 "frame write: wid=\(target.windowID) phase=\(phase.rawValue) "

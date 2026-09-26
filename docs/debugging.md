@@ -202,7 +202,8 @@ logs no trace line; it appears only in typed results. Four line names:
   for, `complete` every window whose three setters all returned
   success. `write` covers the write pass, `read` the settle loop,
   `settle` just the sleeps inside it, and `headroom` is what was left
-  of the 0.36 s deadline.
+  of the attempt's deadline: 0.36 s, or 1 s for a pass that moves a window
+  across a backing scale change.
 
 `FrameReadbackPoller` logs one `min evidence:` line per window it treats
 as a min-size conflict, under the same category and tier:
@@ -240,6 +241,43 @@ those wherever the candidate left them: on the destination if their writes
 went out, where they were if the candidate failed before reaching them. An
 ordinary tiling pass then reports them stranded, and the admission
 recovery's lines follow.
+
+An attempt that times out also logs one `.notice` line with its timings, so
+Console shows which call used up the budget without the file log (the numbers
+here are made up):
+
+```
+frame attempt timed out: phase=candidate gen=812 wids=[59300] reason=deadlineExceeded written=[59300] complete=[59300] read=[] write=190ms readLoop=190ms settle=0ms elapsed=380ms deadline=360ms samples=1 slowestRead=190ms steps=[59300:size:0/2ms,position:0/95ms,size2:0/95ms/total=192ms]
+```
+
+`read` lists the windows that read back before the budget ran out.
+`steps` is per window: each setter with its raw AX code and duration, then
+the window's total, which also covers the Enhanced UI begin. `slowestRead` is the
+longest single position-plus-size read. Timeouts are `deadlineExceeded`,
+`attemptsExhausted` and `cannotComplete` failures.
+
+A pass that moves a window onto a screen with a different backing scale
+logs, before its first write:
+
+```
+verified layout scale change: ids=[59300:1x→2x] deadline=1000ms
+```
+
+The admission recovery's timeout lines, all `[notice] [tiling]`:
+
+- `admission retry timed out: ids=[…] ws<N> cause=<failure> — not a refusal,
+  retrying in <ms>ms` — another retry is armed (500 ms, then 1000 ms).
+- `admission retry attempt: ws<N> bypassMinimaBefore=[…] keepOnTimeout=true`
+  — the last retry the bound allows.
+- `verified layout kept unverified: reason=<failure> phase=<…> ids=[…] — a
+  timeout, not a refusal; no rollback`, then `admission kept unverified:
+  ws<N> ids=[…] reason=<failure> — tiled, key marked unverified`, then
+  `admission recovery resolved: <id> (kept tiled unverified after <n>
+  timed-out retries, last=<failure>)`.
+- `admission recovery held: ids=[<id>] ws<N> — last retry timed out without
+  a complete write (<failure>); in no tree, not floated` — some window did
+  not get all three setters back, so the last retry had nothing to keep. A
+  later layout that tiles the window releases it.
 
 `MinSizeMemory` then logs what it did with that evidence under
 `category: lifecycle`, in three shapes:
