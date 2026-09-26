@@ -668,7 +668,11 @@ final class FloatingWindowController {
             hyprLog(.notice, .floating, "click re-raise refocus skipped: tile=\(tile.windowID) focus moved")
             return
         }
-        guard !isMenuTracking(), !isScratchpadVisible() else { return }
+        if isMenuTracking() || isScratchpadVisible() {
+            hyprLog(.notice, .floating, "click re-raise refocus skipped: tile=\(tile.windowID) "
+                    + (isMenuTracking() ? "menu tracking" : "scratchpad"))
+            return
+        }
         let front = frontmostPID()
         if let popup = findPopup(windows, front) {
             hyprLog(.notice, .floating, "click re-raise refocus skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")

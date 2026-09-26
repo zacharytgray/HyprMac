@@ -670,7 +670,10 @@ What changed:
   keeps its whole hole, as before. The cutouts are redrawn when the stack
   can change: after a click's mouse-up, a focused or main window change, an
   app activation, a raise-behind or click re-raise, and the usual focus
-  path. `scheduleRestackRefresh` coalesces those into one fresh list read.
+  path. `scheduleRestackRefresh` coalesces each burst into one refresh.
+  That refresh reads the window list once for the dim and once more for
+  the border occlusion when the border is on. It runs per event, not per
+  mouse move, and only while a floater is visible.
 - The click re-raise keeps floaters in front of tiles after a click. About
   40 ms after the mouse-up of a real click on a tile (not a drag, not a
   Hypr or Option gesture, not our own synthetic click), each floater on the
@@ -718,7 +721,7 @@ Log lines, all at notice level:
 | `click re-raise: … → skipped(<reason>)` | floating | `click under floater`, `focus moved`, `popup …`, `menu tracking`, `scratchpad`, `tile app not front`. A cooldown skip logs at debug |
 | `click re-raise failed: wid=<id> rc=<n>` | floating | AXRaise returned an error |
 | `click re-raise refocus missed: tile=<id> floaters=[…] — cooldown 30s` | floating | the tile did not stay key under the floater |
-| `click re-raise refocus skipped: …` | floating | focus moved or a menu opened before the hand-back |
+| `click re-raise refocus skipped: …` | floating | focus moved, a menu or popup opened, or the scratchpad came up before the hand-back. The floater may stay key |
 
 One repro answers the Tahoe question. If `verify` says `landed` with the
 floater in `floatersAbove` and an empty `buried`, the no-raise path works

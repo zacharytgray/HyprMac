@@ -1133,9 +1133,10 @@ class WindowManager {
     /// Called where z-order can change: after a click's mouse-up, a focused
     /// or main window change, an app activation, a raise-behind or click
     /// re-raise, and the usual focus path. Triggers inside the delay ride
-    /// along with the queued refresh, which reads a fresh list when it
-    /// fires. Does nothing without a visible floater, so it costs one
-    /// window-list read per burst of events at most.
+    /// along with the queued refresh, which reads fresh lists when it
+    /// fires. Does nothing without a visible floater. Each refresh costs
+    /// two window-list reads with the border on (its occlusion reads its
+    /// own), one with it off, plus an AX frame read per tile.
     private func scheduleRestackRefresh(after delay: TimeInterval) {
         guard isRunning, !restackRefreshPending,
               config.dimInactiveWindows || config.showFocusBorder,
