@@ -403,6 +403,52 @@ final class AdmissionRecoveryTests: XCTestCase {
         XCTAssertEqual(harness.scheduled.count, 1, "and no new timer")
     }
 
+    func testALockBeforeTheRetryComesDueKeepsItForTheFirstPollAfterUnlock() throws {
+        // a cross-monitor move whose first layout failed, then a lock inside
+        // the 250 ms. the attempt would read the lock screen's partial list
+        recovery.note(failedAdmission([26], generation: 42))
+        harness.sessionInterrupted = true
+        harness.fire()
+
+        XCTAssertTrue(harness.attempts.isEmpty, "no attempt from the partial list")
+        XCTAssertEqual(recovery.pendingWindowIDs, [26], "not dropped")
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingEvidence)
+        XCTAssertEqual(harness.scheduled.count, 1, "and no new timer")
+
+        // polls inside the span offer evidence too; they change nothing
+        recovery.noteEvidence(for: 26)
+        XCTAssertTrue(harness.attempts.isEmpty)
+
+        harness.sessionInterrupted = false
+        harness.place = [26]
+        recovery.noteEvidence(for: 26)
+
+        XCTAssertEqual(harness.attempts.count, 1, "its one attempt, after the span")
+        XCTAssertEqual(try XCTUnwrap(harness.attempts.first).bypass, [26: 42])
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+        XCTAssertTrue(harness.floated.isEmpty)
+    }
+
+    func testALockHoldsAJudgedRefusalInsteadOfFloatingAndRetilingFromIt() {
+        // the fallback's retile would read the same partial list
+        recovery.note(failedAdmission([], published: [11], failure: nil, restored: [],
+                                      refused: [26]))
+        harness.sessionInterrupted = true
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertTrue(harness.retiles.isEmpty)
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingEvidence)
+
+        harness.sessionInterrupted = false
+        recovery.noteEvidence(for: 26)
+
+        XCTAssertTrue(harness.attempts.isEmpty, "its attempt was already spent")
+        XCTAssertEqual(harness.floated.map(\.id), [26])
+        XCTAssertEqual(harness.retiles.count, 1)
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
     func testADisplayChangeCancelsTheRetry() {
         recovery.note(failedAdmission([26]))
         recovery.cancelAll(reason: "display change")
@@ -555,6 +601,7 @@ private final class RecoveryHarness {
     var leftovers: Set<CGWindowID> = []
     var failure: FrameSizingFailure? = .geometryMismatch(11)
     var displayTransitionPending = false
+    var sessionInterrupted = false
 
     private(set) var scheduled: [(delay: TimeInterval, body: () -> Void)] = []
     private(set) var attempts: [Attempt] = []
@@ -586,6 +633,9 @@ private final class RecoveryHarness {
         }
         recovery.isDisplayTransitionPending = { [weak self] in
             self?.displayTransitionPending ?? false
+        }
+        recovery.isSessionInterrupted = { [weak self] in
+            self?.sessionInterrupted ?? false
         }
         recovery.attempt = { [weak self] workspace, _, bypass in
             guard let self else { return AdmissionRecovery.AttemptResult() }

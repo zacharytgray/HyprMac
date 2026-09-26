@@ -312,6 +312,19 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
     }
 
+    func testTheSpanIsReadableForTheRecoveryRetry() {
+        // the admission recovery's own timer reads this, not a poll
+        let (svc, _, _) = lockFixture()
+        XCTAssertFalse(svc.isSessionInterrupted)
+        svc.noteSystemInterruption(NSWorkspace.screensDidSleepNotification.rawValue)
+        XCTAssertTrue(svc.isSessionInterrupted, "display sleep alone opens a span")
+        svc.noteSystemInterruption(Self.locked)
+        svc.noteSystemInterruption(NSWorkspace.screensDidWakeNotification.rawValue)
+        XCTAssertTrue(svc.isSessionInterrupted, "still locked")
+        svc.noteSystemInterruption(Self.unlocked)
+        XCTAssertFalse(svc.isSessionInterrupted)
+    }
+
     func testGoneWindowWithLivePIDMovesToHidden() {
         let (svc, cache, _) = makeService()
         cache.knownWindowIDs = [10]

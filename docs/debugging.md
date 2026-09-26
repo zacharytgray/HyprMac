@@ -409,7 +409,8 @@ holds it.
 `recovery pending` reports newcomers a failed admission left outside the
 tree and that admission recovery has not finished with. A window is listed
 while its one retry is armed, and while it is waiting for evidence — it was
-unreadable, or its workspace was hidden, when its turn came. It leaves the
+unreadable, its workspace was hidden, the screens were being reconfigured,
+or the session was locked or asleep when its turn came. It leaves the
 list when the retry tiles it, when a later layout tiles it, when the
 fallback floats it in place, when the user acts on it, or when it goes
 away. An id that stays here across several dumps is a window nothing can
@@ -891,11 +892,28 @@ The spans are `com.apple.screenIsLocked` to `screenIsUnlocked`,
 `screensDidSleep` to `screensDidWake`, and `sessionDidResignActive` to
 `sessionDidBecomeActive`. The span ends when every reason has ended. The
 holding line is `.notice` once per span and `.debug` after that. A span
-whose end notification never came ends on any hotkey press, a menu-bar
-action, a stop, or the 12-hour cap. The 4-second `discovery suppressed` hold after each
-notification is unchanged. Before this, a lock that outlasted it and the
-three mass-gone skips marked every window hidden, and the unlock rebuilt
-each tree in reading order with default ratios.
+whose end notification never came also ends on a stop, on the 12-hour cap,
+on any bound hotkey firing, or on anything that goes through
+`handleAction`: a workspace button or the Keybinds or Workspace overview
+row in the menu-bar menu, or choosing a workspace in the overview. A bare
+Hypr press does not end it, and neither does choosing a window in the
+overview.
+
+The admission recovery's own 250 ms retry waits for the span too. A retry
+that comes due inside it runs no attempt, floats nothing and retiles
+nothing, because `getAllWindows()` is partial then. The window logs
+`admission recovery pending: … not judgeable yet` and waits for evidence.
+The first poll or retile after the span ends gives it its one attempt;
+after an unlock, that poll comes once the 4-second hold below is over.
+
+Every notification listed above, and `didWake`, goes through
+`systemInterruption`. Each one arms the 4-second `discovery suppressed`
+hold, resets the hotkey state, clears a stuck Dock flag, ends menu tracking
+and hides the scratchpad. `screensDidSleep` is new to that list, so display
+sleep on its own now does all of that as well. Before the span existed, a
+lock that outlasted the 4-second hold and the three mass-gone skips marked
+every window hidden, and the unlock rebuilt each tree in reading order with
+default ratios.
 
 ## Retile churn / full-screen flicker
 
