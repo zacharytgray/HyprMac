@@ -2140,11 +2140,17 @@ class WindowManager {
     /// preserve recovery, as does showing the workspace a newcomer has been waiting
     /// for, and forgetting it here would hand it a fresh timer on the reveal
     /// retile instead of its one remaining attempt.
+    ///
+    /// Resize, swap and split toggle preserve it too. They only rework the
+    /// live tree, which never holds a stranded window, so nothing they do
+    /// gives it another attempt: a move to a visible workspace followed by a
+    /// quick resize used to leave the window assigned, in no tree, and with
+    /// nothing scheduled.
     static func cancelsPendingRecovery(_ action: Action) -> Bool {
         switch action {
         case .switchWorkspace, .cycleWorkspace, .focusDirection, .focusFloating,
              .focusMenuBar, .showKeybinds, .showWorkspaceOverview, .launchApp,
-             .runCommand, .saveLayout:
+             .runCommand, .saveLayout, .resizeDirection, .swapDirection, .toggleSplit:
             return false
         default: return true
         }

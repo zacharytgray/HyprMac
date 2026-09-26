@@ -81,6 +81,14 @@ final class AdmissionRecoveryTests: XCTestCase {
         }
     }
 
+    func testInTreeGeometryActionsKeepPendingRecovery() {
+        // they only rework the live tree, which never holds the stranded
+        // window, so cancelling here left it with nothing scheduled
+        for action: Action in [.resizeDirection(.up), .swapDirection(.left), .toggleSplit] {
+            XCTAssertFalse(WindowManager.cancelsPendingRecovery(action), "\(action)")
+        }
+    }
+
     func testMembershipActionsCancelAPendingRetry() {
         XCTAssertTrue(WindowManager.cancelsPendingRecovery(.moveToWorkspace(3)))
         XCTAssertTrue(WindowManager.cancelsPendingRecovery(.toggleFloating))

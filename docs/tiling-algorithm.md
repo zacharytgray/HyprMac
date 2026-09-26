@@ -320,9 +320,14 @@ A close, a stop, a later key press, a display change, a workspace move, a
 user float, or a later layout that tiles the window all cancel the pending
 work. Switching or cycling workspaces is the exception: a reveal is the
 evidence a parked newcomer is waiting for, so those two actions leave the
-records alone. A retry that comes due while the screens are being
-reconfigured waits as well, rather than tiling into keys that are about to
-move. Scratchpad tiling never enters this path.
+records alone. Focus and informational presses leave them alone too, and so
+do resize, swap and split-toggle presses: those only rework the live tree,
+which never holds a stranded window, so nothing they do would ever give it
+another attempt. Cancelling there is how a move followed quickly by a resize
+left a window assigned, in no tree, and with nothing scheduled. A retry that
+comes due while the screens are being reconfigured waits as well, rather
+than tiling into keys that are about to move. Scratchpad tiling never enters
+this path.
 
 Every visible nonfloating assignment is therefore a verified tile, a window
 under a marked key, or a tracked recovery member. The state dump's
