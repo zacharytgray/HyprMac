@@ -119,19 +119,18 @@ struct KeybindsSettingsView: View {
     }
 
     private func workspacePanel(_ binds: [Keybind]) -> some View {
-        let switchFamily = canonicalWorkspaceFamily(in: binds, switching: true)
-        let moveFamily = canonicalWorkspaceFamily(in: binds, switching: false)
-        let collapsedIDs = Set((switchFamily ?? []).map(\.id) + (moveFamily ?? []).map(\.id))
+        let families = KeybindOverlayGrouping.WorkspaceFamily.allCases
+        let runs = Dictionary(uniqueKeysWithValues: families.compactMap { family in
+            canonicalWorkspaceFamily(in: binds, family: family).map { (family, $0) }
+        })
+        let collapsedIDs = Set(runs.values.flatMap { $0.map(\.id) })
         let exceptions = binds.filter { !collapsedIDs.contains($0.id) }
 
         return HyprPanel("Workspaces", footer: "Keys 1–9 select workspaces 1–9; 0 selects workspace 10. Expand a group to edit individual bindings.") {
-            if let switchFamily {
-                workspaceDisclosure(
-                    id: "switch", title: "Switch to workspace N", binds: switchFamily)
-            }
-            if let moveFamily {
-                workspaceDisclosure(
-                    id: "move", title: "Move window to workspace N", binds: moveFamily)
+            ForEach(families, id: \.self) { family in
+                if let run = runs[family] {
+                    workspaceDisclosure(id: family.rawValue, title: family.title, binds: run)
+                }
             }
             bindRows(exceptions)
         }
@@ -179,18 +178,15 @@ struct KeybindsSettingsView: View {
         }
     }
 
-    private func canonicalWorkspaceFamily(in binds: [Keybind], switching: Bool) -> [Keybind]? {
+    private func canonicalWorkspaceFamily(in binds: [Keybind],
+                                          family wanted: KeybindOverlayGrouping.WorkspaceFamily) -> [Keybind]? {
         let family = binds.compactMap { bind -> (Int, Keybind)? in
-            let number: Int
-            switch bind.action {
-            case .switchWorkspace(let n) where switching: number = n
-            case .moveToWorkspace(let n) where !switching: number = n
-            default: return nil
-            }
-            guard KeybindOverlayGrouping.usesCanonicalWorkspaceKey(bind, number: number) else {
+            guard let member = KeybindOverlayGrouping.workspaceFamily(of: bind.action),
+                  member.family == wanted,
+                  KeybindOverlayGrouping.usesCanonicalWorkspaceKey(bind, number: member.number) else {
                 return nil
             }
-            return (number, bind)
+            return (member.number, bind)
         }.sorted { $0.0 < $1.0 }
 
         guard KeybindOverlayGrouping.isCompleteWorkspaceRange(family.map { $0.0 }),
@@ -551,7 +547,7 @@ struct KeybindEditorSheet: View {
                 switch vm.selectedAction {
                 case .focusDirection, .swapDirection, .moveWindowToMonitor, .resizeDirection:
                     DirectionPicker(direction: $vm.directionParam)
-                case .switchWorkspace, .moveToWorkspace:
+                case .switchWorkspace, .moveToWorkspace, .moveToWorkspaceAndFollow:
                     WorkspacePicker(workspace: $vm.workspaceParam)
                 case .cycleWorkspace:
                     Picker("Direction", selection: $vm.workspaceParam) {

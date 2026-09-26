@@ -94,6 +94,40 @@ final class WelcomeContentTests: XCTestCase {
         XCTAssertFalse(KeybindOverlayGrouping.usesCanonicalDirectionKey(customized, direction: .left))
     }
 
+    func testOverlayFoldsEachWorkspaceFamilyIntoItsOwnRow() throws {
+        let binds = Keybind.defaults
+        let seeds: [(KeybindOverlayGrouping.WorkspaceFamily, Action, String)] = [
+            (.switchTo, .switchWorkspace(1), "Switch to workspace N"),
+            (.move, .moveToWorkspace(1), "Move window to workspace N"),
+            (.moveAndFollow, .moveToWorkspaceAndFollow(1), "Move window to workspace N and follow"),
+        ]
+        var claimed = Set<Int>()
+        for (family, action, title) in seeds {
+            let seed = try XCTUnwrap(binds.first { $0.action == action })
+            let run = try XCTUnwrap(KeybindOverlayGrouping.workspaceRun(seededBy: seed, in: binds))
+            XCTAssertEqual(run.family, family)
+            XCTAssertEqual(run.family.title, title)
+            let numbers = run.indices.compactMap {
+                KeybindOverlayGrouping.workspaceFamily(of: binds[$0].action)?.number
+            }
+            XCTAssertEqual(numbers.sorted(), Array(Constants.workspaceRange), title)
+            XCTAssertTrue(claimed.isDisjoint(with: run.indices), "\(title) folds only its own binds")
+            claimed.formUnion(run.indices)
+        }
+    }
+
+    func testACustomizedFollowBindBreaksOnlyItsOwnRow() throws {
+        var binds = Keybind.defaults
+        let index = try XCTUnwrap(binds.firstIndex { $0.action == .moveToWorkspaceAndFollow(4) })
+        binds[index] = Keybind(keyCode: UInt16(kVK_ANSI_Q), modifiers: [.hypr, .control, .shift],
+                               action: .moveToWorkspaceAndFollow(4))
+
+        let follow = try XCTUnwrap(binds.first { $0.action == .moveToWorkspaceAndFollow(1) })
+        let move = try XCTUnwrap(binds.first { $0.action == .moveToWorkspace(1) })
+        XCTAssertNil(KeybindOverlayGrouping.workspaceRun(seededBy: follow, in: binds))
+        XCTAssertEqual(KeybindOverlayGrouping.workspaceRun(seededBy: move, in: binds)?.indices.count, 10)
+    }
+
     func testOverlaySummarizesOnlyTheCompleteWorkspaceRange() {
         XCTAssertTrue(KeybindOverlayGrouping.isCompleteWorkspaceRange(Array(Constants.workspaceRange)))
         XCTAssertFalse(KeybindOverlayGrouping.isCompleteWorkspaceRange(Array(1...9)))

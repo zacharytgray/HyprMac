@@ -13,6 +13,7 @@ enum Action: Equatable {
     case swapDirection(Direction)
     case switchWorkspace(Int)
     case moveToWorkspace(Int)
+    case moveToWorkspaceAndFollow(Int)
     case moveWindowToMonitor(Direction)
     case toggleFloating
     case toggleSplit
@@ -68,6 +69,55 @@ idempotent and is persisted on the next normal settings save; no schema-version
 flag is added. An explicitly chosen binding identical to a legacy default cannot
 be distinguished from that default.
 
+## Move and follow
+
+`moveToWorkspaceAndFollow(N)` moves the focused window to workspace N and
+switches there with that window focused. It defaults to Hypr+Ctrl+Shift+1–9,
+and Hypr+Ctrl+Shift+0 for workspace 10. Before this action Hypr+Ctrl+Shift
+went only with the arrow keys (resize), so the digit chords were free. No
+offered Hypr key is Control or Shift, so the chord works under all of them.
+Hypr+Shift+N (`moveToWorkspace`) stays silent: it follows only when the
+destination is already showing on another monitor.
+
+It encodes under its own key, `{"moveToWorkspaceAndFollow":{"_0":N}}`,
+with the same payload as `moveToDesktop`. The key is frozen like the others.
+
+`WorkspaceOrchestrator.moveToWorkspace(N, follow: true)` runs the same checks
+as the silent move, and a refused move beeps and does not switch. After that:
+
+- **Destination showing on another monitor:** the same as the silent move.
+  The window is placed there, focused, and the cursor follows. No switch HUD.
+- **Destination hidden:** the window leaves the source tree without a
+  relayout and is not parked. `switchWorkspace(N, preferredWindowID:)` then
+  hides the old workspace on the destination's monitor, lays out every
+  visible workspace in one pass, and focuses the moved window. When the
+  destination is on the source's monitor, the source is hidden as it
+  stood. When it is on the other monitor, the source stays up and closes
+  the gap in that same pass.
+- **Floaters and Quick Look previews** stay floating. A floater bound for
+  the other monitor is carried there first.
+
+The cursor goes to where the window is going: its slot in the destination
+tree, else the frame a floater was carried to, else its live frame. It
+takes the first of those that lies on the destination screen, and falls
+back to the middle of that screen. The live frame can still read the
+source screen when the first layout attempt fails, and `ensureFocus` picks
+from the screen under the cursor. So a follow that trusted it handed the
+next Hypr press to a tile on the wrong monitor. The silent move's follow to
+a showing workspace, and a window picked in the overview, use the same rule.
+
+`mergeNewDefaults` injects the ten binds onto free chords only. A chord the
+user already bound keeps the user's bind; that number then has no follow bind
+until the user adds one in Settings, and the skip logs at `.notice`. A follow
+action the user already bound to another chord is not injected again.
+
+Downgrade: a build with per-keybind tolerance (v0.12.0 and later) that
+reads a config holding these binds drops only them, then its next save
+writes the file without them. This build re-injects the defaults on its
+next launch; a customized follow chord is lost. A build older than v0.12.0
+resets the whole config instead, as "Per-element tolerance" describes. No `ConfigMigration` step is involved, as with
+`runCommand`, `moveToNextEmptyWorkspace`, `saveLayout` and `restoreLayout`.
+
 ## Save and restore layout
 
 `saveLayout` and `restoreLayout` default to Hypr+Ctrl+S and Hypr+Ctrl+R
@@ -96,6 +146,7 @@ the value:
 
 ```json
 { "switchDesktop": { "_0": 3 } }
+{ "moveToWorkspaceAndFollow": { "_0": 3 } }
 { "focusDirection": { "_0": "left" } }
 { "launchApp": { "bundleID": "com.apple.Terminal" } }
 { "runCommand": { "label": "Screenshot", "command": "/usr/sbin/screencapture -i ~/Desktop/shot.png" } }
@@ -132,6 +183,9 @@ new move-window semantics with no config change.
 
 This pattern generalizes — any future case rename should add an
 alias entry rather than break the wire format.
+
+A case added later is frozen at the key it first shipped with, such as
+`moveToNextEmptyWorkspace` or `moveToWorkspaceAndFollow`.
 
 ## `AnyKey`
 
@@ -258,6 +312,13 @@ saved configs at load time, so users who upgrade pick up new
 keybinds without resetting their customizations. New default
 actions go in `DefaultKeybinds.swift`; the merge handles the rest.
 
+The workspace number keys carry three families: Hypr+N switches,
+Hypr+Shift+N moves the window, and Hypr+Ctrl+Shift+N moves it and
+follows. `testEveryDefaultUsesUniqueChord` keeps every default on its own
+chord. The Hypr+K overlay and Settings → Keys fold each complete family
+into one row (`KeybindOverlayGrouping.workspaceRun`); a family with a
+customized key is listed bind by bind.
+
 ## Run a command
 
 `runCommand(label:command:)` binds a chord to a program of the
@@ -364,6 +425,12 @@ Restart HyprMac after editing. Example — bind Hypr+B to launch Safari:
 
 ```json
 { "keyCode": 11, "modifiers": 1, "action": { "launchApp": { "bundleID": "com.apple.Safari" } } }
+```
+
+Example — bind Hypr+Ctrl+Shift+3 to move the window to workspace 3 and follow it:
+
+```json
+{ "keyCode": 20, "modifiers": 11, "action": { "moveToWorkspaceAndFollow": { "_0": 3 } } }
 ```
 
 Example — bind Hypr+5 to an interactive screenshot:

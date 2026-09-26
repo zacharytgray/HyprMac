@@ -6,7 +6,7 @@ import Cocoa
 // onWillSwitch, so the announcement has to leave before the hide/retile/focus
 // pass, not after it — off onDidSwitch the panel cannot paint until the main
 // thread stops writing AX, which is most of a second on Tahoe. the AX sweep
-// itself is not a seam, so what these tests can pin is the announcement's
+// is not recorded here, so what these tests can pin is the announcement's
 // position among the seams that surround it: after the cursor screen is read,
 // before the retile, and with the same screen onDidSwitch will report.
 //

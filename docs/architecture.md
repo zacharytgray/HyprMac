@@ -303,6 +303,13 @@ move between monitors, so workspace identity never drifts. The
 `moveWindowToMonitor` action (`Hypr+Ctrl+←/→`) moves the focused
 *window* to the adjacent monitor's visible workspace instead.
 
+`Hypr+Shift+N` moves the focused window to workspace N and stays put,
+unless N is showing on another monitor, where focus follows the window.
+`Hypr+Ctrl+Shift+N` (`moveToWorkspaceAndFollow`) also switches to N with
+the window focused. Both go through `WorkspaceOrchestrator.moveToWorkspace`,
+and a follow warps the cursor to where the window is going rather than to
+its live frame. See "Move and follow" in `docs/keybinds-and-actions.md`.
+
 `WorkspaceOrchestrator.moveToNextEmptyWorkspace` implements Hypr+F. It resolves
 the actual AX-focused standard window and its physical display, then asks
 `WorkspaceManager.nextEmptyWorkspace` for the next empty anchored workspace,

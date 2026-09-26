@@ -46,6 +46,8 @@ extension Keybind {
             return "number.circle"
         case .moveToWorkspace:
             return "arrow.up.right.square"
+        case .moveToWorkspaceAndFollow:
+            return "arrow.up.right.square.fill"
         case .moveWindowToMonitor:
             return "rectangle.2.swap"
         case .toggleFloating:
@@ -101,6 +103,7 @@ extension Keybind {
         case .swapDirection(let d):         return "Swap \(d.rawValue.capitalized)"
         case .switchWorkspace(let n):       return "Switch to Workspace \(n)"
         case .moveToWorkspace(let n):       return "Move to Workspace \(n)"
+        case .moveToWorkspaceAndFollow(let n): return "Move to Workspace \(n) and Follow"
         case .moveWindowToMonitor(let d):   return "Move Window to \(d.rawValue.capitalized) Monitor"
         case .toggleFloating:               return "Toggle Floating"
         case .toggleSplit:                  return "Toggle Split Direction"

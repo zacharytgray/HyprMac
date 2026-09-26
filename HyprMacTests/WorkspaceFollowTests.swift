@@ -7,6 +7,10 @@ import XCTest
 // to the window's live frame while that frame still reads the source screen
 // hands the next Hypr press to a tile on the wrong monitor. the warp has to
 // aim at the destination.
+//
+// also pins move-and-follow (Hypr+Ctrl+Shift+N): the move goes through the
+// same checks as Hypr+Shift+N, then switches to the destination with the
+// moved window focused. a refused move never switches.
 
 private final class FollowScreen: NSScreen {
     let bounds: NSRect
@@ -254,5 +258,175 @@ final class WorkspaceFollowTests: XCTestCase {
         XCTAssertEqual(rig.warps.first?.x ?? 0, 3400, accuracy: 0.01)
         XCTAssertEqual(rig.warps.first?.y ?? 0, 550, accuracy: 0.01)
         XCTAssertEqual(rig.focusController.lastFocusedID, mover.windowID)
+    }
+
+    // MARK: - move and follow
+
+    /// a tiled window on screen 0 beside a sibling, both laid out
+    private func seedSource() -> (mover: HyprWindow, sibling: HyprWindow, source: Int) {
+        let source = rig.visible(on: 0)
+        let mover = rig.add(11, to: source)
+        let sibling = rig.add(12, to: source)
+        rig.tile(source)
+        rig.focused = mover
+        return (mover, sibling, source)
+    }
+
+    func testASilentMoveToAHiddenWorkspaceStaysOnTheSource() {
+        let (mover, sibling, source) = seedSource()
+        let destination = rig.hidden(on: 0)
+
+        rig.orchestrator.moveToWorkspace(destination)
+
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(mover.windowID), destination)
+        XCTAssertEqual(rig.visible(on: 0), source)
+        XCTAssertTrue(rig.announced.isEmpty)
+        XCTAssertEqual(rig.focusController.lastFocusedID, sibling.windowID)
+        XCTAssertEqual(rig.bordered, [sibling.windowID])
+        XCTAssertTrue(rig.warps.isEmpty)
+    }
+
+    func testFollowToAHiddenWorkspaceOnTheSameScreenSwitchesWithTheWindowFocused() throws {
+        let (mover, sibling, source) = seedSource()
+        let destination = rig.hidden(on: 0)
+        let siblingFrame = rig.frames[sibling.windowID]
+
+        rig.orchestrator.moveToWorkspace(destination, follow: true)
+
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(mover.windowID), destination)
+        XCTAssertEqual(rig.visible(on: 0), destination)
+        XCTAssertEqual(rig.announced, ["will:\(destination)@Follow 0", "did:\(destination)@Follow 0"])
+        XCTAssertEqual(rig.treeIDs(destination), [mover.windowID])
+        XCTAssertEqual(rig.treeIDs(source), [sibling.windowID])
+        XCTAssertEqual(rig.focusController.lastFocusedID, mover.windowID)
+        XCTAssertEqual(rig.bordered, [mover.windowID], "focus never goes back to the source")
+        XCTAssertEqual(rig.frames[sibling.windowID], siblingFrame,
+                       "the source is hidden as it stood, not laid out again first")
+        let slot = try XCTUnwrap(rig.engine.intendedRect(
+            for: mover.windowID, onWorkspace: destination, screen: rig.screens[0]))
+        XCTAssertEqual(rig.warps, [center(slot)])
+    }
+
+    func testFollowToAHiddenWorkspaceOnTheOtherScreenLeavesTheSourceShowing() throws {
+        let (mover, sibling, source) = seedSource()
+        let destination = rig.hidden(on: 1)
+        let siblingWidth = try XCTUnwrap(rig.frames[sibling.windowID]?.width)
+
+        rig.orchestrator.moveToWorkspace(destination, follow: true)
+
+        XCTAssertEqual(rig.visible(on: 1), destination)
+        XCTAssertEqual(rig.visible(on: 0), source, "the source monitor keeps its workspace")
+        XCTAssertEqual(rig.announced, ["will:\(destination)@Follow 1", "did:\(destination)@Follow 1"])
+        XCTAssertEqual(rig.treeIDs(destination), [mover.windowID])
+        let moverFrame = try XCTUnwrap(rig.frames[mover.windowID])
+        XCTAssertTrue(rig.rect(1).contains(center(moverFrame)), "laid out on the destination screen")
+        XCTAssertEqual(rig.treeIDs(source), [sibling.windowID])
+        XCTAssertGreaterThan(try XCTUnwrap(rig.frames[sibling.windowID]?.width), siblingWidth,
+                             "the sibling fills the gap in the same pass")
+        XCTAssertEqual(rig.focusController.lastFocusedID, mover.windowID)
+        XCTAssertEqual(rig.bordered, [mover.windowID])
+        let slot = try XCTUnwrap(rig.engine.intendedRect(
+            for: mover.windowID, onWorkspace: destination, screen: rig.screens[1]))
+        XCTAssertEqual(rig.warps, [center(slot)])
+    }
+
+    func testFollowWhoseFirstLayoutFailsStillLandsTheCursorOnTheDestination() {
+        let source = rig.visible(on: 0)
+        let mover = StuckWindow(id: 11, live: CGRect(x: 100, y: 100, width: 600, height: 400))
+        rig.add(11, to: source, window: mover)
+        rig.add(12, to: source)
+        rig.tile(source)
+        rig.focused = mover
+        rig.ignoresWrites = [mover.windowID]
+        let destination = rig.hidden(on: 1)
+
+        rig.orchestrator.moveToWorkspace(destination, follow: true)
+
+        XCTAssertEqual(rig.visible(on: 1), destination)
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(mover.windowID), destination)
+        XCTAssertTrue(rig.treeIDs(destination).isEmpty, "no slot to aim at")
+        XCTAssertEqual(rig.warps, [center(rig.rect(1))], "not the live frame on screen 0")
+        XCTAssertEqual(rig.focusController.lastFocusedID, mover.windowID)
+    }
+
+    func testFollowToAWorkspaceShowingOnTheOtherScreenFocusesItWithoutASwitch() {
+        let (mover, _, source) = seedSource()
+        let destination = rig.visible(on: 1)
+        let tenant = rig.add(21, to: destination)
+        rig.tile(destination)
+
+        rig.orchestrator.moveToWorkspace(destination, follow: true)
+
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(mover.windowID), destination)
+        XCTAssertEqual(rig.visible(on: 0), source)
+        XCTAssertEqual(rig.visible(on: 1), destination)
+        XCTAssertTrue(rig.announced.isEmpty, "already showing, as with the silent move")
+        XCTAssertEqual(rig.treeIDs(destination), [mover.windowID, tenant.windowID])
+        XCTAssertEqual(rig.focusController.lastFocusedID, mover.windowID)
+        XCTAssertEqual(rig.bordered, [mover.windowID])
+        XCTAssertEqual(rig.warps.count, 1)
+        XCTAssertTrue(rig.rect(1).contains(rig.warps.first ?? .zero))
+    }
+
+    func testARefusedFollowDoesNotSwitch() {
+        let (mover, _, source) = seedSource()
+        let destination = rig.hidden(on: 0)
+        // one tile per workspace, and the destination already holds one
+        rig.engine.maxSplitsPerMonitor = ["Follow 0": 0]
+        rig.add(31, to: destination)
+
+        rig.orchestrator.moveToWorkspace(destination, follow: true)
+
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(mover.windowID), source)
+        XCTAssertEqual(rig.visible(on: 0), source)
+        XCTAssertTrue(rig.announced.isEmpty)
+        XCTAssertTrue(rig.bordered.isEmpty)
+        XCTAssertTrue(rig.warps.isEmpty)
+        XCTAssertEqual(rig.focusController.lastFocusedID, 0)
+    }
+
+    func testAFloatingWindowFollowsAndStaysFloating() {
+        let source = rig.visible(on: 0)
+        let mover = rig.add(11, to: source, floating: true)
+        rig.add(12, to: source)
+        rig.tile(source)
+        rig.focused = mover
+        let destination = rig.hidden(on: 0)
+
+        rig.orchestrator.moveToWorkspace(destination, follow: true)
+
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(mover.windowID), destination)
+        XCTAssertEqual(rig.visible(on: 0), destination)
+        XCTAssertTrue(rig.cache.floatingWindowIDs.contains(mover.windowID))
+        XCTAssertTrue(rig.treeIDs(destination).isEmpty, "a floater joins no tree")
+        XCTAssertEqual(rig.focusController.lastFocusedID, mover.windowID)
+        XCTAssertEqual(rig.bordered, [mover.windowID])
+    }
+
+    func testAQuickLookPreviewFollowsToTheOtherScreenAsAFloater() {
+        let source = rig.visible(on: 0)
+        let preview = StuckWindow(id: 11, live: CGRect(x: 600, y: 300, width: 800, height: 500))
+        preview.isQuickLookPanel = true
+        rig.add(11, to: source, floating: true, window: preview)
+        rig.focused = preview
+        let destination = rig.hidden(on: 1)
+
+        rig.orchestrator.moveToWorkspace(destination, follow: true)
+
+        XCTAssertEqual(rig.workspaceManager.workspaceFor(preview.windowID), destination)
+        XCTAssertEqual(rig.visible(on: 1), destination)
+        XCTAssertTrue(rig.cache.floatingWindowIDs.contains(preview.windowID))
+        XCTAssertTrue(rig.treeIDs(destination).isEmpty)
+        XCTAssertEqual(rig.focusController.lastFocusedID, preview.windowID)
+        XCTAssertEqual(rig.warps.count, 1)
+        XCTAssertTrue(rig.rect(1).contains(rig.warps.first ?? .zero))
+    }
+
+    func testMoveAndFollowIsHandledLikeAMove() {
+        let action = Action.moveToWorkspaceAndFollow(3)
+        XCTAssertEqual(ActionDispatcher.discriminator(for: action), "moveToWorkspaceAndFollow")
+        XCTAssertEqual(KeybindCategory.from(action), .workspaces)
+        XCTAssertTrue(WindowManager.isDroppedMidDisplayTransition(action))
+        XCTAssertTrue(WindowManager.cancelsPendingRecovery(action))
     }
 }

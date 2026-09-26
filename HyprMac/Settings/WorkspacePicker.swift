@@ -1,4 +1,5 @@
-// Segmented picker for `switchWorkspace` and `moveToWorkspace`.
+// Segmented picker for `switchWorkspace`, `moveToWorkspace` and
+// `moveToWorkspaceAndFollow`.
 
 import SwiftUI
 

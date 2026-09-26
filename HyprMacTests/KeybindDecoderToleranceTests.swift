@@ -195,6 +195,51 @@ final class KeybindDecoderToleranceTests: XCTestCase {
         XCTAssertEqual(saved.restoreLayoutOnLaunch, true)
     }
 
+    func testMoveToWorkspaceAndFollowWireFormatDecodes() throws {
+        let json = #"{"action":{"moveToWorkspaceAndFollow":{"_0":10}},"keyCode":29,"modifiers":11}"#
+        let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
+        XCTAssertEqual(kb.action, .moveToWorkspaceAndFollow(10))
+        XCTAssertEqual(kb.keyCode, 29)
+        XCTAssertEqual(kb.modifiers, [.hypr, .control, .shift])
+    }
+
+    // its own frozen key with the same {"_0": N} payload as moveToDesktop,
+    // never the silent move's key
+    func testMoveToWorkspaceAndFollowEncodesUnderItsOwnKey() throws {
+        let kb = Keybind(keyCode: 20, modifiers: [.hypr, .control, .shift],
+                         action: .moveToWorkspaceAndFollow(3))
+        let s = String(data: try JSONEncoder().encode(kb), encoding: .utf8)!
+        XCTAssertTrue(s.contains(#""moveToWorkspaceAndFollow":{"_0":3}"#), s)
+        XCTAssertFalse(s.contains("moveToDesktop"), s)
+
+        let json = #"{"keybinds":[\#(s)],"gapSize":8,"outerPadding":8,"enabled":true}"#
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        let reloaded = try JSONDecoder().decode(SavedConfig.self, from: try JSONEncoder().encode(saved))
+        XCTAssertEqual(reloaded.keybinds, [kb])
+    }
+
+    // a build from before this action reads it as an unknown key, the way
+    // this build reads the made-up one below. only those binds go: the
+    // silent move, the valid follow bind and every setting survive. a follow
+    // bind with no workspace number is dropped the same way.
+    func testUnknownOrBrokenFollowBindBesideKnownOnesKeepsTheRest() throws {
+        let json = """
+        {"keybinds":[
+            {"action":{"moveToDesktop":{"_0":3}},"keyCode":20,"modifiers":3},
+            {"action":{"moveToWorkspaceAndFollowLater":{"_0":3}},"keyCode":21,"modifiers":11},
+            {"action":{"moveToWorkspaceAndFollow":{}},"keyCode":23,"modifiers":11},
+            {"action":{"moveToWorkspaceAndFollow":{"_0":3}},"keyCode":20,"modifiers":11}
+        ],"gapSize":14,"outerPadding":6,"enabled":true,"focusFollowsMouse":false,
+          "excludedBundleIDs":["com.apple.FaceTime"]}
+        """
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(saved.keybinds.map(\.action), [.moveToWorkspace(3), .moveToWorkspaceAndFollow(3)])
+        XCTAssertEqual(saved.gapSize, 14)
+        XCTAssertEqual(saved.outerPadding, 6)
+        XCTAssertEqual(saved.focusFollowsMouse, false)
+        XCTAssertEqual(saved.excludedBundleIDs, ["com.apple.FaceTime"])
+    }
+
     // MARK: - malformed-direction tolerance (was crash, now log + fallback)
 
     func testMalformedFocusDirectionFallsBack() throws {

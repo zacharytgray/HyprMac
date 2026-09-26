@@ -49,6 +49,14 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_0), modifiers: [.hypr, .shift],
                              action: .moveToWorkspace(10)))
 
+        // hypr + ctrl + shift + 1-9,0: move window to workspace N and follow it there
+        for (i, key) in numKeys.enumerated() {
+            binds.append(Keybind(keyCode: key, modifiers: [.hypr, .control, .shift],
+                                 action: .moveToWorkspaceAndFollow(i + 1)))
+        }
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_0), modifiers: [.hypr, .control, .shift],
+                             action: .moveToWorkspaceAndFollow(10)))
+
         // hypr + ctrl + left/right: move focused window to adjacent monitor
         binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .control],
                              action: .moveWindowToMonitor(.left)))
