@@ -361,7 +361,8 @@ class MouseTrackingManager {
     /// Pointer hit test at `point` (CG coordinates) against the cached list.
     func hitTest(at point: CGPoint, maxAge: CFAbsoluteTime = MouseTrackingManager.windowListMaxAge) -> WindowStacking.Hit {
         guard let windows = stackedWindows(maxAge: maxAge) else { return .none }
-        return WindowStacking.hitTest(point, in: windows, frontmostPID: frontmostPID(), ownPID: ownPID)
+        return WindowStacking.hitTest(point, in: windows, frontmostPID: frontmostPID(), ownPID: ownPID,
+                                      managedFloaters: floatingWindowIDs())
     }
 
     /// What hover focus should see at `point`. An open popup of the
@@ -385,7 +386,8 @@ class MouseTrackingManager {
             hyprLog(.notice, .mouse, "ffm resumed: popup \(pausedByPopupID) gone")
             pausedByPopupID = 0
         }
-        return WindowStacking.hitTest(point, in: windows, frontmostPID: front, ownPID: ownPID)
+        return WindowStacking.hitTest(point, in: windows, frontmostPID: front, ownPID: ownPID,
+                                      managedFloaters: floatingWindowIDs())
     }
 
     /// Called when a menu (app menu or right-click context menu) opens.

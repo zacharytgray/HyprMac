@@ -35,7 +35,7 @@ struct FloatToTileRejectionMessage {
 /// focus restore.
 ///
 /// Keyed by the floater and the tile covering it. A raise that left the
-/// floater covered (Tahoe often refuses a cross-app AXRaise) cools the pair
+/// floater covered (macOS 27 ignores a cross-app AXRaise) cools the pair
 /// down. So does a raise that follows our own restore within `echoWindow`,
 /// which is the raise → restore → activation → raise loop, and a burst of
 /// raises for one pair from any cause.
@@ -572,7 +572,9 @@ final class FloatingWindowController {
     /// clicked), and while `throttle` cools the pair down. A raise that
     /// leaves the floater under the tile, or a refocus that misses, cools
     /// the pair down for 30 s. One click buys at most one raise, so this
-    /// cannot loop on its own.
+    /// cannot loop on its own. Only a floater of the tile's own app can
+    /// come back: macOS 27 ignores a cross-app AXRaise, so a cross-app pair
+    /// logs `ineffective` and rests.
     func raiseAfterClick(_ press: ClickPress) {
         let tileID = press.windowID
         guard isTiledWindow(tileID), let tile = stateCache.cachedWindows[tileID],
@@ -731,7 +733,7 @@ final class FloatingWindowController {
 
         var pairs: [RaiseBehindThrottle.Pair] = []
         for (index, entry) in windows.enumerated()
-        where floaters.contains(entry.windowID) && entry.layer == 0 {
+        where floaters.contains(entry.windowID) && WindowStacking.isFloaterLayer(entry.layer) {
             guard let frame = entry.bounds
                     ?? stateCache.cachedWindows[entry.windowID].flatMap(windowFrameForZOrder) else { continue }
             let cover = windows[..<index].first { above in
