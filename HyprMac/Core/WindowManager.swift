@@ -3218,6 +3218,9 @@ private extension WindowManager {
         admissionRecovery.isDisplayTransitionPending = { [weak self] in
             self?.displayTransitionPending ?? true
         }
+        admissionRecovery.isSessionInterrupted = { [weak self] in
+            self?.discovery.isSessionInterrupted ?? false
+        }
         admissionRecovery.liveWindow = { [weak self] id in
             guard let self,
                   self.stateCache.knownWindowIDs.contains(id),

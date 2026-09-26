@@ -326,7 +326,11 @@ which never holds a stranded window, so nothing they do would ever give it
 another attempt. Cancelling there is how a move followed quickly by a resize
 left a window assigned, in no tree, and with nothing scheduled. A retry that
 comes due while the screens are being reconfigured waits as well, rather
-than tiling into keys that are about to move. Scratchpad tiling never enters
+than tiling into keys that are about to move. So does one that comes due
+while the session is locked, the displays sleep or the user session is
+switched out: the window list is partial then, and an attempt from it would
+lay the key out without the windows it is missing. It gets its attempt from
+the first poll or retile after the span ends. Scratchpad tiling never enters
 this path.
 
 Every visible nonfloating assignment is therefore a verified tile, a window

@@ -210,6 +210,11 @@ final class WindowDiscoveryService {
         interruptions.removeAll()
     }
 
+    /// Whether a lock, display sleep or switched-out session span is open.
+    /// The admission recovery reads this so its own retry timer never runs
+    /// an attempt from the partial window list a poll would ignore.
+    var isSessionInterrupted: Bool { sessionInterruptionActive() }
+
     /// Whether an interruption is in effect. Past the cap it ends itself.
     private func sessionInterruptionActive() -> Bool {
         guard let start = interruptions.values.min() else { return false }
