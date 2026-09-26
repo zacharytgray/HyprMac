@@ -761,6 +761,52 @@ looked", which only the file log keeps:
   `pollWindowChanges`, with the snapshot size and the elapsed wall
   clock since the previous poll.
 
+### "Why isn't this window managed?" (filtered windows, Quick Look)
+
+Discovery keeps only what `WindowAdmissionFilter` admits: standard windows
+and Quick Look panels, which always float. Everything else is dropped
+before it can claim a CG id. Each dropped window logs once per window id
+per launch, `[notice] [discovery]`:
+
+```
+AX filter dropped: wid=4811 pid=512 bundle=com.apple.finder reason=subrole role=AXWindow subrole=AXDialog roleDesc=dialog ident=nil modal=false title='…' frame=(400,200,265,480) cg=layer0 alpha=1.00
+```
+
+`reason` is `role`, `subrole` or `modal`. It can also be `fullScreen` or
+`noVisibleWindow` for a Quick Look-subrole window whose own id could not be
+read. `cg` is the window's own CG entry, or `none` when it has none on
+layer 0 or 3. Minimized windows are skipped before the filter and do not
+log.
+
+A window with the Quick Look subrole and a readable id logs its verdict
+instead, when the verdict changes, so once per opening while it stays
+admitted:
+
+```
+quick look panel admitted: wid=812 pid=431 bundle=com.apple.finder cg=layer3 alpha=1.00 frame=(555,238,810,543) — floats
+quick look panel not admitted: wid=812 pid=431 bundle=com.apple.finder reason=noVisibleWindow cg=layer3 alpha=0.00 frame=(555,238,810,543)
+quick look panel gone: 812 (com.apple.finder) — forgotten with its floating state, no ghost
+```
+
+`not admitted` reasons are `modal`, `fullScreen` (native full screen) and
+`noVisibleWindow` (no own CG window, alpha 0 as in Quick Look's own
+full-screen view, or a layer other than 0 or 3). `gone` means discovery
+forgot the panel instead of keeping it as a ghost. An admitted panel also
+logs `auto-float quick look preview` at `[debug] [discovery]` (file log
+only), and Hypr+T on it logs `float→tile refused: <id> is a quick look
+preview` at `[notice] [floating]`.
+
+To learn what a preview reports on a new macOS, open one and read the file
+log:
+
+```bash
+grep -E 'AX filter dropped|quick look' ~/Library/Logs/HyprMac/com.zachgray.HyprMac.debug.log
+```
+
+If the panel shows up as `AX filter dropped` with some other subrole, the
+subrole changed; `WindowAdmissionFilter.quickLookSubrole` is the one value
+to update.
+
 ## Retile churn / full-screen flicker
 
 Symptom: two tiled windows, one keeps snapping full-screen and back
