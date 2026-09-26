@@ -220,6 +220,27 @@ the line is only reached inside a rejected candidate or adjusted pass,
 and a restoration pass classifies nothing, so it logs no `min evidence:`
 lines at all.
 
+Every candidate that is refused also logs one line at `.notice` under
+`tiling`, so Console shows it without the file log or the trace tier:
+
+```
+verified layout candidate failed: reason=geometryMismatch(74) phase=candidate off=[74: target=(1724.0, 38.0, 1708.0, 1394.0) actual=(1724.0, 38.0, 1708.0, 1136.0)] actual=[115: (8.0, 38.0, 1708.0, 1394.0), 74: (1724.0, 38.0, 1708.0, 1136.0)]
+verified layout rollback leaves newcomers in place: ids=[74] — their originals are outside the restoration rect
+```
+
+`off` lists each window that read back more than a point from its target,
+or `actual=unread` when the readback never got it. `phase` is the pass that
+failed last: `candidate`, or `adjusted` after a min-size ratio adjustment.
+The `verified layout rejected and restored:` and `verified layout
+degraded:` lines that follow print the frames after the rollback, which is
+why this line exists. The second line names newcomers whose captured
+original was off the restoration rect — a window moved in from another
+screen, or a parked one. The rollback puts the incumbents back and leaves
+those wherever the candidate left them: on the destination if their writes
+went out, where they were if the candidate failed before reaching them. An
+ordinary tiling pass then reports them stranded, and the admission
+recovery's lines follow.
+
 `MinSizeMemory` then logs what it did with that evidence under
 `category: lifecycle`, in three shapes:
 
@@ -760,6 +781,35 @@ looked", which only the file log keeps:
 - `poll: 14 windows, 213ms since last` — at the top of every
   `pollWindowChanges`, with the snapshot size and the elapsed wall
   clock since the previous poll.
+
+### Windows rearranged after a lock or sleep
+
+A locked session, sleeping displays and a switched-out user session all
+empty the on-screen window list. `WindowDiscoveryService` holds every
+missing window from the start of such a span to its end. A poll that finds
+a known window missing does nothing else: nothing is marked hidden, nothing
+leaves its tree, and no retile, drift re-apply, park repair or recovery
+attempt runs from it. All `[notice] [discovery]`:
+
+```
+session interruption began (locked) — missing windows are not marked gone until it ends
+session interruption: 5/5 known windows missing — holding them, nothing marked gone
+session interruption: screens asleep ended after 142s, still locked
+session interruption ended (locked) after 205s
+session interruption ended by hotkey press (was locked)
+session interruption ended by action (was locked)
+session interruption cap reached after 43200s (locked) — missing windows count again
+```
+
+The spans are `com.apple.screenIsLocked` to `screenIsUnlocked`,
+`screensDidSleep` to `screensDidWake`, and `sessionDidResignActive` to
+`sessionDidBecomeActive`. The span ends when every reason has ended. The
+holding line is `.notice` once per span and `.debug` after that. A span
+whose end notification never came ends on any hotkey press, a menu-bar
+action, a stop, or the 12-hour cap. The 4-second `discovery suppressed` hold after each
+notification is unchanged. Before this, a lock that outlasted it and the
+three mass-gone skips marked every window hidden, and the unlock rebuilt
+each tree in reading order with default ratios.
 
 ## Retile churn / full-screen flicker
 

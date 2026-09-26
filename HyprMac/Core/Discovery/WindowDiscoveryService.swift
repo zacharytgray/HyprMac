@@ -55,6 +55,10 @@ struct WindowChanges {
     /// `true` when a guarded partial snapshot should be checked again soon
     /// instead of waiting for the slow reconcile timer.
     let requestsRecheck: Bool
+    /// `true` when the cycle was skipped because the session is locked or
+    /// the displays are asleep. The snapshot is not the desktop, so the
+    /// caller does nothing else with it either.
+    var heldForInterruption = false
 
     /// `true` when at least one observed change warrants a retile.
     /// Stale-state sweeps do not bump this — they are silent state
@@ -117,6 +121,30 @@ final class WindowDiscoveryService {
     private var hiddenAt: [CGWindowID: Date] = [:]
     private static let flapWindowSec: TimeInterval = 5.0
 
+    /// A locked session, sleeping displays or a switched-out user session
+    /// empty the on-screen window list, so a missing window says nothing
+    /// then. Without this a lock outlasted the 4 s wake suppression and the
+    /// three mass-gone skips, every window was marked hidden and pulled out
+    /// of its tree, and the unlock rebuilt each tree in reading order with
+    /// default ratios. Each reason keeps the time it began.
+    private var interruptions: [String: Date] = [:]
+    private var interruptionHoldLogged = false
+    /// how long a span may last if its end notification never comes. long
+    /// enough for a night. a hotkey press, a menu action or a stop also
+    /// ends it: the lock screen keeps all of those from happening.
+    static let interruptionCap: TimeInterval = 12 * 60 * 60
+    /// injected so tests can move past the cap
+    var now: () -> Date = { Date() }
+
+    private static let interruptionSpans: [String: (reason: String, begins: Bool)] = [
+        "com.apple.screenIsLocked": ("locked", true),
+        "com.apple.screenIsUnlocked": ("locked", false),
+        NSWorkspace.screensDidSleepNotification.rawValue: ("screens asleep", true),
+        NSWorkspace.screensDidWakeNotification.rawValue: ("screens asleep", false),
+        NSWorkspace.sessionDidResignActiveNotification.rawValue: ("session inactive", true),
+        NSWorkspace.sessionDidBecomeActiveNotification.rawValue: ("session inactive", false),
+    ]
+
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
          displayManager: DisplayManager,
@@ -149,6 +177,52 @@ final class WindowDiscoveryService {
         )
     }
 
+    /// Start or end one reason for a session interruption, by notification
+    /// name. Names that open or close no span are ignored.
+    func noteSystemInterruption(_ name: String) {
+        guard let span = Self.interruptionSpans[name] else { return }
+        let wasActive = !interruptions.isEmpty
+        if span.begins {
+            guard interruptions[span.reason] == nil else { return }
+            interruptions[span.reason] = now()
+            if !wasActive {
+                interruptionHoldLogged = false
+                hyprLog(.notice, .discovery, "session interruption began (\(span.reason))"
+                        + " — missing windows are not marked gone until it ends")
+            }
+            return
+        }
+        guard let since = interruptions.removeValue(forKey: span.reason) else { return }
+        let seconds = Int(now().timeIntervalSince(since))
+        if interruptions.isEmpty {
+            hyprLog(.notice, .discovery, "session interruption ended (\(span.reason)) after \(seconds)s")
+        } else {
+            hyprLog(.notice, .discovery, "session interruption: \(span.reason) ended after \(seconds)s,"
+                    + " still \(interruptions.keys.sorted().joined(separator: ", "))")
+        }
+    }
+
+    /// End any interruption on evidence that the session is in use.
+    func endSessionInterruption(evidence: String) {
+        guard !interruptions.isEmpty else { return }
+        hyprLog(.notice, .discovery, "session interruption ended by \(evidence)"
+                + " (was \(interruptions.keys.sorted().joined(separator: ", ")))")
+        interruptions.removeAll()
+    }
+
+    /// Whether an interruption is in effect. Past the cap it ends itself.
+    private func sessionInterruptionActive() -> Bool {
+        guard let start = interruptions.values.min() else { return false }
+        let elapsed = now().timeIntervalSince(start)
+        guard elapsed < Self.interruptionCap else {
+            hyprLog(.notice, .discovery, "session interruption cap reached after \(Int(elapsed))s"
+                    + " (\(interruptions.keys.sorted().joined(separator: ", "))) — missing windows count again")
+            interruptions.removeAll()
+            return false
+        }
+        return true
+    }
+
     /// Testable entry point. Pure with respect to AX and `NSWorkspace`:
     /// the caller supplies the snapshot and running-pid set, and this
     /// method does the diff and mutates the cache.
@@ -167,6 +241,18 @@ final class WindowDiscoveryService {
         // whole cycle before mutating any cache state — but only a bounded
         // number of times, so a genuine mass close still processes.
         let apparentlyGone = stateCache.knownWindowIDs.subtracting(currentIDs)
+        // while locked or asleep nothing is marked gone, and nothing else in
+        // the cycle is applied either: the snapshot is not the desktop
+        if !apparentlyGone.isEmpty, sessionInterruptionActive() {
+            let line = "session interruption: \(apparentlyGone.count)/\(stateCache.knownWindowIDs.count)"
+                + " known windows missing — holding them, nothing marked gone"
+            hyprLog(interruptionHoldLogged ? .debug : .notice, .discovery, line)
+            interruptionHoldLogged = true
+            return WindowChanges(newWindows: [], newOnDisabledMonitor: [], returned: [],
+                                 goneIDs: [], fullyForgottenIDs: [], screenDrift: [],
+                                 focusedWindowGone: false, requestsRecheck: false,
+                                 heldForInterruption: true)
+        }
         if apparentlyGone.count >= 3, apparentlyGone.count * 2 > stateCache.knownWindowIDs.count,
            massGoneSkips < 3 {
             massGoneSkips += 1

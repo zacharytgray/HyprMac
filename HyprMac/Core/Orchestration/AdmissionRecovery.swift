@@ -220,8 +220,10 @@ final class AdmissionRecovery {
         hyprLog(.notice, .tiling, "admission retry cancelled: ids=[\(windowID)] reason=\(reason)")
     }
 
-    /// Drop everything. Used for a stop, a display change, and any later key
-    /// geometry-changing press, all of which make the captured context stale.
+    /// Drop everything. Used for a stop, a display change, and a later key
+    /// press that changes membership, all of which make the captured context
+    /// stale. Resize, swap and split toggle do not: see
+    /// `WindowManager.cancelsPendingRecovery`.
     func cancelAll(reason: String) {
         guard !records.isEmpty else { return }
         let ids = Set(records.keys)
