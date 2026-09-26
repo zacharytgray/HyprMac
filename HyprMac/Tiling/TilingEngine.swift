@@ -303,6 +303,20 @@ class TilingEngine {
         observedMinimumGeneration.removeValue(forKey: windowID)
     }
 
+    /// Record `ids` as verified incumbents of `workspace`. A window belongs
+    /// to one workspace, so this ends its incumbency on every other: one
+    /// dragged to another screen, reassigned by drift and later moved back
+    /// is a newcomer there. As a returning incumbent it was left out of the
+    /// admission result, so a failed layout stranded it with nothing
+    /// scheduled.
+    private func admit(_ ids: [CGWindowID], toWorkspace workspace: Int) {
+        let admitted = Set(ids)
+        for other in Array(admittedWindowIDs.keys) where other != workspace {
+            admittedWindowIDs[other]?.subtract(admitted)
+        }
+        admittedWindowIDs[workspace, default: []].formUnion(admitted)
+    }
+
     /// Drop verified-admission identity for `windowID`, leaving its learned
     /// minima alone. Discovery calls this the moment an id turns up as a new
     /// window rather than a returned one: CGWindowIDs get recycled, and a
@@ -521,7 +535,7 @@ class TilingEngine {
                 hyprLog(.notice, .lifecycle, "layout rebuild ws\(workspace): verification refused — kept live tree (\(reason.map { "\($0)" } ?? "superseded"))")
                 return .rejected(reason)
             }
-            admittedWindowIDs[workspace, default: []].formUnion(candidate.allWindows.map(\.windowID))
+            admit(candidate.allWindows.map(\.windowID), toWorkspace: workspace)
         }
 
         if let live = trees[key] { live.root = candidate.root } else { trees[key] = candidate }
@@ -1647,7 +1661,7 @@ class TilingEngine {
                                              ? maxDepth(for: screen) : nil)
         if publishes(outcome), layoutGeneration == generation {
             if let live { live.root = candidate.root } else { trees[key] = candidate }
-            admittedWindowIDs[workspace, default: []].formUnion(candidate.allWindows.map(\.windowID))
+            admit(candidate.allWindows.map(\.windowID), toWorkspace: workspace)
         }
 
         // clean up empty trees for this workspace on other screens
@@ -2493,7 +2507,8 @@ class TilingEngine {
         let key = TilingKey(workspace: prepared.workspace, screen: prepared.screen)
         guard trees[key]?.allWindows.isEmpty ?? true else { return false }
         trees[key] = prepared.candidate
-        admittedWindowIDs[prepared.workspace] = Set(prepared.candidate.allWindows.map(\.windowID))
+        admittedWindowIDs[prepared.workspace] = []
+        admit(prepared.candidate.allWindows.map(\.windowID), toWorkspace: prepared.workspace)
         unverified.removeValue(forKey: key)
         return true
     }
@@ -2731,7 +2746,7 @@ class TilingEngine {
             return .failed(.layoutRejected(reason))
         }
         if let live { live.root = candidate.root } else { trees[key] = candidate }
-        admittedWindowIDs[key.workspace, default: []].formUnion(candidate.allWindows.map(\.windowID))
+        admit(candidate.allWindows.map(\.windowID), toWorkspace: key.workspace)
         return success
     }
 }

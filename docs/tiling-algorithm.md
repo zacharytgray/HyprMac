@@ -12,8 +12,11 @@ recovery turn without another sizing attempt. Count-based initial assignment
 is unchanged. Float-to-tile never evicts a neighbor into scratchpad.
 
 Verified incumbent identity survives temporary tree removal and display
-migration. Returning incumbents take slots before newcomers and never become
-admission fallback targets. If returning incumbents cannot all fit, the engine
+migration. It ends when the window leaves by an explicit move or is
+admitted to another workspace, so a window that drifted to another screen
+and is moved back is a newcomer again. Returning incumbents take slots
+before newcomers and never become admission fallback targets. If returning
+incumbents cannot all fit, the engine
 writes nothing and keeps the whole key unverified. Adjustment uses guarded
 refusal evidence and skips an adjusted write when the proposed frames cannot
 accommodate the refused axes within the existing candidate allowance.

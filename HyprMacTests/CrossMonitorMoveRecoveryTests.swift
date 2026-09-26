@@ -336,6 +336,31 @@ final class CrossMonitorMoveRecoveryTests: XCTestCase {
         XCTAssertTrue(rig.treeIDs(2, rig.builtIn).isEmpty)
     }
 
+    func testAWindowThatDriftedAwayIsANewcomerWhenItIsMovedBack() {
+        // dragged by mouse onto the DELL: discovery reads drift, reassigns
+        // it, and the retile admits it there
+        rig.trace.frames[74] = CGRect(x: rig.dellRect.minX + 700, y: rig.dellRect.minY + 40,
+                                      width: 600, height: 500)
+        rig.workspaceManager.moveWindow(74, toWorkspace: 1)
+        retileVisible()
+        XCTAssertEqual(rig.treeIDs(1, rig.dell), [115, 74])
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+
+        // Hypr+Shift+2 takes it back, and the built-in refuses it once
+        rig.trace.hopShortfall[74] = 258
+        let mover = rig.windows[74]!
+        rig.engine.removeWindow(mover, fromWorkspace: 1)
+        rig.workspaceManager.moveWindow(74, toWorkspace: 2)
+        retileVisible()
+
+        XCTAssertEqual(recovery.pendingWindowIDs, [74],
+                       "leaving workspace 2 by drift ended its incumbency there, so it is stranded, not orphaned")
+
+        fire()
+
+        XCTAssertEqual(rig.treeIDs(2, rig.builtIn), [74])
+    }
+
     func testAMoveThatKeepsFailingFloatsOnTheDestinationNotTheSource() {
         rig.trace.heightCap[74] = 1136
 
