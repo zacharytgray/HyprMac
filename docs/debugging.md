@@ -651,10 +651,10 @@ What changed:
   floater/tile pair down after a raise that did not lift it (30 s), a raise
   within 1 s of our own restore (15 s, the loop), or 4 raises in 5 s (10 s).
 - `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus
-  invariant and the raise restore. Workspace switches, window moves and the
-  scratchpad still use their own focus calls, which can lift a tile. When a
-  floater
-  covers the target tile it sends only `_SLPSSetFrontProcessWithOptions` and
+  invariant, the raise restore and the click re-raise. Workspace switches,
+  window moves and the scratchpad still use their own focus calls, which can
+  lift a tile. When a floater covers the target tile it sends only
+  `_SLPSSetFrontProcessWithOptions` and
   the key-window event records, as yabai does, plus yabai's lost/gained pair
   when focus moves inside the frontmost app. No kAXMain write, no
   `activate()`, no click. 80 ms later it checks whether the target app is
@@ -662,6 +662,33 @@ What changed:
   the usual path and logs it, unless a menu opened or the user switched to
   another app meanwhile. Hypr+Arrow warps the cursor to the part of the
   tile the floater leaves uncovered.
+- The dim cuts a floater's hole only where the floater is in front. For
+  each floater, `WindowStacking.occluders` lists the tiles stacked above it
+  in the window list, and `DimmingOverlay` takes them back out of the hole.
+  Before this, clicking a tile over a floater left a bright rectangle on
+  the tile where the floater used to show. A floater the list does not show
+  keeps its whole hole, as before. The cutouts are redrawn when the stack
+  can change: after a click's mouse-up, a focused or main window change, an
+  app activation, a raise-behind or click re-raise, and the usual focus
+  path. `scheduleRestackRefresh` coalesces those into one fresh list read.
+- The click re-raise keeps floaters in front of tiles after a click. About
+  40 ms after the mouse-up of a real click on a tile (not a drag, not a
+  Hypr or Option gesture, not our own synthetic click), each floater on the
+  same workspace that the tile now covers gets an AXRaise. 50 ms later the
+  stack is checked, and keyboard focus goes back to the tile through
+  `TiledFocusRouter` (`reason=click-reraise`), so the tile stays key with
+  the floater on top. The click itself reaches the tile as usual. It stands
+  down while a menu tracks or a popup is open, while the scratchpad is up,
+  when focus has moved on, and when the click landed inside the floater's
+  frame, since raising it would cover the spot just clicked. A raise that
+  leaves the floater under the tile, or a refocus that misses, cools the
+  pair down for 30 s, so an app that refuses stops costing a flicker per
+  click. A click re-raise counts toward no burst, since it follows one
+  click. When the floater's app took the front, the refocus counts as a
+  restore, so a raise-behind for the same pair within 1 s is the loop.
+- A click is credited to the window the window list puts under the
+  pointer when that window is one of ours, so a floater a tile has buried
+  no longer takes the focus tracker from the tile that got the click.
 
 Log lines, all at notice level:
 
@@ -676,6 +703,7 @@ Log lines, all at notice level:
 | `raise behind ineffective: wid=<id> still under <id> — cooldown 30s` | floating | the window server kept the tile on top |
 | `raise behind kept focus: wid=<id> front=<pid>` | floating | no restore sent |
 | `raise behind restore: wid=<id> (front moved <pid> → <pid>)` | floating | the raised app took focus; it went back |
+| `raise behind restore skipped: popup wid=<id> layer=<n>` | floating | a menu opened meanwhile, so focus stayed where it was |
 | `raise behind cooldown: pair=<floater>/<tile> reason=loop\|burst for <n>s` | floating | loop or burst stopped |
 | `no-raise focus: wid=<id> pid=<pid> reason=<why> floaters=[…] front=<pid> prevKey=<id>` | focus | a covered tile was focused without activate or click |
 | `no-raise focus verify: wid=<id> … front=<pid> (want <pid>) key=<id> floatersAbove=[…] buried=[…] → landed\|missed` | focus | whether it worked |
@@ -685,11 +713,27 @@ Log lines, all at notice level:
 | `no-raise focus fallback skipped: …` | focus | a menu opened, or the user switched apps, meanwhile |
 | `focus invariant skipped: popup …` | focus | the invariant held off |
 | `ensureFocus skipped: popup …` | focus | a bare Hypr press left the menu open |
+| `click re-raise: floater=<id> tile=<id> sameApp=<bool> → on top` | floating | a click buried the floater and the raise put it back |
+| `click re-raise: … → ineffective — cooldown 30s` | floating | the window server kept the tile on top; the pair rests |
+| `click re-raise: … → skipped(<reason>)` | floating | `click under floater`, `focus moved`, `popup …`, `menu tracking`, `scratchpad`, `tile app not front`. A cooldown skip logs at debug |
+| `click re-raise failed: wid=<id> rc=<n>` | floating | AXRaise returned an error |
+| `click re-raise refocus missed: tile=<id> floaters=[…] — cooldown 30s` | floating | the tile did not stay key under the floater |
+| `click re-raise refocus skipped: …` | floating | focus moved or a menu opened before the hand-back |
 
 One repro answers the Tahoe question. If `verify` says `landed` with the
 floater in `floatersAbove` and an empty `buried`, the no-raise path works
 there. If it says `missed` and a `fallback` line follows, Tahoe refused it
-and hover onto a covered tile still lifts the tile, as before.
+and hover onto a covered tile still lifts the tile, as before. On the
+MacBook (macOS 27, Safari only, September 26) hover, Hypr+Arrow and typing
+into a covered tile all logged `landed` with the floater in
+`floatersAbove`. Cross-app no-raise focus is still unproven.
+
+For the click re-raise, click a tile beside a floater. Same app should log
+`click re-raise: … sameApp=true → on top`, then `no-raise focus: …
+reason=click-reraise` and `no-raise focus verify: … → landed` with the
+floater in `floatersAbove`. A cross-app pair logs `→ on top` if Tahoe
+honours the AXRaise, or `→ ineffective — cooldown 30s` once if not; the tile
+then stays on top and the dim shows the floater only where it is in front.
 
 ### Rejected drag feedback and source restoration
 
@@ -824,6 +868,12 @@ poll/retile cycles. `WindowManager.currentTiledRects` re-reads live
 AX before `refreshDimming` and `refreshBorderOcclusion` to avoid
 the "half-dim" artifact — if you see stale-rect dimming, that read
 path is the place to look first.
+
+A bright hole on a tile, or a dimmed floater, means the floater
+cutout followed an old stack. The cutouts come from the window list
+through the mouse tracker's 80 ms cache, and `scheduleRestackRefresh`
+drops that cache first. A z-order change none of its triggers sees
+stays wrong until the next focus change or poll.
 
 ### "Why did discovery think this was a new window?"
 
