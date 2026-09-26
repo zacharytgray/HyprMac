@@ -83,7 +83,9 @@ It encodes under its own key, `{"moveToWorkspaceAndFollow":{"_0":N}}`,
 with the same payload as `moveToDesktop`. The key is frozen like the others.
 
 `WorkspaceOrchestrator.moveToWorkspace(N, follow: true)` runs the same checks
-as the silent move, and a refused move beeps and does not switch. After that:
+as the silent move and never switches when the move does not happen: a
+refusal beeps and shakes, and no focused window or a window already on N
+does nothing. After that:
 
 - **Destination showing on another monitor:** the same as the silent move.
   The window is placed there, focused, and the cursor follows. No switch HUD.
@@ -94,13 +96,15 @@ as the silent move, and a refused move beeps and does not switch. After that:
   destination is on the source's monitor, the source is hidden as it
   stood. When it is on the other monitor, the source stays up and closes
   the gap in that same pass.
-- **Floaters and Quick Look previews** stay floating. A floater bound for
-  the other monitor is carried there first.
+- **Floaters and Quick Look previews** stay floating, except a floater
+  coming off a disabled monitor, which tiles as it does with the silent
+  move. A floater bound for the other monitor is carried there first.
 
 The cursor goes to where the window is going: its slot in the destination
 tree, else the frame a floater was carried to, else its live frame. It
 takes the first of those that lies on the destination screen, and falls
-back to the middle of that screen. The live frame can still read the
+back to the middle of that screen. A `follow warp:` line at `.notice` says
+which one it used. The live frame can still read the
 source screen when the first layout attempt fails, and `ensureFocus` picks
 from the screen under the cursor. So a follow that trusted it handed the
 next Hypr press to a tile on the wrong monitor. The silent move's follow to

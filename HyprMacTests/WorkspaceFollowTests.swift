@@ -418,8 +418,11 @@ final class WorkspaceFollowTests: XCTestCase {
         XCTAssertTrue(rig.cache.floatingWindowIDs.contains(preview.windowID))
         XCTAssertTrue(rig.treeIDs(destination).isEmpty)
         XCTAssertEqual(rig.focusController.lastFocusedID, preview.windowID)
+        // carried to the same spot one screen over, middle (3400, 550), while
+        // the live frame still reads screen 0
         XCTAssertEqual(rig.warps.count, 1)
-        XCTAssertTrue(rig.rect(1).contains(rig.warps.first ?? .zero))
+        XCTAssertEqual(rig.warps.first?.x ?? 0, 3400, accuracy: 0.01)
+        XCTAssertEqual(rig.warps.first?.y ?? 0, 550, accuracy: 0.01)
     }
 
     func testMoveAndFollowIsHandledLikeAMove() {
