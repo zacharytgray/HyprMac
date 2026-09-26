@@ -61,8 +61,8 @@ permissions, and the recommended macOS settings.
 - For the default Caps Lock Hypr key: Caps Lock must stay set to **"⇪ Caps Lock"** in System
   Settings → Keyboard → Keyboard Shortcuts → Modifier Keys, not "No Action". The pane is per
   keyboard, so check each one you use. HyprMac remaps Caps Lock to F18 itself.
-- The same holds if Control, Option, or Command is your Hypr key: leave it on its default
-  there. Tab, backtick, backslash, F13–F20, and Shift are not in that pane and need nothing.
+- The same holds if Right Option or Right Command is your Hypr key: leave Option or Command on
+  its default there. Tab, backtick, backslash, and F13–F20 are not in that pane and need nothing.
 - macOS gives apps no way to read that setting, so HyprMac shows this as a reminder in
   onboarding and in Settings → Keys, with an Open Keyboard Settings button.
 
@@ -79,6 +79,11 @@ You'll feel at home. The differences are mostly macOS being macOS:
 - **Hypr + F:** native macOS fullscreen spawns its own Space and wrecks the layout, so HyprMac
   gives the window a dedicated empty workspace on its display instead.
 - **Focus follows mouse:** there if you want it, with an adjustable hover rate.
+- **Hypr key:** Caps Lock by default. Settings → Keys also offers Tab, backtick, backslash,
+  F13–F20, Right Option, and Right Command. Shift and Control are not offered because many
+  default shortcuts add them to Hypr. Left Option and Left Command are not offered because they
+  carry everyday macOS shortcuts like ⌘W and ⌥←. A config that already uses one of these keeps
+  working, and Settings → Keys says why it is no longer recommended.
 - **Config:** everything, including the Hypr key itself, lives in Settings and is saved as JSON
   at `~/Library/Application Support/HyprMac/config.json`. The schema is in
   [Keybinds and actions](docs/keybinds-and-actions.md).

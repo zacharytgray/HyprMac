@@ -288,6 +288,38 @@ There is no default binding. The action ignores key autorepeat, so
 holding the chord runs the program once, and — like Launch App — it
 is unavailable while tiling is paused.
 
+## Hypr key
+
+`hyprKey` in `config.json` holds a `HyprKey` raw value. The Settings →
+Keys picker offers `HyprKey.pickerChoices`: `capsLock` (the default),
+`tab`, `grave`, `backslash`, `f13` through `f20`, `rightOption` and
+`rightCommand`.
+
+`leftShift`, `rightShift`, `leftControl`, `rightControl`, `leftOption`
+and `leftCommand` are no longer offered. Default binds add Shift
+(Hypr+Shift+…) and Control (Hypr+Ctrl+…) on top of Hypr, so either one
+as the Hypr key makes those binds unreachable or awkward. Left Option
+and Left Command take over everyday macOS shortcuts such as ⌘W, ⌘T,
+⌘1–9 and ⌥←. No default bind adds Option or Command on top of Hypr, and
+most people type those shortcuts with the left-hand keys, so Right Option
+and Right Command stay offered.
+
+The dropped cases stay in the enum with their raw values. `SavedConfig`
+decodes `hyprKey` strictly: an unknown value throws,
+`ConfigStore.loadSavedConfig` returns nil, and every setting resets to
+defaults. With iCloud sync on, the next save pushes that reset to the
+other machines. So a config that already
+names a dropped key keeps it and keeps working. `HyprKey.pickerRows(for:)`
+appends that key to the picker so the selection still has a matching
+row, and `HyprKey.notRecommendedNote` explains in one sentence why it is
+no longer recommended. The row goes away once the user picks another
+key. There is no migration.
+
+Never remove a `HyprKey` case or change a raw value. `HyprKeyPickerTests`
+pins the offered list, the kept row, the note, and decoding of every
+dropped value. Modifier Keys guidance (`HyprKeySystemGuidance`) still
+covers the dropped Control, Option and Command keys.
+
 ## Hex color storage
 
 `UserConfig.focusBorderColorHex` and `floatingBorderColorHex` are
