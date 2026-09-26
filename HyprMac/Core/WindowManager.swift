@@ -450,6 +450,7 @@ class WindowManager {
         }
         actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        actionDispatcher.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
         actionDispatcher.toggleScratchpad = { [weak self] in self?.scratchpad.toggle() }
         actionDispatcher.moveToScratchpad = { [weak self] in self?.scratchpad.sendFocusedWindow() }
         actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }
@@ -901,6 +902,8 @@ class WindowManager {
             let downNS = CGPoint(x: downCG.x,
                                  y: self.displayManager.primaryScreenHeight - downCG.y)
             self.mouseDownPointCG = downCG
+            // a press is what opens a menu, so the next hover must read a fresh list
+            self.mouseTracker.invalidateWindowListCache()
             self.tiledDragHandler.handleMouseDown(at: downCG)
             self.armDimDragIfFloating(downPointNS: downNS)
             // a menu open at the OS level eats clicks before we'd see them
@@ -913,8 +916,14 @@ class WindowManager {
             }
             // sync our focus tracker with the click — without this, manual clicks
             // leave focusController.lastFocusedID stale and currentFocusedWindow() routes
-            // commands to whatever was previously hovered, not what the user clicked
-            self.syncFocusTrackerToCursor(at: downNS)
+            // commands to whatever was previously hovered, not what the user clicked.
+            // a click on a menu item or panel of the frontmost app is not a click
+            // on the window under it.
+            if case .blocked = self.mouseTracker.hitTest(at: downCG, maxAge: 0) {
+                hyprLog(.debug, .mouse, "click on a raised window of the front app — focus tracker left alone")
+            } else {
+                self.syncFocusTrackerToCursor(at: downNS)
+            }
             // scratchpad is quasimodal: a click outside every member dismisses
             // it in the same tick, so the click lands on the tile it aimed at
             if self.scratchpad.isVisible {
@@ -967,6 +976,7 @@ class WindowManager {
                 self.tiledDragHandler.handleMouseUp(release)
             }
             self?.mouseDragLifecycle.finishPress()
+            self?.mouseTracker.invalidateWindowListCache()
             self?.mouseDownPointCG = nil
             self?.mouseDownFloatingWindowID = 0
             self?.mouseDownFloatingFrame = nil

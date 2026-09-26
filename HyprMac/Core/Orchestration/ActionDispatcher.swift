@@ -82,6 +82,8 @@ final class ActionDispatcher {
     var animatedRetile: ([HyprWindow]) -> [TilingEngine.AdmissionResult] = { _ in [] }
     var refocusUnderCursor: () -> Void = {}
     var isMenuTracking: () -> Bool = { false }
+    // the frontmost app's open popup-level window (a menu), if any
+    var openPopup: () -> StackedWindow? = { nil }
     var toggleScratchpad: () -> Void = {}
     var moveToScratchpad: () -> Void = {}
     var saveLayout: () -> Void = {}
@@ -372,8 +374,9 @@ final class ActionDispatcher {
     /// actual mouse motion. Resolution order: AX's reported focused
     /// window if it belongs to this workspace, then any tiled window on
     /// this workspace, then any visible window on this workspace.
-    /// No-ops when a menu is tracking (refocusing would dismiss it) or
-    /// when the focus border is already showing on a live window.
+    /// No-ops when a menu is tracking or the frontmost app has a popup open
+    /// (refocusing would dismiss it), or when the focus border is already
+    /// showing on a live window.
     private func ensureFocusInvariant() {
         guard config.showFocusBorder else { return }
         // don't steal focus from a native menu that's currently tracking —
@@ -381,6 +384,11 @@ final class ActionDispatcher {
         guard !isMenuTracking() else { return }
         // border is already showing on a live window — nothing to do
         if let tid = focusBorder.trackedWindowID, stateCache.cachedWindows[tid] != nil {
+            return
+        }
+        // app-drawn menus (chrome's bookmark folders) never set menu tracking
+        if let popup = openPopup() {
+            hyprLog(.notice, .focus, "focus invariant skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
             return
         }
         let screen = screenUnderCursor()
