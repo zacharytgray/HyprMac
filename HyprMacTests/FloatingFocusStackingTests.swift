@@ -155,6 +155,152 @@ final class RaiseBehindThrottleTests: XCTestCase {
     }
 }
 
+final class TiledFocusRouterTests: XCTestCase {
+    private var router: TiledFocusRouter!
+    private var windows: [StackedWindow] = []
+    private var floaters: Set<CGWindowID> = [10]
+    private var front: pid_t? = otherPID
+    private var keys: [pid_t: CGWindowID] = [:]
+    private var lastFocused: CGWindowID = 11
+    private var generation: UInt64 = 1
+    private var popup: StackedWindow?
+    private var calls: [String] = []
+    private var scheduled: [(TimeInterval, () -> Void)] = []
+
+    private let target = makeWindow(id: 11, pid: frontPID)
+    private let tileRect = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    private let floaterRect = CGRect(x: 200, y: 150, width: 600, height: 500)
+
+    override func setUp() {
+        super.setUp()
+        windows = [win(10, pid: otherPID, floaterRect), win(11, tileRect)]
+        router = TiledFocusRouter()
+        router.windowList = { [unowned self] in self.windows }
+        router.visibleFloaterIDs = { [unowned self] in self.floaters }
+        router.isTiled = { $0 == 11 }
+        router.frontmostPID = { [unowned self] in self.front }
+        router.keyWindowID = { [unowned self] pid in self.keys[pid] }
+        router.postWindowFocus = { [unowned self] pid, wid, gained in
+            self.calls.append("event \(wid) \(gained ? "gained" : "lost")")
+        }
+        router.makeFrontAndKey = { [unowned self] w in self.calls.append("front+key \(w.windowID)"); return "ok" }
+        router.usualFocus = { [unowned self] w, fallback in self.calls.append("usual \(w.windowID) \(fallback.rawValue)") }
+        router.lastFocusedID = { [unowned self] in self.lastFocused }
+        router.focusGeneration = { [unowned self] in self.generation }
+        router.openPopup = { [unowned self] in self.popup }
+        router.schedule = { [unowned self] delay, body in self.scheduled.append((delay, body)) }
+    }
+
+    private func runScheduled() {
+        while !scheduled.isEmpty { scheduled.removeFirst().1() }
+    }
+
+    func testAnUncoveredTileTakesTheUsualPathRightAway() {
+        floaters = []
+
+        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
+
+        XCTAssertEqual(route.path, .usual)
+        XCTAssertEqual(calls, ["usual 11 activate+click"])
+        XCTAssertTrue(scheduled.isEmpty)
+    }
+
+    func testAFloaterBehindTheTileDoesNotChangeThePath() {
+        windows.reverse()
+
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+
+        XCTAssertEqual(calls, ["usual 11 activate+click"])
+    }
+
+    func testACoveredTileIsFocusedWithoutActivateOrClickAndChecked() {
+        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
+
+        XCTAssertEqual(route.path, .noRaise)
+        XCTAssertEqual(calls, ["front+key 11"])
+        XCTAssertEqual(scheduled.map(\.0), [TiledFocusRouter.verifyDelay])
+
+        // the app came forward and the tile is key; the floater stayed above
+        front = frontPID
+        keys[frontPID] = 11
+        runScheduled()
+
+        XCTAssertEqual(calls, ["front+key 11"], "no fallback when focus landed")
+    }
+
+    func testAMissedFocusFallsBackToTheCallersUsualPath() {
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+        runScheduled()
+
+        XCTAssertEqual(calls, ["front+key 11", "usual 11 activate+click"])
+    }
+
+    func testTheAppFrontButAnotherWindowKeyIsAMiss() {
+        router.focus(target, reason: "focusInDirection", fallback: .activate)
+        front = frontPID
+        keys[frontPID] = 77
+        runScheduled()
+
+        XCTAssertEqual(calls.last, "usual 11 activate")
+    }
+
+    func testANewerFocusCancelsTheFallback() {
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+        lastFocused = 12
+        generation += 1
+        runScheduled()
+
+        XCTAssertEqual(calls, ["front+key 11"])
+    }
+
+    func testAnOpenPopupCancelsTheFallback() {
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+        popup = win(99, layer: 101, CGRect(x: 0, y: 0, width: 100, height: 100))
+        runScheduled()
+
+        XCTAssertEqual(calls, ["front+key 11"])
+    }
+
+    func testMenuTrackingCancelsTheFallback() {
+        router.isMenuTracking = { true }
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+        runScheduled()
+
+        XCTAssertEqual(calls, ["front+key 11"])
+    }
+
+    func testWithinTheFrontAppKeyIsHandedOverFirst() {
+        front = frontPID
+        keys[frontPID] = 12
+
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+        XCTAssertEqual(calls, ["event 12 lost"])
+        XCTAssertEqual(scheduled.map(\.0), [TiledFocusRouter.keyHandoffDelay])
+
+        scheduled.removeFirst().1()
+        XCTAssertEqual(calls, ["event 12 lost", "event 11 gained", "front+key 11"])
+    }
+
+    func testAnAlreadyKeyTileGetsNoEvents() {
+        front = frontPID
+        keys[frontPID] = 11
+
+        let route = router.focus(target, reason: "ensureFocus", fallback: .activate)
+
+        XCTAssertEqual(route.path, .alreadyFocused)
+        XCTAssertTrue(calls.isEmpty)
+        XCTAssertTrue(scheduled.isEmpty)
+    }
+
+    func testTheWarpPointIsOnTheUncoveredPartOfTheTile() throws {
+        let route = router.focus(target, reason: "focusInDirection", fallback: .activate)
+
+        let point = try XCTUnwrap(route.warpPoint)
+        XCTAssertTrue(tileRect.contains(point))
+        XCTAssertFalse(floaterRect.contains(point))
+    }
+}
+
 final class MouseTrackingPopupTests: XCTestCase {
     private var windows: [StackedWindow] = []
     private var focused: [CGWindowID] = []

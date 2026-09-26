@@ -36,6 +36,7 @@
 		192896C26681E7F32D0A8EE3 /* RatioMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B508954B7CC67DE0AB417D2E /* RatioMemoryTests.swift */; };
 		19A5EB4FD50CE7FF439CA151 /* TiledDriftMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8425DC47E2604936890FF01 /* TiledDriftMonitor.swift */; };
 		19AA6221B0B55BFAC6065DE0 /* CommandRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D180FDED47AD57DF35C3858C /* CommandRunnerTests.swift */; };
+		1A4B5F0F12CBBB85131440AB /* TiledFocusRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */; };
 		1AB9B2043A23A0FB662ECB30 /* RuntimeVariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE740E91A8A260E9F899EB51 /* RuntimeVariant.swift */; };
 		1B637997E721C7D6BF0FC307 /* DirectionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 301C7EDAAD234FC3DDCBAADC /* DirectionPicker.swift */; };
 		1C09D1112018B2B6DDA753F3 /* WorkspaceSwitchAnnouncementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3DB9C9425DBA2D12D58CAF7 /* WorkspaceSwitchAnnouncementTests.swift */; };
@@ -207,6 +208,7 @@
 		C77DE1995895F9C4FC7A77C6 /* RuntimeVariantTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6988D3019CAFAAAE262E388E /* RuntimeVariantTests.swift */; };
 		C842B6F9AAC01B6A047253B1 /* Keybind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4E656D3CA021B130775CC3 /* Keybind.swift */; };
 		C90986ED07B24EC5077BC016 /* AXNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */; };
+		C9590D525F741515354B259B /* TiledFocusRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */; };
 		CA98F4C2A6C5FED1DB51B390 /* AppIcon.svg in Resources */ = {isa = PBXBuildFile; fileRef = F95CD8FB8B25B86236401214 /* AppIcon.svg */; };
 		CAF7E4C0660A5075D1D9DD62 /* PrepareLayoutMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12DCA371573CAAC4B23A96AA /* PrepareLayoutMutationTests.swift */; };
 		CF85EEA5C6929AE2E15E53DC /* LayoutTreeRebuildTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACE3FC5B95249CF81BC8F117 /* LayoutTreeRebuildTests.swift */; };
@@ -410,6 +412,7 @@
 		BB697B2619BEB7E2434E157E /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
 		BB8DE37F0110F3E975EE8BB9 /* StateDumpFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StateDumpFormatterTests.swift; sourceTree = "<group>"; };
 		BE062173D513A1A60A3E704D /* ConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
+		C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledFocusRouter.swift; sourceTree = "<group>"; };
 		C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceInsertWindowFallbackTests.swift; sourceTree = "<group>"; };
 		C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingScheduler.swift; sourceTree = "<group>"; };
 		C52D4D8F0D171A4757C5951A /* TilingEngineMembershipTransactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineMembershipTransactionTests.swift; sourceTree = "<group>"; };
@@ -558,6 +561,7 @@
 				2CD84800A82DD5466833975C /* MouseTrackingManager.swift */,
 				4461955B9373BBC5DD00DB15 /* ScratchpadController.swift */,
 				913F7521CBE5FF04365D18D8 /* SpaceManager.swift */,
+				C065112E8478DA1E16DC4D64 /* TiledFocusRouter.swift */,
 				B6FC3298BBD003F3AD7DAC44 /* WindowCornerRadius.swift */,
 				2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */,
 				5A139BBB5E4E8AF38923E2D0 /* WindowStacking.swift */,
@@ -1011,6 +1015,7 @@
 				8BEC65B84A975386F95AA087 /* TiledDragTarget.swift in Sources */,
 				B7B452BA5C221D28C3A8CA4E /* TiledDragTransaction.swift in Sources */,
 				5953698B05EC33E530C72A12 /* TiledDriftMonitor.swift in Sources */,
+				1A4B5F0F12CBBB85131440AB /* TiledFocusRouter.swift in Sources */,
 				418CEE0D45A22A4854CBF801 /* TilingConfig.swift in Sources */,
 				321ED983E085852543CE66E5 /* TilingEngine.swift in Sources */,
 				F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */,
@@ -1116,6 +1121,7 @@
 				D79FC29758B8999CB1D4BD05 /* TiledDragTarget.swift in Sources */,
 				E94B82A62C0BFE40FA50BAC8 /* TiledDragTransaction.swift in Sources */,
 				19A5EB4FD50CE7FF439CA151 /* TiledDriftMonitor.swift in Sources */,
+				C9590D525F741515354B259B /* TiledFocusRouter.swift in Sources */,
 				3955A053C485588A5CF09D76 /* TilingConfig.swift in Sources */,
 				E0EC87378AAEFCEB313B283E /* TilingEngine.swift in Sources */,
 				3AAB922B85C5906E5A96D580 /* TilingSettingsView.swift in Sources */,
