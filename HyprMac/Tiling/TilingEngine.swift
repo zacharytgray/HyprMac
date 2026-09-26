@@ -1902,6 +1902,16 @@ class TilingEngine {
         return out
     }
 
+    /// `windowID`'s slot in the `(workspace, screen)` tree's layout, or nil
+    /// when that tree does not hold it. The slot the engine wants, not the
+    /// live frame, which lags behind a layout that has not landed yet.
+    func intendedRect(for windowID: CGWindowID, onWorkspace workspace: Int,
+                      screen: NSScreen) -> CGRect? {
+        guard let t = trees[TilingKey(workspace: workspace, screen: screen)] else { return nil }
+        return t.layout(in: displayManager.cgRect(for: screen), gap: gapSize, padding: outerPadding)
+            .first { $0.0.windowID == windowID }?.1
+    }
+
     /// Add a single window to the `(workspace, screen)` tree and
     /// retile. Returns a refusal when smart insert cannot
     /// place the window without violating `minSlotDimension`. No-op

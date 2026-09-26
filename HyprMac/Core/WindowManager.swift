@@ -1579,7 +1579,7 @@ class WindowManager {
         // into invisible floaters under the scrim, both read as broken.
         if scratchpad.isVisible {
             switch action {
-            case .moveToWorkspace, .moveWindowToMonitor:
+            case .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor:
                 // move a summoned member OUT to another workspace/monitor:
                 // eject it into tiling on the current monitor first (leaves
                 // it unfloated + focused + the layer dismissed), then let the
@@ -2290,8 +2290,8 @@ class WindowManager {
     /// be undone by the settle reconcile.
     static func isDroppedMidDisplayTransition(_ action: Action) -> Bool {
         switch action {
-        case .switchWorkspace, .moveToWorkspace, .moveWindowToMonitor, .cycleWorkspace,
-             .moveToNextEmptyWorkspace, .saveLayout, .restoreLayout:
+        case .switchWorkspace, .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,
+             .cycleWorkspace, .moveToNextEmptyWorkspace, .saveLayout, .restoreLayout:
             return true
         default:
             return false
