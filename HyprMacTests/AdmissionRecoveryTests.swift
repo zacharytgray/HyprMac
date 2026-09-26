@@ -475,6 +475,30 @@ final class AdmissionRecoveryTests: XCTestCase {
                        "it is in no tree and not floating either; the log should not say floating")
     }
 
+    func testTheWindowListBeatsTheFrameOfAFloaterATileBuried() {
+        // the floater's frame covers the point, but the tile is on top there
+        let target = WindowManager.clickFocusTarget(
+            at: CGPoint(x: 200, y: 200),
+            overlayFrames: [(id: 12, frame: CGRect(x: 100, y: 100, width: 400, height: 300))],
+            tiledPositions: [11: CGRect(x: 0, y: 0, width: 800, height: 600)],
+            stackHit: 11)
+
+        XCTAssertEqual(target?.id, 11)
+        XCTAssertEqual(target?.reason, "syncTracker-tiled")
+    }
+
+    func testAnUnknownWindowListHitFallsBackToTheFrames() {
+        let target = WindowManager.clickFocusTarget(
+            at: CGPoint(x: 200, y: 200),
+            overlayFrames: [(id: 26, frame: CGRect(x: 100, y: 100, width: 400, height: 300))],
+            tiledPositions: [11: CGRect(x: 0, y: 0, width: 800, height: 600)],
+            recoveryIDs: [26],
+            stackHit: 999)
+
+        XCTAssertEqual(target?.id, 26)
+        XCTAssertEqual(target?.reason, "syncTracker-recovery")
+    }
+
     func testAClickOutsideEveryOverlayStillPicksTheTile() {
         let target = WindowManager.clickFocusTarget(
             at: CGPoint(x: 20, y: 20),
@@ -1021,6 +1045,215 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         controller.raiseBehind()
 
         XCTAssertEqual(raises, [])
+    }
+
+    // MARK: - click re-raise
+
+    private static func entry(_ id: CGWindowID, _ rect: CGRect, layer: Int = 0, pid: pid_t = 100) -> [String: Any] {
+        [kCGWindowNumber as String: id, kCGWindowOwnerPID as String: pid, kCGWindowLayer as String: layer,
+         kCGWindowBounds as String: rect.dictionaryRepresentation]
+    }
+    private static let tileFrame = CGRect(x: 0, y: 0, width: 500, height: 500)
+    private static let floaterFrame = CGRect(x: 50, y: 50, width: 300, height: 300)
+    private static let tileOnTop = [entry(11, tileFrame), entry(12, floaterFrame)]
+    private static let floaterOnTop = [entry(12, floaterFrame), entry(11, tileFrame)]
+    // a click on the tile outside the floater
+    private let click = ClickPress(windowID: 11, point: CGPoint(x: 450, y: 450), popupOpen: false)
+
+    private struct ClickHarness {
+        var raises: [CGWindowID] = []
+        var refocused: [CGWindowID] = []
+        var restacks = 0
+        var queued: [() -> Void] = []
+    }
+
+    private struct ClickRig {
+        let controller: FloatingWindowController
+        let focus: FocusStateController
+        let workspaces: WorkspaceManager
+        let harness: () -> ClickHarness
+        let run: () -> Void
+    }
+
+    /// A controller whose AXRaise lifts the floater over the tile (unless
+    /// `raiseWorks` is false) and whose refocus reports `refocusKeeps`.
+    private func clickRig(tiledPID: pid_t, floatingPID: pid_t, raiseWorks: Bool = true,
+                          refocusKeeps: Bool = true) -> ClickRig {
+        let (controller, _, workspaces, focus) = makeController(tiledPID: tiledPID, floatingPID: floatingPID)
+        var harness = ClickHarness()
+        var stack = Self.tileOnTop
+        controller.windowListForZOrder = { stack }
+        controller.performRaise = { w in
+            harness.raises.append(w.windowID)
+            if raiseWorks { stack = Self.floaterOnTop }
+            return .success
+        }
+        controller.refocusClickedTile = { w, done in
+            harness.refocused.append(w.windowID)
+            done(refocusKeeps)
+        }
+        controller.onRestack = { harness.restacks += 1 }
+        controller.scheduleAfter = { _, body in harness.queued.append(body) }
+        let run = {
+            while !harness.queued.isEmpty { harness.queued.removeFirst()() }
+            // the next click lifts the tile again
+            stack = Self.tileOnTop
+        }
+        return ClickRig(controller: controller, focus: focus, workspaces: workspaces,
+                        harness: { harness }, run: run)
+    }
+
+    func testASameAppClickPutsTheFloaterBackAndHandsFocusToTheTile() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [12])
+        XCTAssertEqual(rig.harness().refocused, [11], "the tile keeps the keyboard under the floater")
+        XCTAssertGreaterThan(rig.harness().restacks, 0, "the cutouts are redrawn for the new stack")
+    }
+
+    func testEveryClickGetsItsRaiseWithoutABurstCooldown() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+
+        for _ in 0..<6 {
+            rig.controller.raiseAfterClick(click)
+            rig.run()
+        }
+
+        XCTAssertEqual(rig.harness().raises.count, 6)
+    }
+
+    func testAClickInsideTheFloatersFrameLeavesItBuried() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+
+        rig.controller.raiseAfterClick(ClickPress(windowID: 11, point: CGPoint(x: 100, y: 100), popupOpen: false))
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [], "raising it would cover the spot the user just clicked")
+    }
+
+    func testAClickOnTheFloaterIsNotAClickOnATile() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+
+        rig.controller.raiseAfterClick(ClickPress(windowID: 12, point: CGPoint(x: 100, y: 100), popupOpen: false))
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [])
+    }
+
+    func testAFloaterStillOnTopNeedsNothing() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+        rig.controller.windowListForZOrder = { Self.floaterOnTop }
+
+        rig.controller.raiseAfterClick(click)
+
+        XCTAssertEqual(rig.harness().raises, [])
+        XCTAssertTrue(rig.harness().queued.isEmpty)
+    }
+
+    func testAnOpenMenuBlocksTheRaise() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+
+        // open when the click went down
+        rig.controller.raiseAfterClick(ClickPress(windowID: 11, point: click.point, popupOpen: true))
+        rig.run()
+        // opened by the click
+        rig.controller.windowListForZOrder = { [Self.popup(pid: 100)] + Self.tileOnTop }
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        // a native menu
+        rig.controller.isMenuTracking = { true }
+        rig.controller.windowListForZOrder = { Self.tileOnTop }
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [])
+    }
+
+    func testFocusThatMovedOnBlocksTheRaise() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+        rig.focus.recordFocus(13, reason: "hover elsewhere")
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [])
+    }
+
+    func testAFloaterOnAnotherWorkspaceIsLeftAlone() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+        let workspace = rig.workspaces.workspaceFor(11) ?? 1
+        rig.workspaces.moveWindow(12, toWorkspace: workspace == 9 ? 8 : 9)
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [])
+    }
+
+    func testARaiseThatDoesNothingCoolsThePairDown() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200, raiseWorks: false)
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [12], "Tahoe refused the cross-app raise once; no retry every click")
+        XCTAssertEqual(rig.harness().refocused, [], "the tile is still on top and still key")
+    }
+
+    func testARefocusThatMissesCoolsThePairDown() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100, refocusKeeps: false)
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [12], "a flicker per click with no gain stops after one try")
+    }
+
+    func testACrossAppRestoreThatLiftsTheTileAgainEndsInALoopCooldown() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200)
+        let controller = rig.controller
+        var front: pid_t = 100
+        var stack = Self.tileOnTop
+        var raiseBehindRaises = 0
+        controller.frontmostPID = { front }
+        controller.windowListForZOrder = { stack }
+        controller.performRaise = { _ in
+            // the floater's app activated itself when raised
+            stack = Self.floaterOnTop
+            front = 200
+            return .success
+        }
+        controller.refocusClickedTile = { _, done in
+            // giving focus back lifted the tile over the floater again
+            stack = Self.tileOnTop
+            front = 100
+            done(true)
+        }
+
+        controller.raiseAfterClick(click)
+        rig.run()
+        // the activation that restore caused runs raise-behind
+        controller.performRaise = { _ in raiseBehindRaises += 1; return .success }
+        controller.raiseBehind()
+
+        XCTAssertEqual(raiseBehindRaises, 0, "raise-behind sees our restore and stops the loop")
+    }
+
+    func testTheClickedWindowMustBeATile() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+        rig.controller.isTiledWindow = { _ in false }
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [], "a newcomer in admission recovery is not a tile")
     }
 }
 

@@ -55,6 +55,7 @@ final class AXNotificationService {
         case windowMiniaturized
         case windowDeminiaturized
         case focusedWindowChanged
+        case mainWindowChanged
     }
 
     /// Sink for every translated notification. `pid` is the app the event
@@ -185,6 +186,8 @@ final class AXNotificationService {
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         let createdErr = AXObserverAddNotification(observer, appElement, kAXWindowCreatedNotification as CFString, refcon)
         let focusedErr = AXObserverAddNotification(observer, appElement, kAXFocusedWindowChangedNotification as CFString, refcon)
+        // a window coming forward can bury a floater; only the stacking visuals use this
+        AXObserverAddNotification(observer, appElement, kAXMainWindowChangedNotification as CFString, refcon)
 
         // a newly launched app may not be AX-ready — treat "subscribed to
         // nothing" as a failure and let the retry catch it once.
@@ -236,6 +239,7 @@ final class AXNotificationService {
         case kAXWindowMiniaturizedNotification as String:   kind = .windowMiniaturized
         case kAXWindowDeminiaturizedNotification as String: kind = .windowDeminiaturized
         case kAXFocusedWindowChangedNotification as String: kind = .focusedWindowChanged
+        case kAXMainWindowChangedNotification as String:    kind = .mainWindowChanged
         default: return
         }
         guard let pid = elementPID ?? observerPID else { return }

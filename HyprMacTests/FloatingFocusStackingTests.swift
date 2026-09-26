@@ -110,6 +110,123 @@ final class WindowStackingTests: XCTestCase {
         XCTAssertNil(WindowStacking.exposedPoint(of: tile, coveredBy: [tile.insetBy(dx: -10, dy: -10)]))
         XCTAssertEqual(WindowStacking.exposedPoint(of: tile, coveredBy: []), CGPoint(x: 500, y: 400))
     }
+
+    func testFloatersBelowATileAreTheOnesAClickBuried() {
+        let tile = win(11, CGRect(x: 0, y: 0, width: 800, height: 800))
+        let buried = win(10, pid: otherPID, CGRect(x: 100, y: 100, width: 300, height: 300))
+        let above = win(12, pid: otherPID, CGRect(x: 200, y: 200, width: 300, height: 300))
+        let beside = win(13, pid: otherPID, CGRect(x: 804, y: 0, width: 300, height: 300))
+        let hidden = win(14, pid: otherPID, CGRect(x: 100, y: 100, width: 300, height: 300), alpha: 0)
+
+        let below = WindowStacking.floaters(below: 11, among: [10, 12, 13, 14],
+                                            in: [above, tile, beside, buried, hidden])
+
+        XCTAssertEqual(below.map(\.windowID), [10])
+    }
+
+    // two tiles side by side; the floater straddles the gap between them
+    private let tileA = CGRect(x: 0, y: 0, width: 400, height: 400)
+    private let tileB = CGRect(x: 408, y: 0, width: 400, height: 400)
+    private let straddler = CGRect(x: 300, y: 100, width: 200, height: 200)
+
+    func testAFloaterInFrontOfEveryTileHasNoOccluders() {
+        let windows = [win(10, pid: otherPID, straddler), win(1, tileA), win(2, tileB)]
+
+        let occluders = WindowStacking.occluders(ofFloaters: [10: straddler],
+                                                 covers: [1: tileA, 2: tileB], in: windows)
+
+        XCTAssertEqual(occluders, [:])
+    }
+
+    func testAFloaterATileBuriedIsOccludedByThatTile() {
+        let inside = CGRect(x: 100, y: 100, width: 200, height: 200)
+        let windows = [win(1, tileA), win(10, pid: otherPID, inside), win(2, tileB)]
+
+        let occluders = WindowStacking.occluders(ofFloaters: [10: inside],
+                                                 covers: [1: tileA, 2: tileB], in: windows)
+
+        XCTAssertEqual(occluders, [10: [tileA]])
+    }
+
+    func testAFloaterHalfBuriedAcrossTwoTilesIsOccludedOnlyByTheClickedOne() {
+        // the user clicked tile A; B is still behind the floater
+        let windows = [win(1, tileA), win(10, pid: otherPID, straddler), win(2, tileB)]
+
+        let occluders = WindowStacking.occluders(ofFloaters: [10: straddler],
+                                                 covers: [1: tileA, 2: tileB], in: windows)
+
+        XCTAssertEqual(occluders, [10: [tileA]])
+    }
+
+    func testBothTilesClickedOccludeTheFloaterFrontToBack() {
+        let windows = [win(2, tileB), win(1, tileA), win(10, pid: otherPID, straddler)]
+
+        let occluders = WindowStacking.occluders(ofFloaters: [10: straddler],
+                                                 covers: [1: tileA, 2: tileB], in: windows)
+
+        XCTAssertEqual(occluders, [10: [tileB, tileA]])
+    }
+
+    func testAFloaterTheListDoesNotShowKeepsItsWholeCutout() {
+        let windows = [win(1, tileA), win(2, tileB)]
+
+        let occluders = WindowStacking.occluders(ofFloaters: [10: straddler],
+                                                 covers: [1: tileA, 2: tileB], in: windows)
+
+        XCTAssertEqual(occluders, [:])
+    }
+}
+
+// the dim path math, without panels, so it runs headless
+final class FloaterCutoutPathTests: XCTestCase {
+    private let tileA = NSRect(x: 0, y: 0, width: 400, height: 400)
+    private let tileB = NSRect(x: 408, y: 0, width: 400, height: 400)
+    private let straddler = NSRect(x: 300, y: 100, width: 200, height: 200)
+    private let overA = CGPoint(x: 350, y: 200)
+    private let overB = CGPoint(x: 450, y: 200)
+
+    private func path(_ tile: NSRect, _ holes: [DimmingOverlay.FloaterHole]) -> CGPath {
+        DimmingOverlay.dimPath(tile, radius: 10, focused: nil, floaters: holes, holeRadius: 10)
+    }
+
+    func testAFloaterInFrontCutsBothTiles() {
+        let hole = DimmingOverlay.FloaterHole(rect: straddler)
+
+        XCTAssertFalse(path(tileA, [hole]).contains(overA))
+        XCTAssertFalse(path(tileB, [hole]).contains(overB))
+        XCTAssertTrue(path(tileA, [hole]).contains(CGPoint(x: 100, y: 200)), "the rest of A stays dim")
+    }
+
+    func testAFullyBuriedFloaterCutsNothing() {
+        let inside = NSRect(x: 100, y: 100, width: 200, height: 200)
+        let hole = DimmingOverlay.FloaterHole(rect: inside, occluders: [tileA])
+
+        XCTAssertNil(hole.path(radius: 10))
+        XCTAssertTrue(path(tileA, [hole]).contains(CGPoint(x: 200, y: 200)))
+    }
+
+    func testAHalfBuriedFloaterCutsOnlyTheTileItIsInFrontOf() {
+        // A was clicked and now covers the floater's left half
+        let hole = DimmingOverlay.FloaterHole(rect: straddler, occluders: [tileA])
+
+        XCTAssertTrue(path(tileA, [hole]).contains(overA), "no bright hole left on the clicked tile")
+        XCTAssertFalse(path(tileB, [hole]).contains(overB), "the floater still shows over B")
+    }
+
+    func testBothTilesClickedLeaveNoHoleAnywhere() {
+        let hole = DimmingOverlay.FloaterHole(rect: straddler, occluders: [tileA, tileB])
+
+        XCTAssertTrue(path(tileA, [hole]).contains(overA))
+        XCTAssertTrue(path(tileB, [hole]).contains(overB))
+    }
+
+    func testTheFocusedTileIsStillCarvedOut() {
+        let dimmed = DimmingOverlay.dimPath(tileA, radius: 10, focused: NSRect(x: 350, y: 0, width: 50, height: 400),
+                                            floaters: [], holeRadius: 10)
+
+        XCTAssertFalse(dimmed.contains(CGPoint(x: 375, y: 200)))
+        XCTAssertTrue(dimmed.contains(CGPoint(x: 100, y: 200)))
+    }
 }
 
 final class RaiseBehindThrottleTests: XCTestCase {
@@ -307,6 +424,67 @@ final class TiledFocusRouterTests: XCTestCase {
         let point = try XCTUnwrap(route.warpPoint)
         XCTAssertTrue(tileRect.contains(point))
         XCTAssertFalse(floaterRect.contains(point))
+    }
+
+    // MARK: - result for the click re-raise
+
+    func testTheResultSaysTheTileIsKeyUnderTheFloater() {
+        var results: [Bool] = []
+        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
+        front = frontPID
+        keys[frontPID] = 11
+        runScheduled()
+
+        XCTAssertEqual(results, [true])
+    }
+
+    func testAnAlreadyKeyTileReportsSuccessAtOnce() {
+        front = frontPID
+        keys[frontPID] = 11
+        var results: [Bool] = []
+
+        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
+
+        XCTAssertEqual(results, [true])
+    }
+
+    func testAMissReportsFailure() {
+        var results: [Bool] = []
+        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
+        runScheduled()
+
+        XCTAssertEqual(results, [false])
+    }
+
+    func testLandingAboveTheFloaterIsNotSuccess() {
+        var results: [Bool] = []
+        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
+        front = frontPID
+        keys[frontPID] = 11
+        // the tile came up over the floater after all
+        windows.reverse()
+        runScheduled()
+
+        XCTAssertEqual(results, [false])
+    }
+
+    func testTheUsualPathReportsFailure() {
+        floaters = []
+        var results: [Bool] = []
+
+        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
+
+        XCTAssertEqual(results, [false])
+    }
+
+    func testASupersededFocusReportsNothing() {
+        var results: [Bool] = []
+        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
+        lastFocused = 12
+        generation += 1
+        runScheduled()
+
+        XCTAssertEqual(results, [])
     }
 }
 

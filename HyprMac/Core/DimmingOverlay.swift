@@ -18,6 +18,12 @@ import Cocoa
 /// changes (window becoming focused or unfocused, dim turning on or
 /// off) animate over `fadeDurationSec` with `easeInEaseOut`.
 ///
+/// A floater's carve-out covers only the part of it that is in front.
+/// The caller passes, per floater, the frames stacked above it (from the
+/// window list), and those come back out of the hole. Without that, a
+/// tile clicked over a floater kept a bright hole where the floater used
+/// to show.
+///
 /// State per window:
 /// ```
 /// new window appears  → layer created at opacity 0, animates to target
@@ -54,6 +60,7 @@ class DimmingOverlay {
     private var lastFocusedID: CGWindowID = 0
     private var lastTiledRects: [CGWindowID: CGRect] = [:]
     private var lastFloatingRects: [CGWindowID: CGRect] = [:]
+    private var lastFloatingOccluders: [CGWindowID: [CGRect]] = [:]
     private var lastScreens: [NSScreen] = []
     // single live floater rect during a drag. merged over lastFloatingRects
     // inside update() so a mid-drag full update doesn't stomp it, and
@@ -101,11 +108,16 @@ class DimmingOverlay {
     /// - Parameter floatingRects: every visible floating window; their
     ///   rects are carved out of each tile's dim path so floaters render
     ///   bright above any dimmed tile they cover.
+    /// - Parameter floatingOccluders: per floater, the frames stacked above
+    ///   it. They are taken back out of that floater's carve-out, so a
+    ///   floater a tile covers leaves no bright hole on the tile. A floater
+    ///   with no entry keeps its whole carve-out.
     /// - Parameter screens: enabled `NSScreen`s.
     func update(
         focusedID: CGWindowID,
         tiledRects: [CGWindowID: CGRect],
         floatingRects: [CGWindowID: CGRect],
+        floatingOccluders: [CGWindowID: [CGRect]] = [:],
         screens: [NSScreen]
     ) {
         mainThreadOnly()
@@ -116,12 +128,14 @@ class DimmingOverlay {
         lastFocusedID = focusedID
         lastTiledRects = tiledRects
         lastFloatingRects = floatingRects
+        lastFloatingOccluders = floatingOccluders
         lastScreens = screens
 
         // merge the live drag rect over the (possibly stale) floating input
         // so a full update mid-drag doesn't snap the hole back to the poll rect.
         var floatingRects = floatingRects
         if let ov = dragOverride { floatingRects[ov.id] = ov.rect }
+        let occluders = liveOccluders(floatingOccluders)
 
         let fillColor = currentFillColor()
 
@@ -159,10 +173,9 @@ class DimmingOverlay {
             let onScreenIDs = Set(onScreen.map { $0.0 })
 
             // floater locals — subtracted from every tile's path so a
-            // floater that overlaps a dimmed tile stays bright.
-            let floaters = floatingRects.values.compactMap {
-                localRect(cgRect: $0, screenNS: screenNS)
-            }
+            // floater that overlaps a dimmed tile stays bright, minus
+            // whatever is stacked above the floater.
+            let floaters = floaterHoles(floatingRects, occluders: occluders, screenNS: screenNS)
 
             // focused local — subtracted from non-focused tiles' paths so
             // a min-size-induced overlap doesn't paint dim onto the bright
@@ -315,13 +328,14 @@ class DimmingOverlay {
         let fillColor = currentFillColor()
         var floatingRects = lastFloatingRects
         if let ov = dragOverride { floatingRects[ov.id] = ov.rect }
+        let occluders = liveOccluders(lastFloatingOccluders)
 
         for screen in lastScreens {
             guard let entry = panels[screen.displayID] else { continue }
             let screenNS = screen.frame
 
             let dirtyLocals = dirty.compactMap { localRect(cgRect: $0, screenNS: screenNS) }
-            let floaters = floatingRects.values.compactMap { localRect(cgRect: $0, screenNS: screenNS) }
+            let floaters = floaterHoles(floatingRects, occluders: occluders, screenNS: screenNS)
             let focusedLocal: NSRect? = lastTiledRects[lastFocusedID].flatMap {
                 localRect(cgRect: $0, screenNS: screenNS)
             }
@@ -437,29 +451,76 @@ class DimmingOverlay {
         }
     }
 
-    /// Path for one window's dim region: the window's rounded rect with
-    /// the focused-tile region and every floater rect carved out as
-    /// rounded rects via real boolean subtraction (CGPath.subtracting,
-    /// macOS 13+) — cutout corners match the unified window radius
-    /// instead of degrading to sharp axis-aligned strips.
+    /// Path for one window's dim region. See `dimPath`.
     private func buildPath(
         for wid: CGWindowID,
         local: NSRect,
         focusedToExclude: NSRect?,
-        floaters: [NSRect]
+        floaters: [FloaterHole]
     ) -> CGPath {
-        var path = roundedPath(local, radius: WindowCornerRadius.resolve(for: wid))
-        var holes = floaters
-        if let focused = focusedToExclude { holes.append(focused) }
-        for hole in holes where hole.intersects(local) {
-            path = path.subtracting(roundedPath(hole, radius: WindowCornerRadius.global))
+        Self.dimPath(local, radius: WindowCornerRadius.resolve(for: wid),
+                     focused: focusedToExclude, floaters: floaters,
+                     holeRadius: WindowCornerRadius.global)
+    }
+
+    /// One floater's carve-out in panel-local coordinates: its rect and
+    /// the frames stacked above it.
+    struct FloaterHole: Equatable {
+        let rect: NSRect
+        var occluders: [NSRect] = []
+
+        /// The floater's rounded rect minus what is stacked above it.
+        /// `nil` when none of it is in front.
+        func path(radius: CGFloat) -> CGPath? {
+            let hiding = occluders.filter { !$0.intersection(rect).isEmpty }
+            if hiding.contains(where: { $0.contains(rect) }) { return nil }
+            var path = DimmingOverlay.roundedPath(rect, radius: radius)
+            for cover in hiding {
+                path = path.subtracting(CGPath(rect: cover, transform: nil))
+            }
+            return path.isEmpty ? nil : path
+        }
+    }
+
+    /// One window's dim region: its rounded rect with the focused tile and
+    /// the visible part of every floater carved out, by real boolean
+    /// subtraction (CGPath.subtracting, macOS 13+), so cutout corners match
+    /// the window radius instead of degrading to sharp strips.
+    static func dimPath(_ local: NSRect, radius: CGFloat, focused: NSRect?,
+                        floaters: [FloaterHole], holeRadius: CGFloat) -> CGPath {
+        var path = roundedPath(local, radius: radius)
+        for floater in floaters where floater.rect.intersects(local) {
+            guard let hole = floater.path(radius: holeRadius) else { continue }
+            path = path.subtracting(hole)
+        }
+        if let focused, focused.intersects(local) {
+            path = path.subtracting(roundedPath(focused, radius: holeRadius))
         }
         return path
     }
 
+    /// Floater carve-outs for one screen, in panel-local coordinates.
+    private func floaterHoles(_ rects: [CGWindowID: CGRect], occluders: [CGWindowID: [CGRect]],
+                              screenNS: NSRect) -> [FloaterHole] {
+        rects.compactMap { id, rect in
+            guard let local = localRect(cgRect: rect, screenNS: screenNS) else { return nil }
+            let above = (occluders[id] ?? []).compactMap { localRect(cgRect: $0, screenNS: screenNS) }
+            return FloaterHole(rect: local, occluders: above)
+        }
+    }
+
+    // a floater being dragged is in front of everything, whatever the last
+    // window list said
+    private func liveOccluders(_ occluders: [CGWindowID: [CGRect]]) -> [CGWindowID: [CGRect]] {
+        guard let id = dragOverride?.id else { return occluders }
+        var live = occluders
+        live[id] = nil
+        return live
+    }
+
     // rounded-rect path with the radius clamped to the rect's half-size —
     // CGPath asserts when a corner exceeds half the width/height.
-    private func roundedPath(_ rect: NSRect, radius: CGFloat) -> CGPath {
+    private static func roundedPath(_ rect: NSRect, radius: CGFloat) -> CGPath {
         let r = min(radius, rect.width / 2, rect.height / 2)
         guard r > 0 else { return CGPath(rect: rect, transform: nil) }
         return CGPath(roundedRect: rect, cornerWidth: r, cornerHeight: r, transform: nil)
