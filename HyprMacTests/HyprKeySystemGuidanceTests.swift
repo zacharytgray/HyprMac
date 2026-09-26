@@ -36,10 +36,21 @@ final class HyprKeySystemGuidanceTests: XCTestCase {
         XCTAssertEqual(needsNothing.count + expected.count, HyprKey.allCases.count)
     }
 
-    // tab, backtick, backslash and F13–F20 are not in the Modifier Keys pane
-    func testOfferedKeysNeedingGuidanceAreCapsLockAndTheRightModifiers() {
+    // backslash and F13–F20 are not in the Modifier Keys pane
+    func testOfferedKeysNeedingGuidanceAreCapsLockOptionAndCommand() {
         let needing = HyprKey.pickerChoices.filter { HyprKeySystemGuidance.forKey($0) != nil }
-        XCTAssertEqual(needing, [.capsLock, .rightOption, .rightCommand])
+        XCTAssertEqual(needing, [.capsLock, .leftOption, .rightOption, .leftCommand, .rightCommand])
+    }
+
+    // the pane remaps Option and Command for both sides at once, so the
+    // wording names the modifier, not the side
+    func testLeftAndRightKeysShareTheSameWording() {
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftOption), HyprKeySystemGuidance.forKey(.rightOption))
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftCommand), HyprKeySystemGuidance.forKey(.rightCommand))
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftOption)?.title,
+                       "Keep Option set to \"⌥ Option\" in Modifier Keys on each keyboard.")
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftCommand)?.title,
+                       "Keep Command set to \"⌘ Command\" in Modifier Keys on each keyboard.")
     }
 
     func testCapsLockGuidanceWording() {

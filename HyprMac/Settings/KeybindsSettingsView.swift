@@ -299,7 +299,16 @@ struct KeybindsSettingsView: View {
                 Rectangle()
                     .fill(Color.hyprCyan.opacity(0.18))
                     .frame(height: 0.5)
-                notRecommendedRow(note)
+                keyNoteRow(note, icon: "exclamationmark.circle")
+                    .padding(.horizontal, HyprSpacing.lg)
+                    .padding(.vertical, HyprSpacing.sm)
+            }
+
+            if let note = config.hyprKey.leftModifierNote {
+                Rectangle()
+                    .fill(Color.hyprCyan.opacity(0.18))
+                    .frame(height: 0.5)
+                keyNoteRow(note, icon: "info.circle")
                     .padding(.horizontal, HyprSpacing.lg)
                     .padding(.vertical, HyprSpacing.sm)
             }
@@ -329,9 +338,9 @@ struct KeybindsSettingsView: View {
         )
     }
 
-    private func notRecommendedRow(_ note: String) -> some View {
+    private func keyNoteRow(_ note: String, icon: String) -> some View {
         HStack(spacing: HyprSpacing.sm) {
-            Image(systemName: "exclamationmark.circle")
+            Image(systemName: icon)
                 .font(.system(size: 11))
                 .foregroundStyle(Color.hyprTextSecondary)
                 .frame(width: 40)

@@ -159,13 +159,14 @@ extension HyprKey {
     /// Keys the Settings → Keys picker offers, in picker order.
     ///
     /// Shift and Control are left out because default binds add them on
-    /// top of Hypr. Left Option and Left Command are left out because they
-    /// carry everyday macOS shortcuts. Those cases stay in the enum so an
-    /// existing config still decodes and keeps its key.
+    /// top of Hypr. Tab and backtick are left out because each one is the
+    /// key of a default bind (Hypr+Tab, Hypr+Shift+Tab, Hypr+`). Those
+    /// cases stay in the enum so an existing config still decodes and
+    /// keeps its key.
     static let pickerChoices: [HyprKey] = [
-        .capsLock, .tab, .grave, .backslash,
+        .capsLock, .backslash,
         .f13, .f14, .f15, .f16, .f17, .f18, .f19, .f20,
-        .rightOption, .rightCommand
+        .leftOption, .rightOption, .leftCommand, .rightCommand
     ]
 
     var isOffered: Bool { Self.pickerChoices.contains(self) }
@@ -180,19 +181,36 @@ extension HyprKey {
     /// One sentence shown under the picker when the saved key is no longer
     /// offered. nil for offered keys.
     var notRecommendedNote: String? {
+        var name = displayName
         let reason: String
         switch self {
         case .leftShift, .rightShift:
             reason = "many default shortcuts add Shift to Hypr"
         case .leftControl, .rightControl:
             reason = "several default shortcuts add Control to Hypr"
-        case .leftOption:
-            reason = "it takes over everyday shortcuts like ⌥← to jump a word"
-        case .leftCommand:
-            reason = "it takes over everyday shortcuts like ⌘W, ⌘T and ⌘1–9"
+        case .tab:
+            reason = "it blocks the default Hypr+Tab and Hypr+Shift+Tab shortcuts that cycle workspaces"
+        case .grave:
+            name = "Backtick (`)"
+            reason = "it blocks the default Hypr+` shortcut that focuses the menu bar"
         default:
             return nil
         }
-        return "\(displayName) is no longer recommended as the Hypr key because \(reason)."
+        return "\(name) is no longer recommended as the Hypr key because \(reason)."
+    }
+
+    /// Heads-up shown under the picker for the left-hand Option and Command
+    /// keys. The left key plus a key HyprMac binds goes to HyprMac, so the
+    /// right-hand key keeps those macOS shortcuts. The examples are keys
+    /// the defaults bind with plain Hypr. nil for other keys.
+    var leftModifierNote: String? {
+        switch self {
+        case .leftOption:
+            return "With the left ⌥ as Hypr, ⌥ shortcuts on keys HyprMac uses, like ⌥← and ⌥→, go to HyprMac. Use the right ⌥ for them."
+        case .leftCommand:
+            return "With the left ⌘ as Hypr, ⌘ shortcuts on keys HyprMac uses, like ⌘S, ⌘T, ⌘W and ⌘1–9, go to HyprMac. Use the right ⌘ for them."
+        default:
+            return nil
+        }
     }
 }
