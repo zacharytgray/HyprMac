@@ -357,25 +357,28 @@ Config lives at `~/Library/Application Support/HyprMac/config.json`
 (delete to reset to defaults). Keybind entries look like:
 
 ```json
-{ "keyCode": 123, "modifiers": { "rawValue": 1 }, "action": { "focusDirection": { "_0": "left" } } }
+{ "keyCode": 123, "modifiers": 1, "action": { "focusDirection": { "_0": "left" } } }
 ```
 
 Restart HyprMac after editing. Example — bind Hypr+B to launch Safari:
 
 ```json
-{ "keyCode": 11, "modifiers": { "rawValue": 1 }, "action": { "launchApp": { "bundleID": "com.apple.Safari" } } }
+{ "keyCode": 11, "modifiers": 1, "action": { "launchApp": { "bundleID": "com.apple.Safari" } } }
 ```
 
 Example — bind Hypr+5 to an interactive screenshot:
 
 ```json
-{ "keyCode": 23, "modifiers": { "rawValue": 1 }, "action": { "runCommand": { "label": "Screenshot", "command": "/usr/sbin/screencapture -i ~/Desktop/shot.png" } } }
+{ "keyCode": 23, "modifiers": 1, "action": { "runCommand": { "label": "Screenshot", "command": "/usr/sbin/screencapture -i ~/Desktop/shot.png" } } }
 ```
 
-**Modifier rawValues** (bitwise OR to combine — see
-`Models/Keybind.swift`): `1` Hypr, `2` Shift, `4` Option, `8`
-Control, `16` Command. Hypr+Shift = `3`, Hypr+Ctrl = `9`,
-Hypr+Ctrl+Shift = `11`.
+**Modifier values**: `modifiers` is a bare number, the bitwise OR of
+the modifiers in the chord (see `Models/Keybind.swift`): `1` Hypr, `2`
+Shift, `4` Option, `8` Control, `16` Command. Hypr+Shift = `3`,
+Hypr+Ctrl = `9`, Hypr+Ctrl+Shift = `11`. An object such as
+`{ "rawValue": 1 }` does not decode, and HyprMac drops that keybind.
+`KeybindDecoderToleranceTests.testDocumentedJSONExamplesDecode` decodes
+every JSON example in this file.
 
 **Key codes** (decimal, Carbon `kVK_*`):
 
