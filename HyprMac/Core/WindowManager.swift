@@ -62,6 +62,15 @@ class WindowManager {
     // floating-window lifecycle: float/tile toggle, cycle-focus, raise-behind, auto-float predicate.
     private(set) var floatingController: FloatingWindowController!
 
+    // focus for HyprMac-initiated focus changes. a tile a floater covers is
+    // focused without being lifted over the floater.
+    private let tiledFocusRouter = TiledFocusRouter()
+    // the current left press, if it was a real click on a window. consumed
+    // at mouse-up by the click re-raise.
+    private var clickPress: ClickPress?
+    // a restack refresh is queued; later triggers ride along with it
+    private var restackRefreshPending = false
+
     // verified tiled drag capture and completion.
     private var tiledDragHandler: TiledDragHandler!
     private var tiledDragFeedback = TiledDragFeedbackReconciler()
@@ -321,6 +330,10 @@ class WindowManager {
 
         hotkeyManager.onAction = { [weak self] action in
             guard let self else { return }
+            // hotkeys arrive through an event tap, which the lock screen's
+            // secure input keeps key events from, so one firing means the
+            // session is in use again
+            self.discovery.endSessionInterruption(evidence: "hotkey press")
             if action == .toggleTiling {
                 self.config.enabled.toggle()
                 return
@@ -338,7 +351,16 @@ class WindowManager {
             // Do not repair focus while a mouse gesture is in flight. A stale
             // tracker can otherwise focus a fallback window and redirect the
             // native title-bar drag when Hypr is pressed mid-gesture.
-            if !mousePressActive { self.ensureFocus() }
+            // Nor while a menu is open: a bare Hypr press must not close it.
+            if !mousePressActive {
+                if self.mouseTracker.menuTracking {
+                    hyprLog(.debug, .focus, "ensureFocus skipped: menu tracking")
+                } else if let popup = self.mouseTracker.openPopup(maxAge: 0) {
+                    hyprLog(.notice, .focus, "ensureFocus skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
+                } else {
+                    self.ensureFocus()
+                }
+            }
             // visual cue: corner brackets snap inward around the focused
             // window so the user sees which window the next Hypr action
             // will target. shown regardless of focus-border setting.
@@ -387,10 +409,44 @@ class WindowManager {
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
+        floatingController.findPopup = { [weak self] windows, front in
+            self?.mouseTracker.livePopup(in: windows, frontmostPID: front)
+        }
         floatingController.rejectFloatToTile = { [weak self] w, reason in
             guard let self, let frame = w.frame ?? self.stateCache.cachedWindows[w.windowID]?.frame else { return }
             self.focusBorder.flashError(around: frame, windowID: w.windowID, window: w,
                                         message: FloatToTileRejectionMessage.text(for: reason))
+        }
+
+        // the restore must not lift the tile back over the floater it just raised
+        floatingController.restoreFocusWithoutRaise = { [weak self] w in
+            self?.tiledFocusRouter.focus(w, reason: "raise-restore", fallback: .activate)
+        }
+        floatingController.refocusClickedTile = { [weak self] w, done in
+            guard let self else { return }
+            self.tiledFocusRouter.focus(w, reason: "click-reraise", fallback: .activate, onResult: done)
+        }
+        floatingController.isTiledWindow = { [weak self] wid in self?.isRoutedTile(wid) ?? false }
+        floatingController.onRestack = { [weak self] in self?.scheduleRestackRefresh(after: 0.02) }
+
+        // hover, Hypr+Arrow and focus repair go through the router. newcomers
+        // in admission recovery are drawn over the tiles like floaters, as in
+        // clickFocusTarget, so they count as covers and not as tiles.
+        tiledFocusRouter.visibleFloaterIDs = { [weak self] in
+            guard let self else { return [] }
+            return self.stateCache.floatingWindowIDs.union(self.admissionRecovery.pendingWindowIDs)
+                .filter { self.workspaceManager.isWindowVisible($0) }
+        }
+        tiledFocusRouter.isTiled = { [weak self] wid in self?.isRoutedTile(wid) ?? false }
+        tiledFocusRouter.lastFocusedID = { [weak self] in self?.focusController.lastFocusedID ?? 0 }
+        tiledFocusRouter.focusGeneration = { [weak self] in self?.focusController.generation ?? 0 }
+        tiledFocusRouter.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
+        tiledFocusRouter.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        // the usual path can lift the tile over a floater
+        let usualFocus = tiledFocusRouter.usualFocus
+        tiledFocusRouter.usualFocus = { [weak self] window, fallback in
+            usualFocus(window, fallback)
+            self?.scheduleRestackRefresh(after: 0.1)
         }
 
         wireAdmissionRecovery()
@@ -450,6 +506,11 @@ class WindowManager {
         }
         actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        actionDispatcher.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
+        actionDispatcher.focusWindow = { [weak self] w, reason in
+            self?.tiledFocusRouter.focus(w, reason: reason, fallback: .activate)
+                ?? TiledFocusRouter.Route(path: .usual, targetFrame: nil, coveringFrames: [])
+        }
         actionDispatcher.toggleScratchpad = { [weak self] in self?.scratchpad.toggle() }
         actionDispatcher.moveToScratchpad = { [weak self] in self?.scratchpad.sendFocusedWindow() }
         actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }
@@ -606,6 +667,10 @@ class WindowManager {
                 self.pollingScheduler.schedule(after: 0.2)
             case .focusedWindowChanged:
                 self.pollingScheduler.schedule(after: 0.15)
+                self.scheduleRestackRefresh(after: 0.05)
+            case .mainWindowChanged:
+                // a new main window usually came forward; nothing to discover
+                self.scheduleRestackRefresh(after: 0.05)
             }
         }
 
@@ -695,6 +760,8 @@ class WindowManager {
         wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
                          name: NSWorkspace.screensDidWakeNotification, object: nil)
         wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
+                         name: NSWorkspace.screensDidSleepNotification, object: nil)
+        wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
                          name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         wsnc.addObserver(self, selector: #selector(systemInterruption(_:)),
                          name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
@@ -754,6 +821,8 @@ class WindowManager {
         focusBrackets.hide()
         admissionRecovery.cancelAll(reason: "stop")
         minimaRevalidation.cancelAll(reason: "stop")
+        // the observers go below, so no end notification would reach a span
+        discovery.endSessionInterruption(evidence: "stop")
         driftMonitor.reset()
         dumpStateSignalSource?.cancel()
         dumpStateSignalSource = nil
@@ -901,6 +970,8 @@ class WindowManager {
             let downNS = CGPoint(x: downCG.x,
                                  y: self.displayManager.primaryScreenHeight - downCG.y)
             self.mouseDownPointCG = downCG
+            // a press is what opens a menu, so the next hover must read a fresh list
+            self.mouseTracker.invalidateWindowListCache()
             self.tiledDragHandler.handleMouseDown(at: downCG)
             self.armDimDragIfFloating(downPointNS: downNS)
             // a menu open at the OS level eats clicks before we'd see them
@@ -913,8 +984,22 @@ class WindowManager {
             }
             // sync our focus tracker with the click — without this, manual clicks
             // leave focusController.lastFocusedID stale and currentFocusedWindow() routes
-            // commands to whatever was previously hovered, not what the user clicked
-            self.syncFocusTrackerToCursor(at: downNS)
+            // commands to whatever was previously hovered, not what the user clicked.
+            // a click on a menu item or panel of the frontmost app is not a click
+            // on the window under it.
+            let hit = self.mouseTracker.hitTest(at: downCG, maxAge: 0)
+            if case .blocked = hit {
+                hyprLog(.debug, .mouse, "click on a raised window of the front app — focus tracker left alone")
+            } else {
+                self.syncFocusTrackerToCursor(at: downNS, hit: hit)
+            }
+            // remember a real click on a window for the re-raise at mouse-up.
+            // our own synthetic clicks and Hypr gestures do not count.
+            self.clickPress = nil
+            if case .window(let wid) = hit, !self.hyprHeld, !Self.isOwnSyntheticEvent(event) {
+                self.clickPress = ClickPress(windowID: wid, point: downCG,
+                                             popupOpen: self.mouseTracker.openPopup() != nil)
+            }
             // scratchpad is quasimodal: a click outside every member dismisses
             // it in the same tick, so the click lands on the tile it aimed at
             if self.scratchpad.isVisible {
@@ -965,8 +1050,21 @@ class WindowManager {
                         hyprHeld: self.hyprHeld,
                         optionDown: event.modifierFlags.contains(.option)))
                 self.tiledDragHandler.handleMouseUp(release)
+                // a click lifts the tile over any floater it overlaps. put the
+                // floater back, and redraw the cutouts once the stack settles.
+                let press = self.clickPress
+                self.clickPress = nil
+                if let press, !isDrag, !release.swapRequested {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + FloatingWindowController.clickRaiseDelay) { [weak self] in
+                        // a new press means a double click; its own mouse-up decides
+                        guard let self, self.isRunning, !self.mouseButtonDown else { return }
+                        self.floatingController.raiseAfterClick(press)
+                    }
+                }
+                self.scheduleRestackRefresh(after: 0.06)
             }
             self?.mouseDragLifecycle.finishPress()
+            self?.mouseTracker.invalidateWindowListCache()
             self?.mouseDownPointCG = nil
             self?.mouseDownFloatingWindowID = 0
             self?.mouseDownFloatingFrame = nil
@@ -1014,30 +1112,77 @@ class WindowManager {
         mouseDownPointCG = nil
         mouseDownFloatingWindowID = 0
         mouseDownFloatingFrame = nil
+        clickPress = nil
         // teardown can land mid-drag — drop the overlay's override too or a
         // stale carve hole survives until the next full update
         dimDrag = nil
         dimmingOverlay.clearDragOverride()
     }
 
-    /// Apply focus-follows-mouse to `window` without changing z-order.
+    /// `true` for a mouse event HyprMac posted itself, such as the hover
+    /// path's synthetic click. Those never count as the user's click.
+    static func isOwnSyntheticEvent(_ event: NSEvent) -> Bool {
+        guard let cg = event.cgEvent else { return false }
+        return cg.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid())
+    }
+
+    /// A tile as the focus router and the click re-raise see it: in the
+    /// tiled set, not floating, and not a newcomer waiting in admission
+    /// recovery (those sit over the tiles like floaters).
+    private func isRoutedTile(_ wid: CGWindowID) -> Bool {
+        stateCache.tiledPositions[wid] != nil
+            && !stateCache.floatingWindowIDs.contains(wid)
+            && !admissionRecovery.pendingWindowIDs.contains(wid)
+    }
+
+    /// Re-read the stack and redraw what depends on it: the floater
+    /// cutouts in the dim and the floater outlines' occlusion.
+    ///
+    /// Called where z-order can change: after a click's mouse-up, a focused
+    /// or main window change, an app activation, a raise-behind or click
+    /// re-raise, and the usual focus path. Triggers inside the delay ride
+    /// along with the queued refresh, which reads fresh lists when it
+    /// fires. Does nothing without a visible floater. Each refresh costs
+    /// two window-list reads with the border on (its occlusion reads its
+    /// own), one with it off, plus an AX frame read per tile.
+    private func scheduleRestackRefresh(after delay: TimeInterval) {
+        guard isRunning, !restackRefreshPending,
+              config.dimInactiveWindows || config.showFocusBorder,
+              stateCache.floatingWindowIDs.contains(where: workspaceManager.isWindowVisible) else { return }
+        restackRefreshPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self else { return }
+            self.restackRefreshPending = false
+            // a press may be a drag, which hides the dim and border itself;
+            // its mouse-up schedules another pass. a finishing tiled drag
+            // redraws when it settles.
+            guard self.isRunning, !self.mouseButtonDown,
+                  !self.tiledDragHandler.isFinishingDrag else { return }
+            let fid = self.focusBorder.trackedWindowID ?? self.focusController.lastFocusedID
+            guard !self.isFullscreenSuppressed(focused: self.stateCache.cachedWindows[fid]) else { return }
+            self.mouseTracker.invalidateWindowListCache()
+            self.refreshFloatingBorders()
+            self.refreshDimming()
+        }
+    }
+
+    /// Apply focus-follows-mouse to `window`.
     /// Suppresses the dock-click workspace switch for half a second so the
     /// app activation kicked off by the AX focus call doesn't bounce the
     /// user to a different workspace.
     ///
     /// On Tahoe, AX writes + SkyLight + `NSRunningApplication.activate()` are all
     /// silently rejected from a `.accessory` app's mouse-move handler context, so
-    /// `focusViaSyntheticClick` posts a leftMouseDown/Up directly into the target
-    /// process — the only reliable activator. AX/SkyLight calls remain so the
-    /// rest of the system (`AXFocused` queries, key-window state) sees the right
-    /// window even before the click lands.
+    /// the usual path adds `focusViaSyntheticClick`, which posts a leftMouseDown/Up
+    /// directly into the target process. That path lifts the window. When a
+    /// floater covers the target tile, `TiledFocusRouter` first tries SkyLight
+    /// alone, checks whether focus landed, and only then falls back.
     private func focusForFFM(_ window: HyprWindow) {
         // while the scratchpad is up, hovering the dimmed tiles behind it
         // must not steal focus — the layer is quasimodal
         if scratchpad.isVisible && !scratchpad.contains(window.windowID) { return }
         suppressions.suppress("activation-switch", for: 0.5)
-        window.focusWithoutRaise()
-        window.focusViaSyntheticClick()
+        tiledFocusRouter.focus(window, reason: "ffm", fallback: .activateAndClick)
         updateFocusBorder(for: window)
     }
 
@@ -1244,12 +1389,26 @@ class WindowManager {
         dimmingOverlay.panelLevel = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
         dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
         dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
+        let tiles = tiledRectsOverride ?? currentTiledRects()
+        let floaters = floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 2)
         dimmingOverlay.update(
             focusedID: fid,
-            tiledRects: tiledRectsOverride ?? currentTiledRects(),
-            floatingRects: floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 2),
+            tiledRects: tiles,
+            floatingRects: floaters,
+            floatingOccluders: floaterOccluders(floaters, tiles: tiles),
             screens: displayManager.screens
         )
+    }
+
+    /// The tiles stacked above each floater, from the window list, so the
+    /// dim cuts a floater's hole only where the floater is in front. Reads
+    /// the mouse tracker's short-lived list, which the restack refresh drops
+    /// first. No floaters, no read.
+    private func floaterOccluders(_ floaters: [CGWindowID: CGRect],
+                                  tiles: [CGWindowID: CGRect]) -> [CGWindowID: [CGRect]] {
+        guard !floaters.isEmpty, config.dimInactiveWindows,
+              let windows = mouseTracker.stackedWindows() else { return [:] }
+        return WindowStacking.occluders(ofFloaters: floaters, covers: tiles, in: windows)
     }
 
     /// Read live AX frames for every visible tile before dim or border
@@ -1324,8 +1483,8 @@ class WindowManager {
         if let tid = focusBorder.trackedWindowID,
            isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[tid] {
-            w.focusWithoutRaise()
             focusController.recordFocus(tid, reason: "ensureFocus-trackedID")
+            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
             updateFocusBorder(for: w)
             return
         }
@@ -1333,7 +1492,7 @@ class WindowManager {
         if focusController.lastFocusedID != 0,
            isSelectableInCurrentContext(focusController.lastFocusedID, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[focusController.lastFocusedID] {
-            w.focusWithoutRaise()
+            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
             updateFocusBorder(for: w)
             return
         }
@@ -1358,8 +1517,8 @@ class WindowManager {
         for (wid, rect) in stateCache.tiledPositions {
             if wsWindows.contains(wid), rect.contains(cgPoint),
                let w = stateCache.cachedWindows[wid] {
-                w.focusWithoutRaise()
                 focusController.recordFocus(wid, reason: "ensureFocus-tiled")
+                tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
                 updateFocusBorder(for: w)
                 return
             }
@@ -1382,8 +1541,8 @@ class WindowManager {
                 return distanceSquared(lhsCenter, cgPoint) < distanceSquared(rhsCenter, cgPoint)
             }
         if let (wid, _) = fallback, let w = stateCache.cachedWindows[wid] {
-            w.focusWithoutRaise()
             focusController.recordFocus(wid, reason: "ensureFocus-fallback")
+            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
             updateFocusBorder(for: w)
         }
     }
@@ -1394,6 +1553,8 @@ class WindowManager {
     /// callback site stays terse and so subclasses or tests can intercept
     /// in one place. Also called from the menu bar (cheat-sheet row).
     func handleAction(_ action: Action) {
+        // the menu bar calls in here too, and nobody reaches it while locked
+        discovery.endSessionInterruption(evidence: "action")
         if action == .showWorkspaceOverview {
             let overview = workspaceOverviewSnapshots()
             workspaceOverview.toggle(snapshots: overview.workspaces, scratchpad: overview.scratchpad)
@@ -2092,8 +2253,9 @@ class WindowManager {
     /// this, commands routed via `currentFocusedWindow()` would target the
     /// previously-hovered window instead of what the user just clicked.
     /// Takes the event's click location so a fast post-click drag can't
-    /// move the hit test off the clicked window.
-    private func syncFocusTrackerToCursor(at mouseNS: NSPoint) {
+    /// move the hit test off the clicked window, and the window-list hit at
+    /// that point, which knows when a tile has buried a floater.
+    private func syncFocusTrackerToCursor(at mouseNS: NSPoint, hit: WindowStacking.Hit) {
         let cgY = displayManager.primaryScreenHeight - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
 
@@ -2105,9 +2267,12 @@ class WindowManager {
                   let frame = stateCache.cachedWindows[wid]?.frame else { return nil }
             return (wid, frame)
         }
+        var stackHit: CGWindowID?
+        if case .window(let wid) = hit { stackHit = wid }
         guard let target = Self.clickFocusTarget(at: cgPoint, overlayFrames: overlayFrames,
                                                  tiledPositions: stateCache.tiledPositions,
-                                                 recoveryIDs: admissionRecovery.pendingWindowIDs) else { return }
+                                                 recoveryIDs: admissionRecovery.pendingWindowIDs,
+                                                 stackHit: stackHit) else { return }
         focusController.recordFocus(target.id, reason: target.reason)
     }
 
@@ -2140,11 +2305,17 @@ class WindowManager {
     /// preserve recovery, as does showing the workspace a newcomer has been waiting
     /// for, and forgetting it here would hand it a fresh timer on the reveal
     /// retile instead of its one remaining attempt.
+    ///
+    /// Resize, swap and split toggle preserve it too. They only rework the
+    /// live tree, which never holds a stranded window, so nothing they do
+    /// gives it another attempt: a move to a visible workspace followed by a
+    /// quick resize used to leave the window assigned, in no tree, and with
+    /// nothing scheduled.
     static func cancelsPendingRecovery(_ action: Action) -> Bool {
         switch action {
         case .switchWorkspace, .cycleWorkspace, .focusDirection, .focusFloating,
              .focusMenuBar, .showKeybinds, .showWorkspaceOverview, .launchApp,
-             .runCommand, .saveLayout:
+             .runCommand, .saveLayout, .resizeDirection, .swapDirection, .toggleSplit:
             return false
         default: return true
         }
@@ -2489,6 +2660,10 @@ class WindowManager {
             excludedBundleIDs: Set(config.excludedBundleIDs),
             focusedWindowID: focusController.lastFocusedID
         )
+        // locked or asleep: this snapshot is not the desktop. a drift
+        // re-apply or a recovery attempt from it would lay the trees out
+        // without the windows it is missing
+        if changes.heldForInterruption { return }
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
         // a poll is the real event that says a window came back, became
         // readable, or went away — the only thing that can unblock a
@@ -2677,6 +2852,8 @@ class WindowManager {
         }
 
         pollingScheduler.schedule()
+        // activation brings windows forward; floater cutouts follow the new stack
+        scheduleRestackRefresh(after: 0.1)
 
         // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
         // must always run — even when activation switch is suppressed — so floaters stay on top.
@@ -2733,6 +2910,9 @@ class WindowManager {
         // suppression arms.
         suppressions.suppress("workspace-transition", for: 4.0)
         hyprLog(.notice, .lifecycle, "discovery suppressed 4s around system interruption")
+        // lock and display sleep last longer than that. discovery holds
+        // every missing window from the start of the span to its end
+        discovery.noteSystemInterruption(notification.name.rawValue)
         // park the scratchpad across sleep/lock so wake never finds visible
         // members with a stale scrim
         scratchpad.hide(reason: .displayChange)
@@ -3195,6 +3375,9 @@ private extension WindowManager {
         admissionRecovery.isDisplayTransitionPending = { [weak self] in
             self?.displayTransitionPending ?? true
         }
+        admissionRecovery.isSessionInterrupted = { [weak self] in
+            self?.discovery.isSessionInterrupted ?? false
+        }
         admissionRecovery.liveWindow = { [weak self] id in
             guard let self,
                   self.stateCache.knownWindowIDs.contains(id),
@@ -3275,13 +3458,24 @@ extension WindowManager {
     /// incumbent underneath it. A recovery newcomer says so in the reason:
     /// it is not floating, and a log that calls it floating sends the next
     /// reader looking in the wrong place.
+    ///
+    /// `stackHit` is the window the window list puts on top at the point.
+    /// When it is one of ours it wins over the frame order: a floater a
+    /// tile has buried does not take the click the tile received.
     static func clickFocusTarget(at point: CGPoint,
                                  overlayFrames: [(id: CGWindowID, frame: CGRect)],
                                  tiledPositions: [CGWindowID: CGRect],
-                                 recoveryIDs: Set<CGWindowID> = []) -> (id: CGWindowID, reason: String)? {
+                                 recoveryIDs: Set<CGWindowID> = [],
+                                 stackHit: CGWindowID? = nil) -> (id: CGWindowID, reason: String)? {
+        func overlayReason(_ id: CGWindowID) -> String {
+            recoveryIDs.contains(id) ? "syncTracker-recovery" : "syncTracker-floating"
+        }
+        if let hit = stackHit {
+            if overlayFrames.contains(where: { $0.id == hit }) { return (hit, overlayReason(hit)) }
+            if tiledPositions[hit] != nil { return (hit, "syncTracker-tiled") }
+        }
         for entry in overlayFrames where entry.frame.contains(point) {
-            return (entry.id, recoveryIDs.contains(entry.id) ? "syncTracker-recovery"
-                                                             : "syncTracker-floating")
+            return (entry.id, overlayReason(entry.id))
         }
         for (wid, rect) in tiledPositions where rect.contains(point) {
             return (wid, "syncTracker-tiled")

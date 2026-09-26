@@ -19,8 +19,9 @@ import Cocoa
 /// in no tree is held: an explicit record with no timer and no float.
 ///
 /// The retry never re-arms itself. A window that is unreadable or on a
-/// hidden workspace when its turn comes keeps its place in the pending set
-/// and waits for a real discovery or activation event instead of a new
+/// hidden workspace when its turn comes, or whose turn comes while the
+/// session is locked or the displays sleep, keeps its place in the pending
+/// set and waits for a real discovery or activation event instead of a new
 /// timer, so nothing spins and no frame is invented.
 ///
 /// One admission pass for a key, plus the bookkeeping every pass owes.
@@ -61,7 +62,8 @@ final class AdmissionRecovery {
         /// its one retry is armed.
         case awaitingRetry
         /// the window could not be judged when its turn came — unreadable,
-        /// or its workspace was hidden. No timer is running for it.
+        /// its workspace was hidden, the screens were mid-reconfiguration,
+        /// or the session was locked or asleep. No timer is running for it.
         case awaitingEvidence
         /// visible, not floating, and in no tree even after the fallback's
         /// ordinary retile. No timer and no float — an explicit record, so
@@ -129,6 +131,11 @@ final class AdmissionRecovery {
     /// keys that are about to move, so the retry waits like the ordinary
     /// retile does.
     var isDisplayTransitionPending: () -> Bool = { false }
+    /// the session is locked, the displays sleep, or the user session is
+    /// switched out. the window list is partial then, so an attempt from it
+    /// would lay the key out without the windows it is missing. the retry
+    /// waits for the first poll after the span ends.
+    var isSessionInterrupted: () -> Bool = { false }
 
     // actions
     /// `bypass` maps each newcomer to the generation below which the
@@ -220,8 +227,10 @@ final class AdmissionRecovery {
         hyprLog(.notice, .tiling, "admission retry cancelled: ids=[\(windowID)] reason=\(reason)")
     }
 
-    /// Drop everything. Used for a stop, a display change, and any later key
-    /// geometry-changing press, all of which make the captured context stale.
+    /// Drop everything. Used for a stop, a display change, and a later key
+    /// press that changes membership, all of which make the captured context
+    /// stale. Resize, swap and split toggle do not: see
+    /// `WindowManager.cancelsPendingRecovery`.
     func cancelAll(reason: String) {
         guard !records.isEmpty else { return }
         let ids = Set(records.keys)
@@ -343,6 +352,7 @@ final class AdmissionRecovery {
     private func readiness(_ id: CGWindowID, record: Record) -> Readiness {
         guard let window = liveWindow(id) else { return .gone }
         guard !isDisplayTransitionPending() else { return .notYet }
+        guard !isSessionInterrupted() else { return .notYet }
         guard workspaceFor(id) == record.workspace else { return .userActed("moved workspace") }
         guard homeScreenForWorkspace(record.workspace) == record.screen else {
             return .userActed("screen changed")

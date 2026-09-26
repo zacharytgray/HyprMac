@@ -1044,20 +1044,25 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
                        "and the newcomer is back where it came from")
     }
 
-    func testWithoutTheReachTheSameRollbackIsCancelledWhole() throws {
+    func testWithoutTheReachTheRollbackLeavesTheNewcomerOnTheDestination() throws {
         let f = try fixture()
         let newcomer = f.windows[2]
         let usable = f.engine.displayManager.cgRect(for: f.screen)
         let offScreen = CGRect(x: usable.maxX + 400, y: usable.minY + 20, width: 120, height: 120)
         f.trace.frames[newcomer.windowID] = offScreen
+        let incumbentOriginals = f.windows.prefix(2).map { f.trace.frames[$0.windowID] }
         f.trace.rejectNextRead = true
 
         let result = f.engine.revalidateAdmission(f.windows, incoming: [newcomer.windowID],
                                                   onWorkspace: 1, screen: f.screen)
 
         XCTAssertFalse(result.published)
-        XCTAssertFalse(result.restorationVerified,
-                       "this is what the reach exists to prevent")
+        XCTAssertEqual(result.restoredIDs, Set(f.windows.prefix(2).map(\.windowID)),
+                       "the incumbents still go back")
+        XCTAssertEqual(f.windows.prefix(2).map { f.trace.frames[$0.windowID] }, incumbentOriginals)
+        XCTAssertNotEqual(f.trace.frames[newcomer.windowID], offScreen,
+                          "but the newcomer is not taken home — that is what the reach is for")
+        XCTAssertTrue(usable.contains(try XCTUnwrap(f.trace.frames[newcomer.windowID])))
     }
 
     // MARK: - clearing the mark

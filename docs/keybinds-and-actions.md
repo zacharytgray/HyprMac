@@ -288,6 +288,45 @@ There is no default binding. The action ignores key autorepeat, so
 holding the chord runs the program once, and — like Launch App — it
 is unavailable while tiling is paused.
 
+## Hypr key
+
+`hyprKey` in `config.json` holds a `HyprKey` raw value. The Settings →
+Keys picker offers `HyprKey.pickerChoices`: `capsLock` (the default),
+`backslash`, `f13` through `f20`, `leftOption`, `rightOption`,
+`leftCommand` and `rightCommand`.
+
+`tab`, `grave`, `leftShift`, `rightShift`, `leftControl` and
+`rightControl` are no longer offered. Tab and backtick are the keys of
+default binds (Hypr+Tab and Hypr+Shift+Tab cycle workspaces, Hypr+`
+focuses the menu bar), so either one as the Hypr key blocks them.
+Default binds add Shift (Hypr+Shift+…) and Control (Hypr+Ctrl+…) on top
+of Hypr, so either one as the Hypr key makes those binds unreachable or
+awkward.
+
+No default bind adds Option or Command on top of Hypr, and Apple
+keyboards have both on each side, so both sides are offered. With a
+left-hand key as Hypr, that key plus any key HyprMac binds goes to
+HyprMac instead of the app: ⌘S, ⌘T, ⌘W and ⌘1–9, or ⌥← and ⌥→. Unbound
+chords pass through unchanged. `HyprKey.leftModifierNote` says this under
+the picker and points to the right-hand key for those shortcuts.
+
+The dropped cases stay in the enum with their raw values. `SavedConfig`
+decodes `hyprKey` strictly: an unknown value throws,
+`ConfigStore.loadSavedConfig` returns nil, and every setting resets to
+defaults. With iCloud sync on, the next save pushes that reset to the
+other machines. So a config that already
+names a dropped key keeps it and keeps working. `HyprKey.pickerRows(for:)`
+appends that key to the picker so the selection still has a matching
+row, and `HyprKey.notRecommendedNote` explains in one sentence why it is
+no longer recommended. The row goes away once the user picks another
+key. There is no migration.
+
+Never remove a `HyprKey` case or change a raw value. `HyprKeyPickerTests`
+pins the offered list, the kept row, both notes, the default binds the
+notes name, and decoding of every dropped value. Modifier Keys guidance
+(`HyprKeySystemGuidance`) covers Caps Lock, Option and Command, plus
+Control for older configs.
+
 ## Hex color storage
 
 `UserConfig.focusBorderColorHex` and `floatingBorderColorHex` are

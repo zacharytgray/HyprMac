@@ -4,7 +4,7 @@
 
 import Cocoa
 
-/// Warps the cursor to known positions (the center of a window, today).
+/// Warps the cursor to a window's center or to a given point.
 ///
 /// Threading: main-thread only.
 class CursorManager {
@@ -17,9 +17,15 @@ class CursorManager {
     /// the accumulation; the empirical 50 ms window matches what other
     /// apps use for the same pattern.
     func warpToCenter(of window: HyprWindow) {
-        mainThreadOnly()
         guard let center = window.center else { return }
-        CGWarpMouseCursorPosition(center)
+        warp(to: center)
+    }
+
+    /// Move the cursor to `point` (CG coordinates), with the same
+    /// disassociate dance as `warpToCenter`.
+    func warp(to point: CGPoint) {
+        mainThreadOnly()
+        CGWarpMouseCursorPosition(point)
         // briefly disassociate mouse to prevent delta accumulation
         CGAssociateMouseAndMouseCursorPosition(0)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {

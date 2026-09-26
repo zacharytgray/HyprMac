@@ -20,6 +20,23 @@ final class AXNotificationServiceTests: XCTestCase {
         }
     }
 
+    func testMainWindowChangeIsForwarded() {
+        let service = AXNotificationService()
+        var received: (AXNotificationService.Kind, pid_t)?
+        service.onEvent = { received = ($0, $1) }
+
+        service.route(
+            notification: kAXMainWindowChangedNotification as String,
+            elementPID: 77,
+            observerPID: nil
+        )
+
+        XCTAssertEqual(received?.1, 77)
+        guard case .mainWindowChanged? = received?.0 else {
+            return XCTFail("expected main window event")
+        }
+    }
+
     func testEventIsDroppedWhenNeitherElementNorObserverHasPID() {
         let service = AXNotificationService()
         var fireCount = 0

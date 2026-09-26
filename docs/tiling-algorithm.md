@@ -12,8 +12,11 @@ recovery turn without another sizing attempt. Count-based initial assignment
 is unchanged. Float-to-tile never evicts a neighbor into scratchpad.
 
 Verified incumbent identity survives temporary tree removal and display
-migration. Returning incumbents take slots before newcomers and never become
-admission fallback targets. If returning incumbents cannot all fit, the engine
+migration. It ends when the window leaves by an explicit move or is
+admitted to another workspace, so a window that drifted to another screen
+and is moved back is a newcomer again. Returning incumbents take slots
+before newcomers and never become admission fallback targets. If returning
+incumbents cannot all fit, the engine
 writes nothing and keeps the whole key unverified. Adjustment uses guarded
 refusal evidence and skips an adjusted write when the proposed frames cannot
 accommodate the refused axes within the existing candidate allowance.
@@ -187,7 +190,12 @@ Failed first tiles do not create a live tree; failed scratchpad migrations keep
 the source tree. The engine checks captured
 original frames against the usable screen before writing them back. Parked
 workspace frames are not valid restoration targets for a visible workspace;
-the result remains degraded without moving windows back offscreen. Valid
+the result remains degraded without moving windows back offscreen. The one
+exception is a newcomer the pass itself inserted, one neither in the live
+tree nor admitted to the workspace: its off-screen original says nothing
+about the tree being rolled back. It stays wherever the candidate left it,
+and the incumbents are restored and verified without it. An ordinary tiling
+pass reports it stranded for the admission recovery. Valid
 original frames are written once and restoration is verified. Scratchpad
 restoration uses the full display bounds, even when its candidate layout uses
 an inset region. Results distinguish
@@ -312,9 +320,18 @@ A close, a stop, a later key press, a display change, a workspace move, a
 user float, or a later layout that tiles the window all cancel the pending
 work. Switching or cycling workspaces is the exception: a reveal is the
 evidence a parked newcomer is waiting for, so those two actions leave the
-records alone. A retry that comes due while the screens are being
-reconfigured waits as well, rather than tiling into keys that are about to
-move. Scratchpad tiling never enters this path.
+records alone. Focus and informational presses leave them alone too, and so
+do resize, swap and split-toggle presses: those only rework the live tree,
+which never holds a stranded window, so nothing they do would ever give it
+another attempt. Cancelling there is how a move followed quickly by a resize
+left a window assigned, in no tree, and with nothing scheduled. A retry that
+comes due while the screens are being reconfigured waits as well, rather
+than tiling into keys that are about to move. So does one that comes due
+while the session is locked, the displays sleep or the user session is
+switched out: the window list is partial then, and an attempt from it would
+lay the key out without the windows it is missing. It gets its attempt from
+the first poll or retile after the span ends. Scratchpad tiling never enters
+this path.
 
 Every visible nonfloating assignment is therefore a verified tile, a window
 under a marked key, or a tracked recovery member. The state dump's
@@ -576,13 +593,31 @@ ordinary rejection happens.
 
 The rollback has to be told it may reach that far. A visible destination is
 always a different screen, so the window is standing on the source screen
-when the attempt captures its original frame, and a captured original
-outside the restoration rect cancels the rollback whole. Left alone that
-would strand the window on the destination screen while it is still assigned
-to the source, which the next poll reads as screen drift and acts on —
-completing the move the user was just told was impossible.
+when the attempt captures its original frame. A newcomer whose original is
+outside the restoration rect is left where the candidate put it. Left alone
+that would strand the window on the destination screen while it is still
+assigned to the source, which the next poll reads as screen drift and acts
+on — completing the move the user was just told was impossible.
 `revalidateAdmission` takes a `restorationReach` for this, and the
 orchestrator passes the source screen's rect.
+
+**Visible destination, ordinary move.** A window that fits takes the other
+order: it leaves the source tree, is reassigned, and the retile that
+follows lays out the destination with it. By then the destination is where
+it belongs, so a refused layout does not send it back. The incumbents are
+restored and verified; the mover stays where the candidate left it, in no
+tree, and the admission recovery retries it about 250 ms later. When the
+candidate's writes reached the mover, that is the destination screen and
+the retry is a same-screen write: a terminal that settled short after a 2x
+to 1x hop (issue #19, 1366×1136 against a 1394 target) gets its second
+write on the screen it now stands on. When the candidate failed on an
+incumbent before reaching the mover, the mover is still on the source
+screen and the retry is its first write. If the retry is refused too, the
+window floats in place and the fallback retile gives the incumbents their
+slots back. Rolling it back across the screens instead
+would leave a nonfloating window on a screen that does not show its
+workspace, and the rollback would be a second scale hop that can land short
+of the strict restoration bound itself.
 
 **Hidden destination.** Nothing is written. Unparking a hidden workspace's
 tenants over the visible one to run an experiment is not what the user

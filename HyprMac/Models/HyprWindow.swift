@@ -61,6 +61,11 @@ class HyprWindow: Equatable, Hashable {
     /// next Outlook window the same probe.
     var bundleID: String?
 
+    /// `true` for a Quick Look preview panel admitted by
+    /// `WindowAdmissionFilter`. The panel belongs to whichever app opened
+    /// it and always floats (`FloatingAdmissionPolicy`).
+    var isQuickLookPanel = false
+
     init(element: AXUIElement, windowID: CGWindowID, ownerPID: pid_t) {
         self.element = element
         self.windowID = windowID
@@ -323,13 +328,14 @@ class HyprWindow: Equatable, Hashable {
         }
     }
 
-    /// Give this window keyboard focus without changing z-order.
+    /// Give this window keyboard focus, activating its app when needed.
     ///
-    /// Uses `_SLPSSetFrontProcessWithOptions` to activate the process
-    /// in place, then `SLPSPostEventRecordTo` to synthesize the
-    /// keyboard-focus events. Floating windows stay exactly where
-    /// they are — used by FFM and `Hypr+Arrow` to avoid disturbing
-    /// the user's z-stack.
+    /// Despite the name this can raise. The kAXMain write makes this the
+    /// app's main window, and `NSRunningApplication.activate` brings the
+    /// app's main and key windows forward, so a tile covered by a floater
+    /// ends up above it.
+    /// `TiledFocusRouter` uses `makeFrontAndKeyWithoutRaise` instead when
+    /// a floater covers the target.
     func focusWithoutRaise() {
         let wid = windowID
 
@@ -353,15 +359,27 @@ class HyprWindow: Equatable, Hashable {
             }
         }
 
-        // SkyLight: route the synthesized key-focus event to the specific window.
-        // byte layout matches yabai's window_manager_make_key_window.
+        guard let sl = makeFrontAndKeyWithoutRaise() else { return }
+        hyprLog(.debug, .focus, "focusWithoutRaise(\(wid)) ax main=\(mainRC.rawValue) focused=\(focRC.rawValue) wasActive=\(wasActive) \(sl)")
+    }
+
+    /// Front the owning process and make this window key, with no AX
+    /// writes, no `activate()` and no click. This is yabai's
+    /// focus-without-raise: `_SLPSSetFrontProcessWithOptions` with the
+    /// window id, then the two key-window event records.
+    ///
+    /// Returns the SkyLight result codes for the log, or `nil` when the
+    /// process has no PSN.
+    @discardableResult
+    func makeFrontAndKeyWithoutRaise() -> String? {
         var psn = ProcessSerialNumber()
         guard GetProcessForPID(ownerPID, &psn) == noErr else {
-            hyprLog(.notice, .focus, "focusWithoutRaise(\(wid)) GetProcessForPID failed")
-            return
+            hyprLog(.notice, .focus, "makeFrontAndKey(\(windowID)) GetProcessForPID failed")
+            return nil
         }
         let setFrontRC = _SLPSSetFrontProcessWithOptions(&psn, UInt32(windowID), kCPSUserGenerated)
 
+        // byte layout matches yabai's window_manager_make_key_window.
         var bytes = [UInt8](repeating: 0, count: 0xf8)
         bytes[0x04] = 0xF8
         bytes[0x08] = 0x01
@@ -375,8 +393,36 @@ class HyprWindow: Equatable, Hashable {
 
         bytes[0x08] = 0x02
         let post2RC = SLPSPostEventRecordTo(&psn, &bytes[0])
+        return "sl front=\(setFrontRC.rawValue) post1=\(post1RC.rawValue) post2=\(post2RC.rawValue)"
+    }
 
-        hyprLog(.debug, .focus, "focusWithoutRaise(\(wid)) ax main=\(mainRC.rawValue) focused=\(focRC.rawValue) wasActive=\(wasActive) sl front=\(setFrontRC.rawValue) post1=\(post1RC.rawValue) post2=\(post2RC.rawValue)")
+    /// Tell `pid` that one of its windows gained or lost focus. yabai sends
+    /// this pair (lost on the old key window, gained on the new one, 40 ms
+    /// apart) when focus moves between two windows of the frontmost app.
+    @discardableResult
+    static func postWindowFocusEvent(pid: pid_t, windowID: CGWindowID, gained: Bool) -> CGError? {
+        var psn = ProcessSerialNumber()
+        guard GetProcessForPID(pid, &psn) == noErr else { return nil }
+        var bytes = [UInt8](repeating: 0, count: 0xf8)
+        bytes[0x04] = 0xF8
+        bytes[0x08] = 0x0D
+        bytes[0x8a] = gained ? 0x01 : 0x02
+        var widBytes = UInt32(windowID)
+        withUnsafeBytes(of: &widBytes) { src in
+            for i in 0..<4 { bytes[0x3c + i] = src[i] }
+        }
+        return SLPSPostEventRecordTo(&psn, &bytes[0])
+    }
+
+    /// The window AX reports as focused in `pid`'s app, as a `CGWindowID`.
+    static func axFocusedWindowID(pid: pid_t) -> CGWindowID? {
+        let app = AXUIElementCreateApplication(pid)
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
+        var wid: CGWindowID = 0
+        guard _AXUIElementGetWindow(value as! AXUIElement, &wid) == .success, wid != 0 else { return nil }
+        return wid
     }
 
     /// Force OS keyboard focus by delivering a synthesized leftMouseDown/Up

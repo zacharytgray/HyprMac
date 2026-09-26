@@ -49,14 +49,16 @@ singleton except `UserConfig.shared` and `MenuBarState.shared`.
 | `SpaceManager` | macOS native Spaces enumeration via private CGS APIs (read-only). |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
-| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind, auto-float predicate. |
-| `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu-tracking suppression. |
+| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate. |
+| `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
+| `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown, the focus invariant and the raise restore. A tile a floater covers is focused through SkyLight alone, checked, and falls back to the usual path. |
+| `WindowStacking` | Pure rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, and the tiles covering each floater. |
 | `TiledDragHandler` | Owns captured press/release state, cancellation, and verified cache updates. |
 | `TiledDragTransaction` | Builds isolated insertion, swap, or resize candidates and verifies frames before commit. |
 | `FrameSizingAttempt` | Bounded AX writes and complete frame readback through an injected clock and IO surface. |
 | `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. |
 | `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. |
-| `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. |
+| `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. A floater's cutout covers only the part of it that is in front. |
 | `CursorManager` | Cursor warp via `CGWarpMouseCursorPosition` + reassociate dance. |
 | `AppLauncherManager` | Launch-or-focus path for the `launchApp` action. |
 | `CommandRunner` | Runs the `runCommand` action's command line directly through `Process` — tokenize, resolve the program, launch. Never a shell. |
@@ -143,6 +145,10 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
 
 Per-app AXObserver notifications are the primary discovery trigger; the
 10s timer only backstops missed events and observer-refusing apps.
+While the session is locked, the displays sleep, or the user session is
+switched out, `computeChanges` treats a missing window as no evidence and
+skips the cycle, and `pollWindowChanges` stops there;
+`WindowManager.systemInterruption` opens and closes that span.
 
 ## Ownership rules
 
@@ -366,6 +372,58 @@ ratchet the floor down.
 
 See `docs/tiling-algorithm.md` for the full algorithm walkthrough.
 
+## Quick Look previews
+
+A Quick Look preview (select a file, press Space) is a `QLPreviewPanel`.
+It is one long-lived panel inside whichever app opened it (Finder,
+Messages, Mail), not a window of a Quick Look process. Discovery used to
+drop it along with every other non-standard subrole, so it was unmanaged:
+focus-follows-mouse buried it under the hovered tile, and Hypr+Shift+T
+could not find it.
+
+`WindowAdmissionFilter` (`Core/Discovery`) is the one place that decides
+which AX windows discovery keeps. It admits a Quick Look panel when all
+of these hold:
+
+- role `AXWindow` and subrole exactly `Quick Look`. That is what the panel
+  reported on macOS 15.7. Its role description (`window`), identifier,
+  title and document are generic or empty, so the subrole is the only
+  Quick Look signal;
+- not modal, and not in native full screen (`AXFullScreen`);
+- its own CG window, found through `_AXUIElementGetWindow` and never by
+  position, is visible on layer 0 or layer 3. The panel sits at the
+  floating level (layer 3) while its app is active.
+
+An admitted panel is always a floater (`FloatingAdmissionPolicy` reason
+`quick look preview`) and never enters a BSP tree:
+
+- **Opening** is a new floating window, assigned to the visible workspace
+  on the screen where it opened. Floaters use no tile slot, so a full
+  workspace does not route it anywhere. Startup and Retile All ask the same
+  policy, so they keep it floating too.
+- **Floating logic** treats it like any floater: Hypr+Shift+T cycles to it,
+  and raise-behind lifts it when a tile covers it. While its app is active
+  it sits on layer 3, above every tile, so nothing covers it then.
+- **Hypr+T** does not tile it. The toggle refuses up front with the red
+  shake ("Quick Look previews stay floating") and nothing is laid out.
+  Sending it to the scratchpad beeps, and moving it off a disabled monitor
+  keeps it floating.
+- **Arrowing to another file** resizes the panel to fit the item. That is
+  left alone: floaters get no drift re-apply.
+- **Closing** (Space, Esc, the close button) orders the panel out. The app
+  stops listing it, and the next preview comes back with the same id.
+  Discovery forgets it outright, floating flag and all, instead of keeping
+  a ghost, so the next preview is new. The same happens if it disappears
+  for any other reason: its app hidden or deactivated, or Quick Look's own
+  full-screen view.
+- **Full screen** is never managed. Native full screen is refused by the
+  rule. Quick Look's own full-screen view sets the panel's alpha to 0 and
+  draws on higher layers, so the panel leaves the snapshot until it
+  returns.
+
+macOS 27 behaviour is unconfirmed. `docs/debugging.md` lists the log lines
+that show what the panel reports there.
+
 ## Coordinate systems
 
 CG (CoreGraphics) uses a top-left origin; NS (AppKit) uses
@@ -417,8 +475,10 @@ The on-disk JSON wire format for keybinds is frozen — see
   event system, before the `hidutil` user mapping and before any
   CGEvent exists, so "No Action" (or any other choice) swallows the key
   before `KeyRemapper` or the event tap sees it. It is per keyboard.
-  The same holds for Control, Option, and Command when one of them is
-  the Hypr key. macOS exposes no supported way to read or change this,
+  The same holds for Option and Command on either side, and for
+  Control, which older configs may still use (see "Hypr key" in
+  `docs/keybinds-and-actions.md`). Shift, Tab, backtick, backslash and
+  F13–F20 are not in that pane. macOS exposes no supported way to read or change this,
   so HyprMac never claims it is verified: `HyprKeySystemGuidance`
   supplies the copy and the deep link shown in the permissions gate,
   the tour, and Settings → Keys.
@@ -442,6 +502,19 @@ this list is the index.
   automatically on app activation and discovery reconciliation. It leaves
   floating siblings of the focused tiled app alone, because restoring focus
   within that app can put the tile back above its sibling and cause a loop.
+  It raises only floaters a tile overlaps, stands down while the frontmost
+  app has a menu open, and cools a pair down when the raise does nothing
+  (macOS 27 ignores a cross-app AXRaise, seen live) or loops. A managed
+  floater counts on layer 0 or on the floating level (3), since AppKit
+  moves floating panels between the two as their app activates. Hover and Hypr+Arrow
+  focus avoid burying floaters in the first place through
+  `TiledFocusRouter`; workspace switches, window moves and the scratchpad
+  do not yet. A click on a tile still lifts it natively; the click re-raise
+  puts the floater back about 40 ms after mouse-up and hands focus back to
+  the tile without lifting it, so the covered part of the floater blinks
+  once per click. That works only for a floater of the tile's own app. When a raise does nothing, the dim shows the floater only
+  where it is in front. See `docs/debugging.md` "Floaters, open menus and
+  no-raise focus".
 - **Squishy-sibling swap rejection** — when a swap squishes a
   sibling app that has no AX-reported or readback-confirmed minimum
   size (the canonical case in the user's setup is Sidenote), the

@@ -36,6 +36,31 @@ final class HyprKeySystemGuidanceTests: XCTestCase {
         XCTAssertEqual(needsNothing.count + expected.count, HyprKey.allCases.count)
     }
 
+    // backslash and F13–F20 are not in the Modifier Keys pane
+    func testOfferedKeysNeedingGuidanceAreCapsLockOptionAndCommand() {
+        let needing = HyprKey.pickerChoices.filter { HyprKeySystemGuidance.forKey($0) != nil }
+        XCTAssertEqual(needing, [.capsLock, .leftOption, .rightOption, .leftCommand, .rightCommand])
+    }
+
+    // the pane remaps Option and Command for both sides at once, so the
+    // wording names the modifier, not the side
+    func testLeftAndRightKeysShareTheSameWording() {
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftOption), HyprKeySystemGuidance.forKey(.rightOption))
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftCommand), HyprKeySystemGuidance.forKey(.rightCommand))
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftOption)?.title,
+                       "Keep Option set to \"⌥ Option\" in Modifier Keys on each keyboard.")
+        XCTAssertEqual(HyprKeySystemGuidance.forKey(.leftCommand)?.title,
+                       "Keep Command set to \"⌘ Command\" in Modifier Keys on each keyboard.")
+    }
+
+    func testCapsLockGuidanceWording() {
+        let guidance = HyprKeySystemGuidance.forKey(.capsLock)
+        XCTAssertEqual(guidance?.title,
+                       "Keep Caps Lock set to \"⇪ Caps Lock\" in Modifier Keys on each keyboard.")
+        XCTAssertEqual(guidance?.detail,
+                       "Check System Settings → Keyboard → Keyboard Shortcuts… → Modifier Keys for each keyboard you use. \"No Action\" or any other choice hides Caps Lock from HyprMac. HyprMac can't check it for you.")
+    }
+
     func testTitleNamesTheKeyAndTheRequiredAction() {
         for (key, (keyName, requiredAction)) in expected {
             guard let guidance = HyprKeySystemGuidance.forKey(key) else {

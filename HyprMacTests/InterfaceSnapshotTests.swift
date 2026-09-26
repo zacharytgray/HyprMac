@@ -44,6 +44,17 @@ final class InterfaceSnapshotTests: XCTestCase {
 
         UserConfig.shared.hyprKey = .tab
         try render("keys-tab-dark", tab(KeybindsSettingsView()))
+
+        // tab above and these two are no longer offered: the note shows, plus
+        // Modifier Keys guidance where the pane can remap the key
+        UserConfig.shared.hyprKey = .rightShift
+        try render("keys-rightshift-dark", tab(KeybindsSettingsView()))
+        UserConfig.shared.hyprKey = .leftControl
+        try render("keys-leftcontrol-dark", tab(KeybindsSettingsView()))
+
+        // left-hand modifier: the use-the-right-key note plus guidance
+        UserConfig.shared.hyprKey = .leftCommand
+        try render("keys-leftcommand-dark", tab(KeybindsSettingsView()))
     }
 
     func testRenderTourGateAndMenu() throws {

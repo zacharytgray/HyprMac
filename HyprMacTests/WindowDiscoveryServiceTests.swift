@@ -197,6 +197,134 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertFalse(fourth.requestsRecheck)
     }
 
+    // MARK: - lock and display sleep
+
+    private static let locked = "com.apple.screenIsLocked"
+    private static let unlocked = "com.apple.screenIsUnlocked"
+
+    /// five windows on one live pid, the shape of the 09:36 lock log
+    private func lockFixture() -> (WindowDiscoveryService, WindowStateCache, [HyprWindow]) {
+        let (svc, cache, _) = makeService()
+        let windows = (1...5).map { makeWindow(id: CGWindowID($0), pid: 8000) }
+        cache.knownWindowIDs = Set(windows.map(\.windowID))
+        for w in windows { cache.windowOwners[w.windowID] = 8000 }
+        return (svc, cache, windows)
+    }
+
+    func testALockedSessionHoldsEveryMissingWindowUntilUnlock() {
+        let (svc, cache, windows) = lockFixture()
+        svc.noteSystemInterruption(Self.locked)
+
+        // well past the three mass-gone skips, and through a display sleep
+        // and wake that both happen while the lock screen is up
+        for poll in 0..<8 {
+            if poll == 2 { svc.noteSystemInterruption(NSWorkspace.screensDidSleepNotification.rawValue) }
+            if poll == 5 { svc.noteSystemInterruption(NSWorkspace.screensDidWakeNotification.rawValue) }
+            let changes = compute(svc, snapshot: [], runningPIDs: [8000])
+            XCTAssertTrue(changes.heldForInterruption, "poll \(poll)")
+            XCTAssertTrue(changes.goneIDs.isEmpty, "poll \(poll)")
+            XCTAssertFalse(changes.needsRetile, "poll \(poll)")
+            XCTAssertFalse(changes.requestsRecheck, "no prompt re-poll while locked")
+        }
+        XCTAssertEqual(cache.knownWindowIDs, Set(windows.map(\.windowID)))
+        XCTAssertTrue(cache.hiddenWindowIDs.isEmpty, "nothing was marked hidden")
+
+        svc.noteSystemInterruption(Self.unlocked)
+        let back = compute(svc, snapshot: windows, runningPIDs: [8000])
+
+        XCTAssertTrue(back.returned.isEmpty, "nothing left, so nothing returns")
+        XCTAssertFalse(back.needsRetile, "and no retile rebuilds the trees")
+        XCTAssertFalse(back.heldForInterruption)
+    }
+
+    func testTheSpanLastsUntilEveryReasonHasEnded() {
+        let (svc, _, _) = lockFixture()
+        svc.noteSystemInterruption(NSWorkspace.screensDidSleepNotification.rawValue)
+        svc.noteSystemInterruption(Self.locked)
+        svc.noteSystemInterruption(NSWorkspace.screensDidWakeNotification.rawValue)
+
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).goneIDs.isEmpty)
+        XCTAssertFalse(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
+
+        svc.noteSystemInterruption(Self.unlocked)
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck,
+                      "unlocked and awake: the ordinary mass-gone guard is back in charge")
+    }
+
+    func testAWindowThatReallyClosedDuringTheLockIsHiddenAfterUnlock() {
+        let (svc, cache, windows) = lockFixture()
+        svc.noteSystemInterruption(Self.locked)
+        let fourLeft = Array(windows.dropFirst())
+        XCTAssertTrue(compute(svc, snapshot: fourLeft, runningPIDs: [8000]).goneIDs.isEmpty)
+
+        svc.noteSystemInterruption(Self.unlocked)
+        let changes = compute(svc, snapshot: fourLeft, runningPIDs: [8000])
+
+        XCTAssertEqual(changes.goneIDs, [1])
+        XCTAssertTrue(cache.hiddenWindowIDs.contains(1))
+    }
+
+    func testTheCapEndsASpanWhoseEndNeverCame() {
+        let (svc, _, _) = lockFixture()
+        var clock = Date(timeIntervalSinceReferenceDate: 0)
+        svc.now = { clock }
+        svc.noteSystemInterruption(Self.locked)
+        clock += WindowDiscoveryService.interruptionCap - 1
+        XCTAssertFalse(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck, "still held")
+
+        clock += 2
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck,
+                      "past the cap the span is over and the mass-gone guard runs")
+    }
+
+    func testAHeldCycleIsOnlyAHoldWhileSomethingIsMissing() {
+        let (svc, _, windows) = lockFixture()
+        svc.noteSystemInterruption(Self.locked)
+
+        XCTAssertFalse(compute(svc, snapshot: windows, runningPIDs: [8000]).heldForInterruption,
+                       "a full snapshot is an ordinary no-op cycle")
+    }
+
+    func testAHotkeyPressEndsTheSpan() {
+        let (svc, _, _) = lockFixture()
+        svc.noteSystemInterruption(Self.locked)
+        svc.endSessionInterruption(evidence: "hotkey press")
+
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
+    }
+
+    func testNotificationsThatOpenNoSpanChangeNothing() {
+        let (svc, _, _) = lockFixture()
+        // a system wake says nothing about the lock, and an unlock with no
+        // lock before it has nothing to end
+        svc.noteSystemInterruption(NSWorkspace.didWakeNotification.rawValue)
+        svc.noteSystemInterruption(Self.unlocked)
+
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
+    }
+
+    func testASwitchedOutSessionHoldsMissingWindowsToo() {
+        let (svc, _, _) = lockFixture()
+        svc.noteSystemInterruption(NSWorkspace.sessionDidResignActiveNotification.rawValue)
+        XCTAssertFalse(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
+
+        svc.noteSystemInterruption(NSWorkspace.sessionDidBecomeActiveNotification.rawValue)
+        XCTAssertTrue(compute(svc, snapshot: [], runningPIDs: [8000]).requestsRecheck)
+    }
+
+    func testTheSpanIsReadableForTheRecoveryRetry() {
+        // the admission recovery's own timer reads this, not a poll
+        let (svc, _, _) = lockFixture()
+        XCTAssertFalse(svc.isSessionInterrupted)
+        svc.noteSystemInterruption(NSWorkspace.screensDidSleepNotification.rawValue)
+        XCTAssertTrue(svc.isSessionInterrupted, "display sleep alone opens a span")
+        svc.noteSystemInterruption(Self.locked)
+        svc.noteSystemInterruption(NSWorkspace.screensDidWakeNotification.rawValue)
+        XCTAssertTrue(svc.isSessionInterrupted, "still locked")
+        svc.noteSystemInterruption(Self.unlocked)
+        XCTAssertFalse(svc.isSessionInterrupted)
+    }
+
     func testGoneWindowWithLivePIDMovesToHidden() {
         let (svc, cache, _) = makeService()
         cache.knownWindowIDs = [10]
