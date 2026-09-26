@@ -8,6 +8,8 @@ import AppKit
 // - SavedConfig with the version field set round-trips
 // - SavedConfig with all optional fields missing still decodes (partial
 //   configs from hand-edited files or older releases must not crash)
+// - an optional field this build can't read (an unknown hyprKey, a changed
+//   type) drops just that field; the core fields stay strict
 // - encoder omits the version field when nil, preserving the byte-equal
 //   contract for unchanged settings
 // - a nil corner-radius override stays omitted so OS defaults remain adaptive
@@ -115,6 +117,136 @@ final class ConfigMigrationTests: XCTestCase {
         XCTAssertEqual(saved.focusBracketStyle, .rounded)
         XCTAssertNil(ConfigMigration.resolveFocusBracketColor(saved: saved))
         XCTAssertEqual(saved.dimIntensity, 0.17)
+    }
+
+    // MARK: - per-field decode tolerance
+
+    // config.json is shared over iCloud, so this build can meet a value a
+    // newer build wrote. a value it can't read must cost that one field,
+    // not every setting. the fixture sets every optional field, so a field
+    // lost along the way shows up in the comparisons below.
+    private let fullConfig = SavedConfig(
+        version: nil,
+        keybinds: [Keybind(keyCode: 18, modifiers: .hypr, action: .switchWorkspace(1))],
+        gapSize: 12, outerPadding: 6, enabled: true,
+        focusFollowsMouse: false, hyprKey: .rightCommand,
+        excludedBundleIDs: ["com.apple.FaceTime"],
+        showMenuBarIndicator: false,
+        overlayAppearance: .dark,
+        maxSplitsPerMonitor: ["Display A": 4], disabledMonitors: ["Display B"],
+        showFocusBorder: true,
+        focusBorderColorHex: "007AFF", floatingBorderColorHex: "FF9500",
+        focusBracketStyle: .rounded, focusBracketColorHex: "FFFFFF",
+        focusBracketRadius: 14, focusBracketThickness: 3, focusBracketLength: 12,
+        dimInactiveWindows: false, dimIntensity: 0.17,
+        mouseHoverPollHz: 60, chromeFadeDurationSec: 0.2,
+        windowCornerRadius: 13,
+        scratchpadTileByDefault: false, scratchpadRegionInset: 0.03,
+        restoreLayoutOnLaunch: true)
+
+    private let tolerantFields = [
+        "focusFollowsMouse", "hyprKey", "excludedBundleIDs", "showMenuBarIndicator",
+        "maxSplitsPerMonitor", "disabledMonitors", "showFocusBorder",
+        "focusBorderColorHex", "floatingBorderColorHex", "focusBracketColorHex",
+        "focusBracketRadius", "focusBracketThickness", "focusBracketLength",
+        "dimInactiveWindows", "dimIntensity", "mouseHoverPollHz", "chromeFadeDurationSec",
+        "windowCornerRadius", "scratchpadTileByDefault", "scratchpadRegionInset",
+        "restoreLayoutOnLaunch",
+    ]
+
+    private func jsonObject(_ saved: SavedConfig) throws -> [String: Any] {
+        try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(saved)) as? [String: Any])
+    }
+
+    private func decode(_ object: [String: Any]) throws -> SavedConfig {
+        try JSONDecoder().decode(SavedConfig.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    func testUnknownHyprKeyKeepsEveryOtherSetting() throws {
+        var object = try jsonObject(fullConfig)
+        object["hyprKey"] = "rightFn"
+
+        let saved = try decode(object)
+
+        XCTAssertNil(saved.hyprKey)
+        XCTAssertEqual(saved.hyprKey ?? UserConfigDefaults.hyprKey, .capsLock)
+        XCTAssertEqual(saved.keybinds, fullConfig.keybinds)
+        XCTAssertEqual(saved.gapSize, 12)
+        XCTAssertEqual(saved.excludedBundleIDs, ["com.apple.FaceTime"])
+        XCTAssertEqual(saved.focusBorderColorHex, "007AFF")
+        XCTAssertEqual(saved.dimIntensity, 0.17)
+        XCTAssertEqual(saved.overlayAppearance, .dark)
+        XCTAssertEqual(saved.restoreLayoutOnLaunch, true)
+        object.removeValue(forKey: "hyprKey")
+        XCTAssertEqual(try jsonObject(saved) as NSDictionary, object as NSDictionary)
+    }
+
+    func testEachOptionalFieldDropsOnlyItselfWhenUnreadable() throws {
+        let original = try jsonObject(fullConfig)
+        XCTAssertEqual(Set(tolerantFields).subtracting(original.keys), [],
+                       "the fixture must set every tolerant field")
+
+        // an object is the wrong type for every field. the rest are changes a
+        // newer build or a hand edit could plausibly make.
+        var cases: [(String, Any)] = tolerantFields.map { ($0, ["future": "value"]) }
+        cases += [
+            ("hyprKey", "rightFn"),
+            ("hyprKey", 3),
+            ("mouseHoverPollHz", 119.5),
+            ("excludedBundleIDs", [42]),
+            ("maxSplitsPerMonitor", ["Display A": "four"]),
+            ("dimIntensity", "0.2"),
+            ("showFocusBorder", "yes"),
+            ("focusBorderColorHex", 0x007AFF),
+        ]
+        for (key, bad) in cases {
+            var object = original
+            object[key] = bad
+            let saved = try decode(object)
+            var expected = original
+            expected.removeValue(forKey: key)
+            XCTAssertEqual(try jsonObject(saved) as NSDictionary, expected as NSDictionary,
+                           "\(key) = \(bad)")
+        }
+    }
+
+    func testTolerantDecodeRoundTripIsByteStable() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+
+        let first = try encoder.encode(fullConfig)
+        XCTAssertEqual(try encoder.encode(JSONDecoder().decode(SavedConfig.self, from: first)), first)
+
+        // once the unreadable fields drop, the next save/load cycle is stable
+        var object = try jsonObject(fullConfig)
+        object["hyprKey"] = "rightFn"
+        object["dimIntensity"] = ["future": "value"]
+        let dropped = try encoder.encode(decode(object))
+        XCTAssertEqual(try encoder.encode(JSONDecoder().decode(SavedConfig.self, from: dropped)), dropped)
+    }
+
+    func testEveryHyprKeyRoundTripsByteStable() throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        for key in HyprKey.allCases {
+            var object = try jsonObject(fullConfig)
+            object["hyprKey"] = key.rawValue
+            let first = try encoder.encode(decode(object))
+            let again = try JSONDecoder().decode(SavedConfig.self, from: first)
+            XCTAssertEqual(again.hyprKey, key)
+            XCTAssertEqual(try encoder.encode(again), first, key.rawValue)
+        }
+    }
+
+    func testCoreFieldsStayStrict() throws {
+        let cases: [(String, Any)] = [
+            ("gapSize", "8"), ("outerPadding", "8"), ("enabled", "yes"), ("version", "2"),
+        ]
+        for (key, bad) in cases {
+            var object = try jsonObject(fullConfig)
+            object[key] = bad
+            XCTAssertThrowsError(try decode(object), key)
+        }
     }
 
     private let oldFloat = Keybind(keyCode: 17, modifiers: [.hypr, .shift], action: .toggleFloating)

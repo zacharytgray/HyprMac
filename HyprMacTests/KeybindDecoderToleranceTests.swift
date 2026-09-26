@@ -442,6 +442,61 @@ final class KeybindDecoderToleranceTests: XCTestCase {
         XCTAssertEqual(decoded.keybinds.map(\.action), Keybind.defaults.map(\.action))
     }
 
+    // MARK: - documented hand-edit examples
+
+    // the hand-edit section of docs/keybinds-and-actions.md once showed
+    // "modifiers": { "rawValue": 1 }. ModifierFlags is an OptionSet with the
+    // standard RawRepresentable coding, so the wire format is a bare number.
+    // the object form fails that one keybind, and the per-keybind tolerance
+    // drops it without a word to the user.
+    func testRawValueObjectModifiersAreDropped() throws {
+        let documented = #"{ "keyCode": 123, "modifiers": { "rawValue": 1 }, "action": { "focusDirection": { "_0": "left" } } }"#
+        XCTAssertThrowsError(try JSONDecoder().decode(Keybind.self, from: Data(documented.utf8)))
+
+        let json = """
+        {"keybinds":[\(documented)],"gapSize":8,"outerPadding":8,"enabled":true}
+        """
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        XCTAssertTrue(saved.keybinds.isEmpty)
+    }
+
+    // every line of every ```json block in docs/keybinds-and-actions.md must
+    // decode: a line with keyCode as a Keybind (alone and inside a config,
+    // where the tolerance would hide a bad one), any other line as an Action.
+    // this keeps the documented examples from drifting off the wire format.
+    func testDocumentedJSONExamplesDecode() throws {
+        let doc = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("docs/keybinds-and-actions.md")
+        let text = try String(contentsOf: doc, encoding: .utf8)
+
+        var examples: [String] = []
+        var inJSONBlock = false
+        for line in text.components(separatedBy: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") {
+                inJSONBlock = !inJSONBlock && trimmed == "```json"
+                continue
+            }
+            if inJSONBlock && !trimmed.isEmpty { examples.append(trimmed) }
+        }
+        XCTAssertGreaterThanOrEqual(examples.count, 8, "found only \(examples.count) examples")
+
+        for example in examples {
+            if example.contains(#""keyCode""#) {
+                let kb = try JSONDecoder().decode(Keybind.self, from: Data(example.utf8))
+                let json = """
+                {"keybinds":[\(example)],"gapSize":8,"outerPadding":8,"enabled":true}
+                """
+                let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+                XCTAssertEqual(saved.keybinds, [kb], example)
+            } else {
+                XCTAssertNoThrow(try JSONDecoder().decode(Action.self, from: Data(example.utf8)), example)
+            }
+        }
+    }
+
     // MARK: - SavedConfig wire format is unchanged
 
     // the custom decoder must not touch what the encoder writes. these pin the

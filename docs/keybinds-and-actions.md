@@ -157,7 +157,17 @@ Malformed payloads are handled defensively rather than crashing.
   "Per-element tolerance" below.
 - **Optional `SavedConfig` fields**: missing fields decode as `nil`
   and the runtime applies the matching default from
-  `UserConfigDefaults`.
+  `UserConfigDefaults`. So does a value this build can't read: a case a
+  newer build added, a changed type, a typo. That field is treated as
+  missing and logs at `.notice`, and every other field decodes normally.
+  `ConfigMigrationTests` pins each field. Two older exceptions do not
+  log: an unreadable `overlayAppearance` decodes as `.system`, and an
+  unreadable `focusBracketStyle` decodes as `.rounded`, because the key's
+  presence marks the new bracket schema.
+- **Core fields**: the `keybinds` array, `gapSize`, `outerPadding` and
+  `enabled` stay strict, since every build since v0.4.2 writes them with
+  these types. `version` stays strict too, because it will pick which
+  migrations run.
 
 ## Per-element tolerance
 
@@ -310,20 +320,24 @@ HyprMac instead of the app: ⌘S, ⌘T, ⌘W and ⌘1–9, or ⌥← and ⌥→.
 chords pass through unchanged. `HyprKey.leftModifierNote` says this under
 the picker and points to the right-hand key for those shortcuts.
 
-The dropped cases stay in the enum with their raw values. `SavedConfig`
-decodes `hyprKey` strictly: an unknown value throws,
-`ConfigStore.loadSavedConfig` returns nil, and every setting resets to
-defaults. With iCloud sync on, the next save pushes that reset to the
-other machines. So a config that already
-names a dropped key keeps it and keeps working. `HyprKey.pickerRows(for:)`
-appends that key to the picker so the selection still has a matching
-row, and `HyprKey.notRecommendedNote` explains in one sentence why it is
-no longer recommended. The row goes away once the user picks another
-key. There is no migration.
+The dropped cases stay in the enum with their raw values, so a config
+that already names a dropped key keeps it and keeps working.
+`HyprKey.pickerRows(for:)` appends that key to the picker so the
+selection still has a matching row, and `HyprKey.notRecommendedNote`
+explains in one sentence why it is no longer recommended. The row goes
+away once the user picks another key. There is no migration.
 
-Never remove a `HyprKey` case or change a raw value. `HyprKeyPickerTests`
-pins the offered list, the kept row, both notes, the default binds the
-notes name, and decoding of every dropped value. Modifier Keys guidance
+An unknown `hyprKey` value, such as a key a newer build added, decodes
+as `nil` with a `.notice` log. This build then uses the default Hypr key,
+Caps Lock, and keeps every other setting. With iCloud sync on, its next
+save writes `capsLock` over the unknown value, and the newer machine
+picks that up. Before this, an unknown value failed the whole decode,
+`ConfigStore.loadSavedConfig` returned nil, and every setting reset.
+
+Never remove a `HyprKey` case or change a raw value: its users would
+silently move to Caps Lock. `HyprKeyPickerTests` pins the offered list,
+the kept row, both notes, the default binds the notes name, decoding of
+every dropped value, and the fallback for an unknown one. Modifier Keys guidance
 (`HyprKeySystemGuidance`) covers Caps Lock, Option and Command, plus
 Control for older configs.
 
@@ -343,25 +357,28 @@ Config lives at `~/Library/Application Support/HyprMac/config.json`
 (delete to reset to defaults). Keybind entries look like:
 
 ```json
-{ "keyCode": 123, "modifiers": { "rawValue": 1 }, "action": { "focusDirection": { "_0": "left" } } }
+{ "keyCode": 123, "modifiers": 1, "action": { "focusDirection": { "_0": "left" } } }
 ```
 
 Restart HyprMac after editing. Example — bind Hypr+B to launch Safari:
 
 ```json
-{ "keyCode": 11, "modifiers": { "rawValue": 1 }, "action": { "launchApp": { "bundleID": "com.apple.Safari" } } }
+{ "keyCode": 11, "modifiers": 1, "action": { "launchApp": { "bundleID": "com.apple.Safari" } } }
 ```
 
 Example — bind Hypr+5 to an interactive screenshot:
 
 ```json
-{ "keyCode": 23, "modifiers": { "rawValue": 1 }, "action": { "runCommand": { "label": "Screenshot", "command": "/usr/sbin/screencapture -i ~/Desktop/shot.png" } } }
+{ "keyCode": 23, "modifiers": 1, "action": { "runCommand": { "label": "Screenshot", "command": "/usr/sbin/screencapture -i ~/Desktop/shot.png" } } }
 ```
 
-**Modifier rawValues** (bitwise OR to combine — see
-`Models/Keybind.swift`): `1` Hypr, `2` Shift, `4` Option, `8`
-Control, `16` Command. Hypr+Shift = `3`, Hypr+Ctrl = `9`,
-Hypr+Ctrl+Shift = `11`.
+**Modifier values**: `modifiers` is a bare number, the bitwise OR of
+the modifiers in the chord (see `Models/Keybind.swift`): `1` Hypr, `2`
+Shift, `4` Option, `8` Control, `16` Command. Hypr+Shift = `3`,
+Hypr+Ctrl = `9`, Hypr+Ctrl+Shift = `11`. An object such as
+`{ "rawValue": 1 }` does not decode, and HyprMac drops that keybind.
+`KeybindDecoderToleranceTests.testDocumentedJSONExamplesDecode` decodes
+every JSON example in this file.
 
 **Key codes** (decimal, Carbon `kVK_*`):
 

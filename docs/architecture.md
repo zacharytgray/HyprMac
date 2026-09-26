@@ -43,7 +43,7 @@ singleton except `UserConfig.shared` and `MenuBarState.shared`.
 |---|---|
 | `WindowManager` | Orchestrator. Wires services, drives lifecycle, owns mouse monitors and observers. |
 | `HotkeyManager` | Session-level CGEventTap on a dedicated thread. Translates Hypr-key chords into `Action` values, dispatched to main. |
-| `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. |
+| `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. Adds and removes only its own `UserKeyMapping` entry (see "Caps Lock remap"). |
 | `AccessibilityManager` | AX bridge. Enumerates windows, resolves the focused window, picks directional neighbors. |
 | `DisplayManager` | NSScreen tracking and CG ↔ NS coordinate conversion. |
 | `SpaceManager` | macOS native Spaces enumeration via private CGS APIs (read-only). |
@@ -463,6 +463,51 @@ event and need no update callback. See [settings polish](settings-polish.md).
 
 The on-disk JSON wire format for keybinds is frozen — see
 `docs/keybinds-and-actions.md` for the contract.
+
+## Caps Lock remap
+
+`hidutil`'s `UserKeyMapping` is one system-wide list. Users with their
+own system-wide mappings (from a LaunchAgent or a script) share it with
+HyprMac, so
+`KeyRemapper` never writes the whole list from scratch. It reads the list
+through IOKit (`IOHIDEventSystemClientCopyProperty`), changes only its own
+Caps Lock → F18 entry, and writes the result with `hidutil property --set`.
+The rules are the pure `KeyMappingMerge`, pinned by `KeyRemapperTests`:
+
+- Install adds the entry once. Every other entry keeps its place.
+  Repeated launches never add a second copy, and a list that already
+  matches is not written.
+- Remove (at quit, when the Hypr key changes away from Caps Lock, and
+  at launch when it is not Caps Lock) takes out only that entry. It never
+  writes `[]` over other entries.
+- A user entry whose source is Caps Lock (Caps Lock → Escape, say)
+  cannot coexist with ours. While Caps Lock is the Hypr key, ours takes
+  its place in the list, and the user's entry is held in the
+  `heldCapsLockKeyMappings` default. The hold is stored before the write
+  and cleared only after a successful one. Remove puts it back where ours
+  was. If something else has mapped Caps Lock by then, or ours is already
+  gone, the hold is dropped instead. Taking over, putting back and
+  dropping each log at `.notice`.
+- A list with an entry HyprMac can't reproduce exactly (not a plain
+  src/dst pair of whole numbers) is left alone. Nothing is written, and
+  the skip logs at `.error`. With Caps Lock as the Hypr key, that leaves
+  the Hypr key dead until the list is fixed.
+- An entry identical to ours counts as ours, whoever added it.
+
+It reads through IOKit instead of parsing `hidutil property --get`: the
+key is public (`kIOHIDUserKeyUsageMapKey`), the value comes back typed, and
+the `--get` output is a CoreFoundation description string with no stable
+format. A missing property (nothing set since boot) reads as an empty
+list. If that read ever came back empty while our entry was set, remove
+would write nothing and leave F18 in place; the old code wrote `[]`.
+
+The Debug and Release apps have separate defaults domains, so each holds
+its own displaced entry. Running one after the other while an entry is
+held can put back a mapping the user no longer has. Quit one variant
+before starting the other.
+
+Mappings set per keyboard with `hidutil --matching` are not in this list,
+and HyprMac does not read or change them.
 
 ## Permissions
 
