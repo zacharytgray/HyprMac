@@ -82,19 +82,27 @@ final class TiledFocusRouter {
 
     /// Focus `target`. A tile with a floater above it takes the no-raise
     /// path; everything else takes the usual one.
+    ///
+    /// `onResult` hears `true` when the target ends up key with every
+    /// floater that covered it still above, and `false` when the usual path
+    /// ran or the check missed. It is not called when a newer focus
+    /// supersedes this one.
     @discardableResult
-    func focus(_ target: HyprWindow, reason: String, fallback: Fallback) -> Route {
+    func focus(_ target: HyprWindow, reason: String, fallback: Fallback,
+               onResult: ((Bool) -> Void)? = nil) -> Route {
         let wid = target.windowID
         let pid = target.ownerPID
         let floaters = visibleFloaterIDs().subtracting([wid])
         guard isTiled(wid), !floaters.isEmpty, let windows = windowList() else {
             usualFocus(target, fallback)
+            onResult?(false)
             return Route(path: .usual, targetFrame: nil, coveringFrames: [])
         }
         let targetFrame = windows.first { $0.windowID == wid }?.bounds
         let covering = WindowStacking.floaters(above: wid, among: floaters, in: windows)
         guard !covering.isEmpty else {
             usualFocus(target, fallback)
+            onResult?(false)
             return Route(path: .usual, targetFrame: targetFrame, coveringFrames: [])
         }
         let route = Route(path: .noRaise, targetFrame: targetFrame,
@@ -105,6 +113,7 @@ final class TiledFocusRouter {
         let previousKey = front == pid ? keyWindowID(pid) : nil
         if front == pid, previousKey == wid {
             hyprLog(.debug, .focus, "no-raise focus: wid=\(wid) already key (reason=\(reason))")
+            onResult?(true)
             return Route(path: .alreadyFocused, targetFrame: route.targetFrame,
                          coveringFrames: route.coveringFrames)
         }
@@ -120,7 +129,8 @@ final class TiledFocusRouter {
             hyprLog(.debug, .focus, "no-raise focus: wid=\(wid) \(rc)")
             self.schedule(Self.verifyDelay) { [weak self] in
                 self?.verify(target, reason: reason, fallback: fallback,
-                             generation: generation, covering: coveringIDs, startFront: front)
+                             generation: generation, covering: coveringIDs, startFront: front,
+                             onResult: onResult)
             }
         }
 
@@ -156,7 +166,8 @@ final class TiledFocusRouter {
     }
 
     private func verify(_ target: HyprWindow, reason: String, fallback: Fallback,
-                        generation: UInt64, covering: [CGWindowID], startFront: pid_t?) {
+                        generation: UInt64, covering: [CGWindowID], startFront: pid_t?,
+                        onResult: ((Bool) -> Void)?) {
         let wid = target.windowID
         guard isCurrent(wid, generation) else {
             hyprLog(.notice, .focus, "no-raise focus verify: wid=\(wid) superseded")
@@ -170,6 +181,7 @@ final class TiledFocusRouter {
                 + "key=\(check.keyWindowID.map(String.init) ?? "nil") "
                 + "floatersAbove=\(check.floatersAbove) buried=\(buried) "
                 + "→ \(landed ? "landed" : "missed")")
+        onResult?(landed && buried.isEmpty)
         guard !landed else { return }
         // the user switched to a third app meanwhile (Cmd-Tab, a Dock click)
         if let now = check.frontPID, now != target.ownerPID, now != startFront {

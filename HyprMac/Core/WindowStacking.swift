@@ -1,7 +1,8 @@
 // What the window server says about stacking: the frontmost app's popup
-// windows, a pointer hit-test that stops at them, and which floaters sit
-// above a tile. Everything here is pure over a decoded CGWindowList so the
-// rules can be tested with an injected list.
+// windows, a pointer hit-test that stops at them, which floaters sit above
+// or below a tile, and what covers each floater. Everything here is pure
+// over a decoded CGWindowList so the rules can be tested with an injected
+// list.
 
 import Cocoa
 
@@ -152,6 +153,46 @@ enum WindowStacking {
             floaterIDs.contains($0.windowID) && $0.layer == 0
                 && ($0.bounds.map { overlaps($0, targetFrame) } ?? false)
         }
+    }
+
+    /// Visible floaters stacked below `target` that it overlaps, front to
+    /// back. After a click on a tile, these are the floaters it buried.
+    static func floaters(below target: CGWindowID, among floaterIDs: Set<CGWindowID>,
+                         in windows: [StackedWindow]) -> [StackedWindow] {
+        guard let targetIndex = windows.firstIndex(where: { $0.windowID == target }),
+              let targetFrame = windows[targetIndex].bounds else { return [] }
+        return windows[(targetIndex + 1)...].filter {
+            floaterIDs.contains($0.windowID) && $0.layer == 0 && $0.isVisible
+                && ($0.bounds.map { overlaps($0, targetFrame) } ?? false)
+        }
+    }
+
+    /// For each floater, the frames in `covers` stacked above it that touch
+    /// it, front to back.
+    ///
+    /// The dim cuts a floater's hole only where the floater is in front, so
+    /// these come back out of the hole. A floater the list does not show
+    /// gets no entry and keeps its whole hole, as before.
+    static func occluders(ofFloaters floaterFrames: [CGWindowID: CGRect],
+                          covers: [CGWindowID: CGRect],
+                          in windows: [StackedWindow]) -> [CGWindowID: [CGRect]] {
+        var depth: [CGWindowID: Int] = [:]
+        for (index, window) in windows.enumerated() where window.layer == 0 && depth[window.windowID] == nil {
+            depth[window.windowID] = index
+        }
+        var result: [CGWindowID: [CGRect]] = [:]
+        for (floater, frame) in floaterFrames {
+            guard let floaterDepth = depth[floater] else { continue }
+            let above = covers.compactMap { id, rect -> (Int, CGRect)? in
+                guard id != floater, let d = depth[id], d < floaterDepth,
+                      !rect.intersection(frame).isEmpty else { return nil }
+                return (d, rect)
+            }
+            if !above.isEmpty {
+                result[floater] = above.sorted { $0.0 < $1.0 }.map(\.1)
+            }
+        }
+        return result
     }
 
     /// A point inside `frame` that none of `covers` hides: the center of

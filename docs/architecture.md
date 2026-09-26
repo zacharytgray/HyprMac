@@ -49,16 +49,16 @@ singleton except `UserConfig.shared` and `MenuBarState.shared`.
 | `SpaceManager` | macOS native Spaces enumeration via private CGS APIs (read-only). |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
-| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), auto-float predicate. |
+| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate. |
 | `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
 | `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown, the focus invariant and the raise restore. A tile a floater covers is focused through SkyLight alone, checked, and falls back to the usual path. |
-| `WindowStacking` | Pure rules over the CG window list: the frontmost app's open popup, pointer hit-test, floater/tile overlap. |
+| `WindowStacking` | Pure rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, and the tiles covering each floater. |
 | `TiledDragHandler` | Owns captured press/release state, cancellation, and verified cache updates. |
 | `TiledDragTransaction` | Builds isolated insertion, swap, or resize candidates and verifies frames before commit. |
 | `FrameSizingAttempt` | Bounded AX writes and complete frame readback through an injected clock and IO surface. |
 | `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. |
 | `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. |
-| `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. |
+| `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. A floater's cutout covers only the part of it that is in front. |
 | `CursorManager` | Cursor warp via `CGWarpMouseCursorPosition` + reassociate dance. |
 | `AppLauncherManager` | Launch-or-focus path for the `launchApp` action. |
 | `CommandRunner` | Runs the `runCommand` action's command line directly through `Process` — tokenize, resolve the program, launch. Never a shell. |
@@ -453,8 +453,12 @@ this list is the index.
   (Tahoe often refuses a cross-app AXRaise) or loops. Hover and Hypr+Arrow
   focus avoid burying floaters in the first place through
   `TiledFocusRouter`; workspace switches, window moves and the scratchpad
-  do not yet. See `docs/debugging.md` "Floaters, open menus and no-raise
-  focus".
+  do not yet. A click on a tile still lifts it natively; the click re-raise
+  puts the floater back about 40 ms after mouse-up and hands focus back to
+  the tile without lifting it, so the covered part of the floater blinks
+  once per click. When a raise does nothing, the dim shows the floater only
+  where it is in front. See `docs/debugging.md` "Floaters, open menus and
+  no-raise focus".
 - **Squishy-sibling swap rejection** — when a swap squishes a
   sibling app that has no AX-reported or readback-confirmed minimum
   size (the canonical case in the user's setup is Sidenote), the
