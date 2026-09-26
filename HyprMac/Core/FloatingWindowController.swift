@@ -159,7 +159,11 @@ final class FloatingWindowController {
     var restoreFocusWithoutRaise: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
     var windowFrameForZOrder: (HyprWindow) -> CGRect? = { $0.frame }
     var frontmostPID: () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
-    var ownPID: pid_t = getpid()
+    // the frontmost app's open popup in a list. WindowManager points this at
+    // the mouse tracker so every guard ignores the same long-lived windows.
+    var findPopup: ([StackedWindow], pid_t?) -> StackedWindow? = { windows, front in
+        WindowStacking.openPopup(in: windows, frontmostPID: front, ownPID: getpid())
+    }
     var now: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
     var throttle = RaiseBehindThrottle()
     var isWindowSizeSettable: (HyprWindow) -> Bool? = { $0.isSizeSettable }
@@ -386,6 +390,7 @@ final class FloatingWindowController {
         // skip while a native menu is tracking — the focus restore
         // synthesizes key-focus events that dismiss context menus.
         guard !isMenuTracking() else { return }
+        guard stateCache.floatingWindowIDs.contains(where: workspaceManager.isWindowVisible) else { return }
         isRaising = true
         defer { isRaising = false }
 
@@ -398,13 +403,14 @@ final class FloatingWindowController {
         }
         // safari can reorder a floating sibling when focus returns to its tile
         let candidates = coveredFloaters(in: windows).filter { pair in
+            guard let floater = stateCache.cachedWindows[pair.floater] else { return false }
             guard let focusedTiledPID else { return true }
-            return stateCache.cachedWindows[pair.floater]?.ownerPID != focusedTiledPID
+            return floater.ownerPID != focusedTiledPID
         }
         guard !candidates.isEmpty else { return }
 
         let frontBefore = frontmostPID()
-        if let popup = WindowStacking.openPopup(in: windows, frontmostPID: frontBefore, ownPID: ownPID) {
+        if let popup = findPopup(windows, frontBefore) {
             deferForPopup(popup)
             return
         }
@@ -477,8 +483,9 @@ final class FloatingWindowController {
               workspaceManager.workspaceFor(previousFocusID) != nil,
               workspaceManager.isWindowVisible(previousFocusID),
               !isMenuTracking(), !isScratchpadVisible() else { return }
-        if let windows,
-           let popup = WindowStacking.openPopup(in: windows, frontmostPID: frontAfter, ownPID: ownPID) {
+        // without a list there is no way to rule out an open menu
+        guard let windows else { return }
+        if let popup = findPopup(windows, frontAfter) {
             hyprLog(.notice, .floating, "raise behind restore skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
             return
         }

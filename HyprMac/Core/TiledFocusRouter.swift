@@ -120,7 +120,7 @@ final class TiledFocusRouter {
             hyprLog(.debug, .focus, "no-raise focus: wid=\(wid) \(rc)")
             self.schedule(Self.verifyDelay) { [weak self] in
                 self?.verify(target, reason: reason, fallback: fallback,
-                             generation: generation, covering: coveringIDs)
+                             generation: generation, covering: coveringIDs, startFront: front)
             }
         }
 
@@ -156,7 +156,7 @@ final class TiledFocusRouter {
     }
 
     private func verify(_ target: HyprWindow, reason: String, fallback: Fallback,
-                        generation: UInt64, covering: [CGWindowID]) {
+                        generation: UInt64, covering: [CGWindowID], startFront: pid_t?) {
         let wid = target.windowID
         guard isCurrent(wid, generation) else {
             hyprLog(.notice, .focus, "no-raise focus verify: wid=\(wid) superseded")
@@ -171,6 +171,11 @@ final class TiledFocusRouter {
                 + "floatersAbove=\(check.floatersAbove) buried=\(buried) "
                 + "→ \(landed ? "landed" : "missed")")
         guard !landed else { return }
+        // the user switched to a third app meanwhile (Cmd-Tab, a Dock click)
+        if let now = check.frontPID, now != target.ownerPID, now != startFront {
+            hyprLog(.notice, .focus, "no-raise focus fallback skipped: wid=\(wid) front moved to \(now)")
+            return
+        }
         // the fallback's activation and click would close an open menu
         if isMenuTracking() {
             hyprLog(.notice, .focus, "no-raise focus fallback skipped: wid=\(wid) menu tracking")

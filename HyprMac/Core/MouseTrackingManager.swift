@@ -40,7 +40,8 @@ class MouseTrackingManager {
     // re-resolve within ~80ms.
     static let windowListMaxAge: CFAbsoluteTime = 0.08
     // a menu-level window open this long is part of the app, not a menu.
-    // stop pausing hover focus for it so one odd app cannot freeze FFM.
+    // stop treating it as a popup so one odd app cannot freeze FFM or the
+    // other popup guards.
     static let popupPauseLimit: CFAbsoluteTime = 30
 
     // state
@@ -100,8 +101,9 @@ class MouseTrackingManager {
 
     // the popup that last paused hover focus, so the pause logs once
     private var pausedByPopupID: CGWindowID = 0
-    private var pausedSince: CFAbsoluteTime = 0
-    private var ignoredStalePopupID: CGWindowID = 0
+    // when each open popup was first seen, and which ones outlived the limit
+    private var popupFirstSeen: [CGWindowID: CFAbsoluteTime] = [:]
+    private var ignoredStalePopupIDs: Set<CGWindowID> = []
 
     /// Entry point for FFM. Called from the global `NSMouseMoved`
     /// monitor on every event; gates and throttles before doing real
@@ -332,7 +334,28 @@ class MouseTrackingManager {
     /// The frontmost app's open popup-level window, if any.
     func openPopup(maxAge: CFAbsoluteTime = MouseTrackingManager.windowListMaxAge) -> StackedWindow? {
         guard let windows = stackedWindows(maxAge: maxAge) else { return nil }
-        return WindowStacking.openPopup(in: windows, frontmostPID: frontmostPID(), ownPID: ownPID)
+        return livePopup(in: windows, frontmostPID: frontmostPID())
+    }
+
+    /// The frontmost app's open popup in `windows`, skipping any that has
+    /// been open longer than `popupPauseLimit`. Every popup guard asks
+    /// through here, so they agree on what counts.
+    func livePopup(in windows: [StackedWindow], frontmostPID front: pid_t?) -> StackedWindow? {
+        let popups = WindowStacking.openPopups(in: windows, frontmostPID: front, ownPID: ownPID)
+        let time = now()
+        let ids = Set(popups.map(\.windowID))
+        popupFirstSeen = popupFirstSeen.filter { ids.contains($0.key) }
+        ignoredStalePopupIDs.formIntersection(ids)
+        for popup in popups {
+            let firstSeen = popupFirstSeen[popup.windowID] ?? time
+            popupFirstSeen[popup.windowID] = firstSeen
+            if time - firstSeen < Self.popupPauseLimit { return popup }
+            if ignoredStalePopupIDs.insert(popup.windowID).inserted {
+                hyprLog(.notice, .mouse, "ignoring popup \(popup.windowID) pid=\(popup.ownerPID) "
+                        + "layer=\(popup.layer): open \(Int(Self.popupPauseLimit))s, treated as part of the app")
+            }
+        }
+        return nil
     }
 
     /// Pointer hit test at `point` (CG coordinates) against the cached list.
@@ -350,24 +373,16 @@ class MouseTrackingManager {
         }
         guard let windows = stackedWindows() else { return .none }
         let front = frontmostPID()
-        if let popup = WindowStacking.openPopup(in: windows, frontmostPID: front, ownPID: ownPID) {
-            let time = now()
+        if let popup = livePopup(in: windows, frontmostPID: front) {
             if popup.windowID != pausedByPopupID {
                 pausedByPopupID = popup.windowID
-                pausedSince = time
                 hyprLog(.notice, .mouse, "ffm paused: popup wid=\(popup.windowID) pid=\(popup.ownerPID) "
                         + "layer=\(popup.layer) bounds=\(popup.bounds.map { "\($0)" } ?? "nil")")
             }
-            if time - pausedSince < Self.popupPauseLimit {
-                return .blocked(popup)
-            }
-            if ignoredStalePopupID != popup.windowID {
-                ignoredStalePopupID = popup.windowID
-                hyprLog(.notice, .mouse, "ffm ignoring popup \(popup.windowID): open "
-                        + "\(Int(Self.popupPauseLimit))s, treated as part of the app")
-            }
-        } else if pausedByPopupID != 0 {
-            hyprLog(.notice, .mouse, "ffm resumed: popup \(pausedByPopupID) closed")
+            return .blocked(popup)
+        }
+        if pausedByPopupID != 0 {
+            hyprLog(.notice, .mouse, "ffm resumed: popup \(pausedByPopupID) gone")
             pausedByPopupID = 0
         }
         return WindowStacking.hitTest(point, in: windows, frontmostPID: front, ownPID: ownPID)

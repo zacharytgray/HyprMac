@@ -610,9 +610,9 @@ behavior. Keep existing logs before restarting the app.
 
 The report: with tiled windows and a floater on the same workspace, a
 Chrome bookmark-folder menu closed as soon as it opened, and some apps
-(Zoom) flickered between focused and unfocused. Zach saw a related
-problem with focus-follows-mouse: moving off a floater onto the tile behind
-it lifted the tile over the floater.
+(Zoom) flickered between focused and unfocused. A related problem with
+focus-follows-mouse: moving off a floater onto the tile behind it lifted
+the tile over the floater.
 
 What the source showed:
 
@@ -638,9 +638,11 @@ What changed:
 
 - `WindowStacking` reads the window list. An open popup is a window of the
   frontmost app at layer 101 or above (below the screen saver). Hover focus,
-  `refocusUnderCursor`, `raiseBehind`, its restore, the focus invariant and
-  the no-raise fallback all stand down while one is open. A raised window of
-  the frontmost app under the pointer (a menu, a floating panel) is never
+  `refocusUnderCursor`, `raiseBehind`, its restore, the focus invariant, the
+  focus repair on a bare Hypr press, and the no-raise fallback all stand
+  down while one is open. A popup-level window open longer than 30 s is
+  treated as part of its app and stops counting. A raised window of the
+  frontmost app under the pointer (a menu, a floating panel) is never
   hit-tested through. Other apps' high windows are still skipped, so a
   click-through overlay does not freeze focus.
 - `raiseBehind` only raises a floater a tile actually overlaps, checks the
@@ -648,14 +650,17 @@ What changed:
   app away from the focused tile. `RaiseBehindThrottle` cools a
   floater/tile pair down after a raise that did not lift it (30 s), a raise
   within 1 s of our own restore (15 s, the loop), or 4 raises in 5 s (10 s).
-- `TiledFocusRouter` handles HyprMac's own focus moves (hover, Hypr+Arrow,
-  Hypr keydown, the focus invariant, the raise restore). When a floater
+- `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus
+  invariant and the raise restore. Workspace switches, window moves and the
+  scratchpad still use their own focus calls, which can lift a tile. When a
+  floater
   covers the target tile it sends only `_SLPSSetFrontProcessWithOptions` and
   the key-window event records, as yabai does, plus yabai's lost/gained pair
   when focus moves inside the frontmost app. No kAXMain write, no
   `activate()`, no click. 80 ms later it checks whether the target app is
   frontmost and the target window is AX-focused. If not, it falls back to
-  the usual path and logs it. Hypr+Arrow warps the cursor to the part of the
+  the usual path and logs it, unless a menu opened or the user switched to
+  another app meanwhile. Hypr+Arrow warps the cursor to the part of the
   tile the floater leaves uncovered.
 
 Log lines, all at notice level:
@@ -663,8 +668,8 @@ Log lines, all at notice level:
 | Line | Category | Meaning |
 |---|---|---|
 | `ffm paused: popup wid=<id> pid=<pid> layer=<n> bounds=<rect>` | mouse | hover focus stopped for an open menu |
-| `ffm resumed: popup <id> closed` | mouse | hover focus back |
-| `ffm ignoring popup <id>: open 30s, treated as part of the app` | mouse | a menu-level window that never closes no longer pauses hover |
+| `ffm resumed: popup <id> gone` | mouse | hover focus back |
+| `ignoring popup <id> pid=<pid> layer=<n>: open 30s, treated as part of the app` | mouse | a menu-level window that never closes no longer counts for any guard |
 | `refocus under cursor skipped: popup …` | mouse | post-click refocus held off |
 | `raise behind deferred: popup wid=<id> pid=<pid> layer=<n>` | floating | raise held until the menu closes |
 | `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised, and the tiles that covered them |
@@ -675,8 +680,11 @@ Log lines, all at notice level:
 | `no-raise focus: wid=<id> pid=<pid> reason=<why> floaters=[…] front=<pid> prevKey=<id>` | focus | a covered tile was focused without activate or click |
 | `no-raise focus verify: wid=<id> … front=<pid> (want <pid>) key=<id> floatersAbove=[…] buried=[…] → landed\|missed` | focus | whether it worked |
 | `no-raise focus fallback: wid=<id> path=activate\|activate+click` | focus | it did not; the usual path ran |
-| `no-raise focus fallback skipped: …` | focus | a menu opened meanwhile |
+| `no-raise focus superseded: wid=<id>` | focus | a newer focus replaced a same-app hand-off |
+| `no-raise focus verify: wid=<id> superseded` | focus | a newer focus came before the check |
+| `no-raise focus fallback skipped: …` | focus | a menu opened, or the user switched apps, meanwhile |
 | `focus invariant skipped: popup …` | focus | the invariant held off |
+| `ensureFocus skipped: popup …` | focus | a bare Hypr press left the menu open |
 
 One repro answers the Tahoe question. If `verify` says `landed` with the
 floater in `floatersAbove` and an empty `buried`, the no-raise path works

@@ -342,7 +342,16 @@ class WindowManager {
             // Do not repair focus while a mouse gesture is in flight. A stale
             // tracker can otherwise focus a fallback window and redirect the
             // native title-bar drag when Hypr is pressed mid-gesture.
-            if !mousePressActive { self.ensureFocus() }
+            // Nor while a menu is open: a bare Hypr press must not close it.
+            if !mousePressActive {
+                if self.mouseTracker.menuTracking {
+                    hyprLog(.debug, .focus, "ensureFocus skipped: menu tracking")
+                } else if let popup = self.mouseTracker.openPopup(maxAge: 0) {
+                    hyprLog(.notice, .focus, "ensureFocus skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
+                } else {
+                    self.ensureFocus()
+                }
+            }
             // visual cue: corner brackets snap inward around the focused
             // window so the user sees which window the next Hypr action
             // will target. shown regardless of focus-border setting.
@@ -391,6 +400,9 @@ class WindowManager {
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
+        floatingController.findPopup = { [weak self] windows, front in
+            self?.mouseTracker.livePopup(in: windows, frontmostPID: front)
+        }
         floatingController.rejectFloatToTile = { [weak self] w, reason in
             guard let self, let frame = w.frame ?? self.stateCache.cachedWindows[w.windowID]?.frame else { return }
             self.focusBorder.flashError(around: frame, windowID: w.windowID, window: w,

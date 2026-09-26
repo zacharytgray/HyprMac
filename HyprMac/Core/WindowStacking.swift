@@ -84,8 +84,14 @@ enum WindowStacking {
     /// banners, other status menus, our own panels) must not freeze focus.
     static func openPopup(in windows: [StackedWindow], frontmostPID: pid_t?,
                           ownPID: pid_t) -> StackedWindow? {
-        guard let frontmostPID, frontmostPID != ownPID else { return nil }
-        return windows.first {
+        openPopups(in: windows, frontmostPID: frontmostPID, ownPID: ownPID).first
+    }
+
+    /// Every popup-level window of the frontmost app, front to back.
+    static func openPopups(in windows: [StackedWindow], frontmostPID: pid_t?,
+                           ownPID: pid_t) -> [StackedWindow] {
+        guard let frontmostPID, frontmostPID != ownPID else { return [] }
+        return windows.filter {
             $0.ownerPID == frontmostPID && popupLayers.contains($0.layer) && $0.isVisible
         }
     }

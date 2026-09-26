@@ -20,7 +20,7 @@ The former refresh-rate slider controls **hover-to-focus checks during mouse mov
 | Frequency looked like an overall refresh control | Wording says it controls pointer-driven focus checks |
 | Saved intermediate rates | Exact custom rate remains visible and preserved |
 
-Medium retains the existing 120 Hz default. The minimum spacing between eligible checks is approximately 16.7 ms at Low, 8.3 ms at Medium, and 4.2 ms at High. These are throttle intervals, not guaranteed focus latencies: dropped events are not replayed if the pointer stops, and main-thread work can delay handling. The topmost-window cache also reuses results for up to 80 ms while the pointer remains within 10 points, so attempts do not equal expensive window-list queries.
+Medium retains the existing 120 Hz default. The minimum spacing between eligible checks is approximately 16.7 ms at Low, 8.3 ms at Medium, and 4.2 ms at High. These are throttle intervals, not guaranteed focus latencies: dropped events are not replayed if the pointer stops, and main-thread work can delay handling. The window-list cache also reuses one list for up to 80 ms, so attempts do not equal expensive window-list queries.
 
 Window discovery is separate: accessibility notifications request coalesced discovery, with a fixed 10-second reconciliation timer for missed events. Neither this timer nor display refresh, key handling, animation durations, or window sizing uses the hover setting.
 

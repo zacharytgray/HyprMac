@@ -325,9 +325,10 @@ class HyprWindow: Equatable, Hashable {
 
     /// Give this window keyboard focus, activating its app when needed.
     ///
-    /// Despite the name this can raise. The kAXMain write and
-    /// `NSRunningApplication.activate` both bring the app's main and key
-    /// windows forward, so a tile covered by a floater ends up above it.
+    /// Despite the name this can raise. The kAXMain write makes this the
+    /// app's main window, and `NSRunningApplication.activate` brings the
+    /// app's main and key windows forward, so a tile covered by a floater
+    /// ends up above it.
     /// `TiledFocusRouter` uses `makeFrontAndKeyWithoutRaise` instead when
     /// a floater covers the target.
     func focusWithoutRaise() {

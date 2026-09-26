@@ -269,6 +269,15 @@ final class TiledFocusRouterTests: XCTestCase {
         XCTAssertEqual(calls, ["front+key 11"])
     }
 
+    func testAnAppSwitchMeanwhileCancelsTheFallback() {
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+        // the user pressed Cmd-Tab to a third app before the check
+        front = 300
+        runScheduled()
+
+        XCTAssertEqual(calls, ["front+key 11"])
+    }
+
     func testWithinTheFrontAppKeyIsHandedOverFirst() {
         front = frontPID
         keys[frontPID] = 12
@@ -388,6 +397,25 @@ final class MouseTrackingPopupTests: XCTestCase {
         time += 2
         tracker.handleMouseMove()
         XCTAssertEqual(focused, [13])
+    }
+
+    func testEveryPopupGuardIgnoresAMenuLevelWindowThatNeverCloses() {
+        windows = [
+            win(90, layer: 101, CGRect(x: 100, y: 100, width: 250, height: 500)),
+            win(11, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+        ]
+        var time: CFAbsoluteTime = 100
+        let tracker = makeTracker(cursor: CGPoint(x: 1200, y: 500))
+        tracker.now = { time }
+
+        XCTAssertEqual(tracker.openPopup(maxAge: 0)?.windowID, 90)
+        time += MouseTrackingManager.popupPauseLimit + 1
+        XCTAssertNil(tracker.openPopup(maxAge: 0))
+        XCTAssertNil(tracker.livePopup(in: windows, frontmostPID: frontPID))
+
+        // a new menu opened in front of it still counts
+        windows.insert(win(91, layer: 101, CGRect(x: 300, y: 100, width: 250, height: 500)), at: 0)
+        XCTAssertEqual(tracker.openPopup(maxAge: 0)?.windowID, 91)
     }
 
     func testAPressDropsTheCachedList() {
