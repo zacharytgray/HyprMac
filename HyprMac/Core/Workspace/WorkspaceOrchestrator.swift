@@ -36,6 +36,7 @@ final class WorkspaceOrchestrator {
     var actualFocusedWindow: () -> HyprWindow? = { nil }
     var focusTransferredWindow: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
     var warpToWindow: (HyprWindow) -> Void = { _ in }
+    var warpCursor: (CGPoint) -> Void = { _ in }
     var transferRejected: ((HyprWindow, String) -> Void)?
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var updatePositionCache: () -> Void = { }
@@ -84,6 +85,7 @@ final class WorkspaceOrchestrator {
             accessibility?.getActualFocusedStandardWindow()
         }
         self.warpToWindow = { [weak cursorManager] in cursorManager?.warpToCenter(of: $0) }
+        self.warpCursor = { [weak cursorManager] in cursorManager?.warp(to: $0) }
     }
 
     // MARK: - switch
@@ -513,6 +515,9 @@ final class WorkspaceOrchestrator {
             hyprLog(.debug, .workspace, "unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
         }
 
+        // where a carried floater was put, for the follow's warp
+        var carriedFrame: CGRect?
+
         // animate remaining windows filling the gap
         animatedRetile({ [self] in
             // remove from current workspace's tiling tree
@@ -533,7 +538,7 @@ final class WorkspaceOrchestrator {
                 // park position as the "real" frame.
                 hyprLog(.notice, .workspace, "moveToWorkspace(\(number)): target visible — placing '\(focused.title ?? "?")' (\(focused.windowID)) on \(targetScreen.localizedName) tiled=\(willTile)")
                 if !willTile {
-                    carryFloaterToScreen(focused, targetScreen)
+                    carriedFrame = carryFloaterToScreen(focused, targetScreen)
                 }
             } else {
                 // target hidden — park at the global hide corner until the
@@ -550,9 +555,13 @@ final class WorkspaceOrchestrator {
         }, { [self] in
             if targetVisible {
                 // destination is on screen — focus follows the window,
-                // matching switchWorkspace's focus+warp behavior.
+                // matching switchWorkspace's focus+warp behavior. the warp
+                // aims at the destination: the live frame still reads the
+                // source screen while the first layout attempt is failing,
+                // and ensureFocus picks from the screen under the cursor.
                 focused.focusWithoutRaise()
-                cursorManager.warpToCenter(of: focused)
+                warpCursor(followPoint(for: focused, workspace: number, screen: targetScreen,
+                                       placedFrame: carriedFrame))
                 focusController.recordFocus(focused.windowID, reason: "moveToWorkspace-follow")
                 updateFocusBorder(focused)
             } else {
@@ -610,10 +619,13 @@ final class WorkspaceOrchestrator {
     /// Place a floating window onto `screen`, preserving its size and its
     /// relative position. No-op when the floater is already substantially
     /// visible on the target screen.
-    private func carryFloaterToScreen(_ window: HyprWindow, _ screen: NSScreen) {
-        guard let frame = window.frame else { return }
+    ///
+    /// - Returns: the frame the floater now has, nil when it has none to read.
+    @discardableResult
+    private func carryFloaterToScreen(_ window: HyprWindow, _ screen: NSScreen) -> CGRect? {
+        guard let frame = window.frame else { return nil }
         let targetRect = displayManager.cgRect(for: screen)
-        if frame.isSubstantiallyVisible(on: targetRect, threshold: 0.5) { return }
+        if frame.isSubstantiallyVisible(on: targetRect, threshold: 0.5) { return frame }
 
         let sourceScreen = displayManager.screen(for: window) ?? screen
         let sourceRect = displayManager.cgRect(for: sourceScreen)
@@ -625,7 +637,30 @@ final class WorkspaceOrchestrator {
                              y: targetRect.minY + relY * targetRect.height - size.height / 2)
         origin.x = max(targetRect.minX, min(origin.x, targetRect.maxX - size.width))
         origin.y = max(targetRect.minY, min(origin.y, targetRect.maxY - size.height))
-        window.setFrame(CGRect(origin: origin, size: size))
+        let carried = CGRect(origin: origin, size: size)
+        window.setFrame(carried)
+        return carried
+    }
+
+    /// Where the cursor goes when focus follows `window` to `workspace` on
+    /// `screen`: the middle of its slot in that tree, else of the frame a
+    /// floater was just placed at, else of its live frame, taking the first
+    /// that lies on `screen`. Falls back to the middle of the screen, so the
+    /// cursor always lands on the destination even when the first layout
+    /// attempt failed and the window is still standing on the source.
+    private func followPoint(for window: HyprWindow, workspace: Int, screen: NSScreen,
+                             placedFrame: CGRect? = nil) -> CGPoint {
+        let rect = displayManager.cgRect(for: screen)
+        let candidates = [
+            tilingEngine.intendedRect(for: window.windowID, onWorkspace: workspace, screen: screen),
+            placedFrame,
+            window.frame,
+        ]
+        for case let frame? in candidates {
+            let center = CGPoint(x: frame.midX, y: frame.midY)
+            if rect.contains(center) { return center }
+        }
+        return CGPoint(x: rect.midX, y: rect.midY)
     }
 
     /// Focus the best remaining window on `screen`'s active workspace
