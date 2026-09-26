@@ -3,7 +3,9 @@
 // the tile above any floater covering it. When a floater covers the target,
 // this sends only the SkyLight front-process and key-window events, checks
 // a moment later whether focus landed, and falls back to the usual path
-// when it did not.
+// when it did not. A floater at the floating level counts too: activating
+// the tile's app deactivates the floater's app, which drops the floater to
+// layer 0 under the freshly activated tile.
 
 import Cocoa
 
@@ -47,6 +49,7 @@ final class TiledFocusRouter {
         let frontPID: pid_t?
         let keyWindowID: CGWindowID?
         let floatersAbove: [CGWindowID]
+        var floaterLayers: [Int] = []
 
         func landed(on target: HyprWindow) -> Bool {
             frontPID == target.ownerPID && keyWindowID == target.windowID
@@ -108,6 +111,7 @@ final class TiledFocusRouter {
         let route = Route(path: .noRaise, targetFrame: targetFrame,
                           coveringFrames: covering.compactMap(\.bounds))
         let coveringIDs = covering.map(\.windowID)
+        let coveringLayers = covering.map(\.layer)
 
         let front = frontmostPID()
         let previousKey = front == pid ? keyWindowID(pid) : nil
@@ -119,8 +123,10 @@ final class TiledFocusRouter {
         }
 
         let generation = focusGeneration()
+        // crossApp: the SkyLight call has to switch the front process
         hyprLog(.notice, .focus, "no-raise focus: wid=\(wid) pid=\(pid) reason=\(reason) "
-                + "floaters=\(coveringIDs) front=\(front.map(String.init) ?? "nil") "
+                + "floaters=\(coveringIDs) layers=\(coveringLayers) "
+                + "front=\(front.map(String.init) ?? "nil") crossApp=\(front != pid) "
                 + "prevKey=\(previousKey.map(String.init) ?? "nil")")
 
         let finish = { [weak self] in
@@ -159,10 +165,10 @@ final class TiledFocusRouter {
     private func probe(_ target: HyprWindow) -> Check {
         let floaters = visibleFloaterIDs().subtracting([target.windowID])
         let above = windowList().map {
-            WindowStacking.floaters(above: target.windowID, among: floaters, in: $0).map(\.windowID)
+            WindowStacking.floaters(above: target.windowID, among: floaters, in: $0)
         } ?? []
         return Check(frontPID: frontmostPID(), keyWindowID: keyWindowID(target.ownerPID),
-                     floatersAbove: above)
+                     floatersAbove: above.map(\.windowID), floaterLayers: above.map(\.layer))
     }
 
     private func verify(_ target: HyprWindow, reason: String, fallback: Fallback,
@@ -176,11 +182,12 @@ final class TiledFocusRouter {
         let check = probe(target)
         let landed = check.landed(on: target)
         let buried = covering.filter { !check.floatersAbove.contains($0) }
+        let front = check.frontPID.map(String.init) ?? "nil"
+        let key = check.keyWindowID.map(String.init) ?? "nil"
         hyprLog(.notice, .focus, "no-raise focus verify: wid=\(wid) reason=\(reason) "
-                + "front=\(check.frontPID.map(String.init) ?? "nil") (want \(target.ownerPID)) "
-                + "key=\(check.keyWindowID.map(String.init) ?? "nil") "
-                + "floatersAbove=\(check.floatersAbove) buried=\(buried) "
-                + "→ \(landed ? "landed" : "missed")")
+                + "front=\(front) (want \(target.ownerPID)) key=\(key) "
+                + "floatersAbove=\(check.floatersAbove) layers=\(check.floaterLayers) buried=\(buried) "
+                + "→ \(landed ? "landed" : "missed"), floaters \(buried.isEmpty ? "kept above" : "buried")")
         onResult?(landed && buried.isEmpty)
         guard !landed else { return }
         // the user switched to a third app meanwhile (Cmd-Tab, a Dock click)
@@ -198,7 +205,9 @@ final class TiledFocusRouter {
                     + "popup wid=\(popup.windowID) layer=\(popup.layer)")
             return
         }
-        hyprLog(.notice, .focus, "no-raise focus fallback: wid=\(wid) path=\(fallback.rawValue)")
+        hyprLog(.notice, .focus, "no-raise focus fallback: wid=\(wid) path=\(fallback.rawValue) "
+                + "after a miss (front=\(front) want \(target.ownerPID), key=\(key)); "
+                + "this lifts the tile over \(covering)")
         usualFocus(target, fallback)
     }
 }

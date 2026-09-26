@@ -90,13 +90,60 @@ final class WindowStackingTests: XCTestCase {
         let target = win(11, CGRect(x: 0, y: 0, width: 800, height: 800))
         let beside = win(12, pid: otherPID, CGRect(x: 804, y: 0, width: 300, height: 300))
         let behind = win(13, pid: otherPID, CGRect(x: 200, y: 200, width: 300, height: 300))
-        let pinned = win(14, pid: otherPID, layer: 3, CGRect(x: 100, y: 100, width: 300, height: 300))
+        let status = win(14, pid: otherPID, layer: 25, CGRect(x: 100, y: 100, width: 300, height: 300))
 
         let above = WindowStacking.floaters(above: 11, among: [10, 12, 13, 14],
-                                            in: [pinned, covering, beside, target, behind])
+                                            in: [status, covering, beside, target, behind])
 
         XCTAssertEqual(above.map(\.windowID), [10],
-                       "a floater beside the tile, behind it, or pinned above every window is not at risk")
+                       "a floater beside the tile, behind it, or on a layer no floater uses is not at risk")
+    }
+
+    // a quick look preview while its app is active: floating level, layer 3
+    func testAManagedFloaterAtTheFloatingLevelCoversATile() {
+        let panel = win(10, pid: otherPID, layer: 3, CGRect(x: 100, y: 100, width: 300, height: 300))
+        let tile = win(11, CGRect(x: 0, y: 0, width: 800, height: 800))
+
+        XCTAssertEqual(WindowStacking.floaters(above: 11, among: [10], in: [panel, tile]).map(\.windowID), [10])
+        XCTAssertEqual(WindowStacking.floaters(above: 11, among: [], in: [panel, tile]), [],
+                       "an unmanaged floating-level window is none of our business")
+    }
+
+    func testAFloaterDroppedBackToLayerZeroStillCounts() {
+        let panel = win(10, pid: otherPID, CGRect(x: 100, y: 100, width: 300, height: 300))
+        let tile = win(11, CGRect(x: 0, y: 0, width: 800, height: 800))
+
+        XCTAssertEqual(WindowStacking.floaters(above: 11, among: [10], in: [panel, tile]).map(\.windowID), [10])
+        XCTAssertEqual(WindowStacking.floaters(below: 11, among: [10], in: [tile, panel]).map(\.windowID), [10])
+    }
+
+    func testHoveringAManagedFloaterAtTheFloatingLevelHitsIt() {
+        // messages is in front with its quick look preview raised over a safari tile
+        let panel = win(10, pid: frontPID, layer: 3, CGRect(x: 100, y: 100, width: 300, height: 300))
+        let tile = win(11, pid: otherPID, CGRect(x: 0, y: 0, width: 800, height: 800))
+        let point = CGPoint(x: 200, y: 200)
+
+        XCTAssertEqual(WindowStacking.hitTest(point, in: [panel, tile], frontmostPID: frontPID,
+                                              ownPID: ownPID, managedFloaters: [10]), .window(10))
+        XCTAssertEqual(WindowStacking.hitTest(point, in: [panel, tile], frontmostPID: frontPID,
+                                              ownPID: ownPID), .blocked(panel),
+                       "an unmanaged panel of the front app still blocks hovering through it")
+        XCTAssertEqual(WindowStacking.hitTest(point, in: [panel, tile], frontmostPID: otherPID,
+                                              ownPID: ownPID), .window(11),
+                       "another app's unmanaged panel is still looked through")
+    }
+
+    func testAFloaterAtTheFloatingLevelKeepsItsWholeCutout() {
+        let tileA = CGRect(x: 0, y: 0, width: 400, height: 400)
+        let panel = CGRect(x: 300, y: 100, width: 200, height: 200)
+        let windows = [win(10, pid: otherPID, layer: 3, panel), win(1, tileA)]
+
+        XCTAssertEqual(WindowStacking.occluders(ofFloaters: [10: panel], covers: [1: tileA], in: windows), [:],
+                       "at the floating level it is above every tile")
+        // its app deactivated, it dropped to layer 0, and the tile came up over it
+        let dropped = [win(1, tileA), win(10, pid: otherPID, panel)]
+        XCTAssertEqual(WindowStacking.occluders(ofFloaters: [10: panel], covers: [1: tileA], in: dropped),
+                       [10: [tileA]])
     }
 
     func testExposedPointAvoidsTheCoveringFloater() throws {
@@ -320,6 +367,39 @@ final class TiledFocusRouterTests: XCTestCase {
         XCTAssertEqual(route.path, .usual)
         XCTAssertEqual(calls, ["usual 11 activate+click"])
         XCTAssertTrue(scheduled.isEmpty)
+    }
+
+    func testAFloaterAtTheFloatingLevelTakesTheNoRaisePath() {
+        // the floater's app is in front, so its panel sits at layer 3
+        windows = [win(10, pid: otherPID, layer: 3, floaterRect), win(11, tileRect)]
+
+        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
+
+        XCTAssertEqual(route.path, .noRaise, "activating the tile's app would drop the panel under the tile")
+        XCTAssertEqual(calls, ["front+key 11"])
+    }
+
+    func testACrossAppNoRaiseThatBuriesTheFloaterIsNotSuccess() {
+        windows = [win(10, pid: otherPID, layer: 3, floaterRect), win(11, tileRect)]
+        var results: [Bool] = []
+        router.focus(target, reason: "ffm", fallback: .activateAndClick) { results.append($0) }
+        // the process switch landed; the panel dropped to layer 0 under the tile
+        front = frontPID
+        keys[frontPID] = 11
+        windows = [win(11, tileRect), win(10, pid: otherPID, floaterRect)]
+        runScheduled()
+
+        XCTAssertEqual(results, [false])
+        XCTAssertEqual(calls, ["front+key 11"], "focus landed, so no fallback")
+    }
+
+    func testAnUnmanagedFloatingLevelWindowDoesNotChangeThePath() {
+        floaters = []
+        windows = [win(10, pid: otherPID, layer: 3, floaterRect), win(11, tileRect)]
+
+        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
+
+        XCTAssertEqual(route.path, .usual)
     }
 
     func testAFloaterBehindTheTileDoesNotChangeThePath() {
@@ -608,6 +688,31 @@ final class MouseTrackingPopupTests: XCTestCase {
         XCTAssertNil(tracker.openPopup(), "still inside the cache age")
         tracker.invalidateWindowListCache()
         XCTAssertEqual(tracker.openPopup()?.windowID, 90)
+    }
+
+    func testHoverReachesAManagedFloaterAtTheFloatingLevel() {
+        // the front app's quick look preview, raised to layer 3, over tile 11
+        windows = [
+            win(12, layer: 3, CGRect(x: 150, y: 300, width: 400, height: 400)),
+            win(11, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+        ]
+        let tracker = makeTracker(cursor: CGPoint(x: 200, y: 400))
+
+        tracker.handleMouseMove()
+
+        XCTAssertEqual(focused, [12])
+    }
+
+    func testHoverStillStopsAtAnUnmanagedPanelOfTheFrontApp() {
+        windows = [
+            win(40, layer: 3, CGRect(x: 150, y: 300, width: 400, height: 400)),
+            win(13, pid: otherPID, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+        ]
+        let tracker = makeTracker(cursor: CGPoint(x: 200, y: 400))
+
+        tracker.handleMouseMove()
+
+        XCTAssertEqual(focused, [], "hovering the panel must not focus the tile under it")
     }
 
     func testRefocusUnderCursorLeavesAnOpenMenuAlone() {

@@ -60,6 +60,16 @@ enum WindowStacking {
     static let statusLayer = Int(CGWindowLevelForKey(.statusWindow))
     static let popUpMenuLayer = Int(CGWindowLevelForKey(.popUpMenuWindow))
     static let screenSaverLayer = Int(CGWindowLevelForKey(.screenSaverWindow))
+    static let floatingLayer = Int(CGWindowLevelForKey(.floatingWindow))
+
+    /// Layers a managed floater can sit on. AppKit puts a floating panel
+    /// (a Quick Look preview, an inspector) at the floating level while its
+    /// app is active and drops it to layer 0 when the app deactivates, so
+    /// both count. Only windows HyprMac manages as floaters are asked about;
+    /// an unmanaged floating-level window stays out of every floater rule.
+    static func isFloaterLayer(_ layer: Int) -> Bool {
+        layer == 0 || layer == floatingLayer
+    }
 
     /// Layers that mean "a menu is open". NSMenu draws at the pop-up menu
     /// level, and so do Chrome's own menu windows (bookmark-bar folders):
@@ -106,7 +116,8 @@ enum WindowStacking {
     }
 
     enum Hit: Equatable {
-        /// the first normal-layer window under the point
+        /// the first normal-layer window under the point, or a managed
+        /// floater at the floating level
         case window(CGWindowID)
         /// a raised window of the frontmost app is under the point.
         /// hovering it must not reach the window below.
@@ -118,14 +129,20 @@ enum WindowStacking {
     ///
     /// Our own windows and invisible windows are skipped. Other apps'
     /// raised windows are skipped too, as before, so a click-through
-    /// overlay cannot kill focus-follows-mouse.
+    /// overlay cannot kill focus-follows-mouse. A managed floater raised
+    /// to the floating level is a hit on that floater, whichever app is in
+    /// front; any other raised window of the frontmost app blocks.
     static func hitTest(_ point: CGPoint, in windows: [StackedWindow],
-                        frontmostPID: pid_t?, ownPID: pid_t) -> Hit {
+                        frontmostPID: pid_t?, ownPID: pid_t,
+                        managedFloaters: Set<CGWindowID> = []) -> Hit {
         for window in windows {
             guard window.ownerPID != ownPID, window.alpha > 0.01,
                   let bounds = window.bounds, bounds.contains(point) else { continue }
             if window.layer == 0 {
                 return window.windowID == 0 ? .none : .window(window.windowID)
+            }
+            if window.layer == floatingLayer, managedFloaters.contains(window.windowID) {
+                return .window(window.windowID)
             }
             if let frontmostPID, window.ownerPID == frontmostPID,
                isAppRaisedLayer(window.layer) {
@@ -144,13 +161,15 @@ enum WindowStacking {
         return !shared.isNull && shared.width >= minOverlap && shared.height >= minOverlap
     }
 
-    /// Floaters stacked above `target` that overlap it, front to back.
+    /// Floaters stacked above `target` that overlap it, front to back. A
+    /// floater at the floating level is above every normal window; it is
+    /// still at risk, because activating the tile's app drops it to layer 0.
     static func floaters(above target: CGWindowID, among floaterIDs: Set<CGWindowID>,
                          in windows: [StackedWindow]) -> [StackedWindow] {
         guard let targetIndex = windows.firstIndex(where: { $0.windowID == target }),
               let targetFrame = windows[targetIndex].bounds else { return [] }
         return windows[..<targetIndex].filter {
-            floaterIDs.contains($0.windowID) && $0.layer == 0
+            floaterIDs.contains($0.windowID) && isFloaterLayer($0.layer)
                 && ($0.bounds.map { overlaps($0, targetFrame) } ?? false)
         }
     }
@@ -162,7 +181,7 @@ enum WindowStacking {
         guard let targetIndex = windows.firstIndex(where: { $0.windowID == target }),
               let targetFrame = windows[targetIndex].bounds else { return [] }
         return windows[(targetIndex + 1)...].filter {
-            floaterIDs.contains($0.windowID) && $0.layer == 0 && $0.isVisible
+            floaterIDs.contains($0.windowID) && isFloaterLayer($0.layer) && $0.isVisible
                 && ($0.bounds.map { overlaps($0, targetFrame) } ?? false)
         }
     }
@@ -172,21 +191,26 @@ enum WindowStacking {
     ///
     /// The dim cuts a floater's hole only where the floater is in front, so
     /// these come back out of the hole. A floater the list does not show
-    /// gets no entry and keeps its whole hole, as before.
+    /// gets no entry and keeps its whole hole, as before, and so does a
+    /// floater at the floating level, which is above every layer-0 window.
+    /// Covers count only on layer 0.
     static func occluders(ofFloaters floaterFrames: [CGWindowID: CGRect],
                           covers: [CGWindowID: CGRect],
                           in windows: [StackedWindow]) -> [CGWindowID: [CGRect]] {
-        var depth: [CGWindowID: Int] = [:]
-        for (index, window) in windows.enumerated() where window.layer == 0 && depth[window.windowID] == nil {
-            depth[window.windowID] = index
+        var depth: [CGWindowID: (index: Int, layer: Int)] = [:]
+        for (index, window) in windows.enumerated()
+        where isFloaterLayer(window.layer) && depth[window.windowID] == nil {
+            depth[window.windowID] = (index, window.layer)
         }
         var result: [CGWindowID: [CGRect]] = [:]
         for (floater, frame) in floaterFrames {
-            guard let floaterDepth = depth[floater] else { continue }
+            guard let entry = depth[floater], entry.layer == 0 else { continue }
+            let floaterDepth = entry.index
             let above = covers.compactMap { id, rect -> (Int, CGRect)? in
-                guard id != floater, let d = depth[id], d < floaterDepth,
+                guard id != floater, let cover = depth[id], cover.layer == 0,
+                      cover.index < floaterDepth,
                       !rect.intersection(frame).isEmpty else { return nil }
-                return (d, rect)
+                return (cover.index, rect)
             }
             if !above.isEmpty {
                 result[floater] = above.sorted { $0.0 < $1.0 }.map(\.1)
