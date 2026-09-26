@@ -612,3 +612,144 @@ final class ScaleChangeArrivalTests: XCTestCase {
         XCTAssertEqual(generous.withScaleChangeBudget.deadline, 2, accuracy: 0.0001)
     }
 }
+
+/// Frame i/o for Zach's three-screen desk. Every write is recorded with the
+/// frame it left the window in. A window lying over more than one screen
+/// never reads back the same position twice, the way the live readback
+/// never settled for a 3424-wide ultrawide window set down on the panel.
+private final class DeskTrace {
+    let screens: [CGRect]
+    var frames: [CGWindowID: CGRect] = [:]
+    private(set) var writes: [(label: String, frame: CGRect)] = []
+    private(set) var begins = 0
+    private var positionReads = 0
+    private(set) var now: TimeInterval = 0
+
+    init(screens: [CGRect]) { self.screens = screens }
+
+    /// the screens `frame` covers some area of
+    func screensCovered(by frame: CGRect) -> [CGRect] {
+        screens.filter { screen in
+            let overlap = screen.intersection(frame)
+            return !overlap.isNull && overlap.width > 0 && overlap.height > 0
+        }
+    }
+
+    func io(_ generation: @escaping () -> UInt64) -> FrameSizingIO {
+        var io = FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { [self] id, size, _ in
+                frames[id]?.size = size
+                if let frame = frames[id] { writes.append(("size", frame)) }
+                return .success
+            },
+            writePosition: { [self] id, position, _ in
+                frames[id]?.origin = position
+                if let frame = frames[id] { writes.append(("position", frame)) }
+                return .success
+            },
+            readPosition: { [self] id, _ in
+                guard let frame = frames[id] else { return (.invalidUIElement, nil) }
+                positionReads += 1
+                let wobble: CGFloat = screensCovered(by: frame).count > 1
+                    ? CGFloat(positionReads % 2) * 3 : 0
+                return (.success, CGPoint(x: frame.minX, y: frame.minY + wobble))
+            },
+            readSize: { [self] id, _ in
+                guard let frame = frames[id] else { return (.invalidUIElement, nil) }
+                return (.success, frame.size)
+            },
+            now: { [self] in now }, sleep: { [self] in now += $0 },
+            currentGeneration: generation)
+        io.beginFrameWrite = { [self] id, _, _ in
+            begins += 1
+            return .ready(.noop(windowID: id))
+        }
+        return io
+    }
+}
+
+/// Which order a window crossing screens gets its frame in. The 2x panel is
+/// primary, the LG portrait to its right, the ultrawide right of that.
+final class CrossScreenWriteOrderTests: XCTestCase {
+    private var builtIn: HopScreen!
+    private var portrait: HopScreen!
+    private var ultrawide: HopScreen!
+    private var displayManager: DisplayManager!
+    private var engine: TilingEngine!
+    private var trace: DeskTrace!
+
+    override func setUp() {
+        builtIn = HopScreen(x: 0, width: 1512, height: 982, menuBar: 38,
+                            name: "Built-in Retina Display", scale: 2)
+        portrait = HopScreen(x: 1512, width: 1080, height: 1920, menuBar: 25, name: "LG BL450")
+        ultrawide = HopScreen(x: 2592, width: 3440, height: 1440, menuBar: 25, name: "S34C65xT")
+        let screens: [NSScreen] = [builtIn, portrait, ultrawide]
+        let displayManager = DisplayManager(screenSource: { screens })
+        let trace = DeskTrace(screens: screens.map { displayManager.cgFullRect(for: $0) })
+        self.displayManager = displayManager
+        self.trace = trace
+        engine = TilingEngine(displayManager: displayManager,
+                              frameSizingIOFactory: { _, generation in trace.io(generation) })
+    }
+
+    private func usable(_ screen: NSScreen) -> CGRect { displayManager.cgRect(for: screen) }
+
+    func testAnUltrawideWindowSentToThePanelShrinksBeforeItMovesAndNeverCoversThePortrait() {
+        let id: CGWindowID = 77803
+        let window = makeWindow(id: id)
+        trace.frames[id] = usable(ultrawide).insetBy(dx: 8, dy: 8)
+
+        let result = engine.tileWindows([window], onWorkspace: 1, screen: builtIn)
+
+        XCTAssertTrue(result.published, "\(String(describing: result.failure))")
+        XCTAssertEqual(trace.writes.map(\.label), ["size", "position", "size"])
+        let portraitRect = displayManager.cgFullRect(for: portrait)
+        for write in trace.writes {
+            XCTAssertFalse(trace.screensCovered(by: write.frame).contains(portraitRect),
+                           "the \(write.label) write left it over the portrait: \(write.frame)")
+            XCTAssertEqual(trace.screensCovered(by: write.frame).count, 1,
+                           "the \(write.label) write left it across screens: \(write.frame)")
+        }
+        XCTAssertEqual(trace.begins, 1, "accepted on the first attempt, no rollback")
+        XCTAssertLessThan(trace.now, 0.36, "no settle wait on the way")
+    }
+
+    func testAPortraitWindowSentToTheUltrawideMovesBeforeItIsSized() {
+        let id: CGWindowID = 5100
+        let window = makeWindow(id: id)
+        trace.frames[id] = usable(portrait).insetBy(dx: 8, dy: 8)
+
+        let result = engine.tileWindows([window], onWorkspace: 3, screen: ultrawide)
+
+        XCTAssertTrue(result.published, "\(String(describing: result.failure))")
+        XCTAssertEqual(trace.writes.map(\.label), ["position", "size", "size"],
+                       "a 3424-wide target does not fit the 1080-wide portrait")
+    }
+
+    func testAnUltrawideWindowSentToThePortraitMovesFirstWhenItIsTooTallForTheSource() {
+        let id: CGWindowID = 5200
+        let window = makeWindow(id: id)
+        trace.frames[id] = CGRect(x: usable(ultrawide).minX + 40, y: usable(ultrawide).minY + 40,
+                                  width: 900, height: 700)
+
+        let result = engine.tileWindows([window], onWorkspace: 2, screen: portrait)
+
+        XCTAssertTrue(result.published, "\(String(describing: result.failure))")
+        XCTAssertEqual(trace.writes.map(\.label), ["position", "size", "size"],
+                       "a portrait-height target does not fit the ultrawide")
+    }
+
+    func testAParkedRevealStillMovesFirstEvenWhenItsSizeWouldFitTheCornerScreen() {
+        let id: CGWindowID = 5300
+        let window = makeWindow(id: id)
+        let corner = WorkspaceManager(displayManager: displayManager).hidePosition()
+        XCTAssertTrue(usable(ultrawide).contains(corner), "the ultrawide is the rightmost screen")
+        trace.frames[id] = CGRect(origin: corner, size: CGSize(width: 1400, height: 800))
+
+        let result = engine.tileWindows([window], onWorkspace: 1, screen: builtIn)
+
+        XCTAssertTrue(result.published, "\(String(describing: result.failure))")
+        XCTAssertEqual(trace.writes.map(\.label), ["position", "size", "size"])
+    }
+}

@@ -23,8 +23,8 @@ final class FrameReadbackPollerTests: XCTestCase {
             now: { time }, sleep: { time += $0; destinationReady = true }, currentGeneration: { 1 })
 
         let result = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in io })
-            .applyWorkspaceReveal([(window, target)], parkedWindowIDs: [31], usableFrame: target,
-                                  gap: 8, generation: 1)
+            .applyWorkspaceReveal([(window, target)], positionFirstWindowIDs: [31],
+                                  usableFrame: target, gap: 8, generation: 1)
 
         XCTAssertEqual(result.verdict, .accepted)
         XCTAssertEqual(frame, target)
@@ -47,8 +47,8 @@ final class FrameReadbackPollerTests: XCTestCase {
             now: { time }, sleep: { time += $0; generation = 2 }, currentGeneration: { generation })
 
         let result = FrameReadbackPoller(generation: { generation }, ioFactory: { _, _ in io })
-            .applyWorkspaceReveal([(window, target)], parkedWindowIDs: [32], usableFrame: target,
-                                  gap: 8, generation: 1)
+            .applyWorkspaceReveal([(window, target)], positionFirstWindowIDs: [32],
+                                  usableFrame: target, gap: 8, generation: 1)
 
         XCTAssertEqual(result.verdict, .unknown(.superseded))
         XCTAssertEqual(sizeWrites, 0)
@@ -67,8 +67,8 @@ final class FrameReadbackPollerTests: XCTestCase {
             now: { 0 }, sleep: { _ in }, currentGeneration: { 1 })
 
         let result = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in io })
-            .applyWorkspaceReveal([(window, target)], parkedWindowIDs: [33], usableFrame: target,
-                                  gap: 8, generation: 1)
+            .applyWorkspaceReveal([(window, target)], positionFirstWindowIDs: [33],
+                                  usableFrame: target, gap: 8, generation: 1)
 
         XCTAssertEqual(result.verdict, .unknown(.readFailed(33, .cannotComplete)))
         XCTAssertEqual(sizeWrites, 0)

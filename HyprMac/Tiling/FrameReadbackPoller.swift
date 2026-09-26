@@ -78,11 +78,15 @@ struct FrameReadbackPoller {
                     phase: .candidate)
     }
 
-    func applyWorkspaceReveal(_ layouts: [(HyprWindow, CGRect)], parkedWindowIDs: Set<CGWindowID>,
+    /// A candidate pass where `positionFirstWindowIDs` move before they are
+    /// sized: windows revealed from the hide corner, or crossing from a
+    /// screen too small for their target. See `positionSettleWindowIDs`.
+    func applyWorkspaceReveal(_ layouts: [(HyprWindow, CGRect)],
+                              positionFirstWindowIDs: Set<CGWindowID>,
                               usableFrame: CGRect, gap: CGFloat,
                               generation requestedGeneration: UInt64) -> Result {
         var revealConfiguration = configuration
-        revealConfiguration.positionSettleWindowIDs = parkedWindowIDs
+        revealConfiguration.positionSettleWindowIDs = positionFirstWindowIDs
         return applyLayout(layouts, usableFrame: usableFrame, gap: gap,
                            generation: requestedGeneration, configuration: revealConfiguration,
                            phase: .candidate)

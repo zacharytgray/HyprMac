@@ -181,6 +181,8 @@ logs no trace line; it appears only in typed results. Four line names:
   — once per window after its writes, listing every AX setter that went
   out with its raw `AXError` code (0 is success) and how long it took.
   `size2` is the second size write of the resize-move-resize pattern.
+  A window that moves first lists `position` first, then
+  `settle:ok/<n>ms` or `settle:cut/<n>ms` for the wait on its position.
   `complete=true` means all three setters returned success; it is
   evidence that the writes were issued, not proof the app applied them.
   A window that never got past the EnhancedUI bracket logs `steps=none`.
@@ -261,6 +263,23 @@ logs, before its first write:
 
 ```
 verified layout scale change: ids=[59300:1x→2x] deadline=1000ms
+```
+
+A window crossing onto another screen logs its write order once per attempt,
+before its first write. The reason names the screen holding most of its
+original:
+
+```
+write order: wid=77803 size-first (fits source S34C65xT) target=1496x841
+write order: wid=5100 position-first (does not fit source LG BL450) target=3424x1399
+write order: wid=5300 position-first (parked) target=1496x928
+```
+
+A position-first window whose position does not read back on target twice
+within a third of the deadline is sized anyway, and says so:
+
+```
+position settle cut short: wid=<id> phase=candidate after=<n>ms samples=<n> last=(x,y) target=(x,y) — writing size anyway
 ```
 
 The admission recovery's timeout lines, all `[notice] [tiling]`:

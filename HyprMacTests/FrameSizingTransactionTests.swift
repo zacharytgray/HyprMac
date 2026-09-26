@@ -16,6 +16,7 @@ final class FrameSizingTransactionTests: XCTestCase {
         var positionReadAdvances: [TimeInterval] = []
         var sizeReadAdvances: [TimeInterval] = []
         var callAdvance: TimeInterval = 0
+        var sizeWriteTimes: [TimeInterval] = []
 
         func io() -> FrameSizingIO {
             FrameSizingIO(
@@ -27,6 +28,7 @@ final class FrameSizingTransactionTests: XCTestCase {
                 },
                 writeSize: { [unowned self] id, size, _ in
                     operations.append("size:\(id)")
+                    sizeWriteTimes.append(time)
                     time += writeAdvances.isEmpty ? callAdvance : writeAdvances.removeFirst()
                     if !writeErrors.isEmpty { return writeErrors.removeFirst() }
                     frames[id]?.size = size
@@ -424,6 +426,41 @@ final class FrameSizingTransactionTests: XCTestCase {
             usableFrame: CGRect(x: 0, y: 0, width: 1000, height: 800), gap: 8, generation: 1)
         XCTAssertEqual(result.verdict, .unknown(.deadlineExceeded))
         XCTAssertGreaterThanOrEqual(fake.time, 0.1)
+    }
+
+    // a position-first write whose position never reads back on target used
+    // to poll out the whole deadline with no size written. the settle has a
+    // budget: past it the size goes out anyway and the readback judges
+    func testPositionSettleIsBoundedAndSizesBeforeTheDeadline() {
+        let fake = Fake()
+        let id: CGWindowID = 40
+        let target = CGRect(x: 8, y: 41, width: 1496, height: 841)
+        fake.frames[id] = CGRect(x: 2600, y: -450, width: 3424, height: 1391)
+        // the window keeps reading back 30 points below where it was sent
+        let landed = CGRect(x: 8, y: 71, width: 1496, height: 841)
+        fake.reads[id] = Array(repeating: (.success, Optional(landed)), count: 60)
+        var config = FrameSizingConfiguration()
+        config.positionSettleWindowIDs = [id]
+
+        let result = FrameSizingAttempt(io: fake.io(), configuration: config).apply(
+            targets: [.init(windowID: id, frame: target)],
+            usableFrame: CGRect(x: 0, y: 33, width: 1512, height: 900), gap: 8, generation: 1)
+
+        XCTAssertEqual(fake.operations.filter { $0.hasPrefix("size:") || $0.hasPrefix("position:") },
+                       ["position:40", "size:40", "size:40"])
+        let firstSize = fake.sizeWriteTimes.first ?? .infinity
+        XCTAssertLessThan(firstSize, config.deadline, "a size went out inside the deadline")
+        XCTAssertLessThanOrEqual(firstSize, config.positionSettleBudget + config.pollInterval)
+        XCTAssertEqual(result.verdict, .rejected(.geometryMismatch(id)),
+                       "the readback judged the landed frame")
+        XCTAssertEqual(result.progress.writesCompleted, [id])
+    }
+
+    func testPositionSettleBudgetGrowsWithTheScaleChangeDeadline() {
+        let ordinary = FrameSizingConfiguration()
+        XCTAssertLessThan(ordinary.positionSettleBudget, ordinary.deadline / 2)
+        XCTAssertGreaterThan(ordinary.withScaleChangeBudget.positionSettleBudget,
+                             ordinary.positionSettleBudget)
     }
 
     func testDefaultToleranceRejectsGapErosionBeyondOneCellAndAcceptsSafeShift() {

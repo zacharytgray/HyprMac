@@ -1207,12 +1207,11 @@ class TilingEngine {
                     }.joined(separator: ", ")
                     + "] deadline=\(Int((poller.deadline * 1000).rounded()))ms")
         }
-        let parkedWindowIDs = Set(originalFrames.compactMap { windowID, frame in
-            frame.isSubstantiallyVisible(on: rect, threshold: 0.5) ? nil : windowID
-        })
-        let first = !parkedWindowIDs.isEmpty
+        let positionFirstIDs = positionFirstWindowIDs(originalFrames, layouts: firstLayouts,
+                                                      destination: rect)
+        let first = !positionFirstIDs.isEmpty
             ? reconcile(poller.applyWorkspaceReveal(firstLayouts,
-                                                    parkedWindowIDs: parkedWindowIDs,
+                                                    positionFirstWindowIDs: positionFirstIDs,
                                                     usableFrame: rect, gap: gapSize,
                                                     generation: generation),
                         generation: generation)
@@ -1479,6 +1478,72 @@ class TilingEngine {
 
     private static func scale(_ factor: CGFloat) -> String {
         String(format: "%gx", Double(factor))
+    }
+
+    /// How a window crossing onto another screen takes its frame, and why.
+    enum CrossScreenWriteOrder: CustomStringConvertible {
+        /// resized on the screen it stands on, moved, resized again
+        case sizeFirst(source: String)
+        /// parked, hidden or on no screen: moved, then resized
+        case positionFirstParked
+        /// bigger than the screen it stands on: moved, then resized
+        case positionFirst(tooSmallSource: String)
+
+        var description: String {
+            switch self {
+            case let .sizeFirst(source): return "size-first (fits source \(source))"
+            case .positionFirstParked: return "position-first (parked)"
+            case let .positionFirst(source): return "position-first (does not fit source \(source))"
+            }
+        }
+    }
+
+    /// The windows crossing onto `rect` that move before they are sized. A
+    /// window is crossing when its captured original is less than half on
+    /// `rect`, and each one logs its order once per attempt.
+    ///
+    /// Resize-move-resize is the default: a target that fits the usable
+    /// frame of the screen the window stands on is sized there, then moved
+    /// whole. Moving first carries the old size across. A 3424-wide
+    /// ultrawide window moved first onto the 1512-wide panel also lay over
+    /// the portrait next to it. Its position never read back steady, and
+    /// the settle used the whole deadline before any size went out.
+    ///
+    /// A window moves first only when a size written where it stands would
+    /// be clamped by that screen: it is parked, hidden or on no screen, or
+    /// its target is bigger than the screen. That is the reveal onto the
+    /// portrait that settled 1528 tall against an 1874 target.
+    private func positionFirstWindowIDs(_ originals: [CGWindowID: CGRect],
+                                        layouts: [(HyprWindow, CGRect)],
+                                        destination rect: CGRect) -> Set<CGWindowID> {
+        var ids = Set<CGWindowID>()
+        for (window, target) in layouts {
+            guard let original = originals[window.windowID],
+                  !original.isSubstantiallyVisible(on: rect, threshold: 0.5) else { continue }
+            let order = crossScreenWriteOrder(from: original, targetSize: target.size)
+            hyprLog(.notice, .tiling, "write order: wid=\(window.windowID) \(order) "
+                    + String(format: "target=%gx%g", Double(target.width), Double(target.height)))
+            if case .sizeFirst = order { continue }
+            ids.insert(window.windowID)
+        }
+        return ids
+    }
+
+    private func crossScreenWriteOrder(from original: CGRect,
+                                       targetSize: CGSize) -> CrossScreenWriteOrder {
+        // a hide-corner sliver counts for the screen it is parked on, so
+        // check the frame really stands there before trusting that screen
+        guard let source = displayManager.screen(containingMostOf: original),
+              original.isSubstantiallyVisible(on: displayManager.cgFullRect(for: source)) else {
+            return .positionFirstParked
+        }
+        let usable = displayManager.cgRect(for: source)
+        let slack = FrameSizingConfiguration().sizeTolerance
+        guard targetSize.width <= usable.width + slack,
+              targetSize.height <= usable.height + slack else {
+            return .positionFirst(tooSmallSource: source.localizedName)
+        }
+        return .sizeFirst(source: source.localizedName)
     }
 
     // both passes teach the same memory. the adjusted pass is where a

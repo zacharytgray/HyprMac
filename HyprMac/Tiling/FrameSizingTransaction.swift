@@ -100,9 +100,13 @@ struct FrameSizingConfiguration {
     var requiredStableSamples: Int = 2
     var minimumMismatchSettle: TimeInterval = 0.24
     var perCallTimeout: TimeInterval = 0.1
-    /// A parked window can still be constrained by its old display for a
-    /// short time after its position changes. Observe the target position
-    /// settle before asking that window to take the destination size.
+    /// Windows that move before they are sized. The engine picks them: a
+    /// parked window, or one whose target is bigger than the screen it
+    /// stands on. A size written there would be clamped by that screen, and
+    /// a parked window can stay constrained by its old display for a short
+    /// time after it moves. Each waits for its position to settle, for at
+    /// most `positionSettleBudget`, before it is sized. Every other window
+    /// sizes first.
     var positionSettleWindowIDs: Set<CGWindowID> = []
     /// Restoration only. A rollback asks every window to go back where it
     /// was, so the question is per-window correspondence, not whether the
@@ -117,6 +121,13 @@ struct FrameSizingConfiguration {
     /// panel the first write after a hop from a 1x external missed 0.36 s on
     /// every move, and the retry 250 ms later usually verified.
     var scaleChangeDeadline: TimeInterval = 1.0
+
+    /// The most a position-first write waits for its position to settle.
+    /// A move that never reads back on target used to poll out the whole
+    /// deadline with no size written, so the attempt could only time out.
+    /// Past this the size goes out anyway and the readback judges. A third
+    /// of the deadline, so it grows with the scale-change budget.
+    var positionSettleBudget: TimeInterval { deadline / 3 }
 
     /// This configuration with the scale-change budget. The sample limit
     /// grows with the deadline so the settle loop can use the extra time.
@@ -552,7 +563,10 @@ struct FrameSizingAttempt {
                                  actualFrames: actualFrames)
             } else {
                 if label == "position", settlePositionBeforeSizing {
+                    let settleStarted = io.now()
                     var anchor: CGPoint?
+                    var last: CGPoint?
+                    var samples = 0
                     var stableCount = 0
                     var settled = false
                     for attempt in 0..<configuration.maximumAttempts {
@@ -591,6 +605,8 @@ struct FrameSizingAttempt {
                                                           actualFrames: actualFrames),
                                        checkpoint: checkpoint)
                         }
+                        samples += 1
+                        last = position
                         let onTarget = abs(position.x - target.frame.minX) <= configuration.positionTolerance
                             && abs(position.y - target.frame.minY) <= configuration.positionTolerance
                         if onTarget, let prior = anchor,
@@ -605,16 +621,21 @@ struct FrameSizingAttempt {
                             settled = true
                             break
                         }
+                        // out of settle budget: size it where it landed
+                        if io.now() - settleStarted >= configuration.positionSettleBudget { break }
                         if attempt + 1 < configuration.maximumAttempts {
                             io.sleep(configuration.pollInterval)
                         }
                     }
-                    guard settled else {
-                        traceSteps(false)
-                        return end(token, windowID: target.windowID,
-                                   preserving: Result(verdict: .unknown(.attemptsExhausted),
-                                                      actualFrames: actualFrames),
-                                   checkpoint: checkpoint)
+                    let waited = io.now() - settleStarted
+                    steps.append("settle:\(settled ? "ok" : "cut")/\(Self.ms(waited))")
+                    if !settled {
+                        let landed = last.map { "(\(traced($0.x)),\(traced($0.y)))" } ?? "none"
+                        hyprLog(.notice, .tiling, "position settle cut short: wid=\(target.windowID) "
+                                + "phase=\(phase.rawValue) after=\(Self.ms(waited)) samples=\(samples) "
+                                + "last=\(landed) "
+                                + "target=(\(traced(target.frame.minX)),\(traced(target.frame.minY))) "
+                                + "— writing size anyway")
                     }
                 }
                 continue

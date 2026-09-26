@@ -193,6 +193,29 @@ corner of the rightmost screen, so on the MacBook desk every reveal onto the
 2x panel gets the longer deadline and logs the scale change. The budget only
 costs time when the app is slow to answer.
 
+A window crossing screens picks its write order per window. It is crossing
+when its captured original is less than half on the destination. Each one
+logs a `write order:` notice. Resize-move-resize stays the default: when the
+target size fits the usable frame of the screen holding most of the
+original, the window is resized there, moved whole, and resized again. It
+moves first only when it is parked, hidden or on no screen, or when its
+target is bigger than that screen. A size written there would be clamped by
+it, which is how a parked reveal onto the portrait settled 1528 tall against
+1874. The size-first default exists for the other case: a 3424-wide
+ultrawide window moved first onto the 1512-wide panel lay over the portrait
+next to it on the way.
+
+A position-first window waits for two stable on-target position reads
+before its size goes out, but for at most a third of the deadline. After
+that the size goes out anyway and the readback judges. Without the cap, a
+position that never read back steady used the whole deadline with no size
+written, and the attempt could only time out. The cap is per window, so a
+reveal of three or more windows whose positions never settle can still run
+out of time. A cut wait also changes how a failure is counted. The attempt
+used to end as `attemptsExhausted`, a timeout that the admission recovery
+retries. It now ends with the readback's verdict, and a
+`geometryMismatch` there is a refusal, which can float the window.
+
 Only a known, stable size conflict permits a second pass.
 `BSPTree.adjustForMinSizes` adjusts constrained ratios, and the final
 adjusted layout goes through the same complete verification. The second
