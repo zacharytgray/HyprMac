@@ -22,6 +22,85 @@ enum FloatingAdmissionPolicy {
     }
 }
 
+/// Every frame HyprMac writes to a floating window goes through here: the
+/// workspace reveal, the carry to another screen, the float toggle, the
+/// focus cycle, the scratchpad, the overflow float and the stop restore.
+///
+/// A floater dragged onto the ultrawide once grew far past the screen and
+/// off its edge, and the notice log could not say whether HyprMac wrote
+/// that frame. So each write logs its reason, both frames, both screens and
+/// both backing scales, and none may leave the destination's usable frame:
+/// a frame too big is shrunk to fit, one hanging off an edge is moved in.
+/// Parking in the hide corner is a position-only write and does not come
+/// through here.
+enum FloatingFramePlacement {
+    struct Plan: Equatable {
+        /// the frame the caller asked for
+        let requested: CGRect
+        /// what is written: `requested` clamped into `usable`
+        let target: CGRect
+        let source: NSScreen?
+        let destination: NSScreen?
+        let usable: CGRect?
+        var clamped: Bool { target != requested }
+    }
+
+    /// Where `frame` lands and what gets written. `screen` names the
+    /// destination when the caller knows it; otherwise it is the screen
+    /// holding most of `frame`.
+    static func plan(_ frame: CGRect, from current: CGRect?, on screen: NSScreen?,
+                     displayManager: DisplayManager) -> Plan {
+        let destination = screen ?? displayManager.screen(containingMostOf: frame)
+        let source = current.flatMap { displayManager.screen(containingMostOf: $0) }
+        guard let destination else {
+            return Plan(requested: frame, target: frame, source: source, destination: nil, usable: nil)
+        }
+        let usable = displayManager.cgRect(for: destination)
+        return Plan(requested: frame, target: frame.clamped(into: usable), source: source,
+                    destination: destination, usable: usable)
+    }
+
+    static func logLine(windowID: CGWindowID, reason: String, from current: CGRect?,
+                        plan: Plan) -> String {
+        var line = "floating frame write: wid=\(windowID) reason=\(reason)"
+            + " from=\(current.map(describe) ?? "unread") on \(describe(plan.source))"
+            + " to=\(describe(plan.target)) on \(describe(plan.destination))"
+        if plan.clamped, let usable = plan.usable {
+            line += " clamped from \(describe(plan.requested)) into usable \(describe(usable))"
+        }
+        return line
+    }
+
+    static func describe(_ screen: NSScreen?) -> String {
+        guard let screen else { return "no screen" }
+        return "'\(screen.localizedName)' @\(String(format: "%g", Double(screen.backingScaleFactor)))x"
+    }
+
+    static func describe(_ rect: CGRect) -> String {
+        String(format: "(%g, %g, %g, %g)", Double(rect.minX), Double(rect.minY),
+               Double(rect.width), Double(rect.height))
+    }
+}
+
+extension HyprWindow {
+    /// Write `frame` to this floating window through `FloatingFramePlacement`:
+    /// clamped into the destination's usable frame, with a notice line.
+    /// `current` is the frame the caller already read, if it has one.
+    /// - Returns: the frame written.
+    @discardableResult
+    func placeFloating(_ frame: CGRect, reason: String, on screen: NSScreen? = nil,
+                       from current: CGRect? = nil,
+                       displayManager: DisplayManager) -> CGRect {
+        let before = current ?? self.frame
+        let plan = FloatingFramePlacement.plan(frame, from: before, on: screen,
+                                               displayManager: displayManager)
+        hyprLog(.notice, .floating, FloatingFramePlacement.logLine(
+            windowID: windowID, reason: reason, from: before, plan: plan))
+        setFrame(plan.target)
+        return plan.target
+    }
+}
+
 struct FloatToTileRejectionMessage {
     static func text(for failure: TilingEngine.ForceInsertFailure) -> String {
         switch failure {
@@ -307,17 +386,24 @@ final class FloatingWindowController {
                 let screenRect = displayManager.cgRect(for: screen)
                 if let original = stateCache.originalFrames[window.windowID],
                    original.isSubstantiallyVisible(on: screenRect) {
-                    window.position = original.origin
-                    window.size = original.size
-                    hyprLog(.debug, .floating, "floated window '\(window.title ?? "?")' → restored \(original)")
-                } else {
-                    let currentSize = window.size ?? CGSize(width: 800, height: 600)
+                    window.placeFloating(original, reason: "float toggle, original frame",
+                                         on: screen, displayManager: displayManager)
+                } else if let current = window.frame {
                     let centeredOrigin = CGPoint(
-                        x: screenRect.midX - currentSize.width / 2,
-                        y: screenRect.midY - currentSize.height / 2
+                        x: screenRect.midX - current.width / 2,
+                        y: screenRect.midY - current.height / 2
                     )
-                    window.position = centeredOrigin
-                    hyprLog(.debug, .floating, "floated window '\(window.title ?? "?")' → centered on screen (bad original frame)")
+                    window.placeFloating(CGRect(origin: centeredOrigin, size: current.size),
+                                         reason: "float toggle, centered (no usable original)",
+                                         on: screen, from: current, displayManager: displayManager)
+                } else {
+                    // unreadable frame: move only, as before. there is no
+                    // real size to write or clamp
+                    let size = window.size ?? CGSize(width: 800, height: 600)
+                    window.position = CGPoint(x: screenRect.midX - size.width / 2,
+                                              y: screenRect.midY - size.height / 2)
+                    hyprLog(.notice, .floating, "floating frame write: wid=\(window.windowID)"
+                            + " reason=float toggle, centered, position only (frame unreadable)")
                 }
             }
         }
@@ -393,10 +479,12 @@ final class FloatingWindowController {
             if !onScreen {
                 let screen = displayManager.screens.first ?? NSScreen.main!
                 let screenRect = displayManager.cgRect(for: screen)
-                let sz = target.size ?? CGSize(width: 800, height: 600)
-                target.position = CGPoint(x: screenRect.midX - sz.width / 2,
-                                          y: screenRect.midY - sz.height / 2)
-                hyprLog(.debug, .floating, "brought offscreen floater '\(target.title ?? "?")' to center")
+                let sz = frame.size
+                target.placeFloating(CGRect(x: screenRect.midX - sz.width / 2,
+                                            y: screenRect.midY - sz.height / 2,
+                                            width: sz.width, height: sz.height),
+                                     reason: "focus cycle, off-screen floater",
+                                     on: screen, from: frame, displayManager: displayManager)
             }
         }
 

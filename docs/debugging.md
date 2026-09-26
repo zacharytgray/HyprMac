@@ -834,6 +834,44 @@ kept above`. A cross-app pair logs `→ ineffective — cooldown 30s` once per
 30 s, as on macOS 27. The tile then stays on top, and the dim shows the
 floater only where it is in front.
 
+### A floater changed size or left the screen
+
+The report (September 26): a floating window dragged onto the S34C65xT
+ultrawide grew far past the screen and off its edge. The notice log showed
+only the drag. The cause is not confirmed. Reading the source found no code
+that scales a floater's size by a ratio between screens, and no frame write
+at all for a plain title-bar drag of a floater: the drag capture is
+ineligible under a floater, discovery's screen drift skips floaters, and the
+floater keeps its workspace.
+
+Every frame HyprMac writes to a floater now goes through
+`FloatingFramePlacement` (`HyprWindow.placeFloating`). It logs one
+`[notice] [floating]` line and clamps the frame into the destination
+screen's usable frame, shrinking it if it is too big and moving it in if it
+hangs off an edge:
+
+```
+floating frame write: wid=<id> reason=<why> from=(x, y, w, h) on '<screen>' @<n>x to=(x, y, w, h) on '<screen>' @<n>x [clamped from (x, y, w, h) into usable (x, y, w, h)]
+```
+
+The reasons are `workspace reveal, saved frame`, `carry to another screen`,
+`float toggle, original frame`, `float toggle, centered (no usable
+original)`, `focus cycle, off-screen floater`, `scratchpad show`,
+`scratchpad untile`, `all workspaces full, original frame`, `stop, original
+frame` and `stop, cascade onto the main screen`. Parking in the hide corner
+is position-only and does not log here.
+
+A floater drag also logs, 0.18 s after the release:
+
+```
+floater drag: wid=<id> from=(x, y, w, h) on '<screen>' @<n>x to=(x, y, w, h) on '<screen>' @<n>x resized=<bool> fitsUsable=<bool>
+```
+
+and `floater drag +1s: …` if the frame is still changing a second later. On
+the next repro: a `floater drag` line with `resized=true` and no `floating
+frame write` line before it means the app or macOS changed the size, not
+HyprMac. A `floating frame write` line names the path that did it.
+
 ### Rejected drag feedback and source restoration
 
 A September 14 capture exposed two drag regressions. At 21:47:17.362 CDT,
