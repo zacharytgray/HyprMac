@@ -297,6 +297,13 @@ class HyprWindow: Equatable, Hashable {
     /// `WindowManager`.
     static var activationObserver: ((pid_t) -> Void)?
 
+    /// How long after `activate()` the diagnostic asks whether the app is
+    /// active. `NSRunningApplication.isActive` is updated from the
+    /// workspace notification on the main run loop, so it lags the
+    /// activation by however long the main thread is busy.
+    static let activationCheckDelay: TimeInterval = 0.1
+    static var activationCheckMS: Int { Int((activationCheckDelay * 1000).rounded()) }
+
     /// Make this the app's main window without raising or activating, so
     /// a later activation brings this window forward and not another one.
     func makeMain() {
@@ -326,11 +333,15 @@ class HyprWindow: Equatable, Hashable {
             // .activateIgnoringOtherApps is the legacy option but still functions on Tahoe;
             // empty-options activate() is silently dropped from non-keyboard contexts.
             app?.activate(options: [.activateIgnoringOtherApps])
-            // verify activation actually flipped — if not, log it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak app] in
+            // verify activation actually flipped — if not, log it. isActive
+            // follows the workspace notification, which lands well after
+            // 10 ms when the main thread is busy with the frame writes that
+            // follow a focus; asked that early it said "dropped" on nearly
+            // every focus that then went through.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationCheckDelay) { [weak app] in
                 let nowActive = app?.isActive ?? false
                 if !nowActive {
-                    hyprLog(.notice, .focus, "focus(\(wid)) activate dropped — app still inactive 10ms after activate()")
+                    hyprLog(.notice, .focus, "focus(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
                 } else {
                     hyprLog(.debug, .focus, "focus(\(wid)) activate ok — app flipped active")
                 }
@@ -369,10 +380,10 @@ class HyprWindow: Equatable, Hashable {
         let wasActive = app?.isActive ?? false
         if let app, !wasActive {
             app.activate(options: [.activateIgnoringOtherApps])
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak app] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationCheckDelay) { [weak app] in
                 let nowActive = app?.isActive ?? false
                 if !nowActive {
-                    hyprLog(.notice, .focus, "focusWithoutRaise(\(wid)) activate dropped — app still inactive 10ms after activate()")
+                    hyprLog(.notice, .focus, "focusWithoutRaise(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
                 }
             }
         }
