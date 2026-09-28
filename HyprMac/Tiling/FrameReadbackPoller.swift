@@ -104,10 +104,30 @@ struct FrameReadbackPoller {
                            phase: .restoration)
     }
 
+    /// Windows the base deadline is sized for, and what each one past that
+    /// adds. One deadline covered every setter and every readback sample of
+    /// the whole key, so a workspace of eight healthy windows ran out of it
+    /// on ordinary IPC latency and rolled back.
+    static let windowsInBaseBudget = 3
+    static let perWindowBudget: TimeInterval = 0.08
+
+    /// `configuration` with its deadline grown for `count` targets, and the
+    /// sample limit grown with it.
+    static func scaled(_ configuration: FrameSizingConfiguration, for count: Int) -> FrameSizingConfiguration {
+        let extra = Double(max(0, count - windowsInBaseBudget)) * perWindowBudget
+        guard extra > 0 else { return configuration }
+        var scaled = configuration
+        scaled.deadline = configuration.deadline + extra
+        scaled.maximumAttempts = max(configuration.maximumAttempts,
+                                     Int((scaled.deadline / configuration.pollInterval).rounded(.up)))
+        return scaled
+    }
+
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
                              gap: CGFloat, generation requestedGeneration: UInt64,
-                             configuration: FrameSizingConfiguration,
+                             configuration baseConfiguration: FrameSizingConfiguration,
                              phase: FrameSizingPhase) -> Result {
+        let configuration = Self.scaled(baseConfiguration, for: layouts.count)
         let ids = layouts.map { $0.0.windowID }
         let unstarted = FrameSizingAttempt.Progress(phase: phase, generation: requestedGeneration,
                                                     targetIDs: ids)
@@ -176,8 +196,25 @@ struct FrameReadbackPoller {
             // cell rounding is not a min-size floor, so it must not teach
             // one. the boundary is the candidate overshoot tolerance
             // whatever configuration this pass ran under.
-            let widthConflict = actual.width > target.width + self.configuration.sizeOvershootTolerance
-            let heightConflict = actual.height > target.height + self.configuration.sizeOvershootTolerance
+            let learnWidth = actual.width > target.width + self.configuration.sizeOvershootTolerance
+            let learnHeight = actual.height > target.height + self.configuration.sizeOvershootTolerance
+            // a window that rounds up by less than that passes its own match
+            // and can still fail the pair or the screen: a terminal a cell
+            // wider than its slot eats the gap. that pass gets the adjusted
+            // layout, with room for the rounding, or the key rolled back and
+            // rolled back again on every retile. the rounding is still not a
+            // floor, so it teaches nothing.
+            var aggregateRejection = false
+            if case let .rejected(failure) = raw.verdict {
+                switch failure {
+                case .overlap, .gapViolation, .outsideUsableFrame: aggregateRejection = true
+                default: break
+                }
+            }
+            let adjustThreshold = aggregateRejection
+                ? configuration.aggregateSafetySlack : self.configuration.sizeOvershootTolerance
+            let widthConflict = actual.width > target.width + adjustThreshold
+            let heightConflict = actual.height > target.height + adjustThreshold
             if widthConflict || heightConflict, case .rejected = raw.verdict {
                 let refusal = Self.learningRefusal(windowID: window.windowID,
                                                    target: target, actual: actual,
@@ -185,10 +222,12 @@ struct FrameReadbackPoller {
                                                    positionTolerance: configuration.positionTolerance)
                 if refusal == nil {
                     conflicts.append(Conflict(window: window, allocated: target, actual: actual.size))
-                    observations.append(Observation(window: window, target: target.size,
-                                                    actual: actual.size,
-                                                    widthConflict: widthConflict,
-                                                    heightConflict: heightConflict))
+                    if learnWidth || learnHeight {
+                        observations.append(Observation(window: window, target: target.size,
+                                                        actual: actual.size,
+                                                        widthConflict: learnWidth,
+                                                        heightConflict: learnHeight))
+                    }
                 }
                 hyprLog(.debug, .tiling, "min evidence: wid=\(window.windowID) "
                         + "phase=\(phase.rawValue) "

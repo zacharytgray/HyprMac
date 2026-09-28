@@ -518,8 +518,10 @@ final class TilingEngineTiledDragTests: XCTestCase {
         XCTAssertEqual(Set(fixture.trace.writes), [1, 2, 3])
         XCTAssertTrue(fixture.engine.existingTree(forWorkspace: 1, screen: fixture.tall) === sourceTree)
         XCTAssertTrue(fixture.engine.existingTree(forWorkspace: 2, screen: fixture.wide) === targetTree)
-        XCTAssertEqual(Set(fixture.engine.unverifiedLayouts.map(\.workspace)), [1],
-                       "the release screen's key still speaks for its geometry")
+        // nothing was written before the refusal and the verified rollback
+        // put the source back on its slots: both keys still speak for their
+        // geometry, and the drift monitor keeps watching the source
+        XCTAssertTrue(fixture.engine.unverifiedLayouts.isEmpty)
     }
 
     func testCrossMonitorRollsBackBothTreesWhenATargetFrameIsRefused() throws {

@@ -444,8 +444,10 @@ final class FrameReadbackPollerTests: XCTestCase {
                          gap: 8, generation: 1)
 
         XCTAssertEqual(result.verdict, .rejected(.overlap(66, 67)))
-        XCTAssertTrue(result.conflicts.isEmpty, "no window here refused its own size")
-        XCTAssertTrue(result.observations.isEmpty)
+        // the rounding gets the adjusted pass, with room for the cell it
+        // grew by, instead of a rollback on every retile
+        XCTAssertEqual(result.conflicts.map(\.window.windowID), [66])
+        XCTAssertTrue(result.observations.isEmpty, "but no window here refused its own size")
         XCTAssertTrue(result.accepted.isEmpty, "a rejected layout accepts nothing")
     }
 
@@ -565,5 +567,17 @@ final class FrameReadbackPollerTests: XCTestCase {
         XCTAssertEqual(FrameReadbackPoller.axis(width: true, height: false), "width")
         XCTAssertEqual(FrameReadbackPoller.axis(width: false, height: true), "height")
         XCTAssertEqual(FrameReadbackPoller.axis(width: false, height: false), "none")
+    }
+}
+
+final class FrameReadbackPollerBudgetTests: XCTestCase {
+    /// one deadline covered every setter and every sample of the whole key,
+    /// so eight healthy windows ran out of it on plain IPC latency
+    func testTheDeadlineGrowsWithTheNumberOfTargets() {
+        let base = FrameSizingConfiguration()
+        XCTAssertEqual(FrameReadbackPoller.scaled(base, for: 3).deadline, base.deadline)
+        let eight = FrameReadbackPoller.scaled(base, for: 8)
+        XCTAssertEqual(eight.deadline, base.deadline + 5 * FrameReadbackPoller.perWindowBudget, accuracy: 0.0001)
+        XCTAssertGreaterThanOrEqual(Double(eight.maximumAttempts) * eight.pollInterval, eight.deadline)
     }
 }

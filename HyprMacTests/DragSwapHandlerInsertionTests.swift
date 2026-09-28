@@ -178,8 +178,9 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
             1: CGRect(x: 10, y: 20, width: 300, height: 200)
         ]
 
-        XCTAssertEqual(TiledDragFeedbackPolicy.feedback(for: .rejectedRestored(
-            reason: .preflight(.noTarget), actualFrames: frames)), .rejected)
+        // a release with nowhere to land is not a refused arrangement
+        XCTAssertNil(TiledDragFeedbackPolicy.feedback(for: .rejectedRestored(
+            reason: .preflight(.noTarget), actualFrames: frames)))
         XCTAssertEqual(TiledDragFeedbackPolicy.feedback(for: .rejectedRestored(
             reason: .preflight(.maxDepthExceeded), actualFrames: frames)), .rejected)
         XCTAssertEqual(TiledDragFeedbackPolicy.feedback(for: .rejectedRestored(
@@ -1267,5 +1268,14 @@ private final class DeferredScheduler {
             return
         }
         jobs[index]()
+    }
+}
+
+final class TiledDragFeedbackPolicyTests: XCTestCase {
+    /// a release with nowhere to land puts the window back; it is not an
+    /// arrangement that was refused, so it neither beeps nor flashes
+    func testAReleaseWithNoTargetGivesNoFeedback() {
+        XCTAssertNil(TiledDragFeedbackPolicy.feedback(
+            for: .rejectedRestored(reason: .preflight(.noTarget), actualFrames: [:])))
     }
 }

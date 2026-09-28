@@ -291,6 +291,9 @@ class WindowManager {
         self.workspaceOrchestrator.isScratchpadWindow = { [weak self] id in
             self?.scratchpad.contains(id) ?? false
         }
+        self.workspaceOrchestrator.noteAdmission = { [weak self] result in
+            self?.admissionRecovery.note(result)
+        }
         self.workspaceOverview.onSelectWorkspace = { [weak self] workspace in
             guard let self, self.config.enabled else { return }
             self.handleAction(.switchWorkspace(workspace))

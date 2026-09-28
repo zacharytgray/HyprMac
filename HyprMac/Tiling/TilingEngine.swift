@@ -845,7 +845,14 @@ class TilingEngine {
         }
         guard let key = trees.first(where: { $0.value === snapshot.sourceTree })?.key else { return }
         var restored = false
-        if case .rejectedRestored = outcome { restored = true }
+        if case let .rejectedRestored(reason, _) = outcome {
+            // nothing was written before a preflight refusal, and the
+            // verified rollback put the dragged window back on its slot: the
+            // tree still speaks for the key. marking it here switched drift
+            // watching off for the workspace on every release in a gap
+            if case .preflight = reason { return }
+            restored = true
+        }
         mark(key, windowIDs: snapshot.context.memberIDs, insertedIDs: [], restored: restored)
     }
 
@@ -1572,12 +1579,22 @@ class TilingEngine {
         // writes went out, where it was if they never reached it. an
         // ordinary pass reports it stranded for the admission recovery;
         // other callers decide for themselves. the incumbents still go back.
+        // an original is a restoration target when it lies within the
+        // restoration rect by the same slack the rollback's own validation
+        // grants its readback. a parked one is a sliver past the edge, and
+        // one on another screen is not there at all; one a point over the
+        // edge, a half-point rounding or a min-height window against the
+        // Dock, is exactly where the window was and goes back there. strict
+        // containment refused the rollback of the whole key for that point
+        // and left the candidate frames on screen under the old tree
+        let reach = restorationFrame.insetBy(dx: -FrameSizingConfiguration().aggregateSafetySlack,
+                                             dy: -FrameSizingConfiguration().aggregateSafetySlack)
         let leftInPlace = newcomerIDs.filter { id in
-            originalFrames[id].map { !restorationFrame.contains($0) } ?? false
+            originalFrames[id].map { !reach.contains($0) } ?? false
         }
         if let invalidOriginalID = originalFrames.keys.sorted().first(where: { windowID in
             !leftInPlace.contains(windowID)
-                && (originalFrames[windowID].map { !restorationFrame.contains($0) } ?? true)
+                && (originalFrames[windowID].map { !reach.contains($0) } ?? true)
         }) {
             // an original parked off the usable frame is not a restoration
             // target, so the candidate writes stay where they landed. the

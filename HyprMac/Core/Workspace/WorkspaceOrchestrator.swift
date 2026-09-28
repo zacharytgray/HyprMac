@@ -30,6 +30,10 @@ final class WorkspaceOrchestrator {
     private let dimmingOverlay: DimmingOverlay
     private let suppressions: SuppressionRegistry
     private let revalidation: MinimaRevalidation
+    /// Every admission result a move produces goes here, so a refused
+    /// arrival is tracked by the recovery like one from any other pass
+    /// instead of sitting assigned, visible and in no tree.
+    var noteAdmission: (TilingEngine.AdmissionResult) -> Void = { _ in }
 
     var screenUnderCursor: () -> NSScreen = { NSScreen.main! }
     var currentFocusedWindow: () -> HyprWindow? = { nil }
@@ -1044,6 +1048,7 @@ final class WorkspaceOrchestrator {
                 layout = tilingEngine.tileWindows(windows, onWorkspace: workspace, screen: screen,
                                                   alsoRestoringWithin: reach)
             }
+            noteAdmission(layout)
             if layout.published && arriving.isSubset(of: layout.publishedIDs) {
                 laidOut[workspace] = (screen, ids)
                 continue

@@ -145,6 +145,57 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(wide.width + TilingConfig.frameToleranceXPx, rect.width * 0.7)
     }
 
+    /// a window that rounds a cell wider than its slot passes its own match
+    /// and eats the gap. the pass gets the adjusted layout with room for the
+    /// rounding instead of rolling back, and learns no floor from it
+    func testARoundingOvershootGetsTheAdjustedPassWithoutTeachingAFloor() {
+        let screen = MembershipHomeScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 1001), b = makeWindow(id: 1002)
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in [a, b] { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        // the 50/50 slot is 948 wide; the app answers with one cell more
+        let slot = (rect.width - 2 * engine.outerPadding - engine.gapSize) / 2
+        trace.minSize[a.windowID] = CGSize(width: slot + 8, height: 0)
+
+        let result = engine.tileWindows([a, b], onWorkspace: 1, screen: screen)
+
+        XCTAssertTrue(result.published)
+        XCTAssertGreaterThanOrEqual(engine.intendedTileRects()[a.windowID]!.width + 1, slot + 8)
+        XCTAssertNotEqual(engine.knownMinimumSizes[a.windowID]?.provenance, .observed,
+                          "a cell of rounding is not a floor")
+    }
+
+    /// a rollback puts each window back where it was. an original a point
+    /// past the edge of the screen, the slack the rollback's own readback
+    /// is allowed, is where it was; it used to make the whole key's
+    /// rollback refused, leaving the failed candidate's frames on screen
+    /// under the old tree
+    func testAnOriginalAPointPastTheEdgeIsStillPutBack() {
+        let screen = MembershipHomeScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 1011), b = makeWindow(id: 1012)
+        let usable = engine.displayManager.cgRect(for: screen)
+        for w in [a, b] { trace.frames[w.windowID] = usable.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows([a, b], onWorkspace: 1, screen: screen).published)
+        // a sits against the right edge and one point past it
+        let protruding = CGRect(x: usable.maxX - 400, y: usable.minY + 8, width: 401, height: 500)
+        trace.frames[a.windowID] = protruding
+        trace.frames[b.windowID] = CGRect(x: usable.minX + 8, y: usable.minY + 8, width: 500, height: 500)
+        trace.failNextSizeWriteID = b.windowID
+
+        let result = engine.tileWindows([a, b], onWorkspace: 1, screen: screen)
+
+        XCTAssertFalse(result.published)
+        XCTAssertTrue(result.restorationVerified,
+                      "failure=\(String(describing: result.failure)) restored=\(result.restoredIDs.sorted())")
+        XCTAssertEqual(trace.frames[a.windowID], protruding)
+    }
+
     /// without a hold, a member missing from the list leaves the tree as it
     /// always has: a close, a minimize, a move
     func testAMemberMissingWithoutAHoldLeavesTheTree() {
