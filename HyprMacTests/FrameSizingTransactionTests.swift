@@ -208,6 +208,86 @@ final class FrameSizingTransactionTests: XCTestCase {
         XCTAssertEqual(outcome.outcome, .rejectedRestored(reason: .geometryMismatch(14), actualFrames: [14: original]))
     }
 
+    // MARK: - a layout that already stands
+
+    private func inPlaceFixture() -> (Fake, CGRect, CGRect, CGRect) {
+        let fake = Fake()
+        let left = CGRect(x: 8, y: 8, width: 492, height: 784)
+        let right = CGRect(x: 508, y: 8, width: 492, height: 784)
+        fake.frames[7] = left
+        fake.frames[8] = right
+        return (fake, left, right, CGRect(x: 0, y: 0, width: 1008, height: 800))
+    }
+
+    /// Most passes retile a key nothing changed on: the other screen on a
+    /// workspace switch, a move's source twice, a poll re-applying a tree.
+    /// Every one of them sent three setters per window and waited a settle
+    /// and a stable readback of frames that never moved.
+    func testALayoutAlreadyInPlaceIsAcceptedWithoutAWriteOrAWait() {
+        let (fake, left, right, usable) = inPlaceFixture()
+        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+            targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
+            originalFrames: [7: left, 8: right], usableFrame: usable, gap: 8, generation: 1)
+
+        XCTAssertEqual(report.outcome, .accepted(actualFrames: [7: left, 8: right]))
+        XCTAssertTrue(fake.operations.isEmpty, "the capture was the readback: \(fake.operations)")
+        XCTAssertEqual(fake.time, 0, "no settle is waited for")
+        XCTAssertTrue(report.progress.candidate.readbackComplete)
+        XCTAssertTrue(report.progress.candidate.possiblyWritten.isEmpty)
+    }
+
+    func testAnOriginalWithinTheVerdictsToleranceIsInPlaceToo() {
+        let (fake, left, right, usable) = inPlaceFixture()
+        // a point off in position and a cell of overshoot, as the verdict
+        // would accept after a write
+        let sat = left.offsetBy(dx: 1, dy: 0)
+        fake.frames[7] = sat
+        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+            targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
+            originalFrames: [7: sat, 8: right], usableFrame: usable, gap: 8, generation: 1)
+
+        XCTAssertEqual(report.outcome, .accepted(actualFrames: [7: sat, 8: right]))
+        XCTAssertTrue(fake.operations.isEmpty)
+    }
+
+    func testOneWindowOffItsTargetRunsTheOrdinaryPassForAll() {
+        let (fake, left, right, usable) = inPlaceFixture()
+        let elsewhere = CGRect(x: 508, y: 8, width: 400, height: 784)
+        fake.frames[8] = elsewhere
+        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+            targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
+            originalFrames: [7: left, 8: elsewhere], usableFrame: usable, gap: 8, generation: 1)
+
+        XCTAssertEqual(report.outcome, .accepted(actualFrames: [7: left, 8: right]))
+        XCTAssertTrue(fake.operations.contains("size:8"))
+        XCTAssertTrue(fake.operations.contains("size:7"), "one pass, every target written")
+    }
+
+    func testInPlaceFramesThatFailTogetherAreNotTakenAsALayout() {
+        // both windows stand exactly on their targets, but the targets
+        // overlap: standing there proves nothing about the layout
+        let (fake, left, _, usable) = inPlaceFixture()
+        let overlapping = CGRect(x: 400, y: 8, width: 492, height: 784)
+        fake.frames[8] = overlapping
+        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+            targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: overlapping)],
+            originalFrames: [7: left, 8: overlapping], usableFrame: usable, gap: 8, generation: 1)
+
+        XCTAssertNotEqual(report.outcome, .accepted(actualFrames: [7: left, 8: overlapping]))
+        XCTAssertFalse(fake.operations.isEmpty, "the ordinary pass ran and judged it")
+    }
+
+    func testASupersededInPlaceLayoutIsNotAccepted() {
+        let (fake, left, right, usable) = inPlaceFixture()
+        fake.generation = 2
+        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+            targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
+            originalFrames: [7: left, 8: right], usableFrame: usable, gap: 8, generation: 1)
+
+        XCTAssertEqual(report.outcome, .degraded(candidateReason: .superseded,
+                                                 restorationReason: nil, actualFrames: [:]))
+    }
+
     func testSupersededAttemptNeverRollsBack() {
         let fake = Fake()
         fake.frames[15] = CGRect(x: 0, y: 0, width: 500, height: 800)
@@ -1223,6 +1303,10 @@ final class FrameSizingTransactionTests: XCTestCase {
         let second: CGWindowID = 59
         let originalA = CGRect(x: 0, y: 0, width: 496, height: 400)
         let originalB = CGRect(x: 504, y: 0, width: 496, height: 400)
+        // targets well off the originals, or the layout stands and nothing
+        // is written at all
+        let targetA = CGRect(x: 0, y: 0, width: 400, height: 400)
+        let targetB = CGRect(x: 504, y: 0, width: 400, height: 400)
         fake.frames = [first: originalA, second: originalB]
         let base = fake.io()
         var sizeCalls = 0
@@ -1241,7 +1325,7 @@ final class FrameSizingTransactionTests: XCTestCase {
         )
         let transaction = FrameSizingTransaction(attempt: FrameSizingAttempt(io: io))
         let outcome = transaction.apply(
-            targets: [.init(windowID: first, frame: originalA), .init(windowID: second, frame: originalB)],
+            targets: [.init(windowID: first, frame: targetA), .init(windowID: second, frame: targetB)],
             originalFrames: [first: originalA, second: originalB],
             usableFrame: CGRect(x: 0, y: 0, width: 1000, height: 800), gap: 8, generation: 1)
         XCTAssertEqual(outcome.outcome, .degraded(candidateReason: .writeFailed(first, .cannotComplete),

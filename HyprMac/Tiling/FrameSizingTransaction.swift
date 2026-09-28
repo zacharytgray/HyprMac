@@ -269,6 +269,38 @@ struct FrameSizingAttempt {
     let io: FrameSizingIO
     var configuration = FrameSizingConfiguration()
 
+    /// The layout as it already stands. Every target is where its window
+    /// is, within the verdict's own tolerances, and the frames pass the
+    /// aggregate checks as they are, so there is nothing to write and
+    /// nothing to wait for: the capture that produced `originalFrames` is
+    /// the readback. Nil when any window is off its target, or the frames
+    /// do not pass together, and the ordinary pass runs.
+    ///
+    /// Most passes are this. A workspace switch retiles the other screen,
+    /// a move retiles its source twice, a poll re-applies a tree nothing
+    /// changed; every one of them sent three setters per window and then
+    /// waited for a settle and a stable readback of frames that never moved.
+    func alreadyApplied(targets: [Target], originalFrames: [CGWindowID: CGRect],
+                        usableFrame: CGRect, gap: CGFloat, generation: UInt64) -> Result? {
+        guard !targets.isEmpty, io.currentGeneration() == generation else { return nil }
+        var actual: [CGWindowID: CGRect] = [:]
+        for target in targets {
+            guard actual[target.windowID] == nil, valid(target.frame),
+                  let original = originalFrames[target.windowID], valid(original),
+                  matches(original, target.frame) else { return nil }
+            actual[target.windowID] = original
+        }
+        let validated = validateFrames(targets: targets, actualFrames: actual,
+                                       usableFrame: usableFrame, gap: gap)
+        guard case .accepted = validated.verdict else { return nil }
+        var progress = Progress(phase: .candidate, generation: generation,
+                                targetIDs: targets.map(\.windowID))
+        progress.readbackComplete = true
+        progress.readbackStable = true
+        return Result(verdict: .accepted, actualFrames: actual, progress: progress,
+                      overlaps: validated.overlaps)
+    }
+
     func captureFrames(windowIDs: [CGWindowID], generation: UInt64) -> Result {
         let started = io.now()
         var frames: [CGWindowID: CGRect] = [:]
@@ -1099,6 +1131,15 @@ struct FrameSizingTransaction {
                 targets.first(where: { originalFrames[$0.windowID] == nil })?.windowID ?? 0),
                 restorationReason: nil,
                 actualFrames: [:]))
+        }
+        if let inPlace = attempt.alreadyApplied(targets: targets, originalFrames: originalFrames,
+                                                usableFrame: usableFrame, gap: gap,
+                                                generation: generation) {
+            hyprLog(.debug, .tiling, "frame attempt: phase=\(phase.rawValue) gen=\(generation) "
+                    + "wids=\(targets.map(\.windowID)) verdict=accepted in place — every window is"
+                    + " already on its target, nothing written")
+            return Report(outcome: .accepted(actualFrames: inPlace.actualFrames),
+                          progress: FrameSizingProgressReport(candidate: inPlace.progress))
         }
         let candidate = self.candidate(targets: targets, usableFrame: usableFrame,
                                        gap: gap, generation: generation, phase: phase)
