@@ -386,7 +386,13 @@ more when the app does not answer in time (step 3).
    ordinary pass would simply leave it out. When the arrangement cannot exist — the Outlook case, where a
    938 pt floor, a 574 pt floor, the gap and the padding do not fit in
    1496 pt of usable width — it resolves there, without a single setter, and
-   logs `admission retry refused pre-write`. Before acting the recovery
+   logs `admission retry refused pre-write`. When only some of the newcomers
+   are the problem, the retry gives them up one at a time — the one whose
+   tightest axis takes the largest share of the usable frame first — until
+   what is left fits, tiles the rest in the same pass, and reports the
+   dropped ones as `refusedIDs` (`admission retry narrowed pre-write`). Eight
+   windows opening on a laptop screen used to float as a set because two of
+   them could not share it with anyone. Before acting the recovery
    re-checks the assignment, the workspace's home screen, whether the
    workspace is visible, whether the app is running, whether the window
    still exists and can be read, and whether the user has floated it.
@@ -398,6 +404,17 @@ more when the app does not answer in time (step 3).
    workspace. `.routeToFittingWorkspace` is the placeholder for the other
    answer; nothing implements it, and selecting it still floats the window
    so nothing is left untracked. One named policy point, one line to change.
+
+   A second failure that names some of the newcomers still waiting and not
+   all of them — the window that would not take its frame, both of an
+   overlapping pair, plus whatever the engine refused pre-write — floats
+   those and runs the pass again for the rest without them, inside the same
+   retry and without a new timer, up to `narrowingRounds` (three) times.
+   Every round floats at least one window, so the loop ends on its own; the
+   bound keeps a key that refuses every arrangement from becoming a visible
+   resize storm. A failure that names an incumbent or nobody says nothing
+   about which newcomer to give up on, and a timeout is not a refusal;
+   neither narrows (`admission recovery narrowed`).
 
    The recovery then asks the engine to drop the key's unverified
    mark, and the engine decides: `clearUnverifiedGeometry` drops it only if

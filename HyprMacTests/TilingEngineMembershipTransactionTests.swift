@@ -786,6 +786,51 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(retry.insertedIDs.isEmpty)
     }
 
+    /// Eight windows opening on a laptop screen: two of them could not share
+    /// it with anyone, so the retry refused the whole set pre-write and the
+    /// recovery floated all eight. The retry gives up on the newcomers
+    /// asking for the most room, one at a time, and tiles what is left.
+    func testARetryDropsTheNewcomersThatCannotFitAndTilesTheRest() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let tenant = makeWindow(id: 32513)
+        let wide = makeWindow(id: 32836)
+        let tall = makeWindow(id: 32837)
+        let small = makeWindow(id: 32838)
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in [tenant, wide, tall, small] { trace.frames[w.windowID] = rect }
+        XCTAssertTrue(engine.tileWindows([tenant], onWorkspace: 1, screen: screen).published)
+        // the screen is 1600 by 1000: one newcomer is wider than the usable
+        // frame, one is taller, one fits beside the tenant
+        for (window, floor) in [(tenant, CGSize(width: 600, height: 300)),
+                                (wide, CGSize(width: 1700, height: 300)),
+                                (tall, CGSize(width: 300, height: 1100)),
+                                (small, CGSize(width: 300, height: 300))] {
+            window.observedMinSize = floor
+            window.minSizeProvenance = .observed
+            trace.minSize[window.windowID] = floor
+        }
+        engine.primeMinimumSizes([tenant, wide, tall, small])
+        trace.written = []
+
+        let retry = engine.retryAdmission([tenant, wide, tall, small], onWorkspace: 1, screen: screen,
+                                          bypassingMinimaBefore: [wide.windowID: 0, tall.windowID: 0,
+                                                                  small.windowID: 0],
+                                          refusingImpossibleArrangements: true)
+
+        XCTAssertEqual(retry.refusedIDs, [wide.windowID, tall.windowID],
+                       "failure=\(String(describing: retry.failure))")
+        XCTAssertTrue(retry.published, "failure=\(String(describing: retry.failure))")
+        XCTAssertEqual(retry.publishedIDs, [tenant.windowID, small.windowID])
+        XCTAssertEqual(retry.strandedIDs, [wide.windowID, tall.windowID])
+        XCTAssertFalse(trace.written.contains(wide.windowID), "a dropped newcomer is never written")
+        XCTAssertFalse(trace.written.contains(tall.windowID))
+        XCTAssertEqual(Set(engine.windowIDs(inTreeForWorkspace: 1, screen: screen)),
+                       [tenant.windowID, small.windowID])
+    }
+
     /// The second Outlook window. The first one taught the engine a floor
     /// no slot on this screen can hold; the second must not have to prove it
     /// again with its own visible resize.

@@ -2221,15 +2221,68 @@ class TilingEngine {
             // ordinary pass would simply leave it out.
             let key = TilingKey(workspace: workspace, screen: screen)
             let published = Set(trees[key]?.allWindows.map(\.windowID) ?? [])
-            let judged = windows.filter {
+            var judged = windows.filter {
                 !$0.isFloating && (published.contains($0.windowID) || bypass[$0.windowID] != nil)
             }
-            if !fitWindows(judged, onWorkspace: workspace, screen: screen) {
-                return structuralRefusal(Set(bypass.keys), workspace: workspace, screen: screen)
+            // an arrangement that cannot exist loses one newcomer at a time,
+            // the one asking for the most room first, until what is left
+            // fits. eight windows opening on a laptop screen used to float
+            // as a set because two of them could not share it with anyone;
+            // the two go, and the six get their pass.
+            let rect = layoutRect(for: key, screen: screen)
+            var dropped: [CGWindowID] = []
+            while !fitWindows(judged, onWorkspace: workspace, screen: screen) {
+                let newcomers = judged.filter { !published.contains($0.windowID) }
+                guard let victim = newcomerToDrop(newcomers, in: rect) else { break }
+                judged.removeAll { $0 === victim }
+                dropped.append(victim.windowID)
+            }
+            if !dropped.isEmpty {
+                let droppedIDs = Set(dropped)
+                let remaining = Set(bypass.keys).subtracting(droppedIDs)
+                guard !remaining.isEmpty else {
+                    return structuralRefusal(Set(bypass.keys), workspace: workspace, screen: screen)
+                }
+                hyprLog(.notice, .tiling, "admission retry narrowed pre-write: dropped="
+                        + Self.idList(dropped) + " ws\(workspace) — their known minima do not fit"
+                        + " beside the rest; tiling " + Self.idList(remaining))
+                let result = tileWindows(windows.filter { !droppedIDs.contains($0.windowID) },
+                                         onWorkspace: workspace, screen: screen,
+                                         alsoRestoringWithin: restorationReach)
+                return AdmissionResult(workspace: workspace, screen: screen,
+                                       generation: result.generation,
+                                       insertedIDs: result.insertedIDs,
+                                       publishedIDs: result.publishedIDs,
+                                       failure: result.failure, restoredIDs: result.restoredIDs,
+                                       refusedIDs: result.refusedIDs.union(droppedIDs))
             }
         }
         return tileWindows(windows, onWorkspace: workspace, screen: screen,
                            alsoRestoringWithin: restorationReach)
+    }
+
+    /// Which newcomer leaves an arrangement that cannot exist: the one whose
+    /// tightest axis takes the largest share of the usable frame, so what
+    /// stays has the best chance of fitting. A window nobody knows a floor
+    /// for scores zero; among equals the later one goes, which with nothing
+    /// known is the one the ordinary pass would have inserted last.
+    private func newcomerToDrop(_ newcomers: [HyprWindow], in rect: CGRect) -> HyprWindow? {
+        guard var choice = newcomers.last else { return nil }
+        var share: CGFloat = -1
+        for window in newcomers {
+            let minimum = minimumSize(for: window)
+            let candidate = max(minimum.width / max(rect.width, 1),
+                                minimum.height / max(rect.height, 1))
+            if candidate >= share {
+                share = candidate
+                choice = window
+            }
+        }
+        return choice
+    }
+
+    private static func idList<S: Sequence>(_ ids: S) -> String where S.Element == CGWindowID {
+        "[" + ids.sorted().map(String.init).joined(separator: ", ") + "]"
     }
 
     /// The result of a retry that never ran: the known minima cannot be

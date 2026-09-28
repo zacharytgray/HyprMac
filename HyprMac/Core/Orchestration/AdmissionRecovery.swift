@@ -1,8 +1,9 @@
 // One bounded retry for a newcomer a failed admission stranded, then an
-// explicit float in place. A retry that times out gets a few more with
-// backoff and then stays tiled, unverified, instead of floating. Nothing
-// here routes a window to another workspace. Initial count-based
-// assignment is a separate policy.
+// explicit float in place. A refusal that names some of the newcomers floats
+// those and gives the rest the pass again, a bounded number of times. A
+// retry that times out gets a few more with backoff and then stays tiled,
+// unverified, instead of floating. Nothing here routes a window to another
+// workspace. Initial count-based assignment is a separate policy.
 
 import Cocoa
 
@@ -14,6 +15,15 @@ import Cocoa
 /// one retry about 250 ms later under a fresh owned context with only the
 /// minima recorded *before* that attempt ignored, and, if that is refused
 /// too, an explicit float where the window already is.
+///
+/// A retry refused on some of its newcomers and not all of them — the
+/// window that would not take its frame, both of an overlapping pair, the
+/// ones the engine turned away before writing — floats those and runs the
+/// pass again for the rest without them, up to `narrowingRounds` times.
+/// Eight windows opening on a laptop screen used to float as a set because
+/// two of them could not share it with anyone. A failure that names an
+/// incumbent or nobody says nothing about which newcomer to give up on, so
+/// it ends in the ordinary fallback for all of them.
 ///
 /// A retry that times out was not refused: the app did not answer in time.
 /// It gets up to `timeoutRetryDelays.count` more retries with backoff, and
@@ -100,6 +110,13 @@ final class AdmissionRecovery {
     /// answer, the engine keeps the window tiled and marks the key
     /// unverified. So a timeout never floats a window.
     var timeoutRetryDelays: [TimeInterval] = [0.5, 1.0]
+
+    /// How many times one retry may give up on the newcomers a refusal
+    /// named and run the pass again for the rest. Every round floats at
+    /// least one window, so the loop ends on its own; the bound keeps a key
+    /// that refuses every arrangement from turning the recovery into a
+    /// visible resize storm. Past it the rest float as before.
+    var narrowingRounds = 3
 
     /// What one recovery attempt found out.
     struct AttemptResult {
@@ -323,54 +340,70 @@ final class AdmissionRecovery {
         var backoff: TimeInterval?
         for (workspace, entry) in byKey.sorted(by: { $0.key < $1.key }) {
             for id in entry.bypass.keys { records[id]?.attempted = true }
-            let trace = entry.bypass.keys.sorted().map { "\($0):\(entry.bypass[$0]!)" }
-                .joined(separator: ",")
-            hyprLog(.notice, .tiling, "admission retry attempt: ws\(workspace)"
-                    + " bypassMinimaBefore=[\(trace)]"
-                    + (entry.keepOnTimeout ? " keepOnTimeout=true" : ""))
-            let result = attempt(workspace, entry.screen, entry.bypass, entry.keepOnTimeout)
-            // a newcomer the fit check turned away was refused, whatever the
-            // rest of the pass then ran into
-            let refused = result.admission?.refusedIDs ?? []
-            var timedOut: Set<CGWindowID> = []
-            var keyBackoff: TimeInterval?
-            for id in entry.bypass.keys.sorted() {
-                if result.placed.contains(id) {
-                    if let failure = result.failure, failure.isTimeout, entry.keepOnTimeout {
-                        // placed without an accepted layout: the last retry
-                        // timed out and the engine kept the tile unverified
-                        resolve(id, reason: "kept tiled unverified after"
-                                + " \((records[id]?.timeouts ?? 0) + 1) timed-out retries,"
-                                + " last=\(failure)")
-                    } else if let failure = result.failure {
-                        resolve(id, reason: "in the tree although the retry failed (\(failure))")
-                    } else {
-                        resolve(id, reason: "retry tiled it")
-                    }
-                } else if !refused.contains(id),
-                          let delay = rearmAfterTimeout(id, failure: result.failure) {
-                    timedOut.insert(id)
-                    keyBackoff = min(keyBackoff ?? delay, delay)
-                } else if let failure = result.failure, failure.isTimeout, !refused.contains(id) {
-                    // the last retry timed out before every window got its
-                    // whole frame, so the engine had nothing to keep tiled.
-                    // a timeout still does not float anything
-                    holdUnanswered(id, workspace: workspace, failure: failure)
-                } else if finish(id, retryFailure: result.failure) {
-                    floated[workspace] = entry.screen
+            var bypass = entry.bypass
+            var narrowings = 0
+            var lastAdmission: TilingEngine.AdmissionResult?
+            while true {
+                let trace = bypass.keys.sorted().map { "\($0):\(bypass[$0]!)" }
+                    .joined(separator: ",")
+                hyprLog(.notice, .tiling, "admission retry attempt: ws\(workspace)"
+                        + " bypassMinimaBefore=[\(trace)]"
+                        + (entry.keepOnTimeout ? " keepOnTimeout=true" : "")
+                        + (narrowings > 0 ? " narrowed=\(narrowings)" : ""))
+                let result = attempt(workspace, entry.screen, bypass, entry.keepOnTimeout)
+                lastAdmission = result.admission
+                // a newcomer the fit check turned away was refused, whatever the
+                // rest of the pass then ran into
+                let refused = result.admission?.refusedIDs ?? []
+                for id in bypass.keys.sorted() where result.placed.contains(id) {
+                    resolvePlaced(id, failure: result.failure, keepOnTimeout: entry.keepOnTimeout)
                 }
-            }
-            if let keyBackoff {
-                backoff = min(backoff ?? keyBackoff, keyBackoff)
-                hyprLog(.notice, .tiling, "admission retry timed out: ids=\(Self.list(timedOut))"
-                        + " ws\(workspace) cause=\(Self.text(result.failure))"
-                        + " — not a refusal, retrying in \(Int((keyBackoff * 1000).rounded()))ms")
+                let waiting = Set(bypass.keys).subtracting(result.placed)
+                if narrowings < narrowingRounds,
+                   let giveUp = Self.narrowing(of: waiting, refused: refused, failure: result.failure) {
+                    // the refusal names some of the newcomers still waiting
+                    // and not all of them: those float now, and the rest get
+                    // the pass again without them
+                    narrowings += 1
+                    hyprLog(.notice, .tiling, "admission recovery narrowed: floating \(Self.list(giveUp))"
+                            + " ws\(workspace) cause=\(Self.text(result.failure))"
+                            + " — retrying \(Self.list(waiting.subtracting(giveUp))) without them"
+                            + " (round \(narrowings) of \(narrowingRounds))")
+                    for id in giveUp.sorted() {
+                        if finish(id, retryFailure: result.failure) { floated[workspace] = entry.screen }
+                    }
+                    bypass = bypass.filter { waiting.contains($0.key) && !giveUp.contains($0.key) }
+                    continue
+                }
+                var timedOut: Set<CGWindowID> = []
+                var keyBackoff: TimeInterval?
+                for id in waiting.sorted() {
+                    if !refused.contains(id),
+                       let delay = rearmAfterTimeout(id, failure: result.failure) {
+                        timedOut.insert(id)
+                        keyBackoff = min(keyBackoff ?? delay, delay)
+                    } else if let failure = result.failure, failure.isTimeout, !refused.contains(id) {
+                        // the last retry timed out before every window got its
+                        // whole frame, so the engine had nothing to keep tiled.
+                        // a timeout still does not float anything
+                        holdUnanswered(id, workspace: workspace, failure: failure)
+                    } else if finish(id, retryFailure: result.failure) {
+                        floated[workspace] = entry.screen
+                    }
+                }
+                if let keyBackoff {
+                    backoff = min(backoff ?? keyBackoff, keyBackoff)
+                    hyprLog(.notice, .tiling, "admission retry timed out: ids=\(Self.list(timedOut))"
+                            + " ws\(workspace) cause=\(Self.text(result.failure))"
+                            + " — not a refusal, retrying in \(Int((keyBackoff * 1000).rounded()))ms")
+                }
+                break
             }
             let settled = entry.bypass.keys.allSatisfy {
                 records[$0] == nil || records[$0]?.phase == .held
             }
             if settled, floated[workspace] == nil {
-                terminalOutcome(workspace, entry.screen, result.admission)
+                terminalOutcome(workspace, entry.screen, lastAdmission)
             }
         }
         if let backoff { arm(after: backoff) }
@@ -378,6 +411,37 @@ final class AdmissionRecovery {
         for (workspace, screen) in floated.sorted(by: { $0.key < $1.key }) {
             retileWhatIsLeft(workspace, screen)
         }
+    }
+
+    /// The retry left `id` in the published tree. Resolved, with the log
+    /// line saying how it got there.
+    private func resolvePlaced(_ id: CGWindowID, failure: FrameSizingFailure?, keepOnTimeout: Bool) {
+        if let failure, failure.isTimeout, keepOnTimeout {
+            // placed without an accepted layout: the last retry timed out
+            // and the engine kept the tile unverified
+            resolve(id, reason: "kept tiled unverified after"
+                    + " \((records[id]?.timeouts ?? 0) + 1) timed-out retries,"
+                    + " last=\(failure)")
+        } else if let failure {
+            resolve(id, reason: "in the tree although the retry failed (\(failure))")
+        } else {
+            resolve(id, reason: "retry tiled it")
+        }
+    }
+
+    /// The newcomers a refused retry gives up on while the rest get the
+    /// pass again: the ones the failure names, plus the ones the engine
+    /// refused pre-write. Nil when the failure names none of the waiting
+    /// newcomers — an incumbent refused, or nobody did, as in a timeout —
+    /// and nil when giving them up would leave nothing to retry. Both end
+    /// in the ordinary fallback.
+    static func narrowing(of waiting: Set<CGWindowID>, refused: Set<CGWindowID>,
+                          failure: FrameSizingFailure?) -> Set<CGWindowID>? {
+        guard let failure, !failure.isTimeout else { return nil }
+        let named = failure.namedWindowIDs.intersection(waiting)
+        guard !named.isEmpty else { return nil }
+        let giveUp = named.union(refused.intersection(waiting))
+        return giveUp.count < waiting.count ? giveUp : nil
     }
 
     /// The last retry timed out before every window got its whole frame, so

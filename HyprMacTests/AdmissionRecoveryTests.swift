@@ -416,6 +416,120 @@ final class AdmissionRecoveryTests: XCTestCase {
         XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
     }
 
+    // MARK: - narrowing: a refusal that names some of the newcomers
+
+    func testARefusalNamingOneNewcomerFloatsOnlyItAndRetriesTheRest() {
+        recovery.note(failedAdmission([26, 27]))
+        harness.failures = [.geometryMismatch(27), nil]
+        harness.placements = [[], [26]]
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.map(\.newcomers), [[26, 27], [26]])
+        XCTAssertEqual(harness.floated.map(\.id), [27])
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+        XCTAssertEqual(harness.calls,
+                       ["attempt", "floatInPlace", "clearUnverified", "attempt", "retileAfterFallback"])
+        XCTAssertEqual(harness.scheduled.count, 1, "the second pass runs inside the one retry")
+    }
+
+    func testAPairFailureNamingTwoNewcomersFloatsBothAndRetriesTheThird() {
+        harness.add(28)
+        recovery.note(failedAdmission([26, 27, 28]))
+        harness.failures = [.overlap(27, 28), nil]
+        harness.placements = [[], [26]]
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.map(\.newcomers), [[26, 27, 28], [26]])
+        XCTAssertEqual(Set(harness.floated.map(\.id)), [27, 28])
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
+    func testAPreWriteDropFloatsWithTheNamedRefuserBeforeTheRetry() {
+        // the engine dropped 28 before writing, and the pass it ran for the
+        // rest was refused on 27: both go, and 26 gets the pass alone
+        harness.add(28)
+        recovery.note(failedAdmission([26, 27, 28]))
+        harness.failures = [.geometryMismatch(27), nil]
+        harness.refusals = [[28], []]
+        harness.placements = [[], [26]]
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.map(\.newcomers), [[26, 27, 28], [26]])
+        XCTAssertEqual(Set(harness.floated.map(\.id)), [27, 28])
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
+    func testARefusalNamingAnIncumbentStillFloatsEveryNewcomer() {
+        // nothing says which newcomer squeezed the incumbent, so there is
+        // nothing to narrow by
+        recovery.note(failedAdmission([26, 27]))
+        harness.failure = .geometryMismatch(11)
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.count, 1)
+        XCTAssertEqual(harness.floated.map(\.id), [26, 27])
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
+    func testARefusalNamingTheOnlyWaitingNewcomerIsTheOrdinaryFallback() {
+        recovery.note(failedAdmission([26]))
+        harness.failure = .geometryMismatch(26)
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.count, 1, "nothing is left to retry without it")
+        XCTAssertEqual(harness.floated.map(\.id), [26])
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
+    func testNarrowingIsBoundedAndThenFloatsTheRest() {
+        harness.add(28, 29, 30)
+        recovery.note(failedAdmission([26, 27, 28, 29, 30]))
+        harness.failures = [.geometryMismatch(30), .geometryMismatch(29),
+                            .geometryMismatch(28), .geometryMismatch(27)]
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.map(\.newcomers),
+                       [[26, 27, 28, 29, 30], [26, 27, 28, 29], [26, 27, 28], [26, 27]])
+        XCTAssertEqual(harness.floated.map(\.id), [30, 29, 28, 26, 27],
+                       "three rounds, then the fourth refusal floats what is left")
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+        XCTAssertEqual(harness.scheduled.count, 1, "narrowing never arms a timer")
+    }
+
+    func testATimeoutIsNeverNarrowed() {
+        recovery.note(failedAdmission([26, 27]))
+        harness.failure = .deadlineExceeded
+
+        harness.fire()
+
+        XCTAssertEqual(harness.attempts.count, 1)
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertEqual(recovery.pendingWindowIDs, [26, 27], "both back off together")
+    }
+
+    func testTheNarrowingRuleReadsTheFailureNotTheRefusalsAlone() {
+        XCTAssertEqual(AdmissionRecovery.narrowing(of: [26, 27], refused: [],
+                                                   failure: .geometryMismatch(27)), [27])
+        XCTAssertEqual(AdmissionRecovery.narrowing(of: [26, 27, 28], refused: [28],
+                                                   failure: .geometryMismatch(27)), [27, 28])
+        XCTAssertNil(AdmissionRecovery.narrowing(of: [26, 27], refused: [27],
+                                                 failure: .geometryMismatch(11)),
+                     "a refusal naming an incumbent says nothing about the rest")
+        XCTAssertNil(AdmissionRecovery.narrowing(of: [26, 27], refused: [],
+                                                 failure: .overlap(26, 27)),
+                     "nothing would be left to retry")
+        XCTAssertNil(AdmissionRecovery.narrowing(of: [26, 27], refused: [],
+                                                 failure: .writeFailed(27, .cannotComplete)),
+                     "a timeout is not a refusal")
+        XCTAssertNil(AdmissionRecovery.narrowing(of: [26, 27], refused: [], failure: nil))
+    }
+
     // MARK: - unreadable newcomer
 
     func testUnreadableNewcomerStaysPendingWithNoSecondTimer() {
@@ -747,8 +861,13 @@ private final class RecoveryHarness {
 
     /// ids the next attempt manages to tile
     var place: Set<CGWindowID> = []
+    /// what each attempt places, in order; `place` once it runs out
+    var placements: [Set<CGWindowID>] = []
     /// failures for the next attempts, in order; `failure` once it runs out
     var failures: [FrameSizingFailure?] = []
+    /// ids each attempt's engine refused pre-write, in order; none once it
+    /// runs out
+    var refusals: [Set<CGWindowID>] = []
     /// the engine keeping a timed-out tile: a keepOnTimeout attempt that
     /// times out places every newcomer it was given
     var keepsTimeouts = true
@@ -771,6 +890,16 @@ private final class RecoveryHarness {
         self.screen = screen
         self.homeScreen = screen
         for id in [CGWindowID(11), 26, 27] { windows[id] = makeWindow(id: id) }
+    }
+
+    /// More newcomers on ws2, alive and readable.
+    func add(_ ids: CGWindowID...) {
+        for id in ids {
+            windows[id] = makeWindow(id: id)
+            alive.insert(id)
+            readable.insert(id)
+            workspaces[id] = 2
+        }
     }
 
     func install(on recovery: AdmissionRecovery) {
@@ -798,10 +927,18 @@ private final class RecoveryHarness {
             self.attempts.append(Attempt(workspace: workspace, bypass: bypass,
                                          keepOnTimeout: keepOnTimeout))
             let failure = self.failures.isEmpty ? self.failure : self.failures.removeFirst()
+            let placed = self.placements.isEmpty ? self.place : self.placements.removeFirst()
+            let refused = self.refusals.isEmpty ? [] : self.refusals.removeFirst()
             if keepOnTimeout, self.keepsTimeouts, let failure, failure.isTimeout {
                 return AdmissionRecovery.AttemptResult(placed: Set(bypass.keys), failure: failure)
             }
-            return AdmissionRecovery.AttemptResult(placed: self.place, failure: failure)
+            let admission = TilingEngine.AdmissionResult(
+                workspace: workspace, screen: self.screen, generation: 8,
+                insertedIDs: Set(bypass.keys).subtracting(refused),
+                publishedIDs: placed.union([11]), failure: failure,
+                restoredIDs: [], refusedIDs: refused)
+            return AdmissionRecovery.AttemptResult(placed: placed, failure: failure,
+                                                   admission: admission)
         }
         recovery.floatInPlace = { [weak self] window, reason in
             self?.calls.append("floatInPlace")

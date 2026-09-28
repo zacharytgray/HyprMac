@@ -378,7 +378,9 @@ constrained vertical monitors.
 Max BSP depth is 3 (smallest slot = 1/8 of screen). Beyond that, smart
 insert finds no fitting leaf. The pass reports the window as refused on its
 `AdmissionResult`; nothing routes it elsewhere, and `AdmissionRecovery`
-gives it one bounded retry and then floats it where it stands.
+gives it one bounded retry and then floats it where it stands. A retry
+refused on some of its newcomers floats only those and runs the pass again
+for the rest, at most three times.
 
 Two-pass layout via `HyprWindow.setFrameWithReadback`:
 1. Pass 1 applies target frames and reads back actual sizes.

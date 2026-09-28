@@ -44,6 +44,27 @@ extension FrameSizingFailure {
         }
     }
 
+    /// The windows the failure names: the one that refused or lost its
+    /// frame, both of an overlapping or gapless pair, the primary failure's
+    /// windows behind a cleanup failure. Empty for the failures nobody
+    /// caused — a deadline, an exhausted attempt budget, a superseded pass.
+    /// The admission recovery reads it as the newcomers to give up on while
+    /// the rest of a refused arrangement gets its pass again.
+    var namedWindowIDs: Set<CGWindowID> {
+        switch self {
+        case let .cleanupFailed(id, primary, _):
+            return primary?.namedWindowIDs ?? [id]
+        case let .writeFailed(id, _), let .readFailed(id, _),
+             let .noFittingSlot(id), let .geometryMismatch(id), let .outsideUsableFrame(id),
+             let .windowUnavailable(id), let .duplicateWindowID(id), let .invalidFrame(id):
+            return [id]
+        case let .overlap(first, second), let .gapViolation(first, second):
+            return [first, second]
+        case .deadlineExceeded, .attemptsExhausted, .superseded:
+            return []
+        }
+    }
+
     /// The failure with raw AX codes. The synthesized description prints
     /// `__C.AXError`, which does not say which error it was.
     var trace: String {
