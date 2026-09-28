@@ -185,8 +185,27 @@ final class WindowDiscoveryService {
             snapshot: snapshot,
             runningPIDs: runningPIDs,
             excludedBundleIDs: excludedBundleIDs,
-            focusedWindowID: focusedWindowID
+            focusedWindowID: focusedWindowID,
+            unreadableWindowIDs: accessibility.unreadableWindowIDs
         )
+    }
+
+    /// Known windows the last cycle held because AX could not read them.
+    /// Kept so the outage is logged at its edges rather than every cycle.
+    private var heldUnreadableIDs: Set<CGWindowID> = []
+
+    private func noteHeld(_ held: Set<CGWindowID>) {
+        guard held != heldUnreadableIDs else { return }
+        let began = held.subtracting(heldUnreadableIDs)
+        let ended = heldUnreadableIDs.subtracting(held)
+        heldUnreadableIDs = held
+        if !began.isEmpty {
+            hyprLog(.notice, .discovery, "holding \(began.count) unreadable window(s) in place: "
+                    + "\(began.sorted()) — on screen, but their app did not answer AX")
+        }
+        if !ended.isEmpty {
+            hyprLog(.notice, .discovery, "unreadable window(s) readable again: \(ended.sorted())")
+        }
     }
 
     /// Start or end one reason for a session interruption, by notification
@@ -247,17 +266,31 @@ final class WindowDiscoveryService {
     /// - Returns: a `WindowChanges` value describing what changed and
     ///   what the caller still needs to apply (workspace assignment,
     ///   external cleanup, retile, refocus).
+    /// - Parameter unreadableWindowIDs: windows the walk could not read
+    ///   although the window server shows them. They are held: not gone, not
+    ///   hidden, not returned, and nothing about them changes this cycle.
     func computeChanges(snapshot: [HyprWindow],
                         runningPIDs: Set<pid_t>,
                         excludedBundleIDs: Set<String>,
-                        focusedWindowID: CGWindowID) -> WindowChanges {
+                        focusedWindowID: CGWindowID,
+                        unreadableWindowIDs: Set<CGWindowID> = []) -> WindowChanges {
         let currentIDs = Set(snapshot.map { $0.windowID })
+
+        // a known window missing from the snapshot is gone only when AX
+        // answered for it. one that is on screen by the window server's
+        // account but whose app did not answer is held where it is, in every
+        // store, until a pass can read it again: a single failed read used to
+        // pull the window out of its tree, expand the neighbour over it, and
+        // re-insert it somewhere else on the next poll.
+        let missing = stateCache.knownWindowIDs.subtracting(currentIDs)
+        let held = missing.intersection(unreadableWindowIDs)
+        noteHeld(held)
 
         // partial AX snapshots (post-wake, unresponsive apps) can report half
         // the desktop gone in one cycle; real user actions never do. skip the
         // whole cycle before mutating any cache state — but only a bounded
         // number of times, so a genuine mass close still processes.
-        let apparentlyGone = stateCache.knownWindowIDs.subtracting(currentIDs)
+        let apparentlyGone = missing.subtracting(held)
         // while locked or asleep nothing is marked gone, and nothing else in
         // the cycle is applied either: the snapshot is not the desktop
         if !apparentlyGone.isEmpty, sessionInterruptionActive() {
@@ -344,8 +377,8 @@ final class WindowDiscoveryService {
             newWindows.append(w)
         }
 
-        // gone
-        let gone = stateCache.knownWindowIDs.subtracting(currentIDs)
+        // gone. the held ids stay out of this: they are still known
+        let gone = apparentlyGone
         for id in gone {
             goneIDs.insert(id)
             // startup and Retile All register windows without a discovery

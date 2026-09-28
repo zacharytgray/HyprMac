@@ -25,6 +25,55 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(engine.unverifiedLayouts.contains { $0.windowIDs.contains(incumbent.windowID) })
     }
 
+    /// a member whose app did not answer the discovery walk is absent from
+    /// the pass's list but held by the caller: its leaf stays, so every
+    /// other slot stays, and no frame goes out to it
+    func testAHeldMemberKeepsItsLeafAndIsNotWritten() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let windows = [makeWindow(id: 951), makeWindow(id: 952), makeWindow(id: 953)]
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in windows { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows(windows, onWorkspace: 1, screen: screen).published)
+        let shape = engine.existingTree(forWorkspace: 1, screen: screen)?.structuralFingerprint()
+        let slots = engine.intendedTileRects()
+        trace.written = []
+
+        let result = engine.withHeldWindows([953]) {
+            engine.tileWindows(Array(windows.prefix(2)), onWorkspace: 1, screen: screen)
+        }
+
+        XCTAssertTrue(result.published)
+        XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: screen)?.structuralFingerprint(), shape)
+        XCTAssertEqual(trace.written, [951, 952], "nothing goes out to the app that did not answer")
+        XCTAssertEqual(engine.intendedTileRects(), slots, "every slot is where it was")
+        // the poll that reads 953 again asks for the retile, once
+        XCTAssertEqual(engine.releaseHeldWindows(readable: [951, 952]), [])
+        XCTAssertEqual(engine.releaseHeldWindows(readable: [951, 952, 953]), [953])
+        XCTAssertEqual(engine.releaseHeldWindows(readable: [951, 952, 953]), [])
+    }
+
+    /// without a hold, a member missing from the list leaves the tree as it
+    /// always has: a close, a minimize, a move
+    func testAMemberMissingWithoutAHoldLeavesTheTree() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let windows = [makeWindow(id: 961), makeWindow(id: 962), makeWindow(id: 963)]
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in windows { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows(windows, onWorkspace: 1, screen: screen).published)
+
+        let result = engine.tileWindows(Array(windows.prefix(2)), onWorkspace: 1, screen: screen)
+
+        XCTAssertTrue(result.published)
+        XCTAssertEqual(result.publishedIDs, [961, 962])
+        XCTAssertTrue(engine.releaseHeldWindows(readable: [963]).isEmpty)
+    }
+
     func testARecycledWindowIDIsJudgedAsANewcomerNotAnIncumbent() {
         let screen = MembershipTestScreen()
         let trace = MembershipTrace()

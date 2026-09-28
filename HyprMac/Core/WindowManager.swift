@@ -2044,10 +2044,22 @@ class WindowManager {
             }
 
             hyprLog(.debug, .lifecycle, "retile: workspace=\(workspace) screen=\(workspaceManager.screenID(for: screen)), \(workspaceWindows.count) windows")
+            // members this walk could not read keep their leaves: the window
+            // server still shows them, so the slot is theirs, and no frame
+            // goes out to an app that is not answering. the poll retiles the
+            // key once they read again
+            let held = accessibility.unreadableWindowIDs.intersection(widsOnWorkspace)
+                .subtracting(stateCache.floatingWindowIDs)
+                .subtracting(stateCache.hiddenWindowIDs)
+            if !held.isEmpty {
+                hyprLog(.notice, .lifecycle, "retile: ws\(workspace) holds \(held.sorted()) — unreadable, leaves kept, no frame written")
+            }
             // a workspace being shown is where an explicit move to a hidden
             // destination finally gets its one attempt. the marker is spent
             // on this pass whatever it says.
-            results.append(admissionPass.run(workspaceWindows, onWorkspace: workspace, screen: screen))
+            results.append(tilingEngine.withHeldWindows(held) {
+                admissionPass.run(workspaceWindows, onWorkspace: workspace, screen: screen)
+            })
         }
 
         updatePositionCache(windows: allWindows)
@@ -2815,13 +2827,23 @@ class WindowManager {
             snapshot: allWindows,
             runningPIDs: runningPIDs,
             excludedBundleIDs: Set(config.excludedBundleIDs),
-            focusedWindowID: focusController.lastFocusedID
+            focusedWindowID: focusController.lastFocusedID,
+            unreadableWindowIDs: accessibility.unreadableWindowIDs
         )
         // locked or asleep: this snapshot is not the desktop. a drift
         // re-apply or a recovery attempt from it would lay the trees out
         // without the windows it is missing
         if changes.heldForInterruption { return }
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
+        // a member a tile pass held out because its app did not answer gets
+        // its frame once the app does. a retile this poll already wrote it
+        var retiled = changes.needsRetile
+        let released = tilingEngine.releaseHeldWindows(readable: Set(allWindows.map(\.windowID)))
+        if !released.isEmpty, !retiled {
+            hyprLog(.notice, .discovery, "held windows readable again: \(released.sorted()) — retiling")
+            animatedRetile(windows: allWindows)
+            retiled = true
+        }
         // a poll is the real event that says a window came back, became
         // readable, or went away — the only thing that can unblock a
         // recovery waiting on evidence
@@ -2829,14 +2851,17 @@ class WindowManager {
         // a retile already rewrote every frame on the affected keys, so the
         // frames in this snapshot are what it replaced. drift is the
         // question for a poll that changed nothing.
-        if !changes.needsRetile { applyTiledDrift(allWindows) }
+        if !retiled { applyTiledDrift(allWindows) }
         repairParkedWindows(allWindows)
         reconcileTiledDragFeedback(with: retileResults, allWindows: allWindows)
         // a guarded cycle diffed nothing, so it can't have seen the close —
         // don't spend a recheck attempt on it, and don't let the slower
         // destroy re-poll coalesce away the prompt one.
         if changes.requestsRecheck {
-            pollingScheduler.schedule(after: 0.1)
+            // a real mass close is delayed by this, a partial snapshot gets
+            // the time it needs to fill in. at 0.1 s the three skips the
+            // guard allows were over in a third of a second
+            pollingScheduler.schedule(after: 0.5)
         } else if destroyRecheck.resolve(goneIDs: changes.goneIDs, ownersBefore: ownersBefore,
                                          runningPIDs: runningPIDs) {
             hyprLog(.debug, .discovery, "destroy recheck: closed window not yet gone from the snapshot — re-polling")
@@ -3158,6 +3183,16 @@ class WindowManager {
             guard let self else { return }
             // a newer notification owns the debounce now
             guard gen == self.displayChangeGeneration else { return }
+            // the window list is partial while the session is locked or the
+            // displays sleep. a reconcile from it would re-home every
+            // workspace and tile without the windows it is missing, so it
+            // waits for the span to end and settles again from there
+            if self.discovery.isSessionInterrupted {
+                hyprLog(.notice, .lifecycle, "display reconcile deferred: session interrupted")
+                self.suppressions.suppress("workspace-transition", for: 3.0)
+                self.scheduleDisplayReconcile(stabilityWindow: stabilityWindow)
+                return
+            }
             let fingerprint = self.displayFingerprint()
             if fingerprint != fingerprintAtSchedule {
                 // changed without a fresh notification — keep waiting

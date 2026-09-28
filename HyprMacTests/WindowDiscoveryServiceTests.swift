@@ -64,13 +64,15 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         snapshot: [HyprWindow],
         runningPIDs: Set<pid_t> = [],
         excluded: Set<String> = [],
-        focusedID: CGWindowID = 0
+        focusedID: CGWindowID = 0,
+        unreadable: Set<CGWindowID> = []
     ) -> WindowChanges {
         svc.computeChanges(
             snapshot: snapshot,
             runningPIDs: runningPIDs,
             excludedBundleIDs: excluded,
-            focusedWindowID: focusedID
+            focusedWindowID: focusedID,
+            unreadableWindowIDs: unreadable
         )
     }
 
@@ -338,6 +340,70 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(cache.hiddenWindowIDs.contains(10))
         // owner pid retained so the un-hide path can restore the wid as "returned"
         XCTAssertEqual(cache.windowOwners[10], 8000)
+        XCTAssertTrue(changes.needsRetile)
+    }
+
+    // MARK: - unreadable windows
+
+    /// the window server still shows the window; its app just did not
+    /// answer. it stays known, on its workspace and in its tree, and nobody
+    /// asks the same app whether the window is minimized
+    func testAnUnreadableWindowIsHeldNotHidden() {
+        let stub = StubAccessibility()
+        let (svc, cache, _) = makeService(accessibility: stub)
+        cache.knownWindowIDs = [10, 11]
+        cache.windowOwners = [10: 8000, 11: 8000]
+
+        let changes = compute(svc, snapshot: [makeWindow(id: 10, pid: 8000)],
+                              runningPIDs: [8000], unreadable: [11])
+
+        XCTAssertTrue(changes.goneIDs.isEmpty)
+        XCTAssertFalse(changes.needsRetile)
+        XCTAssertTrue(cache.knownWindowIDs.contains(11))
+        XCTAssertFalse(cache.hiddenWindowIDs.contains(11))
+        XCTAssertTrue(stub.queries.isEmpty)
+    }
+
+    /// once the app answers again the window is simply present: not
+    /// returned, not new, nothing to retile
+    func testAHeldWindowThatReadsAgainIsNoChange() {
+        let (svc, cache, _) = makeService(accessibility: StubAccessibility())
+        cache.knownWindowIDs = [10, 11]
+        cache.windowOwners = [10: 8000, 11: 8000]
+        let windows = [makeWindow(id: 10, pid: 8000), makeWindow(id: 11, pid: 8000)]
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8000], unreadable: [11])
+
+        let changes = compute(svc, snapshot: windows, runningPIDs: [8000])
+
+        XCTAssertTrue(changes.returned.isEmpty)
+        XCTAssertTrue(changes.newWindows.isEmpty)
+        XCTAssertFalse(changes.needsRetile)
+    }
+
+    /// a whole app that stops answering is not a mass close
+    func testHeldWindowsDoNotTripTheMassGoneGuard() {
+        let (svc, cache, _) = makeService(accessibility: StubAccessibility())
+        cache.knownWindowIDs = [1, 2, 3, 4]
+        cache.windowOwners = [1: 8000, 2: 8000, 3: 8000, 4: 8000]
+
+        let changes = compute(svc, snapshot: [], runningPIDs: [8000], unreadable: [1, 2, 3, 4])
+
+        XCTAssertFalse(changes.requestsRecheck)
+        XCTAssertTrue(changes.goneIDs.isEmpty)
+        XCTAssertEqual(cache.knownWindowIDs, [1, 2, 3, 4])
+    }
+
+    /// a window its app answered for and no longer lists is gone as before
+    func testAMissingWindowOfAReadableAppIsStillGone() {
+        let (svc, cache, _) = makeService(accessibility: StubAccessibility())
+        cache.knownWindowIDs = [10, 11]
+        cache.windowOwners = [10: 8000, 11: 8000]
+
+        let changes = compute(svc, snapshot: [makeWindow(id: 10, pid: 8000)],
+                              runningPIDs: [8000], unreadable: [])
+
+        XCTAssertEqual(changes.goneIDs, [11])
+        XCTAssertTrue(cache.hiddenWindowIDs.contains(11))
         XCTAssertTrue(changes.needsRetile)
     }
 

@@ -58,6 +58,20 @@ class AccessibilityManager {
     // is admitted or refused, not on every poll
     private var quickLookVerdicts: [CGWindowID: String] = [:]
 
+    /// Windows the last `getAllWindows` walk could not read: every visible
+    /// window of an app whose window list did not answer, and each window
+    /// whose frame did not. The window server still lists them on screen,
+    /// so their absence from the snapshot says nothing about them, and
+    /// discovery holds them instead of marking them gone.
+    private(set) var unreadableWindowIDs: Set<CGWindowID> = []
+
+    /// Messaging timeout for the discovery walk. The process-wide default is
+    /// one second, which is what one stalled app costs the main thread per
+    /// call; the walk asks every app on every poll, and an app that does not
+    /// answer in this time is held rather than judged, so the short budget
+    /// loses nothing.
+    static let discoveryMessagingTimeout: Float = 0.25
+
     /// Look up a window in the last discovery snapshot by `CGWindowID`.
     /// Wired by `WindowManager` to `stateCache.cachedWindows[id]`. Lets
     /// `getFocusedWindow` skip a full AX walk when the focused window was
@@ -234,6 +248,7 @@ class AccessibilityManager {
     func hiddenWindowState(windowID target: CGWindowID, pid: pid_t) -> HiddenWindowState? {
         if NSRunningApplication(processIdentifier: pid)?.isHidden == true { return .appHidden }
         let appRef = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
         var value: AnyObject?
         let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &value)
         guard result == .success, let axWindows = value as? [AXUIElement] else { return nil }
@@ -265,6 +280,7 @@ class AccessibilityManager {
         let cgWindows = cgWindowsByPID()
         var windows: [HyprWindow] = []
         var usedIDs: Set<CGWindowID> = []
+        var unreadable: Set<CGWindowID> = []
 
         // apps to never tile
         let excludedBundleIDs: Set<String> = [
@@ -290,15 +306,18 @@ class AccessibilityManager {
             let cgEntries = cgWindows[pid] ?? []
             let candidates = cgEntries.filter { $0.layer == 0 }
             let appRef = AXUIElementCreateApplication(pid)
+            AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
             var value: AnyObject?
             let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &value)
             guard result == .success, let axWindows = value as? [AXUIElement] else {
                 // a busy app (main thread stalled) fails this read wholesale
                 // and every one of its windows drops from the snapshot for
-                // the cycle — discovery reads them as gone, the sibling tile
-                // expands full-screen, and the next cycle flaps them back.
-                // log the outage edges only, not every 1 Hz cycle.
-                if candidates.contains(where: { $0.alpha > 0.01 }) {
+                // the cycle. the window server still shows them, so they are
+                // reported unreadable and discovery holds them in place.
+                // log the outage edges only, not every cycle.
+                let visible = candidates.filter { $0.alpha > 0.01 }
+                unreadable.formUnion(visible.map(\.windowID))
+                if !visible.isEmpty {
                     let n = (axListFailures[pid] ?? 0) + 1
                     axListFailures[pid] = n
                     if n == 1 {
@@ -326,6 +345,7 @@ class AccessibilityManager {
             var quickLookOwnIDs: Set<CGWindowID> = []
             var frameDropCount = 0
             for axWin in axWindows {
+                AXUIElementSetMessagingTimeout(axWin, Self.discoveryMessagingTimeout)
                 var minimized: AnyObject?
                 AXUIElementCopyAttributeValue(axWin, kAXMinimizedAttribute as CFString, &minimized)
                 if let min = minimized as? Bool, min { continue }
@@ -351,6 +371,9 @@ class AccessibilityManager {
                 switch verdict {
                 case .standard:
                     guard let frame = axFrame(for: axWin) else {
+                        // the window is listed but its frame did not answer:
+                        // unreadable, not absent
+                        if let wid = windowID(for: axWin) { unreadable.insert(wid) }
                         frameDropCount += 1
                         continue
                     }
@@ -446,6 +469,7 @@ class AccessibilityManager {
             }
         }
         quickLookVerdicts = quickLookVerdicts.filter { quickLookSeen.contains($0.key) }
+        unreadableWindowIDs = unreadable
         return windows
     }
 

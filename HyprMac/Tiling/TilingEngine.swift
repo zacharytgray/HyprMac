@@ -343,6 +343,7 @@ class TilingEngine {
     /// (Cmd-H, minimize, missed AX poll) doesn't reshuffle the tree.
     /// No-op when no tree contains `windowID`.
     func removeWindowID(_ windowID: CGWindowID) {
+        forgetHeld(windowID)
         for (_, t) in trees {
             guard let w = t.allWindows.first(where: { $0.windowID == windowID }) else { continue }
             invalidatePendingLayout()
@@ -1089,6 +1090,8 @@ class TilingEngine {
                              homeScreenForWorkspace: (Int) -> NSScreen?) {
         // resolution and usable bounds can change without changing a tree key.
         invalidatePendingLayout()
+        // the reconcile retiles every visible key; a hold from before it is moot
+        heldByKey.removeAll()
         var migrations: [(old: TilingKey, dest: NSScreen)] = []
         var orphans: [TilingKey] = []
 
@@ -1404,7 +1407,9 @@ class TilingEngine {
                                             restorationUsableFrame suppliedRestorationFrame: CGRect?,
                                             topologyRecoveryMaxDepth: Int?,
                                             newcomerIDs: Set<CGWindowID>) -> LayoutApplicationOutcome {
-        let windows = tree.allWindows
+        // a held member is in the tree but not in this pass: nothing is read
+        // from it or written to it
+        let windows = tree.allWindows.filter { !heldWindowIDs.contains($0.windowID) }
         let restorationFrame = suppliedRestorationFrame ?? rect
         let originalFrames: [CGWindowID: CGRect]
         if let suppliedOriginalFrames {
@@ -1433,7 +1438,7 @@ class TilingEngine {
         }
 
         let candidate = tree.deepClone()
-        let firstLayouts = candidate.layout(in: rect, gap: gapSize, padding: outerPadding)
+        let firstLayouts = writable(candidate.layout(in: rect, gap: gapSize, padding: outerPadding))
         // a window arriving from a screen with a different backing scale
         // makes its app redraw at the new scale while our calls queue behind
         // it. that pass, and a rollback carrying it back, get the longer
@@ -1471,7 +1476,7 @@ class TilingEngine {
            layoutGeneration == generation {
             let conflicts = first.conflicts.map { (window: $0.window, actual: $0.actual) }
             candidate.adjustForMinSizes(conflicts, in: rect, gap: gapSize, padding: outerPadding)
-            let adjusted = candidate.layout(in: rect, gap: gapSize, padding: outerPadding)
+            let adjusted = writable(candidate.layout(in: rect, gap: gapSize, padding: outerPadding))
             let frames = Dictionary(uniqueKeysWithValues: adjusted.map { ($0.0.windowID, $0.1) })
             let tolerance = FrameSizingConfiguration().sizeOvershootTolerance
             let resolves = first.observations.allSatisfy { observation in
@@ -1922,7 +1927,11 @@ class TilingEngine {
         let currentIDs = Set(tileWindows.map { $0.windowID })
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
-        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
+        // a member the caller holds is absent from the list only because its
+        // app did not answer; it keeps its leaf
+        for w in treeWindows where !currentIDs.contains(w.windowID) && !heldWindowIDs.contains(w.windowID) {
+            t.remove(w)
+        }
 
         t.root.pruneEmptyNodes()
         // no compact on removal — BSPNode.remove promotes the sibling with
@@ -2041,6 +2050,11 @@ class TilingEngine {
                         + "] reason=\(keptTimeout) — tiled, key marked unverified")
             }
         }
+        // whatever this pass did, its held members are still in the live
+        // tree without a frame from it. remember them for the retile that
+        // follows the poll that reads them again
+        let heldHere = heldWindowIDs.intersection(t.allWindows.map(\.windowID))
+        if !heldHere.isEmpty { heldByKey[key, default: []].formUnion(heldHere) }
 
         // clean up empty trees for this workspace on other screens
         for (key, t) in trees where key.workspace == workspace {
@@ -2202,7 +2216,11 @@ class TilingEngine {
         let treeIDs = Set(treeWindows.map { $0.windowID })
 
         // membership diff: remove gone (sibling promotion keeps shape), insert new
-        for w in treeWindows where !currentIDs.contains(w.windowID) { t.remove(w) }
+        // a member the caller holds is absent from the list only because its
+        // app did not answer; it keeps its leaf
+        for w in treeWindows where !currentIDs.contains(w.windowID) && !heldWindowIDs.contains(w.windowID) {
+            t.remove(w)
+        }
         t.root.pruneEmptyNodes()
         t.root.resetSplitRatios()
 
@@ -2349,6 +2367,7 @@ class TilingEngine {
     /// surviving arrangement), then retiles the affected screen.
     func removeWindow(_ window: HyprWindow, fromWorkspace workspace: Int) {
         admittedWindowIDs[workspace]?.remove(window.windowID)
+        forgetHeld(window.windowID)
         // search all trees for this workspace
         for (key, t) in trees where key.workspace == workspace {
             if t.contains(window) {
@@ -2811,6 +2830,53 @@ class TilingEngine {
     private func withRevalidationBypass<T>(incoming: Set<CGWindowID>, key: TilingKey,
                                            _ body: () -> T) -> T {
         withMinimaBypass(revalidationBypass(incoming: incoming, key: key), body)
+    }
+
+    /// Members of the trees a pass may not touch: their app did not answer
+    /// the discovery walk, so the caller could not hand them over, but the
+    /// window server still shows them. They keep their leaves, so the other
+    /// members keep their slots, and no frame is written to them.
+    private var heldWindowIDs: Set<CGWindowID> = []
+
+    /// Held members per key, so the poll that reads them again can ask for
+    /// the retile that gives them their frames.
+    private var heldByKey: [TilingKey: Set<CGWindowID>] = [:]
+
+    /// Run `body` with `ids` held out of every membership update and every
+    /// write inside it.
+    func withHeldWindows<T>(_ ids: Set<CGWindowID>, _ body: () -> T) -> T {
+        let previous = heldWindowIDs
+        heldWindowIDs = ids
+        defer { heldWindowIDs = previous }
+        return body()
+    }
+
+    /// The held members among `readable`, dropped from the record. The
+    /// caller retiles their keys; a retile that already ran this cycle wrote
+    /// them, so there is nothing to do for it beyond forgetting the hold.
+    func releaseHeldWindows(readable: Set<CGWindowID>) -> Set<CGWindowID> {
+        var released: Set<CGWindowID> = []
+        for (key, held) in heldByKey {
+            let back = held.intersection(readable)
+            guard !back.isEmpty else { continue }
+            released.formUnion(back)
+            let rest = held.subtracting(back)
+            if rest.isEmpty { heldByKey.removeValue(forKey: key) } else { heldByKey[key] = rest }
+        }
+        return released
+    }
+
+    private func forgetHeld(_ windowID: CGWindowID) {
+        for (key, held) in heldByKey where held.contains(windowID) {
+            let rest = held.subtracting([windowID])
+            if rest.isEmpty { heldByKey.removeValue(forKey: key) } else { heldByKey[key] = rest }
+        }
+    }
+
+    /// The targets of a pass without its held members: their leaves stay
+    /// reserved, their frames are not written.
+    private func writable(_ layouts: [(HyprWindow, CGRect)]) -> [(HyprWindow, CGRect)] {
+        heldWindowIDs.isEmpty ? layouts : layouts.filter { !heldWindowIDs.contains($0.0.windowID) }
     }
 
     private func withMinimaBypass<T>(_ bypass: [CGWindowID: UInt64],
