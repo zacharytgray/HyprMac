@@ -2078,12 +2078,16 @@ class WindowManager {
             // members this walk could not read keep their leaves: the window
             // server still shows them, so the slot is theirs, and no frame
             // goes out to an app that is not answering. the poll retiles the
-            // key once they read again
-            let held = accessibility.unreadableWindowIDs.intersection(widsOnWorkspace)
+            // key once they read again. discovery's own holds — a window off
+            // the screen its app still lists — keep their leaves the same
+            // way, unless this walk has the window back
+            let held = accessibility.unreadableWindowIDs.union(discovery.heldWindowIDs)
+                .intersection(widsOnWorkspace)
+                .subtracting(workspaceWindows.map(\.windowID))
                 .subtracting(stateCache.floatingWindowIDs)
                 .subtracting(stateCache.hiddenWindowIDs)
             if !held.isEmpty {
-                hyprLog(.notice, .lifecycle, "retile: ws\(workspace) holds \(held.sorted()) — unreadable, leaves kept, no frame written")
+                hyprLog(.notice, .lifecycle, "retile: ws\(workspace) holds \(held.sorted()) — leaves kept, no frame written")
             }
             // a workspace being shown is where an explicit move to a hidden
             // destination finally gets its one attempt. the marker is spent
