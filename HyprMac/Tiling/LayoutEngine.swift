@@ -223,13 +223,15 @@ struct LayoutEngine {
         }
 
         let leaf = placement.leaf
-        let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize,
-                                        padding: outerPadding) ?? rect
-        let needsOverride = leaf.splitOverride == nil
-            && leaf.savedSplitRatio == nil
-            && placement.direction != leaf.direction(for: leafRect)
         leaf.insert(window)
-        if needsOverride { leaf.splitOverride = placement.direction }
+        // the axis chosen now is the axis this split keeps. read off the
+        // rect at every layout, a later ratio change or a constrained
+        // neighbour flipped it and turned a stack into columns. a remembered
+        // boundary brings its own axis back through applySavedRatios
+        if leaf.splitOverride == nil {
+            leaf.splitOverride = placement.direction
+            leaf.splitOverrideIsAutomatic = true
+        }
         if let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) {
             hyprLog(.debug, .lifecycle, "smart insert fit at depth \(leaf.depth) (\(Int(leafRect.width))x\(Int(leafRect.height)))")
         }

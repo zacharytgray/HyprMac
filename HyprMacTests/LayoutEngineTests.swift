@@ -130,7 +130,10 @@ final class LayoutEngineTests: XCTestCase {
                                                 rect: bigRect, minimumSize: zeroMins))
 
         XCTAssertEqual(tree.root.direction(for: bigRect.insetBy(dx: 8, dy: 8)), .horizontal)
-        XCTAssertNil(tree.root.splitOverride)
+        // the preferred axis is pinned as such, so a later ratio change
+        // cannot flip it; the pin is the automatic kind, not a togglesplit
+        XCTAssertEqual(tree.root.splitOverride, .horizontal)
+        XCTAssertTrue(tree.root.splitOverrideIsAutomatic)
     }
 
     func testSmartInsertFittingDoesNotReplaceASavedSplitDirection() {

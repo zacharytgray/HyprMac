@@ -44,7 +44,19 @@ class BSPNode {
     /// Forced split direction from `togglesplit`. `nil` lets dwindle
     /// pick from the rect aspect ratio. Survives until a sibling
     /// restructure (insert / remove on this node) clears it.
-    var splitOverride: SplitDirection?
+    var splitOverride: SplitDirection? {
+        // an assignment is the user's unless the caller says otherwise
+        // right after it
+        didSet { splitOverrideIsAutomatic = false }
+    }
+
+    /// `true` when `splitOverride` was pinned by smart insert at the split's
+    /// creation, so the axis chosen then survives every later ratio change,
+    /// rather than set by `togglesplit`. A migration to a screen of the
+    /// other orientation drops the automatic pins and keeps the user's.
+    /// Set after `splitOverride`, never before: assigning the override
+    /// clears it.
+    var splitOverrideIsAutomatic = false
 
     var window: HyprWindow?
     var left: BSPNode?
@@ -124,6 +136,7 @@ class BSPNode {
         self.splitRatio = TilingConfig.defaultRatio
         self.userSetRatio = false
         self.splitOverride = nil
+        self.splitOverrideIsAutomatic = false
         self.savedSplitRatio = nil
         self.savedChildWasLeft = nil
         self.savedSplitOverride = nil
@@ -178,6 +191,7 @@ class BSPNode {
         parent.splitRatio = sibling?.splitRatio ?? TilingConfig.defaultRatio
         parent.userSetRatio = sibling?.userSetRatio ?? false
         parent.splitOverride = sibling?.splitOverride
+        parent.splitOverrideIsAutomatic = sibling?.splitOverrideIsAutomatic ?? false
         parent.pendingSplitRatio = sibling?.pendingSplitRatio
         parent.pendingSplitOverride = sibling?.pendingSplitOverride
 
@@ -214,12 +228,28 @@ class BSPNode {
         if !isLeaf, let ratio = pendingSplitRatio {
             self.splitRatio = ratio
             self.userSetRatio = true
-            self.splitOverride = pendingSplitOverride
+            // a boundary with no override of its own keeps the axis the
+            // split was just pinned to
+            if let restored = pendingSplitOverride {
+                self.splitOverride = restored
+                self.splitOverrideIsAutomatic = true
+            }
             self.pendingSplitRatio = nil
             self.pendingSplitOverride = nil
         }
         left?.applySavedRatios()
         right?.applySavedRatios()
+    }
+
+    /// Drop every automatic axis pin in the subtree. Overrides from
+    /// `togglesplit` stay.
+    func clearAutomaticSplitOverrides() {
+        if splitOverrideIsAutomatic {
+            splitOverride = nil
+            splitOverrideIsAutomatic = false
+        }
+        left?.clearAutomaticSplitOverrides()
+        right?.clearAutomaticSplitOverrides()
     }
 
     /// Reset every internal node's `splitRatio` to the default, except

@@ -305,6 +305,7 @@ class TilingEngine {
     /// window is forgotten by the discovery layer.
     func forgetMinimumSize(windowID: CGWindowID) {
         forgetAdmittedIdentity(windowID: windowID)
+        slotMemory.removeValue(forKey: windowID)
         minSizes.forget(windowID: windowID)
         observedMinimumGeneration.removeValue(forKey: windowID)
     }
@@ -344,9 +345,10 @@ class TilingEngine {
     /// No-op when no tree contains `windowID`.
     func removeWindowID(_ windowID: CGWindowID) {
         forgetHeld(windowID)
-        for (_, t) in trees {
+        for (key, t) in trees {
             guard let w = t.allWindows.first(where: { $0.windowID == windowID }) else { continue }
             invalidatePendingLayout()
+            rememberSlot(of: w, in: t, key: key)
             t.remove(w)
             t.root.pruneEmptyNodes()
             return
@@ -617,7 +619,10 @@ class TilingEngine {
         case (let only?, nil), (nil, let only?):
             return only
         case (let l?, let r?):
-            return .split(override: node.splitOverride, ratio: node.splitRatio,
+            // an axis smart insert pinned is this screen's; only togglesplit
+            // goes into the snapshot
+            return .split(override: node.splitOverrideIsAutomatic ? nil : node.splitOverride,
+                          ratio: node.splitRatio,
                           userSet: node.userSetRatio, left: l, right: r)
         }
     }
@@ -1123,6 +1128,8 @@ class TilingEngine {
         for (oldKey, newScreen) in migrations {
             guard let tree = trees.removeValue(forKey: oldKey) else { continue }
             let newKey = TilingKey(workspace: oldKey.workspace, screen: newScreen)
+            // axes pinned for a landscape screen would stack a portrait one
+            tree.dropAutomaticSplitOverrides(ifPinnedAgainst: layoutRect(for: newKey, screen: newScreen))
             // the mark belongs to the tree, not to the coordinates. dropping
             // it on migration would let the same unverified windows start
             // advertising intended rects under the new key without a single
@@ -1438,6 +1445,13 @@ class TilingEngine {
         }
 
         let candidate = tree.deepClone()
+        // a minimum the memory already knows is applied before the first
+        // write. asking the app to take a slot it refused last time repeats
+        // the resize the user watched, and then the adjusted pass anyway
+        let known = knownMinimumConflicts(in: candidate, rect: rect)
+        if !known.isEmpty {
+            candidate.adjustForMinSizes(known, in: rect, gap: gapSize, padding: outerPadding)
+        }
         let firstLayouts = writable(candidate.layout(in: rect, gap: gapSize, padding: outerPadding))
         // a window arriving from a screen with a different backing scale
         // makes its app redraw at the new scale while our calls queue behind
@@ -1463,6 +1477,7 @@ class TilingEngine {
                         generation: generation)
             : applyLayout(firstLayouts, usableFrame: rect, generation: generation, poller: poller)
         if case .accepted = first.verdict {
+            if !known.isEmpty { copyVerifiedRatios(from: candidate.root, to: tree.root) }
             return .accepted(actualFrames: first.actualFrames,
                              progress: FrameSizingProgressReport(candidate: first.progress))
         }
@@ -1475,7 +1490,8 @@ class TilingEngine {
         if case .rejected = first.verdict, !first.conflicts.isEmpty,
            layoutGeneration == generation {
             let conflicts = first.conflicts.map { (window: $0.window, actual: $0.actual) }
-            candidate.adjustForMinSizes(conflicts, in: rect, gap: gapSize, padding: outerPadding)
+            candidate.adjustForMinSizes(conflicts, in: rect, gap: gapSize, padding: outerPadding,
+                                        givingWayOnUserSet: true)
             let adjusted = writable(candidate.layout(in: rect, gap: gapSize, padding: outerPadding))
             let frames = Dictionary(uniqueKeysWithValues: adjusted.map { ($0.0.windowID, $0.1) })
             let tolerance = FrameSizingConfiguration().sizeOvershootTolerance
@@ -1667,6 +1683,18 @@ class TilingEngine {
             }
         }
         return layoutCanAccommodateKnownMinimums(recovered, rect: rect) ? recovered : nil
+    }
+
+    /// The members whose observed minimum does not fit the slot the tree
+    /// gives them, with that minimum as the size to make room for.
+    private func knownMinimumConflicts(in tree: BSPTree, rect: CGRect) -> [(window: HyprWindow, actual: CGSize)] {
+        let slack = TilingConfig.minSizeConflictSlackPx
+        return tree.layout(in: rect, gap: gapSize, padding: outerPadding).compactMap { window, frame in
+            guard minSizes.entry(for: window.windowID)?.provenance == .observed else { return nil }
+            let minimum = minimumSize(for: window)
+            guard minimum.width > frame.width + slack || minimum.height > frame.height + slack else { return nil }
+            return (window, minimum)
+        }
     }
 
     private func copyVerifiedRatios(from source: BSPNode, to destination: BSPNode) {
@@ -1929,8 +1957,10 @@ class TilingEngine {
 
         // a member the caller holds is absent from the list only because its
         // app did not answer; it keeps its leaf
+        var removed = 0
         for w in treeWindows where !currentIDs.contains(w.windowID) && !heldWindowIDs.contains(w.windowID) {
             t.remove(w)
+            removed += 1
         }
 
         t.root.pruneEmptyNodes()
@@ -1938,15 +1968,28 @@ class TilingEngine {
         // ratios/overrides intact. compacting here rebuilt the whole tree,
         // reshuffling unrelated windows every time anything closed or hid.
 
+        var toInsert = tileWindows.filter { !treeIDs.contains($0.windowID) }
+
         // reset before insert decisions: fittingLeaf judges candidate rects
         // with live ratios, and a stale pass-2 adjustment (0.85/0.15) from a
-        // previous cycle would skew which leaf accepts the window.
-        t.root.resetSplitRatios()
+        // previous cycle would skew which leaf accepts the window. only when
+        // the membership changed: a pass over the same members keeps the
+        // ratios the last accepted pass found, so a known minimum is not
+        // probed again on every retile.
+        if removed > 0 || !toInsert.isEmpty { t.root.resetSplitRatios() }
+
+        // a member that left for a poll or two goes back where it was
+        var insertedWindows: [HyprWindow] = []
+        toInsert.removeAll { w in
+            guard restoreRememberedSlot(for: w, in: t, key: key, rect: rect,
+                                        maxDepth: maxDepth(for: screen)) else { return false }
+            insertedWindows.append(w)
+            return true
+        }
 
         // deterministic batch order: left-to-right by current frame, id
         // tiebreak. AX enumeration order shifts with focus/z churn, which
         // made multi-window inserts land differently every time.
-        var toInsert = tileWindows.filter { !treeIDs.contains($0.windowID) }
         if toInsert.count > 1 {
             let frames = Dictionary(uniqueKeysWithValues: toInsert.map { ($0.windowID, $0.frame ?? .zero) })
             toInsert.sort { a, b in
@@ -1961,7 +2004,6 @@ class TilingEngine {
             }
         }
 
-        var insertedWindows: [HyprWindow] = []
         var refusedWindows: [HyprWindow] = []
         for w in toInsert {
             let insert = {
@@ -1977,10 +2019,10 @@ class TilingEngine {
             }
         }
 
-        if !insertedWindows.isEmpty {
-            t.root.clearUserSetRatios()
-            t.root.resetSplitRatios()
-        }
+        // a fresh split starts at the default ratio; the splits around it
+        // keep what the user set. every manual resize on the workspace used
+        // to go with any window that opened or came back
+        if !insertedWindows.isEmpty { t.root.resetSplitRatios() }
         t.root.applySavedRatios()
 
         return TileMembershipResult(key: key, tree: t, rect: rect,
@@ -2368,6 +2410,9 @@ class TilingEngine {
     func removeWindow(_ window: HyprWindow, fromWorkspace workspace: Int) {
         admittedWindowIDs[workspace]?.remove(window.windowID)
         forgetHeld(window.windowID)
+        // an explicit departure: a move, a float, a send. it is a newcomer
+        // wherever it lands next
+        slotMemory.removeValue(forKey: window.windowID)
         // search all trees for this workspace
         for (key, t) in trees where key.workspace == workspace {
             if t.contains(window) {
@@ -2877,6 +2922,60 @@ class TilingEngine {
     /// reserved, their frames are not written.
     private func writable(_ layouts: [(HyprWindow, CGRect)]) -> [(HyprWindow, CGRect)] {
         heldWindowIDs.isEmpty ? layouts : layouts.filter { !heldWindowIDs.contains($0.0.windowID) }
+    }
+
+    /// Where a member sat when discovery took it out of its tree: the
+    /// member it shared a split with, the side it was on, and the split's
+    /// axis and ratio. A window that leaves for a poll or two, minimized,
+    /// hidden with its app, or unread, goes back beside that member instead
+    /// of wherever dwindle finds room.
+    private struct SlotMemory {
+        let key: TilingKey
+        /// the windows of the subtree it shared the split with
+        let besideIDs: Set<CGWindowID>
+        let wasLeft: Bool
+        let direction: SplitDirection?
+        let ratio: CGFloat
+        let userSet: Bool
+    }
+
+    private var slotMemory: [CGWindowID: SlotMemory] = [:]
+
+    private func rememberSlot(of window: HyprWindow, in tree: BSPTree, key: TilingKey) {
+        slotMemory.removeValue(forKey: window.windowID)
+        guard let node = tree.root.find(window), let parent = node.parent else { return }
+        let wasLeft = parent.left === node
+        guard let sibling = wasLeft ? parent.right : parent.left else { return }
+        let besideIDs = Set(sibling.allWindows().map(\.windowID))
+        guard !besideIDs.isEmpty else { return }
+        slotMemory[window.windowID] = SlotMemory(key: key, besideIDs: besideIDs, wasLeft: wasLeft,
+                                                 direction: parent.splitOverride,
+                                                 ratio: parent.splitRatio, userSet: parent.userSetRatio)
+    }
+
+    /// Put `window` back beside the subtree it left, when those windows
+    /// still form one in this tree, with depth and room for the pair. The
+    /// memory is spent either way.
+    private func restoreRememberedSlot(for window: HyprWindow, in tree: BSPTree,
+                                       key: TilingKey, rect: CGRect, maxDepth: Int) -> Bool {
+        guard let memory = slotMemory.removeValue(forKey: window.windowID), memory.key == key,
+              let target = tree.node(holdingExactly: memory.besideIDs),
+              let deepest = target.allLeavesRightToLeft().map(\.depth).max(), deepest < maxDepth,
+              let targetRect = tree.rectForNode(target, in: rect, gap: gapSize, padding: outerPadding)
+        else { return false }
+        let direction = memory.direction ?? target.direction(for: targetRect)
+        // a minimum learned since it left can make the old pair impossible.
+        // a subtree is judged by the largest minimum among its members
+        let tenantMinimum = target.allWindows().map { minimumSize(for: $0) }.reduce(CGSize.zero) {
+            CGSize(width: max($0.width, $1.width), height: max($0.height, $1.height))
+        }
+        guard layoutEngine.pairFit(tenantMinimum, minimumSize(for: window),
+                                   in: targetRect, dir: direction).fits else { return false }
+        tree.insert(window, beside: target, onLeft: memory.wasLeft, direction: direction,
+                    ratio: memory.ratio, userSet: memory.userSet)
+        hyprLog(.notice, .tiling, "slot restored: \(window.windowID) back beside "
+                + "\(memory.besideIDs.sorted()) on ws\(key.workspace)")
+        return true
     }
 
     private func withMinimaBypass<T>(_ bypass: [CGWindowID: UInt64],

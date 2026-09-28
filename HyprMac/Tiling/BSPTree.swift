@@ -70,6 +70,7 @@ class BSPTree {
             copy.splitRatio = source.splitRatio
             copy.userSetRatio = source.userSetRatio
             copy.splitOverride = source.splitOverride
+            copy.splitOverrideIsAutomatic = source.splitOverrideIsAutomatic
             copy.savedSplitRatio = source.savedSplitRatio
             copy.savedChildWasLeft = source.savedChildWasLeft
             copy.savedSplitOverride = source.savedSplitOverride
@@ -178,11 +179,74 @@ class BSPTree {
         target.splitRatio = TilingConfig.defaultRatio
         target.userSetRatio = false
         target.splitOverride = (edge == .left || edge == .right) ? .horizontal : .vertical
+        target.splitOverrideIsAutomatic = false
         target.savedSplitRatio = nil
         target.savedChildWasLeft = nil
         target.savedSplitOverride = nil
         target.pendingSplitRatio = nil
         target.pendingSplitOverride = nil
+    }
+
+    /// Split `target`, a leaf or a whole subtree, with `window` on the side
+    /// it left from, on the axis and at the ratio the split had: a member
+    /// coming back to the slot it was taken out of. The tenant moves down
+    /// into a child, so `target` keeps its place under its parent.
+    func insert(_ window: HyprWindow, beside target: BSPNode, onLeft: Bool,
+                direction: SplitDirection, ratio: CGFloat, userSet: Bool) {
+        let tenant = BSPNode(window: target.window)
+        tenant.left = target.left
+        tenant.right = target.right
+        tenant.left?.parent = tenant
+        tenant.right?.parent = tenant
+        tenant.splitRatio = target.splitRatio
+        tenant.userSetRatio = target.userSetRatio
+        tenant.splitOverride = target.splitOverride
+        tenant.splitOverrideIsAutomatic = target.splitOverrideIsAutomatic
+        tenant.savedSplitRatio = target.savedSplitRatio
+        tenant.savedChildWasLeft = target.savedChildWasLeft
+        tenant.savedSplitOverride = target.savedSplitOverride
+        tenant.pendingSplitRatio = target.pendingSplitRatio
+        tenant.pendingSplitOverride = target.pendingSplitOverride
+
+        let added = BSPNode(window: window)
+        target.window = nil
+        target.left = onLeft ? added : tenant
+        target.right = onLeft ? tenant : added
+        target.left?.parent = target
+        target.right?.parent = target
+        target.splitRatio = ratio
+        target.userSetRatio = userSet
+        target.splitOverride = direction
+        target.splitOverrideIsAutomatic = true
+        target.savedSplitRatio = nil
+        target.savedChildWasLeft = nil
+        target.savedSplitOverride = nil
+        target.pendingSplitRatio = nil
+        target.pendingSplitOverride = nil
+    }
+
+    /// The node whose subtree holds exactly `ids`, or nil when those
+    /// windows no longer form one.
+    func node(holdingExactly ids: Set<CGWindowID>) -> BSPNode? {
+        guard let first = ids.first,
+              let start = allWindows.first(where: { $0.windowID == first }),
+              var node = root.find(start) else { return nil }
+        while true {
+            let held = Set(node.allWindows().map(\.windowID))
+            if held == ids { return node }
+            guard held.isStrictSubset(of: ids), let parent = node.parent else { return nil }
+            node = parent
+        }
+    }
+
+    /// Drop the automatic axis pins when the root's disagrees with `rect`.
+    /// The tree was laid out for a screen of the other orientation, and
+    /// the axes chosen there would stack a landscape layout on a portrait
+    /// monitor. Pins from `togglesplit` stay.
+    func dropAutomaticSplitOverrides(ifPinnedAgainst rect: CGRect) {
+        guard root.splitOverrideIsAutomatic, let pinned = root.splitOverride,
+              pinned != (rect.width >= rect.height ? .horizontal : .vertical) else { return }
+        root.clearAutomaticSplitOverrides()
     }
 
     /// Insert a window via plain dwindle: split the deepest-right leaf.
@@ -325,6 +389,7 @@ class BSPTree {
         // flip it
         let newDir: SplitDirection = (currentDir == .horizontal) ? .vertical : .horizontal
         parent.splitOverride = newDir
+        parent.splitOverrideIsAutomatic = false
     }
 
     // walk the tree to find what rect a given node occupies, then get its direction
@@ -420,37 +485,55 @@ class BSPTree {
     ///   through multiple ancestors produces effective 1/16 slots that defeat
     ///   the depth ceiling. One window's min-size conflict will not push
     ///   another window outside its slot.
+    /// `givingWayOnUserSet` lets a split the user set by hand move when no
+    /// other ancestor on the axis can make room. The verified pass asks for
+    /// that after a real refusal: the alternative is a layout that is
+    /// refused, rolled back and refused again on every retile. Fit checks
+    /// never ask, so a hand-set ratio still refuses a swap or an arrival
+    /// up front.
     func adjustForMinSizes(_ conflicts: [(window: HyprWindow, actual: CGSize)],
-                           in rect: CGRect, gap: CGFloat, padding: CGFloat) {
+                           in rect: CGRect, gap: CGFloat, padding: CGFloat,
+                           givingWayOnUserSet: Bool = false) {
         let padded = rect.insetBy(dx: padding, dy: padding)
 
         for (window, actualSize) in conflicts {
             guard let leaf = root.find(window) else { continue }
             guard let leafRect = rectForNodeHelper(node: root, target: leaf, rect: padded, gap: gap) else { continue }
 
-            if actualSize.width > leafRect.width + TilingConfig.minSizeConflictSlackPx {
-                adjustAxisRatio(from: leaf, needed: actualSize.width,
+            if actualSize.width > leafRect.width + TilingConfig.minSizeConflictSlackPx,
+               !adjustAxisRatio(from: leaf, needed: actualSize.width,
                                 axis: .horizontal, rect: padded, gap: gap,
-                                windowTitle: window.title)
+                                windowTitle: window.title, allowUserSet: false),
+               givingWayOnUserSet {
+                _ = adjustAxisRatio(from: leaf, needed: actualSize.width,
+                                    axis: .horizontal, rect: padded, gap: gap,
+                                    windowTitle: window.title, allowUserSet: true)
             }
 
-            if actualSize.height > leafRect.height + TilingConfig.minSizeConflictSlackPx {
-                adjustAxisRatio(from: leaf, needed: actualSize.height,
+            if actualSize.height > leafRect.height + TilingConfig.minSizeConflictSlackPx,
+               !adjustAxisRatio(from: leaf, needed: actualSize.height,
                                 axis: .vertical, rect: padded, gap: gap,
-                                windowTitle: window.title)
+                                windowTitle: window.title, allowUserSet: false),
+               givingWayOnUserSet {
+                _ = adjustAxisRatio(from: leaf, needed: actualSize.height,
+                                    axis: .vertical, rect: padded, gap: gap,
+                                    windowTitle: window.title, allowUserSet: true)
             }
         }
     }
 
+    /// `true` when an ancestor on `axis` was found to tune (whether or not
+    /// its ratio needed to move); `false` when every one was skipped.
+    @discardableResult
     private func adjustAxisRatio(from leaf: BSPNode, needed: CGFloat,
                                  axis: SplitDirection, rect: CGRect, gap: CGFloat,
-                                 windowTitle: String?) {
+                                 windowTitle: String?, allowUserSet: Bool) -> Bool {
         let halfGap = gap / 2
         var node: BSPNode = leaf
 
         while let parent = node.parent {
             defer { node = parent }
-            if parent.userSetRatio { continue }
+            if parent.userSetRatio && !allowUserSet { continue }
             guard let parentRect = rectForNodeHelper(node: root, target: parent, rect: rect, gap: gap) else { continue }
             guard parent.direction(for: parentRect) == axis else { continue }
 
@@ -477,8 +560,9 @@ class BSPTree {
             // see adjustForMinSizes doc comment: one conflict tunes one
             // ancestor on this axis. stacking 0.15/0.85 across multiple
             // ancestors creates effective 1/16 slots even with depth respected.
-            return
+            return true
         }
+        return false
     }
 
     /// Convert a manual user resize back into split-ratio updates.
@@ -585,6 +669,7 @@ class BSPTree {
             let splitRatio: CGFloat
             let userSetRatio: Bool
             let splitOverride: SplitDirection?
+            let splitOverrideIsAutomatic: Bool
             let window: HyprWindow?
             let savedSplitRatio: CGFloat?
             let savedChildWasLeft: Bool?
@@ -601,6 +686,7 @@ class BSPTree {
                                              splitRatio: node.splitRatio,
                                              userSetRatio: node.userSetRatio,
                                              splitOverride: node.splitOverride,
+                                             splitOverrideIsAutomatic: node.splitOverrideIsAutomatic,
                                              window: node.window,
                                              savedSplitRatio: node.savedSplitRatio,
                                              savedChildWasLeft: node.savedChildWasLeft,
@@ -619,6 +705,7 @@ class BSPTree {
             state.node.splitRatio = state.splitRatio
             state.node.userSetRatio = state.userSetRatio
             state.node.splitOverride = state.splitOverride
+            state.node.splitOverrideIsAutomatic = state.splitOverrideIsAutomatic
             state.node.window = state.window
             state.node.savedSplitRatio = state.savedSplitRatio
             state.node.savedChildWasLeft = state.savedChildWasLeft

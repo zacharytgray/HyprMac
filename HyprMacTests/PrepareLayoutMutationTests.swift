@@ -60,12 +60,15 @@ final class PrepareLayoutMutationTests: XCTestCase {
         tree()?.root.splitRatio = 0.3
         XCTAssertEqual(tree()?.root.splitRatio, 0.3)
 
-        // a fresh prepare with the same windows must reset the ratio.
-        // userSetRatio is cleared by prepareTileLayout when there's a structural
-        // change; but with no add/remove the flag is preserved. set userSetRatio
-        // = false explicitly to confirm reset path.
+        // a fresh prepare over the same members keeps the ratio: the last
+        // accepted pass found it, and resetting it here probed every known
+        // minimum again on every retile
         tree()?.root.userSetRatio = false
         engine.prepareTileLayout([w1, w2], onWorkspace: 1, screen: screen)
+        XCTAssertEqual(tree()?.root.splitRatio, 0.3)
+
+        // a membership change resets what the user did not set
+        engine.prepareTileLayout([w1, w2, makeWindow(id: 3)], onWorkspace: 1, screen: screen)
         XCTAssertEqual(tree()?.root.splitRatio, TilingConfig.defaultRatio)
     }
 
@@ -141,11 +144,16 @@ final class PrepareLayoutMutationTests: XCTestCase {
         let w1 = makeWindow(id: 1)
         let w2 = makeWindow(id: 2)
         engine.prepareTileLayout([w1, w2], onWorkspace: 1, screen: screen)
-        XCTAssertNil(tree()?.root.splitOverride)
+        // the split is pinned to the axis smart insert chose
+        let pinned = tree()?.root.splitOverride
+        XCTAssertNotNil(pinned)
+        XCTAssertEqual(tree()?.root.splitOverrideIsAutomatic, true)
 
         let layout = engine.prepareToggleSplitLayout(w2, onWorkspace: 1, screen: screen)
         XCTAssertNotNil(layout)
         XCTAssertNotNil(tree()?.root.splitOverride)
+        XCTAssertNotEqual(tree()?.root.splitOverride, pinned)
+        XCTAssertEqual(tree()?.root.splitOverrideIsAutomatic, false, "togglesplit is the user's")
     }
 
     func testPrepareToggleSplitLayoutTwiceRevertsDirection() {

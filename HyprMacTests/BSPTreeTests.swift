@@ -119,6 +119,54 @@ final class BSPTreeTests: XCTestCase {
         XCTAssertNil(tree.root.find(makeWindow(id: 99)))
     }
 
+    // MARK: - pinned split axes
+
+    /// the axis smart insert chose stays with the split. read off the rect
+    /// at every layout, narrowing the left column past the point where the
+    /// right one is taller than wide turned a stack into columns
+    func testSmartInsertPinsTheAxisItChose() {
+        let engine = LayoutEngine(gapSize: defaultGap, outerPadding: defaultPadding,
+                                  minSlotDimension: defaultMinSlot)
+        let tree = BSPTree()
+        for id in 1...3 {
+            engine.smartInsertFitting(makeWindow(id: CGWindowID(id)), into: tree, maxDepth: 3,
+                                      rect: defaultRect, minimumSize: { _ in .zero })
+        }
+        // root: 1 | (2 over 3)
+        XCTAssertEqual(tree.root.splitOverride, .horizontal)
+        XCTAssertTrue(tree.root.splitOverrideIsAutomatic)
+        XCTAssertEqual(tree.root.right?.splitOverride, .vertical)
+
+        tree.root.splitRatio = 0.2
+        tree.root.userSetRatio = true
+        let frames = Dictionary(uniqueKeysWithValues: tree.layout(in: defaultRect, gap: defaultGap,
+                                                                  padding: defaultPadding)
+            .map { ($0.0.windowID, $0.1) })
+
+        XCTAssertEqual(frames[2]!.minX, frames[3]!.minX, "2 and 3 are still stacked")
+        XCTAssertLessThan(frames[2]!.maxY, frames[3]!.minY)
+    }
+
+    func testMigrationToTheOtherOrientationDropsAutomaticPinsOnly() {
+        let engine = LayoutEngine(gapSize: defaultGap, outerPadding: defaultPadding,
+                                  minSlotDimension: defaultMinSlot)
+        let tree = BSPTree()
+        for id in 1...3 {
+            engine.smartInsertFitting(makeWindow(id: CGWindowID(id)), into: tree, maxDepth: 3,
+                                      rect: defaultRect, minimumSize: { _ in .zero })
+        }
+        // the user flipped the inner split by hand
+        tree.root.right?.splitOverride = .horizontal
+        tree.root.right?.splitOverrideIsAutomatic = false
+
+        tree.dropAutomaticSplitOverrides(ifPinnedAgainst: defaultRect)
+        XCTAssertEqual(tree.root.splitOverride, .horizontal, "same orientation: nothing to drop")
+
+        tree.dropAutomaticSplitOverrides(ifPinnedAgainst: narrowRect)
+        XCTAssertNil(tree.root.splitOverride)
+        XCTAssertEqual(tree.root.right?.splitOverride, .horizontal, "togglesplit stays")
+    }
+
     // MARK: - smartInsert
 
     func testSmartInsertOnEmptyTreeFillsRoot() {
@@ -336,6 +384,31 @@ final class BSPTreeTests: XCTestCase {
 
         // userSetRatio parents are skipped — ratio stays at 0.7
         XCTAssertEqual(tree.root.splitRatio, 0.7)
+    }
+
+    /// the verified pass, after a real refusal, may ask a hand-set split to
+    /// give way when no other ancestor on the axis can make room. it stays
+    /// the user's ratio, moved by the minimum
+    func testAdjustForMinSizesLetsAUserSetParentGiveWayOnlyWhenAsked() {
+        let tree = BSPTree()
+        let a = makeWindow(id: 1)
+        let b = makeWindow(id: 2)
+        tree.insert(a)
+        tree.insert(b)
+        tree.root.userSetRatio = true
+        tree.root.splitRatio = 0.7
+
+        let conflicts: [(window: HyprWindow, actual: CGSize)] = [
+            (b, CGSize(width: 1400, height: 1080))
+        ]
+        tree.adjustForMinSizes(conflicts, in: defaultRect, gap: defaultGap, padding: defaultPadding,
+                               givingWayOnUserSet: true)
+
+        XCTAssertLessThan(tree.root.splitRatio, 0.7)
+        XCTAssertTrue(tree.root.userSetRatio)
+        let right = tree.layout(in: defaultRect, gap: defaultGap, padding: defaultPadding)
+            .first { $0.0.windowID == 2 }!.1
+        XCTAssertGreaterThanOrEqual(right.width + 1, 1400)
     }
 
     func testAdjustForMinSizesIgnoresMissingWindow() {
