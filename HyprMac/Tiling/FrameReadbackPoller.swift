@@ -99,6 +99,15 @@ struct FrameReadbackPoller {
         strictConfiguration.sizeUndershootTolerance = strictConfiguration.sizeTolerance
         strictConfiguration.aggregateSafetySlack = strictConfiguration.sizeTolerance
         strictConfiguration.correspondenceOnly = true
+        // the rollback is the safety net: a refused candidate is undone by
+        // it, and a rollback that fails leaves the candidate's frames under
+        // the old tree. it returns as soon as its frames read back stable,
+        // so the larger cap costs the happy path nothing
+        strictConfiguration.deadline = max(strictConfiguration.deadline,
+                                           strictConfiguration.withTimeoutRecoveryBudget.deadline)
+        strictConfiguration.maximumAttempts = max(
+            strictConfiguration.maximumAttempts,
+            Int((strictConfiguration.deadline / strictConfiguration.pollInterval).rounded(.up)))
         return applyLayout(layouts, usableFrame: usableFrame, gap: gap,
                            generation: requestedGeneration, configuration: strictConfiguration,
                            phase: .restoration)
@@ -111,10 +120,17 @@ struct FrameReadbackPoller {
     static let windowsInBaseBudget = 3
     static let perWindowBudget: TimeInterval = 0.08
 
-    /// `configuration` with its deadline grown for `count` targets, and the
-    /// sample limit grown with it.
-    static func scaled(_ configuration: FrameSizingConfiguration, for count: Int) -> FrameSizingConfiguration {
+    /// `configuration` with its deadline grown for `count` targets, and by
+    /// the position settle each of the `positionFirst` targets may spend
+    /// before its size goes out, and the sample limit grown with it. A
+    /// reveal of two parked windows used to spend the whole base deadline
+    /// in its write phase with both settles succeeding, time out before a
+    /// single readback, roll the incumbent back over them, and get the same
+    /// layout accepted by the recovery's retry a quarter second later.
+    static func scaled(_ configuration: FrameSizingConfiguration, for count: Int,
+                       positionFirst: Int = 0) -> FrameSizingConfiguration {
         let extra = Double(max(0, count - windowsInBaseBudget)) * perWindowBudget
+            + Double(max(0, positionFirst)) * configuration.positionSettleBudget
         guard extra > 0 else { return configuration }
         var scaled = configuration
         scaled.deadline = configuration.deadline + extra
@@ -127,8 +143,10 @@ struct FrameReadbackPoller {
                              gap: CGFloat, generation requestedGeneration: UInt64,
                              configuration baseConfiguration: FrameSizingConfiguration,
                              phase: FrameSizingPhase) -> Result {
-        let configuration = Self.scaled(baseConfiguration, for: layouts.count)
         let ids = layouts.map { $0.0.windowID }
+        let positionFirst = ids.filter { baseConfiguration.positionSettleWindowIDs.contains($0) }.count
+        let configuration = Self.scaled(baseConfiguration, for: layouts.count,
+                                        positionFirst: positionFirst)
         let unstarted = FrameSizingAttempt.Progress(phase: phase, generation: requestedGeneration,
                                                     targetIDs: ids)
         guard generation() == requestedGeneration else {

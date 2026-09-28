@@ -580,4 +580,15 @@ final class FrameReadbackPollerBudgetTests: XCTestCase {
         XCTAssertEqual(eight.deadline, base.deadline + 5 * FrameReadbackPoller.perWindowBudget, accuracy: 0.0001)
         XCTAssertGreaterThanOrEqual(Double(eight.maximumAttempts) * eight.pollInterval, eight.deadline)
     }
+
+    /// a reveal of two parked windows spent the base deadline in its write
+    /// phase with both position settles succeeding, and timed out before a
+    /// single readback
+    func testTheDeadlineGrowsWithEveryPositionFirstTarget() {
+        let base = FrameSizingConfiguration()
+        let reveal = FrameReadbackPoller.scaled(base, for: 3, positionFirst: 2)
+        XCTAssertEqual(reveal.deadline, base.deadline + 2 * base.positionSettleBudget, accuracy: 0.0001)
+        XCTAssertGreaterThanOrEqual(Double(reveal.maximumAttempts) * reveal.pollInterval, reveal.deadline)
+        XCTAssertEqual(FrameReadbackPoller.scaled(base, for: 3, positionFirst: 0).deadline, base.deadline)
+    }
 }
