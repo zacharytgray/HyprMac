@@ -1634,9 +1634,11 @@ class TilingEngine {
                     ? timeoutRecoveryPoller : timeoutRecoveryPoller.withScaleChangeBudget()
                 let relaxedRestorationPoller = restoresAcrossScales
                     ? relaxedPoller : timeoutRecoveryPoller
-                let retry = relaxedPoller.applyLayout(
-                    firstLayouts, usableFrame: rect, gap: gapSize, generation: generation
-                )
+                // a pass like any other: what it reads back about a floor is
+                // kept, or the admission retry 250 ms later writes the same
+                // refused frames again and learns them a second time
+                let retry = applyLayout(firstLayouts, usableFrame: rect, generation: generation,
+                                        poller: relaxedPoller)
                 if case .accepted = retry.verdict {
                     hyprLog(.notice, .tiling, "verified layout AX timeout recovery accepted")
                     return .accepted(actualFrames: retry.actualFrames,
