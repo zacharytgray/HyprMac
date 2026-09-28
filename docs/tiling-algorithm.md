@@ -165,7 +165,16 @@ frames and reads back what the OS actually accepted. When pass 1
 reveals an oversize, pass 2 redistributes the parent's split ratio.
 
 The engine first captures every affected window's actual position and
-size. `FrameSizingAttempt` applies each requested frame in resize–move–resize
+size. A pass whose every target is where its window already is, within
+the verdict's own tolerances, and whose captured frames pass the
+aggregate checks as they are, is accepted from that capture: nothing is
+written and nothing is waited for (`verdict=accepted in place` in the
+`frame attempt` line). Most passes are this — a workspace switch retiles
+the other screen, a move retiles its source twice, a poll re-applies a
+tree — and each used to send three setters per window and wait a settle
+and a stable readback of frames that never moved. Any window off its
+target runs the ordinary pass for the whole key.
+`FrameSizingAttempt` applies each requested frame in resize–move–resize
 order, retains AX write errors, and reads the complete layout back. Two
 stable samples are required. Position may differ by at most one AX point.
 Candidate size may differ by at most twenty points in either direction, which
@@ -242,9 +251,13 @@ A position-first window waits for two stable on-target position reads
 before its size goes out, but for at most a third of the deadline. After
 that the size goes out anyway and the readback judges. Without the cap, a
 position that never read back steady used the whole deadline with no size
-written, and the attempt could only time out. The cap is per window, so a
-reveal of three or more windows whose positions never settle can still run
-out of time. A cut wait also changes how a failure is counted. The attempt
+written, and the attempt could only time out. The cap is per window, and
+the deadline grows by it for every position-first target, so a reveal of
+several parked windows has the time their settles take: two parked
+windows used to spend the whole base deadline in the write phase with
+both settles succeeding, time out before a single readback, and get the
+same layout accepted by the recovery's retry a quarter second later. A
+cut wait also changes how a failure is counted. The attempt
 used to end as `attemptsExhausted`, a timeout that the admission recovery
 retries. It now ends with the readback's verdict, and a
 `geometryMismatch` there is a refusal, which can float the window.
@@ -262,7 +275,8 @@ records a conflict at the aggregate slack, so the adjusted pass runs with
 room for the rounding; it teaches no minimum, since a cell of rounding is
 not a floor.
 
-The deadline grows by 80 ms for every target past three, and the sample
+The deadline grows by 80 ms for every target past three and by the
+position settle budget for every position-first target, and the sample
 limit with it: one deadline for every setter and every sample of the
 whole key ran out on eight healthy windows.
 
@@ -318,7 +332,11 @@ treated as evidence that writes completed.
 ### Restoration correspondence is not tiled validity
 
 A rollback asks every window to go back exactly where it was. It is verified
-per window against the strict one-point size and position bound. The
+per window against the strict one-point size and position bound. It runs
+under the timeout recovery's 0.75-second cap rather than the candidate's:
+it is the safety net, a rollback that fails leaves the candidate's frames
+under the old tree, and it returns as soon as its frames read back stable,
+so the larger cap costs a healthy rollback nothing. The
 pairwise checks are not verdicts on it: two originals that overlapped before
 the candidate ran still overlap after it, and calling that a failed rollback
 would be a lie about correspondence. The overlap is reported separately on
@@ -378,6 +396,10 @@ more when the app does not answer in time (step 3).
    admitted at different generations, and neither inherits the other's.
    Seeded hints, app hints and every other window's memory all still count,
    and `MinSizeMemory` is never cleared.
+
+   The retry the verified layout itself runs after an AX messaging
+   timeout (`verified layout AX timeout recovery`) is reconciled like
+   every other pass, so a floor it reads back is known to this retry.
 
    With every tenant's floor in hand the retry runs the structural fit check
    first, over the newcomers it is retrying and the live tree's incumbents

@@ -200,7 +200,10 @@ logs no trace line; it appears only in typed results. Four line names:
   complete=[…] readback=<complete|partial>/<stable|unstable>
   write=<n>ms read=<n>ms settle=<n>ms elapsed=<n>ms headroom=<n>ms` —
   once at the end of every attempt, the restore attempt after a
-  rejection included. `written` is every window a setter was issued
+  rejection included. `verdict=accepted in place — every window is
+  already on its target, nothing written` is the pass whose targets the
+  capture already found in place: no setter went out and nothing was
+  waited for. `written` is every window a setter was issued
   for, `complete` every window whose three setters all returned
   success. `write` covers the write pass, `read` the settle loop,
   `settle` just the sleeps inside it, and `headroom` is what was left
@@ -281,6 +284,18 @@ within a third of the deadline is sized anyway, and says so:
 ```
 position settle cut short: wid=<id> phase=candidate after=<n>ms samples=<n> last=(x,y) target=(x,y) — writing size anyway
 ```
+
+The admission recovery's narrowing lines, all `[notice] [tiling]`:
+
+- `admission retry narrowed pre-write: dropped=[…] ws<N> — their known
+  minima do not fit beside the rest; tiling […]` — the retry gave up on
+  the newcomers whose floors cannot fit, largest share of the frame
+  first, and ran the pass for the rest. The dropped ones come back
+  refused and float without another attempt.
+- `admission recovery narrowed: floating […] ws<N> cause=<failure> —
+  retrying […] without them (round <n> of 3)` — the retry was refused on
+  some of its newcomers: those float, the rest get the pass again inside
+  the same retry. After three rounds the rest float as before.
 
 The admission recovery's timeout lines, all `[notice] [tiling]`:
 
@@ -1144,6 +1159,33 @@ sleep on its own now does all of that as well. Before the span existed, a
 lock that outlasted the 4-second hold and the three mass-gone skips marked
 every window hidden, and the unlock rebuilt each tree in reading order with
 default ratios.
+
+### A window vanished for a poll and came back somewhere else
+
+Two kinds of missing window are held rather than judged: kept known, on
+their workspace and in their tree, with no frame written to them, so the
+neighbours keep their slots and the return is a pass whose frames already
+stand. All `[notice] [discovery]`:
+
+```
+holding 1 unreadable window(s) in place: [21915] — on screen, but their app did not answer AX
+unreadable window(s) readable again: [21915]
+holding 2 window(s) off the screen in place: [15173, 21915] — their app still lists them (another Space, full screen, or a stale snapshot); hidden if not back within 5s
+off-screen hold ended: [15173, 21915]
+```
+
+The first is an app that failed the walk's window-list or frame read
+while the window server still shows the window (`AX window-list read
+FAILED for <bundle>` precedes it). The second is a window the window
+server no longer shows on screen while its app still lists it, neither
+minimized nor hidden with the app: a native full-screen app on the
+display, a Space switched away, or a stale snapshot. That hold lasts five
+seconds; a window still missing after it is `window hidden` as before,
+with its slot reserved. `FLAP: … returned <n>ms after vanishing` on the
+return is the diagnostic for a window that was not held and came back
+within five seconds; with both holds in place it should be rare. The tile
+pass logs `retile: ws<N> holds […] — leaves kept, no frame written` for
+the members it kept out of a pass.
 
 ### "Why isn't this window managed?" (filtered windows, Quick Look)
 
