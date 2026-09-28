@@ -248,11 +248,14 @@ class HyprWindow: Equatable, Hashable {
     /// `setFrame`. Used by the hide path so macOS doesn't animate or
     /// reposition the parked window — animations cause apps to snap
     /// to nearby monitors and become half-visible.
-    func setPositionOnly(_ point: CGPoint) {
+    @discardableResult
+    func setPositionOnly(_ point: CGPoint) -> AXError {
         cachedFrame = nil
+        var rc: AXError = .success
         withEnhancedUIDisabled {
-            position = point
+            rc = writePosition(point)
         }
+        return rc
     }
 
     /// Disable `AXEnhancedUserInterface` on the owning app for the

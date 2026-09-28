@@ -37,6 +37,18 @@ class WorkspaceManager {
     /// reveal so floaters return to their last user-chosen position.
     private var savedFloatingFrames: [CGWindowID: CGRect] = [:]
 
+    /// The workspace each display last showed, by display name. A screen
+    /// that leaves and comes back, on every sleep and wake with an
+    /// external monitor, lost its entry with its origin key and came back
+    /// on its lowest home workspace, which hid the one the user was on
+    /// and parked its windows.
+    private var lastVisibleByDisplayName: [String: Int] = [:]
+
+    /// Called when a park write fails, so the caller can ask for the poll
+    /// that repairs it. A window left visible on a hidden workspace is a
+    /// ghost over the tiles until then.
+    var onParkFailed: (() -> Void)?
+
     /// Localized names of monitors the user has excluded from tiling.
     /// Disabled monitors host floating windows only.
     var disabledMonitors: Set<String> = []
@@ -132,9 +144,18 @@ class WorkspaceManager {
             let homeWorkspaces = workspacesAnchoredTo(screen)
             let valid: Set<Int> = Set(homeWorkspaces)
             if let current = monitorWorkspace[sid], valid.contains(current) {
+                lastVisibleByDisplayName[screen.localizedName] = current
+                continue
+            }
+            // a display that came back shows what it showed before it left,
+            // when that is still one of its own
+            if let remembered = lastVisibleByDisplayName[screen.localizedName], valid.contains(remembered) {
+                monitorWorkspace[sid] = remembered
+                hyprLog(.notice, .lifecycle, "init: \(screen.localizedName) back on ws\(remembered), as it left")
                 continue
             }
             monitorWorkspace[sid] = homeWorkspaces.first ?? 1
+            lastVisibleByDisplayName[screen.localizedName] = monitorWorkspace[sid]
         }
 
         // clean up stale entries for screens that no longer exist
@@ -281,7 +302,14 @@ class WorkspaceManager {
     /// EnhancedUI-guarded position write.
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
         let pos = hidePosition()
-        window.setPositionOnly(pos)
+        let rc = window.setPositionOnly(pos)
+        guard rc == .success else {
+            // the window is still where it was, visible on a hidden
+            // workspace. the repair poll re-parks it
+            hyprLog(.notice, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) park write failed rc=\(rc.rawValue) — repair poll requested")
+            onParkFailed?()
+            return
+        }
         hyprLog(.debug, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) parked at (\(Int(pos.x)),\(Int(pos.y)))")
     }
 
@@ -368,6 +396,7 @@ class WorkspaceManager {
         let toShow = windowIDs(onWorkspace: number)
 
         monitorWorkspace[targetSID] = number
+        lastVisibleByDisplayName[targetScreen.localizedName] = number
 
         hyprLog(.notice, .lifecycle, "switch: \(targetScreen.localizedName) ws\(oldWorkspace)→ws\(number) (hide \(toHide.count), show \(toShow.count))")
         return SwitchResult(toHide: toHide, toShow: toShow, screen: targetScreen, alreadyVisible: false)

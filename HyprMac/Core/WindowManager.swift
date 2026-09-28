@@ -201,6 +201,12 @@ class WindowManager {
     // deregister display callbacks, color profile bumps), and our handler
     // runs the destructive redistribute every time. guard against no-op fires.
     private var lastDisplayFingerprint: String = ""
+    /// when the session was last interrupted: sleep, wake, lock, unlock. a
+    /// topology change soon after a wake settles more slowly, because
+    /// displays reattach one at a time over several seconds
+    private var lastSystemInterruptionAt = Date.distantPast
+    static let wakeSettleWindow: TimeInterval = 5.0
+    static let recentWakeSpan: TimeInterval = 20.0
     /// Pending destroy notifications whose poll has not yet seen the close.
     private var destroyRecheck = DestroyRecheck()
     /// Monotonic token for the display-change stability debounce — a newer
@@ -238,6 +244,7 @@ class WindowManager {
         self.config = config
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
+        self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
         self.tilingEngine = TilingEngine(displayManager: displayManager)
         self.discovery = WindowDiscoveryService(
             stateCache: stateCache,
@@ -3113,6 +3120,7 @@ class WindowManager {
     /// Hypr modifier (the "sticky Caps Lock" bug from a different angle).
     @objc private func systemInterruption(_ notification: Notification) {
         hyprLog(.notice, .hotkey, "system interruption (\(notification.name.rawValue)) — resetting hotkey state")
+        lastSystemInterruptionAt = Date()
         hotkeyManager.resetTrackingAfterTapInterruption()
         // also clear stuck dock flag and menu-tracking flag — sleep dialogs
         // and screen lock can leave either stale.
@@ -3204,7 +3212,14 @@ class WindowManager {
         suppressions.suppress("workspace-transition", for: 3.0)
         displayTransitionPending = true
         displayChangeGeneration += 1
-        scheduleDisplayReconcile()
+        // after a wake the displays come back one at a time over several
+        // seconds, and a two-second beat reconciled the one-screen desk in
+        // between as real
+        let recentWake = Date().timeIntervalSince(lastSystemInterruptionAt) < Self.recentWakeSpan
+        if recentWake {
+            suppressions.suppress("workspace-transition", for: Self.wakeSettleWindow + 1)
+        }
+        scheduleDisplayReconcile(stabilityWindow: recentWake ? Self.wakeSettleWindow : 2.0)
     }
 
     /// Reconcile only once the topology has been stable for a beat. Wake

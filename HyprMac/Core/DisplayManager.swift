@@ -51,9 +51,12 @@ class DisplayManager {
     func refreshedFingerprint() -> String {
         refresh()
         var nextBounds: [String: CGRect] = [:]
+        // by name and frame, in a fixed order. the display id changes on
+        // some wakes and NSScreen.screens comes back in another order, and
+        // either used to read as a new topology: every workspace re-homed
+        // and every visible one retiled for a desk that had not changed
         let fingerprint = screens.map { screen in
-            let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber
-            let key = "\(id?.uint32Value ?? 0):\(screen.localizedName)@\(screen.frame)"
+            let key = "\(screen.localizedName)@\(screen.frame)"
             let visible = screen.visibleFrame
             let prior = fingerprintUsableBounds[key]
             let slack = TilingConfig.rectComparisonSlackPx
@@ -70,7 +73,7 @@ class DisplayManager {
             let stable = unchanged ? prior! : visible
             nextBounds[key] = stable
             return "\(key)/\(stable)"
-        }.joined(separator: "|")
+        }.sorted().joined(separator: "|")
         fingerprintUsableBounds = nextBounds
         return fingerprint
     }
