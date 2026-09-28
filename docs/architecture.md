@@ -148,6 +148,14 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
 
 Per-app AXObserver notifications are the primary discovery trigger; the
 10s timer only backstops missed events and observer-refusing apps.
+A window the walk could not read — its app failed the window-list read,
+or its frame read failed — is reported on
+`AccessibilityManager.unreadableWindowIDs` while the window server still
+shows it. Discovery holds such a window in every store: not gone, not
+hidden, not returned. The tile pass keeps its leaf and writes no frame to
+it, and the poll that reads it again retiles its key once. The walk sets
+a 0.25 s messaging timeout on the elements it reads, so a stalled app
+costs a quarter second per poll and is held rather than judged.
 While the session is locked, the displays sleep, or the user session is
 switched out, `computeChanges` treats a missing window as no evidence and
 skips the cycle, and `pollWindowChanges` stops there;
@@ -343,7 +351,13 @@ visible-workspace mapping refreshes (`initializeMonitors`), BSP trees
 migrate to each workspace's current home
 (`TilingEngine.handleDisplayChange`), hidden-workspace windows
 re-park at the (possibly moved) global corner, and visible workspaces
-retile. Workspace assignments and the floating set are preserved —
+retile. Each display remembers the workspace it last showed, by name,
+and a display that comes back shows it again when it is still one of its
+own. The fingerprint that gates the reconcile is the sorted list of
+display names and frames plus usable bounds; a screen number that
+changes across a wake is the same desk. Within twenty seconds of a
+sleep, wake, lock or unlock the settle beat is five seconds instead of
+two, since displays reattach one at a time. Workspace assignments and the floating set are preserved —
 full redistribution (`distributeWindowsAcrossWorkspaces`) runs only at
 first launch and on explicit "Retile All". Discovery polling is
 suppressed through the settle window so drift detection cannot
@@ -567,7 +581,12 @@ this list is the index.
   do not yet. A click on a tile still lifts it natively; the click re-raise
   puts the floater back about 40 ms after mouse-up and hands focus back to
   the tile without lifting it, so the covered part of the floater blinks
-  once per click. That works only for a floater of the tile's own app. When a raise does nothing, the dim shows the floater only
+  once per click. That works only for a floater of the tile's own app. A
+  floater whose app takes the front when raised is cooled down at once
+  after that click, and each such loop doubles the cooldown up to ten
+  minutes, so it blinks on one click and not on every one; no raise is
+  scheduled off an app activation while a press or a click is in flight.
+  When a raise does nothing, the dim shows the floater only
   where it is in front. See `docs/debugging.md` "Floaters, open menus and
   no-raise focus".
 - **Squishy-sibling swap rejection** — when a swap squishes a

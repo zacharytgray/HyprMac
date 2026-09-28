@@ -70,6 +70,29 @@ spiral on wide monitors:
 focused leaf's parent via `splitOverride`. The override survives
 until the next sibling restructure (insert / remove on that node).
 
+Smart insert pins the axis it chose on the split as well, marked
+automatic (`splitOverrideIsAutomatic`). Read off the rect at every
+layout, the axis flipped whenever a ratio change or a min-size
+adjustment made a child rect taller than wide, turning a stack into
+columns. A tree that migrates to a screen of the other orientation drops
+its automatic pins and dwindle chooses again there; `togglesplit` pins
+stay, and only those go into a layout snapshot.
+
+## Slot memory
+
+When discovery takes a window out of its tree — an AX read that failed, a
+minimize, Cmd-H, a tab switch — the engine records which subtree it
+shared a split with, the side it was on, and the split's axis and ratio.
+A window that comes back to the same key goes back beside that subtree,
+when those windows still form one and the pair still fits; otherwise it
+is a newcomer and smart insert places it. An explicit move, float or send
+drops the memory. Before this, a returning window landed at the first
+leaf with room and every window after it moved.
+
+Inserting a window resets only the ratios the user did not set. It used
+to clear the user-set flag on the whole tree, so a window opening or
+coming back cost every manual resize on the workspace.
+
 ## Ratio memory
 
 A native tab switch or a Cmd-H looks like a close followed by an open
@@ -226,9 +249,31 @@ used to end as `attemptsExhausted`, a timeout that the admission recovery
 retries. It now ends with the readback's verdict, and a
 `geometryMismatch` there is a refusal, which can float the window.
 
+A minimum the memory already knows (`observed` provenance) shapes the
+first pass: the candidate is adjusted for it before any frame is written,
+and its ratios are kept while the membership stays the same. Asking the
+app to take a slot it refused last time only repeated the resize the user
+watched, and then the adjusted pass, on every retile.
+
+A window that rounds its size up by less than the size tolerance passes
+its own match and can still fail the pair or the screen — a terminal a
+cell wider than its slot eats the gap. Such an aggregate rejection
+records a conflict at the aggregate slack, so the adjusted pass runs with
+room for the rounding; it teaches no minimum, since a cell of rounding is
+not a floor.
+
+The deadline grows by 80 ms for every target past three, and the sample
+limit with it: one deadline for every setter and every sample of the
+whole key ran out on eight healthy windows.
+
 Only a known, stable size conflict permits a second pass.
 `BSPTree.adjustForMinSizes` adjusts constrained ratios, and the final
-adjusted layout goes through the same complete verification. The second
+adjusted layout goes through the same complete verification. A split the
+user set by hand is left alone as long as another ancestor on the axis
+can make room; when none can, the verified pass lets it give way by the
+minimum, since the alternative is a layout refused and rolled back on
+every retile. Fit checks never ask for that, so a hand-set ratio still
+refuses a swap or an arrival up front. The second
 pass runs on the apparent conflict; what the memory is allowed to learn
 from it is a narrower question, decided per window under "Min-size
 memory" below. Membership and
@@ -237,7 +282,11 @@ Failed first tiles do not create a live tree; failed scratchpad migrations keep
 the source tree. The engine checks captured
 original frames against the usable screen before writing them back. Parked
 workspace frames are not valid restoration targets for a visible workspace;
-the result remains degraded without moving windows back offscreen. The one
+the result remains degraded without moving windows back offscreen. An
+original is a restoration target when it lies within the restoration rect
+by the same one-point slack the rollback's own validation grants its
+readback, so a half-point rounding or a window a point past the Dock
+edge still goes back where it was. The one
 exception is a newcomer the pass itself inserted, one neither in the live
 tree nor admitted to the workspace: its off-screen original says nothing
 about the tree being rolled back. It stays wherever the candidate left it,
@@ -794,8 +843,10 @@ workspace and physical display. The nearest normalized target edge selects
 left, right, top, or bottom insertion; ties use that order. A latched Hypr
 gesture or Option at release requests a same-tree swap instead. A release on
 the source display without a target restores and verifies the captured
-frames. A release on another display is a drop across monitors, described
-below.
+frames, silently: nothing was written before the refusal, the window goes
+back to its slot, and the key keeps speaking for its geometry. Every other
+refusal beeps, flashes and marks the key. A release on another display is a
+drop across monitors, described below.
 
 `BSPTree.candidateTree` clones the source, removes the dragged leaf, and
 splits the target on the selected side. Horizontal splits create columns;
