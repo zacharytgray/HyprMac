@@ -470,6 +470,9 @@ class WindowManager {
         tiledFocusRouter.focusGeneration = { [weak self] in self?.focusController.generation ?? 0 }
         tiledFocusRouter.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
         tiledFocusRouter.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        tiledFocusRouter.noteActivation = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }
+        // every focus HyprMac asks a window for, whichever path asks
+        HyprWindow.activationObserver = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }
         // the usual path can lift the tile over a floater
         let usualFocus = tiledFocusRouter.usualFocus
         tiledFocusRouter.usualFocus = { [weak self] window, fallback in
@@ -1562,6 +1565,24 @@ class WindowManager {
         let screen = screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
         let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
+
+        // the user switched apps behind our back: Cmd-Tab, a Dock click, an
+        // app that opened its own window. the app in front wins over what
+        // we remember, when its focused window is a valid target here.
+        // within one app AX focus is not trusted (multi-window apps lag
+        // and diverge), so only a change of app counts. a bare Hypr press
+        // used to activate the remembered window and yank focus back
+        if let front = NSWorkspace.shared.frontmostApplication,
+           let remembered = stateCache.cachedWindows[focusBorder.trackedWindowID ?? focusController.lastFocusedID],
+           front.processIdentifier != remembered.ownerPID,
+           let focused = accessibility.getFocusedWindow(),
+           focused.ownerPID == front.processIdentifier,
+           isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
+            hyprLog(.notice, .focus, "ensureFocus: front app changed to \(focused.windowID) — adopting it")
+            focusController.recordFocus(focused.windowID, reason: "ensureFocus-frontApp")
+            updateFocusBorder(for: focused)
+            return
+        }
 
         if let tid = focusBorder.trackedWindowID,
            isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
@@ -2997,8 +3018,16 @@ class WindowManager {
             scratchpad.noteAppActivation(pid: app.processIdentifier, bundleID: app.bundleIdentifier)
         }
 
+        // an activation HyprMac asked for, a focus or a raise of its own, is
+        // never the user's. the note is spent here whether or not the
+        // half-second window below has run out under a slow retile
+        var causedByHyprMac = false
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            causedByHyprMac = suppressions.consumeExpectedActivation(of: app.processIdentifier)
+        }
+
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
-        if !suppressions.isSuppressed("activation-switch") {
+        if !causedByHyprMac && !suppressions.isSuppressed("activation-switch") {
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
                 let pid = app.processIdentifier
                 let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
@@ -3042,9 +3071,12 @@ class WindowManager {
 
         // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
         // must always run — even when activation switch is suppressed — so floaters stay on top.
-        if !stateCache.floatingWindowIDs.isEmpty {
+        // not while a click is in flight: the click's own re-raise owns that,
+        // and a raise racing the popup the click is opening dismisses it
+        if !stateCache.floatingWindowIDs.isEmpty, clickPress == nil, !mouseButtonDown {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.floatingController.raiseBehind()
+                guard let self, self.isRunning, !self.mouseButtonDown else { return }
+                self.floatingController.raiseBehind()
             }
         }
     }

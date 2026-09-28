@@ -284,8 +284,15 @@ class HyprWindow: Equatable, Hashable {
     /// Used when stacking several windows (scratchpad show) where only
     /// the final one should take focus.
     func raise() {
+        Self.activationObserver?(ownerPID)
         AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     }
+
+    /// Told the owner pid before every focus, raise or activation HyprMac
+    /// asks a window for, on every path, so the app activation that may
+    /// follow is known to be HyprMac's own and not the user's. Set once by
+    /// `WindowManager`.
+    static var activationObserver: ((pid_t) -> Void)?
 
     /// Make this the app's main window without raising or activating, so
     /// a later activation brings this window forward and not another one.
@@ -302,6 +309,7 @@ class HyprWindow: Equatable, Hashable {
     /// is unreliable when the app was not already active because the
     /// AX writes can race the activation.
     func focus() {
+        Self.activationObserver?(ownerPID)
         let app = NSRunningApplication(processIdentifier: ownerPID)
         let alreadyActive = app?.isActive ?? false
         let wid = windowID
@@ -343,6 +351,7 @@ class HyprWindow: Equatable, Hashable {
     /// `TiledFocusRouter` uses `makeFrontAndKeyWithoutRaise` instead when
     /// a floater covers the target.
     func focusWithoutRaise() {
+        Self.activationObserver?(ownerPID)
         let wid = windowID
 
         // window-level AX: doesn't raise on its own — kAXRaiseAction is what raises.
@@ -442,6 +451,7 @@ class HyprWindow: Equatable, Hashable {
     /// Title-bar coordinate (`midX`, `minY + 4`) avoids window controls and any
     /// in-content button. A bare down+up does not start a drag.
     func focusViaSyntheticClick() {
+        Self.activationObserver?(ownerPID)
         guard let frame = self.frame else {
             hyprLog(.notice, .focus, "focusViaSyntheticClick(\(windowID)) no frame")
             return

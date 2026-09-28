@@ -148,6 +148,11 @@ struct RaiseBehindThrottle {
     private var attempts: [Pair: [TimeInterval]] = [:]
     private var cooldowns: [Pair: (until: TimeInterval, reason: String)] = [:]
     private var restores: [Pair: TimeInterval] = [:]
+    /// how many loops a pair has been cooled for. each one doubles the
+    /// cooldown, capped at `loopCooldownCap`, so a floater whose app takes
+    /// the front on every raise stops blinking every fifteen seconds
+    private var loops: [Pair: Int] = [:]
+    var loopCooldownCap: TimeInterval = 600
 
     /// Decide one pair. A `.raise` counts as an attempt.
     mutating func decide(_ pair: Pair, now: TimeInterval) -> Decision {
@@ -156,7 +161,10 @@ struct RaiseBehindThrottle {
             return .coolingDown(reason: cooldown.reason, remaining: cooldown.until - now)
         }
         if restores[pair] != nil {
-            return startCooldown(pair, reason: "loop", for: loopCooldown, now: now)
+            let count = loops[pair, default: 0] + 1
+            loops[pair] = count
+            let duration = min(loopCooldown * pow(2, Double(count - 1)), loopCooldownCap)
+            return startCooldown(pair, reason: "loop", for: duration, now: now)
         }
         let recent = attempts[pair, default: []]
         if recent.count >= burstLimit {
@@ -174,6 +182,22 @@ struct RaiseBehindThrottle {
 
     mutating func noteRestore(_ pairs: [Pair], now: TimeInterval) {
         for pair in pairs { restores[pair] = now }
+    }
+
+    /// The loop as the click re-raise sees it: the raise took the front
+    /// away from the tile and the hand-back is putting it back. The pair
+    /// cools at once, and longer each time, so a floater whose app
+    /// activates itself on a raise blinks on one click and not on every
+    /// one. The click path asks `cooldown`, which never saw a restore.
+    mutating func noteLoop(_ pairs: [Pair], now: TimeInterval) {
+        for pair in pairs {
+            let count = loops[pair, default: 0] + 1
+            loops[pair] = count
+            let duration = min(loopCooldown * pow(2, Double(count - 1)), loopCooldownCap)
+            cooldowns[pair] = (now + duration, "loop")
+            attempts[pair] = nil
+            restores[pair] = nil
+        }
     }
 
     /// The pair's running cooldown, if any. Asking counts as no attempt:
@@ -590,6 +614,8 @@ final class FloatingWindowController {
                 + "focus=\(previousFocusID) front=\(frontBefore.map(String.init) ?? "nil")")
         for pair in pairs {
             guard let w = stateCache.cachedWindows[pair.floater] else { continue }
+            // an app that activates itself on a raise is HyprMac's doing
+            suppressions.expectActivation(of: w.ownerPID)
             let rc = performRaise(w)
             if rc != .success {
                 hyprLog(.notice, .floating, "raise behind failed: wid=\(pair.floater) rc=\(rc.rawValue)")
@@ -730,6 +756,7 @@ final class FloatingWindowController {
         let generation = focusController.generation
         // back to front, so the floaters keep their order among themselves
         for item in raising.reversed() {
+            suppressions.expectActivation(of: item.window.ownerPID)
             let rc = performRaise(item.window)
             if rc != .success {
                 hyprLog(.notice, .floating, "click re-raise failed: wid=\(item.pair.floater) rc=\(rc.rawValue)")
@@ -797,8 +824,13 @@ final class FloatingWindowController {
             return
         }
         // the floater's app took the front, so this is a restore. a
-        // raise-behind for the same pair right after it is the loop.
-        if front != tile.ownerPID { throttle.noteRestore(lifted, now: now) }
+        // raise-behind for the same pair right after it is the loop, and so
+        // is the next click: the pair cools now, longer each time
+        if front != tile.ownerPID {
+            throttle.noteRestore(lifted, now: now)
+            throttle.noteLoop(lifted, now: now)
+            hyprLog(.notice, .floating, "click re-raise moved the front app — cooling \(lifted)")
+        }
         refocusClickedTile(tile) { [weak self] kept in
             guard let self else { return }
             if !kept {

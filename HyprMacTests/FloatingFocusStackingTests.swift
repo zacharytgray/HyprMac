@@ -860,3 +860,39 @@ final class FloatingFramePlacementTests: XCTestCase {
         XCTAssertTrue(line.contains("clamped from"), line)
     }
 }
+
+final class RaiseBehindLoopEscalationTests: XCTestCase {
+    /// a floater whose app takes the front on every raise used to come back
+    /// every fifteen seconds. each loop doubles the cooldown
+    func testEachLoopDoublesTheCooldown() {
+        var throttle = RaiseBehindThrottle()
+        let pair = RaiseBehindThrottle.Pair(floater: 1, tile: 2)
+        var now: TimeInterval = 0
+        var durations: [TimeInterval] = []
+        for _ in 0..<4 {
+            XCTAssertEqual(throttle.decide(pair, now: now), .raise)
+            throttle.noteRestore([pair], now: now)
+            guard case let .cooldownStarted(reason, duration) = throttle.decide(pair, now: now) else {
+                return XCTFail("expected a loop cooldown")
+            }
+            XCTAssertEqual(reason, "loop")
+            durations.append(duration)
+            now += duration + 1
+        }
+        XCTAssertEqual(durations, [15, 30, 60, 120])
+    }
+
+    /// the click re-raise asks `cooldown`, which never saw a restore, so a
+    /// self-activating floater blinked on every click. a loop noted from
+    /// the click cools the pair at once
+    func testALoopNotedFromAClickCoolsThePairAtOnce() {
+        var throttle = RaiseBehindThrottle()
+        let pair = RaiseBehindThrottle.Pair(floater: 1, tile: 2)
+        XCTAssertNil(throttle.cooldown(pair, now: 0))
+        throttle.noteLoop([pair], now: 0)
+        XCTAssertEqual(throttle.cooldown(pair, now: 1)?.reason, "loop")
+        XCTAssertNil(throttle.cooldown(pair, now: 16))
+        throttle.noteLoop([pair], now: 16)
+        XCTAssertNotNil(throttle.cooldown(pair, now: 40), "the second loop cools for thirty seconds")
+    }
+}

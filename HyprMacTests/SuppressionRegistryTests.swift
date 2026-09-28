@@ -92,3 +92,28 @@ final class SuppressionRegistryTests: XCTestCase {
         XCTAssertTrue(r.isSuppressed("k"))
     }
 }
+
+final class ExpectedActivationTests: XCTestCase {
+    /// a focus or raise HyprMac asked for is noted by pid and spent by the
+    /// activation that follows, however late that notification arrives
+    func testANotedActivationIsConsumedOnce() {
+        let r = SuppressionRegistry()
+        r.expectActivation(of: 4242)
+        XCTAssertTrue(r.consumeExpectedActivation(of: 4242))
+        XCTAssertFalse(r.consumeExpectedActivation(of: 4242), "spent")
+        XCTAssertFalse(r.consumeExpectedActivation(of: 4243), "another app's activation is the user's")
+    }
+
+    func testAnExpiredNoteIsNotHyprMacs() {
+        let r = SuppressionRegistry()
+        r.expectActivation(of: 4242, ttl: -1)
+        XCTAssertFalse(r.consumeExpectedActivation(of: 4242))
+    }
+
+    func testClearAllDropsTheNotes() {
+        let r = SuppressionRegistry()
+        r.expectActivation(of: 4242)
+        r.clearAll()
+        XCTAssertFalse(r.consumeExpectedActivation(of: 4242))
+    }
+}

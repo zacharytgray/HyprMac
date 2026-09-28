@@ -58,5 +58,29 @@ final class SuppressionRegistry {
     /// reset state for a clean restart.
     func clearAll() {
         until.removeAll()
+        expectedActivations.removeAll()
+    }
+
+    // MARK: - expected activations
+
+    private var expectedActivations: [pid_t: Date] = [:]
+
+    /// Note that HyprMac is about to focus or raise a window of `pid`, so
+    /// the app activation that follows is HyprMac's doing and not the
+    /// user's. Unlike a timed suppression the note waits for that
+    /// notification however long the main thread takes to reach it: a
+    /// retile that ran past the half-second window used to let the
+    /// activation through and switch workspaces under the user. It expires
+    /// after `ttl` only so an activation that never comes leaves nothing
+    /// behind.
+    func expectActivation(of pid: pid_t, ttl: TimeInterval = 5) {
+        expectedActivations[pid] = Date().addingTimeInterval(ttl)
+    }
+
+    /// Consume the note for `pid`. `true` when HyprMac caused this
+    /// activation; the note is spent either way.
+    func consumeExpectedActivation(of pid: pid_t) -> Bool {
+        guard let expiry = expectedActivations.removeValue(forKey: pid) else { return false }
+        return Date() < expiry
     }
 }

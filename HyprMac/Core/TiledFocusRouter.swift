@@ -77,6 +77,9 @@ final class TiledFocusRouter {
     }
     var lastFocusedID: () -> CGWindowID = { 0 }
     var focusGeneration: () -> UInt64 = { 0 }
+    /// told before every focus, so the app activation it may cause is
+    /// known to be HyprMac's and not the user's
+    var noteActivation: (pid_t) -> Void = { _ in }
     var openPopup: () -> StackedWindow? = { nil }
     var isMenuTracking: () -> Bool = { false }
     var schedule: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
@@ -95,6 +98,7 @@ final class TiledFocusRouter {
                onResult: ((Bool) -> Void)? = nil) -> Route {
         let wid = target.windowID
         let pid = target.ownerPID
+        noteActivation(pid)
         let floaters = visibleFloaterIDs().subtracting([wid])
         guard isTiled(wid), !floaters.isEmpty, let windows = windowList() else {
             usualFocus(target, fallback)

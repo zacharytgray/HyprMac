@@ -267,6 +267,11 @@ class MouseTrackingManager {
                     + "pid=\(popup.ownerPID) layer=\(popup.layer)")
             return
         }
+        // the same gates the live hover path honours: a native menu, a Dock
+        // popup, and the moment after a keyboard action. this runs 200 ms
+        // after every mouse-up, and a click on a menu or the Dock used to
+        // refocus the tile under the cursor through them
+        guard !menuTracking, !dockIsActive, !isMouseFocusSuppressed() else { return }
         let mouseNS = mouseLocationNS()
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
@@ -303,9 +308,11 @@ class MouseTrackingManager {
                 return
             }
         }
-        // cursor not over any tiled window — clear FFM state but leave the
-        // border alone so the invariant check can put it on a sensible target
-        recordFocus(0, "refocus-under-cursor-clear")
+        // cursor not over any tiled window: the menu bar, the Dock, the
+        // desktop, a window HyprMac does not manage. focus stays where it
+        // was. clearing it here blanked the dim for a moment and sent the
+        // next hover over the old tile through the slow path with a
+        // synthetic click
     }
 
     /// Short-TTL cache of the window list. `CGWindowListCopyWindowInfo` is

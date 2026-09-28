@@ -543,8 +543,20 @@ final class ActionDispatcher {
             updateFocusBorder(focused)
             return
         }
-        // any tiled window on this workspace
-        for (wid, _) in stateCache.tiledPositions where wsWindows.contains(wid) {
+        // the tile the user last had, then the tiles in reading order. a
+        // dictionary walk here picked a different window each time, so a
+        // poll that lost sight of the focused tile for a cycle sent focus
+        // somewhere at random
+        let tiles = stateCache.tiledPositions.filter { wsWindows.contains($0.key) }
+        let ordered = tiles.keys.sorted { lhs, rhs in
+            if lhs == focusController.lastFocusedID { return true }
+            if rhs == focusController.lastFocusedID { return false }
+            let a = tiles[lhs]!, b = tiles[rhs]!
+            if a.minY != b.minY { return a.minY < b.minY }
+            if a.minX != b.minX { return a.minX < b.minX }
+            return lhs < rhs
+        }
+        for wid in ordered {
             if let w = stateCache.cachedWindows[wid] {
                 focusController.recordFocus(wid, reason: "ensureInvariant-tiled")
                 _ = focusWindow(w, "ensureInvariant")
@@ -553,7 +565,7 @@ final class ActionDispatcher {
             }
         }
         // fall back to any visible window on this workspace (floating, etc.)
-        for wid in wsWindows {
+        for wid in wsWindows.sorted() {
             if let w = stateCache.cachedWindows[wid] {
                 focusController.recordFocus(wid, reason: "ensureInvariant-fallback")
                 _ = focusWindow(w, "ensureInvariant")
