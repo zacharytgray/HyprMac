@@ -3142,6 +3142,17 @@ class WindowManager {
         // lock and display sleep last longer than that. discovery holds
         // every missing window from the start of the span to its end
         discovery.noteSystemInterruption(notification.name.rawValue)
+        // a reconcile that came due during the span was deferred against the
+        // desk as the lock left it, usually one screen. now that the span is
+        // over the settle beat is measured from here, and the deferred timer
+        // is superseded so it cannot fire against that stale fingerprint
+        // while the external displays are still re-handshaking
+        if displayTransitionPending, !discovery.isSessionInterrupted {
+            displayChangeGeneration += 1
+            suppressions.suppress("workspace-transition", for: Self.wakeSettleWindow + 1)
+            hyprLog(.notice, .lifecycle, "display reconcile settles \(Int(Self.wakeSettleWindow))s from the end of the interruption")
+            scheduleDisplayReconcile(stabilityWindow: Self.wakeSettleWindow)
+        }
         // park the scratchpad across sleep/lock so wake never finds visible
         // members with a stale scrim
         scratchpad.hide(reason: .displayChange)

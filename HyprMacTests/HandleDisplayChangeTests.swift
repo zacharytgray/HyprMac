@@ -208,13 +208,16 @@ private final class SnapshotScreen: SyntheticScreen {
 
 private final class DeskScreen: SyntheticScreen {
     let bounds: NSRect
-    init(x: CGFloat, width: CGFloat) {
+    let name: String?
+    init(x: CGFloat, width: CGFloat, name: String? = nil) {
         bounds = NSRect(x: x, y: 0, width: width, height: 900)
+        self.name = name
         super.init()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override var frame: NSRect { bounds }
     override var visibleFrame: NSRect { bounds }
+    override var localizedName: String { name ?? super.localizedName }
 }
 
 final class DisplayReturnTests: XCTestCase {
@@ -242,6 +245,49 @@ final class DisplayReturnTests: XCTestCase {
 
         XCTAssertEqual(workspaces.workspaceForScreen(external), 4)
         XCTAssertEqual(workspaces.workspaceForScreen(laptop), 1)
+    }
+
+    /// two displays of one model share a name. the one that leaves comes
+    /// back on its own workspace, not on the other's
+    func testTwoSameNamedDisplaysRememberTheirWorkspacesApart() {
+        let laptop = DeskScreen(x: 0, width: 1400)
+        let left = DeskScreen(x: 1400, width: 1920, name: "LG HDR 4K")
+        let right = DeskScreen(x: 3320, width: 1920, name: "LG HDR 4K")
+        var live: [NSScreen] = [laptop, left, right]
+        let display = DisplayManager(screenSource: { live })
+        let workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        _ = workspaces.switchWorkspace(5, cursorScreen: left)
+        _ = workspaces.switchWorkspace(6, cursorScreen: right)
+        XCTAssertEqual(workspaces.workspaceForScreen(left), 5)
+        XCTAssertEqual(workspaces.workspaceForScreen(right), 6)
+
+        live = [laptop, left]
+        display.refresh()
+        workspaces.initializeMonitors()
+        live = [laptop, left, right]
+        display.refresh()
+        workspaces.initializeMonitors()
+
+        XCTAssertEqual(workspaces.workspaceForScreen(right), 6)
+        XCTAssertEqual(workspaces.workspaceForScreen(left), 5)
+    }
+
+    /// a park write the app refuses asks for the repair poll a few times,
+    /// not every 0.3 s for as long as the app refuses
+    func testAParkWriteThatKeepsFailingAsksForTheRepairPollAFewTimes() {
+        let screen = DeskScreen(x: 0, width: 1400)
+        let workspaces = WorkspaceManager(displayManager: DisplayManager(screenSource: { [screen] }))
+        var requests = 0
+        workspaces.onParkFailed = { requests += 1 }
+        // its AX element answers nothing, so every write fails
+        let window = makeWindow(id: 4711)
+
+        for _ in 0..<(WorkspaceManager.parkRepairRequests + 3) {
+            workspaces.hideInCorner(window, on: screen)
+        }
+
+        XCTAssertEqual(requests, WorkspaceManager.parkRepairRequests)
     }
 
     /// NSScreen.screens comes back in another order after some wakes, and
