@@ -12,7 +12,7 @@ import XCTest
 // same checks as Hypr+Shift+N, then switches to the destination with the
 // moved window focused. a refused move never switches.
 
-private final class FollowScreen: NSScreen {
+private final class FollowScreen: SyntheticScreen {
     let bounds: NSRect
     let name: String
 

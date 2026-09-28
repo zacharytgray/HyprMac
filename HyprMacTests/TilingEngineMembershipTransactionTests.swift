@@ -1157,7 +1157,9 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
     }
 
     private func fixture() throws -> (engine: TilingEngine, tree: BSPTree, windows: [HyprWindow], screen: NSScreen, trace: MembershipTrace) {
-        let screen = NSScreen.main ?? NSScreen.screens.first ?? MembershipHomeScreen()
+        // a synthetic screen, not the host's: the parked and off-screen cases below
+        // depend on the geometry, and the hub runs this suite headless
+        let screen = MembershipHomeScreen()
         let windows = (901...903).map { id in
             HyprWindow(element: AXUIElementCreateApplication(99999), windowID: CGWindowID(id), ownerPID: 99999)
         }
@@ -1346,17 +1348,17 @@ private final class MembershipTrace {
     }
 }
 
-private final class MembershipTestScreen: NSScreen {
+private final class MembershipTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 4000, y: 0, width: 1600, height: 1000) }
     override var visibleFrame: NSRect { frame }
 }
 
-private final class PortraitMembershipTestScreen: NSScreen {
+private final class PortraitMembershipTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 4000, y: 0, width: 1080, height: 1890) }
     override var visibleFrame: NSRect { frame }
 }
 
-private final class MembershipHomeScreen: NSScreen {
+private final class MembershipHomeScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 1920, height: 1080) }
     override var visibleFrame: NSRect { frame }
 }

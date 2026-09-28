@@ -826,7 +826,7 @@ private final class RecoveryHarness {
     }
 }
 
-private final class OtherRecoveryScreen: NSScreen {
+private final class OtherRecoveryScreen: SyntheticScreen {
     override func isEqual(_ object: Any?) -> Bool {
         guard let screen = object as? NSScreen else { return false }
         return self === screen
@@ -1493,7 +1493,7 @@ final class MouseTrackingFocusRegressionTests: XCTestCase {
     }
 }
 
-private final class PrimaryRecoveryScreen: NSScreen {
+private final class PrimaryRecoveryScreen: SyntheticScreen {
     override func isEqual(_ object: Any?) -> Bool {
         guard let screen = object as? NSScreen else { return false }
         return self === screen

@@ -274,7 +274,7 @@ final class WindowRuleTests: XCTestCase {
     }
 }
 
-private final class WindowRuleTestScreen: NSScreen {
+private final class WindowRuleTestScreen: SyntheticScreen {
     override func isEqual(_ object: Any?) -> Bool {
         guard let screen = object as? NSScreen else { return false }
         return self === screen

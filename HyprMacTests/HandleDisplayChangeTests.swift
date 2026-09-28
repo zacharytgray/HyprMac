@@ -109,12 +109,12 @@ final class FitAwareDisplayMigrationTests: XCTestCase {
     }
 }
 
-private final class MigrationScreen: NSScreen {
+private final class MigrationScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 6000, y: 0, width: 1400, height: 900) }
     override var visibleFrame: NSRect { frame }
 }
 
-private final class CollisionScreen: NSScreen {
+private final class CollisionScreen: SyntheticScreen {
     let bounds: NSRect
 
     init(x: CGFloat, width: CGFloat) {
@@ -192,7 +192,7 @@ final class DisplaySnapshotTests: XCTestCase {
     }
 }
 
-private final class SnapshotScreen: NSScreen {
+private final class SnapshotScreen: SyntheticScreen {
     var bounds = NSRect(x: 0, y: 0, width: 1920, height: 1080)
     var usable: NSRect?
     var displayID = 41

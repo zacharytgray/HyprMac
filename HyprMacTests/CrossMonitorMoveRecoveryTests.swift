@@ -12,7 +12,7 @@ import XCTest
 /// DELL-shaped primary on the left, a built-in-shaped screen on the right.
 /// The engine only sees points. The backing scale is 1 unless a test sets
 /// it, and only the sizing budget reads it.
-private final class HopScreen: NSScreen {
+private final class HopScreen: SyntheticScreen {
     private let bounds: NSRect
     private let menuBar: CGFloat
     private let name: String

@@ -10,7 +10,7 @@ import XCTest
 // runs on synthetic screens with frame i/o that accepts every write unless
 // a window is told to ignore it, so it executes headless.
 
-private final class RestorerScreen: NSScreen {
+private final class RestorerScreen: SyntheticScreen {
     let bounds: NSRect
     let name: String
 

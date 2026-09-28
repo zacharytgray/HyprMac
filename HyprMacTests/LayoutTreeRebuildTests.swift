@@ -397,12 +397,12 @@ private func refusingWritesFrameSizingIOFactory()
     }
 }
 
-private final class RebuildTestScreen: NSScreen {
+private final class RebuildTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 2400, height: 1600) }
     override var visibleFrame: NSRect { frame }
 }
 
-private final class RebuildOtherScreen: NSScreen {
+private final class RebuildOtherScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 2400, y: 0, width: 1920, height: 1080) }
     override var visibleFrame: NSRect { frame }
 }

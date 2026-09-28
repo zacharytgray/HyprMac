@@ -752,7 +752,7 @@ final class MouseTrackingPopupTests: XCTestCase {
 
 /// Zach's desk: the built-in panel at 2x, the S34C65xT ultrawide and the
 /// BL450 portrait at 1x, left to right.
-private final class DeskScreen: NSScreen {
+private final class DeskScreen: SyntheticScreen {
     private let bounds: NSRect
     private let menuBar: CGFloat
     private let name: String

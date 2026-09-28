@@ -908,7 +908,7 @@ final class TilingEngineTiledDragTests: XCTestCase {
     }
 }
 
-private final class DragTestScreen: NSScreen {
+private final class DragTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 1200, height: 800) }
     override var visibleFrame: NSRect { frame }
     override var localizedName: String { "Tiled drag test display" }
@@ -919,7 +919,7 @@ private final class DragTestScreen: NSScreen {
 
 /// One of two side-by-side displays for drops across monitors. Usable
 /// frame is the whole frame, and the display number is fixed.
-private final class CrossDragScreen: NSScreen {
+private final class CrossDragScreen: SyntheticScreen {
     private let bounds: NSRect
     private let name: String
     private let number: UInt32

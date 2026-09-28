@@ -161,7 +161,7 @@ final class TiledDriftMonitorTests: XCTestCase {
     }
 }
 
-private final class DriftTestScreen: NSScreen {
+private final class DriftTestScreen: SyntheticScreen {
     override func isEqual(_ object: Any?) -> Bool {
         guard let screen = object as? NSScreen else { return false }
         return self === screen

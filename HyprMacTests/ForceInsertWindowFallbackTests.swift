@@ -261,7 +261,7 @@ private final class ForceInsertTrace {
     }
 }
 
-private final class ForceInsertTestScreen: NSScreen {
+private final class ForceInsertTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 1600, height: 1000) }
     override var visibleFrame: NSRect { frame }
 }

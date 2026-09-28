@@ -501,7 +501,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
     }
 }
 
-private final class TransferScreen: NSScreen {
+private final class TransferScreen: SyntheticScreen {
     private let bounds: CGRect
     init(x: CGFloat, width: CGFloat = 1600, height: CGFloat = 1000) {
         bounds = CGRect(x: x, y: 0, width: width, height: height)

@@ -2,7 +2,7 @@ import Cocoa
 import XCTest
 @testable import HyprMac
 
-private final class BatchMoveScreen: NSScreen {
+private final class BatchMoveScreen: SyntheticScreen {
     let bounds: NSRect
     let name: String
 
