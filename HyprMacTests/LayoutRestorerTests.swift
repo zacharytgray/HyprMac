@@ -72,7 +72,7 @@ private final class RestorerRig {
         recovery.schedule = { _, _ in }
         io = { [unowned self] generation in self.frameIO(generation) }
         orchestrator.allWindows = { [unowned self] in self.all }
-        orchestrator.tileAllVisibleSpaces = { [unowned self] in self.retileVisible() }
+        orchestrator.tileAllVisibleSpaces = { [unowned self] _ in self.retileVisible() }
     }
 
     var all: [HyprWindow] { windows.values.sorted { $0.windowID < $1.windowID } }

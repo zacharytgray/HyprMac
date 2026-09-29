@@ -3306,6 +3306,10 @@ class TilingEngine {
     /// would add a second layout between verification and the switch.
     func removeWindowMembershipOnly(_ window: HyprWindow, fromWorkspace workspace: Int) {
         admittedWindowIDs[workspace]?.remove(window.windowID)
+        forgetHeld(window.windowID)
+        // an explicit departure, like removeWindow: a newcomer wherever it
+        // lands next
+        slotMemory.removeValue(forKey: window.windowID)
         for (key, tree) in trees where key.workspace == workspace && tree.contains(window) {
             tree.remove(window)
             tree.root.pruneEmptyNodes()

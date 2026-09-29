@@ -66,7 +66,7 @@ private final class BatchMoveRig {
         revalidation.workspaceFor = { [workspaceManager] in workspaceManager.workspaceFor($0) }
         io = { [unowned self] generation in self.frameIO(generation) }
         orchestrator.allWindows = { [unowned self] in self.windows.values.sorted { $0.windowID < $1.windowID } }
-        orchestrator.tileAllVisibleSpaces = { [unowned self] in self.retileVisible() }
+        orchestrator.tileAllVisibleSpaces = { [unowned self] _ in self.retileVisible() }
     }
 
     private func frameIO(_ generation: @escaping () -> UInt64) -> FrameSizingIO {

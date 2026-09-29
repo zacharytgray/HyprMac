@@ -91,7 +91,7 @@ private final class FollowRig {
         io = { [unowned self] generation in self.frameIO(generation) }
         orchestrator.currentFocusedWindow = { [unowned self] in self.focused }
         orchestrator.allWindows = { [unowned self] in self.windows.values.sorted { $0.windowID < $1.windowID } }
-        orchestrator.tileAllVisibleSpaces = { [unowned self] in self.retileVisible() }
+        orchestrator.tileAllVisibleSpaces = { [unowned self] _ in self.retileVisible() }
         orchestrator.animatedRetile = { [unowned self] prepare, completion in
             prepare?()
             self.retileVisible()

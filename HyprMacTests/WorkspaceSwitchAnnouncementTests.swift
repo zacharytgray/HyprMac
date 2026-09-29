@@ -50,7 +50,7 @@ final class WorkspaceSwitchAnnouncementTests: XCTestCase {
             self?.events.append("cursor-screen")
             return self?.screen ?? NSScreen.main!
         }
-        orchestrator.tileAllVisibleSpaces = { [weak self] in self?.events.append("retile") }
+        orchestrator.tileAllVisibleSpaces = { [weak self] _ in self?.events.append("retile") }
         orchestrator.onWillSwitch = { [weak self] workspace, screen in
             self?.events.append("will:\(workspace)")
             self?.willScreen = screen

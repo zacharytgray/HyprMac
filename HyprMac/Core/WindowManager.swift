@@ -281,7 +281,9 @@ class WindowManager {
         self.workspaceOrchestrator.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
         self.workspaceOrchestrator.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         self.workspaceOrchestrator.updatePositionCache = { [weak self] in self?.updatePositionCache() }
-        self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] in self?.tileAllVisibleSpaces() }
+        self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] windows in
+            self?.tileAllVisibleSpaces(windows: windows)
+        }
         self.workspaceOrchestrator.animatedRetile = { [weak self] prepare, completion in
             self?.animatedRetile(prepare: prepare, completion: completion)
         }
