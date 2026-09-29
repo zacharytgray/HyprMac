@@ -502,6 +502,37 @@ final class AdmissionRecoveryTests: XCTestCase {
         XCTAssertEqual(harness.scheduled.count, 1, "narrowing never arms a timer")
     }
 
+    /// the fallback retile tiled a pending newcomer the round could not
+    /// judge; when its evidence arrives it is resolved, not floated off the
+    /// slot it just got
+    func testANewcomerTiledMeanwhileIsResolvedNotFloated() {
+        harness.readable.remove(26)
+        recovery.note(failedAdmission([26]))
+        harness.fire()
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingEvidence)
+
+        harness.readable.insert(26)
+        harness.tiled.insert(26)
+        recovery.noteEvidence(for: 26)
+
+        XCTAssertTrue(harness.floated.isEmpty, "a tiled window is not floated")
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
+    func testAPreWriteDropFloatsForItsOwnReason() {
+        harness.add(28)
+        recovery.note(failedAdmission([26, 27, 28]))
+        harness.failures = [nil]
+        harness.refusals = [[28]]
+        harness.placements = [[26, 27]]
+
+        harness.fire()
+
+        XCTAssertEqual(harness.floated.map(\.id), [28])
+        XCTAssertTrue(harness.floated[0].reason.contains("retry=noFittingSlot(28)"),
+                      "the fallback line names the drop, not the pass that tiled the rest: \(harness.floated[0].reason)")
+    }
+
     func testATimeoutIsNeverNarrowed() {
         recovery.note(failedAdmission([26, 27]))
         harness.failure = .deadlineExceeded
@@ -856,6 +887,8 @@ private final class RecoveryHarness {
     var visibleWorkspaces: Set<Int> = [2]
     var workspaces: [CGWindowID: Int] = [26: 2, 27: 2, 11: 2]
     var floatingIDs: Set<CGWindowID> = []
+    /// ids a published tree holds when the recovery asks
+    var tiled: Set<CGWindowID> = []
     var alive: Set<CGWindowID> = [11, 26, 27]
     var readable: Set<CGWindowID> = [11, 26, 27]
 
@@ -908,6 +941,7 @@ private final class RecoveryHarness {
         recovery.homeScreenForWorkspace = { [weak self] _ in self?.homeScreen }
         recovery.isWorkspaceVisible = { [weak self] ws in self?.visibleWorkspaces.contains(ws) ?? false }
         recovery.isFloating = { [weak self] id in self?.floatingIDs.contains(id) ?? false }
+        recovery.isTiled = { [weak self] id in self?.tiled.contains(id) ?? false }
         recovery.liveWindow = { [weak self] id in
             guard let self, self.alive.contains(id) else { return nil }
             return self.windows[id]

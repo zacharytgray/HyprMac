@@ -1967,6 +1967,22 @@ class TilingEngine {
     // tree shape), smart-inserts new windows in a stable order
     // (auto-floating those that don't fit), and resets split ratios.
     // pure with respect to AX — only mutates the tree and engine state.
+    /// The order a batch is inserted in: incumbents first, then left to
+    /// right by current frame, then by id. The retry's fit check and its
+    /// choice of the newcomer to give up on use the same order, so they
+    /// judge what the pass will do.
+    private func insertionOrder(_ a: HyprWindow, _ b: HyprWindow,
+                                frames: [CGWindowID: CGRect], workspace: Int) -> Bool {
+        let aIncumbent = admittedWindowIDs[workspace]?.contains(a.windowID) ?? false
+        let bIncumbent = admittedWindowIDs[workspace]?.contains(b.windowID) ?? false
+        if aIncumbent != bIncumbent { return aIncumbent }
+        let fa = frames[a.windowID] ?? .zero
+        let fb = frames[b.windowID] ?? .zero
+        if fa.origin.x != fb.origin.x { return fa.origin.x < fb.origin.x }
+        if fa.origin.y != fb.origin.y { return fa.origin.y < fb.origin.y }
+        return a.windowID < b.windowID
+    }
+
     private func updateTreeMembership(_ windows: [HyprWindow],
                                       onWorkspace workspace: Int,
                                       screen: NSScreen, candidate: BSPTree? = nil) -> TileMembershipResult {
@@ -2017,16 +2033,7 @@ class TilingEngine {
         // made multi-window inserts land differently every time.
         if toInsert.count > 1 {
             let frames = Dictionary(uniqueKeysWithValues: toInsert.map { ($0.windowID, $0.frame ?? .zero) })
-            toInsert.sort { a, b in
-                let aIncumbent = admittedWindowIDs[workspace]?.contains(a.windowID) ?? false
-                let bIncumbent = admittedWindowIDs[workspace]?.contains(b.windowID) ?? false
-                if aIncumbent != bIncumbent { return aIncumbent }
-                let fa = frames[a.windowID] ?? .zero
-                let fb = frames[b.windowID] ?? .zero
-                if fa.origin.x != fb.origin.x { return fa.origin.x < fb.origin.x }
-                if fa.origin.y != fb.origin.y { return fa.origin.y < fb.origin.y }
-                return a.windowID < b.windowID
-            }
+            toInsert.sort { insertionOrder($0, $1, frames: frames, workspace: workspace) }
         }
 
         var refusedWindows: [HyprWindow] = []
@@ -2232,6 +2239,11 @@ class TilingEngine {
             var judged = windows.filter {
                 !$0.isFloating && (published.contains($0.windowID) || bypass[$0.windowID] != nil)
             }
+            // in the order the pass inserts, so the check and the choice of
+            // the newcomer to give up on judge what the pass will do, and
+            // not the order the window server listed the windows in
+            let judgedFrames = Dictionary(uniqueKeysWithValues: judged.map { ($0.windowID, $0.frame ?? .zero) })
+            judged.sort { insertionOrder($0, $1, frames: judgedFrames, workspace: workspace) }
             // an arrangement that cannot exist loses one newcomer at a time,
             // the one asking for the most room first, until what is left
             // fits. eight windows opening on a laptop screen used to float
@@ -2251,9 +2263,10 @@ class TilingEngine {
                 guard !remaining.isEmpty else {
                     return structuralRefusal(Set(bypass.keys), workspace: workspace, screen: screen)
                 }
+                let tiling = judged.map(\.windowID).filter { bypass[$0] != nil }
                 hyprLog(.notice, .tiling, "admission retry narrowed pre-write: dropped="
                         + Self.idList(dropped) + " ws\(workspace) — their known minima do not fit"
-                        + " beside the rest; tiling " + Self.idList(remaining))
+                        + " beside the rest; tiling " + Self.idList(tiling))
                 let result = tileWindows(windows.filter { !droppedIDs.contains($0.windowID) },
                                          onWorkspace: workspace, screen: screen,
                                          alsoRestoringWithin: restorationReach)

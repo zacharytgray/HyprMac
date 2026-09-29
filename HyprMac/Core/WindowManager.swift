@@ -3964,9 +3964,15 @@ private extension WindowManager {
                 admission: result)
         }
         admissionRecovery.floatInPlace = { [weak self] window, reason in
-            guard let self else { return }
-            self.floatingController.floatInPlace(window, reason: reason)
-            self.updatePositionCache()
+            // no cache refresh here: the run follows its floats with the
+            // fallback retile, which walks once and refreshes the cache for
+            // the key. a walk per float was eight walks for eight windows
+            self?.floatingController.floatInPlace(window, reason: reason)
+        }
+        admissionRecovery.isTiled = { [weak self] id in
+            guard let self, let workspace = self.workspaceManager.workspaceFor(id),
+                  let screen = self.workspaceManager.homeScreenForWorkspace(workspace) else { return false }
+            return self.tilingEngine.windowIDs(inTreeForWorkspace: workspace, screen: screen).contains(id)
         }
         admissionRecovery.clearUnverified = { [weak self] workspace, screen in
             self?.tilingEngine.clearUnverifiedGeometry(forWorkspace: workspace, screen: screen)

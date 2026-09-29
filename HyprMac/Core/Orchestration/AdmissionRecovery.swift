@@ -181,6 +181,11 @@ final class AdmissionRecovery {
                   _ bypass: [CGWindowID: UInt64],
                   _ keepOnTimeout: Bool) -> AttemptResult = { _, _, _, _ in AttemptResult() }
     var floatInPlace: (HyprWindow, String) -> Void = { _, _ in }
+    /// whether the window is in a published tree right now. The fallback
+    /// retile, or a newer layout, may have tiled a pending window since the
+    /// round gave up on it; floating it then would tear it out of the slot
+    /// it just got.
+    var isTiled: (CGWindowID) -> Bool = { _ in false }
     /// One ordinary retile of a key whose newcomers the fallback just
     /// floated, so incumbents left out of the refused pass get admitted on
     /// their own. Returns the ids still visible, not floating and in no
@@ -370,7 +375,10 @@ final class AdmissionRecovery {
                             + " — retrying \(Self.list(waiting.subtracting(giveUp))) without them"
                             + " (round \(narrowings) of \(narrowingRounds))")
                     for id in giveUp.sorted() {
-                        if finish(id, retryFailure: result.failure) { floated[workspace] = entry.screen }
+                        // a newcomer the engine dropped pre-write floats for
+                        // its own reason, not the pass's
+                        let cause: FrameSizingFailure? = refused.contains(id) ? .noFittingSlot(id) : result.failure
+                        if finish(id, retryFailure: cause) { floated[workspace] = entry.screen }
                     }
                     bypass = bypass.filter { waiting.contains($0.key) && !giveUp.contains($0.key) }
                     continue
@@ -387,7 +395,7 @@ final class AdmissionRecovery {
                         // whole frame, so the engine had nothing to keep tiled.
                         // a timeout still does not float anything
                         holdUnanswered(id, workspace: workspace, failure: failure)
-                    } else if finish(id, retryFailure: result.failure) {
+                    } else if finish(id, retryFailure: refused.contains(id) ? .noFittingSlot(id) : result.failure) {
                         floated[workspace] = entry.screen
                     }
                 }
@@ -550,6 +558,10 @@ final class AdmissionRecovery {
             return false
         case .ready:
             break
+        }
+        if isTiled(id) {
+            resolve(id, reason: "tiled meanwhile")
+            return false
         }
         guard let window = liveWindow(id) else { forget(id); return false }
         let cause = "first=\(Self.text(record.firstFailure)) retry=\(Self.text(retryFailure))"
