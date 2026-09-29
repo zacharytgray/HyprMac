@@ -104,6 +104,18 @@ final class ExpectedActivationTests: XCTestCase {
         XCTAssertFalse(r.consumeExpectedActivation(of: 4243), "another app's activation is the user's")
     }
 
+    /// a focus of a window of the app already in front activates nothing,
+    /// so nothing consumes a note for it; the user's own Dock click on that
+    /// app moments later must be theirs
+    func testNoNoteIsKeptForTheAppAlreadyInFront() {
+        let r = SuppressionRegistry()
+        r.frontmostPID = { 4242 }
+        r.expectActivation(of: 4242)
+        XCTAssertFalse(r.consumeExpectedActivation(of: 4242))
+        r.expectActivation(of: 4243)
+        XCTAssertTrue(r.consumeExpectedActivation(of: 4243), "another app's focus is noted")
+    }
+
     func testAnExpiredNoteIsNotHyprMacs() {
         let r = SuppressionRegistry()
         r.expectActivation(of: 4242, ttl: -1)

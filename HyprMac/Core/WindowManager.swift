@@ -479,6 +479,7 @@ class WindowManager {
         tiledFocusRouter.focusGeneration = { [weak self] in self?.focusController.generation ?? 0 }
         tiledFocusRouter.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
         tiledFocusRouter.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        suppressions.frontmostPID = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
         tiledFocusRouter.noteActivation = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }
         // every focus HyprMac asks a window for, whichever path asks
         HyprWindow.activationObserver = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }

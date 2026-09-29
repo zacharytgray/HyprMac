@@ -64,6 +64,11 @@ final class SuppressionRegistry {
     // MARK: - expected activations
 
     private var expectedActivations: [pid_t: Date] = [:]
+    /// The app in front right now. A focus or raise of one of its windows
+    /// activates nothing, so no note is kept for it: a note nothing
+    /// consumes outlives the press that made it, and the user's own Dock
+    /// click on that app five seconds later was taken for HyprMac's.
+    var frontmostPID: () -> pid_t? = { nil }
 
     /// Note that HyprMac is about to focus or raise a window of `pid`, so
     /// the app activation that follows is HyprMac's doing and not the
@@ -74,6 +79,7 @@ final class SuppressionRegistry {
     /// after `ttl` only so an activation that never comes leaves nothing
     /// behind.
     func expectActivation(of pid: pid_t, ttl: TimeInterval = 5) {
+        guard pid != frontmostPID() else { return }
         expectedActivations[pid] = Date().addingTimeInterval(ttl)
     }
 
