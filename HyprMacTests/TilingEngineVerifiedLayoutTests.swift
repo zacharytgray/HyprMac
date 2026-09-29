@@ -505,7 +505,11 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
             )
             let prepared = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
-            let originals = Dictionary(uniqueKeysWithValues: prepared.map { ($0.0.windowID, $0.1) })
+            // a little off their slots: a layout the windows already stand
+            // on is accepted from the capture and writes nothing
+            let originals = Dictionary(uniqueKeysWithValues: prepared.map {
+                ($0.0.windowID, $0.1.insetBy(dx: 5, dy: 5))
+            })
             trace.frames = originals
 
             switch entryPoint {
@@ -546,7 +550,11 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         _ = try XCTUnwrap(engine.prepareSwapLayout(first, second, onWorkspace: 1, screen: screen))
 
         let newer = engine.prepareTileLayout([first, second, third], onWorkspace: 1, screen: screen)
-        trace.frames = Dictionary(uniqueKeysWithValues: newer.map { ($0.0.windowID, $0.1) })
+        // a little off the slots, so the newer layout is written rather than
+        // accepted from the capture
+        trace.frames = Dictionary(uniqueKeysWithValues: newer.map {
+            ($0.0.windowID, $0.1.insetBy(dx: 5, dy: 5))
+        })
         let newerFrames = trace.frames
         let accepted = engine.applyComputedLayout(onWorkspace: 1, screen: screen)
 
@@ -615,7 +623,11 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
             )
             let prepared = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
-            trace.frames = Dictionary(uniqueKeysWithValues: prepared.map { ($0.0.windowID, $0.1) })
+            // a little off the slots: the mutation fires on the first read
+            // after a write, and a layout already in place writes nothing
+            trace.frames = Dictionary(uniqueKeysWithValues: prepared.map {
+                ($0.0.windowID, $0.1.insetBy(dx: 5, dy: 5))
+            })
             if change == .forceInsertNoFit {
                 engine.maxSplitsPerMonitor[screen.localizedName] = 0
             }

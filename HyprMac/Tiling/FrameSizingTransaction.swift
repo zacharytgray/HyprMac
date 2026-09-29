@@ -242,6 +242,10 @@ struct FrameSizingAttempt {
         var readbackComplete = false
         /// every target reached the configured stable sample count
         var readbackStable = false
+        /// the layout already stood: every target was where its window was
+        /// at the capture, so nothing was written and the capture was the
+        /// readback. Counts as written for publication.
+        var verifiedInPlace = false
     }
 
     /// Phase durations for the attempt trace. Not part of the typed
@@ -276,10 +280,14 @@ struct FrameSizingAttempt {
     /// the readback. Nil when any window is off its target, or the frames
     /// do not pass together, and the ordinary pass runs.
     ///
-    /// Most passes are this. A workspace switch retiles the other screen,
+    /// Most retiles are this. A workspace switch retiles the other screen,
     /// a move retiles its source twice, a poll re-applies a tree nothing
     /// changed; every one of them sent three setters per window and then
     /// waited for a settle and a stable readback of frames that never moved.
+    /// `FrameReadbackPoller` asks before a candidate pass whose caller
+    /// captured the originals it hands over. A tiled drop never asks: it
+    /// always changes the layout, and its originals are the press-time
+    /// capture, not where the windows stand at the release.
     func alreadyApplied(targets: [Target], originalFrames: [CGWindowID: CGRect],
                         usableFrame: CGRect, gap: CGFloat, generation: UInt64) -> Result? {
         guard !targets.isEmpty, io.currentGeneration() == generation else { return nil }
@@ -297,6 +305,7 @@ struct FrameSizingAttempt {
                                 targetIDs: targets.map(\.windowID))
         progress.readbackComplete = true
         progress.readbackStable = true
+        progress.verifiedInPlace = true
         return Result(verdict: .accepted, actualFrames: actual, progress: progress,
                       overlaps: validated.overlaps)
     }
@@ -986,12 +995,14 @@ struct FrameSizingProgressReport: Equatable {
     }
 
     /// Every target had all three setters return success and the final
-    /// readback was complete and stable. An empty target set satisfies the
+    /// readback was complete and stable, or the layout already stood and
+    /// its capture was the readback. An empty target set satisfies the
     /// write and readback conditions vacuously and is not evidence of
     /// anything, so it does not count as verified.
     var candidateFullyWritten: Bool {
         !candidate.targetIDs.isEmpty
-            && candidate.targetIDs.allSatisfy(candidate.writesCompleted.contains)
+            && (candidate.verifiedInPlace
+                || candidate.targetIDs.allSatisfy(candidate.writesCompleted.contains))
             && candidate.readbackComplete && candidate.readbackStable
     }
 
@@ -1131,15 +1142,6 @@ struct FrameSizingTransaction {
                 targets.first(where: { originalFrames[$0.windowID] == nil })?.windowID ?? 0),
                 restorationReason: nil,
                 actualFrames: [:]))
-        }
-        if let inPlace = attempt.alreadyApplied(targets: targets, originalFrames: originalFrames,
-                                                usableFrame: usableFrame, gap: gap,
-                                                generation: generation) {
-            hyprLog(.debug, .tiling, "frame attempt: phase=\(phase.rawValue) gen=\(generation) "
-                    + "wids=\(targets.map(\.windowID)) verdict=accepted in place — every window is"
-                    + " already on its target, nothing written")
-            return Report(outcome: .accepted(actualFrames: inPlace.actualFrames),
-                          progress: FrameSizingProgressReport(candidate: inPlace.progress))
         }
         let candidate = self.candidate(targets: targets, usableFrame: usableFrame,
                                        gap: gap, generation: generation, phase: phase)

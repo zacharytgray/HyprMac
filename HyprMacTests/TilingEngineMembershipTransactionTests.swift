@@ -47,7 +47,7 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
 
         XCTAssertTrue(result.published)
         XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: screen)?.structuralFingerprint(), shape)
-        XCTAssertEqual(trace.written, [951, 952], "nothing goes out to the app that did not answer")
+        XCTAssertFalse(trace.written.contains(953), "nothing goes out to the app that did not answer")
         XCTAssertEqual(engine.intendedTileRects(), slots, "every slot is where it was")
         // the poll that reads 953 again asks for the retile, once
         XCTAssertEqual(engine.releaseHeldWindows(readable: [951, 952]), [])
@@ -273,6 +273,9 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         for w in windows { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
         XCTAssertTrue(engine.tileWindows(windows, onWorkspace: 1, screen: screen).published)
         trace.minSize[822] = CGSize(width: rect.width * 0.95, height: 0)
+        // off their slots again, so the pass writes instead of accepting the
+        // layout the windows stand on
+        for w in windows { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
         var writes = 0
         trace.onWrite = { writes += 1 }
 
@@ -347,6 +350,8 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         let window = f.windows[0]
         XCTAssertTrue(f.engine.tileWindows([window], onWorkspace: 1, screen: f.screen).published)
         f.engine.removeWindow(window, fromWorkspace: 1)
+        // it left, so it stands elsewhere when it comes back
+        f.trace.frames[window.windowID] = f.trace.frames[window.windowID]!.insetBy(dx: 100, dy: 100)
         f.trace.forgetWrites()
         f.trace.rejectNextRead = true
 
@@ -784,6 +789,30 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertEqual(retry.refusedIDs, [newcomer.windowID])
         XCTAssertEqual(retry.publishedIDs, [tenant.windowID])
         XCTAssertTrue(retry.insertedIDs.isEmpty)
+    }
+
+    /// Most retiles are over a key nothing changed on. The second pass over
+    /// the same members reads the frames it captured, accepts them, and
+    /// writes nothing; the key stays verified.
+    func testARetileOverUnchangedMembersWritesNothingAndStaysVerified() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let windows = [makeWindow(id: 32901), makeWindow(id: 32902)]
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in windows { trace.frames[w.windowID] = rect }
+        XCTAssertTrue(engine.tileWindows(windows, onWorkspace: 1, screen: screen).published)
+        XCTAssertEqual(trace.written, Set(windows.map(\.windowID)))
+        trace.written = []
+
+        let again = engine.tileWindows(windows, onWorkspace: 1, screen: screen)
+
+        XCTAssertTrue(again.published, "failure=\(String(describing: again.failure))")
+        XCTAssertTrue(trace.written.isEmpty, "the capture was the readback: \(trace.written)")
+        XCTAssertTrue(engine.unverifiedLayouts.isEmpty)
+        XCTAssertEqual(Set(engine.windowIDs(inTreeForWorkspace: 1, screen: screen)),
+                       Set(windows.map(\.windowID)))
     }
 
     /// Eight windows opening on a laptop screen: two of them could not share

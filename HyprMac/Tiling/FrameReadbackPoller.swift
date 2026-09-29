@@ -71,11 +71,15 @@ struct FrameReadbackPoller {
 
     var deadline: TimeInterval { configuration.deadline }
 
+    /// A candidate pass. `originalFrames` are the frames the caller captured
+    /// just before; with them a layout every window already stands on is
+    /// accepted from the capture, without a write or a wait.
     func applyLayout(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
-                     gap: CGFloat, generation requestedGeneration: UInt64) -> Result {
+                     gap: CGFloat, generation requestedGeneration: UInt64,
+                     originalFrames: [CGWindowID: CGRect]? = nil) -> Result {
         applyLayout(layouts, usableFrame: usableFrame, gap: gap,
                     generation: requestedGeneration, configuration: configuration,
-                    phase: .candidate)
+                    phase: .candidate, originalFrames: originalFrames)
     }
 
     /// A candidate pass where `positionFirstWindowIDs` move before they are
@@ -84,12 +88,13 @@ struct FrameReadbackPoller {
     func applyWorkspaceReveal(_ layouts: [(HyprWindow, CGRect)],
                               positionFirstWindowIDs: Set<CGWindowID>,
                               usableFrame: CGRect, gap: CGFloat,
-                              generation requestedGeneration: UInt64) -> Result {
+                              generation requestedGeneration: UInt64,
+                              originalFrames: [CGWindowID: CGRect]? = nil) -> Result {
         var revealConfiguration = configuration
         revealConfiguration.positionSettleWindowIDs = positionFirstWindowIDs
         return applyLayout(layouts, usableFrame: usableFrame, gap: gap,
                            generation: requestedGeneration, configuration: revealConfiguration,
-                           phase: .candidate)
+                           phase: .candidate, originalFrames: originalFrames)
     }
 
     func applyRestoration(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
@@ -142,7 +147,8 @@ struct FrameReadbackPoller {
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
                              gap: CGFloat, generation requestedGeneration: UInt64,
                              configuration baseConfiguration: FrameSizingConfiguration,
-                             phase: FrameSizingPhase) -> Result {
+                             phase: FrameSizingPhase,
+                             originalFrames: [CGWindowID: CGRect]? = nil) -> Result {
         let ids = layouts.map { $0.0.windowID }
         let positionFirst = ids.filter { baseConfiguration.positionSettleWindowIDs.contains($0) }.count
         let configuration = Self.scaled(baseConfiguration, for: layouts.count,
@@ -163,15 +169,28 @@ struct FrameReadbackPoller {
                           observations: [], accepted: [], progress: unstarted)
         }
         let windows = Dictionary(uniqueKeysWithValues: layouts.map { ($0.0.windowID, $0.0) })
-        if generation() == requestedGeneration {
-            for (window, _) in layouts { window.cachedFrame = nil }
-        }
         let attempt = FrameSizingAttempt(
             io: ioFactory(windows, generation),
             configuration: configuration
         )
+        let targets = layouts.map { FrameSizingAttempt.Target(windowID: $0.0.windowID, frame: $0.1) }
+        // a layout every window already stands on: the capture that produced
+        // the originals is the readback, nothing is written and nothing is
+        // waited for. the cached frames stay, since nothing moved
+        if let originalFrames,
+           let inPlace = attempt.alreadyApplied(targets: targets, originalFrames: originalFrames,
+                                                usableFrame: usableFrame, gap: gap,
+                                                generation: requestedGeneration) {
+            hyprLog(.debug, .tiling, "frame attempt: phase=\(phase.rawValue) gen=\(requestedGeneration) "
+                    + "wids=\(ids) verdict=accepted in place — every window is already on its"
+                    + " target, nothing written")
+            return classify(inPlace, layouts: layouts, configuration: configuration)
+        }
+        if generation() == requestedGeneration {
+            for (window, _) in layouts { window.cachedFrame = nil }
+        }
         let raw = attempt.apply(
-            targets: layouts.map { .init(windowID: $0.0.windowID, frame: $0.1) },
+            targets: targets,
             usableFrame: usableFrame, gap: gap, generation: requestedGeneration,
             phase: phase
         )

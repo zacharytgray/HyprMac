@@ -219,48 +219,43 @@ final class FrameSizingTransactionTests: XCTestCase {
         return (fake, left, right, CGRect(x: 0, y: 0, width: 1008, height: 800))
     }
 
-    /// Most passes retile a key nothing changed on: the other screen on a
-    /// workspace switch, a move's source twice, a poll re-applying a tree.
-    /// Every one of them sent three setters per window and waited a settle
-    /// and a stable readback of frames that never moved.
-    func testALayoutAlreadyInPlaceIsAcceptedWithoutAWriteOrAWait() {
+    /// Most retiles are this: the other screen on a workspace switch, a
+    /// move's source twice, a poll re-applying a tree. Every one of them
+    /// sent three setters per window and waited a settle and a stable
+    /// readback of frames that never moved.
+    func testALayoutAlreadyInPlaceIsAcceptedFromTheCaptureWithoutAWriteOrAWait() throws {
         let (fake, left, right, usable) = inPlaceFixture()
-        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+        let result = try XCTUnwrap(FrameSizingAttempt(io: fake.io()).alreadyApplied(
             targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
-            originalFrames: [7: left, 8: right], usableFrame: usable, gap: 8, generation: 1)
+            originalFrames: [7: left, 8: right], usableFrame: usable, gap: 8, generation: 1))
 
-        XCTAssertEqual(report.outcome, .accepted(actualFrames: [7: left, 8: right]))
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(result.actualFrames, [7: left, 8: right])
         XCTAssertTrue(fake.operations.isEmpty, "the capture was the readback: \(fake.operations)")
         XCTAssertEqual(fake.time, 0, "no settle is waited for")
-        XCTAssertTrue(report.progress.candidate.readbackComplete)
-        XCTAssertTrue(report.progress.candidate.possiblyWritten.isEmpty)
+        XCTAssertTrue(result.progress.verifiedInPlace)
+        XCTAssertTrue(result.progress.readbackComplete)
+        XCTAssertTrue(FrameSizingProgressReport(candidate: result.progress).candidateVerified,
+                      "a layout that stood counts as written, so it publishes")
     }
 
     func testAnOriginalWithinTheVerdictsToleranceIsInPlaceToo() {
         let (fake, left, right, usable) = inPlaceFixture()
-        // a point off in position and a cell of overshoot, as the verdict
-        // would accept after a write
+        // a point off in position, as the verdict would accept after a write
         let sat = left.offsetBy(dx: 1, dy: 0)
-        fake.frames[7] = sat
-        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+        let result = FrameSizingAttempt(io: fake.io()).alreadyApplied(
             targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
             originalFrames: [7: sat, 8: right], usableFrame: usable, gap: 8, generation: 1)
 
-        XCTAssertEqual(report.outcome, .accepted(actualFrames: [7: sat, 8: right]))
-        XCTAssertTrue(fake.operations.isEmpty)
+        XCTAssertEqual(result?.actualFrames, [7: sat, 8: right])
     }
 
-    func testOneWindowOffItsTargetRunsTheOrdinaryPassForAll() {
+    func testOneWindowOffItsTargetIsNotInPlace() {
         let (fake, left, right, usable) = inPlaceFixture()
         let elsewhere = CGRect(x: 508, y: 8, width: 400, height: 784)
-        fake.frames[8] = elsewhere
-        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+        XCTAssertNil(FrameSizingAttempt(io: fake.io()).alreadyApplied(
             targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
-            originalFrames: [7: left, 8: elsewhere], usableFrame: usable, gap: 8, generation: 1)
-
-        XCTAssertEqual(report.outcome, .accepted(actualFrames: [7: left, 8: right]))
-        XCTAssertTrue(fake.operations.contains("size:8"))
-        XCTAssertTrue(fake.operations.contains("size:7"), "one pass, every target written")
+            originalFrames: [7: left, 8: elsewhere], usableFrame: usable, gap: 8, generation: 1))
     }
 
     func testInPlaceFramesThatFailTogetherAreNotTakenAsALayout() {
@@ -268,24 +263,32 @@ final class FrameSizingTransactionTests: XCTestCase {
         // overlap: standing there proves nothing about the layout
         let (fake, left, _, usable) = inPlaceFixture()
         let overlapping = CGRect(x: 400, y: 8, width: 492, height: 784)
-        fake.frames[8] = overlapping
-        let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
+        XCTAssertNil(FrameSizingAttempt(io: fake.io()).alreadyApplied(
             targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: overlapping)],
-            originalFrames: [7: left, 8: overlapping], usableFrame: usable, gap: 8, generation: 1)
-
-        XCTAssertNotEqual(report.outcome, .accepted(actualFrames: [7: left, 8: overlapping]))
-        XCTAssertFalse(fake.operations.isEmpty, "the ordinary pass ran and judged it")
+            originalFrames: [7: left, 8: overlapping], usableFrame: usable, gap: 8, generation: 1))
     }
 
     func testASupersededInPlaceLayoutIsNotAccepted() {
         let (fake, left, right, usable) = inPlaceFixture()
         fake.generation = 2
+        XCTAssertNil(FrameSizingAttempt(io: fake.io()).alreadyApplied(
+            targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
+            originalFrames: [7: left, 8: right], usableFrame: usable, gap: 8, generation: 1))
+    }
+
+    /// The tiled drop is the transaction's one caller, and its originals are
+    /// the press-time capture: a drop that rebuilds the layout the drag
+    /// started from must still write the dragged window back, so the
+    /// transaction never takes the standing layout.
+    func testTheTransactionAlwaysWritesEvenWhenTheOriginalsMatchTheTargets() {
+        let (fake, left, right, usable) = inPlaceFixture()
         let report = FrameSizingTransaction(attempt: FrameSizingAttempt(io: fake.io())).apply(
             targets: [.init(windowID: 7, frame: left), .init(windowID: 8, frame: right)],
             originalFrames: [7: left, 8: right], usableFrame: usable, gap: 8, generation: 1)
 
-        XCTAssertEqual(report.outcome, .degraded(candidateReason: .superseded,
-                                                 restorationReason: nil, actualFrames: [:]))
+        XCTAssertEqual(report.outcome, .accepted(actualFrames: [7: left, 8: right]))
+        XCTAssertTrue(fake.operations.contains("size:7") && fake.operations.contains("size:8"))
+        XCTAssertTrue(report.progress.candidateVerified)
     }
 
     func testSupersededAttemptNeverRollsBack() {

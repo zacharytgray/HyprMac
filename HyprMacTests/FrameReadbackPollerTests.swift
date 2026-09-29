@@ -570,6 +570,68 @@ final class FrameReadbackPollerTests: XCTestCase {
     }
 }
 
+final class FrameReadbackPollerInPlaceTests: XCTestCase {
+    private struct Desk {
+        let a = makeWindow(id: 41)
+        let b = makeWindow(id: 42)
+        let left = CGRect(x: 8, y: 8, width: 492, height: 784)
+        let right = CGRect(x: 508, y: 8, width: 492, height: 784)
+        let usable = CGRect(x: 0, y: 0, width: 1008, height: 800)
+        var frames: [CGWindowID: CGRect] { [41: left, 42: right] }
+    }
+
+    private func io(_ desk: Desk, operations: @escaping (String) -> Void,
+                    time: @escaping () -> TimeInterval, sleep: @escaping (TimeInterval) -> Void) -> FrameSizingIO {
+        let frames = desk.frames
+        return FrameSizingIO(
+            setMessagingTimeout: { _, _ in operations("timeout"); return .success },
+            writeSize: { _, _, _ in operations("size"); return .success },
+            writePosition: { _, _, _ in operations("position"); return .success },
+            readPosition: { id, _ in operations("read"); return (.success, frames[id]?.origin) },
+            readSize: { id, _ in operations("read"); return (.success, frames[id]?.size) },
+            now: time, sleep: sleep, currentGeneration: { 1 })
+    }
+
+    /// the retile's first pass hands the poller the frames the engine just
+    /// captured; a layout every window already stands on is accepted from
+    /// them, and it publishes like a written one
+    func testALayoutAlreadyInPlaceIsAcceptedFromTheCaptureWithoutAWrite() {
+        let desk = Desk()
+        var operations: [String] = []
+        var time: TimeInterval = 0
+        let poller = FrameReadbackPoller(generation: { 1 }, ioFactory: { [desk] _, _ in
+            self.io(desk, operations: { operations.append($0) }, time: { time }, sleep: { time += $0 })
+        })
+
+        let result = poller.applyLayout([(desk.a, desk.left), (desk.b, desk.right)],
+                                        usableFrame: desk.usable, gap: 8, generation: 1,
+                                        originalFrames: desk.frames)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertTrue(operations.isEmpty, "\(operations)")
+        XCTAssertEqual(time, 0, "no settle")
+        XCTAssertTrue(result.progress.verifiedInPlace)
+        XCTAssertTrue(FrameSizingProgressReport(candidate: result.progress).candidateVerified)
+        XCTAssertEqual(desk.a.cachedFrame, desk.left, "nothing moved, so the cache stands")
+    }
+
+    func testWithoutTheOriginalsThePassWrites() {
+        let desk = Desk()
+        var operations: [String] = []
+        var time: TimeInterval = 0
+        let poller = FrameReadbackPoller(generation: { 1 }, ioFactory: { [desk] _, _ in
+            self.io(desk, operations: { operations.append($0) }, time: { time }, sleep: { time += $0 })
+        })
+
+        let result = poller.applyLayout([(desk.a, desk.left), (desk.b, desk.right)],
+                                        usableFrame: desk.usable, gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertTrue(operations.contains("size"))
+        XCTAssertFalse(result.progress.verifiedInPlace)
+    }
+}
+
 final class FrameReadbackPollerBudgetTests: XCTestCase {
     /// one deadline covered every setter and every sample of the whole key,
     /// so eight healthy windows ran out of it on plain IPC latency
