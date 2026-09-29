@@ -791,6 +791,40 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(retry.insertedIDs.isEmpty)
     }
 
+    /// the fit check judges the arrangement the pass would produce, and the
+    /// pass keeps a held member's leaf; a check that dropped it accepted a
+    /// newcomer into a slot the pass then could not give it
+    func testTheFitCheckKeepsAHeldMembersLeaf() {
+        let screen = MembershipTestScreen()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }))
+        let tenant = makeWindow(id: 32951)
+        let held = makeWindow(id: 32952)
+        _ = engine.prepareTileLayout([tenant, held], onWorkspace: 1, screen: screen)
+        // side by side at 796 by 1000 each, and neither leaf can be split
+        // for a third either way: both floors need 700 on both axes. with
+        // the held member's leaf dropped the tenant would have the whole
+        // width to share
+        for w in [tenant, held] {
+            w.observedMinSize = CGSize(width: 700, height: 700)
+            w.minSizeProvenance = .observed
+        }
+        // and the newcomer needs room of its own, or a sliver beside the
+        // tenant would do for it
+        let newcomer = makeWindow(id: 32953)
+        newcomer.observedMinSize = CGSize(width: 400, height: 400)
+        newcomer.minSizeProvenance = .observed
+        engine.primeMinimumSizes([tenant, held, newcomer])
+
+        XCTAssertEqual(engine.projectedAdmissionOutlook([tenant, newcomer], incoming: [newcomer.windowID],
+                                                        onWorkspace: 1, screen: screen), .fits,
+                       "without the hold the absent member's slot is free")
+        let withHold = engine.withHeldWindows([held.windowID]) {
+            engine.projectedAdmissionOutlook([tenant, newcomer], incoming: [newcomer.windowID],
+                                             onWorkspace: 1, screen: screen)
+        }
+        XCTAssertNotEqual(withHold, .fits, "the held member keeps its leaf, and its floor leaves no room")
+    }
+
     /// Most retiles are over a key nothing changed on. The second pass over
     /// the same members reads the frames it captured, accepts them, and
     /// writes nothing; the key stays verified.

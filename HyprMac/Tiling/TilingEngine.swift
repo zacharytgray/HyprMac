@@ -3349,7 +3349,12 @@ class TilingEngine {
         guard ids.count == windows.count else { return false }
         let key = TilingKey(workspace: workspace, screen: screen)
         let candidate = trees[key]?.deepClone() ?? BSPTree()
-        for window in candidate.allWindows where !ids.contains(window.windowID) { candidate.remove(window) }
+        // a held member is absent from the list only because its app did
+        // not answer; the pass keeps its leaf, so the check does too
+        for window in candidate.allWindows
+        where !ids.contains(window.windowID) && !heldWindowIDs.contains(window.windowID) {
+            candidate.remove(window)
+        }
         candidate.root.pruneEmptyNodes()
         candidate.root.resetSplitRatios()
         primeMinimumSizes(windows)
