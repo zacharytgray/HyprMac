@@ -78,6 +78,30 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertEqual(engine.intendedTileRects(), before)
     }
 
+    /// two members that leave together (an app's two windows hidden with
+    /// it) come back together, and one's remembered neighbour is the other:
+    /// the one that can be restored goes first, whatever the list order,
+    /// and the other then finds it in the tree
+    func testTwoMembersThatLeaveTogetherComeBackToTheirSlots() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 991), b = makeWindow(id: 992), c = makeWindow(id: 993), d = makeWindow(id: 994)
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in [a, b, c, d] { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows([a, b, c, d], onWorkspace: 1, screen: screen).published)
+        let before = engine.intendedTileRects()
+
+        // c leaves first, so its neighbour was d; d's neighbour is then b
+        engine.removeWindowID(c.windowID)
+        engine.removeWindowID(d.windowID)
+        XCTAssertTrue(engine.tileWindows([a, b], onWorkspace: 1, screen: screen).published)
+        XCTAssertTrue(engine.tileWindows([a, b, c, d], onWorkspace: 1, screen: screen).published)
+
+        XCTAssertEqual(engine.intendedTileRects(), before)
+    }
+
     /// the same for a manual resize: a window opening or coming back no
     /// longer wipes every ratio the user set on the workspace
     func testAReturningMemberKeepsTheManualResizes() {

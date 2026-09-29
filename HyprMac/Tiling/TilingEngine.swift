@@ -2019,15 +2019,6 @@ class TilingEngine {
         // probed again on every retile.
         if removed > 0 || !toInsert.isEmpty { t.root.resetSplitRatios() }
 
-        // a member that left for a poll or two goes back where it was
-        var insertedWindows: [HyprWindow] = []
-        toInsert.removeAll { w in
-            guard restoreRememberedSlot(for: w, in: t, key: key, rect: rect,
-                                        maxDepth: maxDepth(for: screen)) else { return false }
-            insertedWindows.append(w)
-            return true
-        }
-
         // deterministic batch order: left-to-right by current frame, id
         // tiebreak. AX enumeration order shifts with focus/z churn, which
         // made multi-window inserts land differently every time.
@@ -2036,8 +2027,27 @@ class TilingEngine {
             toInsert.sort { insertionOrder($0, $1, frames: frames, workspace: workspace) }
         }
 
+        // members that left for a poll or two go back where they were. two
+        // that left together come back together, and one's remembered
+        // neighbour may be the other: the restores run until none is left
+        // that can, and the first that cannot is inserted in the batch
+        // order, after which the next restore may find its neighbour in
+        // the tree. one pass in list order put the second window wherever
+        // smart insert found room.
+        var insertedWindows: [HyprWindow] = []
         var refusedWindows: [HyprWindow] = []
-        for w in toInsert {
+        var pending = toInsert
+        while !pending.isEmpty {
+            if let index = pending.firstIndex(where: { w in
+                restoreRememberedSlot(for: w, in: t, key: key, rect: rect,
+                                      maxDepth: maxDepth(for: screen))
+            }) {
+                insertedWindows.append(pending.remove(at: index))
+                continue
+            }
+            let w = pending.removeFirst()
+            // wherever it lands now is its place; the old one is spent
+            slotMemory.removeValue(forKey: w.windowID)
             let insert = {
                 self.smartInsertFitting(w, into: t, maxDepth: self.maxDepth(for: screen), rect: rect)
             }
@@ -3046,12 +3056,20 @@ class TilingEngine {
 
     /// Put `window` back beside the subtree it left, when those windows
     /// still form one in this tree, with depth and room for the pair. The
-    /// memory is spent either way.
+    /// memory is spent once its neighbours are in the tree, whatever the
+    /// outcome, and by a memory for another key. While the neighbours are
+    /// not in the tree it is kept: a window that left together with its
+    /// neighbour tries again once the neighbour is back in.
     private func restoreRememberedSlot(for window: HyprWindow, in tree: BSPTree,
                                        key: TilingKey, rect: CGRect, maxDepth: Int) -> Bool {
-        guard let memory = slotMemory.removeValue(forKey: window.windowID), memory.key == key,
-              let target = tree.node(holdingExactly: memory.besideIDs),
-              let deepest = target.allLeavesRightToLeft().map(\.depth).max(), deepest < maxDepth,
+        guard let memory = slotMemory[window.windowID] else { return false }
+        guard memory.key == key else {
+            slotMemory.removeValue(forKey: window.windowID)
+            return false
+        }
+        guard let target = tree.node(holdingExactly: memory.besideIDs) else { return false }
+        slotMemory.removeValue(forKey: window.windowID)
+        guard let deepest = target.allLeavesRightToLeft().map(\.depth).max(), deepest < maxDepth,
               let targetRect = tree.rectForNode(target, in: rect, gap: gapSize, padding: outerPadding)
         else { return false }
         let direction = memory.direction ?? target.direction(for: targetRect)
