@@ -79,6 +79,11 @@ its automatic pins and dwindle chooses again there; `togglesplit` pins
 stay, and only those go into a layout snapshot.
 
 ## Slot memory
+Two members that leave together come back together, and one's remembered
+neighbour may be the other: the restores run until none is left that can,
+the first that cannot is inserted in the batch order, and the next restore
+may find its neighbour in the tree. A memory is kept while its neighbours
+are not in the tree and spent once they are, or by a smart insert.
 
 When discovery takes a window out of its tree — an AX read that failed, a
 minimize, Cmd-H, a tab switch — the engine records which subtree it
@@ -174,6 +179,9 @@ the other screen, a move retiles its source twice, a poll re-applies a
 tree — and each used to send three setters per window and wait a settle
 and a stable readback of frames that never moved. Any window off its
 target runs the ordinary pass for the whole key.
+The tiled drop never takes that shortcut: its originals are the press-time
+capture, not where the windows stand at the release, and a drop always
+changes the layout.
 `FrameSizingAttempt` applies each requested frame in resize–move–resize
 order, retains AX write errors, and reads the complete layout back. Two
 stable samples are required. Position may differ by at most one AX point.
@@ -436,7 +444,13 @@ more when the app does not answer in time (step 3).
    bound keeps a key that refuses every arrangement from becoming a visible
    resize storm. A failure that names an incumbent or nobody says nothing
    about which newcomer to give up on, and a timeout is not a refusal;
-   neither narrows (`admission recovery narrowed`).
+   neither narrows (`admission recovery narrowed`). A newcomer the engine
+   dropped pre-write floats as `noFittingSlot`, its own reason, not the
+   verdict of the pass that tiled the rest; a pending window a fallback
+   retile or a newer layout tiled meanwhile is resolved, never floated
+   off its tile. The pre-write check and the choice of the newcomer to
+   give up on take the windows in the order the pass inserts them, so
+   the verdict does not change with the window server's z-order.
 
    The recovery then asks the engine to drop the key's unverified
    mark, and the engine decides: `clearUnverifiedGeometry` drops it only if

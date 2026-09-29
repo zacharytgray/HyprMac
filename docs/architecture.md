@@ -160,7 +160,10 @@ window its app still lists, neither minimized nor hidden with the app —
 another Space, a native full-screen excursion, a stale snapshot — is held
 the same way for five seconds (`WindowDiscoveryService.listedHoldSpan`)
 and hidden as before once it passes; a tile pass in between keeps its
-leaf, so the excursion leaves the layout untouched.
+leaf, so the excursion leaves the layout untouched. Every pass over a
+fresh walk keeps the held leaves — the retile, the recovery's retry and
+its fallback retile, the drift re-apply — and the focus invariant leaves
+a held focused window alone: it is live, its app just did not answer.
 While the session is locked, the displays sleep, or the user session is
 switched out, `computeChanges` treats a missing window as no evidence and
 skips the cycle, and `pollWindowChanges` stops there;
