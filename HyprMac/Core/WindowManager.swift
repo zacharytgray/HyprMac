@@ -3288,12 +3288,18 @@ class WindowManager {
             // for things that don't alter the screen list (call init, app
             // quits, color profile changes).
             if fingerprint == self.lastDisplayFingerprint {
-                hyprLog(.notice, .lifecycle, "screen layout unchanged — skipping reconcile")
+                // the transition began with a different fingerprint, so the
+                // desk came back as it was: the keys and the homes are
+                // intact, but the windows are wherever macOS left them while
+                // a display was away, and the first poll read that as the
+                // user moving a whole workspace across screens. one retile
+                // puts them back; over frames that already stand it only
+                // reads
+                hyprLog(.notice, .lifecycle, "screen layout back as it was after a transition — retiling")
                 self.displayTransitionPending = false
-                if self.retileSkippedDuringTransition {
-                    self.retileSkippedDuringTransition = false
-                    self.tileAllVisibleSpaces()
-                }
+                self.retileSkippedDuringTransition = false
+                self.suppressions.suppress("workspace-transition", for: 3.0)
+                self.tileAllVisibleSpaces()
                 return
             }
             self.lastDisplayFingerprint = fingerprint
