@@ -168,8 +168,11 @@ struct FrameSizingConfiguration {
     /// A move that never reads back on target used to poll out the whole
     /// deadline with no size written, so the attempt could only time out.
     /// Past this the size goes out anyway and the readback judges. A third
-    /// of the deadline, so it grows with the scale-change budget.
-    var positionSettleBudget: TimeInterval { deadline / 3 }
+    /// of the deadline, so it grows with the scale-change budget; a
+    /// deadline grown for the targets pins it instead, so each settle may
+    /// spend exactly what was added for it and no more.
+    var positionSettleBudget: TimeInterval { positionSettleBudgetOverride ?? deadline / 3 }
+    var positionSettleBudgetOverride: TimeInterval?
 
     /// This configuration with the scale-change budget. The sample limit
     /// grows with the deadline so the settle loop can use the extra time.

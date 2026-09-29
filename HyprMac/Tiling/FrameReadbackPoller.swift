@@ -139,6 +139,11 @@ struct FrameReadbackPoller {
         guard extra > 0 else { return configuration }
         var scaled = configuration
         scaled.deadline = configuration.deadline + extra
+        // the settle cap is a third of the deadline; grown with it, three
+        // settles that all hit their cap would eat the whole grown deadline
+        // before a size or a readback. each settle keeps the cap it was
+        // budgeted for
+        scaled.positionSettleBudgetOverride = configuration.positionSettleBudget
         scaled.maximumAttempts = max(configuration.maximumAttempts,
                                      Int((scaled.deadline / configuration.pollInterval).rounded(.up)))
         return scaled

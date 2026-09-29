@@ -653,4 +653,19 @@ final class FrameReadbackPollerBudgetTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(Double(reveal.maximumAttempts) * reveal.pollInterval, reveal.deadline)
         XCTAssertEqual(FrameReadbackPoller.scaled(base, for: 3, positionFirst: 0).deadline, base.deadline)
     }
+
+    /// the cap each settle may spend is what was budgeted for it, not a
+    /// third of the grown deadline: three settles at a third each would
+    /// leave nothing for the size writes and the readback
+    func testASettleKeepsTheCapItWasBudgetedFor() {
+        let base = FrameSizingConfiguration()
+        let reveal = FrameReadbackPoller.scaled(base, for: 3, positionFirst: 3)
+        XCTAssertEqual(reveal.positionSettleBudget, base.positionSettleBudget, accuracy: 0.0001)
+        XCTAssertLessThan(3 * reveal.positionSettleBudget, reveal.deadline)
+        XCTAssertEqual(FrameReadbackPoller.scaled(base, for: 3).positionSettleBudget, base.deadline / 3,
+                       accuracy: 0.0001, "unscaled: the documented third")
+        XCTAssertEqual(base.withScaleChangeBudget.positionSettleBudget,
+                       base.withScaleChangeBudget.deadline / 3, accuracy: 0.0001,
+                       "the scale-change budget still grows the cap")
+    }
 }
