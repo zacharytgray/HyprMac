@@ -37,6 +37,46 @@ class WorkspaceManager {
     /// reveal so floaters return to their last user-chosen position.
     private var savedFloatingFrames: [CGWindowID: CGRect] = [:]
 
+    /// The workspace each display last showed, by display name. A screen
+    /// that leaves and comes back, on every sleep and wake with an
+    /// external monitor, lost its entry with its origin key and came back
+    /// on its lowest home workspace, which hid the one the user was on
+    /// and parked its windows.
+    /// The workspace each display last showed, so a display that leaves and
+    /// comes back shows it again. Written under the display's name and
+    /// under its name and frame; two displays of one model share the name,
+    /// so the read takes the framed key while another live display shares
+    /// it, and the plain name otherwise, which also covers a display whose
+    /// frame moved while it was the only one (clamshell, then the lid open).
+    private var lastVisibleByDisplayName: [String: Int] = [:]
+
+    private func rememberVisible(_ workspace: Int, on screen: NSScreen) {
+        lastVisibleByDisplayName[screen.localizedName] = workspace
+        lastVisibleByDisplayName[Self.framedDisplayKey(screen)] = workspace
+    }
+
+    private func rememberedVisible(on screen: NSScreen, among screens: [NSScreen]) -> Int? {
+        let shared = screens.contains { $0 !== screen && $0.localizedName == screen.localizedName }
+        return shared ? lastVisibleByDisplayName[Self.framedDisplayKey(screen)]
+                      : lastVisibleByDisplayName[screen.localizedName]
+    }
+
+    private static func framedDisplayKey(_ screen: NSScreen) -> String {
+        "\(screen.localizedName)@\(NSStringFromRect(screen.frame))"
+    }
+
+    /// Consecutive park writes that failed, per window. The repair poll is
+    /// asked for the first few; a window whose app refuses the write for
+    /// good is not worth a walk every 0.3 s, and the ordinary poll cycle
+    /// still parks it when it can.
+    private var parkFailures: [CGWindowID: Int] = [:]
+    static let parkRepairRequests = 3
+
+    /// Called when a park write fails, so the caller can ask for the poll
+    /// that repairs it. A window left visible on a hidden workspace is a
+    /// ghost over the tiles until then.
+    var onParkFailed: (() -> Void)?
+
     /// Localized names of monitors the user has excluded from tiling.
     /// Disabled monitors host floating windows only.
     var disabledMonitors: Set<String> = []
@@ -66,9 +106,13 @@ class WorkspaceManager {
         disabledMonitors.contains(screen.localizedName)
     }
 
-    // screens sorted left-to-right by CG x origin
+    // screens sorted left-to-right by CG x origin, then top to bottom: a
+    // total order, so the homes are a function of the frames and not of
+    // the order NSScreen.screens happens to list a stacked desk in
     private func screensLeftToRight() -> [NSScreen] {
-        displayManager.screens.sorted { $0.frame.origin.x < $1.frame.origin.x }
+        displayManager.screens.sorted {
+            ($0.frame.origin.x, $0.frame.origin.y) < ($1.frame.origin.x, $1.frame.origin.y)
+        }
     }
 
     /// Enabled screens left-to-right. Drives `homeScreenForWorkspace`.
@@ -132,8 +176,19 @@ class WorkspaceManager {
             let homeWorkspaces = workspacesAnchoredTo(screen)
             let valid: Set<Int> = Set(homeWorkspaces)
             if let current = monitorWorkspace[sid], valid.contains(current) {
+                rememberVisible(current, on: screen)
                 continue
             }
+            // a display that came back shows what it showed before it left,
+            // when that is still one of its own
+            if let remembered = rememberedVisible(on: screen, among: enabled), valid.contains(remembered) {
+                monitorWorkspace[sid] = remembered
+                hyprLog(.notice, .lifecycle, "init: \(screen.localizedName) back on ws\(remembered), as it left")
+                continue
+            }
+            // the fallback is not remembered: a display back on a transient
+            // topology that makes its own workspace invalid keeps the memory
+            // for the topology that settles
             monitorWorkspace[sid] = homeWorkspaces.first ?? 1
         }
 
@@ -255,6 +310,7 @@ class WorkspaceManager {
     /// Drop `windowID` from workspace tracking entirely. Used when the
     /// window closes or its app terminates.
     func removeWindow(_ windowID: CGWindowID) {
+        parkFailures.removeValue(forKey: windowID)
         if let old = windowWorkspaces[windowID] {
             workspaceWindowSets[old]?.remove(windowID)
         }
@@ -281,7 +337,20 @@ class WorkspaceManager {
     /// EnhancedUI-guarded position write.
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
         let pos = hidePosition()
-        window.setPositionOnly(pos)
+        let rc = window.setPositionOnly(pos)
+        guard rc == .success else {
+            // the window is still where it was, visible on a hidden
+            // workspace. the repair poll re-parks it, a bounded number of
+            // times per run of failures
+            let failures = (parkFailures[window.windowID] ?? 0) + 1
+            parkFailures[window.windowID] = failures
+            let asks = failures <= Self.parkRepairRequests
+            hyprLog(.notice, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) park write failed rc=\(rc.rawValue)"
+                    + (asks ? " — repair poll requested" : " — \(failures) in a row, the ordinary poll retries"))
+            if asks { onParkFailed?() }
+            return
+        }
+        parkFailures.removeValue(forKey: window.windowID)
         hyprLog(.debug, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) parked at (\(Int(pos.x)),\(Int(pos.y)))")
     }
 
@@ -368,6 +437,7 @@ class WorkspaceManager {
         let toShow = windowIDs(onWorkspace: number)
 
         monitorWorkspace[targetSID] = number
+        rememberVisible(number, on: targetScreen)
 
         hyprLog(.notice, .lifecycle, "switch: \(targetScreen.localizedName) ws\(oldWorkspace)→ws\(number) (hide \(toHide.count), show \(toShow.count))")
         return SwitchResult(toHide: toHide, toShow: toShow, screen: targetScreen, alreadyVisible: false)

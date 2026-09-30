@@ -369,6 +369,7 @@ final class ScratchpadController {
             // activation brings the app's main window forward. make that the
             // member, not one of the app's windows on the workspace behind
             w.makeMain()
+            suppressions.expectActivation(of: pid)
             NSRunningApplication(processIdentifier: pid)?
                 .activate(options: [.activateIgnoringOtherApps])
         }

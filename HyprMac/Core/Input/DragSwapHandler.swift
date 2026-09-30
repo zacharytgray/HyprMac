@@ -173,7 +173,11 @@ enum TiledDragFeedback: Equatable {
 struct TiledDragFeedbackPolicy {
     static func feedback(for outcome: TiledDragDropOutcome) -> TiledDragFeedback? {
         switch outcome {
-        case .rejectedRestored:
+        case let .rejectedRestored(reason, _):
+            // a release with nowhere to land, on the window's own slot or in
+            // a gap, is not a rejected arrangement: the window goes back and
+            // nothing was wrong. every other refusal still beeps
+            if case .preflight(.noTarget) = reason { return nil }
             return .rejected
         case .degraded:
             return .degraded

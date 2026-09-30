@@ -201,6 +201,12 @@ class WindowManager {
     // deregister display callbacks, color profile bumps), and our handler
     // runs the destructive redistribute every time. guard against no-op fires.
     private var lastDisplayFingerprint: String = ""
+    /// when the session was last interrupted: sleep, wake, lock, unlock. a
+    /// topology change soon after a wake settles more slowly, because
+    /// displays reattach one at a time over several seconds
+    private var lastSystemInterruptionAt = Date.distantPast
+    static let wakeSettleWindow: TimeInterval = 5.0
+    static let recentWakeSpan: TimeInterval = 20.0
     /// Pending destroy notifications whose poll has not yet seen the close.
     private var destroyRecheck = DestroyRecheck()
     /// Monotonic token for the display-change stability debounce — a newer
@@ -238,6 +244,7 @@ class WindowManager {
         self.config = config
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
+        self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
         self.tilingEngine = TilingEngine(displayManager: displayManager)
         self.discovery = WindowDiscoveryService(
             stateCache: stateCache,
@@ -274,7 +281,9 @@ class WindowManager {
         self.workspaceOrchestrator.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
         self.workspaceOrchestrator.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         self.workspaceOrchestrator.updatePositionCache = { [weak self] in self?.updatePositionCache() }
-        self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] in self?.tileAllVisibleSpaces() }
+        self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] windows in
+            self?.tileAllVisibleSpaces(windows: windows)
+        }
         self.workspaceOrchestrator.animatedRetile = { [weak self] prepare, completion in
             self?.animatedRetile(prepare: prepare, completion: completion)
         }
@@ -290,6 +299,9 @@ class WindowManager {
         }
         self.workspaceOrchestrator.isScratchpadWindow = { [weak self] id in
             self?.scratchpad.contains(id) ?? false
+        }
+        self.workspaceOrchestrator.noteAdmission = { [weak self] result in
+            self?.admissionRecovery.note(result)
         }
         self.workspaceOverview.onSelectWorkspace = { [weak self] workspace in
             guard let self, self.config.enabled else { return }
@@ -467,6 +479,10 @@ class WindowManager {
         tiledFocusRouter.focusGeneration = { [weak self] in self?.focusController.generation ?? 0 }
         tiledFocusRouter.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
         tiledFocusRouter.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        suppressions.frontmostPID = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+        tiledFocusRouter.noteActivation = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }
+        // every focus HyprMac asks a window for, whichever path asks
+        HyprWindow.activationObserver = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }
         // the usual path can lift the tile over a floater
         let usualFocus = tiledFocusRouter.usualFocus
         tiledFocusRouter.usualFocus = { [weak self] window, fallback in
@@ -531,6 +547,10 @@ class WindowManager {
         }
         actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
+        actionDispatcher.heldWindowIDs = { [weak self] in
+            guard let self else { return [] }
+            return self.accessibility.unreadableWindowIDs.union(self.discovery.heldWindowIDs)
+        }
         actionDispatcher.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
         actionDispatcher.focusWindow = { [weak self] w, reason in
             self?.tiledFocusRouter.focus(w, reason: reason, fallback: .activate)
@@ -1560,6 +1580,24 @@ class WindowManager {
         let workspace = workspaceManager.workspaceForScreen(screen)
         let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
 
+        // the user switched apps behind our back: Cmd-Tab, a Dock click, an
+        // app that opened its own window. the app in front wins over what
+        // we remember, when its focused window is a valid target here.
+        // within one app AX focus is not trusted (multi-window apps lag
+        // and diverge), so only a change of app counts. a bare Hypr press
+        // used to activate the remembered window and yank focus back
+        if let front = NSWorkspace.shared.frontmostApplication,
+           let remembered = stateCache.cachedWindows[focusBorder.trackedWindowID ?? focusController.lastFocusedID],
+           front.processIdentifier != remembered.ownerPID,
+           let focused = accessibility.getFocusedWindow(),
+           focused.ownerPID == front.processIdentifier,
+           isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
+            hyprLog(.notice, .focus, "ensureFocus: front app changed to \(focused.windowID) — adopting it")
+            focusController.recordFocus(focused.windowID, reason: "ensureFocus-frontApp")
+            updateFocusBorder(for: focused)
+            return
+        }
+
         if let tid = focusBorder.trackedWindowID,
            isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
            let w = stateCache.cachedWindows[tid] {
@@ -2044,10 +2082,13 @@ class WindowManager {
             }
 
             hyprLog(.debug, .lifecycle, "retile: workspace=\(workspace) screen=\(workspaceManager.screenID(for: screen)), \(workspaceWindows.count) windows")
+            let held = heldMembers(onWorkspace: workspace, absentFrom: workspaceWindows)
             // a workspace being shown is where an explicit move to a hidden
             // destination finally gets its one attempt. the marker is spent
             // on this pass whatever it says.
-            results.append(admissionPass.run(workspaceWindows, onWorkspace: workspace, screen: screen))
+            results.append(tilingEngine.withHeldWindows(held) {
+                admissionPass.run(workspaceWindows, onWorkspace: workspace, screen: screen)
+            })
         }
 
         updatePositionCache(windows: allWindows)
@@ -2815,13 +2856,23 @@ class WindowManager {
             snapshot: allWindows,
             runningPIDs: runningPIDs,
             excludedBundleIDs: Set(config.excludedBundleIDs),
-            focusedWindowID: focusController.lastFocusedID
+            focusedWindowID: focusController.lastFocusedID,
+            unreadableWindowIDs: accessibility.unreadableWindowIDs
         )
         // locked or asleep: this snapshot is not the desktop. a drift
         // re-apply or a recovery attempt from it would lay the trees out
         // without the windows it is missing
         if changes.heldForInterruption { return }
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
+        // a member a tile pass held out because its app did not answer gets
+        // its frame once the app does. a retile this poll already wrote it
+        var retiled = changes.needsRetile
+        let released = tilingEngine.releaseHeldWindows(readable: Set(allWindows.map(\.windowID)))
+        if !released.isEmpty, !retiled {
+            hyprLog(.notice, .discovery, "held windows readable again: \(released.sorted()) — retiling")
+            animatedRetile(windows: allWindows)
+            retiled = true
+        }
         // a poll is the real event that says a window came back, became
         // readable, or went away — the only thing that can unblock a
         // recovery waiting on evidence
@@ -2829,14 +2880,17 @@ class WindowManager {
         // a retile already rewrote every frame on the affected keys, so the
         // frames in this snapshot are what it replaced. drift is the
         // question for a poll that changed nothing.
-        if !changes.needsRetile { applyTiledDrift(allWindows) }
+        if !retiled { applyTiledDrift(allWindows) }
         repairParkedWindows(allWindows)
         reconcileTiledDragFeedback(with: retileResults, allWindows: allWindows)
         // a guarded cycle diffed nothing, so it can't have seen the close —
         // don't spend a recheck attempt on it, and don't let the slower
         // destroy re-poll coalesce away the prompt one.
         if changes.requestsRecheck {
-            pollingScheduler.schedule(after: 0.1)
+            // a real mass close is delayed by this, a partial snapshot gets
+            // the time it needs to fill in. at 0.1 s the three skips the
+            // guard allows were over in a third of a second
+            pollingScheduler.schedule(after: 0.5)
         } else if destroyRecheck.resolve(goneIDs: changes.goneIDs, ownersBefore: ownersBefore,
                                          runningPIDs: runningPIDs) {
             hyprLog(.debug, .discovery, "destroy recheck: closed window not yet gone from the snapshot — re-polling")
@@ -2889,6 +2943,28 @@ class WindowManager {
             || (stateCache.cachedWindows[id]?.isFloating ?? false)
     }
 
+    /// Members of `workspace`'s trees a pass may not touch: their app did
+    /// not answer the walk, or the window server showed them off the
+    /// screen while their app still lists them, and `windows`, the walk
+    /// the pass runs over, does not have them back. They keep their leaves,
+    /// so every other slot stays, and no frame goes out to them; the poll
+    /// retiles the key once they are back. Every pass over a fresh walk
+    /// asks: the retile, the recovery's retry and its fallback retile, and
+    /// the drift re-apply. One that did not dropped the held member from
+    /// its tree, grew the neighbour over its slot, and put it back
+    /// somewhere else when it read again.
+    private func heldMembers(onWorkspace workspace: Int, absentFrom windows: [HyprWindow]) -> Set<CGWindowID> {
+        let held = accessibility.unreadableWindowIDs.union(discovery.heldWindowIDs)
+            .intersection(workspaceManager.windowIDs(onWorkspace: workspace))
+            .subtracting(windows.map(\.windowID))
+            .subtracting(stateCache.floatingWindowIDs)
+            .subtracting(stateCache.hiddenWindowIDs)
+        if !held.isEmpty {
+            hyprLog(.notice, .lifecycle, "retile: ws\(workspace) holds \(held.sorted()) — leaves kept, no frame written")
+        }
+        return held
+    }
+
     /// One ordinary verified layout pass for a key whose windows drifted.
     /// Nothing special: the same path a retile takes, down to the
     /// bookkeeping, so a refusal rolls back, marks the key, and hands
@@ -2901,7 +2977,10 @@ class WindowManager {
         }
         let assigned = workspaceManager.windowIDs(onWorkspace: workspace)
         let windows = allWindows.filter { assigned.contains($0.windowID) }
-        admissionPass.run(windows, onWorkspace: workspace, screen: screen)
+        let held = heldMembers(onWorkspace: workspace, absentFrom: windows)
+        _ = tilingEngine.withHeldWindows(held) {
+            admissionPass.run(windows, onWorkspace: workspace, screen: screen)
+        }
         updatePositionCache(windows: allWindows)
     }
 
@@ -2969,8 +3048,16 @@ class WindowManager {
             scratchpad.noteAppActivation(pid: app.processIdentifier, bundleID: app.bundleIdentifier)
         }
 
+        // an activation HyprMac asked for, a focus or a raise of its own, is
+        // never the user's. the note is spent here whether or not the
+        // half-second window below has run out under a slow retile
+        var causedByHyprMac = false
+        if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            causedByHyprMac = suppressions.consumeExpectedActivation(of: app.processIdentifier)
+        }
+
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
-        if !suppressions.isSuppressed("activation-switch") {
+        if !causedByHyprMac && !suppressions.isSuppressed("activation-switch") {
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
                 let pid = app.processIdentifier
                 let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
@@ -3014,9 +3101,12 @@ class WindowManager {
 
         // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
         // must always run — even when activation switch is suppressed — so floaters stay on top.
-        if !stateCache.floatingWindowIDs.isEmpty {
+        // not while a click is in flight: the click's own re-raise owns that,
+        // and a raise racing the popup the click is opening dismisses it
+        if !stateCache.floatingWindowIDs.isEmpty, clickPress == nil, !mouseButtonDown {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.floatingController.raiseBehind()
+                guard let self, self.isRunning, !self.mouseButtonDown else { return }
+                self.floatingController.raiseBehind()
             }
         }
     }
@@ -3053,6 +3143,7 @@ class WindowManager {
     /// Hypr modifier (the "sticky Caps Lock" bug from a different angle).
     @objc private func systemInterruption(_ notification: Notification) {
         hyprLog(.notice, .hotkey, "system interruption (\(notification.name.rawValue)) — resetting hotkey state")
+        lastSystemInterruptionAt = Date()
         hotkeyManager.resetTrackingAfterTapInterruption()
         // also clear stuck dock flag and menu-tracking flag — sleep dialogs
         // and screen lock can leave either stale.
@@ -3070,6 +3161,17 @@ class WindowManager {
         // lock and display sleep last longer than that. discovery holds
         // every missing window from the start of the span to its end
         discovery.noteSystemInterruption(notification.name.rawValue)
+        // a reconcile that came due during the span was deferred against the
+        // desk as the lock left it, usually one screen. now that the span is
+        // over the settle beat is measured from here, and the deferred timer
+        // is superseded so it cannot fire against that stale fingerprint
+        // while the external displays are still re-handshaking
+        if displayTransitionPending, !discovery.isSessionInterrupted {
+            displayChangeGeneration += 1
+            suppressions.suppress("workspace-transition", for: Self.wakeSettleWindow + 1)
+            hyprLog(.notice, .lifecycle, "display reconcile settles \(Int(Self.wakeSettleWindow))s from the end of the interruption")
+            scheduleDisplayReconcile(stabilityWindow: Self.wakeSettleWindow)
+        }
         // park the scratchpad across sleep/lock so wake never finds visible
         // members with a stale scrim
         scratchpad.hide(reason: .displayChange)
@@ -3144,7 +3246,14 @@ class WindowManager {
         suppressions.suppress("workspace-transition", for: 3.0)
         displayTransitionPending = true
         displayChangeGeneration += 1
-        scheduleDisplayReconcile()
+        // after a wake the displays come back one at a time over several
+        // seconds, and a two-second beat reconciled the one-screen desk in
+        // between as real
+        let recentWake = Date().timeIntervalSince(lastSystemInterruptionAt) < Self.recentWakeSpan
+        if recentWake {
+            suppressions.suppress("workspace-transition", for: Self.wakeSettleWindow + 1)
+        }
+        scheduleDisplayReconcile(stabilityWindow: recentWake ? Self.wakeSettleWindow : 2.0)
     }
 
     /// Reconcile only once the topology has been stable for a beat. Wake
@@ -3158,6 +3267,16 @@ class WindowManager {
             guard let self else { return }
             // a newer notification owns the debounce now
             guard gen == self.displayChangeGeneration else { return }
+            // the window list is partial while the session is locked or the
+            // displays sleep. a reconcile from it would re-home every
+            // workspace and tile without the windows it is missing, so it
+            // waits for the span to end and settles again from there
+            if self.discovery.isSessionInterrupted {
+                hyprLog(.notice, .lifecycle, "display reconcile deferred: session interrupted")
+                self.suppressions.suppress("workspace-transition", for: 3.0)
+                self.scheduleDisplayReconcile(stabilityWindow: stabilityWindow)
+                return
+            }
             let fingerprint = self.displayFingerprint()
             if fingerprint != fingerprintAtSchedule {
                 // changed without a fresh notification — keep waiting
@@ -3169,12 +3288,18 @@ class WindowManager {
             // for things that don't alter the screen list (call init, app
             // quits, color profile changes).
             if fingerprint == self.lastDisplayFingerprint {
-                hyprLog(.notice, .lifecycle, "screen layout unchanged — skipping reconcile")
+                // the transition began with a different fingerprint, so the
+                // desk came back as it was: the keys and the homes are
+                // intact, but the windows are wherever macOS left them while
+                // a display was away, and the first poll read that as the
+                // user moving a whole workspace across screens. one retile
+                // puts them back; over frames that already stand it only
+                // reads
+                hyprLog(.notice, .lifecycle, "screen layout back as it was after a transition — retiling")
                 self.displayTransitionPending = false
-                if self.retileSkippedDuringTransition {
-                    self.retileSkippedDuringTransition = false
-                    self.tileAllVisibleSpaces()
-                }
+                self.retileSkippedDuringTransition = false
+                self.suppressions.suppress("workspace-transition", for: 3.0)
+                self.tileAllVisibleSpaces()
                 return
             }
             self.lastDisplayFingerprint = fingerprint
@@ -3824,11 +3949,14 @@ private extension WindowManager {
             }
             let assigned = self.workspaceManager.windowIDs(onWorkspace: workspace)
             let windows = allWindows.filter { assigned.contains($0.windowID) }
-            let result = self.tilingEngine.retryAdmission(
-                windows, onWorkspace: workspace, screen: screen,
-                bypassingMinimaBefore: bypass,
-                refusingImpossibleArrangements: true,
-                keepingUnverifiedOnTimeout: keepOnTimeout)
+            let held = self.heldMembers(onWorkspace: workspace, absentFrom: windows)
+            let result = self.tilingEngine.withHeldWindows(held) {
+                self.tilingEngine.retryAdmission(
+                    windows, onWorkspace: workspace, screen: screen,
+                    bypassingMinimaBefore: bypass,
+                    refusingImpossibleArrangements: true,
+                    keepingUnverifiedOnTimeout: keepOnTimeout)
+            }
             self.updatePositionCache(windows: allWindows)
             return AdmissionRecovery.AttemptResult(
                 placed: result.publishedIDs.intersection(bypass.keys),
@@ -3836,9 +3964,15 @@ private extension WindowManager {
                 admission: result)
         }
         admissionRecovery.floatInPlace = { [weak self] window, reason in
-            guard let self else { return }
-            self.floatingController.floatInPlace(window, reason: reason)
-            self.updatePositionCache()
+            // no cache refresh here: the run follows its floats with the
+            // fallback retile, which walks once and refreshes the cache for
+            // the key. a walk per float was eight walks for eight windows
+            self?.floatingController.floatInPlace(window, reason: reason)
+        }
+        admissionRecovery.isTiled = { [weak self] id in
+            guard let self, let workspace = self.workspaceManager.workspaceFor(id),
+                  let screen = self.workspaceManager.homeScreenForWorkspace(workspace) else { return false }
+            return self.tilingEngine.windowIDs(inTreeForWorkspace: workspace, screen: screen).contains(id)
         }
         admissionRecovery.clearUnverified = { [weak self] workspace, screen in
             self?.tilingEngine.clearUnverifiedGeometry(forWorkspace: workspace, screen: screen)
@@ -3854,8 +3988,10 @@ private extension WindowManager {
             let windows = allWindows.filter { assigned.contains($0.windowID) }
             // an ordinary pass, no bypass: the newcomer is floating now, so
             // this is the incumbents asking for their slots back.
-            let result = self.tilingEngine.tileWindows(windows, onWorkspace: workspace,
-                                                       screen: screen)
+            let held = self.heldMembers(onWorkspace: workspace, absentFrom: windows)
+            let result = self.tilingEngine.withHeldWindows(held) {
+                self.tilingEngine.tileWindows(windows, onWorkspace: workspace, screen: screen)
+            }
             self.updatePositionCache(windows: allWindows)
             return Set(windows.filter { !$0.isFloating
                                         && !result.publishedIDs.contains($0.windowID) }

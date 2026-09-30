@@ -90,7 +90,7 @@ final class LayoutTreeSerializeTests: XCTestCase {
     }
 }
 
-private final class SerializeTestScreen: NSScreen {
+private final class SerializeTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 2400, height: 1600) }
     override var visibleFrame: NSRect { frame }
 }

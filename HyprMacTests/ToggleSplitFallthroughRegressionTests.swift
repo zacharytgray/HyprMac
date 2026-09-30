@@ -126,8 +126,12 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
             return
         }
 
-        // initial state: splitOverride is nil (dwindle uses computed direction).
-        XCTAssertNil(parent.splitOverride, "splitOverride should start unset")
+        // initial state: the split is pinned to the axis dwindle computed
+        // from the rect when the second window was inserted.
+        let screenRect = displayManager.cgRect(for: screen)
+        let dwindleDefault: SplitDirection = screenRect.width >= screenRect.height ? .horizontal : .vertical
+        XCTAssertEqual(parent.splitOverride, dwindleDefault, "the insert pins the computed axis")
+        XCTAssertTrue(parent.splitOverrideIsAutomatic)
 
         // wire dispatcher to focus w1, leave the rest as defaults.
         dispatcher.currentFocusedWindow = { w1 }
@@ -139,13 +143,12 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
         // .vertical; for a tall one it's .horizontal. either way it must be
         // non-nil — and crucially it must NOT match the rect-derived default,
         // because that's what double-toggle would leave behind.
-        let screenRect = displayManager.cgRect(for: screen)
-        let dwindleDefault: SplitDirection = screenRect.width >= screenRect.height ? .horizontal : .vertical
         let expectedAfterOneToggle: SplitDirection = (dwindleDefault == .horizontal) ? .vertical : .horizontal
 
         XCTAssertNotNil(parent.splitOverride, "splitOverride should be set after toggle")
         XCTAssertEqual(parent.splitOverride, expectedAfterOneToggle,
                        "single toggle should flip exactly once — double-toggle would leave \(dwindleDefault)")
+        XCTAssertFalse(parent.splitOverrideIsAutomatic, "a togglesplit pin is the user's")
     }
 
 }

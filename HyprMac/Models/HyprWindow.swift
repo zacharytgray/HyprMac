@@ -248,11 +248,14 @@ class HyprWindow: Equatable, Hashable {
     /// `setFrame`. Used by the hide path so macOS doesn't animate or
     /// reposition the parked window — animations cause apps to snap
     /// to nearby monitors and become half-visible.
-    func setPositionOnly(_ point: CGPoint) {
+    @discardableResult
+    func setPositionOnly(_ point: CGPoint) -> AXError {
         cachedFrame = nil
+        var rc: AXError = .success
         withEnhancedUIDisabled {
-            position = point
+            rc = writePosition(point)
         }
+        return rc
     }
 
     /// Disable `AXEnhancedUserInterface` on the owning app for the
@@ -284,8 +287,22 @@ class HyprWindow: Equatable, Hashable {
     /// Used when stacking several windows (scratchpad show) where only
     /// the final one should take focus.
     func raise() {
+        Self.activationObserver?(ownerPID)
         AXUIElementPerformAction(element, kAXRaiseAction as CFString)
     }
+
+    /// Told the owner pid before every focus, raise or activation HyprMac
+    /// asks a window for, on every path, so the app activation that may
+    /// follow is known to be HyprMac's own and not the user's. Set once by
+    /// `WindowManager`.
+    static var activationObserver: ((pid_t) -> Void)?
+
+    /// How long after `activate()` the diagnostic asks whether the app is
+    /// active. `NSRunningApplication.isActive` is updated from the
+    /// workspace notification on the main run loop, so it lags the
+    /// activation by however long the main thread is busy.
+    static let activationCheckDelay: TimeInterval = 0.1
+    static var activationCheckMS: Int { Int((activationCheckDelay * 1000).rounded()) }
 
     /// Make this the app's main window without raising or activating, so
     /// a later activation brings this window forward and not another one.
@@ -302,6 +319,7 @@ class HyprWindow: Equatable, Hashable {
     /// is unreliable when the app was not already active because the
     /// AX writes can race the activation.
     func focus() {
+        Self.activationObserver?(ownerPID)
         let app = NSRunningApplication(processIdentifier: ownerPID)
         let alreadyActive = app?.isActive ?? false
         let wid = windowID
@@ -315,11 +333,15 @@ class HyprWindow: Equatable, Hashable {
             // .activateIgnoringOtherApps is the legacy option but still functions on Tahoe;
             // empty-options activate() is silently dropped from non-keyboard contexts.
             app?.activate(options: [.activateIgnoringOtherApps])
-            // verify activation actually flipped — if not, log it.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak app] in
+            // verify activation actually flipped — if not, log it. isActive
+            // follows the workspace notification, which lands well after
+            // 10 ms when the main thread is busy with the frame writes that
+            // follow a focus; asked that early it said "dropped" on nearly
+            // every focus that then went through.
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationCheckDelay) { [weak app] in
                 let nowActive = app?.isActive ?? false
                 if !nowActive {
-                    hyprLog(.notice, .focus, "focus(\(wid)) activate dropped — app still inactive 10ms after activate()")
+                    hyprLog(.debug, .focus, "focus(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
                 } else {
                     hyprLog(.debug, .focus, "focus(\(wid)) activate ok — app flipped active")
                 }
@@ -343,6 +365,7 @@ class HyprWindow: Equatable, Hashable {
     /// `TiledFocusRouter` uses `makeFrontAndKeyWithoutRaise` instead when
     /// a floater covers the target.
     func focusWithoutRaise() {
+        Self.activationObserver?(ownerPID)
         let wid = windowID
 
         // window-level AX: doesn't raise on its own — kAXRaiseAction is what raises.
@@ -357,10 +380,10 @@ class HyprWindow: Equatable, Hashable {
         let wasActive = app?.isActive ?? false
         if let app, !wasActive {
             app.activate(options: [.activateIgnoringOtherApps])
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak app] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationCheckDelay) { [weak app] in
                 let nowActive = app?.isActive ?? false
                 if !nowActive {
-                    hyprLog(.notice, .focus, "focusWithoutRaise(\(wid)) activate dropped — app still inactive 10ms after activate()")
+                    hyprLog(.debug, .focus, "focusWithoutRaise(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
                 }
             }
         }
@@ -442,6 +465,7 @@ class HyprWindow: Equatable, Hashable {
     /// Title-bar coordinate (`midX`, `minY + 4`) avoids window controls and any
     /// in-content button. A bare down+up does not start a drag.
     func focusViaSyntheticClick() {
+        Self.activationObserver?(ownerPID)
         guard let frame = self.frame else {
             hyprLog(.notice, .focus, "focusViaSyntheticClick(\(windowID)) no frame")
             return

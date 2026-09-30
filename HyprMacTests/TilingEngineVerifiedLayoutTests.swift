@@ -79,6 +79,26 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         XCTAssertEqual(fixture.trace.frames, fixture.targets)
     }
 
+    /// the retry the timeout recovery runs is a pass like any other: what
+    /// it reads back about a window's floor is kept, or the admission retry
+    /// 250 ms later writes the same refused frames again
+    func testTheTimeoutRecoveryRetryKeepsTheMinimaItObserves() {
+        let fixture = timeoutRecoveryFixture(mode: .positionTimeout)
+        let floor = fixture.targets[901]!.width + 200
+        fixture.trace.minWidth = floor
+
+        let outcome = fixture.engine.applyVerifiedLayout(
+            fixture.tree, in: fixture.usable, generation: fixture.generation,
+            originalFrames: fixture.originals
+        )
+
+        guard case .rejectedRestored = outcome else {
+            return XCTFail("expected the retry to be refused on the floor, got \(outcome)")
+        }
+        XCTAssertEqual(fixture.trace.candidateApplications, 2)
+        XCTAssertEqual(fixture.engine.knownMinimumSizes[901]?.size.width, floor)
+    }
+
     func testFailedTimeoutRecoveryUsesOneRelaxedRollbackToExactOriginals() {
         let fixture = timeoutRecoveryFixture(mode: .recoveryFails)
 
@@ -485,7 +505,11 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
             )
             let prepared = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
-            let originals = Dictionary(uniqueKeysWithValues: prepared.map { ($0.0.windowID, $0.1) })
+            // a little off their slots: a layout the windows already stand
+            // on is accepted from the capture and writes nothing
+            let originals = Dictionary(uniqueKeysWithValues: prepared.map {
+                ($0.0.windowID, $0.1.insetBy(dx: 5, dy: 5))
+            })
             trace.frames = originals
 
             switch entryPoint {
@@ -526,7 +550,11 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         _ = try XCTUnwrap(engine.prepareSwapLayout(first, second, onWorkspace: 1, screen: screen))
 
         let newer = engine.prepareTileLayout([first, second, third], onWorkspace: 1, screen: screen)
-        trace.frames = Dictionary(uniqueKeysWithValues: newer.map { ($0.0.windowID, $0.1) })
+        // a little off the slots, so the newer layout is written rather than
+        // accepted from the capture
+        trace.frames = Dictionary(uniqueKeysWithValues: newer.map {
+            ($0.0.windowID, $0.1.insetBy(dx: 5, dy: 5))
+        })
         let newerFrames = trace.frames
         let accepted = engine.applyComputedLayout(onWorkspace: 1, screen: screen)
 
@@ -595,7 +623,11 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
             )
             let prepared = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
-            trace.frames = Dictionary(uniqueKeysWithValues: prepared.map { ($0.0.windowID, $0.1) })
+            // a little off the slots: the mutation fires on the first read
+            // after a write, and a layout already in place writes nothing
+            trace.frames = Dictionary(uniqueKeysWithValues: prepared.map {
+                ($0.0.windowID, $0.1.insetBy(dx: 5, dy: 5))
+            })
             if change == .forceInsertNoFit {
                 engine.maxSplitsPerMonitor[screen.localizedName] = 0
             }
@@ -862,6 +894,9 @@ private final class TimeoutRecoveryTrace {
     var candidateApplications = 0
     var restorationApplications = 0
     var maximumTimeout: TimeInterval = 0
+    /// a floor the window answers for the candidate's size, the way a
+    /// min-size app refuses a slot; the rollback to its original is honoured
+    var minWidth: CGFloat?
     var elapsed: TimeInterval { now }
     var onSecondCandidate: (() -> Void)?
     private var now: TimeInterval = 0
@@ -887,6 +922,7 @@ private final class TimeoutRecoveryTrace {
                 maximumTimeout = max(maximumTimeout, timeout)
                 var frame = frames[id] ?? .zero
                 frame.size = size
+                if let minWidth, size == target.size { frame.size.width = max(size.width, minWidth) }
                 frames[id] = frame
                 return .success
             },

@@ -518,8 +518,10 @@ final class TilingEngineTiledDragTests: XCTestCase {
         XCTAssertEqual(Set(fixture.trace.writes), [1, 2, 3])
         XCTAssertTrue(fixture.engine.existingTree(forWorkspace: 1, screen: fixture.tall) === sourceTree)
         XCTAssertTrue(fixture.engine.existingTree(forWorkspace: 2, screen: fixture.wide) === targetTree)
-        XCTAssertEqual(Set(fixture.engine.unverifiedLayouts.map(\.workspace)), [1],
-                       "the release screen's key still speaks for its geometry")
+        // nothing was written before the refusal and the verified rollback
+        // put the source back on its slots: both keys still speak for their
+        // geometry, and the drift monitor keeps watching the source
+        XCTAssertTrue(fixture.engine.unverifiedLayouts.isEmpty)
     }
 
     func testCrossMonitorRollsBackBothTreesWhenATargetFrameIsRefused() throws {
@@ -908,7 +910,7 @@ final class TilingEngineTiledDragTests: XCTestCase {
     }
 }
 
-private final class DragTestScreen: NSScreen {
+private final class DragTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 1200, height: 800) }
     override var visibleFrame: NSRect { frame }
     override var localizedName: String { "Tiled drag test display" }
@@ -919,7 +921,7 @@ private final class DragTestScreen: NSScreen {
 
 /// One of two side-by-side displays for drops across monitors. Usable
 /// frame is the whole frame, and the display number is fixed.
-private final class CrossDragScreen: NSScreen {
+private final class CrossDragScreen: SyntheticScreen {
     private let bounds: NSRect
     private let name: String
     private let number: UInt32

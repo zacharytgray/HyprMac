@@ -444,8 +444,10 @@ final class FrameReadbackPollerTests: XCTestCase {
                          gap: 8, generation: 1)
 
         XCTAssertEqual(result.verdict, .rejected(.overlap(66, 67)))
-        XCTAssertTrue(result.conflicts.isEmpty, "no window here refused its own size")
-        XCTAssertTrue(result.observations.isEmpty)
+        // the rounding gets the adjusted pass, with room for the cell it
+        // grew by, instead of a rollback on every retile
+        XCTAssertEqual(result.conflicts.map(\.window.windowID), [66])
+        XCTAssertTrue(result.observations.isEmpty, "but no window here refused its own size")
         XCTAssertTrue(result.accepted.isEmpty, "a rejected layout accepts nothing")
     }
 
@@ -565,5 +567,105 @@ final class FrameReadbackPollerTests: XCTestCase {
         XCTAssertEqual(FrameReadbackPoller.axis(width: true, height: false), "width")
         XCTAssertEqual(FrameReadbackPoller.axis(width: false, height: true), "height")
         XCTAssertEqual(FrameReadbackPoller.axis(width: false, height: false), "none")
+    }
+}
+
+final class FrameReadbackPollerInPlaceTests: XCTestCase {
+    private struct Desk {
+        let a = makeWindow(id: 41)
+        let b = makeWindow(id: 42)
+        let left = CGRect(x: 8, y: 8, width: 492, height: 784)
+        let right = CGRect(x: 508, y: 8, width: 492, height: 784)
+        let usable = CGRect(x: 0, y: 0, width: 1008, height: 800)
+        var frames: [CGWindowID: CGRect] { [41: left, 42: right] }
+    }
+
+    private func io(_ desk: Desk, operations: @escaping (String) -> Void,
+                    time: @escaping () -> TimeInterval, sleep: @escaping (TimeInterval) -> Void) -> FrameSizingIO {
+        let frames = desk.frames
+        return FrameSizingIO(
+            setMessagingTimeout: { _, _ in operations("timeout"); return .success },
+            writeSize: { _, _, _ in operations("size"); return .success },
+            writePosition: { _, _, _ in operations("position"); return .success },
+            readPosition: { id, _ in operations("read"); return (.success, frames[id]?.origin) },
+            readSize: { id, _ in operations("read"); return (.success, frames[id]?.size) },
+            now: time, sleep: sleep, currentGeneration: { 1 })
+    }
+
+    /// the retile's first pass hands the poller the frames the engine just
+    /// captured; a layout every window already stands on is accepted from
+    /// them, and it publishes like a written one
+    func testALayoutAlreadyInPlaceIsAcceptedFromTheCaptureWithoutAWrite() {
+        let desk = Desk()
+        var operations: [String] = []
+        var time: TimeInterval = 0
+        let poller = FrameReadbackPoller(generation: { 1 }, ioFactory: { [desk] _, _ in
+            self.io(desk, operations: { operations.append($0) }, time: { time }, sleep: { time += $0 })
+        })
+
+        let result = poller.applyLayout([(desk.a, desk.left), (desk.b, desk.right)],
+                                        usableFrame: desk.usable, gap: 8, generation: 1,
+                                        originalFrames: desk.frames)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertTrue(operations.isEmpty, "\(operations)")
+        XCTAssertEqual(time, 0, "no settle")
+        XCTAssertTrue(result.progress.verifiedInPlace)
+        XCTAssertTrue(FrameSizingProgressReport(candidate: result.progress).candidateVerified)
+        XCTAssertEqual(desk.a.cachedFrame, desk.left, "nothing moved, so the cache stands")
+    }
+
+    func testWithoutTheOriginalsThePassWrites() {
+        let desk = Desk()
+        var operations: [String] = []
+        var time: TimeInterval = 0
+        let poller = FrameReadbackPoller(generation: { 1 }, ioFactory: { [desk] _, _ in
+            self.io(desk, operations: { operations.append($0) }, time: { time }, sleep: { time += $0 })
+        })
+
+        let result = poller.applyLayout([(desk.a, desk.left), (desk.b, desk.right)],
+                                        usableFrame: desk.usable, gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertTrue(operations.contains("size"))
+        XCTAssertFalse(result.progress.verifiedInPlace)
+    }
+}
+
+final class FrameReadbackPollerBudgetTests: XCTestCase {
+    /// one deadline covered every setter and every sample of the whole key,
+    /// so eight healthy windows ran out of it on plain IPC latency
+    func testTheDeadlineGrowsWithTheNumberOfTargets() {
+        let base = FrameSizingConfiguration()
+        XCTAssertEqual(FrameReadbackPoller.scaled(base, for: 3).deadline, base.deadline)
+        let eight = FrameReadbackPoller.scaled(base, for: 8)
+        XCTAssertEqual(eight.deadline, base.deadline + 5 * FrameReadbackPoller.perWindowBudget, accuracy: 0.0001)
+        XCTAssertGreaterThanOrEqual(Double(eight.maximumAttempts) * eight.pollInterval, eight.deadline)
+    }
+
+    /// a reveal of two parked windows spent the base deadline in its write
+    /// phase with both position settles succeeding, and timed out before a
+    /// single readback
+    func testTheDeadlineGrowsWithEveryPositionFirstTarget() {
+        let base = FrameSizingConfiguration()
+        let reveal = FrameReadbackPoller.scaled(base, for: 3, positionFirst: 2)
+        XCTAssertEqual(reveal.deadline, base.deadline + 2 * base.positionSettleBudget, accuracy: 0.0001)
+        XCTAssertGreaterThanOrEqual(Double(reveal.maximumAttempts) * reveal.pollInterval, reveal.deadline)
+        XCTAssertEqual(FrameReadbackPoller.scaled(base, for: 3, positionFirst: 0).deadline, base.deadline)
+    }
+
+    /// the cap each settle may spend is what was budgeted for it, not a
+    /// third of the grown deadline: three settles at a third each would
+    /// leave nothing for the size writes and the readback
+    func testASettleKeepsTheCapItWasBudgetedFor() {
+        let base = FrameSizingConfiguration()
+        let reveal = FrameReadbackPoller.scaled(base, for: 3, positionFirst: 3)
+        XCTAssertEqual(reveal.positionSettleBudget, base.positionSettleBudget, accuracy: 0.0001)
+        XCTAssertLessThan(3 * reveal.positionSettleBudget, reveal.deadline)
+        XCTAssertEqual(FrameReadbackPoller.scaled(base, for: 3).positionSettleBudget, base.deadline / 3,
+                       accuracy: 0.0001, "unscaled: the documented third")
+        XCTAssertEqual(base.withScaleChangeBudget.positionSettleBudget,
+                       base.withScaleChangeBudget.deadline / 3, accuracy: 0.0001,
+                       "the scale-change budget still grows the cap")
     }
 }

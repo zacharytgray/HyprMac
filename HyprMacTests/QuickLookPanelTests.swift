@@ -260,7 +260,7 @@ final class QuickLookPanelTests: XCTestCase {
     }
 }
 
-private final class QuickLookTestScreen: NSScreen {
+private final class QuickLookTestScreen: SyntheticScreen {
     override func isEqual(_ object: Any?) -> Bool {
         guard let screen = object as? NSScreen else { return false }
         return self === screen

@@ -30,6 +30,10 @@ final class WorkspaceOrchestrator {
     private let dimmingOverlay: DimmingOverlay
     private let suppressions: SuppressionRegistry
     private let revalidation: MinimaRevalidation
+    /// Every admission result a move produces goes here, so a refused
+    /// arrival is tracked by the recovery like one from any other pass
+    /// instead of sitting assigned, visible and in no tree.
+    var noteAdmission: (TilingEngine.AdmissionResult) -> Void = { _ in }
 
     var screenUnderCursor: () -> NSScreen = { NSScreen.main! }
     var currentFocusedWindow: () -> HyprWindow? = { nil }
@@ -40,7 +44,10 @@ final class WorkspaceOrchestrator {
     var transferRejected: ((HyprWindow, String) -> Void)?
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var updatePositionCache: () -> Void = { }
-    var tileAllVisibleSpaces: () -> Void = { }
+    /// Retile every visible workspace. A switch hands over the walk it
+    /// already took: the walk between the last park write and the first
+    /// reveal write left the switched screen empty for its duration.
+    var tileAllVisibleSpaces: ([HyprWindow]?) -> Void = { _ in }
     /// Every window AX can see right now. A seam because the explicit
     /// revalidation attempt needs the destination's tenants, a switch picks
     /// the window to focus from it, and a test has no desktop to read them off.
@@ -373,8 +380,10 @@ final class WorkspaceOrchestrator {
             }
         }
 
-        // retile immediately — no delay between hide and show
-        tileAllVisibleSpaces()
+        // retile immediately — no delay between hide and show. every write
+        // above dropped the cached frame it changed, and the pass captures
+        // live frames, so the walk from before the parks is valid input
+        tileAllVisibleSpaces(allWindows)
 
         // focus best tiled window on the new workspace; if none, fall back to
         // any floating window before giving up. only warp+hide if truly empty.
@@ -568,9 +577,13 @@ final class WorkspaceOrchestrator {
 
         // animate remaining windows filling the gap
         animatedRetile({ [self] in
-            // remove from current workspace's tiling tree
+            // remove from current workspace's tiling tree. membership only:
+            // the one retile after this block lays the source out once the
+            // window has left. a retile here grew the neighbour under the
+            // window while it was still there, and then every remaining
+            // tile was written a second time
             if !isFloating, let cw = currentWorkspace {
-                tilingEngine.removeWindow(focused, fromWorkspace: cw)
+                tilingEngine.removeWindowMembershipOnly(focused, fromWorkspace: cw)
             }
 
             // reassign globally
@@ -952,7 +965,7 @@ final class WorkspaceOrchestrator {
         }
 
         if !result.moved.isEmpty || !laidOut.isEmpty {
-            tileAllVisibleSpaces()
+            tileAllVisibleSpaces(nil)
         }
         if !result.moved.isEmpty {
             NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
@@ -1044,6 +1057,7 @@ final class WorkspaceOrchestrator {
                 layout = tilingEngine.tileWindows(windows, onWorkspace: workspace, screen: screen,
                                                   alsoRestoringWithin: reach)
             }
+            noteAdmission(layout)
             if layout.published && arriving.isSubset(of: layout.publishedIDs) {
                 laidOut[workspace] = (screen, ids)
                 continue
