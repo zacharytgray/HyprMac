@@ -1964,7 +1964,7 @@ class WindowManager {
             engine: tilingEngine, orchestrator: workspaceOrchestrator,
             workspaceManager: workspaceManager, stateCache: stateCache,
             recovery: admissionRecovery,
-            isScratchpad: { [scratchpad] in scratchpad.contains($0) },
+            isScratchpad: { [scratchpad = scratchpad!] in scratchpad.contains($0) },
             ref: { [weak self] in self?.windowRef(for: $0) })
     }
 
@@ -3202,8 +3202,6 @@ class WindowManager {
         displayManager.refreshedFingerprint()
     }
 
-    /// Handler for the `.hyprMacRetileAll` notification posted from the
-    /// menu bar's "Retile All" action.
     @objc private func tiledDropPreviewWorkspacesChanged() {
         dropPreview.refresh()
     }
@@ -3214,6 +3212,8 @@ class WindowManager {
         dropPreviewTargets = [:]
     }
 
+    /// Handler for Retile All: the `.hyprMacRetileAll` notification posted
+    /// from the menu bar and the `retileAll` keybind (Hypr+R).
     @objc private func retileAllRequested() {
         hyprLog(.debug, .lifecycle, "retile all spaces requested")
         scratchpad.hide(reason: .workspaceAction)

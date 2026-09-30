@@ -245,6 +245,22 @@ final class DefaultKeybindsTests: XCTestCase {
         XCTAssertEqual(bind.modifiers, .hypr)
     }
 
+    func testMonitorMoveBindsAllFourArrowsUnderHyprCtrl() throws {
+        let expected: [(Direction, Int)] = [
+            (.left, kVK_LeftArrow), (.right, kVK_RightArrow), (.up, kVK_UpArrow), (.down, kVK_DownArrow)
+        ]
+        for (direction, key) in expected {
+            let bind = try XCTUnwrap(Keybind.defaults.first { $0.action == .moveWindowToMonitor(direction) },
+                                     "no default for \(direction)")
+            XCTAssertEqual(bind.keyCode, UInt16(key))
+            XCTAssertEqual(bind.modifiers, [.hypr, .control])
+        }
+        XCTAssertEqual(Keybind(keyCode: 0, modifiers: .hypr, action: .moveWindowToMonitor(.up)).actionDescription,
+                       "Move Window to Upper Monitor")
+        XCTAssertEqual(Keybind(keyCode: 0, modifiers: .hypr, action: .moveWindowToMonitor(.down)).actionDescription,
+                       "Move Window to Lower Monitor")
+    }
+
     func testWorkspaceOverviewUsesHyprO() throws {
         let bind = try XCTUnwrap(Keybind.defaults.first { $0.action == .showWorkspaceOverview })
         XCTAssertEqual(bind.keyCode, UInt16(kVK_ANSI_O))

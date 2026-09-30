@@ -57,11 +57,16 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_0), modifiers: [.hypr, .control, .shift],
                              action: .moveToWorkspaceAndFollow(10)))
 
-        // hypr + ctrl + left/right: move focused window to adjacent monitor
+        // hypr + ctrl + arrow: move focused window to the adjacent monitor in
+        // that direction (left/right for side-by-side, up/down for stacked)
         binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .control],
                              action: .moveWindowToMonitor(.left)))
         binds.append(Keybind(keyCode: UInt16(kVK_RightArrow), modifiers: [.hypr, .control],
                              action: .moveWindowToMonitor(.right)))
+        binds.append(Keybind(keyCode: UInt16(kVK_UpArrow), modifiers: [.hypr, .control],
+                             action: .moveWindowToMonitor(.up)))
+        binds.append(Keybind(keyCode: UInt16(kVK_DownArrow), modifiers: [.hypr, .control],
+                             action: .moveWindowToMonitor(.down)))
 
         // hypr + ctrl + shift + arrow: resize focused window in direction
         binds.append(Keybind(keyCode: UInt16(kVK_LeftArrow), modifiers: [.hypr, .control, .shift],

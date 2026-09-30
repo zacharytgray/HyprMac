@@ -1,0 +1,83 @@
+name: build
+
+# Builds HyprMac.app on a GitHub-hosted macOS runner and uploads it as an
+# artifact. The runners ship Xcode, so this is the way to get a build
+# without a local Xcode install.
+#
+# The app is ad-hoc signed ("-"): no Apple account or certificate is
+# needed, but the signature changes every build, so macOS asks for
+# Accessibility permission again after each install.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -project HyprMac.xcodeproj \
+            -scheme HyprMac \
+            -configuration Debug \
+            -derivedDataPath build \
+            -destination 'generic/platform=macOS' \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="" \
+            build
+
+      # ditto, not zip: preserves the bundle's symlinks and resource forks
+      - name: Package
+        run: |
+          APP="build/Build/Products/Debug/HyprMac.app"
+          test -d "$APP"
+          codesign --verify --strict --verbose=2 "$APP"
+          ditto -c -k --keepParent "$APP" HyprMac.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HyprMac-app
+          path: HyprMac.zip
+          if-no-files-found: error
+
+  # Kept separate from the build so a test failure still leaves a
+  # downloadable app, and an app that fails to build is not reported as a
+  # test failure.
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # The repo's own headless path, not a hand-rolled `xcodebuild test`:
+      # it builds the sources as an isolated dynamic library (no app bundle,
+      # no Sparkle, no signing), then runs the bundle through `xcrun xctest`
+      # with HYPRMAC_HEADLESS_TESTS=1 - which is how the display-dependent
+      # cases know to skip themselves where there is no GUI session.
+      # It generates its own project, so no `xcodegen generate` step here.
+      - name: Test
+        run: |
+          set -o pipefail
+          scripts/test-isolated.sh --debug-variant 2>&1 | tee test-results.log
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: HyprMac-test-log
+          path: test-results.log
+          if-no-files-found: error

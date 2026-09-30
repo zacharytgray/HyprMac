@@ -106,7 +106,13 @@ extension Keybind {
         case .switchWorkspace(let n):       return "Switch to Workspace \(n)"
         case .moveToWorkspace(let n):       return "Move to Workspace \(n)"
         case .moveToWorkspaceAndFollow(let n): return "Move to Workspace \(n) and Follow"
-        case .moveWindowToMonitor(let d):   return "Move Window to \(d.rawValue.capitalized) Monitor"
+        case .moveWindowToMonitor(let d):
+            switch d {
+            case .left:  return "Move Window to Left Monitor"
+            case .right: return "Move Window to Right Monitor"
+            case .up:    return "Move Window to Upper Monitor"
+            case .down:  return "Move Window to Lower Monitor"
+            }
         case .toggleFloating:               return "Toggle Floating"
         case .toggleSplit:                  return "Toggle Split Direction"
         case .showKeybinds:                 return "Show Keybind Overlay"

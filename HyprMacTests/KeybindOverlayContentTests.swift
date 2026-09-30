@@ -39,7 +39,7 @@ final class KeybindOverlayContentTests: XCTestCase {
         XCTAssertEqual(all["Focus direction"], ["HYPR", "←↑↓→"])
         XCTAssertEqual(all["Swap direction"], ["HYPR", "⇧", "←↑↓→"])
         XCTAssertEqual(all["Resize window"], ["HYPR", "⌃", "⇧", "←↑↓→"])
-        XCTAssertEqual(all["Move to monitor"], ["HYPR", "⌃", "←→"])
+        XCTAssertEqual(all["Move to monitor"], ["HYPR", "⌃", "←↑↓→"])
     }
 
     func testDragSwapClosesWindowManagement() {

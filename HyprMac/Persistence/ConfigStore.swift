@@ -42,8 +42,13 @@ final class ConfigStore {
         return iCloudDir.appendingPathComponent("config.json")
     }
 
-    var localConfigURL: URL { Self.configPath }
+    let localConfigURL: URL
     var monitorConfigURL: URL { Self.monitorConfigPath }
+
+    /// `localConfigURL` is injectable so tests can watch a scratch file.
+    init(localConfigURL: URL = ConfigStore.configPath) {
+        self.localConfigURL = localConfigURL
+    }
 
     var isICloudDriveAvailable: Bool {
         FileManager.default.fileExists(atPath:
@@ -175,8 +180,17 @@ final class ConfigStore {
             eventMask: [.write, .rename, .delete],
             queue: .main
         )
-        source.setEventHandler { [weak self] in
-            self?.onFileChanged?()
+        source.setEventHandler { [weak self, unowned source] in
+            guard let self else { return }
+            let replaced = !source.data.isDisjoint(with: [.rename, .delete])
+            self.onFileChanged?()
+            // an atomic save (most editors, `mv tmp config.json`) swaps in a
+            // new inode and leaves this fd on the unlinked old one, which
+            // never fires again. re-open the path so later edits still land
+            if replaced {
+                hyprLog(.notice, .config, "config file replaced on disk, re-arming watcher")
+                self.restartFileWatcher()
+            }
         }
         source.setCancelHandler {
             close(fd)
@@ -184,6 +198,8 @@ final class ConfigStore {
         source.resume()
         fileWatcherSource = source
     }
+
+    var isWatchingFile: Bool { fileWatcherSource != nil }
 
     func stopFileWatcher() {
         fileWatcherSource?.cancel()

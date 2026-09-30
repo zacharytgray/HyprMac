@@ -303,8 +303,9 @@ Every workspace is **statically anchored** to a home screen:
 `enabledScreens[(N - 1) % enabledScreens.count]`, left to right.
 Switching to workspace N always lands on its home; workspaces cannot
 move between monitors, so workspace identity never drifts. The
-`moveWindowToMonitor` action (`Hypr+Ctrl+←/→`) moves the focused
-*window* to the adjacent monitor's visible workspace instead.
+`moveWindowToMonitor` action (`Hypr+Ctrl+arrow`) moves the focused
+*window* to the visible workspace of the nearest monitor in that
+direction instead.
 
 `Hypr+Shift+N` moves the focused window to workspace N and stays put,
 unless N is showing on another monitor, where focus follows the window.

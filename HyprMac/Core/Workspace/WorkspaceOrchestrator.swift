@@ -1078,18 +1078,74 @@ final class WorkspaceOrchestrator {
 
     // MARK: - move window to adjacent monitor
 
-    /// Move the focused window to the monitor adjacent in `direction`,
-    /// landing on whatever workspace is visible there. Delegates to
-    /// `moveToWorkspace` so capacity checks, floater handling, and focus
-    /// follow all behave identically to `Hypr+Shift+N`.
+    /// Index into `frames` of the screen nearest to `source` in `direction`,
+    /// or `nil` when no screen lies that way.
+    ///
+    /// Frames are `NSScreen.frame` values, so y grows upward: "up" is a
+    /// screen whose bottom edge sits at or above the source's top edge. A
+    /// screen counts only when it lies wholly past the source's edge, with
+    /// a point of slack for arrangement rounding. Nearest along the axis
+    /// wins; a tie (two monitors side by side above a wide one, say) goes to
+    /// the screen sharing the most extent with the source on the cross
+    /// axis, then to the lower origin so the answer is stable.
+    static func nearestScreenIndex(from source: CGRect, direction: Direction,
+                                   among frames: [CGRect]) -> Int? {
+        let slack: CGFloat = 1
+        func lies(_ frame: CGRect) -> Bool {
+            switch direction {
+            case .left:  return frame.maxX <= source.minX + slack
+            case .right: return frame.minX >= source.maxX - slack
+            case .up:    return frame.minY >= source.maxY - slack
+            case .down:  return frame.maxY <= source.minY + slack
+            }
+        }
+        func distance(_ frame: CGRect) -> CGFloat {
+            switch direction {
+            case .left:  return source.minX - frame.maxX
+            case .right: return frame.minX - source.maxX
+            case .up:    return frame.minY - source.maxY
+            case .down:  return source.minY - frame.maxY
+            }
+        }
+        func overlap(_ frame: CGRect) -> CGFloat {
+            switch direction {
+            case .left, .right:
+                return max(0, min(frame.maxY, source.maxY) - max(frame.minY, source.minY))
+            case .up, .down:
+                return max(0, min(frame.maxX, source.maxX) - max(frame.minX, source.minX))
+            }
+        }
+        return frames.indices
+            .filter { lies(frames[$0]) }
+            .min { lhs, rhs in
+                let l = frames[lhs], r = frames[rhs]
+                if distance(l) != distance(r) { return distance(l) < distance(r) }
+                if overlap(l) != overlap(r) { return overlap(l) > overlap(r) }
+                if l.origin.x != r.origin.x { return l.origin.x < r.origin.x }
+                return l.origin.y < r.origin.y
+            }
+    }
+
+    /// Where "no monitor" points, in the words the flash message uses.
+    static func monitorDirectionLabel(_ direction: Direction) -> String {
+        switch direction {
+        case .left:  return "to the left"
+        case .right: return "to the right"
+        case .up:    return "above"
+        case .down:  return "below"
+        }
+    }
+
+    /// Move the focused window to the visible workspace of the nearest
+    /// enabled monitor in `direction`. All four directions are honoured:
+    /// left and right for side-by-side arrangements, up and down for
+    /// stacked ones. Beeps and flashes when nothing lies that way.
+    /// Delegates to `moveToWorkspace` so capacity checks, floater
+    /// handling, and focus follow all behave identically to `Hypr+Shift+N`.
     ///
     /// Replaces the old workspace-to-monitor move, which static
     /// anchoring turned into a permanent no-op.
     func moveWindowToMonitor(_ direction: Direction) {
-        guard direction == .left || direction == .right else {
-            NSSound.beep()
-            return
-        }
         guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else {
             NSSound.beep()
@@ -1097,25 +1153,17 @@ final class WorkspaceOrchestrator {
         }
 
         let enabled = displayManager.screens.filter { !workspaceManager.isMonitorDisabled($0) }
-        let candidates = enabled.filter {
-            direction == .left
-                ? $0.frame.maxX <= screen.frame.minX + 1
-                : $0.frame.minX >= screen.frame.maxX - 1
-        }
-        // nearest screen in the requested direction
-        let target = direction == .left
-            ? candidates.max(by: { $0.frame.origin.x < $1.frame.origin.x })
-            : candidates.min(by: { $0.frame.origin.x < $1.frame.origin.x })
-        guard let target else {
+        guard let index = Self.nearestScreenIndex(
+            from: screen.frame, direction: direction, among: enabled.map(\.frame)) else {
             hyprLog(.debug, .workspace, "moveWindowToMonitor(\(direction.rawValue)): no monitor in that direction")
             NSSound.beep()
             if let frame = focused.frame {
                 focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
-                                       message: "No monitor to the \(direction.rawValue)")
+                                       message: "No monitor \(Self.monitorDirectionLabel(direction))")
             }
             return
         }
 
-        moveToWorkspace(workspaceManager.workspaceForScreen(target))
+        moveToWorkspace(workspaceManager.workspaceForScreen(enabled[index]))
     }
 }
