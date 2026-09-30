@@ -155,7 +155,13 @@ shows it. Discovery holds such a window in every store: not gone, not
 hidden, not returned. The tile pass keeps its leaf and writes no frame to
 it, and the poll that reads it again retiles its key once. The walk sets
 a 0.25 s messaging timeout on the elements it reads, so a stalled app
-costs a quarter second per poll and is held rather than judged. A missing
+costs a quarter second and is held rather than judged. An app whose
+window list timed out is not asked again until a backoff is up, half a
+second doubling to eight (`StallBackoff`), and only one stalled app is
+asked per walk, so a walk pays at most one timeout however many apps
+are stalled; before, every walk asked every stalled app anew, on every
+poll, event, switch and move. The walk logs its duration and what it
+skipped at debug (`AX walk:`). A missing
 window its app still lists, neither minimized nor hidden with the app —
 another Space, a native full-screen excursion, a stale snapshot — is held
 the same way for five seconds (`WindowDiscoveryService.listedHoldSpan`)

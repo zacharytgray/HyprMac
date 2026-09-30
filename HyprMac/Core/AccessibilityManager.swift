@@ -72,6 +72,16 @@ class AccessibilityManager {
     /// loses nothing.
     static let discoveryMessagingTimeout: Float = 0.25
 
+    /// Apps whose window list did not answer, and when the walk may ask
+    /// them again. Every walk asked every stalled app anew, and a walk runs
+    /// on every poll, every window event and before every switch and move:
+    /// with three apps stalled at once each of those paid three quarters of
+    /// a second on the main thread, for two days. The windows of a stalled
+    /// app stay held meanwhile, so nothing on screen depends on the answer.
+    private var stallBackoff = StallBackoff()
+    /// how long the last walk took, and what it skipped, for the trace line
+    private(set) var lastWalkDuration: TimeInterval = 0
+
     /// Look up a window in the last discovery snapshot by `CGWindowID`.
     /// Wired by `WindowManager` to `stateCache.cachedWindows[id]`. Lets
     /// `getFocusedWindow` skip a full AX walk when the focused window was
@@ -247,6 +257,9 @@ class AccessibilityManager {
     /// read (caller treats unknown as still-around, the conservative side).
     func hiddenWindowState(windowID target: CGWindowID, pid: pid_t) -> HiddenWindowState? {
         if NSRunningApplication(processIdentifier: pid)?.isHidden == true { return .appHidden }
+        // an app the walk is backing off from would not answer this either;
+        // nil is what a timed-out read returns, without the wait
+        if stallBackoff.isBackingOff(pid, now: Date()) { return nil }
         let appRef = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
         var value: AnyObject?
@@ -277,10 +290,15 @@ class AccessibilityManager {
     func getAllWindows() -> [HyprWindow] {
         guard AXIsProcessTrusted() else { return [] }
 
+        let walkStarted = Date()
         let cgWindows = cgWindowsByPID()
         var windows: [HyprWindow] = []
         var usedIDs: Set<CGWindowID> = []
         var unreadable: Set<CGWindowID> = []
+        // at most one stalled app is asked again per walk, so a walk pays
+        // one timeout however many apps are stalled
+        var probedStalledApp = false
+        var skipped: [String] = []
 
         // apps to never tile
         let excludedBundleIDs: Set<String> = [
@@ -305,6 +323,17 @@ class AccessibilityManager {
             // that panel's own id.
             let cgEntries = cgWindows[pid] ?? []
             let candidates = cgEntries.filter { $0.layer == 0 }
+            let visible = candidates.filter { $0.alpha > 0.01 }
+            // a stalled app is not asked until its backoff is up, and only
+            // one of them per walk; its windows stay held meanwhile
+            let now = Date()
+            if stallBackoff.isBackingOff(pid, now: now)
+                || (stallBackoff.isDue(pid, now: now) && probedStalledApp) {
+                unreadable.formUnion(visible.map(\.windowID))
+                skipped.append(bundle)
+                continue
+            }
+            if stallBackoff.isDue(pid, now: now) { probedStalledApp = true }
             let appRef = AXUIElementCreateApplication(pid)
             AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
             var value: AnyObject?
@@ -315,17 +344,18 @@ class AccessibilityManager {
                 // the cycle. the window server still shows them, so they are
                 // reported unreadable and discovery holds them in place.
                 // log the outage edges only, not every cycle.
-                let visible = candidates.filter { $0.alpha > 0.01 }
                 unreadable.formUnion(visible.map(\.windowID))
+                let wait = stallBackoff.noteFailure(pid, now: now)
                 if !visible.isEmpty {
                     let n = (axListFailures[pid] ?? 0) + 1
                     axListFailures[pid] = n
                     if n == 1 {
-                        hyprLog(.notice, .discovery, "AX window-list read FAILED for \(bundle) (err \(result.rawValue)) — \(candidates.count) on-screen window(s) drop from this snapshot")
+                        hyprLog(.notice, .discovery, "AX window-list read FAILED for \(bundle) (err \(result.rawValue)) — \(candidates.count) on-screen window(s) drop from this snapshot; asked again in \(Int((wait * 1000).rounded()))ms")
                     }
                 }
                 continue
             }
+            stallBackoff.noteSuccess(pid)
             if let n = axListFailures.removeValue(forKey: pid) {
                 hyprLog(.notice, .discovery, "AX window-list read recovered for \(bundle) after \(n) failed cycle(s)")
             }
@@ -469,7 +499,11 @@ class AccessibilityManager {
             }
         }
         quickLookVerdicts = quickLookVerdicts.filter { quickLookSeen.contains($0.key) }
+        stallBackoff.retain(Set(apps.map(\.processIdentifier)))
         unreadableWindowIDs = unreadable
+        lastWalkDuration = Date().timeIntervalSince(walkStarted)
+        hyprLog(.debug, .discovery, "AX walk: apps=\(apps.count) windows=\(windows.count) unreadable=\(unreadable.count) \(Int((lastWalkDuration * 1000).rounded()))ms"
+                + (skipped.isEmpty ? "" : " skipped=\(skipped)"))
         return windows
     }
 
@@ -661,5 +695,54 @@ class AccessibilityManager {
         }
 
         return candidates.first?.window
+    }
+}
+
+
+/// When the discovery walk may ask a stalled app again. An app whose
+/// window list timed out is skipped for a growing interval, from half a
+/// second to eight, and asked again once it is up; an answer ends the
+/// backoff. Nothing on screen waits on it: the app's windows are held in
+/// place until it answers, and a window it opens meanwhile is discovered
+/// when it does.
+struct StallBackoff {
+    var initial: TimeInterval = 0.5
+    var cap: TimeInterval = 8
+    private var until: [pid_t: Date] = [:]
+    private var interval: [pid_t: TimeInterval] = [:]
+
+    /// pids with a backoff on record, up or not
+    var stalledPIDs: Set<pid_t> { Set(until.keys) }
+
+    /// the app is not to be asked yet
+    func isBackingOff(_ pid: pid_t, now: Date) -> Bool {
+        guard let until = until[pid] else { return false }
+        return now < until
+    }
+
+    /// the app is stalled on record and its backoff is up: one probe is due
+    func isDue(_ pid: pid_t, now: Date) -> Bool {
+        guard let until = until[pid] else { return false }
+        return now >= until
+    }
+
+    /// - Returns: how long the app is skipped from now.
+    @discardableResult
+    mutating func noteFailure(_ pid: pid_t, now: Date) -> TimeInterval {
+        let next = min((interval[pid] ?? initial / 2) * 2, cap)
+        interval[pid] = next
+        until[pid] = now.addingTimeInterval(next)
+        return next
+    }
+
+    mutating func noteSuccess(_ pid: pid_t) {
+        until.removeValue(forKey: pid)
+        interval.removeValue(forKey: pid)
+    }
+
+    /// Drop the record of apps no longer running.
+    mutating func retain(_ running: Set<pid_t>) {
+        until = until.filter { running.contains($0.key) }
+        interval = interval.filter { running.contains($0.key) }
     }
 }

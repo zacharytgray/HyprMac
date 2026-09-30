@@ -812,3 +812,51 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(compute(svc, snapshot: [makeWindow(id: 1, pid: 1)]).needsRetile)
     }
 }
+
+/// the walk's backoff for apps whose window list does not answer
+final class StallBackoffTests: XCTestCase {
+    private let t0 = Date(timeIntervalSinceReferenceDate: 1000)
+
+    func testAnUnknownAppIsAskedAndAFailureStartsTheBackoff() {
+        var backoff = StallBackoff()
+        XCTAssertFalse(backoff.isBackingOff(7, now: t0))
+        XCTAssertFalse(backoff.isDue(7, now: t0))
+
+        XCTAssertEqual(backoff.noteFailure(7, now: t0), 0.5)
+
+        XCTAssertTrue(backoff.isBackingOff(7, now: t0.addingTimeInterval(0.4)))
+        XCTAssertFalse(backoff.isDue(7, now: t0.addingTimeInterval(0.4)))
+        XCTAssertTrue(backoff.isDue(7, now: t0.addingTimeInterval(0.5)), "one probe is due once it is up")
+        XCTAssertFalse(backoff.isBackingOff(7, now: t0.addingTimeInterval(0.5)))
+    }
+
+    func testRepeatedFailuresDoubleUpToTheCap() {
+        var backoff = StallBackoff()
+        var now = t0
+        var waits: [TimeInterval] = []
+        for _ in 0..<6 {
+            let wait = backoff.noteFailure(7, now: now)
+            waits.append(wait)
+            now = now.addingTimeInterval(wait)
+        }
+        XCTAssertEqual(waits, [0.5, 1, 2, 4, 8, 8])
+    }
+
+    func testAnAnswerEndsTheBackoffAndTheNextFailureStartsSmall() {
+        var backoff = StallBackoff()
+        _ = backoff.noteFailure(7, now: t0)
+        _ = backoff.noteFailure(7, now: t0.addingTimeInterval(1))
+        backoff.noteSuccess(7)
+        XCTAssertFalse(backoff.isBackingOff(7, now: t0.addingTimeInterval(1)))
+        XCTAssertTrue(backoff.stalledPIDs.isEmpty)
+        XCTAssertEqual(backoff.noteFailure(7, now: t0.addingTimeInterval(2)), 0.5)
+    }
+
+    func testAnAppThatQuitIsForgotten() {
+        var backoff = StallBackoff()
+        _ = backoff.noteFailure(7, now: t0)
+        _ = backoff.noteFailure(8, now: t0)
+        backoff.retain([8])
+        XCTAssertEqual(backoff.stalledPIDs, [8])
+    }
+}
