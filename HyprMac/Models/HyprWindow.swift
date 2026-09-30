@@ -341,7 +341,7 @@ class HyprWindow: Equatable, Hashable {
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationCheckDelay) { [weak app] in
                 let nowActive = app?.isActive ?? false
                 if !nowActive {
-                    hyprLog(.notice, .focus, "focus(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
+                    hyprLog(.debug, .focus, "focus(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
                 } else {
                     hyprLog(.debug, .focus, "focus(\(wid)) activate ok — app flipped active")
                 }
@@ -383,7 +383,7 @@ class HyprWindow: Equatable, Hashable {
             DispatchQueue.main.asyncAfter(deadline: .now() + Self.activationCheckDelay) { [weak app] in
                 let nowActive = app?.isActive ?? false
                 if !nowActive {
-                    hyprLog(.notice, .focus, "focusWithoutRaise(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
+                    hyprLog(.debug, .focus, "focusWithoutRaise(\(wid)) activate dropped — app still inactive \(Self.activationCheckMS)ms after activate()")
                 }
             }
         }
