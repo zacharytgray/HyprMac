@@ -337,8 +337,9 @@ lists them in, which puts the primary display first, so a stacked desk
 keeps the homes it had. Retile All fills the screens in the same order.
 Switching to workspace N always lands on its home; workspaces cannot
 move between monitors, so workspace identity never drifts. The
-`moveWindowToMonitor` action (`Hypr+Ctrl+←/→`) moves the focused
-*window* to the adjacent monitor's visible workspace instead.
+`moveWindowToMonitor` action (`Hypr+Ctrl+arrow`) moves the focused
+*window* to the visible workspace of the nearest monitor in that
+direction instead.
 
 `Hypr+Shift+N` moves the focused window to workspace N and stays put,
 unless N is showing on another monitor, where focus follows the window.
