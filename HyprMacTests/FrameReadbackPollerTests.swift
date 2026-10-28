@@ -819,4 +819,30 @@ final class FrameReadbackPollerBudgetTests: XCTestCase {
                        base.withScaleChangeBudget.deadline / 3, accuracy: 0.0001,
                        "the scale-change budget still grows the cap")
     }
+
+    /// Raycast Settings: moved, took the height, stayed at the 960 it had
+    func testAWindowThatKeepsItsOwnWidthIsFixedOnWidth() {
+        XCTAssertEqual(FrameReadbackPoller.fixedAxis(
+            original: CGSize(width: 960, height: 934), target: CGSize(width: 1708, height: 1395),
+            actual: CGSize(width: 960, height: 1395), tolerance: 20), .width)
+    }
+
+    func testShortfallsThatAreNotAKeptLengthAreNotFixed() {
+        // the portrait Terminal stops short wherever it is asked, not at its old height
+        XCTAssertNil(FrameReadbackPoller.fixedAxis(
+            original: CGSize(width: 800, height: 600), target: CGSize(width: 800, height: 1500),
+            actual: CGSize(width: 800, height: 1160), tolerance: 20))
+        // nothing moved on the other axis: no proof the app took the write at all
+        XCTAssertNil(FrameReadbackPoller.fixedAxis(
+            original: CGSize(width: 960, height: 1395), target: CGSize(width: 1708, height: 1395),
+            actual: CGSize(width: 960, height: 1395), tolerance: 20))
+        // still catching up on the other axis
+        XCTAssertNil(FrameReadbackPoller.fixedAxis(
+            original: CGSize(width: 960, height: 934), target: CGSize(width: 1708, height: 1395),
+            actual: CGSize(width: 960, height: 1100), tolerance: 20))
+        // a min-size window is larger, not shorter
+        XCTAssertNil(FrameReadbackPoller.fixedAxis(
+            original: CGSize(width: 1200, height: 934), target: CGSize(width: 900, height: 1395),
+            actual: CGSize(width: 1200, height: 1395), tolerance: 20))
+    }
 }
