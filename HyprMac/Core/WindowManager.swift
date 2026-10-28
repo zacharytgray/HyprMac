@@ -996,6 +996,7 @@ class WindowManager {
             scratchpad: scratchpad.members,
             knownCount: stateCache.knownWindowIDs.count,
             minima: tilingEngine.knownMinimumSizes,
+            fixedSizes: tilingEngine.knownFixedSizeApps,
             pendingRecovery: tilingEngine.pendingRecoveryWindowIDs,
             unverifiedGeometry: tilingEngine.unverifiedGeometryWindowIDs
         )

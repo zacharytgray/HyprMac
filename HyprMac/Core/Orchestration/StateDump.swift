@@ -39,6 +39,9 @@ struct StateDumpFormatter {
     /// `MinSizeMemory`. The source is printed because a seeded hint and a
     /// bound the app actually refused are not the same claim.
     var minima: [CGWindowID: MinSizeMemory.Entry] = [:]
+    /// Per-app lengths windows kept on an axis, oldest first. Printed only
+    /// when there are any.
+    var fixedSizes: [FixedSize] = []
     /// Windows waiting on a bounded recovery attempt. Nothing produces
     /// these yet — the line is here so the shape is stable once
     /// admission recovery lands.
@@ -74,6 +77,11 @@ struct StateDumpFormatter {
             let entry = minima[$0]!
             return "\($0):" + Self.size(entry.size) + "(\(entry.provenance.rawValue))"
         }.joined(separator: ", ") + "]")
+        if !fixedSizes.isEmpty {
+            out.append("fixed=[" + fixedSizes.map {
+                "\($0.bundleID ?? "none"):\($0.axis.rawValue)=\(String(format: "%g", Double($0.length)))"
+            }.joined(separator: ", ") + "]")
+        }
         out.append("recovery pending=\(Self.list(pendingRecovery.sorted()))"
             + " unverified=\(Self.list(unverifiedGeometry.sorted()))")
         out.append("known=\(knownCount) hidden=\(hidden.count)"

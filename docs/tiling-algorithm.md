@@ -740,6 +740,37 @@ The memory mirrors back onto each `HyprWindow.observedMinSize` and
 `HyprWindow.minSizeProvenance` so other subsystems (drag-swap fit check,
 floating toggle) read consistent values.
 
+### Fixed sizes
+
+The opposite case has its own record. Raycast's Settings window moves where
+it is told and takes its height, but stays 960 wide in a 1708 slot. The
+candidate is rejected and rolled back, the recovery's retry does exactly the
+same, and only then is the window floated: four visible resizes for a window
+no slot could ever hold.
+
+`FrameReadbackPoller.fixedAxis` calls a window fixed on an axis when it is
+short of its target there by more than the undershoot tolerance, within a
+point of the length it had before the write, and on target on the other axis
+after really moving there. The `learningRefusal` guards apply as for a
+minimum: a rejected candidate or adjusted pass, all three setters done, a
+complete stable readback, the window at its target origin. A slow app that has
+not taken the other axis yet is not fixed, and neither is one that stops
+short wherever it is asked (the portrait Terminal), since it does not stay at
+its old length. A window moved before it was sized is skipped: its old
+length is the parked one. A maximum size between the old length and the
+slot is not caught.
+
+`MinSizeMemory` keeps the record per window, dropped with the window, and as
+a per-app hint of bundle id, axis and length, capped at 64 with the oldest
+out and gone on restart. A newcomer with its own record, or of a hinted app
+standing at the hinted length, is refused in the tree membership step before
+any frame is written (`no fitting tile slot: … keeps its width at 960`), so
+the recovery floats it without a retry. The first Settings window costs one
+rejected candidate, every later one none. A float→tile by hand
+(`forceInsertWindow`) clears both records first; a window that refuses again
+records them again. Each record logs `fixed-size record:` at notice, and the
+state dump prints the hints as `fixed=[bundle:axis=length]`.
+
 ### Explicit revalidation
 
 A learned bound is a memory of one refusal, and every later fit check treats
