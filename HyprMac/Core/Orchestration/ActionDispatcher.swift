@@ -753,15 +753,14 @@ final class ActionDispatcher {
     /// Cycle through occupied workspaces whose home screen is the cursor's
     /// monitor.
     ///
-    /// "Occupied" means at least one window is assigned. Walks the
-    /// workspace numbers in `delta` direction (`+1` next, `-1` previous),
-    /// wrapping around. Workspaces on other monitors are skipped — the
-    /// cycle stays on the current screen.
+    /// "Occupied" means at least one window is assigned. Steps `|delta|`
+    /// occupied workspaces in `delta` direction (`+1` next, `-1` previous),
+    /// wrapping around, so a coalesced `+3` lands where three `+1` presses
+    /// would. Workspaces on other monitors are skipped — the cycle stays on
+    /// the current screen.
     private func cycleOccupiedWorkspace(delta: Int) {
         let screen = screenUnderCursor()
         let current = workspaceManager.workspaceForScreen(screen)
-        let total = Constants.workspaceCount
-
         let screenSID = workspaceManager.screenID(for: screen)
 
         // collect occupied workspaces whose static home is this monitor
@@ -771,17 +770,27 @@ final class ActionDispatcher {
                 !workspaceManager.windowIDs(onWorkspace: ws).isEmpty
         })
 
-        guard !occupied.isEmpty else { return }
-
-        // walk in the requested direction, wrapping around, until we find an occupied workspace
-        var candidate = current
-        for _ in 1...total {
-            candidate = (candidate - 1 + delta + total) % total + 1
-            if occupied.contains(candidate) {
-                workspaceOrchestrator.switchWorkspace(candidate)
-                return
-            }
+        if let target = Self.cycleTarget(from: current, delta: delta, occupied: occupied,
+                                         total: Constants.workspaceCount) {
+            workspaceOrchestrator.switchWorkspace(target)
         }
+    }
+
+    /// Pure walk behind `cycleOccupiedWorkspace`. Nil when nothing is
+    /// occupied or `delta` is 0.
+    static func cycleTarget(from current: Int, delta: Int, occupied: Set<Int>, total: Int) -> Int? {
+        guard !occupied.isEmpty, delta != 0 else { return nil }
+        let step = delta > 0 ? 1 : -1
+        // the first step lands on an occupied workspace, after that the
+        // walk repeats every occupied.count steps
+        let steps = 1 + Int((delta.magnitude - 1) % UInt(occupied.count))
+        var candidate = current
+        for _ in 0..<steps {
+            repeat {
+                candidate = (candidate - 1 + step + total) % total + 1
+            } while !occupied.contains(candidate)
+        }
+        return candidate
     }
 
     // MARK: - floating / split

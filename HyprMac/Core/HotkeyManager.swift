@@ -324,13 +324,19 @@ class HotkeyManager {
             let token = switchCoalescer.enqueue(action)
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
-                guard self.switchCoalescer.shouldRun(action, token: token, sameMonitor: { a, b in
+                guard let (run, merged) = self.switchCoalescer.admit(action, token: token, sameMonitor: { a, b in
                     self.sharesHomeMonitor?(a, b) ?? false
                 }) else {
-                    hyprLog(.debug, .lifecycle, "coalesced: \(ActionDispatcher.discriminator(for: action))")
+                    // skipped cycles are counted in the merged line instead
+                    if case .switchWorkspace = action {
+                        hyprLog(.debug, .lifecycle, "coalesced: \(ActionDispatcher.discriminator(for: action))")
+                    }
                     return
                 }
-                self.onAction?(action)
+                if merged > 1, case .cycleWorkspace(let delta) = run {
+                    hyprLog(.debug, .lifecycle, "coalesced: cycleWorkspace n=\(merged) delta=\(delta)")
+                }
+                self.onAction?(run)
             }
             return nil
         }
