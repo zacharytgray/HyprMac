@@ -34,6 +34,11 @@ class HotkeyManager {
     /// Fires for every recognized chord (Hypr + bound key).
     var onAction: ((Action) -> Void)?
 
+    /// Main thread: whether two workspaces share a home monitor, so a
+    /// queued switch can give way to a later one there. Unset = never.
+    var sharesHomeMonitor: ((Int, Int) -> Bool)?
+    private let switchCoalescer = SwitchCoalescer()
+
     /// Fires when the Hypr key transitions from up to down.
     var onHyprKeyDown: (() -> Void)?
 
@@ -316,8 +321,16 @@ class HotkeyManager {
             // text (a runCommand command line) in the file log.
             hyprLog(.debug, .lifecycle,
                     "matched: \(ActionDispatcher.discriminator(for: action))")
+            let token = switchCoalescer.enqueue(action)
             DispatchQueue.main.async { [weak self] in
-                self?.onAction?(action)
+                guard let self else { return }
+                guard self.switchCoalescer.shouldRun(action, token: token, sameMonitor: { a, b in
+                    self.sharesHomeMonitor?(a, b) ?? false
+                }) else {
+                    hyprLog(.debug, .lifecycle, "coalesced: \(ActionDispatcher.discriminator(for: action))")
+                    return
+                }
+                self.onAction?(action)
             }
             return nil
         }

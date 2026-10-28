@@ -16,6 +16,7 @@
 		0590157898015CA6B47E1C0B /* WindowStacking.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A139BBB5E4E8AF38923E2D0 /* WindowStacking.swift */; };
 		05955F6C4EAB83E825C3F531 /* LayoutSnapshotStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D13627D56EAF1DA752EAAFC /* LayoutSnapshotStoreTests.swift */; };
 		06154C5AE91D00CA53B12C9C /* LayoutSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8522F7A5DE8D91C7F61FFF /* LayoutSnapshotStore.swift */; };
+		063A3945FE871497B23AEB36 /* SwitchCoalescerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 355FCEA79CD98B91944BFA23 /* SwitchCoalescerTests.swift */; };
 		0882360B3E354269543B3183 /* KeyRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F24369A83C38C9C3757A23FB /* KeyRemapper.swift */; };
 		09BB89D34D8ECB6D50C7AA2A /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
 		0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */; };
@@ -102,6 +103,7 @@
 		4C307BB05F3FA6FC89B4A9F5 /* FrameSizingTransactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7802C236774AA24452B3E1 /* FrameSizingTransactionTests.swift */; };
 		4E300C440FEF20C7DF664515 /* DestroyRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */; };
 		4E6923775790B037E457881C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EA610EADBFADA21DC625C3 /* AppDelegate.swift */; };
+		4F02885D6EF2D5ED8B4A92F8 /* SwitchCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */; };
 		4F220AC370184B0540805075 /* BSPTreeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2796ACDEF732F4AB5C0EC77C /* BSPTreeTests.swift */; };
 		4F7E79CBC44F654BDF24C05B /* ActionDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B096217238208C5F5BCA3E /* ActionDispatcher.swift */; };
 		5170A5CEDBB17316A9C54862 /* WelcomeContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 558BA33696C6D6012B47A661 /* WelcomeContentTests.swift */; };
@@ -245,6 +247,7 @@
 		D3AD8C51C2F4FC148513EA11 /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8FB422F1864D03E43BF91E /* AccessibilityManager.swift */; };
 		D42C28555A078D585F2268A2 /* WindowRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D21946C610CB845DEC5502 /* WindowRule.swift */; };
 		D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
+		D758B499FD8183F4AC73F042 /* SwitchCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */; };
 		D79FC29758B8999CB1D4BD05 /* TiledDragTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8049A0C6B0FBEF8B6ED25B /* TiledDragTarget.swift */; };
 		D849455C3C1CF4C164649D9A /* RetileAllPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B4FC8814875264166E19 /* RetileAllPlanner.swift */; };
 		DA37938105A87387AB0BD336 /* LayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9927DB9594D281BB5179CA3 /* LayoutEngine.swift */; };
@@ -367,6 +370,7 @@
 		30AEC105EA3C66B4DE85EB14 /* TiledDragPreviewSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragPreviewSession.swift; sourceTree = "<group>"; };
 		31EF3D85D0E0F9BCD33F6455 /* HyprWindowAXReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprWindowAXReadTests.swift; sourceTree = "<group>"; };
 		3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileScratchpadTests.swift; sourceTree = "<group>"; };
+		355FCEA79CD98B91944BFA23 /* SwitchCoalescerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchCoalescerTests.swift; sourceTree = "<group>"; };
 		3D8522F7A5DE8D91C7F61FFF /* LayoutSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSnapshotStore.swift; sourceTree = "<group>"; };
 		3E74E9F8AA97C6653000640F /* FrameReadbackPollerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameReadbackPollerTests.swift; sourceTree = "<group>"; };
 		3EEE26248F15BB9A567CA60E /* MinSizeMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinSizeMemoryTests.swift; sourceTree = "<group>"; };
@@ -446,6 +450,7 @@
 		9F54AABB9F5D654E82FF741A /* AXNotificationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXNotificationServiceTests.swift; sourceTree = "<group>"; };
 		A034E555A586C182E187021F /* HyprMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprMacApp.swift; sourceTree = "<group>"; };
 		A0E2AB7E29CE5CACDE9EE308 /* KeyRemapperTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRemapperTests.swift; sourceTree = "<group>"; };
+		A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchCoalescer.swift; sourceTree = "<group>"; };
 		A202B01AD893174E99223B4E /* LoginItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItemController.swift; sourceTree = "<group>"; };
 		A36D359F723D63F2E6036D15 /* AppLauncherManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherManager.swift; sourceTree = "<group>"; };
 		A7BD70717FD497B0899FBCE5 /* KeybindOverlayController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindOverlayController.swift; sourceTree = "<group>"; };
@@ -801,6 +806,7 @@
 				BB8DE37F0110F3E975EE8BB9 /* StateDumpFormatterTests.swift */,
 				6FF11879906CFAC20DB1166F /* StatusExportTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
+				355FCEA79CD98B91944BFA23 /* SwitchCoalescerTests.swift */,
 				2AECFAE9BE1E8270FACA3F28 /* TiledDragEventTests.swift */,
 				0A56E7F84728914582E4BEC0 /* TiledDragPreviewSessionTests.swift */,
 				4F2117AD40136A8602F18F8B /* TiledDragTargetTests.swift */,
@@ -876,6 +882,7 @@
 			isa = PBXGroup;
 			children = (
 				EDB2A500B78D0C9A7FAE6173 /* DragSwapHandler.swift */,
+				A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */,
 				8665ECFAEE8AA274A2CD6635 /* TiledDragEvent.swift */,
 				30AEC105EA3C66B4DE85EB14 /* TiledDragPreviewSession.swift */,
 			);
@@ -1090,6 +1097,7 @@
 				81B6D88FB529B805CC664324 /* StateDump.swift in Sources */,
 				838646B98788481559B982BA /* StatusExport.swift in Sources */,
 				83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */,
+				4F02885D6EF2D5ED8B4A92F8 /* SwitchCoalescer.swift in Sources */,
 				DD38C6D3A18D2B209CDDB9BC /* ThreadAssertions.swift in Sources */,
 				941830F1BB6F9B51AD98E639 /* TiledDragEvent.swift in Sources */,
 				90EB97F4A5B2FE3355B8A591 /* TiledDragPreviewSession.swift in Sources */,
@@ -1203,6 +1211,7 @@
 				7A55BA1F7EFA4F7177CE7F1E /* StateDump.swift in Sources */,
 				DAF247A95504B2BF420C7760 /* StatusExport.swift in Sources */,
 				532AEB9F865B40C952760ECF /* SuppressionRegistry.swift in Sources */,
+				D758B499FD8183F4AC73F042 /* SwitchCoalescer.swift in Sources */,
 				2E6EF6D73356C6C381F5E6BC /* ThreadAssertions.swift in Sources */,
 				9DFD6E23049B6DEACBAC46F1 /* TiledDragEvent.swift in Sources */,
 				21A1415A1F03BBEE783D30A8 /* TiledDragPreviewSession.swift in Sources */,
@@ -1301,6 +1310,7 @@
 				78F04ED8784D47C00CF40356 /* StateDumpFormatterTests.swift in Sources */,
 				F10860BD19A5F31447601D3C /* StatusExportTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,
+				063A3945FE871497B23AEB36 /* SwitchCoalescerTests.swift in Sources */,
 				8456B287CD1B9AC9E86336E5 /* TileScratchpadTests.swift in Sources */,
 				93F279679A1DA953F5BD2707 /* TiledDragEventTests.swift in Sources */,
 				C612AA1B5C741FA13FC1ABCC /* TiledDragPreviewSessionTests.swift in Sources */,

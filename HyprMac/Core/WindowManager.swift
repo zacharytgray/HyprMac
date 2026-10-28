@@ -386,6 +386,13 @@ class WindowManager {
             self.dropPreview.refresh()
         }
 
+        hotkeyManager.sharesHomeMonitor = { [weak self] a, b in
+            guard let wm = self?.workspaceManager,
+                  let sa = wm.homeScreenForWorkspace(a),
+                  let sb = wm.homeScreenForWorkspace(b) else { return false }
+            return wm.screenID(for: sa) == wm.screenID(for: sb)
+        }
+
         hotkeyManager.onHyprKeyDown = { [weak self] in
             guard let self, self.config.enabled else { return }
             self.hyprHeld = true
