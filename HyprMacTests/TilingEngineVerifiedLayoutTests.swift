@@ -12,7 +12,6 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         let target = tree.layout(in: usable, gap: TilingConfig.defaultGap,
                                  padding: TilingConfig.defaultOuterPadding)[0].1
         var frame = parked
-        var destinationReady = false
         var writes: [String] = []
         var now: TimeInterval = 0
         let engine = TilingEngine(displayManager: DisplayManager(), frameSizingIOFactory: { _, generation in
@@ -20,14 +19,17 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 setMessagingTimeout: { _, _ in .success },
                 writeSize: { _, size, _ in
                     writes.append("size")
+                    // the portrait trace: still in the parking corner, the
+                    // landscape screen clamps the height to 1528
+                    let onDestination = frame.origin == target.origin
                     frame.size = CGSize(width: size.width,
-                                        height: destinationReady ? size.height : min(size.height, 1528))
+                                        height: onDestination ? size.height : min(size.height, 1528))
                     return .success
                 },
                 writePosition: { _, position, _ in writes.append("position"); frame.origin = position; return .success },
                 readPosition: { _, _ in (.success, frame.origin) },
                 readSize: { _, _ in (.success, frame.size) },
-                now: { now }, sleep: { now += $0; destinationReady = true },
+                now: { now }, sleep: { now += $0 },
                 currentGeneration: generation)
         })
         let generation = engine.beginLayoutGeneration()

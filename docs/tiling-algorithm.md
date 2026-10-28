@@ -274,8 +274,12 @@ it, which is how a parked reveal onto the portrait settled 1528 tall against
 ultrawide window moved first onto the 1512-wide panel lay over the portrait
 next to it on the way.
 
-A position-first window waits for two stable on-target position reads
-before its size goes out, but for at most a third of the deadline. After
+A position-first window sizes as soon as its first position read is on
+target (`position settle: first read on target`, a debug line). Live, 98.7 %
+of settles finished in two reads (30-59 ms), and the 30 ms sleep between them
+was 41 % of a reveal's main-thread time. A first read off target
+waits for two stable on-target reads before its size goes out, but for at
+most a third of the deadline. After
 that the size goes out anyway and the readback judges. Without the cap, a
 position that never read back steady used the whole deadline with no size
 written, and the attempt could only time out. The cap is per window, and

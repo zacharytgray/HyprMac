@@ -785,6 +785,18 @@ struct FrameSizingAttempt {
                             anchor = position
                             stableCount = onTarget ? 1 : 0
                         }
+                        // a first read already on target is the move landing,
+                        // not a window still in flight: 98.7 % of live settles
+                        // finished in two reads (30-59 ms), the second only a
+                        // confirmation. the readback after the size still needs
+                        // two stable samples
+                        if samples == 1, onTarget {
+                            hyprLog(.debug, .tiling, "position settle: first read on target "
+                                    + "wid=\(target.windowID) phase=\(phase.rawValue) "
+                                    + "after=\(Self.ms(io.now() - settleStarted))")
+                            settled = true
+                            break
+                        }
                         if stableCount >= configuration.requiredStableSamples {
                             settled = true
                             break
