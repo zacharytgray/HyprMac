@@ -164,6 +164,8 @@
 		8683B17E57E3DABFB9776F68 /* KeybindOverlayContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 735D2D29C87C520F2EDEEAF6 /* KeybindOverlayContentTests.swift */; };
 		86B3C95B411DB51B9AFBE08D /* WorkspacePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4754A615E4871D79F5D066 /* WorkspacePicker.swift */; };
 		87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */; };
+		87EDE00EE65C7D8C04A3FFA0 /* FocusPollGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB0AA4D6A2B4396516ABB0D1 /* FocusPollGateTests.swift */; };
+		887C756C5FC1DD579E77523F /* FocusPollGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F0266F4B35C59914C66A1E /* FocusPollGate.swift */; };
 		8A7450A0AEBA21F9865B5BEA /* DragSwapHandlerInsertionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C3A29473C9D3ECD870EB22 /* DragSwapHandlerInsertionTests.swift */; };
 		8BEC65B84A975386F95AA087 /* TiledDragTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8049A0C6B0FBEF8B6ED25B /* TiledDragTarget.swift */; };
 		8C3306FE7A9CD13A28CA5C87 /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49CB059612127CA6F3E7766 /* SettingsComponents.swift */; };
@@ -185,6 +187,7 @@
 		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
 		9A2732DA57E004BBC2860133 /* CommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D8E6D4FE4C4E6D244C14D76 /* CommandRunner.swift */; };
 		9A7B1CB7BE53FAD102B90AE5 /* DebugLogFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C350B5FCD0242E1993F822 /* DebugLogFileTests.swift */; };
+		9CB582630088CFA1AF6159DC /* FocusPollGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F0266F4B35C59914C66A1E /* FocusPollGate.swift */; };
 		9D51788040A2380139C79B56 /* AXFrameWriteBatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9248FBC1729E7F502A6186 /* AXFrameWriteBatchTests.swift */; };
 		9D75A3D3BAA41C0012711D6D /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		9DFD6E23049B6DEACBAC46F1 /* TiledDragEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8665ECFAEE8AA274A2CD6635 /* TiledDragEvent.swift */; };
@@ -483,6 +486,7 @@
 		D7B55D3C4457B095922C6112 /* LayoutPersistencePerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutPersistencePerformanceTests.swift; sourceTree = "<group>"; };
 		D7D1180BDFCCA277B2991FA8 /* TiledDropPreviewPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDropPreviewPanel.swift; sourceTree = "<group>"; };
 		D8425DC47E2604936890FF01 /* TiledDriftMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDriftMonitor.swift; sourceTree = "<group>"; };
+		DB0AA4D6A2B4396516ABB0D1 /* FocusPollGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPollGateTests.swift; sourceTree = "<group>"; };
 		DBF9449D559067A61BBA8394 /* BSPTree.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTree.swift; sourceTree = "<group>"; };
 		DBFE122D665A22CF5243E376 /* ScratchpadLayerLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScratchpadLayerLayoutTests.swift; sourceTree = "<group>"; };
 		DC08AAC03ABC15E772214598 /* ToggleSplitFallthroughRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToggleSplitFallthroughRegressionTests.swift; sourceTree = "<group>"; };
@@ -498,6 +502,7 @@
 		E49CB059612127CA6F3E7766 /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsComponents.swift; sourceTree = "<group>"; };
 		E5557F0D5040AE48CF5031E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleIDPicker.swift; sourceTree = "<group>"; };
+		E8F0266F4B35C59914C66A1E /* FocusPollGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPollGate.swift; sourceTree = "<group>"; };
 		E9EF96B688DCAEC0C6EB7A10 /* WindowRuleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRuleTests.swift; sourceTree = "<group>"; };
 		EC19E9DB53B109940984B5D5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCodeUtils.swift; sourceTree = "<group>"; };
@@ -638,6 +643,7 @@
 			children = (
 				F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */,
 				2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */,
+				E8F0266F4B35C59914C66A1E /* FocusPollGate.swift */,
 				D8425DC47E2604936890FF01 /* TiledDriftMonitor.swift */,
 				7D21846E7D9A34CB1271FE64 /* WindowAdmissionFilter.swift */,
 				8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */,
@@ -759,6 +765,7 @@
 				B9C3A29473C9D3ECD870EB22 /* DragSwapHandlerInsertionTests.swift */,
 				26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */,
 				5C3932D77600EA8C6056C2E3 /* FloatingFocusStackingTests.swift */,
+				DB0AA4D6A2B4396516ABB0D1 /* FocusPollGateTests.swift */,
 				084CC77D9BC9594A5E7DE366 /* FocusStateControllerTests.swift */,
 				C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */,
 				BFF82BFB0DD5A67058F96BE9 /* ForgottenWindowCleanupTests.swift */,
@@ -1046,6 +1053,7 @@
 				531ACE79FC3FD6C76D047281 /* FloatingWindowController.swift in Sources */,
 				3096F5E0A6427D2DB64D076E /* FocusBorder.swift in Sources */,
 				96D7C04382452A795D840940 /* FocusBrackets.swift in Sources */,
+				9CB582630088CFA1AF6159DC /* FocusPollGate.swift in Sources */,
 				16658F8479CAE2DD07B18DB5 /* FocusStateController.swift in Sources */,
 				557EC1265B83BD0ACFB2564C /* FrameReadbackPoller.swift in Sources */,
 				81AF83F1517A037F29B3CA9F /* FrameSizingTransaction.swift in Sources */,
@@ -1159,6 +1167,7 @@
 				D215F368DD012037B9304463 /* FloatingWindowController.swift in Sources */,
 				EBB19C09B6086F4E063069CC /* FocusBorder.swift in Sources */,
 				93AFE8B3CA78BCF41A938991 /* FocusBrackets.swift in Sources */,
+				887C756C5FC1DD579E77523F /* FocusPollGate.swift in Sources */,
 				E1B183F845EF460CEFC02DA0 /* FocusStateController.swift in Sources */,
 				F21B3CD356CACDD05464DCD4 /* FrameReadbackPoller.swift in Sources */,
 				EABEFF5EE2EE6EEABE6956EB /* FrameSizingTransaction.swift in Sources */,
@@ -1259,6 +1268,7 @@
 				8A7450A0AEBA21F9865B5BEA /* DragSwapHandlerInsertionTests.swift in Sources */,
 				7A66C97726B539669E56D8DD /* DwindleLayoutTests.swift in Sources */,
 				BC3FDA5074F38001F6917FBB /* FloatingFocusStackingTests.swift in Sources */,
+				87EDE00EE65C7D8C04A3FFA0 /* FocusPollGateTests.swift in Sources */,
 				EDF1F6BE9094C220921182DC /* FocusStateControllerTests.swift in Sources */,
 				EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */,
 				EAF0DF45A4741C259DF350CA /* ForgottenWindowCleanupTests.swift in Sources */,

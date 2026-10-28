@@ -774,7 +774,7 @@ class WindowManager {
             case .windowCreated, .windowMiniaturized, .windowDeminiaturized:
                 self.pollingScheduler.schedule(after: 0.2)
             case .focusedWindowChanged:
-                self.pollingScheduler.schedule(after: 0.15)
+                self.scheduleFocusPoll(pid: pid, via: "axFocus", after: 0.15)
                 self.scheduleRestackRefresh(after: 0.05)
             case .mainWindowChanged:
                 // a new main window usually came forward; nothing to discover
@@ -3011,6 +3011,22 @@ class WindowManager {
         }
     }
 
+    /// Poll after a focus change unless it landed on a window discovery
+    /// already manages on screen (`FocusPollGate`).
+    private func scheduleFocusPoll(pid: pid_t, via: String, after delay: TimeInterval) {
+        let focused = accessibility.focusedWindowID(ofPID: pid)
+        let needed = FocusPollGate.needsPoll(
+            focusedID: focused,
+            known: stateCache.knownWindowIDs,
+            hidden: stateCache.hiddenWindowIDs,
+            onVisibleWorkspace: { workspaceManager.workspaceFor($0).map(workspaceManager.isWorkspaceVisible) ?? false })
+        if needed {
+            pollingScheduler.schedule(after: delay)
+        } else {
+            hyprLog(.debug, .discovery, "focus poll skipped: wid=\(focused ?? 0) via=\(via)")
+        }
+    }
+
     /// Same-screen drift: hand this poll's tiled frames to the monitor and
     /// carry out whatever it decides.
     ///
@@ -3183,7 +3199,13 @@ class WindowManager {
             }
         }
 
-        pollingScheduler.schedule()
+        // our own activation lands on a window we chose; only the user's can
+        // bring one discovery has not seen
+        if causedByHyprMac, let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            scheduleFocusPoll(pid: app.processIdentifier, via: "activation", after: 0.2)
+        } else {
+            pollingScheduler.schedule()
+        }
         // activation brings windows forward; floater cutouts follow the new stack
         scheduleRestackRefresh(after: 0.1)
 
