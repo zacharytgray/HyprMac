@@ -105,6 +105,21 @@ class OverlayHostingView<Content: View>: NSHostingView<Content> {
     override var isOpaque: Bool { false }
 }
 
+/// Panel for click-through overlays (focus border, dim, brackets, drop
+/// preview). `ignoresMouseEvents` does not stop AppKit from routing
+/// enter/exit through the panel when it moves under the cursor or the
+/// cursor crosses it, and each one resets the cursor to the arrow. With a
+/// customized accessibility pointer that reset re-renders the pointer
+/// image every time, which made hover focus changes expensive.
+final class ClickThroughPanel: NSPanel {
+    override func sendEvent(_ event: NSEvent) {
+        switch event.type {
+        case .mouseEntered, .mouseExited, .cursorUpdate: return
+        default: super.sendEvent(event)
+        }
+    }
+}
+
 struct OverlayPalette {
     let scheme: ColorScheme
     var isDark: Bool { scheme == .dark }
