@@ -2,25 +2,30 @@ import XCTest
 @testable import HyprMac
 
 final class FrameReadbackPollerTests: XCTestCase {
-    func testWorkspaceRevealSettlesDestinationPositionBeforeTallResize() {
+    // the portrait trace (docs/dedicated-workspace-verification.md): a size
+    // written while the window still sat in the parking corner was clamped
+    // to 1528 by the landscape screen. the destination takes the full height
+    // once the window stands on it
+    func testWorkspaceRevealMovesBeforeTheTallResize() {
         let window = makeWindow(id: 31)
         let target = CGRect(x: -1072, y: -88, width: 1064, height: 1874)
         var frame = CGRect(x: 3439, y: 1347, width: 1064, height: 900)
-        var destinationReady = false
         var writes: [String] = []
         var time: TimeInterval = 0
+        var sleeps: [TimeInterval] = []
         let io = FrameSizingIO(
             setMessagingTimeout: { _, _ in .success },
             writeSize: { _, size, _ in
                 writes.append("size")
+                let onDestination = frame.origin == target.origin
                 frame.size = CGSize(width: size.width,
-                                    height: destinationReady ? size.height : min(size.height, 1528))
+                                    height: onDestination ? size.height : min(size.height, 1528))
                 return .success
             },
             writePosition: { _, position, _ in writes.append("position"); frame.origin = position; return .success },
             readPosition: { _, _ in (.success, frame.origin) },
             readSize: { _, _ in (.success, frame.size) },
-            now: { time }, sleep: { time += $0; destinationReady = true }, currentGeneration: { 1 })
+            now: { time }, sleep: { time += $0; sleeps.append(time) }, currentGeneration: { 1 })
 
         let result = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in io })
             .applyWorkspaceReveal([(window, target)], positionFirstWindowIDs: [31],
@@ -29,6 +34,37 @@ final class FrameReadbackPollerTests: XCTestCase {
         XCTAssertEqual(result.verdict, .accepted)
         XCTAssertEqual(frame, target)
         XCTAssertEqual(writes, ["position", "size", "size"])
+        XCTAssertEqual(sleeps.count, 1, "only the readback's stable pair waits; the settle took its first read")
+    }
+
+    // a move that has not landed on the first read still waits for two
+    // stable on-target reads before its size goes out
+    func testWorkspaceRevealStillSettlesAMoveThatLandsLate() {
+        let window = makeWindow(id: 35)
+        let target = CGRect(x: -1072, y: -88, width: 1064, height: 1874)
+        var frame = CGRect(x: 3439, y: 1347, width: 1064, height: 900)
+        var writes: [String] = []
+        var positionReads = 0
+        var time: TimeInterval = 0
+        let io = FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { _, size, _ in writes.append("size@\(positionReads)"); frame.size = size; return .success },
+            writePosition: { _, position, _ in writes.append("position"); frame.origin = position; return .success },
+            readPosition: { _, _ in
+                positionReads += 1
+                // still in flight on the first read
+                return (.success, positionReads == 1 ? CGPoint(x: 1200, y: 600) : frame.origin)
+            },
+            readSize: { _, _ in (.success, frame.size) },
+            now: { time }, sleep: { time += $0 }, currentGeneration: { 1 })
+
+        let result = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in io })
+            .applyWorkspaceReveal([(window, target)], positionFirstWindowIDs: [35],
+                                  usableFrame: target, gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(writes, ["position", "size@3", "size@3"],
+                       "off, on, on again: the size waits for the stable pair")
     }
 
     // issue #43, live trace 22:51:45: Ghostty parked at the hide corner with
@@ -117,9 +153,9 @@ final class FrameReadbackPollerTests: XCTestCase {
             setMessagingTimeout: { _, _ in .success },
             writeSize: { _, _, _ in sizeWrites += 1; return .success },
             writePosition: { _, position, _ in frame.origin = position; return .success },
-            readPosition: { _, _ in (.success, frame.origin) },
+            readPosition: { _, _ in generation = 2; return (.success, frame.origin) },
             readSize: { _, _ in (.success, frame.size) },
-            now: { time }, sleep: { time += $0; generation = 2 }, currentGeneration: { generation })
+            now: { time }, sleep: { time += $0 }, currentGeneration: { generation })
 
         let result = FrameReadbackPoller(generation: { generation }, ioFactory: { _, _ in io })
             .applyWorkspaceReveal([(window, target)], positionFirstWindowIDs: [32],
