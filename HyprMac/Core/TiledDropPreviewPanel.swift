@@ -48,8 +48,8 @@ final class TiledDropPreviewPanel {
     }
 
     private func makePanel() -> NSPanel {
-        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
-                            backing: .buffered, defer: true)
+        let panel = ClickThroughPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                                      backing: .buffered, defer: true)
         panel.isFloatingPanel = true
         // above ordinary windows, below menus, with the focus border
         panel.level = .floating

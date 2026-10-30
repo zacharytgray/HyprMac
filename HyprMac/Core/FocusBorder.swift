@@ -728,9 +728,9 @@ class FocusBorder {
     }
 
     private func makeBasePanel(frame: NSRect) -> NSPanel {
-        let p = NSPanel(contentRect: frame,
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
+        let p = ClickThroughPanel(contentRect: frame,
+                                  styleMask: [.borderless, .nonactivatingPanel],
+                                  backing: .buffered, defer: false)
         p.isFloatingPanel = true
         // Phase 5b: .floating tier guarantees borders render above the dim
         // panel — which sits at .floating - 1 in normal mode and .normal in
