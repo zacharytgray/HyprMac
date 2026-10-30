@@ -328,6 +328,8 @@ class TilingEngine {
     /// Everything `MinSizeMemory` currently believes, with the evidence
     /// behind each entry, for the state dump.
     var knownMinimumSizes: [CGWindowID: MinSizeMemory.Entry] { minSizes.snapshot }
+    var knownFixedSizeApps: [FixedSize] { minSizes.fixedAppHints }
+    func fixedSize(for window: HyprWindow) -> FixedSize? { minSizes.fixedSize(for: window) }
 
     /// Drop any stored min-size memory for `windowID`. Called when a
     /// window is forgotten by the discovery layer.
@@ -2044,6 +2046,10 @@ class TilingEngine {
                 observedMinimumGeneration[obs.window.windowID] = generation
             }
         }
+        for fixed in result.fixedSizes {
+            minSizes.recordFixedSize(fixed.window, axis: fixed.axis, length: fixed.length,
+                                     target: fixed.target)
+        }
         for (window, size) in result.accepted {
             // a window whose app hint this pass set aside has now been
             // measured on its own, so its entry stops being somebody else's
@@ -2245,6 +2251,15 @@ class TilingEngine {
             let w = pending.removeFirst()
             // wherever it lands now is its place; the old one is spent
             slotMemory.removeValue(forKey: w.windowID)
+            // a window that keeps its own length fills no slot, and asking
+            // again only repeats the resize and rollback the user watched
+            if let fixed = minSizes.fixedSize(for: w) {
+                refusedWindows.append(w)
+                hyprLog(.notice, .tiling, "no fitting tile slot: wid=\(w.windowID) ws\(workspace)"
+                        + " keeps its \(fixed.axis.rawValue) at \(String(format: "%g", Double(fixed.length)))"
+                        + " — staying in place")
+                continue
+            }
             let insert = {
                 self.smartInsertFitting(w, into: t, maxDepth: self.maxDepth(for: screen), rect: rect)
             }
@@ -3688,6 +3703,7 @@ class TilingEngine {
                 forceInsertWindow(window, toWorkspace: workspace, on: screen)
             }
         }
+        minSizes.forgetFixedSize(window)
         primeMinimumSizes([window])
         let live = trees[key]
         let rect = layoutRect(for: key, screen: screen)

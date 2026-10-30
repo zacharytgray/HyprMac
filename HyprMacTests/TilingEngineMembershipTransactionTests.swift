@@ -134,6 +134,48 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
                           "a cell of rounding is not a floor")
     }
 
+    /// a newcomer that moves and takes its height but stays at its own width
+    /// is remembered as fixed: the next pass refuses it before writing, a
+    /// new window of the same app at that width too, and a hand tile clears it
+    func testAWindowThatKeepsItsOwnWidthIsRefusedBeforeTheNextWrite() {
+        let screen = MembershipHomeScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 1101), b = makeWindow(id: 1102), c = makeWindow(id: 1103)
+        let rect = engine.displayManager.cgRect(for: screen)
+        trace.frames[a.windowID] = rect.insetBy(dx: 100, dy: 100)
+        XCTAssertTrue(engine.tileWindows([a], onWorkspace: 1, screen: screen).published)
+        for w in [b, c] {
+            w.bundleID = "com.example.settings"
+            trace.frames[w.windowID] = CGRect(x: rect.minX + 300, y: rect.minY + 200, width: 400, height: 300)
+            trace.fixedWidth[w.windowID] = 400
+        }
+
+        let first = engine.tileWindows([a, b], onWorkspace: 1, screen: screen)
+
+        XCTAssertFalse(first.published)
+        XCTAssertEqual(first.strandedIDs, [b.windowID])
+        XCTAssertEqual(engine.fixedSize(for: b),
+                       FixedSize(bundleID: "com.example.settings", axis: .width, length: 400))
+
+        trace.written = []
+        let retry = engine.tileWindows([a, b], onWorkspace: 1, screen: screen)
+        XCTAssertEqual(retry.refusedIDs, [b.windowID])
+        XCTAssertFalse(trace.written.contains(b.windowID), "no second resize for a window that keeps its width")
+
+        c.cachedFrame = trace.frames[c.windowID]
+        let sibling = engine.tileWindows([a, c], onWorkspace: 1, screen: screen)
+        XCTAssertEqual(sibling.refusedIDs, [c.windowID], "the app's hint speaks for its next window at that width")
+        XCTAssertFalse(trace.written.contains(c.windowID))
+
+        // the app lets go of the width and the user tiles the window by hand
+        trace.fixedWidth[b.windowID] = nil
+        XCTAssertEqual(engine.forceInsertWindow(b, toWorkspace: 1, on: screen), .inserted)
+        XCTAssertNil(engine.fixedSize(for: b))
+        XCTAssertTrue(engine.knownFixedSizeApps.isEmpty)
+    }
+
     /// a rollback puts each window back where it was. an original a point
     /// past the edge of the screen, the slack the rollback's own readback
     /// is allowed, is where it was; it used to make the whole key's
@@ -2021,6 +2063,8 @@ private final class MembershipTrace {
     /// how far short of the height it is asked for a window settles — the
     /// portrait Terminal case, which answers short whatever the ask
     var heightShortfall: [CGWindowID: CGFloat] = [:]
+    /// a width a window keeps whatever it is asked, the Raycast Settings case
+    var fixedWidth: [CGWindowID: CGFloat] = [:]
     /// error the EnhancedUI cleanup returns after the setters have all
     /// succeeded, so a clean-looking frame still ends in a failure
     var endError: AXError?
@@ -2048,6 +2092,7 @@ private final class MembershipTrace {
                           let short = heightShortfall[id] ?? 0
                           frames[id]?.size = CGSize(width: max(size.width, floor.width),
                                                     height: max(size.height - short, floor.height))
+                          if let width = fixedWidth[id] { frames[id]?.size.width = width }
                           return .success
                       },
                       writePosition: { [self] id, position, _ in

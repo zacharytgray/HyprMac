@@ -23,6 +23,17 @@ struct FrameReadbackPoller {
         var positionFirst = false
     }
 
+    /// One window's evidence that it keeps its own size on an axis: it moved
+    /// where it was told and took the other axis, and on this one it stayed
+    /// exactly as long as it was before the write. Same guards as
+    /// `Observation`.
+    struct FixedSizeObservation {
+        let window: HyprWindow
+        let axis: FixedSize.Axis
+        let length: CGFloat
+        let target: CGSize
+    }
+
     /// Why a window's apparent oversize teaches nothing. Each case is a
     /// reason the readback cannot be read as "this app refused to be that
     /// small", whatever the numbers say.
@@ -49,6 +60,7 @@ struct FrameReadbackPoller {
         let observations: [Observation]
         let accepted: [(HyprWindow, CGSize)]
         var progress = FrameSizingAttempt.Progress()
+        var fixedSizes: [FixedSizeObservation] = []
         /// restored originals that overlap each other. restoration only,
         /// and a diagnostic rather than a failure — see
         /// `FrameSizingConfiguration.correspondenceOnly`.
@@ -223,7 +235,8 @@ struct FrameReadbackPoller {
             usableFrame: usableFrame, gap: gap, generation: requestedGeneration,
             phase: phase
         )
-        return classify(raw, layouts: layouts, configuration: configuration)
+        return classify(raw, layouts: layouts, configuration: configuration,
+                        originalFrames: originalFrames ?? [:])
     }
 
     /// Whether a second read found every window exactly where the first
@@ -255,10 +268,12 @@ struct FrameReadbackPoller {
 
     private func classify(_ raw: FrameSizingAttempt.Result,
                           layouts: [(HyprWindow, CGRect)],
-                          configuration: FrameSizingConfiguration) -> Result {
+                          configuration: FrameSizingConfiguration,
+                          originalFrames: [CGWindowID: CGRect] = [:]) -> Result {
         var conflicts: [Conflict] = []
         var observations: [Observation] = []
         var accepted: [(HyprWindow, CGSize)] = []
+        var fixedSizes: [FixedSizeObservation] = []
         let phase = raw.progress.phase
         for (window, target) in layouts {
             guard let actual = raw.actualFrames[window.windowID] else { continue }
@@ -318,10 +333,46 @@ struct FrameReadbackPoller {
             } else if raw.verdict == .accepted {
                 accepted.append((window, actual.size))
             }
+            // a window moved before it was sized stood parked, maybe shrunk to
+            // the corner screen, so its old length is not its own (issue #43)
+            if case .rejected = raw.verdict, let original = originalFrames[window.windowID],
+               !configuration.positionSettleWindowIDs.contains(window.windowID),
+               let axis = Self.fixedAxis(original: original.size, target: target.size,
+                                         actual: actual.size,
+                                         tolerance: self.configuration.sizeUndershootTolerance),
+               Self.learningRefusal(windowID: window.windowID, target: target, actual: actual,
+                                    verdict: raw.verdict, progress: raw.progress,
+                                    positionTolerance: configuration.positionTolerance) == nil {
+                fixedSizes.append(FixedSizeObservation(
+                    window: window, axis: axis,
+                    length: axis == .width ? actual.width : actual.height, target: target.size))
+            }
         }
         return Result(verdict: raw.verdict, actualFrames: raw.actualFrames,
                       conflicts: conflicts, observations: observations,
-                      accepted: accepted, progress: raw.progress, overlaps: raw.overlaps)
+                      accepted: accepted, progress: raw.progress, fixedSizes: fixedSizes,
+                      overlaps: raw.overlaps)
+    }
+
+    /// The axis a window kept at its own length while it took the other:
+    /// short of the target on it by more than `tolerance`, within a point of
+    /// where it was before the write, and on target on the other axis after
+    /// really moving there. A window still catching up has not taken the
+    /// other axis yet, and one that stops short wherever it is asked (the
+    /// portrait Terminal) does not stay at its old length, so neither is one.
+    static func fixedAxis(original: CGSize, target: CGSize, actual: CGSize,
+                          tolerance: CGFloat) -> FixedSize.Axis? {
+        func kept(_ original: CGFloat, _ target: CGFloat, _ actual: CGFloat) -> Bool {
+            actual < target - tolerance && abs(actual - original) <= 1
+        }
+        func took(_ original: CGFloat, _ target: CGFloat, _ actual: CGFloat) -> Bool {
+            abs(original - target) > tolerance && abs(actual - target) <= tolerance
+        }
+        if kept(original.width, target.width, actual.width),
+           took(original.height, target.height, actual.height) { return .width }
+        if kept(original.height, target.height, actual.height),
+           took(original.width, target.width, actual.width) { return .height }
+        return nil
     }
 
     /// Whether this window's oversize may teach a minimum, and if not, why
