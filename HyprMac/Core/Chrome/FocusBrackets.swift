@@ -355,9 +355,9 @@ class FocusBrackets {
     // MARK: - panel setup
 
     private func makePanel(frame: NSRect) -> NSPanel {
-        let p = NSPanel(contentRect: frame,
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
+        let p = ClickThroughPanel(contentRect: frame,
+                                  styleMask: [.borderless, .nonactivatingPanel],
+                                  backing: .buffered, defer: false)
         p.isFloatingPanel = true
         p.level = .floating
         p.backgroundColor = .clear

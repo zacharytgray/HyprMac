@@ -538,9 +538,9 @@ class DimmingOverlay {
         let key = screen.displayID
         if let existing = panels[key] { return existing }
 
-        let p = NSPanel(contentRect: screen.frame,
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
+        let p = ClickThroughPanel(contentRect: screen.frame,
+                                  styleMask: [.borderless, .nonactivatingPanel],
+                                  backing: .buffered, defer: false)
         // level is mode-dependent: .floating - 1 for the normal focus dim
         // (above all normal windows so carve-outs keep floaters bright),
         // .normal for the scratchpad scrim (stack once below the members;

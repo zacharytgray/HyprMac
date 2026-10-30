@@ -699,9 +699,9 @@ class FocusBorder {
     }
 
     private func makeBasePanel(frame: NSRect) -> NSPanel {
-        let p = NSPanel(contentRect: frame,
-                        styleMask: [.borderless, .nonactivatingPanel],
-                        backing: .buffered, defer: false)
+        let p = ClickThroughPanel(contentRect: frame,
+                                  styleMask: [.borderless, .nonactivatingPanel],
+                                  backing: .buffered, defer: false)
         p.isFloatingPanel = true
         // .floating keeps borders above the dim panel (.floating - 1, or
         // .normal in scrim mode) and above all .normal-level app windows.
