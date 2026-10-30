@@ -5,8 +5,9 @@ import CoreGraphics
 
 /// a focus change needs no discovery poll when it lands on a window the
 /// walks already know, that is not hidden, and whose workspace is on screen.
-/// every focus HyprMac makes itself (FFM, a switch) is such a window, and a
-/// full walk per hover cost ~15% CPU. an unread or unknown focus keeps the
+/// every focus HyprMac makes itself (FFM, a switch) is such a window, and
+/// each hover ran a full AX walk (~30 ms of calls into every app). an
+/// unread or unknown focus keeps the
 /// poll: some windows announce themselves only through focus. a hidden-ws
 /// focus keeps it too, so park repair still sees a window pulled on screen.
 enum FocusPollGate {
