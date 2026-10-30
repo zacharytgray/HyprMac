@@ -301,6 +301,36 @@ final class WorkspaceOverviewPresentationTests: XCTestCase {
         }
     }
 
+    func testSwitchHUDOriginHugsTheChosenEdges() {
+        let visible = CGRect(x: 100, y: 50, width: 1000, height: 800)
+        let size = CGSize(width: 200, height: 100)
+        func origin(_ p: SwitchHUDPosition) -> CGPoint {
+            WorkspaceOverviewPresentation.switchHUDOrigin(size: size, in: visible, position: p)
+        }
+        XCTAssertEqual(origin(.bottom), CGPoint(x: 500, y: 62))
+        XCTAssertEqual(origin(.topLeft), CGPoint(x: 112, y: 738))
+        XCTAssertEqual(origin(.topRight), CGPoint(x: 888, y: 738))
+        XCTAssertEqual(origin(.center), CGPoint(x: 500, y: 400))
+        XCTAssertEqual(origin(.bottomRight), CGPoint(x: 888, y: 62))
+    }
+
+    func testSwitchHUDCellsUseTheTargetsMonitorAndMoveActive() {
+        let left = MenuBarMonitorSnapshot(id: 0, name: "L", currentWorkspace: 1, isPortrait: false,
+            workspaces: [MenuBarWorkspaceBadge(id: 1, isActive: true, isOccupied: true, hasFloatingWindows: false),
+                         MenuBarWorkspaceBadge(id: 2, isActive: false, isOccupied: false, hasFloatingWindows: false)])
+        let right = MenuBarMonitorSnapshot(id: 1, name: "R", currentWorkspace: 6, isPortrait: false,
+            workspaces: [MenuBarWorkspaceBadge(id: 6, isActive: true, isOccupied: true, hasFloatingWindows: false)])
+        let cells = WorkspaceOverviewPresentation.switchHUDCells(workspace: 2, monitors: [left, right])
+        XCTAssertEqual(cells.map(\.id), [1, 2])
+        XCTAssertEqual(cells.map(\.isActive), [false, true])
+        XCTAssertEqual(cells.map { WorkspaceOverviewPresentation.switchHUDGlyph($0, style: .squares) }, ["□", "■"])
+        XCTAssertEqual(cells.map { WorkspaceOverviewPresentation.switchHUDGlyph($0, style: .dots) }, ["●", "●"])
+
+        let lone = WorkspaceOverviewPresentation.switchHUDCells(workspace: 10, monitors: [])
+        XCTAssertEqual(lone.map(\.id), [10])
+        XCTAssertEqual(WorkspaceOverviewPresentation.switchHUDGlyph(lone[0], style: .numbers), "0")
+    }
+
     private func window(_ id: CGWindowID, _ title: String, _ bundle: String) -> WorkspaceWindowSnapshot {
         WorkspaceWindowSnapshot(id: id, title: title, bundleID: bundle,
                                 appName: bundle.components(separatedBy: ".").last ?? bundle,

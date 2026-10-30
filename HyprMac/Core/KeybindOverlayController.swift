@@ -557,11 +557,11 @@ struct KeybindOverlayView: View {
             Button(action: showTutorial) {
                 Text("Tutorial")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Color.hyprCyan)
+                    .foregroundStyle(Color.overlayPrimary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .contentShape(Rectangle())
-                    .background(Color.hyprCyan.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                    .background(Color.overlayPrimary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.plain)
         }
@@ -600,13 +600,13 @@ struct KeybindOverlayView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.hyprCyan.opacity(0.45), lineWidth: 1)
+                .strokeBorder(Color.overlayPrimary.opacity(0.45), lineWidth: 1)
         )
     }
 
     private var caret: some View {
         Rectangle()
-            .fill(Color.hyprCyan)
+            .fill(Color.overlayPrimary)
             .frame(width: 2, height: 18)
     }
 
@@ -685,7 +685,7 @@ private struct OverlayList: View {
             .font(.system(size: 12, weight: .semibold))
             .tracking(0.8)
             .textCase(.uppercase)
-            .foregroundStyle(Color.hyprCyan)
+            .foregroundStyle(Color.overlayPrimary)
             .padding(.horizontal, 12)
             .padding(.top, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -724,7 +724,7 @@ private struct OverlayList: View {
             return Text(description)
         }
         return Text(description[..<range.lowerBound])
-            + Text(description[range]).foregroundColor(.hyprCyan).fontWeight(.semibold)
+            + Text(description[range]).foregroundColor(.overlayPrimary).fontWeight(.semibold)
             + Text(description[range.upperBound...])
     }
 }

@@ -285,6 +285,11 @@ struct SavedConfig: Codable {
     var restoreLayoutOnLaunch: Bool? = nil
     var windowRules: [WindowRule]? = nil
     var workspaceNames: [String: String]? = nil
+    // nil = the brand cyan + magenta pair
+    var overlayAccentHex: String? = nil
+    var switchHUDPosition: SwitchHUDPosition? = nil
+    var switchHUDStyle: SwitchHUDStyle? = nil
+    var switchHUDFont: SwitchHUDFont? = nil
 }
 
 // MARK: - per-keybind decode tolerance
@@ -314,6 +319,7 @@ extension SavedConfig {
         case restoreLayoutOnLaunch
         case windowRules
         case workspaceNames
+        case overlayAccentHex, switchHUDPosition, switchHUDStyle, switchHUDFont
     }
 
     init(from decoder: Decoder) throws {
@@ -383,6 +389,10 @@ extension SavedConfig {
         self.restoreLayoutOnLaunch = Self.tolerant(c, .restoreLayoutOnLaunch)
         self.windowRules = Self.tolerantWindowRules(c)
         self.workspaceNames = Self.tolerantWorkspaceNames(c)
+        self.overlayAccentHex = Self.tolerant(c, .overlayAccentHex)
+        self.switchHUDPosition = Self.tolerant(c, .switchHUDPosition)
+        self.switchHUDStyle = Self.tolerant(c, .switchHUDStyle)
+        self.switchHUDFont = Self.tolerant(c, .switchHUDFont)
     }
 
     // keys "1"…"10" with a non-empty name; anything else is dropped, so a

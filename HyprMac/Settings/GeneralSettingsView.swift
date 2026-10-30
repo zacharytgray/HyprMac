@@ -243,6 +243,10 @@ struct GeneralSettingsView: View {
         }
     }
 
+    // cyan, blue, purple, pink, red, orange, yellow, green
+    static let overlayAccentPresets = ["56D8F0", "0A84FF", "BF5AF2", "FF6FB5",
+                                       "FF453A", "FF9F0A", "FFD60A", "30D158"]
+
     private func setPinnedWorkspace(_ workspace: Int, for bundleID: String) {
         guard let index = config.windowRules.firstIndex(where: { $0.bundleID == bundleID }) else { return }
         config.windowRules[index].workspace = workspace
@@ -274,6 +278,56 @@ struct GeneralSettingsView: View {
                 }
                 .labelsHidden()
                 .frame(width: 120)
+            }
+
+            HyprRow("Overlay accent", icon: "paintpalette",
+                    subtitle: "Workspace HUD, overview, keybind sheet and this menu.") {
+                HStack(spacing: 5) {
+                    ForEach(Self.overlayAccentPresets, id: \.self) { hex in
+                        let selected = config.overlayAccentHex == hex
+                        Button { config.overlayAccentHex = hex } label: {
+                            Circle().fill(Color(nsColor: NSColor.fromHex(hex) ?? .gray))
+                                .frame(width: 14, height: 14)
+                                .overlay(Circle().stroke(Color.hyprTextPrimary, lineWidth: selected ? 2 : 0)
+                                    .padding(-2))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Accent \(hex)")
+                    }
+                    ColorPicker("", selection: Binding(
+                        get: { Color.overlaySecondary },
+                        set: { config.overlayAccentHex = NSColor($0).hexString }
+                    ), supportsOpacity: false)
+                        .labelsHidden()
+                        .fixedSize()
+                    Button("Default") { config.overlayAccentHex = nil }
+                        .controlSize(.small)
+                        .disabled(config.overlayAccentHex == nil)
+                }
+            }
+
+            HyprRow("Switch HUD position", icon: "rectangle.inset.bottomleft.filled") {
+                Picker("", selection: $config.switchHUDPosition) {
+                    ForEach(SwitchHUDPosition.allCases) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 140)
+            }
+
+            HyprRow("Switch HUD style", icon: "square.grid.3x1.below.line.grid.1x2") {
+                Picker("", selection: $config.switchHUDStyle) {
+                    ForEach(SwitchHUDStyle.allCases) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 140)
+            }
+
+            HyprRow("Switch HUD font", icon: "textformat") {
+                Picker("", selection: $config.switchHUDFont) {
+                    ForEach(SwitchHUDFont.allCases) { Text($0.displayName).tag($0) }
+                }
+                .labelsHidden()
+                .frame(width: 140)
             }
 
             if config.isICloudDriveAvailable {

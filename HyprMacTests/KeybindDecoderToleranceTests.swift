@@ -224,6 +224,33 @@ final class KeybindDecoderToleranceTests: XCTestCase {
         XCTAssertEqual(saved.keybinds.map(\.action), [.retileAll])
     }
 
+    func testOverlayAccentAndSwitchHUDFieldsRoundTrip() throws {
+        let json = """
+        {"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true,
+         "overlayAccentHex":"30D158","switchHUDPosition":"topRight",
+         "switchHUDStyle":"dots","switchHUDFont":"serif"}
+        """
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        let reloaded = try JSONDecoder().decode(SavedConfig.self, from: try JSONEncoder().encode(saved))
+        XCTAssertEqual(reloaded.overlayAccentHex, "30D158")
+        XCTAssertEqual(reloaded.switchHUDPosition, .topRight)
+        XCTAssertEqual(reloaded.switchHUDStyle, .dots)
+        XCTAssertEqual(reloaded.switchHUDFont, .serif)
+    }
+
+    // a value a newer build added costs only that field, never the config
+    func testUnknownSwitchHUDValuesFallBackPerField() throws {
+        let json = """
+        {"keybinds":[],"gapSize":12,"outerPadding":8,"enabled":true,
+         "switchHUDPosition":"underTheDesk","switchHUDStyle":"hexagons","switchHUDFont":"comic"}
+        """
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(saved.gapSize, 12)
+        XCTAssertNil(saved.switchHUDPosition)
+        XCTAssertNil(saved.switchHUDStyle)
+        XCTAssertNil(saved.switchHUDFont)
+    }
+
     func testMoveToWorkspaceAndFollowWireFormatDecodes() throws {
         let json = #"{"action":{"moveToWorkspaceAndFollow":{"_0":10}},"keyCode":29,"modifiers":11}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))

@@ -28,6 +28,17 @@ extension Color {
     static let hyprMagenta = Color(nsColor: .hyprMagenta)
 }
 
+extension Color {
+    // overlay accents: the user's one accent when set, else the brand pair.
+    // read per draw, so views observing UserConfig pick up a change at once
+    static var overlayPrimary: Color {
+        UserConfig.shared.overlayAccent.map { Color(nsColor: $0) } ?? .hyprCyan
+    }
+    static var overlaySecondary: Color {
+        UserConfig.shared.overlayAccent.map { Color(nsColor: $0) } ?? .hyprMagenta
+    }
+}
+
 extension UserConfig {
     // the configured floating color for swiftui markers; brand magenta when unset
     var resolvedFloatingColor: Color { Color(nsColor: resolvedFloatingBorderColor) }

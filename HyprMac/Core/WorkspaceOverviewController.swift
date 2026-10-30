@@ -112,6 +112,60 @@ enum WorkspaceOverviewPresentation {
     static func switchHUDText(workspace: Int, names: [String: String]) -> (caption: String, number: String) {
         ("WORKSPACE", UserConfig.workspaceDisplayName(workspace, names: names, fallback: "\(workspace)"))
     }
+
+    /// The switch HUD panel's origin (NSScreen coordinates) for `position`.
+    /// The HUD view carries 64 pt of shadow padding, so 12 pt here puts the
+    /// card 76 pt off each edge it hugs, as the bottom HUD always sat.
+    static func switchHUDOrigin(size: CGSize, in visible: CGRect,
+                                position: SwitchHUDPosition) -> CGPoint {
+        let inset: CGFloat = 12
+        let x: CGFloat
+        switch position {
+        case .topLeft, .bottomLeft: x = visible.minX + inset
+        case .top, .center, .bottom: x = visible.midX - size.width / 2
+        case .topRight, .bottomRight: x = visible.maxX - size.width - inset
+        }
+        let y: CGFloat
+        switch position {
+        case .topLeft, .top, .topRight: y = visible.maxY - size.height - inset
+        case .center: y = visible.midY - size.height / 2
+        case .bottomLeft, .bottom, .bottomRight: y = visible.minY + inset
+        }
+        return CGPoint(x: x, y: y)
+    }
+
+    /// The row a glyph-style switch HUD draws: the workspaces anchored to the
+    /// monitor that holds `workspace`, with only `workspace` active. Occupancy
+    /// is the last menu bar snapshot's. No snapshot holds it: just that one.
+    static func switchHUDCells(workspace: Int,
+                               monitors: [MenuBarMonitorSnapshot]) -> [MenuBarWorkspaceBadge] {
+        let badges = monitors.first { $0.workspaces.contains { $0.id == workspace } }?.workspaces
+            ?? [MenuBarWorkspaceBadge(id: workspace, isActive: true, isOccupied: false,
+                                      hasFloatingWindows: false)]
+        return badges.map {
+            MenuBarWorkspaceBadge(id: $0.id, isActive: $0.id == workspace,
+                                  isOccupied: $0.isOccupied, hasFloatingWindows: $0.hasFloatingWindows)
+        }
+    }
+
+    static func switchHUDGlyph(_ cell: MenuBarWorkspaceBadge, style: SwitchHUDStyle) -> String {
+        switch style {
+        case .number, .numbers: return "\(cell.id == 10 ? 0 : cell.id)"
+        case .squares: return cell.isActive ? "■" : (cell.isOccupied ? "□" : "·")
+        case .dots: return cell.isActive || cell.isOccupied ? "●" : "○"
+        }
+    }
+}
+
+extension SwitchHUDFont {
+    var design: Font.Design {
+        switch self {
+        case .rounded: return .rounded
+        case .standard: return .default
+        case .monospaced: return .monospaced
+        case .serif: return .serif
+        }
+    }
 }
 
 /// What the open overview shows. Discovery pushes fresh snapshots in while
@@ -195,9 +249,9 @@ final class WorkspaceOverviewController {
         let generation = hudGeneration.next()
         hudPanel?.close()
         let size = hosting.fittingSize
-        let frame = NSRect(x: screen.visibleFrame.midX - size.width / 2,
-                           y: screen.visibleFrame.minY + 12,
-                           width: size.width, height: size.height)
+        let origin = WorkspaceOverviewPresentation.switchHUDOrigin(
+            size: size, in: screen.visibleFrame, position: UserConfig.shared.switchHUDPosition)
+        let frame = NSRect(origin: origin, size: size)
         let panel = makePanel(frame: frame, canKey: false)
         hosting.frame = NSRect(origin: .zero, size: size)
         panel.contentView = hosting
@@ -315,7 +369,7 @@ private struct StatusHUD: View {
     var body: some View {
         VStack(spacing: 5) {
             Text(caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(failed ? Color.red : Color.hyprMagenta)
+                .tracking(2).foregroundStyle(failed ? Color.red : Color.overlaySecondary)
             Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
             if let detail {
@@ -325,7 +379,7 @@ private struct StatusHUD: View {
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
         .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.hyprCyan.opacity(0.32)))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
     }
@@ -339,18 +393,37 @@ private struct WorkspaceSwitchHUD: View {
         WorkspaceOverviewPresentation.switchHUDText(workspace: workspace,
                                                     names: UserConfig.shared.workspaceNames)
     }
+    private var config: UserConfig { UserConfig.shared }
     var body: some View {
         VStack(spacing: 5) {
-            Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(Color.hyprMagenta)
-            // a custom name has no length limit; keep the panel on screen
-            Text(text.number).font(.system(size: 40, weight: .bold, design: .rounded))
-                .lineLimit(1).frame(maxWidth: 480)
-                .foregroundStyle(.primary)
+            if config.switchHUDStyle == .number {
+                Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(2).foregroundStyle(Color.overlaySecondary)
+                // a custom name has no length limit; keep the panel on screen
+                Text(text.number).font(.system(size: 40, weight: .bold, design: config.switchHUDFont.design))
+                    .lineLimit(1).frame(maxWidth: 480)
+                    .foregroundStyle(.primary)
+            } else {
+                // the row says which number; the caption carries a custom name
+                Text(text.number == "\(workspace)" ? "WORKSPACE \(workspace)" : text.number.uppercased())
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(2).lineLimit(1).frame(maxWidth: 480)
+                    .foregroundStyle(Color.overlaySecondary)
+                HStack(spacing: 10) {
+                    ForEach(WorkspaceOverviewPresentation.switchHUDCells(
+                        workspace: workspace, monitors: MenuBarState.shared.monitors)) { cell in
+                        Text(WorkspaceOverviewPresentation.switchHUDGlyph(cell, style: config.switchHUDStyle))
+                            .font(.system(size: 24, weight: cell.isActive ? .bold : .medium,
+                                          design: config.switchHUDFont.design))
+                            .foregroundStyle(cell.isActive ? Color.overlayPrimary
+                                             : (cell.isOccupied ? Color.primary : Color.secondary.opacity(0.5)))
+                    }
+                }
+            }
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
         .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.hyprCyan.opacity(0.32)))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
     }
@@ -401,7 +474,7 @@ struct WorkspaceOverviewView: View {
         }
         .padding(22)
         .background(RoundedRectangle(cornerRadius: 18).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.hyprCyan.opacity(0.28)))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.overlayPrimary.opacity(0.28)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(24)
         .coordinateSpace(name: "workspaceOverview")
@@ -431,7 +504,7 @@ struct WorkspaceOverviewView: View {
             Text("SCRATCHPAD")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
-                .foregroundStyle(Color.hyprMagenta)
+                .foregroundStyle(Color.overlaySecondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)],
                       alignment: .leading, spacing: 7) {
                 ForEach(filteredScratchpad) { window in
@@ -480,7 +553,7 @@ private struct WorkspaceCard: View {
                     Text(workspace.monitorName).font(.system(size: 11, design: .monospaced)).lineLimit(1)
                         .foregroundStyle(name == nil ? HierarchicalShapeStyle.primary : .secondary)
                     Spacer()
-                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.hyprCyan) }
+                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.overlayPrimary) }
                 }
             }.buttonStyle(.plain)
             GeometryReader { proxy in
@@ -490,7 +563,7 @@ private struct WorkspaceCard: View {
                         let frame = window.normalizedFrame
                         Button { selectWindow(workspace.id, window.id) } label: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(0.45) : Color.hyprCyan.opacity(0.22))
+                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(0.45) : Color.overlayPrimary.opacity(0.22))
                                 WorkspaceAppIcon(bundleID: window.bundleID).frame(width: 20, height: 20)
                             }
                         }
@@ -524,7 +597,7 @@ private struct WorkspaceCard: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(workspace.isActive ? palette.activeSurface : palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(workspace.isActive ? Color.hyprCyan.opacity(0.7) : palette.separator))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(workspace.isActive ? Color.overlayPrimary.opacity(0.7) : palette.separator))
     }
 
 }

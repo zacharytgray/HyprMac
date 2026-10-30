@@ -53,6 +53,19 @@ class UserConfig: ObservableObject {
     @Published var overlayAppearance: OverlayAppearance {
         didSet { persistRuntimeChange() }
     }
+    // one accent for the overlays; nil keeps the brand cyan + magenta pair
+    @Published var overlayAccentHex: String? {
+        didSet { persistRuntimeChange() }
+    }
+    @Published var switchHUDPosition: SwitchHUDPosition {
+        didSet { persistRuntimeChange() }
+    }
+    @Published var switchHUDStyle: SwitchHUDStyle {
+        didSet { persistRuntimeChange() }
+    }
+    @Published var switchHUDFont: SwitchHUDFont {
+        didSet { persistRuntimeChange() }
+    }
     @Published var maxSplitsPerMonitor: [String: Int] {
         didSet { persistRuntimeChange() }
     }
@@ -223,6 +236,10 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
+            self.overlayAccentHex = saved.overlayAccentHex
+            self.switchHUDPosition = saved.switchHUDPosition ?? UserConfigDefaults.switchHUDPosition
+            self.switchHUDStyle = saved.switchHUDStyle ?? UserConfigDefaults.switchHUDStyle
+            self.switchHUDFont = saved.switchHUDFont ?? UserConfigDefaults.switchHUDFont
             self.showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = saved.focusBorderColorHex
             self.floatingBorderColorHex = saved.floatingBorderColorHex
@@ -253,6 +270,10 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = UserConfigDefaults.overlayAppearance
+            self.overlayAccentHex = nil
+            self.switchHUDPosition = UserConfigDefaults.switchHUDPosition
+            self.switchHUDStyle = UserConfigDefaults.switchHUDStyle
+            self.switchHUDFont = UserConfigDefaults.switchHUDFont
             self.showFocusBorder = UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = nil
             self.floatingBorderColorHex = nil
@@ -387,7 +408,11 @@ class UserConfig: ObservableObject {
             scratchpadRegionInset: scratchpadRegionInset,
             restoreLayoutOnLaunch: restoreLayoutOnLaunch,
             windowRules: windowRules.isEmpty ? nil : windowRules,
-            workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames)
+            workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
+            overlayAccentHex: overlayAccentHex,
+            switchHUDPosition: switchHUDPosition,
+            switchHUDStyle: switchHUDStyle,
+            switchHUDFont: switchHUDFont)
     }
 
     func resetToDefaults() {
@@ -401,6 +426,10 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
         overlayAppearance = UserConfigDefaults.overlayAppearance
+        overlayAccentHex = nil
+        switchHUDPosition = UserConfigDefaults.switchHUDPosition
+        switchHUDStyle = UserConfigDefaults.switchHUDStyle
+        switchHUDFont = UserConfigDefaults.switchHUDFont
         maxSplitsPerMonitor = [:]
         disabledMonitors = []
         outerPaddingPerMonitor = [:]
@@ -485,6 +514,9 @@ class UserConfig: ObservableObject {
         return NSColor.hyprMagenta
     }
 
+    // the user's overlay accent, nil when unset or unreadable
+    var overlayAccent: NSColor? { overlayAccentHex.flatMap(NSColor.fromHex) }
+
     var resolvedFocusBracketColor: NSColor {
         if let hex = focusBracketColorHex, let color = NSColor.fromHex(hex) { return color }
         return UserConfigDefaults.focusBracketColor
@@ -504,6 +536,10 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
         overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
+        overlayAccentHex = saved.overlayAccentHex
+        switchHUDPosition = saved.switchHUDPosition ?? UserConfigDefaults.switchHUDPosition
+        switchHUDStyle = saved.switchHUDStyle ?? UserConfigDefaults.switchHUDStyle
+        switchHUDFont = saved.switchHUDFont ?? UserConfigDefaults.switchHUDFont
         showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
         focusBorderColorHex = saved.focusBorderColorHex
         floatingBorderColorHex = saved.floatingBorderColorHex

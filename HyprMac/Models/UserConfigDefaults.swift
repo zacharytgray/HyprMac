@@ -26,6 +26,61 @@ enum OverlayAppearance: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// Where the workspace-switch HUD sits on the screen.
+enum SwitchHUDPosition: String, Codable, CaseIterable, Identifiable {
+    case topLeft, top, topRight
+    case center
+    case bottomLeft, bottom, bottomRight
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .topLeft: return "Top left"
+        case .top: return "Top"
+        case .topRight: return "Top right"
+        case .center: return "Center"
+        case .bottomLeft: return "Bottom left"
+        case .bottom: return "Bottom"
+        case .bottomRight: return "Bottom right"
+        }
+    }
+}
+
+/// What the workspace-switch HUD draws.
+enum SwitchHUDStyle: String, Codable, CaseIterable, Identifiable {
+    // one big number (or name)
+    case number
+    // the monitor's workspaces as a row of numbers, glyphs, or dots
+    case numbers, squares, dots
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .number: return "Large number"
+        case .numbers: return "Numbers  1 2 3"
+        case .squares: return "Squares  ■ □ ·"
+        case .dots: return "Dots  ● ○"
+        }
+    }
+}
+
+enum SwitchHUDFont: String, Codable, CaseIterable, Identifiable {
+    case rounded, standard, monospaced, serif
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .rounded: return "Rounded"
+        case .standard: return "System"
+        case .monospaced: return "Monospaced"
+        case .serif: return "Serif"
+        }
+    }
+}
+
 /// Scalar defaults for `UserConfig`.
 ///
 /// Keybinds and excluded bundle ids live in their type-specific
@@ -41,6 +96,9 @@ enum UserConfigDefaults {
     static let hyprKey: HyprKey = .capsLock
     static let showMenuBarIndicator: Bool = true
     static let overlayAppearance: OverlayAppearance = .system
+    static let switchHUDPosition: SwitchHUDPosition = .bottom
+    static let switchHUDStyle: SwitchHUDStyle = .number
+    static let switchHUDFont: SwitchHUDFont = .rounded
     static let showFocusBorder: Bool = false
     static let focusBracketStyle: FocusBracketStyle = .rounded
     static let focusBracketColor: NSColor = .black
