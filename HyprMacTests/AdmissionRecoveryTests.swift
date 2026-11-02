@@ -1587,7 +1587,7 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         XCTAssertEqual(raises, [12, 12])
     }
 
-    func testARaiseRightAfterOurOwnRestoreIsALoopAndCoolsDown() {
+    func testAFrontedRaiseThatKeepsGettingReburiedHitsTheBurstLimit() {
         let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
         var raises: [CGWindowID] = []
         var restores: [CGWindowID] = []
@@ -1613,15 +1613,16 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         }
         controller.scheduleAfter = { _, body in queued = body }
 
-        controller.raiseBehind()
-        queued?()
-        clock += 0.2
-        queued = nil
-        controller.raiseBehind()
+        for _ in 0..<8 {
+            controller.raiseBehind()
+            queued?()
+            queued = nil
+            clock += 0.2
+        }
 
-        XCTAssertEqual(raises, [12])
-        XCTAssertEqual(restores, [11])
-        XCTAssertNil(queued, "the loop stops instead of raising again")
+        XCTAssertEqual(raises.count, controller.throttle.burstLimit,
+                       "an app that re-buries the floater is bounded before the router marks it")
+        XCTAssertEqual(restores.count, controller.throttle.burstLimit)
     }
 
     func testAFloaterBehindATileItDoesNotTouchIsLeftAlone() {
@@ -1916,6 +1917,62 @@ final class FloatingRaiseRegressionTests: XCTestCase {
                      "the raise landed on the second check")
     }
 
+    // Dia lifts itself as soon as it has focus, so a raise only flickers
+    func testNoRaisesWhileAnAppThatLiftsItselfHasFocus() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200)
+        var fronted = 0
+        rig.controller.frontApp = { _ in fronted += 1 }
+        rig.controller.tileAppLiftsOnFocus = { $0 == 100 }
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        rig.controller.windowListForZOrder = { Self.coveredStack }
+        rig.controller.raiseBehind()
+        rig.run()
+
+        XCTAssertEqual(fronted, 0)
+        XCTAssertEqual(rig.harness().raises, [])
+    }
+
+    func testAnotherAppsFocusStillRaisesOverAnAppThatLiftsItself() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises = 0
+        controller.tileAppLiftsOnFocus = { $0 == 300 }
+        controller.windowListForZOrder = { Self.coveredStack }
+        controller.performRaise = { _ in raises += 1; return .success }
+        controller.scheduleAfter = { _, _ in }
+
+        controller.raiseBehind()
+
+        XCTAssertEqual(raises, 1)
+    }
+
+    // fast hover between two tiles once cooled the pair for longer each time
+    func testRepeatedFrontedRaisesDoNotBuildALoopCooldown() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises = 0
+        var front: pid_t = 100
+        var stack = Self.coveredStack
+        var queued: [() -> Void] = []
+        var clock: TimeInterval = 1000
+        controller.now = { clock }
+        controller.frontmostPID = { front }
+        controller.windowListForZOrder = { stack }
+        controller.frontApp = { front = $0.ownerPID }
+        controller.performRaise = { _ in raises += 1; stack = Self.raisedStack; return .success }
+        controller.restoreFocusWithoutRaise = { _ in front = 100 }
+        controller.scheduleAfter = { _, body in queued.append(body) }
+
+        for _ in 0..<3 {
+            stack = Self.coveredStack
+            controller.raiseBehind()
+            while !queued.isEmpty { queued.removeFirst()() }
+            clock += 0.3
+        }
+
+        XCTAssertEqual(raises, 3)
+    }
+
     func testASameAppClickDoesNotSwitchApps() {
         let rig = clickRig(tiledPID: 100, floatingPID: 100)
         var fronted = 0
@@ -1985,36 +2042,6 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         rig.run()
 
         XCTAssertEqual(rig.harness().raises, [12], "a flicker per click with no gain stops after one try")
-    }
-
-    func testACrossAppRestoreThatLiftsTheTileAgainEndsInALoopCooldown() {
-        let rig = clickRig(tiledPID: 100, floatingPID: 200)
-        let controller = rig.controller
-        var front: pid_t = 100
-        var stack = Self.tileOnTop
-        var raiseBehindRaises = 0
-        controller.frontmostPID = { front }
-        controller.windowListForZOrder = { stack }
-        controller.performRaise = { _ in
-            // the floater's app activated itself when raised
-            stack = Self.floaterOnTop
-            front = 200
-            return .success
-        }
-        controller.refocusClickedTile = { _, done in
-            // giving focus back lifted the tile over the floater again
-            stack = Self.tileOnTop
-            front = 100
-            done(true)
-        }
-
-        controller.raiseAfterClick(click)
-        rig.run()
-        // the activation that restore caused runs raise-behind
-        controller.performRaise = { _ in raiseBehindRaises += 1; return .success }
-        controller.raiseBehind()
-
-        XCTAssertEqual(raiseBehindRaises, 0, "raise-behind sees our restore and stops the loop")
     }
 
     func testTheClickedWindowMustBeATile() {

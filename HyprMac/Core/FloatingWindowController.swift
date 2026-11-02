@@ -312,6 +312,9 @@ final class FloatingWindowController {
     // a cross-app raise fronts the floater's app first. this does not lift
     // anything by itself: the AXRaise after it does
     var frontApp: (HyprWindow) -> Void = { $0.makeFrontAndKeyWithoutRaise() }
+    // an app that lifts itself on focus undoes any raise as soon as it gets
+    // focus back, so raising over it only flickers
+    var tileAppLiftsOnFocus: (pid_t) -> Bool = { _ in false }
     // fronting another app mid press would break the drag or selection under way
     var isMouseDown: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
     var scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
@@ -633,6 +636,10 @@ final class FloatingWindowController {
         let frontsApp = focusedTiledPID != nil && frontBefore == focusedTiledPID
         // the click re-raise runs after the mouse-up
         if frontsApp, isMouseDown() { return }
+        if frontsApp, let focusedTiledPID, tileAppLiftsOnFocus(focusedTiledPID) {
+            hyprLog(.debug, .floating, "raise behind skipped: pid=\(focusedTiledPID) lifts itself on focus")
+            return
+        }
 
         let now = self.now()
         var pairs: [RaiseBehindThrottle.Pair] = []
@@ -724,7 +731,10 @@ final class FloatingWindowController {
         }
         hyprLog(.notice, .floating, "raise behind restore: wid=\(previousFocusID) "
                 + "(front moved \(frontBefore.map(String.init) ?? "nil") → \(frontAfter.map(String.init) ?? "nil"))")
-        throttle.noteRestore(pairs, now: now)
+        // a fronted raise always ends here, so this isn't the loop. hovering
+        // between two tiles would otherwise cool the pair for longer each time.
+        // an app that re-buries the floater is caught by tileAppLiftsOnFocus,
+        // and the burst limit bounds what gets through before that
         restoreFocusWithoutRaise(prev)
         updateFocusBorder?(prev)
     }
@@ -796,6 +806,8 @@ final class FloatingWindowController {
                 hyprLog(.notice, .floating, "\(line) → skipped(\(blocker))")
             } else if let frame = entry.bounds, frame.contains(press.point) {
                 hyprLog(.notice, .floating, "\(line) → skipped(click under floater)")
+            } else if floater.ownerPID != tile.ownerPID, tileAppLiftsOnFocus(tile.ownerPID) {
+                hyprLog(.debug, .floating, "\(line) → skipped(tile app lifts itself on focus)")
             } else if let cooldown = throttle.cooldown(pair, now: now),
                       floater.ownerPID == tile.ownerPID
                         || cooldown.reason == RaiseBehindThrottle.frontedIneffectiveReason {
@@ -900,11 +912,8 @@ final class FloatingWindowController {
         // raise-behind for the same pair right after it is the loop, and so
         // is the next click: the pair cools now, longer each time
         if front != tile.ownerPID {
-            if frontedApp {
-                // expected, so no cooldown. a raise-behind right after the
-                // hand-back would mean it buried the floater, which is the loop
-                throttle.noteRestore(lifted, now: now)
-            } else {
+            // expected when the raise fronted the app on purpose
+            if !frontedApp {
                 throttle.noteLoop(lifted, now: now)
                 hyprLog(.notice, .floating, "click re-raise moved the front app — cooling \(lifted)")
             }

@@ -866,7 +866,13 @@ above a floater as soon as `SLPSPostEventRecordTo` delivers them, and stays unde
 it when only the front process moves. Messages and Terminal stay under it either
 way. A build that skipped them for a window already focused in its app took no
 typing or clicks in tiles on the laptop, so they stay, and a floater goes under Dia
-while Dia has focus. That the missing events were the cause is inferred.
+while Dia has focus. That the missing events were the cause is inferred, and AX can't
+settle it: a window's `AXFocused` read `no` on every tile, including ones taking keys.
+
+Two lifts in a row log `tile app lifts itself on focus: pid=<pid> …`. HyprMac then
+stops raising floaters while that app has focus, because each raise only flickers.
+The raise comes back when focus moves to another app, and a later focus that keeps the
+floater above clears the mark.
 
 Floating-level floaters. AppKit puts a floating panel (a Quick Look
 preview, an inspector) at the floating level, CG layer 3, while its app is
@@ -897,8 +903,7 @@ and `no-raise focus verify: … → landed, floaters kept above`. A raise that f
 an app gets up to 230 ms to land, since one can miss the first check. An
 `→ ineffective` or `refocus missed` line means that pair rests: 3 s across apps, 30 s
 within one. The tile then stays on top, and the dim shows the floater only where it is
-in front. The verify line's `axFocused` and `axMain` come from the window itself, so
-`key=<id>` with `axFocused=no` means the app names the window but it may not get keys.
+in front.
 
 ### A floater changed size or left the screen
 

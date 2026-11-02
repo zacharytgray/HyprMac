@@ -60,6 +60,8 @@ final class TiledFocusRouter {
     static let keyHandoffDelay: TimeInterval = 0.04
     // time for the window server and the app to settle before checking
     static let verifyDelay: TimeInterval = 0.08
+    static let liftStreakLimit = 2
+    private var liftStreaks: [pid_t: Int] = [:]
 
     // seams
     var windowList: () -> [StackedWindow]? = { WindowStacking.onScreen() }
@@ -67,17 +69,6 @@ final class TiledFocusRouter {
     var isTiled: (CGWindowID) -> Bool = { _ in false }
     var frontmostPID: () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     var keyWindowID: (pid_t) -> CGWindowID? = { HyprWindow.axFocusedWindowID(pid: $0) }
-    // for the log: whether the window itself says it is key and main. the app's
-    // focused window can name it while keystrokes go nowhere
-    var windowKeyStatus: (HyprWindow) -> String = { window in
-        func flag(_ attribute: String) -> String {
-            var value: AnyObject?
-            guard AXUIElementCopyAttributeValue(window.element, attribute as CFString, &value) == .success,
-                  let on = value as? Bool else { return "?" }
-            return on ? "yes" : "no"
-        }
-        return "axFocused=\(flag(kAXFocusedAttribute)) axMain=\(flag(kAXMainAttribute))"
-    }
     var postWindowFocus: (pid_t, CGWindowID, Bool) -> Void = { pid, wid, gained in
         HyprWindow.postWindowFocusEvent(pid: pid, windowID: wid, gained: gained)
     }
@@ -173,6 +164,29 @@ final class TiledFocusRouter {
         return route
     }
 
+    /// Whether `pid`'s app lifts its window over floaters when it takes focus.
+    /// Dia does. A raise can't hold a floater above it, because handing focus
+    /// back lifts it again, so raising only makes the floater flicker.
+    func liftsItselfOnFocus(_ pid: pid_t) -> Bool {
+        liftStreaks[pid, default: 0] >= Self.liftStreakLimit
+    }
+
+    // a lone miss can be a click landing during the check. a focus that keeps
+    // the floater above clears it, so an app that stops doing this recovers
+    private func noteLift(_ target: HyprWindow, buried: [CGWindowID]) {
+        let pid = target.ownerPID
+        guard !buried.isEmpty else {
+            liftStreaks[pid] = nil
+            return
+        }
+        let streak = liftStreaks[pid, default: 0] + 1
+        liftStreaks[pid] = streak
+        if streak == Self.liftStreakLimit {
+            hyprLog(.notice, .focus, "tile app lifts itself on focus: pid=\(pid) wid=\(target.windowID) "
+                    + "buried=\(buried) — no more raises while it has focus")
+        }
+    }
+
     private func isCurrent(_ wid: CGWindowID, _ generation: UInt64) -> Bool {
         lastFocusedID() == wid && focusGeneration() == generation
     }
@@ -200,9 +214,10 @@ final class TiledFocusRouter {
         let front = check.frontPID.map(String.init) ?? "nil"
         let key = check.keyWindowID.map(String.init) ?? "nil"
         hyprLog(.notice, .focus, "no-raise focus verify: wid=\(wid) reason=\(reason) "
-                + "front=\(front) (want \(target.ownerPID)) key=\(key) \(windowKeyStatus(target)) "
+                + "front=\(front) (want \(target.ownerPID)) key=\(key) "
                 + "floatersAbove=\(check.floatersAbove) layers=\(check.floaterLayers) buried=\(buried) "
                 + "→ \(landed ? "landed" : "missed"), floaters \(buried.isEmpty ? "kept above" : "buried")")
+        if landed { noteLift(target, buried: buried) }
         onResult?(landed && buried.isEmpty)
         guard !landed else { return }
         // the user switched to a third app meanwhile (Cmd-Tab, a Dock click)

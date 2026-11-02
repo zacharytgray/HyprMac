@@ -371,6 +371,31 @@ final class TiledFocusRouterTests: XCTestCase {
         XCTAssertEqual(calls.first, "front+key 11")
     }
 
+    func testTwoLiftsInARowMarkTheAppAndAFocusThatHoldsClearsIt() {
+        // the check runs after the app took focus, so the floater is gone from
+        // above the target when it lifted itself
+        let lifted = [win(11, tileRect), win(10, pid: otherPID, floaterRect)]
+        let held = [win(10, pid: otherPID, floaterRect), win(11, tileRect)]
+
+        func focusOnce(endingWith stack: [StackedWindow]) {
+            windows = held
+            front = otherPID
+            router.focus(target, reason: "ffm", fallback: .activateAndClick)
+            windows = stack
+            front = frontPID
+            keys[frontPID] = 11
+            runScheduled()
+            keys[frontPID] = nil
+        }
+
+        focusOnce(endingWith: lifted)
+        XCTAssertFalse(router.liftsItselfOnFocus(frontPID), "one can be a click during the check")
+        focusOnce(endingWith: lifted)
+        XCTAssertTrue(router.liftsItselfOnFocus(frontPID))
+        focusOnce(endingWith: held)
+        XCTAssertFalse(router.liftsItselfOnFocus(frontPID))
+    }
+
     func testAnUncoveredTileTakesTheUsualPathRightAway() {
         floaters = []
 

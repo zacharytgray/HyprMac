@@ -449,6 +449,9 @@ class WindowManager {
             self.tiledFocusRouter.focus(w, reason: "click-reraise", fallback: .activate, onResult: done)
         }
         floatingController.isTiledWindow = { [weak self] wid in self?.isRoutedTile(wid) ?? false }
+        floatingController.tileAppLiftsOnFocus = { [weak self] pid in
+            self?.tiledFocusRouter.liftsItselfOnFocus(pid) ?? false
+        }
         floatingController.onRestack = { [weak self] in self?.scheduleRestackRefresh(after: 0.02) }
 
         // hover, Hypr+Arrow and focus repair go through the router. newcomers
