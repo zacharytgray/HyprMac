@@ -1352,6 +1352,7 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         )
         // the real one fronts whatever process owns these made-up pids
         controller.frontApp = { _ in }
+        controller.restoreFocusLifting = { _ in }
         controller.isMouseDown = { false }
         controller.secondsSinceLastKey = { .infinity }
         controller.windowListForZOrder = {
@@ -1676,6 +1677,44 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         controller.raiseBehind()
 
         XCTAssertEqual(steps, ["front 12", "raise 12"], "macOS 27 ignores the raise without the front")
+    }
+
+    private static let focusedOverFloaterOverOther = [entry(13, CGRect(x: 40, y: 40, width: 400, height: 400)),
+                                                      entry(11, CGRect(x: 0, y: 0, width: 500, height: 500)),
+                                                      entry(12, CGRect(x: 50, y: 50, width: 300, height: 300))]
+    private static let floaterOverFocused = [entry(11, CGRect(x: 0, y: 0, width: 500, height: 500)),
+                                             entry(12, CGRect(x: 50, y: 50, width: 300, height: 300)),
+                                             entry(13, CGRect(x: 40, y: 40, width: 400, height: 400))]
+
+    // focused tile, floater, the rest. the floater must not pop over the tile
+    // that was just clicked
+    func testTheFocusedTileStaysAboveAFloaterItWasAbove() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var steps: [String] = []
+        controller.windowListForZOrder = { Self.focusedOverFloaterOverOther }
+        controller.performRaise = { steps.append("raise \($0.windowID)"); return .success }
+        controller.restoreFocusLifting = { steps.append("lift \($0.windowID)") }
+        controller.scheduleAfter = { _, _ in }
+
+        controller.raiseBehind()
+
+        XCTAssertEqual(steps, ["raise 12", "lift 13"], "in one turn, so nothing shows between them")
+    }
+
+    // a hover doesn't lift the tile, so the floater stays over it
+    func testAFloaterAlreadyOverTheFocusedTileStaysOverIt() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var lifts = 0
+        var raises = 0
+        controller.windowListForZOrder = { Self.floaterOverFocused }
+        controller.performRaise = { _ in raises += 1; return .success }
+        controller.restoreFocusLifting = { _ in lifts += 1 }
+        controller.scheduleAfter = { _, _ in }
+
+        controller.raiseBehind()
+
+        XCTAssertEqual(raises, 1)
+        XCTAssertEqual(lifts, 0)
     }
 
     func testRaiseBehindFrontsTheFloatersAppOnlyWithTheFocusedTilesAppInFront() {

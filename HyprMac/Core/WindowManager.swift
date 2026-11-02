@@ -72,9 +72,8 @@ class WindowManager {
     // focus for HyprMac-initiated focus changes. a tile a floater covers is
     // focused without being lifted over the floater.
     private let tiledFocusRouter = TiledFocusRouter()
+    // the current left press was a real click on a window. read at mouse-up
     private var realClickInProgress = false
-    // the current left press, if it was a real click on a window. consumed
-    // at mouse-up by the click re-raise.
     // a restack refresh is queued; later triggers ride along with it
     private var restackRefreshPending = false
 
@@ -1230,7 +1229,7 @@ class WindowManager {
         return cg.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid())
     }
 
-    /// A tile as the focus router and the click re-raise see it: in the
+    /// A tile as the focus router sees it: in the
     /// tiled set, not floating, and not a newcomer waiting in admission
     /// recovery (those sit over the tiles like floaters).
     private func isRoutedTile(_ wid: CGWindowID) -> Bool {

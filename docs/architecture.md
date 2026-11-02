@@ -825,9 +825,9 @@ this list is the index.
   overlaps, stands down while the frontmost app has a menu open, and cools a
   pair down when a raise does nothing or loops. Hover and Hypr+Arrow avoid
   burying floaters through `TiledFocusRouter`; workspace switches, window
-  moves and the scratchpad do not yet. A click on a tile still lifts it, and
-  the click re-raise puts the floater back about 40 ms after mouse-up, so the
-  covered part blinks once per click. See `docs/debugging.md` "Floaters,
+  moves and the scratchpad do not yet. A click on a tile lifts it over the
+  floater, which is allowed: a floater may sit behind the focused tile or
+  another floater, and nothing else. See `docs/debugging.md` "Floaters,
   open menus and no-raise focus".
 - **A visible move's rollback can degrade** — if a restoration write or its
   readback fails, `applyVerifiedLayoutAttempt` returns `.degraded` and the

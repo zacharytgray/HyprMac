@@ -768,7 +768,7 @@ How it works:
   loop cooldown starts at 15 s and doubles with each loop up to 600 s. A
   pair quiet for 300 s after its cooldown ends starts over at 15 s.
 - `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus
-  invariant, the raise restore and the click re-raise. Workspace switches,
+  invariant and the raise restore. Workspace switches,
   window moves and the scratchpad still use their own focus calls, which can
   lift a tile. When a floater covers the target tile it sends only
   `_SLPSSetFrontProcessWithOptions` and
@@ -784,7 +784,7 @@ How it works:
   in the window list, and `DimmingOverlay` takes them back out of the hole.
   A floater the list does not show keeps its whole hole. The cutouts are redrawn when the stack
   can change: after a click's mouse-up, a focused or main window change, an
-  app activation, a raise-behind or click re-raise, and the usual focus
+  app activation, a raise-behind, and the usual focus
   path. `scheduleRestackRefresh` coalesces each burst into one refresh.
   That refresh reads the window list once for the dim and once more for
   the border occlusion when the border is on. It runs per event, not per
@@ -837,7 +837,9 @@ Cross-app AXRaise alone does not work on macOS 27. A Messages Quick Look preview
 under a Safari tile logged `raise behind: wids=[5252] under=[71889]` and then
 `raise behind ineffective: wid=5252 still under 71889`. So raise-behind fronts the
 floater's app first (`frontApp`, SkyLight with no activate) and hands focus back
-through the no-raise path. It runs for a floater behind a tile other than the focused
+through the no-raise path. When the focused tile was above the floater, as after a click,
+it goes straight back on top in the same turn, so the stack ends up focused tile, floater,
+the rest. It runs for a floater behind a tile other than the focused
 one, on an app activation, after a click's mouse-up, and on each poll, and only with the
 focused tile's app in front. It waits for the mouse-up, 250 ms after the last key
 because keys go to the front app, a no-raise focus still settling, and the last raise's
@@ -853,7 +855,7 @@ Floating-level floaters. AppKit puts a floating panel (a Quick Look
 preview, an inspector) at the floating level, CG layer 3, while its app is
 active, and drops it to layer 0 when the app deactivates. A window HyprMac
 manages as a floater counts on layer 0 or layer 3 in the router,
-raise-behind, the click re-raise and the dim cutouts. A layer-3 floater is
+raise-behind and the dim cutouts. A layer-3 floater is
 above every tile, so its cutout is whole. Unmanaged layer-3 windows are
 still ignored, and a raised window of the front app that we do not manage
 still blocks hover. Hovering a managed floater at layer 3 is a hit on that

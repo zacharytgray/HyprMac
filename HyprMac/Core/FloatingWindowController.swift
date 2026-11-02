@@ -282,6 +282,9 @@ final class FloatingWindowController {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
     }
     var restoreFocusWithoutRaise: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
+    // back on top and key. runs in the same turn as the floater's raise, so the
+    // floater doesn't show over a tile it was already behind
+    var restoreFocusLifting: (HyprWindow) -> Void = { $0.focus() }
     var windowFrameForZOrder: (HyprWindow) -> CGRect? = { $0.frame }
     var frontmostPID: () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     // the frontmost app's open popup in a list. WindowManager points this at
@@ -597,7 +600,7 @@ final class FloatingWindowController {
         lastDeferredPopupID = 0
 
         let frontsApp = focusedTiledPID != nil && frontBefore == focusedTiledPID
-        // the click re-raise runs after the mouse-up
+        // a click's mouse-up runs this check again
         if frontsApp, isMouseDown() { return }
         if frontsApp, deferFrontedRaise() { return }
 
@@ -644,6 +647,13 @@ final class FloatingWindowController {
             if rc != .success {
                 hyprLog(.notice, .floating, "raise behind failed: wid=\(pair.floater) rc=\(rc.rawValue)")
             }
+        }
+        // the focused tile was above the floater, so it stays above: focused tile,
+        // floater, then the rest. without this the floater would pop over the tile
+        // just clicked
+        if frontsApp, let previousWindow,
+           !WindowStacking.floaters(below: previousFocusID, among: Set(pairs.map(\.floater)), in: windows).isEmpty {
+            restoreFocusLifting(previousWindow)
         }
 
         scheduleAfter(Self.verifyDelay) { [weak self] in
