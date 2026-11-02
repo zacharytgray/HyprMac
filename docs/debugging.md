@@ -861,6 +861,14 @@ focused tile's own app. Added November 2 as a trial: each click on a tile coveri
 a floater switches apps twice, so watch for menu bar flicker and keys typed right
 after a click landing in the floater's app.
 
+Some apps lift themselves when key-window events arrive. On macOS 27 Dia goes
+above a floater as soon as `SLPSPostEventRecordTo` delivers them, and stays under
+it when only the front process moves. Messages and Terminal stay under it either
+way. So a cross-app no-raise focus skips the events when the target is already its
+app's focused window, and the debug line says `key events skipped`. A Dia window
+that isn't its app's focused one still gets them and lifts, and the next raise
+puts the floater back.
+
 Floating-level floaters. AppKit puts a floating panel (a Quick Look
 preview, an inspector) at the floating level, CG layer 3, while its app is
 active, and drops it to layer 0 when the app deactivates. A window HyprMac

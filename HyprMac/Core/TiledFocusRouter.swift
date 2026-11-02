@@ -71,6 +71,7 @@ final class TiledFocusRouter {
         HyprWindow.postWindowFocusEvent(pid: pid, windowID: wid, gained: gained)
     }
     var makeFrontAndKey: (HyprWindow) -> String? = { $0.makeFrontAndKeyWithoutRaise() }
+    var makeFront: (HyprWindow) -> String? = { $0.makeFrontWithoutRaise() }
     var usualFocus: (HyprWindow, Fallback) -> Void = { window, fallback in
         window.focusWithoutRaise()
         if fallback == .activateAndClick { window.focusViaSyntheticClick() }
@@ -135,7 +136,10 @@ final class TiledFocusRouter {
 
         let finish = { [weak self] in
             guard let self else { return }
-            let rc = self.makeFrontAndKey(target) ?? "no psn"
+            // an app coming to the front gives key back to its focused
+            // window, so the events aren't needed, and they make Dia lift it
+            let keyAlreadyThere = front != pid && self.keyWindowID(pid) == wid
+            let rc = (keyAlreadyThere ? self.makeFront(target) : self.makeFrontAndKey(target)) ?? "no psn"
             hyprLog(.debug, .focus, "no-raise focus: wid=\(wid) \(rc)")
             self.schedule(Self.verifyDelay) { [weak self] in
                 self?.verify(target, reason: reason, fallback: fallback,
