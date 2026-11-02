@@ -72,9 +72,9 @@ class WindowManager {
     // focus for HyprMac-initiated focus changes. a tile a floater covers is
     // focused without being lifted over the floater.
     private let tiledFocusRouter = TiledFocusRouter()
+    private var realClickInProgress = false
     // the current left press, if it was a real click on a window. consumed
     // at mouse-up by the click re-raise.
-    private var clickPress: ClickPress?
     // a restack refresh is queued; later triggers ride along with it
     private var restackRefreshPending = false
 
@@ -444,16 +444,8 @@ class WindowManager {
         floatingController.restoreFocusWithoutRaise = { [weak self] w in
             self?.tiledFocusRouter.focus(w, reason: "raise-restore", fallback: .activate)
         }
-        floatingController.refocusClickedTile = { [weak self] w, done in
-            guard let self else { return }
-            self.tiledFocusRouter.focus(w, reason: "click-reraise", fallback: .activate, onResult: done)
-        }
-        floatingController.isTiledWindow = { [weak self] wid in self?.isRoutedTile(wid) ?? false }
         floatingController.focusHandoffPending = { [weak self] in
             self?.tiledFocusRouter.hasPendingHandoff ?? false
-        }
-        floatingController.tileAppLiftsOnFocus = { [weak self] pid in
-            self?.tiledFocusRouter.liftsItselfOnFocus(pid) ?? false
         }
         floatingController.onRestack = { [weak self] in self?.scheduleRestackRefresh(after: 0.02) }
 
@@ -1083,12 +1075,11 @@ class WindowManager {
             } else {
                 self.syncFocusTrackerToCursor(at: downNS, hit: hit)
             }
-            // remember a real click on a window for the re-raise at mouse-up.
+            // remember a real click on a window for the check at mouse-up.
             // our own synthetic clicks and Hypr gestures do not count.
-            self.clickPress = nil
-            if case .window(let wid) = hit, !self.hyprHeld, !Self.isOwnSyntheticEvent(event) {
-                self.clickPress = ClickPress(windowID: wid, point: downCG,
-                                             popupOpen: self.mouseTracker.openPopup() != nil)
+            self.realClickInProgress = false
+            if case .window = hit, !self.hyprHeld, !Self.isOwnSyntheticEvent(event) {
+                self.realClickInProgress = true
             }
             // scratchpad is quasimodal: a click outside every member dismisses
             // it in the same tick, so the click lands on the tile it aimed at
@@ -1154,15 +1145,16 @@ class WindowManager {
                         hyprHeld: self.hyprHeld,
                         optionDown: event.modifierFlags.contains(.option)))
                 self.tiledDragHandler.handleMouseUp(release)
-                // a click lifts the tile over any floater it overlaps. put the
-                // floater back, and redraw the cutouts once the stack settles.
-                let press = self.clickPress
-                self.clickPress = nil
-                if let press, !isDrag, !release.swapRequested {
+                // a click lifts the tile, which is fine: it has focus now. the tile
+                // that lost focus may still cover a floater, so check for that,
+                // and redraw the cutouts once the stack settles.
+                let wasRealClick = self.realClickInProgress
+                self.realClickInProgress = false
+                if wasRealClick, !isDrag, !release.swapRequested {
                     DispatchQueue.main.asyncAfter(deadline: .now() + FloatingWindowController.clickRaiseDelay) { [weak self] in
                         // a new press means a double click; its own mouse-up decides
                         guard let self, self.isRunning, !self.mouseButtonDown else { return }
-                        self.floatingController.raiseAfterClick(press)
+                        self.floatingController.raiseBehind()
                     }
                 }
                 self.scheduleRestackRefresh(after: 0.06)
@@ -1224,7 +1216,7 @@ class WindowManager {
         mouseDownPointCG = nil
         mouseDownFloatingWindowID = 0
         mouseDownFloatingFrame = nil
-        clickPress = nil
+        realClickInProgress = false
         // teardown can land mid-drag — drop the overlay's override too or a
         // stale carve hole survives until the next full update
         dimDrag = nil
@@ -3057,11 +3049,11 @@ class WindowManager {
         // activation brings windows forward; floater cutouts follow the new stack
         scheduleRestackRefresh(after: 0.1)
 
-        // re-raise floating windows after any app activation (e.g. user clicked a tiled window).
-        // must always run — even when activation switch is suppressed — so floaters stay on top.
-        // not while a click is in flight: the click's own re-raise owns that,
+        // an app activation can leave a floater behind a tile that no longer has focus.
+        // must always run, even when activation switch is suppressed.
+        // not while a click is in flight: its mouse-up runs the same check,
         // and a raise racing the popup the click is opening dismisses it
-        if !stateCache.floatingWindowIDs.isEmpty, clickPress == nil, !mouseButtonDown {
+        if !stateCache.floatingWindowIDs.isEmpty, !realClickInProgress, !mouseButtonDown {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
                 guard let self, self.isRunning, !self.mouseButtonDown else { return }
                 self.floatingController.raiseBehind()

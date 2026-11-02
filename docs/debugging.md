@@ -789,21 +789,10 @@ How it works:
   That refresh reads the window list once for the dim and once more for
   the border occlusion when the border is on. It runs per event, not per
   mouse move, and only while a floater is visible.
-- The click re-raise keeps floaters in front of tiles after a click. About
-  40 ms after the mouse-up of a real click on a tile (not a drag, not a
-  Hypr or Option gesture, not our own synthetic click), each floater on the
-  same workspace that the tile now covers gets an AXRaise. 50 ms later the
-  stack is checked, and keyboard focus goes back to the tile through
-  `TiledFocusRouter` (`reason=click-reraise`), so the tile stays key with
-  the floater on top. The click itself reaches the tile as usual. It stands
-  down while a menu tracks or a popup is open, while the scratchpad is up,
-  when focus has moved on, and when the click landed inside the floater's
-  frame, since raising it would cover the spot just clicked. A raise that
-  leaves the floater under the tile, or a refocus that misses, cools the
-  pair down for 30 s, so an app that refuses stops costing a flicker per
-  click. A click re-raise counts toward no burst, since it follows one
-  click. When the floater's app took the front, the click counts as a
-  loop and the pair cools at once, on the same doubling scale.
+- A floater may sit behind the focused tile or another floater, and nothing else.
+  A click lifts the clicked tile natively and nothing fights that. A click re-raise
+  used to put the floater straight back, which blinked on every click and took the
+  keyboard for a moment. It was removed on November 2.
 - A click is credited to the window the window list puts under the
   pointer when that window is one of ours, so a floater a tile has buried
   does not take the focus tracker from the tile that got the click.
@@ -834,12 +823,6 @@ Log lines, all at notice level:
 | `no-raise focus fallback skipped: …` | focus | a menu opened, or the user switched apps, meanwhile |
 | `focus invariant skipped: popup …` | focus | the invariant held off |
 | `ensureFocus skipped: popup …` | focus | a bare Hypr press left the menu open |
-| `click re-raise: floater=<id> tile=<id> sameApp=<bool> → on top` | floating | a click buried the floater and the raise put it back |
-| `click re-raise: … → ineffective — cooldown 30s` | floating | the window server kept the tile on top; the pair rests |
-| `click re-raise: … → skipped(<reason>)` | floating | `click under floater`, `focus moved`, `popup …`, `menu tracking`, `scratchpad`, `tile app not front`. A cooldown skip logs at debug |
-| `click re-raise failed: wid=<id> rc=<n>` | floating | AXRaise returned an error |
-| `click re-raise refocus missed: tile=<id> floaters=[…] — cooldown 30s` | floating | the tile did not stay key under the floater |
-| `click re-raise refocus skipped: …` | floating | focus moved, a menu or popup opened, or the scratchpad came up before the hand-back. The floater may stay key |
 
 One repro shows whether no-raise focus works on a given macOS. If `verify`
 says `landed` with the floater in `floatersAbove` and an empty `buried`, it
@@ -852,28 +835,19 @@ those had the target's app already in front. No-raise focus that has to switch t
 
 Cross-app AXRaise alone does not work on macOS 27. A Messages Quick Look preview
 under a Safari tile logged `raise behind: wids=[5252] under=[71889]` and then
-`raise behind ineffective: wid=5252 still under 71889`. So both raises front the
-floater's app first (`frontApp`, SkyLight with no activate) and hand focus back
-through the no-raise path. The click re-raise does this about 90 ms after a
-mouse-up. Raise-behind does it only with the focused tile's app in front, so the
-restore can undo it, and never during a mouse press. Raise-behind still skips the
-focused tile's own app. Added November 2 as a trial: each click on a tile covering
-a floater switches apps twice, so watch for menu bar flicker and keys typed right
-after a click landing in the floater's app.
+`raise behind ineffective: wid=5252 still under 71889`. So raise-behind fronts the
+floater's app first (`frontApp`, SkyLight with no activate) and hands focus back
+through the no-raise path. It runs for a floater behind a tile other than the focused
+one, on an app activation, after a click's mouse-up, and on each poll, and only with the
+focused tile's app in front. It waits for the mouse-up, 250 ms after the last key
+because keys go to the front app, a no-raise focus still settling, and the last raise's
+400 ms hand-off. Keys typed in the roughly 70 ms the floater's app is in front land
+there. A raise gets up to 230 ms to land. A miss rests 1 s, then 2 and 4, retrying after
+each until three in a row, then waits for the next click.
 
-Some apps lift themselves when key-window events arrive. Measured on macOS 27 with
-HyprMac stopped: Dia goes above a floater when event 0x01 arrives (before or after
-the front switch, and after a 150 ms wait). It stays under for the front switch
-alone, event 0x02 alone, and the focus-gained event. Messages stays under for all of
-them. A build that sent no key events at all took no typing or clicks in tiles on the
-laptop, though the cause is inferred, and AX can't settle it: a window's `AXFocused`
-read `no` on every tile.
-
-So two lifts in a row log `tile app lifts itself on focus: pid=<pid> …`, and that app
-then gets the soft hand-off across apps: the front switch, 0x02 and focus-gained, shown
-as `soft` on the debug line. Every other app and every same-app focus still gets the
-full events. If the soft one lifts twice too, `soft focus still lifts` is logged and
-floaters aren't raised while that app has focus, since each raise would only flicker.
+Some apps lift themselves when key-window events arrive: Dia goes above a floater when
+event 0x01 arrives (measured on macOS 27 with HyprMac stopped). That is allowed, since
+Dia has focus then. The floater returns when focus moves to another tile.
 
 Floating-level floaters. AppKit puts a floating panel (a Quick Look
 preview, an inspector) at the floating level, CG layer 3, while its app is
@@ -897,18 +871,6 @@ layers=[3] front=<messages> crossApp=true`. Then one of:
 - `… → missed, …` then `no-raise focus fallback: … after a miss (…)`:
   SkyLight would not switch the front process. The usual path ran and
   lifted the tile.
-
-For the click re-raise, click a tile beside a floater. Either app pairing should
-log `click re-raise: … → on top`, then `no-raise focus: … reason=click-reraise`
-and `no-raise focus verify: … → landed, floaters kept above`. A raise that fronted
-an app gets up to 230 ms to land, since one can miss the first check. An
-`→ ineffective` or `refocus missed` line means that pair rests. Across apps that is
-1 s, then 2 and 4, with another try after each until three misses in a row, and then
-nothing until the next click. Within one app it is 30 s. A fronted raise waits while another one's hand-off
-runs (400 ms), while a no-raise focus settles, and for 250 ms after the last key,
-because keys go to the front app. Keys typed in the roughly 70 ms the floater's app is
-in front still land there. The tile then stays on top, and the dim shows the floater only where it is
-in front.
 
 ### A floater changed size or left the screen
 

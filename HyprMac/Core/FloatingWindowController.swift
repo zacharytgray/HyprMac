@@ -122,9 +122,7 @@ struct FloatToTileRejectionMessage {
 ///
 /// Keyed by the floater and the tile covering it. A raise that left the
 /// floater covered (macOS 27 ignores a cross-app AXRaise) cools the pair
-/// down. So does a raise that follows our own restore within `echoWindow`,
-/// which is the raise → restore → activation → raise loop, and a burst of
-/// raises for one pair from any cause.
+/// down, and so does a burst of plain raises for one pair.
 struct RaiseBehindThrottle {
     struct Pair: Hashable, CustomStringConvertible {
         let floater: CGWindowID
@@ -148,48 +146,17 @@ struct RaiseBehindThrottle {
     var frontedRetryLimit = 3
     private var frontedMisses: [Pair: Int] = [:]
     static let frontedIneffectiveReason = "ineffective after fronting"
-    var loopCooldown: TimeInterval = 15
     var burstCooldown: TimeInterval = 10
     var burstLimit = 4
     var burstWindow: TimeInterval = 5
-    var echoWindow: TimeInterval = 1
 
     private var attempts: [Pair: [TimeInterval]] = [:]
     private var cooldowns: [Pair: (until: TimeInterval, reason: String)] = [:]
-    private var restores: [Pair: TimeInterval] = [:]
-    /// how many loops a pair has been cooled for. each one doubles the
-    /// cooldown, capped at `loopCooldownCap`, so a floater whose app takes
-    /// the front on every raise stops blinking every fifteen seconds
-    private var loops: [Pair: Int] = [:]
-    var loopCooldownCap: TimeInterval = 600
-    /// when a pair's last loop cooldown ends. a pair quiet for `loopDecay`
-    /// after that starts its escalation over, so a floater that looped once
-    /// an hour ago is not cooled for ten minutes on its next click. counted
-    /// from the end, not the loop: a pair cannot loop while it cools, so a
-    /// long cooldown would otherwise always look like a quiet spell
-    private var loopQuietFrom: [Pair: TimeInterval] = [:]
-    var loopDecay: TimeInterval = 300
-
-    /// The cooldown for this loop: doubled per loop, capped at
-    /// `loopCooldownCap`, and back to `loopCooldown` once the pair has been
-    /// quiet for `loopDecay` after its last loop cooldown.
-    private mutating func nextLoopCooldown(_ pair: Pair, now: TimeInterval) -> TimeInterval {
-        let recent = loopQuietFrom[pair].map { now - $0 <= loopDecay } ?? false
-        let count = (recent ? loops[pair, default: 0] : 0) + 1
-        let duration = min(loopCooldown * pow(2, Double(count - 1)), loopCooldownCap)
-        loops[pair] = count
-        loopQuietFrom[pair] = now + duration
-        return duration
-    }
-
     /// Decide one pair. A `.raise` counts as an attempt.
     mutating func decide(_ pair: Pair, now: TimeInterval) -> Decision {
         prune(now)
         if let cooldown = cooldowns[pair] {
             return .coolingDown(reason: cooldown.reason, remaining: cooldown.until - now)
-        }
-        if restores[pair] != nil {
-            return startCooldown(pair, reason: "loop", for: nextLoopCooldown(pair, now: now), now: now)
         }
         let recent = attempts[pair, default: []]
         if recent.count >= burstLimit {
@@ -209,7 +176,6 @@ struct RaiseBehindThrottle {
             cooldowns[pair] = (now + ineffectiveCooldown, "ineffective")
         }
         attempts[pair] = nil
-        restores[pair] = nil
     }
 
     /// Whether a fronted miss should try again by itself.
@@ -229,26 +195,8 @@ struct RaiseBehindThrottle {
         cooldowns[pair] = nil
     }
 
-    mutating func noteRestore(_ pairs: [Pair], now: TimeInterval) {
-        for pair in pairs { restores[pair] = now }
-    }
-
-    /// The loop as the click re-raise sees it: the raise took the front
-    /// away from the tile and the hand-back is putting it back. The pair
-    /// cools at once, and longer each time, so a floater whose app
-    /// activates itself on a raise blinks on one click and not on every
-    /// one. The click path asks `cooldown`, which never saw a restore.
-    mutating func noteLoop(_ pairs: [Pair], now: TimeInterval) {
-        for pair in pairs {
-            cooldowns[pair] = (now + nextLoopCooldown(pair, now: now), "loop")
-            attempts[pair] = nil
-            restores[pair] = nil
-        }
-    }
-
     /// The pair's running cooldown, if any. Asking counts as no attempt:
-    /// a click re-raise follows one physical click, so it cannot loop on
-    /// its own and must not run a busy clicker into a burst cooldown.
+    /// the fronted path is bounded by its hand-off instead.
     mutating func cooldown(_ pair: Pair, now: TimeInterval) -> (reason: String, remaining: TimeInterval)? {
         prune(now)
         return cooldowns[pair].map { ($0.reason, $0.until - now) }
@@ -258,17 +206,11 @@ struct RaiseBehindThrottle {
                                         now: TimeInterval) -> Decision {
         cooldowns[pair] = (now + duration, reason)
         attempts[pair] = nil
-        restores[pair] = nil
         return .cooldownStarted(reason: reason, duration: duration)
     }
 
     private mutating func prune(_ now: TimeInterval) {
         cooldowns = cooldowns.filter { $0.value.until > now }
-        restores = restores.filter { now - $0.value < echoWindow }
-        // a pair past its decay starts over anyway. dropping it here also
-        // drops the pairs whose windows are gone
-        loopQuietFrom = loopQuietFrom.filter { now - $0.value <= loopDecay }
-        loops = loops.filter { loopQuietFrom[$0.key] != nil }
         attempts = attempts.compactMapValues { times in
             let kept = times.filter { now - $0 < burstWindow }
             return kept.isEmpty ? nil : kept
@@ -276,24 +218,12 @@ struct RaiseBehindThrottle {
     }
 }
 
-/// A left click as the mouse monitors saw it, for
-/// `FloatingWindowController.raiseAfterClick`.
-struct ClickPress: Equatable {
-    /// the window the window list put under the press
-    let windowID: CGWindowID
-    /// the press point, CG coordinates
-    let point: CGPoint
-    /// a menu-level window of the front app was open at the press
-    let popupOpen: Bool
-}
-
 /// Owner of floating-window behavior.
 ///
 /// Public surface: `toggle` flips a window between tiled and floating;
 /// `cycleFocus` rotates focus across visible floaters; `raiseBehind`
-/// lifts floaters that ended up behind tiled windows; `raiseAfterClick`
-/// puts floaters back above a tile the user just clicked; `shouldAutoFloat`
-/// wraps `FloatingAdmissionPolicy` for startup and Retile All. Discovery asks
+/// lifts floaters that ended up behind unfocused tiled windows;
+/// `shouldAutoFloat` wraps `FloatingAdmissionPolicy` for startup and Retile All. Discovery asks
 /// the policy directly.
 ///
 /// What does not live here: workspace assignment for new floaters
@@ -339,9 +269,6 @@ final class FloatingWindowController {
     // a cross-app raise fronts the floater's app first. this does not lift
     // anything by itself: the AXRaise after it does
     var frontApp: (HyprWindow) -> Void = { $0.makeFrontAndKeyWithoutRaise() }
-    // an app that lifts itself on focus undoes any raise as soon as it gets
-    // focus back, so raising over it only flickers
-    var tileAppLiftsOnFocus: (pid_t) -> Bool = { _ in false }
     // keys go to the front app, so fronting the floater's app while someone types
     // puts their words in the floater
     var secondsSinceLastKey: () -> TimeInterval = {
@@ -366,17 +293,6 @@ final class FloatingWindowController {
     var throttle = RaiseBehindThrottle()
     // the stack may have changed: redraw floater cutouts and outlines
     var onRestack: () -> Void = {}
-    // a window a click re-raise may treat as a tile. WindowManager also
-    // leaves out newcomers in admission recovery, which sit on top like floaters.
-    lazy var isTiledWindow: (CGWindowID) -> Bool = { [unowned self] id in
-        self.stateCache.tiledPositions[id] != nil && !self.stateCache.floatingWindowIDs.contains(id)
-    }
-    // give keyboard focus back to a clicked tile without lifting it. reports
-    // whether the tile ended up key with the floaters still above it.
-    var refocusClickedTile: (HyprWindow, @escaping (Bool) -> Void) -> Void = { window, done in
-        window.focusWithoutRaise()
-        done(false)
-    }
     var isWindowSizeSettable: (HyprWindow) -> Bool? = { $0.isSizeSettable }
     // red flash on a float→tile the tree or the screen refused.
     var rejectFloatToTile: ((HyprWindow, TilingEngine.ForceInsertFailure) -> Void)?
@@ -387,8 +303,8 @@ final class FloatingWindowController {
 
     // time for the raise to land before checking the stack and the front app
     static let verifyDelay: TimeInterval = 0.05
-    // gap between mouse-up and the click re-raise. the app has lifted the
-    // clicked tile by then; the floater is hidden for about this long.
+    // gap between mouse-up and the check after a click. the app has lifted the
+    // clicked tile by then
     static let clickRaiseDelay: TimeInterval = 0.04
     // an app can take longer than verifyDelay to come up after fronting. seen
     // live: Granola missed the first check, the pair then rested for 30 s, and
@@ -613,7 +529,12 @@ final class FloatingWindowController {
         }
     }
 
-    /// Lift floating windows that a tile covers back above it.
+    /// Lift floating windows that an unfocused tile covers back above it.
+    ///
+    /// The rule: a floater may be behind the focused tile or another floater,
+    /// and nothing else. A click lifts the clicked tile natively and nothing
+    /// fights that. Raising above every tile after each click flickered on every
+    /// click, and made the floater's app take the keyboard for a moment.
     ///
     /// Runs after app activation and after each discovery pass. It stays
     /// out of the way of the user:
@@ -657,8 +578,10 @@ final class FloatingWindowController {
         let focusedTiledPID = previousWindow.flatMap {
             stateCache.floatingWindowIDs.contains($0.windowID) ? nil : $0.ownerPID
         }
+        // a floater may sit behind the focused tile. only other tiles count
+        let focusedTile = focusedTiledPID == nil ? nil : previousFocusID
         // safari can reorder a floating sibling when focus returns to its tile
-        let candidates = coveredFloaters(in: windows).filter { pair in
+        let candidates = coveredFloaters(in: windows, ignoringTile: focusedTile).filter { pair in
             guard let floater = stateCache.cachedWindows[pair.floater] else { return false }
             guard let focusedTiledPID else { return true }
             return floater.ownerPID != focusedTiledPID
@@ -676,10 +599,6 @@ final class FloatingWindowController {
         let frontsApp = focusedTiledPID != nil && frontBefore == focusedTiledPID
         // the click re-raise runs after the mouse-up
         if frontsApp, isMouseDown() { return }
-        if frontsApp, let focusedTiledPID, tileAppLiftsOnFocus(focusedTiledPID) {
-            hyprLog(.debug, .floating, "raise behind skipped: pid=\(focusedTiledPID) lifts itself on focus")
-            return
-        }
         if frontsApp, deferFrontedRaise() { return }
 
         let now = self.now()
@@ -745,7 +664,10 @@ final class FloatingWindowController {
         let windows = windowListForZOrder().map(WindowStacking.decode)
         let now = self.now()
         if let windows {
-            let stillCovered = Dictionary(coveredFloaters(in: windows).map { ($0.floater, $0.tile) },
+            let focusedTile = previousWindow.flatMap {
+                stateCache.floatingWindowIDs.contains($0.windowID) ? nil : previousFocusID
+            }
+            let stillCovered = Dictionary(coveredFloaters(in: windows, ignoringTile: focusedTile).map { ($0.floater, $0.tile) },
                                           uniquingKeysWith: { first, _ in first })
             if rechecks > 0, pairs.contains(where: { stillCovered[$0.floater] != nil }) {
                 scheduleAfter(Self.frontedRecheckDelay) { [weak self] in
@@ -852,195 +774,6 @@ final class FloatingWindowController {
         }
     }
 
-    // MARK: - click re-raise
-
-    /// Put floaters back above a tile the user just clicked, then hand
-    /// keyboard focus straight back to that tile.
-    ///
-    /// A click lifts the tile over any floater it overlaps, and floaters
-    /// are meant to stay in front of tiles. `WindowManager` calls this
-    /// shortly after the mouse-up of a real click: never a drag, a Hypr
-    /// gesture or one of our own synthetic clicks. Each floater the tile
-    /// buried gets an AXRaise, and the stack is checked 50 ms later. When a
-    /// floater is back on top, focus goes back to the tile through
-    /// `refocusClickedTile`, the no-raise path, so the tile stays key under
-    /// the floater. The click itself already reached the tile; nothing is
-    /// swallowed or re-posted.
-    ///
-    /// It stands down while a menu tracks or a popup is open, while the
-    /// scratchpad is up, once focus has moved on, when the click landed
-    /// inside the floater's frame (the floater would cover the spot just
-    /// clicked), and while `throttle` cools the pair down. A raise that
-    /// leaves the floater under the tile, or a refocus that misses, cools
-    /// the pair down for 30 s. One click buys at most one raise, so this
-    /// cannot loop on its own. A floater of another app is raised by fronting
-    /// its app first, since macOS 27 ignores the plain AXRaise, so the
-    /// hand-back runs even when the raise failed.
-    func raiseAfterClick(_ press: ClickPress) {
-        let tileID = press.windowID
-        guard isTiledWindow(tileID), let tile = stateCache.cachedWindows[tileID],
-              let workspace = workspaceManager.workspaceFor(tileID) else { return }
-        let floaterIDs = stateCache.floatingWindowIDs.filter {
-            $0 != tileID && workspaceManager.isWindowVisible($0)
-                && workspaceManager.workspaceFor($0) == workspace
-        }
-        guard !floaterIDs.isEmpty,
-              let windows = windowListForZOrder().map(WindowStacking.decode) else { return }
-        let buried = WindowStacking.floaters(below: tileID, among: floaterIDs, in: windows)
-        guard !buried.isEmpty else { return }
-
-        // a click during the last raise's hand-off sees the floater's app in
-        // front and would read that as focus gone elsewhere
-        if frontedRaiseBusyUntil > now() {
-            _ = deferFrontedRaise()
-            return
-        }
-
-        let front = frontmostPID()
-        let blocker = clickRaiseBlocker(press, tile: tile, windows: windows, front: front)
-        let now = self.now()
-        var raising: [(pair: RaiseBehindThrottle.Pair, window: HyprWindow)] = []
-        for entry in buried {
-            guard let floater = stateCache.cachedWindows[entry.windowID] else { continue }
-            let pair = RaiseBehindThrottle.Pair(floater: entry.windowID, tile: tileID)
-            let line = Self.clickRaiseLine(pair, sameApp: floater.ownerPID == tile.ownerPID)
-            if let blocker {
-                hyprLog(.notice, .floating, "\(line) → skipped(\(blocker))")
-            } else if let frame = entry.bounds, frame.contains(press.point) {
-                hyprLog(.notice, .floating, "\(line) → skipped(click under floater)")
-            } else if floater.ownerPID != tile.ownerPID, tileAppLiftsOnFocus(tile.ownerPID) {
-                hyprLog(.debug, .floating, "\(line) → skipped(tile app lifts itself on focus)")
-            } else if let cooldown = throttle.cooldown(pair, now: now),
-                      floater.ownerPID == tile.ownerPID
-                        || cooldown.reason == RaiseBehindThrottle.frontedIneffectiveReason {
-                // a cross-app click outranks what raise-behind cooled for. it
-                // follows one real click, so it can't loop, and it fronts the
-                // app, which raise-behind's plain AXRaise may not have done.
-                // the line that started the cooldown already said why
-                hyprLog(.debug, .floating, "\(line) → skipped(cooldown \(cooldown.reason))")
-            } else {
-                raising.append((pair, floater))
-            }
-        }
-        guard !raising.isEmpty else { return }
-        let frontsApp = raising.contains { $0.window.ownerPID != tile.ownerPID }
-        if frontsApp {
-            if deferFrontedRaise() { return }
-            frontedRaiseBusyUntil = now + Self.frontedRaiseBusy
-        }
-
-        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
-        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
-        let generation = focusController.generation
-        // back to front, so the floaters keep their order among themselves
-        for item in raising.reversed() {
-            suppressions.expectActivation(of: item.window.ownerPID)
-            if item.window.ownerPID != tile.ownerPID { frontApp(item.window) }
-            let rc = performRaise(item.window)
-            if rc != .success {
-                hyprLog(.notice, .floating, "click re-raise failed: wid=\(item.pair.floater) rc=\(rc.rawValue)")
-            }
-        }
-        let raised = raising.map { (pair: $0.pair, pid: $0.window.ownerPID) }
-        let frontedApp = raised.contains { $0.pid != tile.ownerPID }
-        scheduleAfter(Self.verifyDelay) { [weak self] in
-            self?.finishClickRaise(tile: tile, raised: raised, frontedApp: frontedApp,
-                                   rechecks: frontedApp ? Self.frontedRechecks : 0,
-                                   generation: generation)
-        }
-    }
-
-    static func clickRaiseLine(_ pair: RaiseBehindThrottle.Pair, sameApp: Bool) -> String {
-        "click re-raise: floater=\(pair.floater) tile=\(pair.tile) sameApp=\(sameApp)"
-    }
-
-    /// Why a click may not re-raise anything, or `nil`.
-    private func clickRaiseBlocker(_ press: ClickPress, tile: HyprWindow,
-                                   windows: [StackedWindow], front: pid_t?) -> String? {
-        if isScratchpadVisible() { return "scratchpad" }
-        if isMenuTracking() { return "menu tracking" }
-        if press.popupOpen { return "popup at press" }
-        if let popup = findPopup(windows, front) { return "popup wid=\(popup.windowID)" }
-        if focusController.lastFocusedID != tile.windowID { return "focus moved" }
-        if front != tile.ownerPID { return "tile app not front" }
-        return nil
-    }
-
-    /// Check the stack after a click re-raise, cool down floaters it could
-    /// not lift, and give keyboard focus back to the tile.
-    private func finishClickRaise(tile: HyprWindow, raised: [(pair: RaiseBehindThrottle.Pair, pid: pid_t)],
-                                  frontedApp: Bool, rechecks: Int, generation: UInt64) {
-        defer { onRestack() }
-        guard let windows = windowListForZOrder().map(WindowStacking.decode),
-              windows.contains(where: { $0.windowID == tile.windowID }) else { return }
-        let ids = Set(raised.map(\.pair.floater))
-        let above = Set(WindowStacking.floaters(above: tile.windowID, among: ids, in: windows).map(\.windowID))
-        let below = Set(WindowStacking.floaters(below: tile.windowID, among: ids, in: windows).map(\.windowID))
-        if rechecks > 0, !below.isEmpty {
-            scheduleAfter(Self.frontedRecheckDelay) { [weak self] in
-                self?.finishClickRaise(tile: tile, raised: raised, frontedApp: frontedApp,
-                                       rechecks: rechecks - 1, generation: generation)
-            }
-            return
-        }
-        let now = self.now()
-        var lifted: [RaiseBehindThrottle.Pair] = []
-        for (pair, pid) in raised {
-            let line = Self.clickRaiseLine(pair, sameApp: pid == tile.ownerPID)
-            if above.contains(pair.floater) {
-                lifted.append(pair)
-                throttle.noteFrontedRaiseLanded(pair)
-                hyprLog(.notice, .floating, "\(line) → on top")
-            } else if below.contains(pair.floater) {
-                let crossApp = pid != tile.ownerPID
-                throttle.noteIneffective(pair, now: now, fronted: crossApp)
-                let rest = crossApp ? throttle.frontedIneffectiveCooldown : throttle.ineffectiveCooldown
-                if crossApp { retryAfterMiss(pair, now: now) }
-                hyprLog(.notice, .floating, "\(line) → ineffective — cooldown \(Int(rest))s")
-            }
-        }
-        // a fronted app has the keyboard even if its window didn't come up
-        guard !lifted.isEmpty || frontedApp else { return }
-
-        guard focusController.lastFocusedID == tile.windowID,
-              focusController.generation == generation else {
-            hyprLog(.notice, .floating, "click re-raise refocus skipped: tile=\(tile.windowID) focus moved")
-            return
-        }
-        if isMenuTracking() || isScratchpadVisible() {
-            hyprLog(.notice, .floating, "click re-raise refocus skipped: tile=\(tile.windowID) "
-                    + (isMenuTracking() ? "menu tracking" : "scratchpad"))
-            return
-        }
-        let front = frontmostPID()
-        if let popup = findPopup(windows, front) {
-            hyprLog(.notice, .floating, "click re-raise refocus skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
-            return
-        }
-        // the floater's app took the front, so this is a restore. a
-        // raise-behind for the same pair right after it is the loop, and so
-        // is the next click: the pair cools now, longer each time
-        if front != tile.ownerPID {
-            // expected when the raise fronted the app on purpose
-            if !frontedApp {
-                throttle.noteLoop(lifted, now: now)
-                hyprLog(.notice, .floating, "click re-raise moved the front app — cooling \(lifted)")
-            }
-        }
-        refocusClickedTile(tile) { [weak self] kept in
-            guard let self else { return }
-            if !kept {
-                let now = self.now()
-                for pair in lifted { self.throttle.noteIneffective(pair, now: now, fronted: frontedApp) }
-                let rest = frontedApp ? self.throttle.frontedIneffectiveCooldown : self.throttle.ineffectiveCooldown
-                if frontedApp { for pair in lifted { self.retryAfterMiss(pair, now: now) } }
-                hyprLog(.notice, .floating, "click re-raise refocus missed: tile=\(tile.windowID) "
-                        + "floaters=\(lifted.map(\.floater)) — cooldown \(Int(rest))s")
-            }
-            self.onRestack()
-        }
-    }
-
     /// Whether `window` belongs to an app in the Never tile list.
     func isNeverTile(_ window: HyprWindow) -> Bool {
         guard let bundleID = window.bundleID
@@ -1079,7 +812,8 @@ final class FloatingWindowController {
     /// `tiledPositions` when the list has none.
     func coveredFloaters(in windows: [StackedWindow],
                          floatingWindowIDs: Set<CGWindowID>? = nil,
-                         tiledPositions: [CGWindowID: CGRect]? = nil) -> [RaiseBehindThrottle.Pair] {
+                         tiledPositions: [CGWindowID: CGRect]? = nil,
+                         ignoringTile: CGWindowID? = nil) -> [RaiseBehindThrottle.Pair] {
         let floaters = (floatingWindowIDs ?? stateCache.floatingWindowIDs)
             .filter { workspaceManager.isWindowVisible($0) }
         guard !floaters.isEmpty else { return [] }
@@ -1091,7 +825,8 @@ final class FloatingWindowController {
             guard let frame = entry.bounds
                     ?? stateCache.cachedWindows[entry.windowID].flatMap(windowFrameForZOrder) else { continue }
             let cover = windows[..<index].first { above in
-                guard above.layer == 0, let rect = above.bounds ?? tiles[above.windowID],
+                guard above.windowID != ignoringTile, above.layer == 0,
+                      let rect = above.bounds ?? tiles[above.windowID],
                       tiles[above.windowID] != nil else { return false }
                 return WindowStacking.overlaps(rect, frame)
             }
