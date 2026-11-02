@@ -861,18 +861,19 @@ focused tile's own app. Added November 2 as a trial: each click on a tile coveri
 a floater switches apps twice, so watch for menu bar flicker and keys typed right
 after a click landing in the floater's app.
 
-Some apps lift themselves when key-window events arrive. On macOS 27 Dia goes
-above a floater as soon as `SLPSPostEventRecordTo` delivers them, and stays under
-it when only the front process moves. Messages and Terminal stay under it either
-way. A build that skipped them for a window already focused in its app took no
-typing or clicks in tiles on the laptop, so they stay, and a floater goes under Dia
-while Dia has focus. That the missing events were the cause is inferred, and AX can't
-settle it: a window's `AXFocused` read `no` on every tile, including ones taking keys.
+Some apps lift themselves when key-window events arrive. Measured on macOS 27 with
+HyprMac stopped: Dia goes above a floater when event 0x01 arrives (before or after
+the front switch, and after a 150 ms wait). It stays under for the front switch
+alone, event 0x02 alone, and the focus-gained event. Messages stays under for all of
+them. A build that sent no key events at all took no typing or clicks in tiles on the
+laptop, though the cause is inferred, and AX can't settle it: a window's `AXFocused`
+read `no` on every tile.
 
-Two lifts in a row log `tile app lifts itself on focus: pid=<pid> …`. HyprMac then
-stops raising floaters while that app has focus, because each raise only flickers.
-The raise comes back when focus moves to another app, and a later focus that keeps the
-floater above clears the mark.
+So two lifts in a row log `tile app lifts itself on focus: pid=<pid> …`, and that app
+then gets the soft hand-off across apps: the front switch, 0x02 and focus-gained, shown
+as `soft` on the debug line. Every other app and every same-app focus still gets the
+full events. If the soft one lifts twice too, `soft focus still lifts` is logged and
+floaters aren't raised while that app has focus, since each raise would only flicker.
 
 Floating-level floaters. AppKit puts a floating panel (a Quick Look
 preview, an inspector) at the floating level, CG layer 3, while its app is

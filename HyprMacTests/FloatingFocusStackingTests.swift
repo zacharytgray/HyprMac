@@ -349,6 +349,7 @@ final class TiledFocusRouterTests: XCTestCase {
             self.calls.append("event \(wid) \(gained ? "gained" : "lost")")
         }
         router.makeFrontAndKey = { [unowned self] w in self.calls.append("front+key \(w.windowID)"); return "ok" }
+        router.makeFrontAndKeySoftly = { [unowned self] w in self.calls.append("soft \(w.windowID)"); return "ok" }
         router.usualFocus = { [unowned self] w, fallback in self.calls.append("usual \(w.windowID) \(fallback.rawValue)") }
         router.lastFocusedID = { [unowned self] in self.lastFocused }
         router.focusGeneration = { [unowned self] in self.generation }
@@ -371,29 +372,61 @@ final class TiledFocusRouterTests: XCTestCase {
         XCTAssertEqual(calls.first, "front+key 11")
     }
 
-    func testTwoLiftsInARowMarkTheAppAndAFocusThatHoldsClearsIt() {
-        // the check runs after the app took focus, so the floater is gone from
-        // above the target when it lifted itself
-        let lifted = [win(11, tileRect), win(10, pid: otherPID, floaterRect)]
+    // the check runs after the app took focus, so a floater it buried is no
+    // longer above the target
+    private func focusOnce(endingAbove: Bool) {
         let held = [win(10, pid: otherPID, floaterRect), win(11, tileRect)]
+        windows = held
+        front = otherPID
+        calls = []
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+        windows = endingAbove ? held : [win(11, tileRect), win(10, pid: otherPID, floaterRect)]
+        front = frontPID
+        keys[frontPID] = 11
+        runScheduled()
+        keys[frontPID] = nil
+    }
 
-        func focusOnce(endingWith stack: [StackedWindow]) {
-            windows = held
-            front = otherPID
-            router.focus(target, reason: "ffm", fallback: .activateAndClick)
-            windows = stack
-            front = frontPID
-            keys[frontPID] = 11
-            runScheduled()
-            keys[frontPID] = nil
-        }
+    func testAnAppThatLiftsItselfTwiceGetsTheSoftHandOff() {
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: false)
+        XCTAssertEqual(calls.first, "front+key 11", "both of those were full focuses")
 
-        focusOnce(endingWith: lifted)
-        XCTAssertFalse(router.liftsItselfOnFocus(frontPID), "one can be a click during the check")
-        focusOnce(endingWith: lifted)
-        XCTAssertTrue(router.liftsItselfOnFocus(frontPID))
-        focusOnce(endingWith: held)
+        focusOnce(endingAbove: true)
+        XCTAssertEqual(calls.first, "soft 11")
+        focusOnce(endingAbove: true)
+        XCTAssertEqual(calls.first, "soft 11", "holding proves nothing about the full events")
+        XCTAssertFalse(router.liftsItselfOnFocus(frontPID), "raises are worth it while soft holds")
+    }
+
+    func testOneLiftIsNotEnoughAndAFullFocusThatHoldsStartsOver() {
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: true)
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: true)
+        XCTAssertEqual(calls.first, "front+key 11", "a lone miss can be a click during the check")
+    }
+
+    func testRaisesStopOnlyWhenTheSoftHandOffLiftsToo() {
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: false)
         XCTAssertFalse(router.liftsItselfOnFocus(frontPID))
+        focusOnce(endingAbove: false)
+        XCTAssertTrue(router.liftsItselfOnFocus(frontPID))
+    }
+
+    func testASameAppFocusStaysFullForAnAppThatLiftsItself() {
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: false)
+        windows = [win(10, pid: otherPID, floaterRect), win(11, tileRect)]
+        front = frontPID
+        calls = []
+        keys[frontPID] = nil
+
+        router.focus(target, reason: "ffm", fallback: .activateAndClick)
+
+        XCTAssertEqual(calls.first, "front+key 11", "only the full events pick a window inside the app")
     }
 
     func testAnUncoveredTileTakesTheUsualPathRightAway() {

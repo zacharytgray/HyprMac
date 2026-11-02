@@ -448,6 +448,28 @@ class HyprWindow: Equatable, Hashable {
         return "sl front=\(setFrontRC.rawValue) post1=\(post1RC.rawValue) post2=\(post2RC.rawValue)"
     }
 
+    /// Front the owning process for an app that lifts itself on focus. Dia goes
+    /// above a floater when the first key-window event (0x01) arrives, and stays
+    /// put for the second (0x02) and the focus-gained event (measured on macOS 27
+    /// with HyprMac stopped), so this sends only those.
+    @discardableResult
+    func makeFrontAndKeySoftly() -> String? {
+        guard var psn = processSerialNumber() else { return nil }
+        let setFrontRC = _SLPSSetFrontProcessWithOptions(&psn, UInt32(windowID), kCPSUserGenerated)
+        var bytes = [UInt8](repeating: 0, count: 0xf8)
+        bytes[0x04] = 0xF8
+        bytes[0x08] = 0x02
+        bytes[0x3a] = 0x10
+        var widBytes = UInt32(windowID)
+        withUnsafeBytes(of: &widBytes) { src in
+            for i in 0..<4 { bytes[0x3c + i] = src[i] }
+        }
+        for i in 0..<0x10 { bytes[0x20 + i] = 0xFF }
+        let postRC = SLPSPostEventRecordTo(&psn, &bytes[0])
+        let gainedRC = Self.postWindowFocusEvent(pid: ownerPID, windowID: windowID, gained: true)
+        return "sl front=\(setFrontRC.rawValue) post2=\(postRC.rawValue) gained=\(gainedRC?.rawValue ?? -1) soft"
+    }
+
     private func processSerialNumber() -> ProcessSerialNumber? {
         var psn = ProcessSerialNumber()
         guard GetProcessForPID(ownerPID, &psn) == noErr else {

@@ -62,6 +62,7 @@ final class TiledFocusRouter {
     static let verifyDelay: TimeInterval = 0.08
     static let liftStreakLimit = 2
     private var liftStreaks: [pid_t: Int] = [:]
+    private var softLiftStreaks: [pid_t: Int] = [:]
 
     // seams
     var windowList: () -> [StackedWindow]? = { WindowStacking.onScreen() }
@@ -73,6 +74,7 @@ final class TiledFocusRouter {
         HyprWindow.postWindowFocusEvent(pid: pid, windowID: wid, gained: gained)
     }
     var makeFrontAndKey: (HyprWindow) -> String? = { $0.makeFrontAndKeyWithoutRaise() }
+    var makeFrontAndKeySoftly: (HyprWindow) -> String? = { $0.makeFrontAndKeySoftly() }
     var usualFocus: (HyprWindow, Fallback) -> Void = { window, fallback in
         window.focusWithoutRaise()
         if fallback == .activateAndClick { window.focusViaSyntheticClick() }
@@ -137,12 +139,13 @@ final class TiledFocusRouter {
 
         let finish = { [weak self] in
             guard let self else { return }
-            let rc = self.makeFrontAndKey(target) ?? "no psn"
+            let soft = front != pid && self.needsSoftFocus(pid)
+            let rc = (soft ? self.makeFrontAndKeySoftly(target) : self.makeFrontAndKey(target)) ?? "no psn"
             hyprLog(.debug, .focus, "no-raise focus: wid=\(wid) \(rc)")
             self.schedule(Self.verifyDelay) { [weak self] in
                 self?.verify(target, reason: reason, fallback: fallback,
                              generation: generation, covering: coveringIDs, startFront: front,
-                             onResult: onResult)
+                             soft: soft, onResult: onResult)
             }
         }
 
@@ -164,26 +167,35 @@ final class TiledFocusRouter {
         return route
     }
 
-    /// Whether `pid`'s app lifts its window over floaters when it takes focus.
-    /// Dia does. A raise can't hold a floater above it, because handing focus
-    /// back lifts it again, so raising only makes the floater flicker.
+    /// Whether a floater can't be held above `pid`'s app while it has focus,
+    /// even with the soft hand-off. Raising over it would only flicker.
     func liftsItselfOnFocus(_ pid: pid_t) -> Bool {
+        softLiftStreaks[pid, default: 0] >= Self.liftStreakLimit
+    }
+
+    /// Whether `pid`'s app lifts its window when the full key-window events
+    /// arrive. Dia does.
+    private func needsSoftFocus(_ pid: pid_t) -> Bool {
         liftStreaks[pid, default: 0] >= Self.liftStreakLimit
     }
 
-    // a lone miss can be a click landing during the check. a focus that keeps
-    // the floater above clears it, so an app that stops doing this recovers
-    private func noteLift(_ target: HyprWindow, buried: [CGWindowID]) {
+    // a lone miss can be a click landing during the check. a full focus that
+    // keeps the floater above clears it, so an app that stops doing this
+    // recovers. a soft one can't say that, since it avoids the lift
+    private func noteLift(_ target: HyprWindow, buried: [CGWindowID], soft: Bool) {
         let pid = target.ownerPID
-        guard !buried.isEmpty else {
-            liftStreaks[pid] = nil
+        if soft {
+            softLiftStreaks[pid] = buried.isEmpty ? nil : softLiftStreaks[pid, default: 0] + 1
+            if softLiftStreaks[pid] == Self.liftStreakLimit {
+                hyprLog(.notice, .focus, "soft focus still lifts: pid=\(pid) wid=\(target.windowID) "
+                        + "buried=\(buried) — no more raises while it has focus")
+            }
             return
         }
-        let streak = liftStreaks[pid, default: 0] + 1
-        liftStreaks[pid] = streak
-        if streak == Self.liftStreakLimit {
+        liftStreaks[pid] = buried.isEmpty ? nil : liftStreaks[pid, default: 0] + 1
+        if liftStreaks[pid] == Self.liftStreakLimit {
             hyprLog(.notice, .focus, "tile app lifts itself on focus: pid=\(pid) wid=\(target.windowID) "
-                    + "buried=\(buried) — no more raises while it has focus")
+                    + "buried=\(buried) — using the soft hand-off")
         }
     }
 
@@ -202,7 +214,7 @@ final class TiledFocusRouter {
 
     private func verify(_ target: HyprWindow, reason: String, fallback: Fallback,
                         generation: UInt64, covering: [CGWindowID], startFront: pid_t?,
-                        onResult: ((Bool) -> Void)?) {
+                        soft: Bool, onResult: ((Bool) -> Void)?) {
         let wid = target.windowID
         guard isCurrent(wid, generation) else {
             hyprLog(.notice, .focus, "no-raise focus verify: wid=\(wid) superseded")
@@ -217,7 +229,7 @@ final class TiledFocusRouter {
                 + "front=\(front) (want \(target.ownerPID)) key=\(key) "
                 + "floatersAbove=\(check.floatersAbove) layers=\(check.floaterLayers) buried=\(buried) "
                 + "→ \(landed ? "landed" : "missed"), floaters \(buried.isEmpty ? "kept above" : "buried")")
-        if landed { noteLift(target, buried: buried) }
+        if landed { noteLift(target, buried: buried, soft: soft) }
         onResult?(landed && buried.isEmpty)
         guard !landed else { return }
         // the user switched to a third app meanwhile (Cmd-Tab, a Dock click)
