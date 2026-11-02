@@ -151,6 +151,10 @@ live for the entire app lifetime. The process-wide singletons are
 | `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. Adds and removes only its own `UserKeyMapping` entry (see "Caps Lock remap"). |
 | `AccessibilityManager` | AX bridge. Enumerates windows, resolves the focused window, picks directional neighbors. |
 | `DisplayManager` | NSScreen tracking and CG ↔ NS coordinate conversion. |
+| `ActionPolicy`, `ScratchpadActionRoute` | Pure gates a pressed action passes before `ActionDispatcher`. `WindowManager.handleAction` runs the effects. |
+| `DisplaySettle` | Pure decisions behind the display-change debounce. `WindowManager` keeps the timer, suppressions and reconcile. |
+| `FocusResolution` | Which window an action applies to, and what counts as selectable. |
+| `DockAffordance` | What an outside app activation does when none of that app's windows are on screen. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
 | `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate. |

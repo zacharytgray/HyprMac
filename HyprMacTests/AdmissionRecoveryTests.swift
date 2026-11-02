@@ -69,15 +69,15 @@ final class AdmissionRecoveryTests: XCTestCase {
     // MARK: - which key presses cancel
 
     func testShowingAnotherWorkspaceDoesNotCancelAPendingRetry() {
-        XCTAssertFalse(WindowManager.cancelsPendingRecovery(.switchWorkspace(3)))
-        XCTAssertFalse(WindowManager.cancelsPendingRecovery(.cycleWorkspace(1)))
+        XCTAssertFalse(ActionPolicy.cancelsPendingRecovery(.switchWorkspace(3)))
+        XCTAssertFalse(ActionPolicy.cancelsPendingRecovery(.cycleWorkspace(1)))
     }
 
     func testFocusAndOverlayActionsKeepPendingRecovery() {
         for action: Action in [.focusDirection(.left), .focusFloating, .focusMenuBar,
                                .showKeybinds, .launchApp(bundleID: "com.apple.Safari"),
                                .runCommand(label: "x", command: "/usr/bin/true")] {
-            XCTAssertFalse(WindowManager.cancelsPendingRecovery(action), "\(action)")
+            XCTAssertFalse(ActionPolicy.cancelsPendingRecovery(action), "\(action)")
         }
     }
 
@@ -85,14 +85,14 @@ final class AdmissionRecoveryTests: XCTestCase {
         // they only rework the live tree, which never holds the stranded
         // window, so cancelling here left it with nothing scheduled
         for action: Action in [.resizeDirection(.up), .swapDirection(.left), .toggleSplit] {
-            XCTAssertFalse(WindowManager.cancelsPendingRecovery(action), "\(action)")
+            XCTAssertFalse(ActionPolicy.cancelsPendingRecovery(action), "\(action)")
         }
     }
 
     func testMembershipActionsCancelAPendingRetry() {
-        XCTAssertTrue(WindowManager.cancelsPendingRecovery(.moveToWorkspace(3)))
-        XCTAssertTrue(WindowManager.cancelsPendingRecovery(.toggleFloating))
-        XCTAssertTrue(WindowManager.cancelsPendingRecovery(.moveToNextEmptyWorkspace))
+        XCTAssertTrue(ActionPolicy.cancelsPendingRecovery(.moveToWorkspace(3)))
+        XCTAssertTrue(ActionPolicy.cancelsPendingRecovery(.toggleFloating))
+        XCTAssertTrue(ActionPolicy.cancelsPendingRecovery(.moveToNextEmptyWorkspace))
     }
 
     // MARK: - the one retry

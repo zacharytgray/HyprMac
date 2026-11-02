@@ -317,7 +317,7 @@ final class AdmissionRecovery {
     /// Drop everything. Used for a stop, a display change, and a later key
     /// press that changes membership, all of which make the captured context
     /// stale. Resize, swap and split toggle do not: see
-    /// `WindowManager.cancelsPendingRecovery`.
+    /// `ActionPolicy.cancelsPendingRecovery`.
     func cancelAll(reason: String) {
         if !vacatedRetries.isEmpty {
             hyprLog(.notice, .tiling, "vacated layout retry cancelled: ws\(vacatedRetries.keys.sorted()) reason=\(reason)")

@@ -493,13 +493,107 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertTrue(config.dimInactiveWindows)
     }
 
+    func testResetToDefaultsRestoresEverySetting() throws {
+        try requireIsolatedHome()
+        let configBefore = try? Data(contentsOf: ConfigStore.configPath)
+        let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
+        defer {
+            restore(configBefore, to: ConfigStore.configPath)
+            restore(monitorBefore, to: ConfigStore.monitorConfigPath)
+        }
+        let config = UserConfig()
+        config.keybinds = []
+        config.gapSize = 31
+        config.outerPadding = 32
+        config.enabled = false
+        config.focusFollowsMouse = false
+        config.mouseHoverPollHz = 33
+        config.hyprKey = .leftOption
+        config.excludedBundleIDs = ["com.example.app"]
+        config.showMenuBarIndicator = false
+        config.overlayAppearance = .dark
+        config.maxSplitsPerMonitor = ["Screen": 2]
+        config.disabledMonitors = ["Screen"]
+        config.outerPaddingPerMonitor = ["Screen": EdgePadding(top: 1, left: 2, bottom: 3, right: 4)]
+        config.workspaceMonitors = ["Screen": [1]]
+        config.showFocusBorder = true
+        config.focusBorderColorHex = "111111"
+        config.floatingBorderColorHex = "222222"
+        config.focusBracketStyle = .off
+        config.focusBracketColorHex = "333333"
+        config.focusBracketRadiusOverride = 1
+        config.focusBracketThicknessOverride = 2
+        config.focusBracketLengthOverride = 3
+        config.dimInactiveWindows = false
+        config.dimIntensity = 0.5
+        config.chromeFadeDurationSec = 0.5
+        config.windowCornerRadiusOverride = 4
+        config.scratchpadTileByDefault = false
+        config.scratchpadRegionInset = 0.2
+        config.restoreLayoutOnLaunch = true
+        config.windowRules = [WindowRule(bundleID: "com.example.app", workspace: 2)]
+        config.workspaceNames = ["1": "one"]
+        config.statusExportEnabled = true
+        config.statusHookCommand = "true"
+        config.externalControlEnabled = true
+
+        config.resetToDefaults()
+
+        XCTAssertEqual(config.keybinds, Keybind.defaults)
+        XCTAssertEqual(config.gapSize, UserConfigDefaults.gapSize)
+        XCTAssertEqual(config.outerPadding, UserConfigDefaults.outerPadding)
+        XCTAssertEqual(config.enabled, UserConfigDefaults.enabled)
+        XCTAssertEqual(config.focusFollowsMouse, UserConfigDefaults.focusFollowsMouse)
+        XCTAssertEqual(config.mouseHoverPollHz, UserConfigDefaults.mouseHoverPollHz)
+        XCTAssertEqual(config.hyprKey, UserConfigDefaults.hyprKey)
+        XCTAssertEqual(config.excludedBundleIDs, Set(UserConfig.defaultExcludedBundleIDs))
+        XCTAssertEqual(config.showMenuBarIndicator, UserConfigDefaults.showMenuBarIndicator)
+        XCTAssertEqual(config.overlayAppearance, UserConfigDefaults.overlayAppearance)
+        XCTAssertEqual(config.maxSplitsPerMonitor, [:])
+        XCTAssertEqual(config.disabledMonitors, [])
+        XCTAssertEqual(config.outerPaddingPerMonitor, [:])
+        XCTAssertEqual(config.workspaceMonitors, [:])
+        XCTAssertEqual(config.showFocusBorder, UserConfigDefaults.showFocusBorder)
+        XCTAssertNil(config.focusBorderColorHex)
+        XCTAssertNil(config.floatingBorderColorHex)
+        XCTAssertEqual(config.focusBracketStyle, UserConfigDefaults.focusBracketStyle)
+        XCTAssertNil(config.focusBracketColorHex)
+        XCTAssertNil(config.focusBracketRadiusOverride)
+        XCTAssertNil(config.focusBracketThicknessOverride)
+        XCTAssertNil(config.focusBracketLengthOverride)
+        XCTAssertEqual(config.dimInactiveWindows, UserConfigDefaults.dimInactiveWindows)
+        XCTAssertEqual(config.dimIntensity, UserConfigDefaults.dimIntensity)
+        XCTAssertEqual(config.chromeFadeDurationSec, UserConfigDefaults.chromeFadeDurationSec)
+        XCTAssertNil(config.windowCornerRadiusOverride)
+        XCTAssertEqual(config.scratchpadTileByDefault, UserConfigDefaults.scratchpadTileByDefault)
+        XCTAssertEqual(config.scratchpadRegionInset, UserConfigDefaults.scratchpadRegionInset)
+        XCTAssertEqual(config.restoreLayoutOnLaunch, UserConfigDefaults.restoreLayoutOnLaunch)
+        XCTAssertEqual(config.windowRules, [])
+        XCTAssertEqual(config.workspaceNames, [:])
+        XCTAssertFalse(config.statusExportEnabled)
+        XCTAssertNil(config.statusHookCommand)
+        XCTAssertFalse(config.externalControlEnabled)
+
+        // the reset reached disk, not just the object
+        let saved = try JSONDecoder().decode(
+            SavedConfig.self, from: Data(contentsOf: ConfigStore.configPath))
+        XCTAssertEqual(saved.keybinds, Keybind.defaults)
+        XCTAssertEqual(saved.gapSize, UserConfigDefaults.gapSize)
+        XCTAssertNil(saved.windowRules)
+        XCTAssertNil(saved.workspaceNames)
+    }
+
+    func testHarnessKeepsTheICloudSymlinkOutOfTheIsolatedHome() throws {
+        try requireIsolatedHome()
+        XCTAssertEqual(UserDefaults.standard.object(forKey: "iCloudSyncEnabled") as? Bool, false)
+        let config = UserConfig()
+        XCTAssertFalse(config.iCloudSyncEnabled)
+        let values = try? ConfigStore.configPath.resourceValues(forKeys: [.isSymbolicLinkKey])
+        XCTAssertNotEqual(values?.isSymbolicLink, true)
+    }
+
     func testFreshInstallUsesBlackCornersWithCurrentMarkDefaults() throws {
         try requireIsolatedHome()
-        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        var isolatedArguments = arguments
-        isolatedArguments["iCloudSyncEnabled"] = false
-        UserDefaults.standard.setVolatileDomain(isolatedArguments, forName: UserDefaults.argumentDomain)
-        defer { UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain) }
         let configBefore = try? Data(contentsOf: ConfigStore.configPath)
         let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
         defer {
@@ -533,11 +627,6 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
 
     func testLegacyCornerLengthMigratesOnceAndSavesIndependently() throws {
         try requireIsolatedHome()
-        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        var isolatedArguments = arguments
-        isolatedArguments["iCloudSyncEnabled"] = false
-        UserDefaults.standard.setVolatileDomain(isolatedArguments, forName: UserDefaults.argumentDomain)
-        defer { UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain) }
         let configBefore = try? Data(contentsOf: ConfigStore.configPath)
         let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
         defer {
@@ -591,11 +680,6 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
 
     func testFloatMigrationOnStartupReloadAndSave() throws {
         try requireIsolatedHome()
-        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        var isolatedArguments = arguments
-        isolatedArguments["iCloudSyncEnabled"] = false
-        UserDefaults.standard.setVolatileDomain(isolatedArguments, forName: UserDefaults.argumentDomain)
-        defer { UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain) }
         let configBefore = try? Data(contentsOf: ConfigStore.configPath)
         let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
         defer {
@@ -622,11 +706,6 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
 
     func testFloatingFocusMigrationOnStartupReloadAndSave() throws {
         try requireIsolatedHome()
-        let arguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
-        var isolatedArguments = arguments
-        isolatedArguments["iCloudSyncEnabled"] = false
-        UserDefaults.standard.setVolatileDomain(isolatedArguments, forName: UserDefaults.argumentDomain)
-        defer { UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain) }
         let configBefore = try? Data(contentsOf: ConfigStore.configPath)
         let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
         defer {

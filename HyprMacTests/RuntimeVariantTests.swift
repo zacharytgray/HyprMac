@@ -2,6 +2,23 @@ import XCTest
 @testable import HyprMac
 
 final class RuntimeVariantTests: XCTestCase {
+    // the harness pins iCloudSyncEnabled in the argument domain, which every
+    // UserDefaults instance reads first. these tests need it unset.
+    private var savedArguments: [String: Any] = [:]
+
+    override func setUp() {
+        super.setUp()
+        savedArguments = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+        var arguments = savedArguments
+        arguments.removeValue(forKey: "iCloudSyncEnabled")
+        UserDefaults.standard.setVolatileDomain(arguments, forName: UserDefaults.argumentDomain)
+    }
+
+    override func tearDown() {
+        UserDefaults.standard.setVolatileDomain(savedArguments, forName: UserDefaults.argumentDomain)
+        super.tearDown()
+    }
+
     func testReleaseOnboardingPolicy() {
         XCTAssertEqual(RuntimeVariant.shouldShowWelcome(
             hasSeenOnboarding: false, lastVersion: nil, currentVersion: "0.12.0",

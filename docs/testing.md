@@ -6,7 +6,9 @@
 `scripts/release.sh`. It generates a separate project that builds HyprMac as a
 testable library. It never starts the window manager or reads live settings.
 Home, cache, and tmp are redirected under `build/sizing/isolated-tests/`. A run
-takes about five minutes, mostly the build.
+takes about five minutes, mostly the build. Each run deletes the isolated
+config first and passes `-iCloudSyncEnabled '<false/>'`, because a debug build would
+otherwise inherit the release app's real preference.
 
 ```bash
 ./scripts/test-isolated.sh --debug-variant                  # full suite, no Sparkle
@@ -18,7 +20,7 @@ takes about five minutes, mostly the build.
 ## Supported environments
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
-through `./scripts/test-isolated.sh --debug-variant`. That run gives 1712
+through `./scripts/test-isolated.sh --debug-variant`. That run gives 1751
 tests, 28 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 
@@ -30,9 +32,6 @@ and no longer depends on `DYLD_*` variables passing through `xcrun`.
 - The second argument goes straight to `xctest -XCTest`. It must start with
   a bare class name. A `HyprMacTests/` prefix runs 0 tests and still exits 0.
   Always check that `Executed N tests` shows a nonzero N and `0 failures`.
-- A full run leaves a `config.json` fixture in the isolated home. The next run
-  then fails two `ConfigUpdateCoordinatorTests`. Before a second full run:
-  `find build/sizing/isolated-tests/home -name config.json -delete`.
 - `PollingSchedulerTests.testScheduleAfterPollFiresAgain` is a known
   wall-clock flake. If it is the only failure, rerun that test alone.
 - After config schema or `Action` changes, also run

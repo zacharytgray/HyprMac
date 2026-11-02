@@ -15,8 +15,9 @@ from `git log v<previous>..HEAD --oneline`. List user-facing changes only.
 Each entry needs an SF Symbol, a short title, a one-line description, and a
 tint (`.cyan` by default, `.magenta` for floating or scratchpad). Add
 `credit:` with the GitHub handle of an outside contributor. Update
-`WelcomeContentTests.testWhatsNewDescribesOnlyThe<version>Changes` to match;
-the release gate fails otherwise. Commit and push this before starting the
+`WelcomeContentTests.testWhatsNewDescribesOnlyThe<version>Changes` to match,
+with the dots removed from the version (`0201` for 0.20.1). The script refuses
+to start if that test is missing, and the test gate fails if it does not match. Commit and push this before starting the
 script, which refuses a dirty checkout.
 
 ## Usage

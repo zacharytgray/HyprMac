@@ -447,7 +447,7 @@ final class WorkspaceFollowTests: XCTestCase {
         let action = Action.moveToWorkspaceAndFollow(3)
         XCTAssertEqual(ActionDispatcher.discriminator(for: action), "moveToWorkspaceAndFollow")
         XCTAssertEqual(KeybindCategory.from(action), .workspaces)
-        XCTAssertTrue(WindowManager.isDroppedMidDisplayTransition(action))
-        XCTAssertTrue(WindowManager.cancelsPendingRecovery(action))
+        XCTAssertTrue(ActionPolicy.isDroppedMidDisplayTransition(action))
+        XCTAssertTrue(ActionPolicy.cancelsPendingRecovery(action))
     }
 }

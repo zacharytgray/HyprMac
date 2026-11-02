@@ -584,7 +584,7 @@ class FocusBorder {
                 y: (windowCGRect.maxY + expansion) - occCG.maxY,
                 width: occCG.width,
                 height: occCG.height)
-            pieces = pieces.flatMap { subtract(occLocal, from: $0) }
+            pieces = pieces.flatMap { Self.subtract(occLocal, from: $0) }
         }
 
         let path = CGMutablePath()
@@ -604,7 +604,7 @@ class FocusBorder {
     // returns up to 4 strips representing `rect` minus `hole`.
     // same strips as WindowStacking.subtract, in a different order. order
     // does not matter here: every strip joins one mask path.
-    private func subtract(_ hole: NSRect, from rect: NSRect) -> [NSRect] {
+    static func subtract(_ hole: NSRect, from rect: NSRect) -> [NSRect] {
         guard rect.intersects(hole) else { return [rect] }
         let clipped = rect.intersection(hole)
         if clipped == rect { return [] }

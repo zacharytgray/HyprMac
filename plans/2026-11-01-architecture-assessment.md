@@ -285,6 +285,23 @@ other prepared tests now run through `swapWindows`, `toggleSplit` and `tileWindo
 
 ### Phase 2: guard tests before touching anything
 
+Status on 2026-11-02: done. The suite is at 1751 tests. New pure types: `ActionPolicy`,
+`ScratchpadActionRoute`, `DisplaySettle`, `FocusResolution`, `DockAffordance`. So steps 5.1 and
+5.3 are mostly done: what is left is moving their effects, not their decisions. None of the
+wiring in `WindowManager` has a test or a live check yet.
+
+Things this phase found:
+
+- `discovery.isSessionInterrupted` has a side effect: past its cap it ends the interruption.
+  `DisplaySettle` takes it as an autoclosure so it is read only when the old code read it. Treat
+  it like `displayFingerprint()`.
+- The harness flag must be `'<false/>'`. A bare `NO` reaches `UserDefaults` as a string, which
+  `RuntimeVariant` ignores.
+- `FocusBorder.subtract` and `WindowStacking.subtract` differ on an empty hole. Both cover the
+  whole rect, but `FocusBorder` returns four strips. `RectSubtractionTests` pins this for step 3.5.
+- `testWhatsNewDescribesOnlyThe<version>Changes` is now checked before the release script bumps
+  anything.
+
 | Step | Change | Why |
 |---|---|---|
 | 2.1 | Table test of all 24 `Action` wire keys, encode and decode | `toggleScratchpad`, `moveToScratchpad`, `resizeDirection`, `toggleTiling`, `showWorkspaceOverview` have no literal assertion. A rename would still round-trip, against a hard rule |
