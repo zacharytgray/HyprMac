@@ -101,6 +101,106 @@ final class ForceInsertWindowFallbackTests: XCTestCase {
         XCTAssertFalse(tree()?.contains(w3) ?? true)
     }
 
+    // MARK: - another slot after the screen refuses one
+
+    /// An engine whose windows hold `floors`: a write smaller than a floor
+    /// reads back at the floor, as a real app refuses a size.
+    private func engineWithFloors(_ floors: @escaping () -> [CGWindowID: CGFloat],
+                                  failingFirstWriteOf failing: CGWindowID? = nil) -> TilingEngine {
+        var positions: [CGWindowID: CGPoint] = [:]
+        var sizes: [CGWindowID: CGSize] = [:]
+        var failed = false
+        return TilingEngine(displayManager: displayManager, frameSizingIOFactory: { _, generation in
+            FrameSizingIO(
+                setMessagingTimeout: { _, _ in .success },
+                writeSize: { id, size, _ in
+                    if id == failing, !failed {
+                        failed = true
+                        return .failure
+                    }
+                    sizes[id] = CGSize(width: size.width, height: max(size.height, floors()[id] ?? 0))
+                    return .success
+                },
+                writePosition: { id, position, _ in positions[id] = position; return .success },
+                readPosition: { id, _ in (.success, positions[id] ?? .zero) },
+                readSize: { id, _ in (.success, sizes[id] ?? CGSize(width: 100, height: 100)) },
+                now: { 0 }, sleep: { _ in }, currentGeneration: generation)
+        })
+    }
+
+    // the live report: tiled apps side by side, the one on the right holds a
+    // known floor, and the floater refuses 15 pt more than the fit check knows
+    // about. 15 pt reads as rounding, so memory never learns it.
+    private func sideBySide(_ engine: TilingEngine, rightTenantFloor: CGFloat)
+        -> (left: HyprWindow, right: HyprWindow, height: CGFloat) {
+        let left = makeWindow(id: 1)
+        let right = makeWindow(id: 2)
+        engine.forceInsertWindow(left, toWorkspace: 1, on: screen)
+        engine.forceInsertWindow(right, toWorkspace: 1, on: screen)
+        let usable = engine.displayManager.cgRect(for: screen)
+        let height = usable.height - 2 * engine.outerPadding
+        right.observedMinSize = CGSize(width: 0, height: rightTenantFloor)
+        right.minSizeProvenance = .observed
+        engine.primeMinimumSizes([right])
+        return (left, right, height)
+    }
+
+    func testARefusedSlotMovesTheWindowToTheNextOne() throws {
+        var floors: [CGWindowID: CGFloat] = [:]
+        let engine = engineWithFloors({ floors })
+        let usable = engine.displayManager.cgRect(for: screen)
+        let height = usable.height - 2 * engine.outerPadding
+        let tenantFloor = (height * 0.53).rounded()
+        let (left, right, _) = sideBySide(engine, rightTenantFloor: tenantFloor)
+        floors[2] = tenantFloor
+        floors[3] = height - tenantFloor - engine.gapSize + 15
+
+        let incoming = makeWindow(id: 3)
+        XCTAssertEqual(engine.forceInsertWindow(incoming, toWorkspace: 1, on: screen), .inserted)
+
+        let tree = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen))
+        let parent = try XCTUnwrap(tree.root.find(incoming)?.parent)
+        XCTAssertTrue(parent.left?.window === left || parent.right?.window === left,
+                      "the left tenant had the room")
+        XCTAssertEqual(tree.root.find(right)?.parent === tree.root, true, "the right tenant keeps its slot")
+    }
+
+    func testEverySlotRefusedLeavesTheTreeAloneAndReportsTheRefusal() throws {
+        var floors: [CGWindowID: CGFloat] = [:]
+        let engine = engineWithFloors({ floors })
+        let usable = engine.displayManager.cgRect(for: screen)
+        let height = usable.height - 2 * engine.outerPadding
+        let tenantFloor = (height * 0.53).rounded()
+        _ = sideBySide(engine, rightTenantFloor: tenantFloor)
+        let left = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen)?.allWindows.first)
+        left.observedMinSize = CGSize(width: 0, height: tenantFloor)
+        left.minSizeProvenance = .observed
+        engine.primeMinimumSizes([left])
+        floors[1] = tenantFloor
+        floors[2] = tenantFloor
+        floors[3] = height - tenantFloor - engine.gapSize + 15
+        let before = engine.existingTree(forWorkspace: 1, screen: screen)?.structuralFingerprint()
+
+        let incoming = makeWindow(id: 3)
+        guard case .failed(.layoutRejected) = engine.forceInsertWindow(incoming, toWorkspace: 1, on: screen) else {
+            return XCTFail("the screen refused both slots, and that is what to report")
+        }
+        XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: screen)?.structuralFingerprint(), before)
+    }
+
+    // a write error says nothing about the slot. another try here would hide
+    // the failure and resize the other tiles for nothing
+    func testAWriteFailureDoesNotTryAnotherSlot() {
+        let engine = engineWithFloors({ [:] }, failingFirstWriteOf: 3)
+        _ = sideBySide(engine, rightTenantFloor: 0)
+
+        let incoming = makeWindow(id: 3)
+        guard case .failed(.layoutRejected) = engine.forceInsertWindow(incoming, toWorkspace: 1, on: screen) else {
+            return XCTFail("a second try would have landed, so this one must not run")
+        }
+        XCTAssertFalse(engine.existingTree(forWorkspace: 1, screen: screen)?.contains(incoming) ?? true)
+    }
+
     // MARK: - explicit revalidation of learned minima
 
     /// Two tenants, so the deepest slot the incoming window can be offered is

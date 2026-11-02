@@ -2095,9 +2095,11 @@ class TilingEngine {
 
     @discardableResult
     private func smartInsertFitting(_ window: HyprWindow, into tree: BSPTree,
-                                    maxDepth: Int, rect: CGRect) -> Bool {
+                                    maxDepth: Int, rect: CGRect,
+                                    skippingTenants: Set<CGWindowID> = []) -> Bool {
         layoutEngine.smartInsertFitting(window, into: tree, maxDepth: maxDepth,
-                                        rect: rect, minimumSize: minimumSize(for:))
+                                        rect: rect, skippingTenants: skippingTenants,
+                                        minimumSize: minimumSize(for:))
     }
 
     private func fittingLeaf(for window: HyprWindow?, in tree: BSPTree,
@@ -3464,6 +3466,12 @@ class TilingEngine {
     /// the live tree exactly as it was. `.failed` is an explicit refusal the
     /// caller reports while keeping the incoming window floating.
     ///
+    /// When the screen refuses a slot's geometry, the next slot gets a try. A
+    /// refusal of up to 20 pt reads as rounding and teaches no minimum, so the
+    /// fit check alone would pick the same doomed slot on every toggle while
+    /// another one had room. Each failed try shows its resize, so the tries
+    /// are capped.
+    ///
     /// `bypassingLearnedMinima` is the explicit-revalidation pass: the user
     /// asked a second time after a refusal that only learned bounds produced,
     /// so this one attempt ignores the observed bounds of the window and of
@@ -3483,39 +3491,64 @@ class TilingEngine {
         let rect = layoutRect(for: key, screen: screen)
 
         if live?.contains(window) == true { return .alreadyPresent }
-        let candidate = live?.deepClone() ?? BSPTree()
 
-        guard smartInsertFitting(window, into: candidate, maxDepth: maxDepth(for: screen), rect: rect) else {
-            return .failed(.noFittingSlot)
+        var refusedTenants: Set<CGWindowID> = []
+        var lastRefusal: ForceInsertResult = .failed(.noFittingSlot)
+        for _ in 0..<Self.forceInsertSlotTries {
+            let candidate = live?.deepClone() ?? BSPTree()
+            guard smartInsertFitting(window, into: candidate, maxDepth: maxDepth(for: screen), rect: rect,
+                                     skippingTenants: refusedTenants) else {
+                return lastRefusal
+            }
+            let tenant = Self.sibling(of: window, in: candidate)
+
+            // only now: a refusal above applies nothing, and cancelling an
+            // in-flight layout for a pass that never ran is a layout lost for
+            // nothing
+            let generation = beginLayoutGeneration()
+            let commit = commitForceInsert(candidate, live: live, key: key, rect: rect,
+                                           window: window, generation: generation)
+            guard commit.mayTryAnotherSlot, let tenant else { return commit.result }
+            lastRefusal = commit.result
+            refusedTenants.insert(tenant)
+            hyprLog(.notice, .tiling, "force insert slot refused: \(window.windowID) beside \(tenant)")
         }
+        return lastRefusal
+    }
 
-        // only now: a refusal above applies nothing, and cancelling an
-        // in-flight layout for a pass that never ran is a layout lost for
-        // nothing
-        let generation = beginLayoutGeneration()
-        return commitForceInsert(candidate, live: live, key: key, rect: rect,
-                                 window: window, generation: generation)
+    // each failed try is a resize the user watches
+    private static let forceInsertSlotTries = 3
+
+    private static func sibling(of window: HyprWindow, in tree: BSPTree) -> CGWindowID? {
+        guard let node = tree.root.find(window), let parent = node.parent else { return nil }
+        return (parent.left === node ? parent.right : parent.left)?.window?.windowID
     }
 
     private func commitForceInsert(_ candidate: BSPTree, live: BSPTree?, key: TilingKey,
-                                   rect: CGRect, window: HyprWindow, generation: UInt64) -> ForceInsertResult {
+                                   rect: CGRect, window: HyprWindow, generation: UInt64)
+        -> (result: ForceInsertResult, mayTryAnotherSlot: Bool) {
         primeMinimumSizes(candidate.allWindows)
         candidate.root.resetSplitRatios()
         let outcome = applyTrackedLayout(candidate, in: rect, generation: generation, key: key,
                                          inserted: [window.windowID])
         guard publishes(outcome), layoutGeneration == generation else {
             let reason: FrameSizingFailure
+            // only a clean rollback leaves the screen fit for another try
+            var restored = false
             switch outcome {
             case .accepted: reason = .superseded
-            case let .rejectedRestored(r, _, _): reason = r
+            case let .rejectedRestored(r, _, _):
+                reason = r
+                restored = true
             case let .degraded(r, _, _, _, _): reason = r
             }
             hyprLog(.notice, .tiling, "force insert refused for \(window.windowID): \(reason)")
-            return .failed(.layoutRejected(reason))
+            return (.failed(.layoutRejected(reason)),
+                    restored && reason.isGeometricRefusal && layoutGeneration == generation)
         }
         publish(candidate, over: live, key: key)
         admit(candidate.allWindows.map(\.windowID), toWorkspace: key.workspace)
-        return .inserted
+        return (.inserted, false)
     }
 }
 

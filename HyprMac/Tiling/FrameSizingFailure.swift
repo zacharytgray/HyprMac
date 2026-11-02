@@ -20,6 +20,15 @@ enum FrameSizingFailure: Equatable {
 }
 
 extension FrameSizingFailure {
+    /// The windows answered and the frames did not work together. Another
+    /// arrangement may still fit, unlike an AX failure or a superseded pass.
+    var isGeometricRefusal: Bool {
+        switch self {
+        case .geometryMismatch, .outsideUsableFrame, .overlap, .gapViolation: return true
+        default: return false
+        }
+    }
+
     /// The app did not answer in time: the attempt ran out of budget, the
     /// readback never settled, or AX gave up waiting (`cannotComplete` is
     /// what a messaging timeout returns). None of these says the app refused

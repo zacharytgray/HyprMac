@@ -152,6 +152,13 @@ window is not routed to another workspace and it is not floated on the spot.
 It stays on its assigned workspace, exactly where it is, and
 `AdmissionRecovery` decides what becomes of it.
 
+A float-to-tile toggle gets one more chance than that. When the screen refuses
+the slot's geometry, `forceInsertWindow` rolls back and tries the next leaf, up
+to three in all, and logs `force insert slot refused: <id> beside <tenant>`. A
+refusal of 20 pt or less reads as rounding and teaches no minimum, so the fit
+check alone would choose the same slot on every toggle. A window that arrives
+on its own does not get this yet: after its admission retry it still floats.
+
 ## Max depth
 
 `TilingConfig.defaultMaxDepth` is 3. A depth-3 tree has 8 leaves;
