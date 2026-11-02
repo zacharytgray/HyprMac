@@ -141,7 +141,12 @@ struct RaiseBehindThrottle {
     var ineffectiveCooldown: TimeInterval = 30
     // a raise that fronted the floater's app normally works, and while a pair
     // rests the floater stays buried, so a miss gets another try soon
-    var frontedIneffectiveCooldown: TimeInterval = 3
+    var frontedIneffectiveCooldown: TimeInterval = 1
+    // misses in a row: each doubles the rest, and past this many nothing retries
+    // until the next click. an app that never comes up must not take the front
+    // from whoever is typing once a second, forever
+    var frontedRetryLimit = 3
+    private var frontedMisses: [Pair: Int] = [:]
     static let frontedIneffectiveReason = "ineffective after fronting"
     var loopCooldown: TimeInterval = 15
     var burstCooldown: TimeInterval = 10
@@ -195,11 +200,34 @@ struct RaiseBehindThrottle {
     }
 
     mutating func noteIneffective(_ pair: Pair, now: TimeInterval, fronted: Bool = false) {
-        cooldowns[pair] = fronted
-            ? (now + frontedIneffectiveCooldown, Self.frontedIneffectiveReason)
-            : (now + ineffectiveCooldown, "ineffective")
+        if fronted {
+            let misses = frontedMisses[pair, default: 0] + 1
+            frontedMisses[pair] = misses
+            cooldowns[pair] = (now + frontedIneffectiveCooldown * pow(2, Double(misses - 1)),
+                               Self.frontedIneffectiveReason)
+        } else {
+            cooldowns[pair] = (now + ineffectiveCooldown, "ineffective")
+        }
         attempts[pair] = nil
         restores[pair] = nil
+    }
+
+    /// Whether a fronted miss should try again by itself.
+    func retriesAfterMiss(_ pair: Pair) -> Bool {
+        frontedMisses[pair, default: 0] < frontedRetryLimit
+    }
+
+    mutating func noteFrontedRaiseLanded(_ pair: Pair) {
+        frontedMisses[pair] = nil
+    }
+
+    /// Clear a cooldown set for a raise that couldn't work (a plain AXRaise
+    /// across apps), so a raise that fronts the app gets its chance. A burst and
+    /// a miss after fronting stay.
+    mutating func clearUnfrontedCooldown(_ pair: Pair) {
+        guard let reason = cooldowns[pair]?.reason,
+              reason == "ineffective" || reason == "loop" else { return }
+        cooldowns[pair] = nil
     }
 
     mutating func noteRestore(_ pairs: [Pair], now: TimeInterval) {
@@ -315,6 +343,13 @@ final class FloatingWindowController {
     // an app that lifts itself on focus undoes any raise as soon as it gets
     // focus back, so raising over it only flickers
     var tileAppLiftsOnFocus: (pid_t) -> Bool = { _ in false }
+    // keys go to the front app, so fronting the floater's app while someone types
+    // puts their words in the floater
+    var secondsSinceLastKey: () -> TimeInterval = {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
+    }
+    // a focus still settling: raising now would race its front switch
+    var focusHandoffPending: () -> Bool = { false }
     // fronting another app mid press would break the drag or selection under way
     var isMouseDown: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
     var scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
@@ -361,6 +396,12 @@ final class FloatingWindowController {
     // every click in that time left it buried
     static let frontedRecheckDelay: TimeInterval = 0.06
     static let frontedRechecks = 3
+    // how long a fronted raise owns the front app: the rechecks and the hand-back.
+    // a second one inside this would hand focus to the wrong app
+    static let frontedRaiseBusy: TimeInterval = 0.4
+    static let typingQuietWindow: TimeInterval = 0.25
+    private var frontedRaiseBusyUntil: TimeInterval = 0
+    private var raiseRetryPending = false
     // a raise deferred by an open popup tries again this often, this many times
     static let popupRetryDelay: TimeInterval = 0.5
     static let popupRetryLimit = 20
@@ -640,10 +681,12 @@ final class FloatingWindowController {
             hyprLog(.debug, .floating, "raise behind skipped: pid=\(focusedTiledPID) lifts itself on focus")
             return
         }
+        if frontsApp, deferFrontedRaise() { return }
 
         let now = self.now()
         var pairs: [RaiseBehindThrottle.Pair] = []
         for pair in candidates {
+            if frontsApp { throttle.clearUnfrontedCooldown(pair) }
             switch throttle.decide(pair, now: now) {
             case .raise:
                 pairs.append(pair)
@@ -654,6 +697,7 @@ final class FloatingWindowController {
             }
         }
         guard !pairs.isEmpty else { return }
+        if frontsApp { frontedRaiseBusyUntil = now + Self.frontedRaiseBusy }
 
         suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
         suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
@@ -701,8 +745,12 @@ final class FloatingWindowController {
                 return
             }
             for pair in pairs {
-                guard let tile = stillCovered[pair.floater] else { continue }
+                guard let tile = stillCovered[pair.floater] else {
+                    throttle.noteFrontedRaiseLanded(pair)
+                    continue
+                }
                 throttle.noteIneffective(pair, now: now, fronted: frontsApp)
+                if frontsApp { retryAfterMiss(pair, now: now) }
                 hyprLog(.notice, .floating, "raise behind ineffective: wid=\(pair.floater) still under \(tile) "
                         + "— cooldown \(Int(frontsApp ? throttle.frontedIneffectiveCooldown : throttle.ineffectiveCooldown))s")
             }
@@ -737,6 +785,41 @@ final class FloatingWindowController {
         // and the burst limit bounds what gets through before that
         restoreFocusWithoutRaise(prev)
         updateFocusBorder?(prev)
+    }
+
+    /// Whether a raise that fronts another app has to wait, and if so, try
+    /// again when it can. Rapid clicks, a focus still settling and typing all
+    /// wait, and the floater comes back up once they stop.
+    private func deferFrontedRaise() -> Bool {
+        let remaining = frontedRaiseBusyUntil - now()
+        if remaining > 0 {
+            retryRaiseBehind(after: remaining + 0.02)
+            return true
+        }
+        if focusHandoffPending() {
+            retryRaiseBehind(after: Self.frontedRecheckDelay)
+            return true
+        }
+        if secondsSinceLastKey() < Self.typingQuietWindow {
+            retryRaiseBehind(after: Self.typingQuietWindow)
+            return true
+        }
+        return false
+    }
+
+    private func retryAfterMiss(_ pair: RaiseBehindThrottle.Pair, now: TimeInterval) {
+        guard throttle.retriesAfterMiss(pair),
+              let rest = throttle.cooldown(pair, now: now)?.remaining else { return }
+        retryRaiseBehind(after: rest + 0.05)
+    }
+
+    private func retryRaiseBehind(after delay: TimeInterval) {
+        guard !raiseRetryPending else { return }
+        raiseRetryPending = true
+        scheduleAfter(delay) { [weak self] in
+            self?.raiseRetryPending = false
+            self?.raiseBehind()
+        }
     }
 
     /// An open popup blocks the raise. Say so once per popup and try again
@@ -794,6 +877,13 @@ final class FloatingWindowController {
         let buried = WindowStacking.floaters(below: tileID, among: floaterIDs, in: windows)
         guard !buried.isEmpty else { return }
 
+        // a click during the last raise's hand-off sees the floater's app in
+        // front and would read that as focus gone elsewhere
+        if frontedRaiseBusyUntil > now() {
+            _ = deferFrontedRaise()
+            return
+        }
+
         let front = frontmostPID()
         let blocker = clickRaiseBlocker(press, tile: tile, windows: windows, front: front)
         let now = self.now()
@@ -821,6 +911,11 @@ final class FloatingWindowController {
             }
         }
         guard !raising.isEmpty else { return }
+        let frontsApp = raising.contains { $0.window.ownerPID != tile.ownerPID }
+        if frontsApp {
+            if deferFrontedRaise() { return }
+            frontedRaiseBusyUntil = now + Self.frontedRaiseBusy
+        }
 
         suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
         suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
@@ -882,11 +977,13 @@ final class FloatingWindowController {
             let line = Self.clickRaiseLine(pair, sameApp: pid == tile.ownerPID)
             if above.contains(pair.floater) {
                 lifted.append(pair)
+                throttle.noteFrontedRaiseLanded(pair)
                 hyprLog(.notice, .floating, "\(line) → on top")
             } else if below.contains(pair.floater) {
                 let crossApp = pid != tile.ownerPID
                 throttle.noteIneffective(pair, now: now, fronted: crossApp)
                 let rest = crossApp ? throttle.frontedIneffectiveCooldown : throttle.ineffectiveCooldown
+                if crossApp { retryAfterMiss(pair, now: now) }
                 hyprLog(.notice, .floating, "\(line) → ineffective — cooldown \(Int(rest))s")
             }
         }
@@ -924,6 +1021,7 @@ final class FloatingWindowController {
                 let now = self.now()
                 for pair in lifted { self.throttle.noteIneffective(pair, now: now, fronted: frontedApp) }
                 let rest = frontedApp ? self.throttle.frontedIneffectiveCooldown : self.throttle.ineffectiveCooldown
+                if frontedApp { for pair in lifted { self.retryAfterMiss(pair, now: now) } }
                 hyprLog(.notice, .floating, "click re-raise refocus missed: tile=\(tile.windowID) "
                         + "floaters=\(lifted.map(\.floater)) — cooldown \(Int(rest))s")
             }

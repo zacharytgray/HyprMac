@@ -902,8 +902,12 @@ For the click re-raise, click a tile beside a floater. Either app pairing should
 log `click re-raise: … → on top`, then `no-raise focus: … reason=click-reraise`
 and `no-raise focus verify: … → landed, floaters kept above`. A raise that fronted
 an app gets up to 230 ms to land, since one can miss the first check. An
-`→ ineffective` or `refocus missed` line means that pair rests: 3 s across apps, 30 s
-within one. The tile then stays on top, and the dim shows the floater only where it is
+`→ ineffective` or `refocus missed` line means that pair rests. Across apps that is
+1 s, then 2 and 4, with another try after each until three misses in a row, and then
+nothing until the next click. Within one app it is 30 s. A fronted raise waits while another one's hand-off
+runs (400 ms), while a no-raise focus settles, and for 250 ms after the last key,
+because keys go to the front app. Keys typed in the roughly 70 ms the floater's app is
+in front still land there. The tile then stays on top, and the dim shows the floater only where it is
 in front.
 
 ### A floater changed size or left the screen

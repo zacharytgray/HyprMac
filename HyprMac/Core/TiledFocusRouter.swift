@@ -62,6 +62,9 @@ final class TiledFocusRouter {
     static let verifyDelay: TimeInterval = 0.08
     static let liftStreakLimit = 2
     private var liftStreaks: [pid_t: Int] = [:]
+    private var pendingVerifies = 0
+    /// A no-raise focus has fronted its app and hasn't been checked yet.
+    var hasPendingHandoff: Bool { pendingVerifies > 0 }
     private var softLiftStreaks: [pid_t: Int] = [:]
 
     // seams
@@ -142,7 +145,9 @@ final class TiledFocusRouter {
             let soft = front != pid && self.needsSoftFocus(pid)
             let rc = (soft ? self.makeFrontAndKeySoftly(target) : self.makeFrontAndKey(target)) ?? "no psn"
             hyprLog(.debug, .focus, "no-raise focus: wid=\(wid) \(rc)")
+            self.pendingVerifies += 1
             self.schedule(Self.verifyDelay) { [weak self] in
+                self?.pendingVerifies -= 1
                 self?.verify(target, reason: reason, fallback: fallback,
                              generation: generation, covering: coveringIDs, startFront: front,
                              soft: soft, onResult: onResult)

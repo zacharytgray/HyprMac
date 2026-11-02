@@ -449,6 +449,9 @@ class WindowManager {
             self.tiledFocusRouter.focus(w, reason: "click-reraise", fallback: .activate, onResult: done)
         }
         floatingController.isTiledWindow = { [weak self] wid in self?.isRoutedTile(wid) ?? false }
+        floatingController.focusHandoffPending = { [weak self] in
+            self?.tiledFocusRouter.hasPendingHandoff ?? false
+        }
         floatingController.tileAppLiftsOnFocus = { [weak self] pid in
             self?.tiledFocusRouter.liftsItselfOnFocus(pid) ?? false
         }
