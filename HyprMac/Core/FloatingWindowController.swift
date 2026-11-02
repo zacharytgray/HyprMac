@@ -302,6 +302,12 @@ final class FloatingWindowController {
     var performRaise: (HyprWindow) -> AXError = {
         AXUIElementPerformAction($0.element, kAXRaiseAction as CFString)
     }
+    // macOS 27 ignores AXRaise on a window of an app behind the front one, so
+    // a cross-app raise fronts the floater's app first. this does not lift
+    // anything by itself: the AXRaise after it does
+    var frontApp: (HyprWindow) -> Void = { $0.makeFrontAndKeyWithoutRaise() }
+    // fronting another app mid press would break the drag or selection under way
+    var isMouseDown: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
     var scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
     }
@@ -568,9 +574,15 @@ final class FloatingWindowController {
     ///   after a burst.
     ///
     /// A moment after raising it checks the stack. Focus goes back to the
-    /// focused tile only when the raise moved the front app away from it
-    /// (some apps activate themselves when raised), and it goes back
-    /// through `restoreFocusWithoutRaise`, which does not lift the tile.
+    /// focused tile only when the raise moved the front app away from it,
+    /// and it goes back through `restoreFocusWithoutRaise`, which does not
+    /// lift the tile.
+    ///
+    /// A floater of another app is raised by fronting that app first, since
+    /// macOS 27 ignores the plain AXRaise. That happens only when the focused
+    /// tile's app is in front, so the restore can undo it, and never during a
+    /// mouse press. With anything else in front it stays a plain raise, which
+    /// can't take focus from an app HyprMac doesn't manage.
     func raiseBehind() {
         guard !isRaising else { return }
         // scratchpad is quasimodal: it owns the level-0 stack (scrim below,
@@ -607,6 +619,10 @@ final class FloatingWindowController {
         popupRetries = 0
         lastDeferredPopupID = 0
 
+        let frontsApp = focusedTiledPID != nil && frontBefore == focusedTiledPID
+        // the click re-raise runs after the mouse-up
+        if frontsApp, isMouseDown() { return }
+
         let now = self.now()
         var pairs: [RaiseBehindThrottle.Pair] = []
         for pair in candidates {
@@ -630,6 +646,7 @@ final class FloatingWindowController {
             guard let w = stateCache.cachedWindows[pair.floater] else { continue }
             // an app that activates itself on a raise is HyprMac's doing
             suppressions.expectActivation(of: w.ownerPID)
+            if frontsApp, w.ownerPID != frontBefore { frontApp(w) }
             let rc = performRaise(w)
             if rc != .success {
                 hyprLog(.notice, .floating, "raise behind failed: wid=\(pair.floater) rc=\(rc.rawValue)")
@@ -728,9 +745,9 @@ final class FloatingWindowController {
     /// clicked), and while `throttle` cools the pair down. A raise that
     /// leaves the floater under the tile, or a refocus that misses, cools
     /// the pair down for 30 s. One click buys at most one raise, so this
-    /// cannot loop on its own. Only a floater of the tile's own app can
-    /// come back: macOS 27 ignores a cross-app AXRaise, so a cross-app pair
-    /// logs `ineffective` and rests.
+    /// cannot loop on its own. A floater of another app is raised by fronting
+    /// its app first, since macOS 27 ignores the plain AXRaise, so the
+    /// hand-back runs even when the raise failed.
     func raiseAfterClick(_ press: ClickPress) {
         let tileID = press.windowID
         guard isTiledWindow(tileID), let tile = stateCache.cachedWindows[tileID],
@@ -771,14 +788,16 @@ final class FloatingWindowController {
         // back to front, so the floaters keep their order among themselves
         for item in raising.reversed() {
             suppressions.expectActivation(of: item.window.ownerPID)
+            if item.window.ownerPID != tile.ownerPID { frontApp(item.window) }
             let rc = performRaise(item.window)
             if rc != .success {
                 hyprLog(.notice, .floating, "click re-raise failed: wid=\(item.pair.floater) rc=\(rc.rawValue)")
             }
         }
         let raised = raising.map { (pair: $0.pair, pid: $0.window.ownerPID) }
+        let frontedApp = raised.contains { $0.pid != tile.ownerPID }
         scheduleAfter(Self.verifyDelay) { [weak self] in
-            self?.finishClickRaise(tile: tile, raised: raised, generation: generation)
+            self?.finishClickRaise(tile: tile, raised: raised, frontedApp: frontedApp, generation: generation)
         }
     }
 
@@ -801,7 +820,7 @@ final class FloatingWindowController {
     /// Check the stack after a click re-raise, cool down floaters it could
     /// not lift, and give keyboard focus back to the tile.
     private func finishClickRaise(tile: HyprWindow, raised: [(pair: RaiseBehindThrottle.Pair, pid: pid_t)],
-                                  generation: UInt64) {
+                                  frontedApp: Bool, generation: UInt64) {
         defer { onRestack() }
         guard let windows = windowListForZOrder().map(WindowStacking.decode),
               windows.contains(where: { $0.windowID == tile.windowID }) else { return }
@@ -820,7 +839,8 @@ final class FloatingWindowController {
                 hyprLog(.notice, .floating, "\(line) → ineffective — cooldown \(Int(throttle.ineffectiveCooldown))s")
             }
         }
-        guard !lifted.isEmpty else { return }
+        // a fronted app has the keyboard even if its window didn't come up
+        guard !lifted.isEmpty || frontedApp else { return }
 
         guard focusController.lastFocusedID == tile.windowID,
               focusController.generation == generation else {
@@ -841,8 +861,14 @@ final class FloatingWindowController {
         // raise-behind for the same pair right after it is the loop, and so
         // is the next click: the pair cools now, longer each time
         if front != tile.ownerPID {
-            throttle.noteLoop(lifted, now: now)
-            hyprLog(.notice, .floating, "click re-raise moved the front app — cooling \(lifted)")
+            if frontedApp {
+                // expected, so no cooldown. a raise-behind right after the
+                // hand-back would mean it buried the floater, which is the loop
+                throttle.noteRestore(lifted, now: now)
+            } else {
+                throttle.noteLoop(lifted, now: now)
+                hyprLog(.notice, .floating, "click re-raise moved the front app — cooling \(lifted)")
+            }
         }
         refocusClickedTile(tile) { [weak self] kept in
             guard let self else { return }

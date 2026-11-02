@@ -850,13 +850,16 @@ tile all logged `landed` with the floater in `floatersAbove`. Every one of
 those had the target's app already in front. No-raise focus that has to switch the front process
 (`crossApp=true`) has not been seen live yet.
 
-Cross-app AXRaise does not work on macOS 27. The same day, a Messages
-Quick Look preview under a Safari tile logged `raise behind: wids=[5252]
-under=[71889]` and then `raise behind ineffective: wid=5252 still under
-71889`. So the click re-raise can only lift a floater of the tile's own app,
-and raise-behind skips the focused tile's own app, so it cannot lift that case
-either. A floater of another app stays in front only if focus
-never lifts the tile over it, which is the no-raise path's job.
+Cross-app AXRaise alone does not work on macOS 27. A Messages Quick Look preview
+under a Safari tile logged `raise behind: wids=[5252] under=[71889]` and then
+`raise behind ineffective: wid=5252 still under 71889`. So both raises front the
+floater's app first (`frontApp`, SkyLight with no activate) and hand focus back
+through the no-raise path. The click re-raise does this about 90 ms after a
+mouse-up. Raise-behind does it only with the focused tile's app in front, so the
+restore can undo it, and never during a mouse press. Raise-behind still skips the
+focused tile's own app. Added November 2 as a trial: each click on a tile covering
+a floater switches apps twice, so watch for menu bar flicker and keys typed right
+after a click landing in the floater's app.
 
 Floating-level floaters. AppKit puts a floating panel (a Quick Look
 preview, an inspector) at the floating level, CG layer 3, while its app is
@@ -881,12 +884,11 @@ layers=[3] front=<messages> crossApp=true`. Then one of:
   SkyLight would not switch the front process. The usual path ran and
   lifted the tile.
 
-For the click re-raise, click a tile beside a floater. Same app should log
-`click re-raise: … sameApp=true → on top`, then `no-raise focus: …
-reason=click-reraise` and `no-raise focus verify: … → landed, floaters
-kept above`. A cross-app pair logs `→ ineffective — cooldown 30s` once per
-30 s, as on macOS 27. The tile then stays on top, and the dim shows the
-floater only where it is in front.
+For the click re-raise, click a tile beside a floater. Either app pairing should
+log `click re-raise: … → on top`, then `no-raise focus: … reason=click-reraise`
+and `no-raise focus verify: … → landed, floaters kept above`. An `→ ineffective —
+cooldown 30s` or `refocus missed` line means that pair rests for 30 s. The tile
+then stays on top, and the dim shows the floater only where it is in front.
 
 ### A floater changed size or left the screen
 

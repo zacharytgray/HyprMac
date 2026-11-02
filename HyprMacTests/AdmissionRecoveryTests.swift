@@ -1343,6 +1343,9 @@ final class FloatingRaiseRegressionTests: XCTestCase {
             accessibility: AccessibilityManager(), cursorManager: CursorManager(),
             focusController: focus, focusBorder: border, dimmingOverlay: DimmingOverlay()
         )
+        // the real one fronts whatever process owns these made-up pids
+        controller.frontApp = { _ in }
+        controller.isMouseDown = { false }
         controller.windowListForZOrder = {
             [
                 [kCGWindowNumber as String: CGWindowID(11)],
@@ -1782,8 +1785,98 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         rig.controller.raiseAfterClick(click)
         rig.run()
 
-        XCTAssertEqual(rig.harness().raises, [12], "Tahoe refused the cross-app raise once; no retry every click")
-        XCTAssertEqual(rig.harness().refocused, [], "the tile is still on top and still key")
+        XCTAssertEqual(rig.harness().raises, [12], "a raise that did nothing is not retried on every click")
+        XCTAssertEqual(rig.harness().refocused, [11], "the floater's app was fronted, so the keyboard goes back")
+    }
+
+    func testACrossAppClickFrontsTheFloatersAppBeforeTheRaiseAndKeepsWorking() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200)
+        var steps: [String] = []
+        var front: pid_t = 100
+        rig.controller.frontmostPID = { front }
+        rig.controller.frontApp = {
+            steps.append("front \($0.windowID)")
+            front = $0.ownerPID
+        }
+        let raise = rig.controller.performRaise
+        rig.controller.performRaise = { steps.append("raise \($0.windowID)"); return raise($0) }
+        let refocus = rig.controller.refocusClickedTile
+        rig.controller.refocusClickedTile = { window, done in
+            front = window.ownerPID
+            refocus(window, done)
+        }
+        var clock: TimeInterval = 1000
+        rig.controller.now = { clock }
+
+        for _ in 0..<6 {
+            rig.controller.raiseAfterClick(click)
+            rig.run()
+            clock += 2
+        }
+
+        XCTAssertEqual(steps.prefix(2), ["front 12", "raise 12"], "macOS 27 ignores the raise without the front")
+        XCTAssertEqual(rig.harness().raises.count, 6, "every click stays on top, with no cooldown building up")
+        XCTAssertEqual(rig.harness().refocused.count, 6)
+    }
+
+    func testASameAppClickDoesNotSwitchApps() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+        var fronted = 0
+        rig.controller.frontApp = { _ in fronted += 1 }
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(fronted, 0)
+        XCTAssertEqual(rig.harness().raises, [12])
+    }
+
+    func testAClickOnAnotherAppsFloaterSpotFrontsNothing() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200)
+        var fronted = 0
+        rig.controller.frontApp = { _ in fronted += 1 }
+
+        rig.controller.raiseAfterClick(ClickPress(windowID: 11, point: CGPoint(x: 100, y: 100), popupOpen: false))
+        rig.run()
+
+        XCTAssertEqual(fronted, 0, "the click landed inside the floater's frame")
+    }
+
+    func testRaiseBehindFrontsTheFloatersAppOnlyWithTheFocusedTilesAppInFront() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var fronted = 0
+        var front: pid_t = 100
+        controller.frontApp = { _ in fronted += 1 }
+        controller.frontmostPID = { front }
+        controller.windowListForZOrder = { Self.coveredStack }
+        controller.performRaise = { _ in .success }
+        controller.scheduleAfter = { _, _ in }
+
+        front = 300 // an app HyprMac doesn't manage: fronting would take its keyboard
+        controller.raiseBehind()
+        XCTAssertEqual(fronted, 0)
+
+        front = 100
+        controller.throttle = RaiseBehindThrottle()
+        controller.raiseBehind()
+        XCTAssertEqual(fronted, 1, "the restore can hand this one back")
+    }
+
+    func testRaiseBehindWaitsForTheMouseUp() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var fronted = 0
+        var raises = 0
+        controller.frontApp = { _ in fronted += 1 }
+        controller.frontmostPID = { 100 }
+        controller.isMouseDown = { true }
+        controller.windowListForZOrder = { Self.coveredStack }
+        controller.performRaise = { _ in raises += 1; return .success }
+        controller.scheduleAfter = { _, _ in }
+
+        controller.raiseBehind()
+
+        XCTAssertEqual(fronted, 0, "switching apps mid press breaks a text selection")
+        XCTAssertEqual(raises, 0)
     }
 
     func testARefocusThatMissesCoolsThePairDown() {
