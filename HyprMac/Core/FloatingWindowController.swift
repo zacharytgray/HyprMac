@@ -222,11 +222,10 @@ struct RaiseBehindThrottle {
     }
 
     /// Clear a cooldown set for a raise that couldn't work (a plain AXRaise
-    /// across apps), so a raise that fronts the app gets its chance. A burst and
-    /// a miss after fronting stay.
+    /// across apps), so a raise that fronts the app gets its chance. A miss
+    /// after fronting stays.
     mutating func clearUnfrontedCooldown(_ pair: Pair) {
-        guard let reason = cooldowns[pair]?.reason,
-              reason == "ineffective" || reason == "loop" else { return }
+        guard let reason = cooldowns[pair]?.reason, reason != Self.frontedIneffectiveReason else { return }
         cooldowns[pair] = nil
     }
 
@@ -686,7 +685,20 @@ final class FloatingWindowController {
         let now = self.now()
         var pairs: [RaiseBehindThrottle.Pair] = []
         for pair in candidates {
-            if frontsApp { throttle.clearUnfrontedCooldown(pair) }
+            // a fronted raise runs at most once per hand-off, its misses back
+            // off, and an app that re-buries the floater gets marked. a burst
+            // limit on top left the floater buried after rapid clicks
+            if frontsApp {
+                throttle.clearUnfrontedCooldown(pair)
+                if let cooldown = throttle.cooldown(pair, now: now),
+                   cooldown.reason == RaiseBehindThrottle.frontedIneffectiveReason {
+                    hyprLog(.debug, .floating, "raise behind cooling: pair=\(pair) reason=\(cooldown.reason) "
+                            + "\(String(format: "%.1f", cooldown.remaining))s left")
+                } else {
+                    pairs.append(pair)
+                }
+                continue
+            }
             switch throttle.decide(pair, now: now) {
             case .raise:
                 pairs.append(pair)

@@ -61,6 +61,8 @@ final class TiledFocusRouter {
     // time for the window server and the app to settle before checking
     static let verifyDelay: TimeInterval = 0.08
     static let liftStreakLimit = 2
+    // covers the check and the press itself
+    static let clickQuietWindow: TimeInterval = 0.4
     private var liftStreaks: [pid_t: Int] = [:]
     private var pendingVerifies = 0
     /// A no-raise focus has fronted its app and hasn't been checked yet.
@@ -73,6 +75,9 @@ final class TiledFocusRouter {
     var isTiled: (CGWindowID) -> Bool = { _ in false }
     var frontmostPID: () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     var keyWindowID: (pid_t) -> CGWindowID? = { HyprWindow.axFocusedWindowID(pid: $0) }
+    var secondsSinceLastClick: () -> TimeInterval = {
+        CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .leftMouseDown)
+    }
     var postWindowFocus: (pid_t, CGWindowID, Bool) -> Void = { pid, wid, gained in
         HyprWindow.postWindowFocusEvent(pid: pid, windowID: wid, gained: gained)
     }
@@ -189,6 +194,9 @@ final class TiledFocusRouter {
     // recovers. a soft one can't say that, since it avoids the lift
     private func noteLift(_ target: HyprWindow, buried: [CGWindowID], soft: Bool) {
         let pid = target.ownerPID
+        // a click lifts any app, and says nothing about this one. seen live:
+        // rapid clicks marked Dia and stopped its raises for the session
+        guard buried.isEmpty || secondsSinceLastClick() >= Self.clickQuietWindow else { return }
         if soft {
             softLiftStreaks[pid] = buried.isEmpty ? nil : softLiftStreaks[pid, default: 0] + 1
             if softLiftStreaks[pid] == Self.liftStreakLimit {

@@ -326,6 +326,7 @@ final class TiledFocusRouterTests: XCTestCase {
     private var floaters: Set<CGWindowID> = [10]
     private var front: pid_t? = otherPID
     private var keys: [pid_t: CGWindowID] = [:]
+    private var sinceClick: TimeInterval = .infinity
     private var lastFocused: CGWindowID = 11
     private var generation: UInt64 = 1
     private var popup: StackedWindow?
@@ -350,6 +351,7 @@ final class TiledFocusRouterTests: XCTestCase {
         }
         router.makeFrontAndKey = { [unowned self] w in self.calls.append("front+key \(w.windowID)"); return "ok" }
         router.makeFrontAndKeySoftly = { [unowned self] w in self.calls.append("soft \(w.windowID)"); return "ok" }
+        router.secondsSinceLastClick = { [unowned self] in self.sinceClick }
         router.usualFocus = { [unowned self] w, fallback in self.calls.append("usual \(w.windowID) \(fallback.rawValue)") }
         router.lastFocusedID = { [unowned self] in self.lastFocused }
         router.focusGeneration = { [unowned self] in self.generation }
@@ -397,6 +399,14 @@ final class TiledFocusRouterTests: XCTestCase {
         focusOnce(endingAbove: true)
         XCTAssertEqual(calls.first, "soft 11", "holding proves nothing about the full events")
         XCTAssertFalse(router.liftsItselfOnFocus(frontPID), "raises are worth it while soft holds")
+    }
+
+    func testALiftRightAfterAClickDoesNotCount() {
+        sinceClick = 0.1
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: false)
+        focusOnce(endingAbove: false)
+        XCTAssertEqual(calls.first, "front+key 11", "any app lifts when clicked")
     }
 
     func testOneLiftIsNotEnoughAndAFullFocusThatHoldsStartsOver() {

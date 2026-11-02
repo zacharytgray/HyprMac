@@ -1591,7 +1591,7 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         XCTAssertEqual(raises, [12, 12])
     }
 
-    func testAFrontedRaiseThatKeepsGettingReburiedHitsTheBurstLimit() {
+    func testAFrontedRaiseThatKeepsGettingReburiedRunsOncePerHandOff() {
         let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
         var raises: [CGWindowID] = []
         var restores: [CGWindowID] = []
@@ -1617,7 +1617,7 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         }
         controller.scheduleAfter = { _, body in queued = body }
 
-        for _ in 0..<8 {
+        for _ in 0..<4 {
             controller.raiseBehind()
             queued?()
             queued = nil
@@ -1627,9 +1627,8 @@ final class FloatingRaiseRegressionTests: XCTestCase {
             clock += FloatingWindowController.frontedRaiseBusy / 2
         }
 
-        XCTAssertEqual(raises.count, controller.throttle.burstLimit,
-                       "an app that re-buries the floater is bounded before the router marks it")
-        XCTAssertEqual(restores.count, controller.throttle.burstLimit)
+        XCTAssertEqual(raises.count, 4, "one per hand-off, however often it's asked. the router marks the app")
+        XCTAssertEqual(restores.count, 4)
     }
 
     func testAFloaterBehindATileItDoesNotTouchIsLeftAlone() {
@@ -2074,6 +2073,26 @@ final class FloatingRaiseRegressionTests: XCTestCase {
 
         XCTAssertTrue(delays.contains { $0 > rig.controller.throttle.frontedIneffectiveCooldown },
                       "buried until the next poll otherwise, about ten seconds")
+    }
+
+    // rapid clicks ended in a burst cooldown with the floater buried
+    func testManyFrontedRaisesDoNotHitABurstCooldown() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises = 0
+        var clock: TimeInterval = 1000
+        var stack = Self.coveredStack
+        controller.now = { clock }
+        controller.windowListForZOrder = { stack }
+        controller.performRaise = { _ in raises += 1; stack = Self.raisedStack; return .success }
+        controller.scheduleAfter = { _, body in body() }
+
+        for _ in 0..<(controller.throttle.burstLimit * 2) {
+            stack = Self.coveredStack
+            controller.raiseBehind()
+            clock += FloatingWindowController.frontedRaiseBusy
+        }
+
+        XCTAssertEqual(raises, controller.throttle.burstLimit * 2)
     }
 
     func testRepeatedMissesRestLongerAndStopRetrying() {
