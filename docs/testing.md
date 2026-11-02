@@ -18,8 +18,8 @@ takes about five minutes, mostly the build.
 ## Supported environments
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
-through `./scripts/test-isolated.sh --debug-variant`. At `670626a` that run
-gave 1716 tests, 28 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
+through `./scripts/test-isolated.sh --debug-variant`. That run gives 1712
+tests, 28 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 
 The harness loads the test library through rpaths. It runs `xctest` directly

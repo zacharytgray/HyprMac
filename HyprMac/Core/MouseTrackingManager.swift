@@ -80,7 +80,6 @@ class MouseTrackingManager {
     var tiledPositions: () -> [CGWindowID: CGRect] = { [:] }
     var onFocusForFFM: (HyprWindow) -> Void = { _ in }
     var onUpdateFocusBorder: (HyprWindow) -> Void = { _ in }
-    var onHideFocusBorder: () -> Void = {}
     // routed to SuppressionRegistry["mouse-focus"] by WindowManager
     var isMouseFocusSuppressed: () -> Bool = { false }
     // minimum spacing between eligible checks. skipped events are not replayed.

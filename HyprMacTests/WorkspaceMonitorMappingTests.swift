@@ -193,7 +193,7 @@ final class WorkspaceMonitorMappingTests: XCTestCase {
         let engine = TilingEngine(displayManager: DisplayManager(screenSource: { screens }))
         // ws4's formula home on three screens is the left one
         XCTAssertTrue(workspaces.homeScreenForWorkspace(4) === left)
-        _ = engine.prepareTileLayout([makeWindow(id: 501)], onWorkspace: 4, screen: left)
+        _ = engine.seedTree([makeWindow(id: 501)], onWorkspace: 4, screen: left)
         XCTAssertEqual(engine.windowIDs(inTreeForWorkspace: 4, screen: left), [501])
 
         workspaces.workspaceMonitors = example

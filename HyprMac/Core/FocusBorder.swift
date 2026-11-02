@@ -105,9 +105,6 @@ class FocusBorder {
         // app un-hide, fresh focus), on focus changes between windows, and
         // when a floater's border first appears.
         static let showAnimationDurationSec: TimeInterval = 0.22
-        static let hideAnimationDurationSec: TimeInterval = 0.28
-        static let floatingShowAnimationDurationSec: TimeInterval = 0.22
-        static let floatingHideAnimationDurationSec: TimeInterval = 0.28
         static let shakeStepDurationSec: TimeInterval = 0.04
         static let shakeOffsets: [CGFloat] = [10, -10, 7, -7, 3, -3, 0]
         // hold the message after the shake stops
@@ -435,7 +432,7 @@ class FocusBorder {
     /// - Parameter message: short reason shown as a pill centered in the
     ///   flashed window — e.g. "Not enough room to swap".
     @discardableResult
-    func flashError(around rect: CGRect, windowID: CGWindowID, window _: HyprWindow? = nil,
+    func flashError(around rect: CGRect, windowID: CGWindowID,
                     message: String? = nil) -> Int? {
         guard Self.errorFeedbackCanRender(isEnabled: isEnabled) else { return nil }
         mainThreadOnly()

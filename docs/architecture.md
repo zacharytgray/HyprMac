@@ -151,7 +151,6 @@ live for the entire app lifetime. The process-wide singletons are
 | `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. Adds and removes only its own `UserKeyMapping` entry (see "Caps Lock remap"). |
 | `AccessibilityManager` | AX bridge. Enumerates windows, resolves the focused window, picks directional neighbors. |
 | `DisplayManager` | NSScreen tracking and CG ↔ NS coordinate conversion. |
-| `SpaceManager` | Reads the native Spaces map through private CGS APIs at startup. Nothing else calls it; virtual workspaces do not use it. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
 | `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate. |
@@ -179,7 +178,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `LoginItemController` | Launch at login through `SMAppService.mainApp`. |
 | `FrameReadbackPoller` | Runs candidate, adjusted and restoration passes over `FrameSizingAttempt` and classifies the readback into conflicts and min-size evidence. |
 
-`DragManager` has no callers: `WindowManager` only constructs it, and no test uses it. Production tiled drags use `TiledDragHandler`. `ProbeFrame` is a Debug-only `--probe-frame` diagnostic.
+Tiled drags use `TiledDragHandler`. `ProbeFrame` is a Debug-only `--probe-frame` diagnostic.
 
 ## Orchestration layer (Core/Orchestration + Core/State + Core/Discovery)
 
@@ -818,11 +817,8 @@ These are not bugs:
 - **`subtract()` rect-strip helper** exists twice: `FocusBorder`
   (`NSRect`) and `WindowStacking` (`CGRect`). `DimmingOverlay` uses
   `CGPath.subtracting` instead.
-- **Code with no production caller:** `TilingEngine.autoFloatOverflow`,
-  `BSPTree.compact` and `BSPTree.smartInsert`, the `SpaceManager` helpers,
-  `ScratchpadController.adopt`, `WindowManager.forgetWindow`, `findWindow`,
-  `hasVisibleFloatingWindows` and `restart`, and `DragManager`, which only
-  `WindowManager` constructs.
+- **Code with no production caller:** `BSPTree.compact`, `BSPTree.smartInsert`
+  and `RetileAllPlanner.pack`. Only tests call them.
 - **Forgetting a window is split in two** —
   `WindowStateCache.forget(_:)` clears cache state and
   `applyForgottenIDExternalCleanup(_:)` runs the engine / workspace

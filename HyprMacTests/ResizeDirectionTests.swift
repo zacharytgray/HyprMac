@@ -23,7 +23,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testResizeRightIncreasesRatio() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         let ratioBefore = tree.root.splitRatio
@@ -37,7 +37,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testResizeLeftDecreasesRatio() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         let ratioBefore = tree.root.splitRatio
@@ -51,7 +51,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testResizeStepSize() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
 
@@ -66,7 +66,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testRightChildResizeRightMovesBoundaryRight() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         let ratioBefore = tree.root.splitRatio
@@ -80,7 +80,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testRightChildResizeLeftMovesBoundaryLeft() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         let ratioBefore = tree.root.splitRatio
@@ -100,7 +100,7 @@ final class ResizeDirectionTests: XCTestCase {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
         let c = makeWindow(id: 3)
-        _ = engine.prepareTileLayout([a, b, c], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b, c], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         guard let leaf = tree.root.find(c), let parent = leaf.parent, parent !== tree.root else {
@@ -124,7 +124,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testPerpendicularResizeWithNoMatchingAncestorIsNoop() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         tree.root.splitOverride = .horizontal
@@ -141,7 +141,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testResizeRespectsClamping() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
 
@@ -165,7 +165,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testResizeUnknownWindowIsNoop() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         let ratioBefore = tree.root.splitRatio
@@ -181,7 +181,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testVerticalSplitTopChildDownMovesBoundaryDown() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         tree.root.splitOverride = .vertical
@@ -199,7 +199,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testVerticalSplitBottomChildUpMovesBoundaryUp() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         tree.root.splitOverride = .vertical
@@ -217,7 +217,7 @@ final class ResizeDirectionTests: XCTestCase {
     func testHorizontalResizeOnVerticalSplitIsNoop() {
         let a = makeWindow(id: 1)
         let b = makeWindow(id: 2)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
 
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         tree.root.splitOverride = .vertical
@@ -235,7 +235,7 @@ final class ResizeDirectionTests: XCTestCase {
         // move the matching boundary in the arrow direction.
         let a = makeWindow(id: 1), b = makeWindow(id: 2)
         let c = makeWindow(id: 3), d = makeWindow(id: 4)
-        _ = engine.prepareTileLayout([a, b], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([a, b], onWorkspace: 1, screen: screen)
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)!
         guard let left = tree.root.left, let right = tree.root.right else {
             XCTFail("expected root split"); return

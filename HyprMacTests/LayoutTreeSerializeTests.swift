@@ -30,7 +30,7 @@ final class LayoutTreeSerializeTests: XCTestCase {
     }
 
     private func tile(_ ids: [CGWindowID]) {
-        _ = engine.prepareTileLayout(ids.map { makeWindow(id: $0) }, onWorkspace: 1, screen: screen)
+        _ = engine.seedTree(ids.map { makeWindow(id: $0) }, onWorkspace: 1, screen: screen)
     }
 
     func testEmptyWorkspaceIsNil() {

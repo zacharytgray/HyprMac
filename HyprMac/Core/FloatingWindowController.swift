@@ -395,7 +395,7 @@ final class FloatingWindowController {
             // a preview never enters a tree. say so instead of doing nothing.
             hyprLog(.notice, .floating, "float→tile refused: \(window.windowID) is a quick look preview")
             if let frame = window.frame ?? stateCache.cachedWindows[window.windowID]?.frame {
-                focusBorder.flashError(around: frame, windowID: window.windowID, window: window,
+                focusBorder.flashError(around: frame, windowID: window.windowID,
                                        message: "Quick Look previews stay floating")
             }
             return
@@ -404,7 +404,7 @@ final class FloatingWindowController {
             // the user put this app in Never tile. say so, and where to change it
             hyprLog(.notice, .floating, "float→tile refused: \(window.windowID) belongs to a never-tile app")
             if let frame = window.frame ?? stateCache.cachedWindows[window.windowID]?.frame {
-                focusBorder.flashError(around: frame, windowID: window.windowID, window: window,
+                focusBorder.flashError(around: frame, windowID: window.windowID,
                                        message: FloatingAdmissionPolicy.neverTileMessage)
             }
             return

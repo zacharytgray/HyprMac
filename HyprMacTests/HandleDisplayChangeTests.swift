@@ -26,7 +26,7 @@ final class HandleDisplayChangeTests: XCTestCase {
 
     func testHandleDisplayChangePrunesOrphanedTrees() {
         // seed a tree
-        engine.prepareTileLayout([makeWindow(id: 1), makeWindow(id: 2)],
+        engine.seedTree([makeWindow(id: 1), makeWindow(id: 2)],
                                  onWorkspace: 1, screen: screen)
         XCTAssertNotNil(engine.existingTree(forWorkspace: 1, screen: screen))
 
@@ -69,7 +69,7 @@ final class HandleDisplayChangeTests: XCTestCase {
     }
 
     func testHandleDisplayChangeIsNoopWhenTreeOnItsHome() {
-        engine.prepareTileLayout([makeWindow(id: 1), makeWindow(id: 2)],
+        engine.seedTree([makeWindow(id: 1), makeWindow(id: 2)],
                                  onWorkspace: 1, screen: screen)
         let tree = engine.existingTree(forWorkspace: 1, screen: screen)
         XCTAssertNotNil(tree)
@@ -96,8 +96,8 @@ final class FitAwareDisplayMigrationTests: XCTestCase {
         first.observedMinSize = CGSize(width: 1000, height: 500)
         second.observedMinSize = CGSize(width: 1000, height: 500)
 
-        engine.prepareTileLayout([first], onWorkspace: 1, screen: left)
-        engine.prepareTileLayout([second], onWorkspace: 1, screen: right)
+        engine.seedTree([first], onWorkspace: 1, screen: left)
+        engine.seedTree([second], onWorkspace: 1, screen: right)
 
         engine.handleDisplayChange(currentScreens: [destination],
                                    homeScreenForWorkspace: { _ in destination })

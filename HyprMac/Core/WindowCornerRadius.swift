@@ -21,11 +21,4 @@ enum WindowCornerRadius {
     /// callers in FocusBorder / DimmingOverlay don't change if we ever
     /// reintroduce per-window resolution.
     static func resolve(for wid: CGWindowID) -> CGFloat { global }
-
-    /// Prime hook — kept as a no-op so call sites in WindowManager can
-    /// stay in place.
-    static func prime(for window: HyprWindow) {}
-
-    /// Forget hook — kept as a no-op for the same reason.
-    static func forget(_ wid: CGWindowID) {}
 }

@@ -1097,15 +1097,6 @@ highlight hides at mouse-up, on a stop, and when there is nowhere to land.
 Nothing keeps running after the drag: one held update at most, and it does
 nothing once the drag has ended.
 
-## `prepareTileLayout` / `prepareSwapLayout` / `prepareToggleSplitLayout`
-
-These methods calculate layouts after provisional tree changes.
-`prepareSwapLayout` and `prepareToggleSplitLayout` capture actual frames
-and the prior tree state for a later verified `applyComputedLayout` call.
-Only tests call them. Production uses `tileWindows`, `swapWindows` and
-`toggleSplit`, which run the verified layout themselves and restore a tree
-snapshot on refusal. A superseding operation invalidates prepared rollback data.
-
 ## Known limitations
 
 ### Squishy-sibling swap rejection

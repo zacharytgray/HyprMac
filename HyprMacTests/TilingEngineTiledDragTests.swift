@@ -879,7 +879,7 @@ final class TilingEngineTiledDragTests: XCTestCase {
                                   frameSizingIOFactory: trace.factory,
                                   tiledDragDisplayID: displayID)
         let windows = [makeWindow(id: 1), makeWindow(id: 2), makeWindow(id: 3)]
-        let layouts = engine.prepareTileLayout(windows, onWorkspace: 1, screen: screen)
+        let layouts = engine.seedTree(windows, onWorkspace: 1, screen: screen)
         trace.frames = Dictionary(uniqueKeysWithValues: layouts.map { ($0.0.windowID, $0.1) })
         return Fixture(engine: engine, screen: screen, trace: trace)
     }
@@ -924,11 +924,11 @@ final class TilingEngineTiledDragTests: XCTestCase {
                                   frameSizingIOFactory: trace.factory)
         configure(engine, wide)
         var frames: [CGWindowID: CGRect] = [:]
-        let source = engine.prepareTileLayout(sourceIDs.map { makeWindow(id: $0) },
+        let source = engine.seedTree(sourceIDs.map { makeWindow(id: $0) },
                                               onWorkspace: 1, screen: tall)
         for (window, frame) in source { frames[window.windowID] = frame }
         if !targetIDs.isEmpty {
-            let target = engine.prepareTileLayout(targetIDs.map { makeWindow(id: $0) },
+            let target = engine.seedTree(targetIDs.map { makeWindow(id: $0) },
                                                   onWorkspace: 2, screen: wide)
             for (window, frame) in target { frames[window.windowID] = frame }
         }

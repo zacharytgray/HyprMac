@@ -69,7 +69,7 @@ final class LayoutTreeRebuildTests: XCTestCase {
 
     func testDwindleChainFromLiveEngineRoundTrips() {
         // shape produced by the real insert path on one engine, restored on another
-        _ = engine.prepareTileLayout(ids([1, 2, 3]), onWorkspace: 1, screen: screen)
+        _ = engine.seedTree(ids([1, 2, 3]), onWorkspace: 1, screen: screen)
         let saved = engine.layoutTree(forWorkspace: 1, ref: refOf)!
 
         let other = makeEngine(acceptingFrameSizingIOFactory())
@@ -120,7 +120,7 @@ final class LayoutTreeRebuildTests: XCTestCase {
     /// another space) is not given that member: the walk could not list
     /// it. the rebuild keeps it in the tree instead of dropping its leaf
     func testAHeldMemberSurvivesARebuildThatWasNotGivenIt() {
-        _ = engine.prepareTileLayout(ids([1, 2, 3]), onWorkspace: 1, screen: screen)
+        _ = engine.seedTree(ids([1, 2, 3]), onWorkspace: 1, screen: screen)
         engine.heldWindowIDsSource = { [3] }
         let saved = LayoutNode.split(override: nil, ratio: 0.5, userSet: false, left: leaf(2), right: leaf(1))
 
@@ -207,7 +207,7 @@ final class LayoutTreeRebuildTests: XCTestCase {
     // MARK: - guards
 
     func testSavedDepthBeyondMaxKeepsLiveTree() {
-        _ = engine.prepareTileLayout(ids([1, 2]), onWorkspace: 1, screen: screen)
+        _ = engine.seedTree(ids([1, 2]), onWorkspace: 1, screen: screen)
         let before = live()!.structuralFingerprint()
         engine.maxSplitsPerMonitor[screen.localizedName] = 2
 
@@ -225,11 +225,11 @@ final class LayoutTreeRebuildTests: XCTestCase {
     }
 
     func testRefusedVerificationKeepsLiveTree() {
-        _ = engine.prepareTileLayout(ids([1, 2]), onWorkspace: 1, screen: screen)
+        _ = engine.seedTree(ids([1, 2]), onWorkspace: 1, screen: screen)
         let before = live()!.structuralFingerprint()
 
         let refusing = makeEngine(refusingWritesFrameSizingIOFactory())
-        _ = refusing.prepareTileLayout(ids([1, 2]), onWorkspace: 1, screen: screen)
+        _ = refusing.seedTree(ids([1, 2]), onWorkspace: 1, screen: screen)
         let refusingBefore = refusing.existingTree(forWorkspace: 1, screen: screen)!.structuralFingerprint()
 
         let saved = LayoutNode.split(override: .vertical, ratio: 0.7, userSet: true, left: leaf(1), right: leaf(2))
@@ -287,8 +287,8 @@ final class LayoutTreeRebuildTests: XCTestCase {
         engine = makeEngine(acceptingFrameSizingIOFactory())
 
         // ws1 used to live on the other screen; its last window left, the tree stayed
-        _ = engine.prepareTileLayout(ids([3]), onWorkspace: 1, screen: other)
-        _ = engine.prepareTileLayout([], onWorkspace: 1, screen: other)
+        _ = engine.seedTree(ids([3]), onWorkspace: 1, screen: other)
+        _ = engine.seedTree([], onWorkspace: 1, screen: other)
         engine.markUnverifiedGeometry(forWorkspace: 1, screen: other, reason: "test")
         XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: other)?.allWindows.count, 0,
                        "precondition: an empty ws1 tree on the other screen")
@@ -309,7 +309,7 @@ final class LayoutTreeRebuildTests: XCTestCase {
         let screens: [NSScreen] = [screen, other]
         displayManager = DisplayManager(screenSource: { screens })
         engine = makeEngine(acceptingFrameSizingIOFactory())
-        _ = engine.prepareTileLayout(ids([3]), onWorkspace: 1, screen: other)
+        _ = engine.seedTree(ids([3]), onWorkspace: 1, screen: other)
 
         let saved = LayoutNode.split(override: nil, ratio: 0.5, userSet: false, left: leaf(1), right: leaf(2))
         _ = engine.rebuildTree(forWorkspace: 1, screen: screen, from: saved,

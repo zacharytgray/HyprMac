@@ -113,7 +113,7 @@ final class ToggleSplitFallthroughRegressionTests: XCTestCase {
     private func seedTwoWindowTree() -> (HyprWindow, HyprWindow) {
         let w1 = makeWindow(id: 1)
         let w2 = makeWindow(id: 2)
-        tilingEngine.prepareTileLayout([w1, w2], onWorkspace: workspace, screen: screen)
+        tilingEngine.seedTree([w1, w2], onWorkspace: workspace, screen: screen)
         return (w1, w2)
     }
 

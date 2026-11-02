@@ -55,7 +55,6 @@ extension Font {
     static let hyprSection  = Font.system(size: 12, weight: .semibold, design: .default)
     static let hyprBody     = Font.system(size: 13, weight: .regular,  design: .default)
     static let hyprCaption  = Font.system(size: 11, weight: .regular,  design: .default)
-    static let hyprMono     = Font.system(size: 12, weight: .medium,   design: .monospaced)
     static let hyprMonoSm   = Font.system(size: 11, weight: .medium,   design: .monospaced)
     static let hyprMonoXs   = Font.system(size: 10, weight: .medium,   design: .monospaced)
 }
@@ -68,7 +67,6 @@ enum HyprSpacing {
     static let md:  CGFloat = 12
     static let lg:  CGFloat = 16
     static let xl:  CGFloat = 24
-    static let xxl: CGFloat = 32
 }
 
 enum HyprRadius {
@@ -82,7 +80,6 @@ enum HyprRadius {
 enum HyprMotion {
     static let snap     = Animation.easeOut(duration: 0.12)
     static let glide    = Animation.easeOut(duration: 0.20)
-    static let physical = Animation.spring(response: 0.35, dampingFraction: 0.82)
 }
 
 // shared appearance for transient overlays; nil inherits live system changes.

@@ -66,25 +66,6 @@ enum TilingConfig {
     // minimum may overflow its slot. ignores rounding noise.
     static let frameToleranceXPx: CGFloat = 20
 
-    // AX read cadence during pass-1 readback. tighter = more samples but more
-    // sleep churn; looser = slower convergence on slow apps (Spotify, Messages).
-    static let readbackPollInterval: TimeInterval = 0.03
-
-    // hard cap before giving up on a window settling. exceeds Spotify's
-    // slowest observed resize.
-    static let readbackMaxWait: TimeInterval = 0.36
-
-    // floor before an over-target reading is eligible to adjust the parent
-    // ratio. apps that haven't finished resizing this long after the request
-    // are treated as having a real minimum.
-    static let readbackMinConflictSettle: TimeInterval = 0.24
-
-    // consecutive matching reads required to call a frame "settled".
-    static let readbackStableSamples: Int = 2
-
-    // px wiggle that still counts as the same reading during settle detection.
-    static let readbackStableTolerancePx: CGFloat = 2
-
     // MARK: - pointer input
 
     // pointer travel between mouse-down and mouse-up below which a press is

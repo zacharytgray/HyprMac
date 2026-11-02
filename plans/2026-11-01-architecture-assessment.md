@@ -259,6 +259,22 @@ Done. Comment-only in Swift. See "Documentation changes" below.
 
 Risk is very low, since the compiler catches misses.
 
+Status on 2026-11-02: done, except `.swiftlint.yml`, which waits on D9. `BSPTree.compact`,
+`BSPTree.smartInsert` and `RetileAllPlanner.pack` remain as well: tests call them, and no step
+here removes them. `prepareTileLayout` is now `seedTree`.
+
+The suite went from 1716 tests to 1712. Removed on purpose:
+
+- `testPrepareSwapLayoutResetsNonUserSetRatios`: pinned behavior production never had.
+- `testPreparedToggleFailureRestoresPreAnimationFramesAndTree`: `testFailedDirectMutationsRestoreTreeStateAndFrames`
+  covers `toggleSplit`.
+- `testMembershipChangeInvalidatesPreparedSwapWithoutRestoringOldState`: prepared state no longer exists.
+- `testPreparedSwapCarriesItsScopedRevalidationIntoFinalApply`: same path and assertion as
+  `testSwapProbesPastAStaleObservedMinimumAndLowersItOnAcceptance`.
+
+`applyResize` left `testFailedDirectMutationsRestoreTreeStateAndFrames` with the method. The
+other prepared tests now run through `swapWindows`, `toggleSplit` and `tileWindows`.
+
 | Step | Change | Extra check |
 |---|---|---|
 | 1.1 | Delete the "dead everywhere" list in section 5. Make `mouseButtonDown` setters getters | Full suite |

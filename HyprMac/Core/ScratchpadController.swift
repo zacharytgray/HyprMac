@@ -541,52 +541,6 @@ final class ScratchpadController {
         hyprLog(.notice, .lifecycle, "sent '\(focused.title ?? "?")' (\(id)) to scratchpad")
     }
 
-    /// Overflow buffer: adopt a window that failed to fit its workspace's
-    /// BSP tree as a FLOATING scratchpad member. Unlike sendFocusedWindow
-    /// this never steals focus or MRU head — it's not a user-summon, the
-    /// window just spilled here. `preferredFrame` is the pre-tile original
-    /// frame the fit-failure site wants restored; falls back to the live
-    /// frame. No updatePositionCache — the caller is mid-tile-pass, the
-    /// caller's post-pass refresh covers it.
-    func adopt(_ window: HyprWindow, preferredFrame: CGRect? = nil) {
-        let id = window.windowID
-        guard !contains(id) else { return }
-        let frameBefore = window.frame
-
-        stateCache.floatingWindowIDs.insert(id)
-        window.isFloating = true
-        workspaceManager.assignWindow(id, toWorkspace: Self.workspace)
-
-        // saved frame for a later summon: prefer the pre-tile original, then
-        // the live frame. use the unconditional setter when saveFloatingFrame
-        // refuses (off-screen guard) so the frame is never lost.
-        if let preferredFrame {
-            workspaceManager.setSavedFloatingFrame(preferredFrame, for: id)
-        } else {
-            workspaceManager.saveFloatingFrame(window)
-            if workspaceManager.savedFloatingFrame(for: id) == nil, let f = frameBefore {
-                workspaceManager.setSavedFloatingFrame(f, for: id)
-            }
-        }
-
-        if isVisible {
-            summonedIDs.insert(id)
-            if let f = frameBefore { lastShownFrames[id] = f }
-            window.raise()
-        } else {
-            if let screen = displayManager.screens.first {
-                workspaceManager.hideInCorner(window, on: screen)
-            }
-            if let f = frameBefore {
-                focusBorder.flashInfo(message: "→ scratchpad", around: f, windowID: id)
-            }
-        }
-
-        // appended at END — not a user summon, don't steal the MRU head.
-        if !mruOrder.contains(id) { mruOrder.append(id) }
-        hyprLog(.notice, .lifecycle, "scratchpad: adopted overflow '\(window.title ?? "?")' (\(id))")
-    }
-
     /// Leave the scratchpad for good — dismiss the layer and tile the
     /// focused member into the workspace visible on the monitor it sits
     /// on. The exit behind Hypr+Shift+S, and the first step of a
@@ -674,7 +628,7 @@ final class ScratchpadController {
 
         if isNeverTile(focused) {
             if let f = focused.frame {
-                focusBorder.flashError(around: f, windowID: id, window: focused,
+                focusBorder.flashError(around: f, windowID: id,
                                        message: FloatingAdmissionPolicy.neverTileMessage)
             } else {
                 NSSound.beep()
@@ -696,7 +650,7 @@ final class ScratchpadController {
             stateCache.floatingWindowIDs.insert(id)
             focused.isFloating = true
             if let f = focused.frame {
-                focusBorder.flashError(around: f, windowID: id, window: focused)
+                focusBorder.flashError(around: f, windowID: id)
             } else {
                 NSSound.beep()
             }

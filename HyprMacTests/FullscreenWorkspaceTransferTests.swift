@@ -96,7 +96,7 @@ final class SoleWindowTransferEngineTests: XCTestCase {
         let sibling = makeWindow(id: 4102)
         trace.frames[mover.windowID] = CGRect(x: 20, y: 20, width: 500, height: 500)
         trace.frames[sibling.windowID] = CGRect(x: 540, y: 20, width: 500, height: 500)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: 1, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: 1, screen: screen)
 
         let result = engine.prepareSoleWindowTransfer(
             mover, sourceWindows: [mover, sibling], fromWorkspace: 1,
@@ -242,7 +242,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         state.floatingWindowIDs.insert(mover.windowID)
         mover.isFloating = true
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -300,7 +300,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             state.cachedWindows[window.windowID] = window
         }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -358,7 +358,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             state.cachedWindows[window.windowID] = window
         }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -397,7 +397,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             state.cachedWindows[window.windowID] = window
         }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -440,7 +440,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         }
         sibling.onParkingWrite = { manager.assignWindow(4599, toWorkspace: destination) }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -482,7 +482,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         }
         sibling.onParkingWrite = { provided = [replacement] }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -541,7 +541,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             manager.assignWindow(window.windowID, toWorkspace: 1)
             state.cachedWindows[window.windowID] = window
         }
-        engine.prepareTileLayout([mover, sibling], onWorkspace: 1, screen: builtIn)
+        engine.seedTree([mover, sibling], onWorkspace: 1, screen: builtIn)
         let orchestrator = makeOrchestrator(manager, engine, display, state)
         orchestrator.actualFocusedWindow = { mover }
         orchestrator.allWindows = { [mover, sibling] }
@@ -581,7 +581,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             state.cachedWindows[window.windowID] = window
         }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: 1, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: 1, screen: screen)
         let orchestrator = makeOrchestrator(manager, engine, display, state)
         orchestrator.actualFocusedWindow = { mover }
         orchestrator.allWindows = { [mover, sibling] }

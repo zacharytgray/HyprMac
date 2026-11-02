@@ -229,7 +229,6 @@ struct TiledDragFeedbackReconciler {
     private var pending: Pending?
     var hasPendingFeedback: Bool { pending != nil }
     func isPending(for key: TiledDragFeedbackKey) -> Bool { pending?.awaiting[key] != nil }
-    var pendingKey: TiledDragFeedbackKey? { pending?.key }
     /// every key the pending feedback still waits on
     var pendingKeys: [TiledDragFeedbackKey] { pending.map { Array($0.awaiting.keys) } ?? [] }
     var shownGeneration: UInt64? { pending?.shownGeneration }

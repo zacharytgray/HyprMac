@@ -300,7 +300,7 @@ final class WorkspaceOrchestrator {
         NSSound.beep()
         if let frame = window.frame {
             focusBorder.flashError(around: frame, windowID: window.windowID,
-                                   window: window, message: message)
+                                   message: message)
         }
     }
 
@@ -495,7 +495,7 @@ final class WorkspaceOrchestrator {
                         + " on \(targetScreen.localizedName) — rejected move")
                 NSSound.beep()
                 if let frame = focused.frame {
-                    focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
+                    focusBorder.flashError(around: frame, windowID: focused.windowID,
                                            message: "Won't fit on workspace \(number)")
                 }
                 return
@@ -518,7 +518,7 @@ final class WorkspaceOrchestrator {
                             + " — rejected move")
                     NSSound.beep()
                     if let frame = focused.frame {
-                        focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
+                        focusBorder.flashError(around: frame, windowID: focused.windowID,
                                                message: UserConfig.workspaceDisplayName(
                                                 number, names: UserConfig.shared.workspaceNames) + " is full")
                     }
@@ -540,7 +540,7 @@ final class WorkspaceOrchestrator {
                         + " ws\(currentWorkspace.map(String.init) ?? "none")")
                 NSSound.beep()
                 if let frame = focused.frame {
-                    focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
+                    focusBorder.flashError(around: frame, windowID: focused.windowID,
                                            message: "Won't fit on workspace \(number)")
                 }
                 return
@@ -1169,7 +1169,7 @@ final class WorkspaceOrchestrator {
             hyprLog(.debug, .workspace, "moveWindowToMonitor(\(direction.rawValue)): no monitor in that direction")
             NSSound.beep()
             if let frame = focused.frame {
-                focusBorder.flashError(around: frame, windowID: focused.windowID, window: focused,
+                focusBorder.flashError(around: frame, windowID: focused.windowID,
                                        message: "No monitor \(Self.monitorDirectionLabel(direction))")
             }
             return

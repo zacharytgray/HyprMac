@@ -698,7 +698,7 @@ final class ActionDispatcher {
         hyprLog(.debug, .orchestration, "\(reason) — rejected swap")
         NSSound.beep()
         if let frame = window.frame {
-            focusBorder.flashError(around: frame, windowID: window.windowID, window: window,
+            focusBorder.flashError(around: frame, windowID: window.windowID,
                                    message: "Not enough room to swap here")
         }
     }
