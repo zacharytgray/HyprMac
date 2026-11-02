@@ -56,8 +56,8 @@ class TilingEngine {
         case parked
         case degraded(FrameSizingFailure)
     }
-    /// Result of applying a verified layout. Mirrors
-    /// `FrameSizingTransaction.Outcome` but carries `restorationAttempted`,
+    /// Result of applying a verified layout. Same shape as
+    /// `FrameSizingTransaction.Outcome`, in a separate flow, but carries `restorationAttempted`,
     /// which says whether a rollback ran at all, and the progress of both
     /// attempts. Publication and cache recovery read the progress: the
     /// candidate's written set and the restoration's are different sets.
@@ -75,8 +75,8 @@ class TilingEngine {
     }
 
     /// One `(workspace, screen)` whose last layout attempt did not leave
-    /// verified geometry behind, with the ids involved. The admission
-    /// recovery reads this when it decides what to finish.
+    /// verified geometry behind, with the ids involved. Tests and the state
+    /// dump's id set read this.
     struct UnverifiedLayout {
         let workspace: Int
         /// nil when the screen that owned the key is gone.
@@ -217,7 +217,8 @@ class TilingEngine {
     private var pendingInsertedWindowIDs: [TilingKey: [CGWindowID]] = [:]
     /// Keys whose last layout attempt did not produce verified geometry.
     /// Set by any non-accepted attempt, cleared by an accepted one or by
-    /// lifecycle cleanup. Nothing in here advertises an intended rect.
+    /// lifecycle cleanup. `intendedTileRects` omits these keys; `intendedRect(for:)`
+    /// and `scratchpadTileRects` do not.
     private var unverified: [TilingKey: UnverifiedRecord] = [:]
     /// Keys a window left since their last accepted layout. Until one is
     /// accepted, the frames on screen still hold the gap it left.
@@ -1181,7 +1182,7 @@ class TilingEngine {
     /// - Note: TilingKey currently keys on screen-origin coordinates. If two
     ///   monitors swap positions during a reconnect, trees follow the position,
     ///   not the physical display. Migrating to `displayID` keying is a future
-    ///   change (see plan §4.2 — deferred for risk reasons).
+    ///   change, deferred for risk.
     func handleDisplayChange(currentScreens: [NSScreen],
                              homeScreenForWorkspace: (Int) -> NSScreen?) {
         // resolution and usable bounds can change without changing a tree key.
@@ -1339,8 +1340,8 @@ class TilingEngine {
     }()
 
     /// `applyVerifiedLayout` plus the unverified-geometry bookkeeping for
-    /// the key that owns the tree. Every production path goes through
-    /// this; the plain call stays for tests that hand it a loose tree.
+    /// the key that owns the tree. Every path that owns a key goes through
+    /// this. The sole-window stage runs the plain call on a private tree.
     private func applyTrackedLayout(_ tree: BSPTree, in rect: CGRect,
                                     generation: UInt64,
                                     key: TilingKey,
@@ -1441,7 +1442,7 @@ class TilingEngine {
     /// Whether a candidate may become the live tree.
     ///
     /// Only an accepted layout publishes. Acceptance is the one state that
-    /// carries every condition at once: all three setters returned success
+    /// carries every condition at once: every setter returned success
     /// for every target, or the in-place pass sent none because every
     /// window already stood on its target in two matching reads; the final
     /// readback was complete and stable, every window matched its target
@@ -1501,7 +1502,7 @@ class TilingEngine {
     }
 
     /// Every `(workspace, screen)` whose geometry the engine cannot speak
-    /// for, for the state dump and for step 4's bounded recovery.
+    /// for. The state dump and tests read it.
     var unverifiedLayouts: [UnverifiedLayout] {
         unverified.keys.sorted { ($0.workspace, $0.screenID) < ($1.workspace, $1.screenID) }
             .map { key in
@@ -2166,11 +2167,10 @@ class TilingEngine {
         var refusedWindows: [HyprWindow] = []
     }
 
-    // shared tree-update path between tileWindows and prepareTileLayout.
-    // primes min-sizes, removes gone windows (sibling promotion keeps the
-    // tree shape), smart-inserts new windows in a stable order
-    // (auto-floating those that don't fit), and resets split ratios.
-    // pure with respect to AX — only mutates the tree and engine state.
+    // updateTreeMembership: the shared tree-update path. primes min-sizes, removes
+    // gone windows (sibling promotion keeps the tree shape), smart-inserts new
+    // windows in a stable order, and resets split ratios. windows that don't fit
+    // come back in its result. pure with respect to AX.
     /// The order a batch is inserted in: incumbents first, then left to
     /// right by current frame, then by id. The retry's fit check and its
     /// choice of the newcomer to give up on use the same order, so they
@@ -2230,8 +2230,8 @@ class TilingEngine {
         // probed again on every retile.
         if removed > 0 || !toInsert.isEmpty { t.root.resetSplitRatios() }
 
-        // deterministic batch order: left-to-right by current frame, id
-        // tiebreak. AX enumeration order shifts with focus/z churn, which
+        // deterministic batch order: incumbents first, then left-to-right by
+        // current frame, id tiebreak. AX enumeration order shifts with focus/z churn, which
         // made multi-window inserts land differently every time.
         if toInsert.count > 1 {
             let frames = Dictionary(uniqueKeysWithValues: toInsert.map { ($0.windowID, $0.frame ?? .zero) })
@@ -2385,7 +2385,7 @@ class TilingEngine {
         return reason
     }
 
-    /// All three setters returned success for every window the pass lays
+    /// Every setter returned success for every window the pass lays
     /// out. Not proof any frame landed — only that each window was sent its
     /// whole frame, so there is something to keep. A pass cut off after the
     /// first size write would leave a newcomer resized but still on the
@@ -2680,13 +2680,9 @@ class TilingEngine {
     /// the resulting per-window layout rects WITHOUT applying frames.
     ///
     /// - Important: This call **mutates the tree** before returning — windows
-    ///   missing from the input are removed (with `compact`), new windows are
-    ///   added via `smartInsertFitting`, structural-change ratio flags are
-    ///   cleared, and `resetSplitRatios` is run. The caller is committed to
-    ///   either applying the returned layout (via `applyComputedLayout`) or
-    ///   accepting that the tree is now in its post-tile state regardless of
-    ///   what the caller does with the returned rects. This is intentional —
-    ///   animation paths need post-mutation geometry to interpolate toward.
+    ///   missing from the input are removed, new windows are added via
+    ///   `smartInsertFitting`, and `resetSplitRatios` is run. No frames are
+    ///   written. Only tests call this, as a seed for a tree.
     /// - Returns: `[(window, frame)]` pairs in tree iteration order. Empty
     ///   array if the tree ends up empty.
     func prepareTileLayout(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) -> [(HyprWindow, CGRect)] {
@@ -2856,9 +2852,9 @@ class TilingEngine {
         func trial() -> Bool {
             t.restore(snapshot)
             t.swap(a, b)
-            // clear userSetRatio + reset to 50/50 for the test layout. matches
-            // what the actual swap does below, so preflight and the
-            // post-acceptance retile evaluate against the same baseline.
+            // clear userSetRatio + reset to 50/50 for the test layout: fit is judged
+            // at default ratios. the real swap keeps its ratios and the verified
+            // pass adjusts them.
             t.root.clearUserSetRatios()
             t.root.resetSplitRatios()
             return layoutCanAccommodateKnownMinimums(t, rect: rect)
@@ -2896,15 +2892,15 @@ class TilingEngine {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
 
-        // canSwapWindows uses the recorded min sizes which can be seeded
+        // swapFit uses the recorded min sizes which can be seeded
         // (AX-static) rather than confirmed via readback. for windows like
         // Spotify whose actual min depends on current UI state, the seeded
-        // values can be too small — canSwapWindows accepts, but the real
+        // values can be too small — swapFit accepts, but the real
         // pass-1 readback after the swap reveals overflow. snapshot the
         // tree first so we can revert on that case.
         let snapshot = t.snapshot()
         t.swap(a, b)
-        // see canSwapWindows — swap is a structural change, prior manual
+        // see swapFit — swap is a structural change, prior manual
         // ratios applied to the OLD occupant of a slot, not the new one.
         t.root.clearUserSetRatios()
         let rect = layoutRect(for: key, screen: screen)
@@ -2930,11 +2926,8 @@ class TilingEngine {
         }
     }
 
-    /// Pending pre-mutation snapshot for animated swap and split-toggle paths.
-    /// Consumed (or cleared) by `applyComputedLayout`.
-    /// Defensively cleared by `prepareToggleSplitLayout` to prevent leakage
-    /// across consecutive prepare-then-apply cycles when the user triggers
-    /// a non-swap action between the two halves.
+    /// Pending pre-mutation snapshot for the prepare family, which only tests
+    /// call. Consumed (or cleared) by `applyComputedLayout`.
     private var pendingSwapRevert: (key: TilingKey, generation: UInt64,
                                     snapshot: BSPTree.Snapshot,
                                     originalFrames: [CGWindowID: CGRect],
@@ -2970,11 +2963,10 @@ class TilingEngine {
         guard case .accepted = captured.verdict,
               captured.actualFrames.count == t.allWindows.count else { return nil }
 
-        // capture snapshot for post-readback overflow revert (animated swap
-        // path). canSwapWindows uses the recorded min size which can be
-        // seeded rather than confirmed via readback — for windows like
-        // Spotify whose actual min depends on UI state, the seed lies and
-        // canSwapWindows false-accepts. The real readback during retile
+        // capture snapshot for post-readback overflow revert. swapFit uses the
+        // recorded min size which can be seeded rather than confirmed via
+        // readback — for windows like Spotify whose actual min depends on UI
+        // state, the seed lies and swapFit false-accepts. The real readback during retile
         // (triggered by applyComputedLayout) is the ground truth, and
         // applyComputedLayout reverts via this snapshot if overflow persists.
         pendingSwapRevert = (key: key, generation: generation,
@@ -2985,16 +2977,14 @@ class TilingEngine {
                              }())
         t.swap(a, b)
         // clear userSetRatio + reset to 50/50 so the test layout matches
-        // canSwapWindows's evaluation baseline (see canSwapWindows).
+        // swapFit's evaluation baseline.
         t.root.clearUserSetRatios()
         t.root.resetSplitRatios()
         return t.layout(in: rect, gap: gapSize, padding: outerPadding)
     }
 
-    /// Re-apply the current tree state to AX frames using the two-pass
-    /// min-size resolution. Pairs with `prepare*Layout`: caller mutates the
-    /// tree (via prepare), drives an animation against the returned rects,
-    /// then calls `applyComputedLayout` on completion to settle frames.
+    /// Re-apply the current tree state to AX frames using the verified
+    /// passes. Pairs with `prepare*Layout`. Only tests call it.
     ///
     /// Prepared mutations capture their pre-animation topology and frames.
     /// A rejected or unknown final application restores that state and returns
@@ -3028,9 +3018,7 @@ class TilingEngine {
         }
     }
 
-    /// Synchronous split-direction toggle for `window`'s parent
-    /// node. Animation-free path; the dispatcher's animated path goes
-    /// through `prepareToggleSplitLayout` instead.
+    /// Split-direction toggle for `window`'s parent node.
     func toggleSplit(_ window: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
@@ -3099,9 +3087,7 @@ class TilingEngine {
     ///
     /// - Important: **Mutates the tree** before returning. `splitOverride`
     ///   flips on the parent and `resetSplitRatios` runs. Calling this twice
-    ///   in succession reverts the toggle — that footgun is exactly what the
-    ///   `WindowManager.toggleSplit()` fallthrough fix prevents (see plan
-    ///   §4.2 + commit ee9e2df).
+    ///   in succession reverts the toggle. Only tests call it.
     /// - Returns: `nil` if `window` isn't in the tree (no toggle performed);
     ///   otherwise the post-toggle layout.
     func prepareToggleSplitLayout(_ window: HyprWindow,
@@ -3639,8 +3625,7 @@ class TilingEngine {
         }
     }
 
-    /// A capacity probe other subsystems run for their own reasons — the
-    /// workspace fit checks. It answers on the
+    /// A capacity probe for the workspace fit checks. It answers on the
     /// memory as it stands, never on a bypass belonging to whatever pass it
     /// was called from.
     func canFitWindows(_ windows: [HyprWindow], onWorkspace workspace: Int, screen: NSScreen) -> Bool {
@@ -3691,9 +3676,8 @@ class TilingEngine {
 
     /// Insert `window` into an available slot without replacing an incumbent.
     ///
-    /// Used by float→tile toggles when the user explicitly wants
-    /// `window` tiled even though smart insert would otherwise reject
-    /// for capacity.
+    /// Used by float→tile toggles. Same fit as any insert, on a private
+    /// candidate, so it can refuse.
     ///
     /// Everything happens on a private candidate, so a refusal — no leaf
     /// takes the window, or the screen will not accept the layout — leaves

@@ -57,7 +57,7 @@ anchoring made a permanent no-op; its wire key is unchanged (see below).
 now defaults to Hypr+Shift+T. The new action is unavailable while paused and
 ignores keyboard autorepeat. It selects the actual AX-focused managed window,
 not the cursor's monitor, and moves it to the next empty workspace anchored to
-its physical display. See the README for eligibility and rejection behavior.
+its physical display. See `docs/architecture.md` for eligibility and failure behavior.
 
 Regular workspace IDs are 1–10. The physical 0 key maps to ID 10:
 Hypr+0 switches, and Hypr+Shift+0 sends. Their wire values remain
@@ -389,6 +389,7 @@ Two on-disk files:
   through iCloud Drive clobbered each machine's setup. The status bar
   export keys `statusExportEnabled` and `statusHookCommand` live here
   too, set by hand with no Settings UI (see [status-bar.md](status-bar.md)).
+  So does `externalControlEnabled` (see [external-control.md](external-control.md)).
   The file watcher follows only `config.json`, so quit HyprMac before
   editing this file and reopen it after.
 
@@ -570,7 +571,7 @@ every JSON example in this file.
 **Other config fields**: `gapSize`, `outerPadding`, `enabled`,
 `focusFollowsMouse`, `excludedBundleIDs` (bundle IDs that never
 tile — auto-float on discovery, and Hypr+T refuses to tile them),
-`windowRules` (per-app workspace pins, see "Window rules"), `disabledMonitors` (monitor names
+`windowRules` (per-app workspace pins, see "Window rules"), `disabledMonitors` (in `monitor-config.json`: monitor names
 matching `NSScreen.localizedName`, excluded from tiling entirely),
 `outerPaddingPerMonitor` (in `monitor-config.json`: per-side outer
 padding per monitor name, e.g.

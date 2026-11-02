@@ -25,8 +25,9 @@ private let kCPSUserGenerated: UInt32 = 0x200
 /// `CGWindowID` and backed by an `AXUIElement`.
 ///
 /// Owns the resize-move-resize pattern (`setFrame`), the focus operations (`focus`,
-/// `focusWithoutRaise`), and the per-window `observedMinSize` cache
-/// `MinSizeMemory` reads and writes.
+/// `focusWithoutRaise`), and `observedMinSize`, this instance's mirror of
+/// `MinSizeMemory`. A live handle, not a value: `frame`, `size`, `position` and
+/// `title` are AX calls, and every walk builds new instances.
 ///
 /// Threading: main-thread only. AX calls block briefly while the OS
 /// round-trips to the owning app.
@@ -35,14 +36,13 @@ class HyprWindow: Equatable, Hashable {
     let windowID: CGWindowID
     let ownerPID: pid_t
 
-    /// `true` when the window is excluded from tiling. Toggled by the
-    /// floating controller and by auto-float predicates.
+    /// This instance's mirror of `floatingWindowIDs`, stamped before a pass.
+    /// A fresh walk object says `false` until stamped.
     var isFloating: Bool = false
 
     /// Most recent AX frame read by `getAllWindows`. Lets
-    /// `updatePositionCache` skip redundant AX reads. Cleared by
-    /// `setFrame` so stale values are not
-    /// reused.
+    /// `updatePositionCache` skip redundant AX reads. Cleared by writes on
+    /// this instance; other instances of the window keep theirs.
     var cachedFrame: CGRect?
 
     /// Known lower bound on the window's resizable size. Seeded from

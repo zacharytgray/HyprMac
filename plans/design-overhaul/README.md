@@ -1,5 +1,7 @@
 # HyprMac — Design Overhaul Context Package
 
+Status: handoff package from July 2026, app v0.7.0. The overhaul shipped; the code is current, this is not.
+
 This folder is a **self-contained handoff** for a design session working on a full
 visual + UX/layout overhaul of HyprMac. It was assembled from the live codebase on
 2026-07-06 (app v0.7.0). Everything a fresh session needs to redesign the app —

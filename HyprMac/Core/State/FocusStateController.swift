@@ -39,8 +39,8 @@ final class FocusStateController {
     /// Record `id` as the new focus intent and log the transition.
     ///
     /// No-op when the id is already current. Does not call AX or touch
-    /// the border — callers perform their focus and visual work first,
-    /// then call `recordFocus` to update the canonical state.
+    /// the border. Callers going through `TiledFocusRouter` must record first:
+    /// its verify compares the focus generation it captured inside `focus`.
     ///
     /// - Parameter reason: short tag for the log line (e.g.
     ///   `"ensureFocus-tiled"`, `"syncTracker-floating"`). Surfaces in

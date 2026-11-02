@@ -34,7 +34,7 @@ If supplied, the release-notes file must exist and be nonempty. Set
 `KEYCHAIN_PASSWORD` when the login keychain needs unlocking. Otherwise the
 script requires the keychain to be unlocked already; it never prompts for a
 secret. A locked keychain makes `codesign` fail with `errSecInternalComponent`.
-Pick `<version>` from `MARKETING_VERSION` in `project.yml`.
+Pick a `<version>` above the current `MARKETING_VERSION` in `project.yml`.
 
 ## Prerequisites
 
@@ -93,7 +93,7 @@ new version and hash.
 ### 6. Commit, push `main`, and publish the final tag
 
 After fetching `origin` again and confirming it has not moved, the script
-creates the first-person release commit, pushes that exact commit to `main`,
+creates the `Released HyprMac v<version>` commit, pushes that exact commit to `main`,
 creates the annotated tag on that final commit, and pushes the tag. The tag
 therefore contains the final project version, appcast, and cask metadata.
 
@@ -112,8 +112,8 @@ assets, both the same notarized bytes:
 ### 8. Update the Homebrew tap
 
 It clones `zacharytgray/homebrew-hyprmac` into a temporary directory, copies
-the validated cask, creates a first-person commit, and pushes that commit to
-the tap's `main` branch.
+the validated cask, commits `Updated HyprMac to v<version>`, and pushes that
+commit to the tap's `main` branch.
 
 ## Failure and recovery
 
@@ -145,7 +145,7 @@ notarization.
 ## Manual acceptance
 
 As a separate acceptance gate before running this publishing script, install a
-signed candidate built from the same commit on the target macOS version. For
-the 0.13 series, check normal drag insertion, Hypr-held drag swapping,
+signed candidate built from the same commit on the target macOS version. Check
+normal drag insertion, Hypr-held drag swapping,
 directional focus and swap, workspace switching and moves, HYPR+T float
 toggling, app quit/reopen, and the post-update What's New panel.

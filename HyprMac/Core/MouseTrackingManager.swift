@@ -9,7 +9,7 @@ import Cocoa
 /// `handleMouseMove` fires on every `NSMouseMoved` event, so the hot
 /// path is built around early exits. The eligibility check
 /// (`isFFMEligible`) gates on the FFM toggle, mouse button state, menu
-/// tracking, dock activation, animation in flight, and the
+/// tracking, dock activation, and the
 /// `mouse-focus` suppression key. After eligibility, a configurable throttle
 /// caps resolve work, and a short-TTL window-list cache avoids a
 /// `CGWindowListCopyWindowInfo` query on every event.
@@ -131,7 +131,7 @@ class MouseTrackingManager {
     /// `true` when FFM should react to the current mouse event.
     ///
     /// Each guard exists for a specific reason: `isMouseButtonDown`
-    /// skips drags (`DragManager` owns those), `menuTracking` and
+    /// skips drags, `menuTracking` and
     /// `dockIsActive` skip transient OS UI that would race with focus
     /// changes, and `isMouseFocusSuppressed` honors the post-action quiet window
     /// owned by `SuppressionRegistry["mouse-focus"]`.

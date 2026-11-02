@@ -1,7 +1,7 @@
 // Central orchestrator. Wires every subsystem together, owns the long-lived
 // references, and routes hotkey actions and discovery results to the services
-// that handle them. No tiling, focus, workspace, or floating policy lives here
-// directly — this class is the seam that holds them in one place.
+// that handle them. It also holds the policy that has no service home yet:
+// focus repair, Retile All placement, the display settle, tiled drag glue.
 
 import Cocoa
 import Combine
@@ -11,8 +11,7 @@ import Combine
 /// Lifecycle is bracketed by ``start()`` and ``stop()``. Between those calls
 /// `WindowManager` keeps its services live, registers global mouse and workspace
 /// observers, and runs a periodic discovery poll that drives tiling and focus
-/// updates. Construction wires the dependency graph; everything past `init` is
-/// orchestration glue.
+/// updates. Construction wires the dependency graph.
 ///
 /// Threading: all methods run on the main thread. Mouse and Workspace observers
 /// fire on the main run loop; the polling scheduler dispatches its callback there.
@@ -54,9 +53,7 @@ class WindowManager {
     private(set) var workspaceManager: WorkspaceManager!
     private(set) var tilingEngine: TilingEngine!
 
-    // window-keyed state cache. owns all seven lifecycle/classification dicts:
-    // knownWindowIDs, floatingWindowIDs, originalFrames, windowOwners, hiddenWindowIDs,
-    // tiledPositions, cachedWindows.
+    // window-keyed state cache. see WindowStateCache for what it owns.
     let stateCache = WindowStateCache()
 
     // canonical focus state. owns lastFocusedID; passes through borderTrackedID
@@ -102,11 +99,10 @@ class WindowManager {
     private var dragOptionDown = false
     private var dragFlagsMonitor: Any?
 
-    // Action → service routing. dispatch(_:) replaces the handleAction switch.
+    // per-action routing. handleAction runs the gates first.
     private var actionDispatcher: ActionDispatcher!
 
     // workspace switch / move / move-to-monitor workflows.
-    // delegates to workspaceManager + tilingEngine; no new policy lives there.
     private var workspaceOrchestrator: WorkspaceOrchestrator!
     private var scratchpad: ScratchpadController!
 
@@ -119,8 +115,9 @@ class WindowManager {
     private let admissionRecovery = AdmissionRecovery()
     private let minimaRevalidation = MinimaRevalidation()
 
-    // one tiling pass plus the bookkeeping it owes. every production retile
-    // goes through this, so nothing it strands goes untracked.
+    // one tiling pass plus the bookkeeping it owes, so nothing it strands goes
+    // untracked. the recovery's own passes and the orchestrator's destination
+    // layout call the engine directly.
     private var admissionPass: AdmissionPass {
         AdmissionPass(engine: tilingEngine, revalidation: minimaRevalidation,
                       recovery: admissionRecovery)
@@ -198,8 +195,7 @@ class WindowManager {
     private var dockActivationToken: UInt64 = 0
 
     // date-gated suppression flags. owned here, shared with subsystems via closures.
-    // keys in use: "activation-switch" (gates appDidActivate workspace switch),
-    // "mouse-focus" (will migrate from MouseTrackingManager in a follow-up commit).
+    // keys: activation-switch, mouse-focus, workspace-transition.
     let suppressions = SuppressionRegistry()
 
     // live config reload
@@ -247,8 +243,8 @@ class WindowManager {
     ///    `workspaceOrchestrator`, `pollingScheduler`, `tiledDragHandler`,
     ///    `actionDispatcher`) and attach the closure handles each one
     ///    needs from `WindowManager`-local helpers.
-    /// 3. Subscribe to `UserConfig` `@Published` properties so runtime
-    ///    config changes flow through to the right subsystem.
+    /// 3. Route runtime config changes through `ConfigUpdateCoordinator` to
+    ///    the right subsystem.
     ///
     /// The recovery hotkey tap starts here so pause/resume works even when
     /// tiling launches disabled. Window discovery and tiling start in `start()`.
@@ -356,8 +352,8 @@ class WindowManager {
         self.pollingScheduler = PollingScheduler { [weak self] in
             self?.pollWindowChanges()
         }
-        // workspace-transition is set by switchWorkspace and moveToWorkspace for 0.6s
-        // so drift detection can't fire on stale-AX-read frames mid-transition.
+        // workspace-transition covers switches, moves, the scratchpad, display settle
+        // and wake (1.5 to 6 s), so drift can't fire on stale AX frames.
         // mouseButtonDown lives here (not as a drop-guard in pollWindowChanges)
         // so a create/destroy event arriving mid-drag defers and fires on
         // mouseUp instead of being lost until the 10s reconcile.
@@ -732,8 +728,8 @@ class WindowManager {
         }
     }
 
-    /// Bring the window manager up: install the hotkey tap, mouse monitors,
-    /// workspace observers, and start the polling scheduler.
+    /// Bring the window manager up: mouse monitors, workspace observers and
+    /// the polling scheduler. The hotkey tap is already up from `init`.
     ///
     /// Idempotent — repeated calls while running are no-ops. Initial tile is
     /// deferred by one second so AX has time to enumerate windows before the
@@ -1046,8 +1042,7 @@ class WindowManager {
         mouseTracker.menuTrackingEnded()
     }
 
-    /// Stop and immediately start again. Used for runtime config changes
-    /// that require rebuilding the hotkey tap and observer chain.
+    /// Stop and immediately start again.
     func restart() {
         stop()
         start()
@@ -1222,7 +1217,8 @@ class WindowManager {
             // belt-and-suspenders: re-resolve FFM after the click sequence settles.
             // fast click+move-back leaves the cursor stationary post-mouseUp, so no
             // further .mouseMoved fires and FFM gets stuck on whatever the click
-            // syncTracker last recorded. force a refocus 200ms later.
+            // syncTracker last recorded. retry the refocus 200ms later, through the
+            // tracker's own gates.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 self?.mouseTracker.refocusUnderCursor(afterMouseUp: true)
             }
@@ -1330,9 +1326,8 @@ class WindowManager {
     /// `config.dimInactiveWindows` itself.
     /// `true` when a fullscreen window is currently driving the active Space.
     /// Checks `window` first (commonly the new focus target), falls back to
-    /// the active app's focused-window AX query. Results are not cached —
-    /// the AX call is one round-trip and `updateFocusBorder` runs on focus
-    /// change, not on every frame.
+    /// the active app's focused-window AX query. Results are not cached:
+    /// two AX reads per call, on focus change rather than every frame.
     private func isFullscreenSuppressed(focused window: HyprWindow?) -> Bool {
         if let w = window, w.isFullscreen { return true }
         // also check the AX-reported focused window of the frontmost app;
@@ -1589,6 +1584,7 @@ class WindowManager {
     ///
     /// The visible focus border is the primary source of truth for intent,
     /// as long as the bordered window belongs to the cursor's workspace.
+    /// A front app that changed wins first: its focused window is adopted.
     /// When that fails, fallbacks are tried in priority order: the last
     /// recorded focus, floating window under the cursor (drawn on top),
     /// tiled window under the cursor, AX's reported focused window, and
@@ -1704,9 +1700,8 @@ class WindowManager {
 
     // MARK: - action dispatch
 
-    /// Hand an `Action` to the dispatcher. Wrapped here so the hotkey
-    /// callback site stays terse and so subclasses or tests can intercept
-    /// in one place. Also called from the menu bar (cheat-sheet row).
+    /// Run an action through the gates, then the dispatcher. Called from the
+    /// hotkey path and the menu bar.
     func handleAction(_ action: Action) {
         // the menu bar calls in here too, and nobody reaches it while locked
         discovery.endSessionInterruption(evidence: "action")
@@ -1787,9 +1782,7 @@ class WindowManager {
             ?? NSScreen.main!
     }
 
-    // MARK: - floating
-
-    // public accessors for menu bar indicator
+    // MARK: - menu bar queries
 
     /// `true` when at least one floating window is currently visible on any
     /// active workspace. Drives the `◆`/`◇` glyphs in the menu bar.
@@ -2134,11 +2127,8 @@ class WindowManager {
         return results
     }
 
-    /// Retile with a slide animation between old and new tile rects.
-    ///
     /// Run `prepare`, retile every visible workspace, run `completion`.
-    /// Animations were stripped — this is now just a sequenced retile.
-    /// Name kept so existing call sites compile unchanged.
+    /// There is no animation; the name is historical.
     @discardableResult
     private func animatedRetile(
         windows: [HyprWindow]? = nil,
@@ -2156,9 +2146,9 @@ class WindowManager {
     ///
     /// Workspaces fill in numeric order, with each workspace's capacity
     /// derived from its statically anchored monitor. Anything that does not
-    /// fit even in the ninth workspace is auto-floated. Called once at
-    /// startup and from "Retile All" so a fresh launch with many windows
-    /// produces a compact layout instead of piling everything on one screen.
+    /// fit even in the tenth workspace is auto-floated. Called from every
+    /// `start()` (including resume from pause), Retile All and a Max Splits
+    /// change, through `snapshotAndTile`.
     private func distributeWindowsAcrossWorkspaces(_ allWindows: [HyprWindow]) {
         hyprLog(.notice, .lifecycle, "distributeWindowsAcrossWorkspaces ENTER — full redistribute about to run (this rewrites workspace assignments)")
         // the homes' order, so a stacked desk fills the primary first here too
@@ -2209,7 +2199,7 @@ class WindowManager {
             }
         }
 
-        // any remaining (all 9 workspaces full) — auto-float
+        // any remaining (all workspaces full) — auto-float
         for wid in plan.overflow {
             stateCache.floatingWindowIDs.insert(wid)
             if let w = allWindows.first(where: { $0.windowID == wid }) {
@@ -2630,9 +2620,10 @@ class WindowManager {
     /// focus-border position, and the dim mask.
     ///
     /// Called after every operation that may have changed window geometry
-    /// (tile, animate, drag-end, workspace switch, config tweak). Keeps the
+    /// (tile, drag-end, workspace switch, config tweak). Keeps the
     /// downstream visual layer (border, dim, menu bar dots) in sync with
     /// the live tile state without re-running the tiling algorithm.
+    /// `cachedWindows` holds only visible windows after this.
     private func updatePositionCache(windows: [HyprWindow]? = nil) {
         tiledRectsMemo = nil // geometry may have changed — force live re-reads
         let allWindows = windows ?? accessibility.getAllWindows()
@@ -2953,9 +2944,8 @@ class WindowManager {
     /// Run a single discovery diff and hand the result to the dispatcher's
     /// apply-loop.
     ///
-    /// Drops the poll entirely when a mouse button is down (the user is
-    /// dragging or clicking through controls; window state is mid-transition).
-    /// Once `applyChanges` is called, the apply-loop runs unconditionally.
+    /// Mouse-down is handled by `PollingScheduler`, which defers rather than
+    /// drops. Once `applyChanges` is called, the apply-loop runs unconditionally.
     ///
     /// Coalesced with notification-driven schedules by `PollingScheduler`,
     /// which stays suppressed until verified drag completion finishes.
@@ -3122,15 +3112,16 @@ class WindowManager {
 
     /// React to an app coming to the foreground.
     ///
-    /// Three responsibilities:
+    /// In order:
     /// 1. Note when the dock is the active app so FFM can be suppressed
     ///    while dock popups (downloads, stacks) are open.
-    /// 2. If the activation was not suppressed (FFM, workspace switch,
+    /// 2. Tell the scratchpad, and spend any expected-activation note.
+    /// 3. If the activation was not suppressed (FFM, workspace switch,
     ///    floater-raise) and the activated app has no visible window, jump
     ///    to a workspace that does — this is the "dock-click takes me to
     ///    that app's workspace" affordance. Returns early when it fires;
     ///    the workspace switch will trigger its own poll.
-    /// 3. Otherwise, schedule a discovery poll and re-raise floating
+    /// 4. Otherwise, schedule a discovery poll and re-raise floating
     ///    windows after a brief settle so they stay visually on top.
     @objc private func appDidActivate(_ notification: Notification) {
         // suppress FFM while dock popups (downloads, stacks) are open
@@ -3247,10 +3238,6 @@ class WindowManager {
         }
     }
 
-    /// Wake / lock / unlock / session-change. Any of these can drop an
-    /// in-flight Hypr keyUp without triggering tap-disabled. Reset hotkey
-    /// state so the next regular keystroke isn't packed with a phantom
-    /// Hypr modifier (the "sticky Caps Lock" bug from a different angle).
     /// The interruption notifications after which the Caps Lock remap is
     /// checked: the ones that bring the user back.
     static let remapRecheckNotifications: Set<String> = [
@@ -3260,6 +3247,10 @@ class WindowManager {
         "com.apple.screenIsUnlocked",
     ]
 
+    /// Wake / lock / unlock / session-change. Any of these can drop an
+    /// in-flight Hypr keyUp without triggering tap-disabled. Reset hotkey
+    /// state so the next regular keystroke isn't packed with a phantom
+    /// Hypr modifier (the "sticky Caps Lock" bug from a different angle).
     @objc private func systemInterruption(_ notification: Notification) {
         hyprLog(.notice, .hotkey, "system interruption (\(notification.name.rawValue)) — resetting hotkey state")
         lastSystemInterruptionAt = Date()
@@ -3335,12 +3326,8 @@ class WindowManager {
     /// React to a screen configuration change (monitor connect/disconnect,
     /// resolution change, dock position).
     ///
-    /// Order is load-bearing: fingerprinting refreshes DisplayManager, then
-    /// `WorkspaceManager.initializeMonitors`
-    /// must run before `TilingEngine.handleDisplayChange` so the
-    /// home-screen lookup the engine consults is current. Reversing the
-    /// order would prune the home-screen mapping first and orphan the
-    /// migration.
+    /// Saves the departing layout, hides the scratchpad, holds polls and arms
+    /// the settle. The migration order is in `reconcileAfterDisplayChange`.
     @objc private func screenParametersChanged() {
         // macOS fires this for events that don't alter the layout — app
         // quits and color profile changes. those used to pay
@@ -3412,9 +3399,6 @@ class WindowManager {
                 self.scheduleDisplayReconcile(stabilityWindow: stabilityWindow)
                 return
             }
-            // skip if nothing actually changed. macOS fires the notification
-            // for things that don't alter the screen list (call init, app
-            // quits, color profile changes).
             if fingerprint == self.lastDisplayFingerprint {
                 // the transition began with a different fingerprint, so the
                 // desk came back as it was: the keys and the homes are
@@ -3998,7 +3982,7 @@ private extension WindowManager {
         }
         // pinned apps' windows go to their rule's workspace, whichever display
         // they sit on, and claim it before the screen batches fill it. a
-        // parked window AX omits is looked up in the cache
+        // parked window AX omits is looked up in the cache, when the cache has it
         let pinned = RetileAllPlanner.pinnedStartupBatches(
             windowIDs: windowIDs,
             pinnedWorkspaceFor: { [self] id in

@@ -6,13 +6,16 @@ import Foundation
 /// Date-gated suppression registry shared by orchestration code paths.
 ///
 /// Owns time-bounded "should I skip this because something just happened"
-/// flags. Two keys are in active use:
+/// flags. Three keys are in active use:
 ///
 /// - `"activation-switch"` — gates the dock-click workspace switch in
 ///   `appDidActivate` after a programmatic focus or raise (≈ 0.5 s).
 /// - `"mouse-focus"` — gates focus-follows-mouse after a keyboard action,
-///   workspace switch, drag, or floater raise (0.15–0.3 s).
-/// Reentrancy guards (e.g. `FloatingWindowController.isRaisingFloaters`)
+///   workspace switch, drag, or floater raise (0.15 s).
+/// - `"workspace-transition"` — holds polls and drift through switches, moves,
+///   the scratchpad, display settle and wake (1.5 to 6 s).
+///
+/// Reentrancy guards (e.g. `FloatingWindowController.isRaising`)
 /// and in-flight scheduling tokens (e.g. `PollingScheduler`'s coalesce
 /// flag) intentionally do not live here — those are not time gates.
 ///
@@ -54,8 +57,7 @@ final class SuppressionRegistry {
         until.removeValue(forKey: key)
     }
 
-    /// Drop every active suppression. Used on `WindowManager.stop()` to
-    /// reset state for a clean restart.
+    /// Drop every active suppression.
     func clearAll() {
         until.removeAll()
         expectedActivations.removeAll()

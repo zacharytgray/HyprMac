@@ -205,7 +205,7 @@ struct LayoutEngine {
     }
 
     /// Smart-insert via `fittingLeaf`. Returns false if no leaf accepts the
-    /// pair (caller usually auto-floats in that case).
+    /// pair; the pass then reports a refusal (see `AdmissionRecovery`).
     @discardableResult
     func smartInsertFitting(_ window: HyprWindow,
                             into tree: BSPTree,

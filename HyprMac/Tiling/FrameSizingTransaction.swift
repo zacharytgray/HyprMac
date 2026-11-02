@@ -270,7 +270,7 @@ struct FrameSizingAttempt {
     ///
     /// `possiblyWritten` records that a setter was issued — it is evidence
     /// of a possible mutation, never proof the app applied the frame.
-    /// `writesCompleted` means all three frame setters returned success for
+    /// `writesCompleted` means every frame setter returned success for
     /// that window; the cleanup that follows carries its own error.
     struct Progress: Equatable {
         var phase: FrameSizingPhase = .candidate
@@ -445,9 +445,9 @@ struct FrameSizingAttempt {
         return out(Result(verdict: .accepted, actualFrames: frames))
     }
 
-    /// Traced wrapper around the attempt. Every line is `.debug` and built
-    /// inside `hyprLog`'s autoclosure, so nothing is formatted unless the
-    /// file log or the trace tier is on.
+    /// Traced wrapper around the attempt. `.debug` lines are built inside
+    /// `hyprLog`'s autoclosure, so they are formatted only when the file log or
+    /// the trace tier is on. Timeouts and refusals log at `.notice`.
     func apply(targets: [Target], usableFrame: CGRect, gap: CGFloat,
                generation: UInt64, phase: FrameSizingPhase = .candidate) -> Result {
         let started = io.now()
@@ -826,7 +826,7 @@ struct FrameSizingAttempt {
             return end(token, windowID: target.windowID, preserving: primary,
                        checkpoint: checkpoint)
         }
-        // all three setters returned success. record that before cleanup —
+        // every setter returned success. record that before cleanup —
         // a cleanup error is its own failure and does not unwrite them.
         progress.writesCompleted.insert(target.windowID)
         traceSteps(true)
@@ -1085,7 +1085,7 @@ struct FrameSizingProgressReport: Equatable {
         candidate.possiblyWritten.union(restoration?.possiblyWritten ?? [])
     }
 
-    /// Every target had all three setters return success and the final
+    /// Every target had every setter return success and the final
     /// readback was complete and stable, or the layout already stood and
     /// its capture was the readback. An empty target set satisfies the
     /// write and readback conditions vacuously and is not evidence of

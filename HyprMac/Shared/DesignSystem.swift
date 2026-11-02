@@ -4,8 +4,7 @@
 // HyprPanel/HyprRow/HyprChip components and the per-tab views.
 // Chassis colors defer to NSColor system semantics so light/dark
 // behavior matches the rest of macOS. The HyprMac signature accents
-// (cyan + magenta) appear in exactly four places: focus border,
-// active sidebar item, key recorder pulse, "Hypr Key" badge.
+// are cyan and magenta.
 
 import SwiftUI
 import AppKit

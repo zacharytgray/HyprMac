@@ -21,11 +21,7 @@ import Cocoa
 /// `FloatingWindowController`), and tiled drag transactions (in
 /// `TiledDragHandler`).
 ///
-/// Closure handles plumb in WM-side helpers without a service home:
-/// `currentFocusedWindow`, `updateFocusBorder`, `updatePositionCache`,
-/// `screenUnderCursor`, plus the apply-loop helpers
-/// `applyForgottenIDCleanup`, `animatedRetile`, `refocusUnderCursor`, and
-/// `isMenuTracking`.
+/// Closure handles plumb in `WindowManager` helpers without a service home.
 ///
 /// Threading: main-thread only.
 final class ActionDispatcher {
@@ -104,7 +100,7 @@ final class ActionDispatcher {
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var updatePositionCache: () -> Void = {}
     var screenUnderCursor: () -> NSScreen = { NSScreen.main! }
-    // additional closures used by applyChanges (Phase 4 step 3b)
+    // closures used by applyChanges
     var applyForgottenIDCleanup: (CGWindowID) -> Void = { _ in }
     var animatedRetile: ([HyprWindow]) -> [TilingEngine.AdmissionResult] = { _ in [] }
     var refocusUnderCursor: () -> Void = {}
@@ -248,7 +244,7 @@ final class ActionDispatcher {
                 changes.screenDrift.isEmpty ? nil : "drift=\(changes.screenDrift.map(\.windowID).sorted())",
             ].compactMap { $0 }.joined(separator: " ")
             hyprLog(.notice, .discovery, "discovery retile: \(causes)")
-            // animate surrounding windows sliding to fill gaps / make room.
+            // let surrounding windows fill gaps / make room.
             retileResults = animatedRetile(allWindows)
         }
 
@@ -274,8 +270,8 @@ final class ActionDispatcher {
             followPinnedWindow(pinFollow.windowID, pinFollow.workspace)
         }
 
-        // periodically re-raise floating windows so they don't get stuck behind
-        // full-screen tiled windows (no activation event to trigger raise).
+        // raise floaters a tile covers after each discovery pass, since no
+        // activation event may trigger it.
         if !stateCache.floatingWindowIDs.isEmpty {
             floatingController.raiseBehind()
         }
@@ -637,12 +633,8 @@ final class ActionDispatcher {
     /// Candidates are pre-filtered to the focused window's own screen so
     /// a tied directional pick cannot drift across monitors. Rejected
     /// before any mutation when `canSwapWindows` reports a min-size
-    /// violation. With animation on, layout is computed first via
-    /// `prepareSwapLayout`, animated from old to new rects, then
-    /// committed via `applyComputedLayout`; if the post-readback layout
-    /// overflows recorded mins, `applyComputedLayout` reverts and this
-    /// path surfaces a `flashError`. With animation off, `swapWindows`
-    /// owns its own snapshot/revert.
+    /// violation. `swapWindows` owns its own snapshot and revert, and a
+    /// refusal surfaces a `flashError`.
     private func swapInDirection(_ direction: Direction) {
         guard let focused = currentFocusedWindow() else { return }
         guard !stateCache.floatingWindowIDs.contains(focused.windowID) else { return }

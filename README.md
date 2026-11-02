@@ -57,7 +57,8 @@ permissions, and the recommended macOS settings.
 
 - macOS 13 (Ventura) or later
 - Accessibility permission, in System Settings → Privacy & Security → Accessibility. HyprMac uses
-  the Accessibility APIs only, so there's no need to disable System Integrity Protection.
+  the Accessibility APIs plus private window-server calls, and it runs with System Integrity
+  Protection on.
 - For the default Caps Lock Hypr key: Caps Lock must stay set to **"⇪ Caps Lock"** in System
   Settings → Keyboard → Keyboard Shortcuts → Modifier Keys, not "No Action". The pane is per
   keyboard, so check each one you use. HyprMac remaps Caps Lock to F18 itself.
@@ -80,7 +81,7 @@ You'll feel at home. The differences are mostly macOS being macOS:
   hides the other workspaces' windows when you switch.
 - **Hypr + F:** native macOS fullscreen spawns its own Space and wrecks the layout, so HyprMac
   gives the window a dedicated empty workspace on its display instead.
-- **Focus follows mouse:** there if you want it, with an adjustable hover rate.
+- **Focus follows mouse:** on by default, with an adjustable hover rate.
 - **Hypr key:** Caps Lock by default. Settings → Keys also offers backslash, F13–F20, and
   Option or Command on either side. If you pick the left Option or Command key, that key plus
   a key HyprMac uses goes to HyprMac, so type shortcuts like ⌘S or ⌘T with the right-hand
@@ -161,7 +162,7 @@ misbehaves, [open an issue](https://github.com/zacharytgray/HyprMac/issues) and 
 ## Updating
 
 HyprMac checks for updates on its own through Sparkle and offers to install them, or use the
-menu bar icon → "Check for Updates...". Homebrew installs can run `brew upgrade --cask hyprmac`.
+menu bar icon → "Check for updates…". Homebrew installs can run `brew upgrade --cask hyprmac`.
 After any update, macOS may ask you to re-grant Accessibility permission, because the signature
 changes with each release.
 
@@ -187,6 +188,7 @@ cp -r build/Build/Products/Debug/HyprMac.app /Applications/
 - [Tiling algorithm](docs/tiling-algorithm.md): BSP dwindle, smart insert, two-pass layout
 - [Keybinds and actions](docs/keybinds-and-actions.md): the `Action` enum and its JSON schema
 - [Status bars](docs/status-bar.md): `state.json`, the change hook and `hyprmac://` links for sketchybar, turned on by hand in `monitor-config.json`
+- [Control from other apps](docs/external-control.md): `hyprmac://action/…` links for BetterTouchTool, Raycast and scripts
 - [Debugging](docs/debugging.md): Console filters, verbose logging, common recipes
 - [Release pipeline](docs/release.md): how a release is built, signed, and published
 

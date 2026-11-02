@@ -18,7 +18,7 @@ enum SplitDirection: String, Codable, Equatable {
 /// Invariants (enforced by construction; pinned by `BSPNodeTests`):
 /// - leaf = `window != nil` or both children are `nil`.
 /// - internal = both children are non-nil.
-/// - Empty leaves are a transient state used during compact / prune.
+/// - Empty leaves are a transient state used during prune.
 /// - `splitRatio` is clamped to `[TilingConfig.minRatio,
 ///   TilingConfig.maxRatio]` by the property setter — direct writes
 ///   cannot escape these bounds.
@@ -38,10 +38,11 @@ class BSPNode {
 
     /// Sticky flag preserved across `resetSplitRatios` so a user
     /// manual-resize survives a retile. Cleared by
-    /// `clearUserSetRatios` on structural changes.
+    /// `clearUserSetRatios` on swaps.
     var userSetRatio: Bool = false
 
-    /// Forced split direction from `togglesplit`. `nil` lets dwindle
+    /// Forced split direction: `togglesplit`, or smart insert's pin (see
+    /// `splitOverrideIsAutomatic`). `nil` lets dwindle
     /// pick from the rect aspect ratio. Survives until a sibling
     /// restructure (insert / remove on this node) clears it.
     var splitOverride: SplitDirection? {
@@ -234,8 +235,7 @@ class BSPNode {
     }
 
     /// Apply the boundary `insert` stashed on the node it just split,
-    /// then recurse into children. Called after clearUserSetRatios +
-    /// resetSplitRatios so a restored ratio survives the reset.
+    /// then recurse into children. Called after resetSplitRatios so a restored ratio survives the reset.
     ///
     /// Only the pending fields are consumed here, so a node that
     /// merely inherited a leaf's `savedSplitRatio` on the way up is
@@ -284,8 +284,7 @@ class BSPNode {
     }
 
     /// Clear every `userSetRatio` flag in the subtree. Called on
-    /// structural changes (add / remove) so a fresh layout starts
-    /// from defaults.
+    /// swaps, so old ratios don't apply to the old tenant.
     func clearUserSetRatios() {
         userSetRatio = false
         left?.clearUserSetRatios()
@@ -310,7 +309,7 @@ class BSPNode {
     /// Used by smart insert: the dwindle default is to split the
     /// deepest-right leaf, but on constrained monitors the algorithm
     /// walks back through this list to find a shallower leaf with
-    /// enough room (see `BSPTree.smartInsert`).
+    /// enough room (see `LayoutEngine.smartInsertFitting`).
     func allLeavesRightToLeft() -> [BSPNode] {
         var result: [BSPNode] = []
         collectLeavesRightToLeft(into: &result)

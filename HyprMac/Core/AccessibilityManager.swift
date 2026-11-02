@@ -1,6 +1,6 @@
 // AX bridge: enumerates visible windows across every running app, returns
 // the focused window, and exposes `windowInDirection` for swap/focus
-// pickers. Windows from this layer come back as `HyprWindow` values
+// pickers. Windows from this layer come back as `HyprWindow` handles
 // keyed by stable `CGWindowID`.
 
 import Cocoa
@@ -289,8 +289,8 @@ class AccessibilityManager {
     /// standard windows and Quick Look panels get in; sheets, dialogs and
     /// other panels do not. Each standard window maps to a `CGWindowID` by
     /// calling `_AXUIElementGetWindow` first and falling back to greedy
-    /// nearest-position matching only when the SPI fails. The fallback is
-    /// defensive — it should not fire in practice. A Quick Look panel is
+    /// nearest-position matching when the SPI fails, or names an id that is
+    /// not on screen or is already taken. A Quick Look panel is
     /// matched by the SPI alone, and its id is claimed before the fallback
     /// runs.
     ///
@@ -308,7 +308,7 @@ class AccessibilityManager {
         var probedStalledApp = false
         var skipped: [String] = []
 
-        // apps to never tile
+        // quick look processes, never walked
         let excludedBundleIDs: Set<String> = [
             "com.apple.quicklook.QuickLookUIService",
             "com.apple.QuickLookDaemon",
@@ -482,9 +482,8 @@ class AccessibilityManager {
                 windows.append(hw)
             }
 
-            // fallback path: SPI failed for some element (shouldn't normally
-            // happen — kept so a future AX/SDK change doesn't blank everything).
-            // greedy nearest-position match against unused candidates.
+            // fallback path: SPI failed for some element, or named an id that is off
+            // screen or taken. greedy nearest-position match against unused candidates.
             guard !unmatchedAX.isEmpty else { continue }
             var availableCG = validCGIDs.subtracting(usedIDs)
             for entry in unmatchedAX {

@@ -1,6 +1,5 @@
-// Named constants for the tiling subsystem. Single source for every
-// magic number that BSPNode, BSPTree, TilingEngine, MinSizeMemory, and
-// FrameReadbackPoller would otherwise inline.
+// Tree geometry and min-size constants for the tiling subsystem. Sizing
+// timing lives in FrameSizingConfiguration.
 
 import Foundation
 
@@ -9,18 +8,18 @@ import Foundation
 /// Every value carries an origin (empirical / specified / OS-imposed)
 /// and notes the effect of changing it. User-tunable defaults (gap,
 /// padding) live here too — they are still configurable via
-/// `UserConfig` at runtime, but the defaults are single-sourced here so
-/// every tiling type agrees.
+/// `UserConfig` at runtime. These are engine fallbacks; `WindowManager`
+/// pushes the user's values at start.
 enum TilingConfig {
 
     // MARK: - layout defaults (user-tunable)
 
-    // user-tunable. matched against UserConfig.json on init.
+    // user-tunable.
     static let defaultGap: CGFloat = 8
     static let defaultOuterPadding: CGFloat = 8
 
     // BSP depth ceiling. depth N → smallest slot = 1/2^N of the screen.
-    // 3 → 1/8 of the screen; beyond this, windows auto-float.
+    // 3 → 1/8 of the screen. the default; each monitor can set 1 to 7.
     static let defaultMaxDepth: Int = 3
 
     // smart-insert backtracking threshold (px). when splitting a leaf would
@@ -32,7 +31,7 @@ enum TilingConfig {
 
     // empirical. 0.85/0.15 keeps the smaller side at >= ~15% of the parent
     // slot, preventing one child from being squeezed into an unusable strip.
-    // shared by BSPTree.adjustForMinSizes/applyResizeDelta and TilingEngine.pairFits.
+    // shared by BSPTree.adjustForMinSizes/applyResizeDelta and LayoutEngine.pairFit.
     static let minRatio: CGFloat = 0.15
     static let maxRatio: CGFloat = 0.85
     static let defaultRatio: CGFloat = 0.5
@@ -63,8 +62,8 @@ enum TilingConfig {
 
     // MARK: - frame readback (two-pass layout)
 
-    // tolerance for over/undershoot in TilingEngine.applyLayout pass-1 readback.
-    // ignores rounding noise; conflicts beyond this trigger pass-2 ratio adjust.
+    // per-window match tolerance in the verified readback, and how far a known
+    // minimum may overflow its slot. ignores rounding noise.
     static let frameToleranceXPx: CGFloat = 20
 
     // AX read cadence during pass-1 readback. tighter = more samples but more

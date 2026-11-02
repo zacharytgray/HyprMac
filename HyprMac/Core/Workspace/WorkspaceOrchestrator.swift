@@ -1,7 +1,6 @@
-// Coordinates workspace switch / move-window / move-workspace workflows on
-// top of `WorkspaceManager` and `TilingEngine`. No new policy lives here —
-// the orchestrator just sequences the right calls and supplies the
-// focus/cursor/border glue each workflow needs.
+// Coordinates workspace switch / move-window / batch move / next-empty
+// workflows on top of `WorkspaceManager` and `TilingEngine`. It sequences the
+// moves, owns their refusal rules, and supplies the focus/cursor/border glue.
 
 import Cocoa
 
@@ -10,9 +9,9 @@ import Cocoa
 /// Delegates the data ownership to the services it composes:
 /// `WorkspaceManager` still owns workspace-to-screen mapping and home
 /// screens; `TilingEngine` still owns BSP trees. The orchestrator
-/// sequences switch, move-window-to-workspace, and move-workspace-to-
-/// monitor flows, applies suppression keys (`activation-switch`,
-/// `mouse-focus`) for the duration of each action, and routes focus and
+/// sequences switch, move-window-to-workspace, move-window-to-monitor and
+/// next-empty flows, applies suppression keys (`activation-switch`,
+/// `mouse-focus`, `workspace-transition`) for the duration of each action, and routes focus and
 /// cursor-warp results through closure handles back into
 /// `WindowManager`.
 ///
@@ -305,7 +304,7 @@ final class WorkspaceOrchestrator {
         }
     }
 
-    /// Switch to workspace `number` on the cursor's monitor.
+    /// Switch to workspace `number` on its home monitor.
     ///
     /// Two paths:
     /// - Already visible (on this or another screen): focus the best
@@ -604,10 +603,7 @@ final class WorkspaceOrchestrator {
                 }
             } else {
                 // target hidden — park at the global hide corner until the
-                // workspace is shown. park on the workspace's static home
-                // monitor, not the source screen (AeroSpace pattern: a
-                // window assigned to ws N belongs physically near ws N's
-                // monitor so the next show is a single-screen transition).
+                // workspace is shown.
                 if isFloating && !onDisabledMonitor {
                     workspaceManager.saveFloatingFrame(focused)
                 } else if isFloating && isNeverTile, let frame = focused.frame {

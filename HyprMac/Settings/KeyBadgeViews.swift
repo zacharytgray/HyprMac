@@ -1,5 +1,5 @@
-// Keybind chord-display chips shared between Keybinds and App
-// Launcher tabs and the keybind overlay.
+// Keybind chord-display chips shared by the Keys tab and the keybind
+// overlay.
 
 import SwiftUI
 

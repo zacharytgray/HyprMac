@@ -40,11 +40,6 @@ class WorkspaceManager {
     /// reveal so floaters return to their last user-chosen position.
     private var savedFloatingFrames: [CGWindowID: CGRect] = [:]
 
-    /// The workspace each display last showed, by display name. A screen
-    /// that leaves and comes back, on every sleep and wake with an
-    /// external monitor, lost its entry with its origin key and came back
-    /// on its lowest home workspace, which hid the one the user was on
-    /// and parked its windows.
     /// The workspace each display last showed, so a display that leaves and
     /// comes back shows it again. Written under the display's name and
     /// under its name and frame; two displays of one model share the name,
@@ -299,8 +294,8 @@ class WorkspaceManager {
     }
 
     /// `true` when `windowID`'s workspace is currently visible (or
-    /// when the window has no assignment — floating windows take this
-    /// branch).
+    /// when the window has no assignment, such as a floater on a disabled
+    /// monitor).
     func isWindowVisible(_ windowID: CGWindowID) -> Bool {
         guard let ws = windowWorkspaces[windowID] else { return true }
         return isWorkspaceVisible(ws)

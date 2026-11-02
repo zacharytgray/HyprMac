@@ -1,7 +1,7 @@
 // Corner brackets shown around the focused window while the Hypr key is
 // held. Screenshot-tool style: four L-shaped marks at the window corners,
-// scale-in on Hypr-down, fade-out on Hypr-up. Always shown regardless of
-// the focus-border toggle.
+// scale-in on Hypr-down, fade-out on Hypr-up. Independent of the
+// focus-border toggle, off when the bracket style is off.
 
 import Cocoa
 
@@ -35,8 +35,7 @@ class FocusBrackets {
     private(set) var markThickness: CGFloat = UserConfigDefaults.focusBracketThickness
     private(set) var markLength: CGFloat = UserConfigDefaults.focusBracketLength
 
-    /// Resolved from config — call before `show()` when the user picks a
-    /// new color in settings. Same source as `FocusBorder.accentCGColor`.
+    /// Set by `applyAppearance` from the bracket color.
     var accentCGColor: CGColor = UserConfigDefaults.focusBracketColor.cgColor
 
     /// Primary screen height for CG → NS coordinate flip. Set from
@@ -79,8 +78,8 @@ class FocusBrackets {
         let isFirstAppear = !isVisible
         let isWindowSwitch = trackedWindowID != nil && trackedWindowID != windowID
 
-        // Paths resolve per-window curvature, so establish tracking before the
-        // first stamp (and after every hide, which clears the tracked id).
+        // stampCornerPaths needs a tracked id, so set it before the first stamp
+        // (and after every hide, which clears it).
         trackedWindowID = windowID
         trackedFrame = rect
         p.setFrame(panelRect(for: rect), display: false)

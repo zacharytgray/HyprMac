@@ -2,8 +2,6 @@
 // vertical stack of `HyprPanel`s, each panel a stack of `HyprRow`s.
 // Identifier-ish text (keybind chords, bundle ids, monitor names)
 // goes through `HyprChip` so monospace styling lives in one place.
-// `HyprAccentBadge` is the only place the cyan signature color
-// appears outside the focus border / key recorder.
 
 import SwiftUI
 

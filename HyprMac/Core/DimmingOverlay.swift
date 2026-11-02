@@ -587,8 +587,8 @@ class DimmingOverlay {
 }
 
 private extension NSScreen {
-    // CGDirectDisplayID — stable across plug/unplug for the same physical
-    // display, unlike localizedName which can collide across identical models.
+    // CGDirectDisplayID — tells identical models apart, unlike localizedName.
+    // it can change across a wake, so this cache is rebuilt from the live screens.
     var displayID: CGDirectDisplayID {
         (deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value ?? 0
     }

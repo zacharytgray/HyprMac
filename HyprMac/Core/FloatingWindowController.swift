@@ -260,11 +260,11 @@ struct ClickPress: Equatable {
 /// `cycleFocus` rotates focus across visible floaters; `raiseBehind`
 /// lifts floaters that ended up behind tiled windows; `raiseAfterClick`
 /// puts floaters back above a tile the user just clicked; `shouldAutoFloat`
-/// is the single predicate used by snapshot and discovery to decide
-/// whether a freshly-seen window enters tiling.
+/// wraps `FloatingAdmissionPolicy` for startup and Retile All. Discovery asks
+/// the policy directly.
 ///
 /// What does not live here: workspace assignment for new floaters
-/// (`WindowDiscoveryService`), and per-window focus
+/// (`ActionDispatcher`), and per-window focus
 /// border refresh (the focus border itself plus `WindowManager`'s
 /// `updateFocusBorder`).
 ///
@@ -333,7 +333,7 @@ final class FloatingWindowController {
     var rejectFloatToTile: ((HyprWindow, TilingEngine.ForceInsertFailure) -> Void)?
 
     // same-stack-frame reentrancy guard for raiseBehind. paired with defer.
-    // moved here from WindowManager (per §5.5 — not a SuppressionRegistry key).
+    // not a SuppressionRegistry key: not a time gate.
     private var isRaising = false
 
     // time for the raise to land before checking the stack and the front app

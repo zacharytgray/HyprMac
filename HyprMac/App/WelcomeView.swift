@@ -22,8 +22,8 @@ struct WelcomeView: View {
 
 // MARK: - Window management
 
-/// NSWindow lifecycle for the welcome window. Built borderless with
-/// a draggable background; pinned above passive chrome so it stays
+/// NSWindow lifecycle for the welcome window. Titled with a transparent
+/// titlebar and a draggable background; pinned above passive chrome so it stays
 /// readable over tiled windows.
 class WelcomeWindowController {
     private var window: NSWindow?

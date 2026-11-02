@@ -1,5 +1,7 @@
 # Performance investigation — system-wide sluggishness
 
+Status: Phases 0 and 1 shipped in July 2026. The event tap runs on its own thread. Citations are against that code.
+
 2026-07-08. Five-agent audit (input path, polling/discovery, layout/overlays,
 runtime logs, external research on yabai/AeroSpace/JankyBorders). Root cause
 is **confirmed by logs**, not hypothesized.
@@ -124,8 +126,8 @@ The slider structurally cannot touch the problem.
    **SKIPPED — `crossMonitor: false` fast path in the readback poller:**
    callers can't cheaply tell which windows are genuinely crossing screens
    (workspace switches arrive from the park corner on another monitor), the
-   saving is ~1 AX call per window, and the open retile-flicker
-   investigation shouldn't be contaminated with frame-write behavior changes.
+   saving is ~1 AX call per window, and the retile-flicker
+   investigation of the time shouldn't be contaminated with frame-write behavior changes.
    **DEFERRED — `getFocusedWindow()` full-walk removal:** the walk guards
    against sibling-window misresolution in multi-window apps (see comment at
    AccessibilityManager.swift:281); replacing it with `_AXUIElementGetWindow`

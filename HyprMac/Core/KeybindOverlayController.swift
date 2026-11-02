@@ -73,7 +73,6 @@ class KeybindOverlayController {
             hosting.rootView = content(keybinds, cardWidth, listHeight)
             fitted = hosting.fittingSize
         }
-        // leave transparent space around the card for the shadow to dissipate
         let panelWidth = fitted.width
         let panelHeight = max(fitted.height, 1)
         let panelX = screen.frame.midX - panelWidth / 2

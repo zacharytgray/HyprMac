@@ -546,7 +546,7 @@ final class ScratchpadController {
     /// this never steals focus or MRU head — it's not a user-summon, the
     /// window just spilled here. `preferredFrame` is the pre-tile original
     /// frame the fit-failure site wants restored; falls back to the live
-    /// frame. No updatePositionCache — onAutoFloat fires mid-tile-pass, the
+    /// frame. No updatePositionCache — the caller is mid-tile-pass, the
     /// caller's post-pass refresh covers it.
     func adopt(_ window: HyprWindow, preferredFrame: CGRect? = nil) {
         let id = window.windowID
@@ -692,7 +692,7 @@ final class ScratchpadController {
 
         if !tileIntoVisibleLayer(focused) {
             // layer tree is full — revert to floating and flash. deliberately
-            // no onAutoFloat: a scratchpad reject must never route into adopt.
+            // a scratchpad reject must never route into adopt.
             stateCache.floatingWindowIDs.insert(id)
             focused.isFloating = true
             if let f = focused.frame {
@@ -770,7 +770,7 @@ final class ScratchpadController {
         hide(reason: .activationChange)
     }
 
-    /// Discovery forgot this id (app died). Called after WorkspaceManager
+    /// Discovery forgot this id. Called after WorkspaceManager
     /// dropped the assignment, so `members` already excludes it.
     func forget(_ id: CGWindowID) {
         let wasSummoned = summonedIDs.contains(id)
@@ -778,8 +778,8 @@ final class ScratchpadController {
         summonedIDs.remove(id)
         lastShownFrames.removeValue(forKey: id)
         // sweep the id from the ws-0 tree in case it was a tiled member. safe
-        // and idempotent — a no-op when WindowManager's gone-path already
-        // removed it (which it does via removeWindowID on goneIDs).
+        // and idempotent — a no-op when `ActionDispatcher.applyChanges` or
+        // `WindowManager.forgetApp` already removed it.
         tilingEngine.removeWindowID(id)
         if isVisible && summonedIDs.isEmpty {
             workspaceManager.scratchpadVisible = false
@@ -923,7 +923,7 @@ final class ScratchpadController {
     /// layer's tree, re-lay the region, and refresh intended rects for
     /// every tiled member. Returns false when the tree has no fitting
     /// slot — the caller reverts the member to floating. Deliberately
-    /// never routes through onAutoFloat (see tileScratchpad).
+    /// never routes into adopt (see tileScratchpad).
     private func tileIntoVisibleLayer(_ window: HyprWindow) -> Bool {
         guard let screen = layerScreen() else { return false }
         let region = tiledRegion(on: screen)
@@ -974,7 +974,8 @@ final class ScratchpadController {
 
     /// Pure carry math on the intended rect: keep it when it already sits
     /// substantially on the target screen, otherwise clamp it in with size
-    /// preserved (same semantics as the orchestrator's floater carry).
+    /// preserved. The orchestrator's floater carry keeps relative position
+    /// instead.
     private func carriedRect(_ base: CGRect, to target: CGRect) -> CGRect {
         if base.isSubstantiallyVisible(on: target, threshold: 0.5) { return base }
         let width = min(base.width, target.width)

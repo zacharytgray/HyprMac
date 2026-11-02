@@ -95,10 +95,8 @@ class FocusBorder {
     }
 
     /// Tunables. Empirical timings (settle delay, shake step) and
-    /// stroke widths. Per-window corner radius is resolved via
-    /// `WindowCornerRadius` rather than a single static value, so the
-    /// border arcs concentrically with whatever radius the underlying
-    /// app actually renders.
+    /// stroke widths. Corner radius comes from `WindowCornerRadius`, one
+    /// global value.
     private enum Tuning {
         static let settleDelaySec: TimeInterval = 0.5
         static let settleAnimationDurationSec: TimeInterval = 0.3
@@ -127,7 +125,7 @@ class FocusBorder {
     // expansion was used when the focused border was last stamped.
     private var focusedCornerRadiusExpansion = Tuning.activeBorderWidth / 2
 
-    // resolved from config — call updateColor() when config changes
+    // resolved from config, repainted by refreshAppearance
     var accentCGColor: CGColor = NSColor.controlAccentColor.cgColor
 
     /// Shared fade duration used by `show`, `hide`, the floating-border
@@ -431,9 +429,9 @@ class FocusBorder {
     /// would violate min-size constraints, move to a full workspace).
     /// The border auto-hides after the shake completes.
     ///
-    /// - Parameter window: retained for source compatibility. Error feedback
-    ///   never moves the actual window because verified geometry must remain
-    ///   unchanged after a rejection or restoration.
+    /// - Parameter window: unused. Error feedback never moves the actual
+    ///   window because verified geometry must remain unchanged after a
+    ///   rejection or restoration.
     /// - Parameter message: short reason shown as a pill centered in the
     ///   flashed window — e.g. "Not enough room to swap".
     @discardableResult
@@ -607,8 +605,8 @@ class FocusBorder {
     }
 
     // returns up to 4 strips representing `rect` minus `hole`.
-    // mirrors DimmingOverlay.subtract — same algorithm, kept local to avoid
-    // crossing the FocusBorder/DimmingOverlay file boundary for a 25-line helper.
+    // same strips as WindowStacking.subtract, in a different order. order
+    // does not matter here: every strip joins one mask path.
     private func subtract(_ hole: NSRect, from rect: NSRect) -> [NSRect] {
         guard rect.intersects(hole) else { return [rect] }
         let clipped = rect.intersection(hole)
@@ -732,11 +730,8 @@ class FocusBorder {
                         styleMask: [.borderless, .nonactivatingPanel],
                         backing: .buffered, defer: false)
         p.isFloatingPanel = true
-        // Phase 5b: .floating tier guarantees borders render above the dim
-        // panel — which sits at .floating - 1 in normal mode and .normal in
-        // scrim mode — and above all .normal-level app windows. previously
-        // .normal + order(.above, relativeTo: windowID), which became
-        // undefined when the focused window closed.
+        // .floating keeps borders above the dim panel (.floating - 1, or
+        // .normal in scrim mode) and above all .normal-level app windows.
         p.level = .floating
         p.backgroundColor = .clear
         p.isOpaque = false
@@ -799,11 +794,9 @@ class FocusBorder {
 
     // MARK: - fade helpers
 
-    /// Animate an NSView's `alphaValue`. Goes through NSAnimationContext +
-    /// the view's animator proxy — the documented, reliable path for
-    /// layer-backed NSViews. CALayer.opacity directly doesn't work here
-    /// because AppKit re-syncs the layer's properties from the view on
-    /// each draw cycle and overwrites the in-flight animation.
+    /// Animate the view's layer opacity with a `CABasicAnimation`. The glow
+    /// view is layer-hosting (see `makeGlowView`), so AppKit does not
+    /// overwrite the layer.
     /// Panel-level (`NSWindow.alphaValue`) animations also no-op on these
     /// borderless `.floating` non-activating panels for reasons not fully
     /// understood — animating the contentView is what actually paints.

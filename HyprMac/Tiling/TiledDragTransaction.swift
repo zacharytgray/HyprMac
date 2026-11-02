@@ -55,7 +55,7 @@ struct TiledDragSnapshot {
     let context: TiledDragContext
     let originalFrames: [CGWindowID: CGRect]
     let generation: UInt64
-    /// where the press landed, global CG. nil for a capture by id
+    /// where the press landed, global CG. nil for a capture by id, which only tests do
     var pressPoint: CGPoint? = nil
 
     /// How far inside a frame's left, right or bottom edge a press grabs its
@@ -116,8 +116,8 @@ struct TiledDragSnapshot {
     /// axis, and a corner press can register as one edge. Anything else is a
     /// move, which holds no edge still even when the app changes its own
     /// size on the way, the way Messages does onto the ultrawide. A capture
-    /// by id has no press point, so size alone decides there, over 20
-    /// points as it always has.
+    /// by id (tests only) has no press point, so size alone decides there,
+    /// over 20 points.
     func gesture(to frame: CGRect) -> TiledDragGesture {
         guard let original = originalFrames[draggedID] else { return .move }
         let tolerance = FrameSizingConfiguration()

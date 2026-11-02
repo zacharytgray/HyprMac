@@ -325,7 +325,7 @@ struct FrameReadbackPoller {
     }
 
     /// Whether this window's oversize may teach a minimum, and if not, why
-    /// not. Nil means the evidence is good: this window's three setters all
+    /// not. Nil means the evidence is good: this window's setters all
     /// returned success, every target read back and settled, the window is
     /// at the origin it was given, and the attempt ended in a geometric
     /// refusal rather than an I/O error.

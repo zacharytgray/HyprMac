@@ -5,13 +5,8 @@
 import Foundation
 import AppKit
 
-/// Conversion namespace for CG ↔ NS coordinate work.
-///
-/// Today the active conversions live inline in the call sites
-/// (`MouseTrackingManager`, `FocusBorder`, `DimmingOverlay`,
-/// `DisplayManager`). This enum is the agreed home for the next
-/// shared helper if a third caller appears or if the conversion
-/// pattern grows beyond `primaryScreenHeight - y`.
+/// Conversion namespace for CG ↔ NS coordinate work. Empty today: the
+/// conversions are inline at their call sites.
 enum CoordinateSpace {}
 
 extension CGRect {

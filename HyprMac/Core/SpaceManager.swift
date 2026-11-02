@@ -1,11 +1,10 @@
-// macOS Spaces enumeration via private CGS APIs. Read-only — virtual
-// workspaces (`WorkspaceManager`) replace native Spaces for hide/show
-// behavior, but this class is still used to look up the current
-// per-display space layout.
+// macOS Spaces enumeration via private CGS APIs. Virtual workspaces
+// (`WorkspaceManager`) replace native Spaces. Only `setup()` is called, at
+// startup, and nothing reads its result.
 
 import Cocoa
 
-/// Read-only inspector for macOS native Spaces.
+/// Inspector for macOS native Spaces. The move and switch helpers have no callers.
 ///
 /// Wraps the private `CGSCopyManagedDisplaySpaces` API. Caches the
 /// display↔space mapping with a 0.5 s cooldown so repeated calls
