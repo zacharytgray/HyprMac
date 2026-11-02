@@ -1396,12 +1396,12 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         let (controller, cache, _, _) = makeController(tiledPID: 100, floatingPID: 200)
         var raises: [CGWindowID] = []
         var restores: [CGWindowID] = []
-        var queued: (() -> Void)?
+        var queued: [() -> Void] = []
         var front: pid_t = 100
         controller.frontmostPID = { front }
         controller.performRaise = { raises.append($0.windowID); return .success }
         controller.restoreFocusWithoutRaise = { restores.append($0.windowID) }
-        controller.scheduleAfter = { _, body in queued = body }
+        controller.scheduleAfter = { _, body in queued.append(body) }
         XCTAssertEqual(controller.floatingWindowsBehindTiled(
             floatingWindowIDs: cache.floatingWindowIDs,
             tiledPositions: cache.tiledPositions
@@ -1410,7 +1410,7 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         controller.raiseBehind()
         // the floater's app activated itself when raised
         front = 200
-        queued?()
+        while !queued.isEmpty { queued.removeFirst()() }
 
         XCTAssertEqual(raises, [12])
         XCTAssertEqual(restores, [11])
@@ -1474,17 +1474,17 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         ) -> Void) -> Int {
             let (controller, cache, workspaces, _) = makeController(tiledPID: 100, floatingPID: 200)
             var restores = 0
-            var queued: (() -> Void)?
+            var queued: [() -> Void] = []
             var front: pid_t = 100
             controller.frontmostPID = { front }
             controller.performRaise = { _ in .success }
             controller.restoreFocusWithoutRaise = { _ in restores += 1 }
-            controller.scheduleAfter = { _, body in queued = body }
+            controller.scheduleAfter = { _, body in queued.append(body) }
             controller.raiseBehind()
-            XCTAssertNotNil(queued, "the cross-app raise must queue a restore before invalidation")
+            XCTAssertFalse(queued.isEmpty, "the cross-app raise must queue a restore before invalidation")
             front = 200
             mutate(cache, workspaces, controller)
-            queued?()
+            while !queued.isEmpty { queued.removeFirst()() }
             return restores
         }
 
@@ -1545,18 +1545,23 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         var clock: TimeInterval = 1000
         controller.now = { clock }
         controller.performRaise = { raises.append($0.windowID); return .success }
-        controller.scheduleAfter = { _, body in queued = body }
+        controller.scheduleAfter = { _, body in
+            queued = body
+        }
 
-        // the stack never changes: tahoe refused the cross-app raise
+        // the stack never changes: the raise never lands
         controller.raiseBehind()
-        queued?()
-        for _ in 0..<5 {
+        while let next = queued {
+            queued = nil
+            next()
+        }
+        for _ in 0..<2 {
             clock += 1
             controller.raiseBehind()
         }
         XCTAssertEqual(raises, [12], "no retry on every activation and poll")
 
-        clock += controller.throttle.ineffectiveCooldown
+        clock += controller.throttle.frontedIneffectiveCooldown
         controller.raiseBehind()
         XCTAssertEqual(raises, [12, 12], "the pair gets another try after the cooldown")
     }
@@ -1817,6 +1822,98 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         XCTAssertEqual(steps.prefix(2), ["front 12", "raise 12"], "macOS 27 ignores the raise without the front")
         XCTAssertEqual(rig.harness().raises.count, 6, "every click stays on top, with no cooldown building up")
         XCTAssertEqual(rig.harness().refocused.count, 6)
+    }
+
+    // seen live: Granola missed the 50 ms check, the pair rested for 30 s, and
+    // every click in that time left it buried
+    func testAFrontedRaiseThatLandsLateStillCounts() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200, raiseWorks: false)
+        var reads = 0
+        rig.controller.windowListForZOrder = {
+            reads += 1
+            return reads > 2 ? Self.floaterOnTop : Self.tileOnTop
+        }
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        XCTAssertEqual(rig.harness().refocused, [11])
+
+        reads = 0
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        XCTAssertEqual(rig.harness().raises, [12, 12], "no cooldown came out of the slow one")
+    }
+
+    func testAFrontedRaiseThatNeverLandsRestsOnlyBriefly() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200, raiseWorks: false)
+        var clock: TimeInterval = 1000
+        rig.controller.now = { clock }
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        clock += 1
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        XCTAssertEqual(rig.harness().raises, [12], "a flicker per click with no gain still rests")
+
+        clock += rig.controller.throttle.frontedIneffectiveCooldown
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        XCTAssertEqual(rig.harness().raises, [12, 12], "not 30 seconds of a buried floater")
+    }
+
+    func testACrossAppClickIgnoresACooldownFromRaiseBehind() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 200)
+        let pair = RaiseBehindThrottle.Pair(floater: 12, tile: 11)
+        var clock: TimeInterval = 1000
+        rig.controller.now = { clock }
+
+        rig.controller.throttle.noteLoop([pair], now: clock)
+        clock += 1
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+        rig.controller.throttle.noteIneffective(pair, now: clock)
+        clock += 1
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [12, 12])
+    }
+
+    func testASameAppClickStillRespectsACooldown() {
+        let rig = clickRig(tiledPID: 100, floatingPID: 100)
+        let pair = RaiseBehindThrottle.Pair(floater: 12, tile: 11)
+        var clock: TimeInterval = 1000
+        rig.controller.now = { clock }
+        rig.controller.throttle.noteIneffective(pair, now: clock)
+        clock += 1
+
+        rig.controller.raiseAfterClick(click)
+        rig.run()
+
+        XCTAssertEqual(rig.harness().raises, [])
+    }
+
+    func testRaiseBehindWaitsOutASlowFrontedRaise() {
+        let (controller, _, _, _) = makeController(tiledPID: 100, floatingPID: 200)
+        var queued: [() -> Void] = []
+        var reads = 0
+        var restores: [CGWindowID] = []
+        controller.frontmostPID = { 100 }
+        controller.windowListForZOrder = {
+            reads += 1
+            return reads > 2 ? Self.raisedStack : Self.coveredStack
+        }
+        controller.performRaise = { _ in .success }
+        controller.restoreFocusWithoutRaise = { restores.append($0.windowID) }
+        controller.scheduleAfter = { _, body in queued.append(body) }
+
+        controller.raiseBehind()
+        while !queued.isEmpty { queued.removeFirst()() }
+
+        XCTAssertNil(controller.throttle.cooldown(RaiseBehindThrottle.Pair(floater: 12, tile: 11),
+                                                  now: controller.now()),
+                     "the raise landed on the second check")
     }
 
     func testASameAppClickDoesNotSwitchApps() {

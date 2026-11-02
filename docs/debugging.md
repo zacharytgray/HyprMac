@@ -864,10 +864,9 @@ after a click landing in the floater's app.
 Some apps lift themselves when key-window events arrive. On macOS 27 Dia goes
 above a floater as soon as `SLPSPostEventRecordTo` delivers them, and stays under
 it when only the front process moves. Messages and Terminal stay under it either
-way. So a cross-app no-raise focus skips the events when the target is already its
-app's focused window, and the debug line says `key events skipped`. A Dia window
-that isn't its app's focused one still gets them and lifts, and the next raise
-puts the floater back.
+way. A build that skipped them for a window already focused in its app took no
+typing or clicks in tiles on the laptop, so they stay, and a floater goes under Dia
+while Dia has focus. That the missing events were the cause is inferred.
 
 Floating-level floaters. AppKit puts a floating panel (a Quick Look
 preview, an inspector) at the floating level, CG layer 3, while its app is
@@ -894,9 +893,12 @@ layers=[3] front=<messages> crossApp=true`. Then one of:
 
 For the click re-raise, click a tile beside a floater. Either app pairing should
 log `click re-raise: … → on top`, then `no-raise focus: … reason=click-reraise`
-and `no-raise focus verify: … → landed, floaters kept above`. An `→ ineffective —
-cooldown 30s` or `refocus missed` line means that pair rests for 30 s. The tile
-then stays on top, and the dim shows the floater only where it is in front.
+and `no-raise focus verify: … → landed, floaters kept above`. A raise that fronted
+an app gets up to 230 ms to land, since one can miss the first check. An
+`→ ineffective` or `refocus missed` line means that pair rests: 3 s across apps, 30 s
+within one. The tile then stays on top, and the dim shows the floater only where it is
+in front. The verify line's `axFocused` and `axMain` come from the window itself, so
+`key=<id>` with `axFocused=no` means the app names the window but it may not get keys.
 
 ### A floater changed size or left the screen
 

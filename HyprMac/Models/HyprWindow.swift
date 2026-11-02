@@ -448,17 +448,6 @@ class HyprWindow: Equatable, Hashable {
         return "sl front=\(setFrontRC.rawValue) post1=\(post1RC.rawValue) post2=\(post2RC.rawValue)"
     }
 
-    /// Front the owning process with no key-window events, for a window that
-    /// is already its app's focused one. Dia lifts its window over everything
-    /// when those events arrive and stays put without them (measured on macOS
-    /// 27). Messages and Terminal don't care.
-    @discardableResult
-    func makeFrontWithoutRaise() -> String? {
-        guard var psn = processSerialNumber() else { return nil }
-        let setFrontRC = _SLPSSetFrontProcessWithOptions(&psn, UInt32(windowID), kCPSUserGenerated)
-        return "sl front=\(setFrontRC.rawValue) key events skipped"
-    }
-
     private func processSerialNumber() -> ProcessSerialNumber? {
         var psn = ProcessSerialNumber()
         guard GetProcessForPID(ownerPID, &psn) == noErr else {

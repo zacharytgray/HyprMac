@@ -139,6 +139,10 @@ struct RaiseBehindThrottle {
     }
 
     var ineffectiveCooldown: TimeInterval = 30
+    // a raise that fronted the floater's app normally works, and while a pair
+    // rests the floater stays buried, so a miss gets another try soon
+    var frontedIneffectiveCooldown: TimeInterval = 3
+    static let frontedIneffectiveReason = "ineffective after fronting"
     var loopCooldown: TimeInterval = 15
     var burstCooldown: TimeInterval = 10
     var burstLimit = 4
@@ -190,8 +194,10 @@ struct RaiseBehindThrottle {
         return .raise
     }
 
-    mutating func noteIneffective(_ pair: Pair, now: TimeInterval) {
-        cooldowns[pair] = (now + ineffectiveCooldown, "ineffective")
+    mutating func noteIneffective(_ pair: Pair, now: TimeInterval, fronted: Bool = false) {
+        cooldowns[pair] = fronted
+            ? (now + frontedIneffectiveCooldown, Self.frontedIneffectiveReason)
+            : (now + ineffectiveCooldown, "ineffective")
         attempts[pair] = nil
         restores[pair] = nil
     }
@@ -347,6 +353,11 @@ final class FloatingWindowController {
     // gap between mouse-up and the click re-raise. the app has lifted the
     // clicked tile by then; the floater is hidden for about this long.
     static let clickRaiseDelay: TimeInterval = 0.04
+    // an app can take longer than verifyDelay to come up after fronting. seen
+    // live: Granola missed the first check, the pair then rested for 30 s, and
+    // every click in that time left it buried
+    static let frontedRecheckDelay: TimeInterval = 0.06
+    static let frontedRechecks = 3
     // a raise deferred by an open popup tries again this often, this many times
     static let popupRetryDelay: TimeInterval = 0.5
     static let popupRetryLimit = 20
@@ -654,7 +665,9 @@ final class FloatingWindowController {
         }
 
         scheduleAfter(Self.verifyDelay) { [weak self] in
-            self?.finishRaise(pairs, frontBefore: frontBefore, previousFocusID: previousFocusID,
+            self?.finishRaise(pairs, frontBefore: frontBefore, frontsApp: frontsApp,
+                              rechecks: frontsApp ? Self.frontedRechecks : 0,
+                              previousFocusID: previousFocusID,
                               previousFocusGeneration: previousFocusGeneration,
                               previousWindow: previousWindow)
         }
@@ -663,6 +676,7 @@ final class FloatingWindowController {
     /// Check what the raise did, cool down pairs it could not lift, and
     /// give focus back to the tile only if the raise took it away.
     private func finishRaise(_ pairs: [RaiseBehindThrottle.Pair], frontBefore: pid_t?,
+                             frontsApp: Bool, rechecks: Int,
                              previousFocusID: CGWindowID, previousFocusGeneration: UInt64,
                              previousWindow: HyprWindow?) {
         let windows = windowListForZOrder().map(WindowStacking.decode)
@@ -670,11 +684,20 @@ final class FloatingWindowController {
         if let windows {
             let stillCovered = Dictionary(coveredFloaters(in: windows).map { ($0.floater, $0.tile) },
                                           uniquingKeysWith: { first, _ in first })
+            if rechecks > 0, pairs.contains(where: { stillCovered[$0.floater] != nil }) {
+                scheduleAfter(Self.frontedRecheckDelay) { [weak self] in
+                    self?.finishRaise(pairs, frontBefore: frontBefore, frontsApp: frontsApp,
+                                      rechecks: rechecks - 1, previousFocusID: previousFocusID,
+                                      previousFocusGeneration: previousFocusGeneration,
+                                      previousWindow: previousWindow)
+                }
+                return
+            }
             for pair in pairs {
                 guard let tile = stillCovered[pair.floater] else { continue }
-                throttle.noteIneffective(pair, now: now)
+                throttle.noteIneffective(pair, now: now, fronted: frontsApp)
                 hyprLog(.notice, .floating, "raise behind ineffective: wid=\(pair.floater) still under \(tile) "
-                        + "— cooldown \(Int(throttle.ineffectiveCooldown))s")
+                        + "— cooldown \(Int(frontsApp ? throttle.frontedIneffectiveCooldown : throttle.ineffectiveCooldown))s")
             }
         }
         onRestack()
@@ -773,7 +796,12 @@ final class FloatingWindowController {
                 hyprLog(.notice, .floating, "\(line) → skipped(\(blocker))")
             } else if let frame = entry.bounds, frame.contains(press.point) {
                 hyprLog(.notice, .floating, "\(line) → skipped(click under floater)")
-            } else if let cooldown = throttle.cooldown(pair, now: now) {
+            } else if let cooldown = throttle.cooldown(pair, now: now),
+                      floater.ownerPID == tile.ownerPID
+                        || cooldown.reason == RaiseBehindThrottle.frontedIneffectiveReason {
+                // a cross-app click outranks what raise-behind cooled for. it
+                // follows one real click, so it can't loop, and it fronts the
+                // app, which raise-behind's plain AXRaise may not have done.
                 // the line that started the cooldown already said why
                 hyprLog(.debug, .floating, "\(line) → skipped(cooldown \(cooldown.reason))")
             } else {
@@ -797,7 +825,9 @@ final class FloatingWindowController {
         let raised = raising.map { (pair: $0.pair, pid: $0.window.ownerPID) }
         let frontedApp = raised.contains { $0.pid != tile.ownerPID }
         scheduleAfter(Self.verifyDelay) { [weak self] in
-            self?.finishClickRaise(tile: tile, raised: raised, frontedApp: frontedApp, generation: generation)
+            self?.finishClickRaise(tile: tile, raised: raised, frontedApp: frontedApp,
+                                   rechecks: frontedApp ? Self.frontedRechecks : 0,
+                                   generation: generation)
         }
     }
 
@@ -820,13 +850,20 @@ final class FloatingWindowController {
     /// Check the stack after a click re-raise, cool down floaters it could
     /// not lift, and give keyboard focus back to the tile.
     private func finishClickRaise(tile: HyprWindow, raised: [(pair: RaiseBehindThrottle.Pair, pid: pid_t)],
-                                  frontedApp: Bool, generation: UInt64) {
+                                  frontedApp: Bool, rechecks: Int, generation: UInt64) {
         defer { onRestack() }
         guard let windows = windowListForZOrder().map(WindowStacking.decode),
               windows.contains(where: { $0.windowID == tile.windowID }) else { return }
         let ids = Set(raised.map(\.pair.floater))
         let above = Set(WindowStacking.floaters(above: tile.windowID, among: ids, in: windows).map(\.windowID))
         let below = Set(WindowStacking.floaters(below: tile.windowID, among: ids, in: windows).map(\.windowID))
+        if rechecks > 0, !below.isEmpty {
+            scheduleAfter(Self.frontedRecheckDelay) { [weak self] in
+                self?.finishClickRaise(tile: tile, raised: raised, frontedApp: frontedApp,
+                                       rechecks: rechecks - 1, generation: generation)
+            }
+            return
+        }
         let now = self.now()
         var lifted: [RaiseBehindThrottle.Pair] = []
         for (pair, pid) in raised {
@@ -835,8 +872,10 @@ final class FloatingWindowController {
                 lifted.append(pair)
                 hyprLog(.notice, .floating, "\(line) → on top")
             } else if below.contains(pair.floater) {
-                throttle.noteIneffective(pair, now: now)
-                hyprLog(.notice, .floating, "\(line) → ineffective — cooldown \(Int(throttle.ineffectiveCooldown))s")
+                let crossApp = pid != tile.ownerPID
+                throttle.noteIneffective(pair, now: now, fronted: crossApp)
+                let rest = crossApp ? throttle.frontedIneffectiveCooldown : throttle.ineffectiveCooldown
+                hyprLog(.notice, .floating, "\(line) → ineffective — cooldown \(Int(rest))s")
             }
         }
         // a fronted app has the keyboard even if its window didn't come up
@@ -874,9 +913,10 @@ final class FloatingWindowController {
             guard let self else { return }
             if !kept {
                 let now = self.now()
-                for pair in lifted { self.throttle.noteIneffective(pair, now: now) }
+                for pair in lifted { self.throttle.noteIneffective(pair, now: now, fronted: frontedApp) }
+                let rest = frontedApp ? self.throttle.frontedIneffectiveCooldown : self.throttle.ineffectiveCooldown
                 hyprLog(.notice, .floating, "click re-raise refocus missed: tile=\(tile.windowID) "
-                        + "floaters=\(lifted.map(\.floater)) — cooldown \(Int(self.throttle.ineffectiveCooldown))s")
+                        + "floaters=\(lifted.map(\.floater)) — cooldown \(Int(rest))s")
             }
             self.onRestack()
         }

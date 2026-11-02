@@ -349,7 +349,6 @@ final class TiledFocusRouterTests: XCTestCase {
             self.calls.append("event \(wid) \(gained ? "gained" : "lost")")
         }
         router.makeFrontAndKey = { [unowned self] w in self.calls.append("front+key \(w.windowID)"); return "ok" }
-        router.makeFront = { [unowned self] w in self.calls.append("front \(w.windowID)"); return "ok" }
         router.usualFocus = { [unowned self] w, fallback in self.calls.append("usual \(w.windowID) \(fallback.rawValue)") }
         router.lastFocusedID = { [unowned self] in self.lastFocused }
         router.focusGeneration = { [unowned self] in self.generation }
@@ -361,31 +360,11 @@ final class TiledFocusRouterTests: XCTestCase {
         while !scheduled.isEmpty { scheduled.removeFirst().1() }
     }
 
-    // measured on macOS 27: Dia lifts its window over the floater when the
-    // key-window events arrive, and stays under it when only the front moves
-    func testACrossAppFocusSkipsTheKeyEventsWhenTheWindowIsAlreadyFocusedInItsApp() {
+    // a build that skipped these took no typing or clicks in tiles. Dia lifts
+    // itself when they arrive, and a floater above it isn't worth that
+    func testACrossAppFocusAlwaysSendsTheKeyEvents() {
         front = otherPID
         keys[frontPID] = 11
-
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-        runScheduled()
-
-        XCTAssertEqual(calls.first, "front 11")
-        XCTAssertFalse(calls.contains("front+key 11"))
-    }
-
-    func testACrossAppFocusStillSendsThemWhenAnotherWindowIsFocusedInItsApp() {
-        front = otherPID
-        keys[frontPID] = 99
-
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-
-        XCTAssertEqual(calls.first, "front+key 11", "fronting alone would give the keyboard to window 99")
-    }
-
-    func testACrossAppFocusStillSendsThemWhenTheFocusedWindowIsUnknown() {
-        front = otherPID
-        keys[frontPID] = nil
 
         router.focus(target, reason: "ffm", fallback: .activateAndClick)
 

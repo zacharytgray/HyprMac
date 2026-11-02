@@ -67,11 +67,21 @@ final class TiledFocusRouter {
     var isTiled: (CGWindowID) -> Bool = { _ in false }
     var frontmostPID: () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     var keyWindowID: (pid_t) -> CGWindowID? = { HyprWindow.axFocusedWindowID(pid: $0) }
+    // for the log: whether the window itself says it is key and main. the app's
+    // focused window can name it while keystrokes go nowhere
+    var windowKeyStatus: (HyprWindow) -> String = { window in
+        func flag(_ attribute: String) -> String {
+            var value: AnyObject?
+            guard AXUIElementCopyAttributeValue(window.element, attribute as CFString, &value) == .success,
+                  let on = value as? Bool else { return "?" }
+            return on ? "yes" : "no"
+        }
+        return "axFocused=\(flag(kAXFocusedAttribute)) axMain=\(flag(kAXMainAttribute))"
+    }
     var postWindowFocus: (pid_t, CGWindowID, Bool) -> Void = { pid, wid, gained in
         HyprWindow.postWindowFocusEvent(pid: pid, windowID: wid, gained: gained)
     }
     var makeFrontAndKey: (HyprWindow) -> String? = { $0.makeFrontAndKeyWithoutRaise() }
-    var makeFront: (HyprWindow) -> String? = { $0.makeFrontWithoutRaise() }
     var usualFocus: (HyprWindow, Fallback) -> Void = { window, fallback in
         window.focusWithoutRaise()
         if fallback == .activateAndClick { window.focusViaSyntheticClick() }
@@ -136,10 +146,7 @@ final class TiledFocusRouter {
 
         let finish = { [weak self] in
             guard let self else { return }
-            // an app coming to the front gives key back to its focused
-            // window, so the events aren't needed, and they make Dia lift it
-            let keyAlreadyThere = front != pid && self.keyWindowID(pid) == wid
-            let rc = (keyAlreadyThere ? self.makeFront(target) : self.makeFrontAndKey(target)) ?? "no psn"
+            let rc = self.makeFrontAndKey(target) ?? "no psn"
             hyprLog(.debug, .focus, "no-raise focus: wid=\(wid) \(rc)")
             self.schedule(Self.verifyDelay) { [weak self] in
                 self?.verify(target, reason: reason, fallback: fallback,
@@ -193,7 +200,7 @@ final class TiledFocusRouter {
         let front = check.frontPID.map(String.init) ?? "nil"
         let key = check.keyWindowID.map(String.init) ?? "nil"
         hyprLog(.notice, .focus, "no-raise focus verify: wid=\(wid) reason=\(reason) "
-                + "front=\(front) (want \(target.ownerPID)) key=\(key) "
+                + "front=\(front) (want \(target.ownerPID)) key=\(key) \(windowKeyStatus(target)) "
                 + "floatersAbove=\(check.floatersAbove) layers=\(check.floaterLayers) buried=\(buried) "
                 + "→ \(landed ? "landed" : "missed"), floaters \(buried.isEmpty ? "kept above" : "buried")")
         onResult?(landed && buried.isEmpty)
