@@ -1,7 +1,6 @@
 import XCTest
 @testable import HyprMac
 
-// strip order matters: exposedPoint breaks ties on it
 final class RectSubtractionTests: XCTestCase {
     private let rect = CGRect(x: 100, y: 100, width: 400, height: 300)
 

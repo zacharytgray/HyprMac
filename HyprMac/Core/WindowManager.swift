@@ -440,27 +440,14 @@ class WindowManager {
         }
 
         // the restore must not lift the tile back over the floater it just raised
-        floatingController.restoreFocusWithoutRaise = { [weak self] w in
-            self?.tiledFocusRouter.focus(w, reason: "raise-restore", fallback: .activate)
-        }
-        floatingController.focusHandoffPending = { [weak self] in
-            self?.tiledFocusRouter.hasPendingHandoff ?? false
-        }
         floatingController.onRestack = { [weak self] in self?.scheduleRestackRefresh(after: 0.02) }
 
         // hover, Hypr+Arrow and focus repair go through the router. newcomers
         // in admission recovery are drawn over the tiles like floaters, as in
         // clickFocusTarget, so they count as covers and not as tiles.
-        tiledFocusRouter.visibleFloaterIDs = { [weak self] in
-            guard let self else { return [] }
-            return self.stateCache.floatingWindowIDs.union(self.admissionRecovery.pendingWindowIDs)
-                .filter { self.isInteractive($0) }
+        tiledFocusRouter.raiseFloatersBeforeFocus = { [weak self] target in
+            self?.floatingController.raiseFloatersBeforeFocus(target)
         }
-        tiledFocusRouter.isTiled = { [weak self] wid in self?.isRoutedTile(wid) ?? false }
-        tiledFocusRouter.lastFocusedID = { [weak self] in self?.focusController.lastFocusedID ?? 0 }
-        tiledFocusRouter.focusGeneration = { [weak self] in self?.focusController.generation ?? 0 }
-        tiledFocusRouter.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
-        tiledFocusRouter.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         suppressions.frontmostPID = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
         tiledFocusRouter.noteActivation = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }
         // every focus HyprMac asks a window for, whichever path asks
@@ -536,7 +523,6 @@ class WindowManager {
         actionDispatcher.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
         actionDispatcher.focusWindow = { [weak self] w, reason in
             self?.tiledFocusRouter.focus(w, reason: reason, fallback: .activate)
-                ?? TiledFocusRouter.Route(path: .usual, targetFrame: nil, coveringFrames: [])
         }
         actionDispatcher.toggleScratchpad = { [weak self] in self?.scratchpad.toggle() }
         actionDispatcher.moveToScratchpad = { [weak self] in self?.scratchpad.sendFocusedWindow() }
@@ -1229,15 +1215,6 @@ class WindowManager {
         return cg.getIntegerValueField(.eventSourceUnixProcessID) == Int64(getpid())
     }
 
-    /// A tile as the focus router sees it: in the
-    /// tiled set, not floating, and not a newcomer waiting in admission
-    /// recovery (those sit over the tiles like floaters).
-    private func isRoutedTile(_ wid: CGWindowID) -> Bool {
-        stateCache.tiledPositions[wid] != nil
-            && !stateCache.floatingWindowIDs.contains(wid)
-            && !admissionRecovery.pendingWindowIDs.contains(wid)
-    }
-
     /// Re-read the stack and redraw what depends on it: the floater
     /// cutouts in the dim and the floater outlines' occlusion.
     ///
@@ -1277,9 +1254,8 @@ class WindowManager {
     /// On Tahoe, AX writes + SkyLight + `NSRunningApplication.activate()` are all
     /// silently rejected from a `.accessory` app's mouse-move handler context, so
     /// the usual path adds `focusViaSyntheticClick`, which posts a leftMouseDown/Up
-    /// directly into the target process. That path lifts the window. When a
-    /// floater covers the target tile, `TiledFocusRouter` first tries SkyLight
-    /// alone, checks whether focus landed, and only then falls back.
+    /// directly into the target process. That path lifts the window, which is
+    /// what the floater rule wants: the focused window sits above a floater.
     private func focusForFFM(_ window: HyprWindow) {
         // while the scratchpad is up, hovering the dimmed tiles behind it
         // must not steal focus — the layer is quasimodal

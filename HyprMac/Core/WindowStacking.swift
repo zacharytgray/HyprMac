@@ -219,18 +219,6 @@ enum WindowStacking {
         return result
     }
 
-    /// A point inside `frame` that none of `covers` hides: the center of
-    /// the largest uncovered strip. `nil` when nothing is left uncovered.
-    static func exposedPoint(of frame: CGRect, coveredBy covers: [CGRect]) -> CGPoint? {
-        var open = [frame]
-        for cover in covers {
-            open = open.flatMap { subtract(cover, from: $0) }
-        }
-        guard let best = open.max(by: { $0.width * $0.height < $1.width * $1.height }),
-              best.width >= minOverlap, best.height >= minOverlap else { return nil }
-        return CGPoint(x: best.midX, y: best.midY)
-    }
-
     /// `rect` minus `cover`, as up to four strips.
     static func subtract(_ cover: CGRect, from rect: CGRect) -> [CGRect] {
         let hole = rect.intersection(cover)

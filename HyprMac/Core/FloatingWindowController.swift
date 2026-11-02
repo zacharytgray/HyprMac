@@ -274,14 +274,11 @@ final class FloatingWindowController {
     var secondsSinceLastKey: () -> TimeInterval = {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: .keyDown)
     }
-    // a focus still settling: raising now would race its front switch
-    var focusHandoffPending: () -> Bool = { false }
     // fronting another app mid press would break the drag or selection under way
     var isMouseDown: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
     var scheduleAfter: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
     }
-    var restoreFocusWithoutRaise: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
     // back on top and key. runs in the same turn as the floater's raise, so the
     // floater doesn't show over a tile it was already behind
     var restoreFocusLifting: (HyprWindow) -> Void = { $0.focus() }
@@ -553,8 +550,7 @@ final class FloatingWindowController {
     ///
     /// A moment after raising it checks the stack. Focus goes back to the
     /// focused tile only when the raise moved the front app away from it,
-    /// and it goes back through `restoreFocusWithoutRaise`, which does not
-    /// lift the tile.
+    /// and it goes back through `restoreFocusLifting`.
     ///
     /// A floater of another app is raised by fronting that app first, since
     /// macOS 27 ignores the plain AXRaise. That happens only when the focused
@@ -648,13 +644,8 @@ final class FloatingWindowController {
                 hyprLog(.notice, .floating, "raise behind failed: wid=\(pair.floater) rc=\(rc.rawValue)")
             }
         }
-        // the focused tile was above the floater, so it stays above: focused tile,
-        // floater, then the rest. without this the floater would pop over the tile
-        // just clicked
-        if frontsApp, let previousWindow,
-           !WindowStacking.floaters(below: previousFocusID, among: Set(pairs.map(\.floater)), in: windows).isEmpty {
-            restoreFocusLifting(previousWindow)
-        }
+        // focused window, floater, then the rest
+        if frontsApp, let previousWindow { restoreFocusLifting(previousWindow) }
 
         scheduleAfter(Self.verifyDelay) { [weak self] in
             self?.finishRaise(pairs, frontBefore: frontBefore, frontsApp: frontsApp,
@@ -727,8 +718,39 @@ final class FloatingWindowController {
         // between two tiles would otherwise cool the pair for longer each time.
         // an app that re-buries the floater is caught by tileAppLiftsOnFocus,
         // and the burst limit bounds what gets through before that
-        restoreFocusWithoutRaise(prev)
+        restoreFocusLifting(prev)
         updateFocusBorder?(prev)
+    }
+
+    /// Put back on top any floater a tile other than `target` covers, right before
+    /// `target` takes focus.
+    ///
+    /// Order is the point. Raising the floater before the target lifts means it
+    /// goes straight from over the old tile to under the new one, and never shows
+    /// over the window taking focus. Skipped work is picked up by `raiseBehind`
+    /// after the activation.
+    func raiseFloatersBeforeFocus(_ target: HyprWindow) {
+        guard !stateCache.floatingWindowIDs.contains(target.windowID),
+              !isScratchpadVisible(), !isMenuTracking(), !isMouseDown(),
+              stateCache.floatingWindowIDs.contains(where: workspaceManager.isWindowVisible),
+              let windows = windowListForZOrder().map(WindowStacking.decode) else { return }
+        let pairs = coveredFloaters(in: windows, ignoringTile: target.windowID).filter {
+            stateCache.cachedWindows[$0.floater]?.ownerPID != target.ownerPID
+        }
+        guard !pairs.isEmpty, findPopup(windows, frontmostPID()) == nil, !deferFrontedRaise() else { return }
+        frontedRaiseBusyUntil = now() + Self.frontedRaiseBusy
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        hyprLog(.notice, .floating, "raise before focus: wids=\(pairs.map(\.floater)) "
+                + "under=\(pairs.map(\.tile)) focus=\(target.windowID)")
+        for pair in pairs {
+            guard let w = stateCache.cachedWindows[pair.floater] else { continue }
+            suppressions.expectActivation(of: w.ownerPID)
+            frontApp(w)
+            let rc = performRaise(w)
+            if rc != .success {
+                hyprLog(.notice, .floating, "raise before focus failed: wid=\(pair.floater) rc=\(rc.rawValue)")
+            }
+        }
     }
 
     /// Whether a raise that fronts another app has to wait, and if so, try
@@ -738,10 +760,6 @@ final class FloatingWindowController {
         let remaining = frontedRaiseBusyUntil - now()
         if remaining > 0 {
             retryRaiseBehind(after: remaining + 0.02)
-            return true
-        }
-        if focusHandoffPending() {
-            retryRaiseBehind(after: Self.frontedRecheckDelay)
             return true
         }
         if secondsSinceLastKey() < Self.typingQuietWindow {

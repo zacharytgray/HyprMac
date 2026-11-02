@@ -159,7 +159,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
 | `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate. |
 | `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
-| `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown, the focus invariant and the raise restore. A tile a floater covers is focused through SkyLight alone, checked, and falls back to the usual path. |
+| `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown and the focus invariant. Puts floaters an old tile covers back on top, then focuses and lifts the target. |
 | `WindowStacking` | Pure rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, and the tiles covering each floater. |
 | `TiledDragHandler` | Owns captured press/release state, cancellation, and verified cache updates. |
 | `TiledDragTransaction` | Builds isolated insertion, swap, or resize candidates, within one tree or across two monitors' trees, and verifies frames before commit. |
@@ -823,12 +823,9 @@ this list is the index.
   level. `Hypr+Shift+T` cycles and raises floaters, and `raiseBehind` runs
   on app activation and after discovery. It raises only floaters a tile
   overlaps, stands down while the frontmost app has a menu open, and cools a
-  pair down when a raise does nothing or loops. Hover and Hypr+Arrow avoid
-  burying floaters through `TiledFocusRouter`; workspace switches, window
-  moves and the scratchpad do not yet. A click on a tile lifts it over the
-  floater, which is allowed: a floater may sit behind the focused tile or
-  another floater, and nothing else. See `docs/debugging.md` "Floaters,
-  open menus and no-raise focus".
+  pair down when a raise does nothing. The focused window sits above a floater
+  wherever they overlap, and a floater is on top of every other tile. See
+  `docs/debugging.md` "Floaters and open menus".
 - **A visible move's rollback can degrade** — if a restoration write or its
   readback fails, `applyVerifiedLayoutAttempt` returns `.degraded` and the
   window can stay on the destination screen while it is assigned to the

@@ -740,65 +740,53 @@ to another app, then press Hypr+Shift+T. Check exact AX window identity and stab
 z-order as well as the visible result; unit tests cannot establish macOS AX
 behavior. Keep existing logs before restarting the app.
 
-### Floaters, open menus and no-raise focus (issue #10)
+### Floaters and open menus (issue #10)
 
-Two facts drive these rules. Chrome's bookmark folders are not NSMenus. They
-are windows at `kCGPopUpMenuWindowLevel` (101), so the HIToolbox menu-tracking
-guard does not see them. And `focusWithoutRaise` is not raise-free: it writes
-kAXMain, may call `NSRunningApplication.activate`, and posts key-window events,
-which bring the app's main and key windows forward and can dismiss menus. The
-hover path adds a synthetic title-bar click.
+The rule, decided November 2: the focused window sits above a floater wherever they
+overlap, and a floater is on top of every other tile. It applies to hover and click
+alike. True always-on-top isn't available: a window level needs SIP off, and raising
+the floater after each click blinked on every click and took the keyboard for a moment.
+
+Two facts drive the guards. Chrome's bookmark folders are not NSMenus. They are windows
+at `kCGPopUpMenuWindowLevel` (101), so the HIToolbox menu-tracking guard does not see
+them. And `focusWithoutRaise` is not raise-free: it writes kAXMain, may call
+`NSRunningApplication.activate`, and posts key-window events, which bring the app's
+windows forward and can dismiss menus. The hover path adds a synthetic title-bar click.
 
 How it works:
 
-- `WindowStacking` reads the window list. An open popup is a window of the
-  frontmost app at layer 101 or above (below the screen saver). Hover focus,
-  `refocusUnderCursor`, `raiseBehind`, its restore, the focus invariant, the
-  focus repair on a bare Hypr press, and the no-raise fallback all stand
-  down while one is open. A popup-level window open longer than 30 s is
-  treated as part of its app and stops counting. A raised window of the
-  frontmost app under the pointer (a menu, a floating panel) is never
-  hit-tested through. Other apps' high windows are still skipped, so a
-  click-through overlay does not freeze focus.
-- `raiseBehind` only raises a floater a tile actually overlaps, checks the
-  stack 50 ms later, and restores focus only when the raise moved the front
-  app away from the focused tile. `RaiseBehindThrottle` cools a
-  floater/tile pair down after a raise that did not lift it (30 s), a raise
-  within 1 s of our own restore (the loop), or 4 raises in 5 s (10 s). The
-  loop cooldown starts at 15 s and doubles with each loop up to 600 s. A
-  pair quiet for 300 s after its cooldown ends starts over at 15 s.
-- `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus
-  invariant and the raise restore. Workspace switches,
-  window moves and the scratchpad still use their own focus calls, which can
-  lift a tile. When a floater covers the target tile it sends only
-  `_SLPSSetFrontProcessWithOptions` and
-  the key-window event records, as yabai does, plus yabai's lost/gained pair
-  when focus moves inside the frontmost app. No kAXMain write, no
-  `activate()`, no click. 80 ms later it checks whether the target app is
-  frontmost and the target window is AX-focused. If not, it falls back to
-  the usual path and logs it, unless a menu opened or the user switched to
-  another app meanwhile. Hypr+Arrow warps the cursor to the part of the
-  tile the floater leaves uncovered.
-- The dim cuts a floater's hole only where the floater is in front. For
-  each floater, `WindowStacking.occluders` lists the tiles stacked above it
-  in the window list, and `DimmingOverlay` takes them back out of the hole.
-  A floater the list does not show keeps its whole hole. The cutouts are redrawn when the stack
-  can change: after a click's mouse-up, a focused or main window change, an
-  app activation, a raise-behind, and the usual focus
-  path. `scheduleRestackRefresh` coalesces each burst into one refresh.
-  That refresh reads the window list once for the dim and once more for
-  the border occlusion when the border is on. It runs per event, not per
-  mouse move, and only while a floater is visible.
-- A floater may sit behind the focused tile or another floater, and nothing else.
-  A click lifts the clicked tile natively and nothing fights that. A click re-raise
-  used to put the floater straight back, which blinked on every click and took the
-  keyboard for a moment. It was removed on November 2.
-- A click is credited to the window the window list puts under the
-  pointer when that window is one of ours, so a floater a tile has buried
-  does not take the focus tracker from the tile that got the click.
-- The refocus that follows a click honours the quiet window after a
-  keyboard action. The refocus a keyboard action asks for itself does not, so
-  a send-to-scratchpad does not leave focus on the window it just parked.
+- `WindowStacking` reads the window list. An open popup is a window of the frontmost
+  app at layer 101 or above (below the screen saver). Hover focus,
+  `refocusUnderCursor`, both raises, the focus invariant and the focus repair on a bare
+  Hypr press all stand down while one is open. A popup-level window open longer than
+  30 s is treated as part of its app and stops counting. A raised window of the
+  frontmost app under the pointer (a menu, a floating panel) is never hit-tested
+  through. Other apps' high windows are still skipped, so a click-through overlay does
+  not freeze focus.
+- `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus invariant and
+  the focus repair. It calls `raiseFloatersBeforeFocus`, then the usual focus, which
+  lifts the target. Order matters. A floater under the old tile goes up first, so it
+  moves straight from over that tile to under the new one and never shows over the
+  window taking focus.
+- `raiseBehind` is the backstop, on an app activation, after a click's mouse-up, and on
+  each poll. It ignores the focused tile, so a floater only it covers is left alone. If
+  a click lifted the new tile before anything could run (no hover first), it raises the
+  floater and lifts the tile again in the same turn, which shows as a blink of about
+  70 ms over that tile.
+- AXRaise on another app's window does nothing on macOS 27 (`raise behind ineffective`),
+  so both raises front the floater's app first (`frontApp`, SkyLight with no activate).
+  Keys go to the front app, so a raise waits 250 ms after the last key and for the last
+  raise's 400 ms hand-off, and never runs during a mouse press. Keys typed in the short
+  time the floater's app is in front land there.
+- A fronted raise gets up to 230 ms to land. A miss rests 1 s, then 2 and 4, retrying
+  after each until three in a row, then waits for the next click. A plain raise, with
+  another app in front, cools the pair for 30 s or after 4 raises in 5 s, and a fronted
+  raise clears that.
+- The dim cuts a floater's hole only where the floater is in front. For each floater,
+  `WindowStacking.occluders` lists the tiles stacked above it, and `DimmingOverlay`
+  takes them back out of the hole. The cutouts are redrawn when the stack can change.
+  `scheduleRestackRefresh` coalesces each burst into one refresh, and it runs only while
+  a floater is visible.
 
 Log lines, all at notice level:
 
@@ -808,71 +796,23 @@ Log lines, all at notice level:
 | `ffm resumed: popup <id> gone` | mouse | hover focus back |
 | `ignoring popup <id> pid=<pid> layer=<n>: open 30s, treated as part of the app` | mouse | a menu-level window that never closes no longer counts for any guard |
 | `refocus under cursor skipped: popup …` | mouse | post-click refocus held off |
+| `raise before focus: wids=[…] under=[…] focus=<id>` | floating | floaters raised from under the old tile before the new one lifts |
+| `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised by the backstop, and the tiles that covered them |
 | `raise behind deferred: popup wid=<id> pid=<pid> layer=<n>` | floating | raise held until the menu closes |
-| `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised, and the tiles that covered them |
-| `raise behind ineffective: wid=<id> still under <id> — cooldown 30s` | floating | the window server kept the tile on top |
-| `raise behind kept focus: wid=<id> front=<pid>` | floating | no restore sent |
-| `raise behind restore: wid=<id> (front moved <pid> → <pid>)` | floating | the raised app took focus; it went back |
+| `raise behind ineffective: wid=<id> still under <id> — cooldown <n>s` | floating | the raise didn't land |
+| `raise behind kept focus: wid=<id> front=<pid>` | floating | no backstop restore needed |
+| `raise behind restore: wid=<id> (front moved <pid> → <pid>)` | floating | the floater's app still had the front, so it went back |
 | `raise behind restore skipped: popup wid=<id> layer=<n>` | floating | a menu opened meanwhile, so focus stayed where it was |
-| `raise behind cooldown: pair=<floater>/<tile> reason=loop\|burst for <n>s` | floating | loop or burst stopped |
-| `no-raise focus: wid=<id> pid=<pid> reason=<why> floaters=[…] layers=[…] front=<pid> crossApp=<bool> prevKey=<id>` | focus | a covered tile was focused without activate or click. `layers` 3 means the floater was at the floating level; `crossApp=true` means SkyLight had to switch the front process |
-| `no-raise focus verify: wid=<id> … front=<pid> (want <pid>) key=<id> floatersAbove=[…] layers=[…] buried=[…] → landed\|missed, floaters kept above\|buried` | focus | whether focus landed, and whether the floaters stayed above the tile |
-| `no-raise focus fallback: wid=<id> path=activate\|activate+click after a miss (front=<pid> want <pid>, key=<id>); this lifts the tile over […]` | focus | it did not land; the usual path ran and lifts the tile |
-| `no-raise focus superseded: wid=<id>` | focus | a newer focus replaced a same-app hand-off |
-| `no-raise focus verify: wid=<id> superseded` | focus | a newer focus came before the check |
-| `no-raise focus fallback skipped: …` | focus | a menu opened, or the user switched apps, meanwhile |
 | `focus invariant skipped: popup …` | focus | the invariant held off |
 | `ensureFocus skipped: popup …` | focus | a bare Hypr press left the menu open |
 
-One repro shows whether no-raise focus works on a given macOS. If `verify`
-says `landed` with the floater in `floatersAbove` and an empty `buried`, it
-works there. If it says `missed` and a `fallback` line follows, macOS refused
-it and hover onto a covered tile still lifts the tile. On the MacBook (macOS
-27, Safari only, September 26) hover, Hypr+Arrow and typing into a covered
-tile all logged `landed` with the floater in `floatersAbove`. Every one of
-those had the target's app already in front. No-raise focus that has to switch the front process
-(`crossApp=true`) has not been seen live yet.
-
-Cross-app AXRaise alone does not work on macOS 27. A Messages Quick Look preview
-under a Safari tile logged `raise behind: wids=[5252] under=[71889]` and then
-`raise behind ineffective: wid=5252 still under 71889`. So raise-behind fronts the
-floater's app first (`frontApp`, SkyLight with no activate) and hands focus back
-through the no-raise path. When the focused tile was above the floater, as after a click,
-it goes straight back on top in the same turn, so the stack ends up focused tile, floater,
-the rest. It runs for a floater behind a tile other than the focused
-one, on an app activation, after a click's mouse-up, and on each poll, and only with the
-focused tile's app in front. It waits for the mouse-up, 250 ms after the last key
-because keys go to the front app, a no-raise focus still settling, and the last raise's
-400 ms hand-off. Keys typed in the roughly 70 ms the floater's app is in front land
-there. A raise gets up to 230 ms to land. A miss rests 1 s, then 2 and 4, retrying after
-each until three in a row, then waits for the next click.
-
-Some apps lift themselves when key-window events arrive: Dia goes above a floater when
-event 0x01 arrives (measured on macOS 27 with HyprMac stopped). That is allowed, since
-Dia has focus then. The floater returns when focus moves to another tile.
-
-Floating-level floaters. AppKit puts a floating panel (a Quick Look
-preview, an inspector) at the floating level, CG layer 3, while its app is
-active, and drops it to layer 0 when the app deactivates. A window HyprMac
-manages as a floater counts on layer 0 or layer 3 in the router,
-raise-behind and the dim cutouts. A layer-3 floater is
-above every tile, so its cutout is whole. Unmanaged layer-3 windows are
-still ignored, and a raised window of the front app that we do not manage
-still blocks hover. Hovering a managed floater at layer 3 is a hit on that
-floater, and so is a click on it.
-
-For that repro, click the preview, then hover a Safari tile. It should log
-`no-raise focus: wid=<tile> pid=<safari> reason=ffm floaters=[<preview>]
-layers=[3] front=<messages> crossApp=true`. Then one of:
-
-- `no-raise focus verify: … front=<safari> (want <safari>) key=<tile> …
-  → landed, floaters kept above`: the process switch worked and the
-  preview stayed in front after dropping to layer 0.
-- `… → landed, floaters buried`: focus moved, but the preview fell under
-  the tile. A `raise behind … ineffective` line usually follows.
-- `… → missed, …` then `no-raise focus fallback: … after a miss (…)`:
-  SkyLight would not switch the front process. The usual path ran and
-  lifted the tile.
+Floating-level floaters. AppKit puts a floating panel (a Quick Look preview, an
+inspector) at the floating level, CG layer 3, while its app is active, and drops it to
+layer 0 when the app deactivates. A window HyprMac manages as a floater counts on layer
+0 or layer 3 in raise-behind and the dim cutouts. A layer-3 floater is above every tile,
+so its cutout is whole. Unmanaged layer-3 windows are still ignored, and a raised window
+of the front app that we do not manage still blocks hover. Hovering a managed floater at
+layer 3 is a hit on that floater, and so is a click on it.
 
 ### A floater changed size or left the screen
 
