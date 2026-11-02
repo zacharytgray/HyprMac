@@ -189,7 +189,7 @@ intermittent ones get a `.notice` log first, then a fix once the cause is seen.
 
 | # | Bug | Evidence | Status | First step |
 |---|---|---|---|---|
-| B1 | Corrupt `config.json` loses every setting | Section 3 | Read | Step 4.2 |
+| B1 | Corrupt `config.json` loses every setting | Section 3 | **Fixed in phase 4**, not checked live | Step 4.2 |
 | B2 | Deleting a default keybind does not stick: `mergeNewDefaults` re-adds it on reload and at launch | `UserConfig.swift:301-316,215,497`; test pins the mechanism at `ConfigUpdateCoordinatorTests.swift:657` | Read, not run live | Decision D5 |
 | B3 | Layout save loses `unplaced` windows, those on a hidden workspace not yet in a tree: `capture` reads `cachedWindows`, which holds visible windows only. The test rig fills the cache by hand | `LayoutRestorer.swift:157`, `WindowManager.swift:2640-2644`, `LayoutRestorerTests.swift:119` | Inferred | Hypr+Shift+N to a hidden workspace, Hypr+Ctrl+S, read `unplaced` in `layout-snapshots.json` |
 | B4 | Pausing during a display settle can re-park and retile while paused: `stop()` leaves the settle armed, and its closure has no `isRunning` check | `WindowManager.swift:924-956,3392` | Inferred | `.notice` in the closure when not running |
@@ -349,6 +349,21 @@ Back up `~/Library/Application Support/HyprMac/` before each live test.
 | 4.3 | Log write failures, by error code. Then atomic writes: resolve the symlink first and suppress the self-triggered rearm | `ConfigStoreWatcherTests`, new symlink tests. **Live** with iCloud on, editing from a second machine |
 | 4.4 | Make `resetToDefaults` one update, as `resetAppearanceToDefaults` is | New atomic test, `ConfigUpdateCoordinatorTests`. **Live**: press Reset |
 | 4.5 | Reload after iCloud repair, before the watcher starts. Retry the watcher when `open` fails. Do not push defaults through a dangling link | New tests through 4.1. **Live** with a backup |
+
+**Status 2026-11-02:** all five steps built and covered by `ConfigStoreSafetyTests`, none of it
+checked live. Every **Live** check above is still owed, and iCloud most of all: a rename inside
+iCloud Drive, a second Mac editing, and a real evicted file have only been simulated with scratch
+files. Choices beyond the table:
+
+- The copy happens right before an overwrite, not at launch. That covers launch, a bad hand edit
+  while running, and a mid-sync read with one rule, and leaves the file alone until then.
+- `monitor-config.json` gets the same treatment.
+- The write hold covers any link this launch can't read, not only a dangling one. An evicted file
+  with no network reads as an error, and its bytes can't be copied.
+- Repair, enable and reset also keep copies, as `<name>.replaced`. This does not settle D6.
+- A save still triggers one reload. Removing it would change the bracket length and B2.
+
+Limits are under Persistence in `docs/architecture.md`.
 
 ### Phase 5: shrink `WindowManager`
 

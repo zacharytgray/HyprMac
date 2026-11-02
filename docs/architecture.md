@@ -696,6 +696,33 @@ and the monitor identity contract (user-facing config keys by
 `ConfigStore` (raw I/O + iCloud sync) → JSON on disk at
 `~/Library/Application Support/HyprMac/config.json`.
 
+Config safety, all in `ConfigStore`:
+
+| Situation | What happens |
+|---|---|
+| File missing | Defaults. Normal on a first run |
+| File unreadable (truncated, garbage, wrong type in a core field) | Log a `.warning` with the reason, never the values. At launch use defaults; while running keep current settings. The file is left alone, since a read mid sync can look unreadable |
+| Any save over a file that doesn't decode | Copy it to `<name>.unreadable` first, for `config.json` and `monitor-config.json`. If the copy fails, the save is skipped |
+| Any save | Atomic, written to the real file behind a symlink so the iCloud link survives. A failure is logged with its error code and the old file stays |
+| Launch finds a link it can't read | Hold `config.json` saves so defaults never reach other Macs. A good file arriving ends the hold, and so does turning sync off or on. `monitor-config.json` still saves. A file lost while running isn't held, because memory holds real settings |
+| Launch finds a regular file where the iCloud link belongs | Copy it to `config.json.replaced` if it differs, link, then reload before anything can save |
+| Enable sync over an existing iCloud file | Last Mac wins. The iCloud file is copied to `config.json.replaced` first, and the local file goes only after iCloud holds its data |
+| Reset all settings | One update. The button has no confirmation, so both files are copied to `<name>.replaced` first |
+
+Copies live beside the local path and never sync. An older copy is never
+overwritten: new bytes get `.2`, `.3` and so on, and the same bytes aren't
+copied twice. Nothing reads or prunes them. They are there for a person.
+
+A save closes the watcher, renames, and reopens on the new file, so there is no
+re-arm gap. It then reports the change once, because the reload that follows a
+save is existing behavior: it re-merges default keybinds and pins the bracket
+length. `startFileWatcher` keeps retrying when the file isn't there yet.
+
+Known limits: on macOS 13, an evicted iCloud file is a `.config.json.icloud`
+placeholder that nothing here asks to download, so that link stays held and
+launch repair treats iCloud as empty. A hold is only in the log, with nothing in
+Settings. Unknown keybinds a newer build wrote are still dropped on save.
+
 `ConfigMigration` handles one-time data migrations and schema
 versioning: the monitor-config split (per-machine `maxSplitsPerMonitor`
 and `disabledMonitors` moved out of the synced config into

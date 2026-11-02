@@ -198,9 +198,10 @@ class UserConfig: ObservableObject {
 
     var isICloudDriveAvailable: Bool { store.isICloudDriveAvailable }
 
-    init() {
-        self.store = ConfigStore()
-        self.iCloudSyncEnabled = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled")
+    init(store: ConfigStore = ConfigStore(),
+         iCloudSyncEnabled: Bool = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled")) {
+        self.store = store
+        self.iCloudSyncEnabled = iCloudSyncEnabled
 
         let monitorConfig = store.loadSavedMonitorConfig()
         let savedConfig = store.loadSavedConfig()
@@ -280,12 +281,20 @@ class UserConfig: ObservableObject {
         self.outerPaddingPerMonitor = monitorConfig?.outerPaddingPerMonitor ?? [:]
         self.workspaceMonitors = monitorConfig?.workspaceMonitors ?? [:]
 
+        var relinked = false
         if iCloudSyncEnabled {
-            store.ensureICloudSymlinkIntegrity(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
+            relinked = store.ensureICloudSymlinkIntegrity(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
         }
+        store.holdWritesIfLinkUnusable()
 
         if resolved.needsLocalWrite {
             store.writeSavedMonitorConfig(makeSavedMonitorConfig())
+        }
+
+        // the values above came from the local file the link just replaced.
+        // saving them would write old settings over iCloud
+        if relinked {
+            reloadFromDisk()
         }
 
         store.onFileChanged = { [weak self] in self?.reloadFromDisk() }
@@ -389,7 +398,11 @@ class UserConfig: ObservableObject {
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames)
     }
 
+    // one update: one save and one runtime signal, like resetAppearanceToDefaults.
+    // the button has no confirmation, so what it replaces gets a copy
     func resetToDefaults() {
+        store.keepCopiesBeforeReset()
+        isReloading = true
         keybinds = Keybind.defaults
         gapSize = UserConfigDefaults.gapSize
         outerPadding = UserConfigDefaults.outerPadding
@@ -424,6 +437,9 @@ class UserConfig: ObservableObject {
         statusExportEnabled = false
         statusHookCommand = nil
         externalControlEnabled = false
+        isReloading = false
+        save()
+        didApplyRuntimeChange.send()
     }
 
     /// Restore the controls in Focus Chrome without changing layout,

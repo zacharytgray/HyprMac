@@ -393,6 +393,10 @@ Two on-disk files:
   The file watcher follows only `config.json`, so quit HyprMac before
   editing this file and reopen it after.
 
+A file HyprMac can't read is copied to `<name>.unreadable` before it is
+overwritten, and `<name>.replaced` holds what iCloud set up or a reset replaced.
+See Persistence in [architecture.md](architecture.md).
+
 `ConfigMigration.resolveMonitorConfig` handles the migration: if
 the local file is absent and the synced config has the old fields,
 it adopts the synced values and returns `needsLocalWrite: true` so
