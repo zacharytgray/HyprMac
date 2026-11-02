@@ -1679,6 +1679,11 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         XCTAssertEqual(steps, ["front 12", "raise 12"], "macOS 27 ignores the raise without the front")
     }
 
+    private static func entry(_ id: CGWindowID, _ frame: CGRect) -> [String: Any] {
+        [kCGWindowNumber as String: id,
+         kCGWindowBounds as String: CGRectCreateDictionaryRepresentation(frame),
+         kCGWindowLayer as String: 0]
+    }
     private static let focusedOverFloaterOverOther = [entry(13, CGRect(x: 40, y: 40, width: 400, height: 400)),
                                                       entry(11, CGRect(x: 0, y: 0, width: 500, height: 500)),
                                                       entry(12, CGRect(x: 50, y: 50, width: 300, height: 300))]
