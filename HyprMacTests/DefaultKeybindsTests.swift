@@ -16,7 +16,7 @@ final class DefaultKeybindsTests: XCTestCase {
         XCTAssertEqual(bind.modifiers, .hypr)
         XCTAssertFalse(bind.modifiers.contains(.shift))
         XCTAssertEqual(bind.displayString, "HYPR+T")
-        XCTAssertEqual(bind.badgeLabels(hyprLabel: "⇪"), ["⇪", "T"])
+        XCTAssertEqual(bind.badgeLabels(), ["HYPR", "T"])
         XCTAssertEqual(bind.overlayChord, "HYPR T")
         XCTAssertEqual(Keybind.defaults.filter { $0.id == bind.id }, [bind])
     }

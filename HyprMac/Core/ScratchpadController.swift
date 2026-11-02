@@ -161,13 +161,11 @@ final class ScratchpadController {
             saveFreeFormFrame(window, fallback: window.frame)
             window.isFloating = false
             if !tileIntoVisibleLayer(window) {
-                stateCache.floatingWindowIDs.insert(id)
-                window.isFloating = true
+                stateCache.setFloating(true, window: window)
                 hyprLog(.notice, .lifecycle, "scratchpad: no slot for new '\(window.title ?? "?")' (\(id)) — floating")
             }
         } else {
-            stateCache.floatingWindowIDs.insert(id)
-            window.isFloating = true
+            stateCache.setFloating(true, window: window)
         }
         if !isTiled(id), let frame = window.frame {
             lastShownFrames[id] = frame
@@ -285,9 +283,9 @@ final class ScratchpadController {
             hyprLog(.notice, .lifecycle, "scratchpad toggle: empty — nothing to show")
             return
         }
-        suppressions.suppress("workspace-transition", for: 1.5)
-        suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
         focusBeforeShow = focusController.lastFocusedID
         shownAt = Date()
         workspaceManager.scratchpadVisible = true
@@ -328,8 +326,7 @@ final class ScratchpadController {
             if !tiledMembers.isEmpty {
                 let rejects = tilingEngine.tileScratchpad(tiledMembers, screen: targetScreen, in: tiledRegionRect)
                 for w in rejects {
-                    stateCache.floatingWindowIDs.insert(w.windowID)
-                    w.isFloating = true
+                    stateCache.setFloating(true, window: w)
                     hyprLog(.notice, .lifecycle, "scratchpad show: no slot for '\(w.title ?? "?")' (\(w.windowID)) — falls back to floating")
                 }
             }
@@ -407,7 +404,7 @@ final class ScratchpadController {
 
     func hide(reason: DismissReason) {
         guard isVisible else { return }
-        suppressions.suppress("workspace-transition", for: 1.5)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
         let ids = members
         let parkScreen = displayManager.screens.first
         for w in accessibility.getAllWindows() where ids.contains(w.windowID) {
@@ -495,14 +492,12 @@ final class ScratchpadController {
                 // later tiled→floating toggle (and the placement fallback
                 // if the tile is rejected).
                 saveFreeFormFrame(focused, fallback: frameBeforeSend)
-                stateCache.floatingWindowIDs.remove(id)
-                focused.isFloating = false
+                stateCache.setFloating(false, window: focused)
                 if isVisible {
                     summonedIDs.insert(id)
                     if !tileIntoVisibleLayer(focused) {
                         // no fitting slot — stays a floating member
-                        stateCache.floatingWindowIDs.insert(id)
-                        focused.isFloating = true
+                        stateCache.setFloating(true, window: focused)
                         if let f = frameBeforeSend { lastShownFrames[id] = f }
                         hyprLog(.notice, .lifecycle, "scratchpad send: no slot for '\(focused.title ?? "?")' (\(id)) — floating instead")
                     }
@@ -511,8 +506,7 @@ final class ScratchpadController {
                     workspaceManager.hideInCorner(focused, on: screen)
                 }
             } else {
-                stateCache.floatingWindowIDs.insert(id)
-                focused.isFloating = true
+                stateCache.setFloating(true, window: focused)
                 if isVisible {
                     summonedIDs.insert(id)
                     if let f = frameBeforeSend { lastShownFrames[id] = f }
@@ -576,8 +570,7 @@ final class ScratchpadController {
 
         animatedRetile({ [weak self] in
             guard let self, !staysFloating else { return }
-            stateCache.floatingWindowIDs.remove(id)
-            focused.isFloating = false
+            stateCache.setFloating(false, window: focused)
         }, { [weak self] in
             guard let self else { return }
             focused.focusWithoutRaise()
@@ -605,8 +598,7 @@ final class ScratchpadController {
             // tiled → floating: pull it out of the ws-0 tree, restore the
             // pre-tile free-form frame, then close the gap left behind.
             tilingEngine.removeWindow(focused, fromWorkspace: Self.workspace)
-            stateCache.floatingWindowIDs.insert(id)
-            focused.isFloating = true
+            stateCache.setFloating(true, window: focused)
             let full = displayManager.cgRect(for: screen)
             let base = workspaceManager.savedFloatingFrame(for: id) ?? focused.frame ?? .zero
             if base != .zero {
@@ -641,14 +633,12 @@ final class ScratchpadController {
         // reverse toggle restores it (belt-and-suspenders: fall back to the
         // live frame when the off-screen guard in saveFloatingFrame refuses).
         saveFreeFormFrame(focused, fallback: focused.frame)
-        stateCache.floatingWindowIDs.remove(id)
-        focused.isFloating = false
+        stateCache.setFloating(false, window: focused)
 
         if !tileIntoVisibleLayer(focused) {
             // layer tree is full — revert to floating and flash. deliberately
             // a scratchpad reject must never route into adopt.
-            stateCache.floatingWindowIDs.insert(id)
-            focused.isFloating = true
+            stateCache.setFloating(true, window: focused)
             if let f = focused.frame {
                 focusBorder.flashError(around: f, windowID: id)
             } else {

@@ -420,16 +420,8 @@ enum KeybindOverlayContent {
         return (run.family.title, chordLabels(modifiers: seed.modifiers, key: "N"), false)
     }
 
-    // same modifier order as `Keybind.badgeLabels`
     private static func chordLabels(modifiers: ModifierFlags, key: String) -> [String] {
-        var parts: [String] = []
-        if modifiers.contains(.hypr)    { parts.append("HYPR") }
-        if modifiers.contains(.control) { parts.append("⌃") }
-        if modifiers.contains(.option)  { parts.append("⌥") }
-        if modifiers.contains(.shift)   { parts.append("⇧") }
-        if modifiers.contains(.command) { parts.append("⌘") }
-        parts.append(key)
-        return parts
+        Keybind.modifierLabels(modifiers) + [key]
     }
 
     // arrows in canonical L↑↓R order, contiguous in one chip

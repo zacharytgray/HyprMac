@@ -5,9 +5,15 @@
 import Foundation
 import AppKit
 
-/// Conversion namespace for CG ↔ NS coordinate work. Empty today: the
-/// conversions are inline at their call sites.
-enum CoordinateSpace {}
+/// Conversion namespace for CG ↔ NS coordinate work.
+enum CoordinateSpace {
+    /// A top-left CG rect as a bottom-left NS rect. A screen left of or above
+    /// the primary has negative coordinates in both, and this one formula
+    /// covers it.
+    static func nsRect(fromCG rect: CGRect, primaryHeight: CGFloat) -> NSRect {
+        NSRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+    }
+}
 
 extension CGRect {
     /// `true` when at least `threshold` of this rect's area overlaps

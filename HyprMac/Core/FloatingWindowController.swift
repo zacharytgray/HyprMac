@@ -416,8 +416,7 @@ final class FloatingWindowController {
             // reassign workspace in case the window was dragged to a different monitor while floating.
             workspaceManager.moveWindow(window.windowID, toWorkspace: workspace)
             animatedRetile { [self] in
-                stateCache.floatingWindowIDs.remove(window.windowID)
-                window.isFloating = false
+                stateCache.setFloating(false, window: window)
 
                 switch forceInsert(window, workspace: workspace, screen: screen) {
                 case .inserted, .alreadyPresent:
@@ -434,8 +433,7 @@ final class FloatingWindowController {
             focusBorder.hide()
             dimmingOverlay.hideAll()
             animatedRetile { [self] in
-                stateCache.floatingWindowIDs.insert(window.windowID)
-                window.isFloating = true
+                stateCache.setFloating(true, window: window)
                 tilingEngine.removeWindow(window, fromWorkspace: workspace)
 
                 let screenRect = displayManager.cgRect(for: screen)
@@ -492,8 +490,7 @@ final class FloatingWindowController {
     /// somewhere the user can see, and that is the whole point of the
     /// fallback. Focus is left alone.
     func floatInPlace(_ window: HyprWindow, reason: String) {
-        stateCache.floatingWindowIDs.insert(window.windowID)
-        window.isFloating = true
+        stateCache.setFloating(true, window: window)
         stateCache.cachedWindows[window.windowID] = window
         hyprLog(.notice, .floating, "float in place: \(window.windowID) (\(reason))")
     }
@@ -507,8 +504,8 @@ final class FloatingWindowController {
     /// focused, so a floater hidden across a disconnected monitor still
     /// becomes reachable.
     func cycleFocus() {
-        suppressions.suppress("mouse-focus", for: 0.15)
-        suppressions.suppress("activation-switch", for: 0.5)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
 
         let visibleFloaters = stateCache.floatingWindowIDs.sorted().compactMap { wid -> HyprWindow? in
             guard workspaceManager.isWindowVisible(wid) else { return nil }
@@ -624,8 +621,8 @@ final class FloatingWindowController {
         }
         guard !pairs.isEmpty else { return }
 
-        suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
 
         hyprLog(.notice, .floating, "raise behind: wids=\(pairs.map(\.floater)) under=\(pairs.map(\.tile)) "
                 + "focus=\(previousFocusID) front=\(frontBefore.map(String.init) ?? "nil")")
@@ -768,8 +765,8 @@ final class FloatingWindowController {
         }
         guard !raising.isEmpty else { return }
 
-        suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
         let generation = focusController.generation
         // back to front, so the floaters keep their order among themselves
         for item in raising.reversed() {

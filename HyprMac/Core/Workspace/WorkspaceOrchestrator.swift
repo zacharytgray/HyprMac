@@ -177,9 +177,9 @@ final class WorkspaceOrchestrator {
             return
         }
         let wasFloating = stateCache.floatingWindowIDs.contains(focused.windowID)
-        suppressions.suppress("workspace-transition", for: 1.5)
-        suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
         focused.isFloating = false
         let preparedResult = tilingEngine.prepareSoleWindowTransfer(
             focused, sourceWindows: sourceWindows, fromWorkspace: sourceWorkspace,
@@ -324,9 +324,9 @@ final class WorkspaceOrchestrator {
         // hold polls off for the duration of the transition. Tahoe AX
         // writes lag, so a poll mid-transition reads stale frames and
         // drift detection can falsely reassign windows.
-        suppressions.suppress("workspace-transition", for: 1.5)
-        suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
 
         let currentScreen = screenUnderCursor()
 
@@ -453,7 +453,7 @@ final class WorkspaceOrchestrator {
         // writes lag, so a poll mid-transition reads the moved window
         // at its OLD pre-hide tile rect and drift detection
         // erroneously reassigns it back to its source workspace.
-        suppressions.suppress("workspace-transition", for: 1.5)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
         tilingEngine.primeMinimumSizes([focused])
         guard let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else { return }
 
@@ -554,8 +554,7 @@ final class WorkspaceOrchestrator {
 
         // unfloat if coming from disabled monitor
         if onDisabledMonitor && isFloating && willTile {
-            stateCache.floatingWindowIDs.remove(focused.windowID)
-            focused.isFloating = false
+            stateCache.setFloating(false, window: focused)
             hyprLog(.debug, .workspace, "unfloating '\(focused.title ?? "?")' from disabled monitor → workspace \(number)")
         }
 
@@ -658,7 +657,7 @@ final class WorkspaceOrchestrator {
     private func revalidateVisibleDestination(_ window: HyprWindow, workspace: Int,
                                               screen: NSScreen, from sourceScreen: NSScreen) -> Bool {
         let all = allWindows()
-        for w in all where stateCache.floatingWindowIDs.contains(w.windowID) { w.isFloating = true }
+        stateCache.stampFloating(all)
         let assigned = workspaceManager.windowIDs(onWorkspace: workspace)
         var windows = all.filter {
             assigned.contains($0.windowID) && $0.windowID != window.windowID && !$0.isFloating
@@ -869,9 +868,9 @@ final class WorkspaceOrchestrator {
     func moveWindows(_ moves: [(window: HyprWindow, workspace: Int)]) -> BatchMoveResult {
         var result = BatchMoveResult()
         guard !moves.isEmpty else { return result }
-        suppressions.suppress("workspace-transition", for: 1.5)
-        suppressions.suppress("activation-switch", for: 0.5)
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
         tilingEngine.primeMinimumSizes(moves.map(\.window))
 
         var plans: [PlannedMove] = []
@@ -906,10 +905,9 @@ final class WorkspaceOrchestrator {
 
         // the windows a retile would lay out, plus the batch's own
         var known: [CGWindowID: HyprWindow] = [:]
-        for window in allWindows() {
-            if stateCache.floatingWindowIDs.contains(window.windowID) { window.isFloating = true }
-            known[window.windowID] = window
-        }
+        let all = allWindows()
+        stateCache.stampFloating(all)
+        for window in all { known[window.windowID] = window }
         for plan in plans { known[plan.id] = plan.window }
 
         var refusedGroups: [Int: BatchMoveResult.Refusal] = [:]

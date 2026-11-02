@@ -443,16 +443,14 @@ final class WindowDiscoveryService {
                 isSizeSettable: isWindowSizeSettable(w),
                 isQuickLookPanel: w.isQuickLookPanel
             ) {
-                stateCache.floatingWindowIDs.insert(w.windowID)
-                w.isFloating = true
+                stateCache.setFloating(true, window: w)
                 hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
             }
 
             // auto-float on disabled monitors — surface so caller skips workspace assignment
             if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
                 if !stateCache.floatingWindowIDs.contains(w.windowID) {
-                    stateCache.floatingWindowIDs.insert(w.windowID)
-                    w.isFloating = true
+                    stateCache.setFloating(true, window: w)
                     hyprLog(.debug, .discovery, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                 }
                 newOnDisabled.insert(w.windowID)

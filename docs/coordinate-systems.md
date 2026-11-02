@@ -110,18 +110,17 @@ introducing an unfamiliar identifier into the settings UI.
 
 ## Coordinate-conversion duplication
 
-The CG↔NS conversion is written inline at each call site:
-`MouseTrackingManager`, `FocusBorder`, `FocusBrackets`, `DimmingOverlay`,
-`TiledDropPreviewPanel`, `ActionDispatcher` and the mouse paths in
-`WindowManager`. `Shared/CoordinateSpace.swift` holds the shared `CGRect`
-helpers (`isSubstantiallyVisible`, `clamped(into:)`) and is the place for a
-shared conversion if one is added.
+`DisplayManager.flippedY` converts a point in either direction.
+`CoordinateSpace.nsRect(fromCG:primaryHeight:)` converts a rect, for the
+overlays that keep their own copy of the primary height. `MouseTrackingManager`,
+`FocusBorder` and `FocusBrackets` still write the conversion inline.
+`Shared/CoordinateSpace.swift` also holds the shared `CGRect` helpers
+(`isSubstantiallyVisible`, `clamped(into:)`).
 
 ## `subtract()` rect-strip helper
 
-`FocusBorder` (`NSRect`) and `WindowStacking` (`CGRect`) each have a helper
-that returns up to four strips representing `rect - hole`. `DimmingOverlay`
-uses `CGPath.subtracting` instead.
+`WindowStacking.subtract` returns up to four strips representing `rect - hole`.
+`FocusBorder` shares it. `DimmingOverlay` uses `CGPath.subtracting` instead.
 
 ## Edge cases
 

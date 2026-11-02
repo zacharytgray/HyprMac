@@ -46,13 +46,6 @@ enum WelcomeContent {
         matching predicate: (Action) -> Bool
     ) -> String? {
         guard let bind = keybinds.first(where: { predicate($0.action) }) else { return nil }
-        var parts: [String] = []
-        if bind.modifiers.contains(.hypr) { parts.append("HYPR") }
-        if bind.modifiers.contains(.control) { parts.append("⌃") }
-        if bind.modifiers.contains(.option) { parts.append("⌥") }
-        if bind.modifiers.contains(.shift) { parts.append("⇧") }
-        if bind.modifiers.contains(.command) { parts.append("⌘") }
-        parts.append(bind.keyCodeName)
-        return parts.joined(separator: " ")
+        return bind.badgeLabels().joined(separator: " ")
     }
 }

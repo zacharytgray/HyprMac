@@ -315,6 +315,23 @@ class TilingEngine {
         self.tiledDragDisplayID = tiledDragDisplayID
     }
 
+    /// A key's marks describe its tree, so they go when the tree does.
+    private func dropTree(_ key: TilingKey) {
+        trees.removeValue(forKey: key)
+        clearLayoutMarks(key)
+    }
+
+    private func clearLayoutMarks(_ key: TilingKey) {
+        unverified.removeValue(forKey: key)
+        vacatedKeys.remove(key)
+    }
+
+    /// Install a candidate that passed. A live tree keeps its identity, since
+    /// callers compare trees with `===`.
+    private func publish(_ candidate: BSPTree, over live: BSPTree?, key: TilingKey) {
+        if let live { live.adopt(candidate) } else { trees[key] = candidate }
+    }
+
     @discardableResult
     internal func beginLayoutGeneration() -> UInt64 {
         layoutGeneration &+= 1
@@ -609,7 +626,7 @@ class TilingEngine {
             admit(candidate.allWindows.map(\.windowID), toWorkspace: workspace)
         }
 
-        if let live = trees[key] { live.adopt(candidate) } else { trees[key] = candidate }
+        publish(candidate, over: trees[key], key: key)
         // the poll that reads a held member again gives it its new slot
         if !held.isEmpty { heldByKey[key, default: []].formUnion(held.map(\.windowID)) }
         if !applyFrames {
@@ -626,9 +643,7 @@ class TilingEngine {
             }
             t.root.pruneEmptyNodes()
             if t.allWindows.isEmpty {
-                trees.removeValue(forKey: other)
-                unverified.removeValue(forKey: other)
-                vacatedKeys.remove(other)
+                dropTree(other)
             }
         }
         hyprLog(.debug, .lifecycle, "layout rebuild ws\(workspace): \(placed.count) placed, \(insertedIDs.count) inserted, \(refusedIDs.count) refused, frames \(applyFrames ? "verified" : "deferred")")
@@ -785,10 +800,7 @@ class TilingEngine {
               layoutGeneration == generation,
               let location = currentLocation(),
               tiledDragOccluderContext(location) == context else {
-            switch captured.verdict {
-            case .accepted: return .unknown(.superseded)
-            case let .rejected(reason), let .unknown(reason): return .unknown(reason)
-            }
+            return .unknown(captured.verdict.failure ?? .superseded)
         }
         onCapturedFrames(captured.actualFrames)
         return .ineligible(.noTarget)
@@ -897,8 +909,7 @@ class TilingEngine {
             return outcome
         }
         trees[key] = candidate
-        unverified.removeValue(forKey: key)
-        vacatedKeys.remove(key)
+        clearLayoutMarks(key)
         return .committed(candidate: candidate, actualFrames: actualFrames, progress: progress)
     }
 
@@ -1106,10 +1117,8 @@ class TilingEngine {
             trees[sourceKey] = sourceCandidate
         }
         trees[targetKey] = targetCandidate
-        unverified.removeValue(forKey: sourceKey)
-        vacatedKeys.remove(sourceKey)
-        unverified.removeValue(forKey: targetKey)
-        vacatedKeys.remove(targetKey)
+        clearLayoutMarks(sourceKey)
+        clearLayoutMarks(targetKey)
         for (id, workspace) in cross.moves {
             admit([id], toWorkspace: workspace)
         }
@@ -1458,8 +1467,7 @@ class TilingEngine {
                               generation: UInt64, inserted: [CGWindowID]) {
         guard layoutGeneration == generation else { return }
         if publishes(outcome) {
-            unverified.removeValue(forKey: key)
-            vacatedKeys.remove(key)
+            clearLayoutMarks(key)
             return
         }
         var ids = Set(inserted)
@@ -2280,7 +2288,7 @@ class TilingEngine {
                                              ? maxDepth(for: screen) : nil)
         let keptTimeout = keepsTimedOutAdmission ? Self.timeoutWithoutRollback(outcome) : nil
         if publishes(outcome) || keptTimeout != nil, layoutGeneration == generation {
-            if let live { live.adopt(candidate) } else { trees[key] = candidate }
+            publish(candidate, over: live, key: key)
             admit(candidate.allWindows.map(\.windowID), toWorkspace: workspace)
             if let keptTimeout {
                 // applyTrackedLayout already marked the key, and only an
@@ -2303,9 +2311,7 @@ class TilingEngine {
         for (key, t) in trees where key.workspace == workspace {
             if !t.allWindows.isEmpty { continue }
             if TilingKey(workspace: workspace, screen: screen) != key {
-                trees.removeValue(forKey: key)
-                unverified.removeValue(forKey: key)
-                vacatedKeys.remove(key)
+                dropTree(key)
             }
         }
 
@@ -2564,13 +2570,11 @@ class TilingEngine {
         let outcome = applyTrackedLayout(t, in: rect, generation: generation, key: key,
                                          restorationUsableFrame: displayManager.cgRect(for: screen))
         if publishes(outcome), layoutGeneration == generation {
-            if let live { live.adopt(t) } else { trees[key] = t }
+            publish(t, over: live, key: key)
             // discard the old monitor's tree only once the destination holds
             // the candidate frames
             for other in trees.keys where other.workspace == Self.scratchpadWorkspace && other != key {
-                trees.removeValue(forKey: other)
-                unverified.removeValue(forKey: other)
-                vacatedKeys.remove(other)
+                dropTree(other)
                 scratchpadRegions.removeValue(forKey: other)
             }
         }
@@ -3259,8 +3263,7 @@ class TilingEngine {
         trees[key] = prepared.candidate
         admittedWindowIDs[prepared.workspace] = []
         admit(prepared.candidate.allWindows.map(\.windowID), toWorkspace: prepared.workspace)
-        unverified.removeValue(forKey: key)
-        vacatedKeys.remove(key)
+        clearLayoutMarks(key)
         return true
     }
 
@@ -3397,9 +3400,7 @@ class TilingEngine {
             tree.root.resetSplitRatios()
             vacatedKeys.insert(key)
             if tree.allWindows.isEmpty {
-                trees.removeValue(forKey: key)
-                unverified.removeValue(forKey: key)
-                vacatedKeys.remove(key)
+                dropTree(key)
             }
         }
     }
@@ -3512,7 +3513,7 @@ class TilingEngine {
             hyprLog(.notice, .tiling, "force insert refused for \(window.windowID): \(reason)")
             return .failed(.layoutRejected(reason))
         }
-        if let live { live.adopt(candidate) } else { trees[key] = candidate }
+        publish(candidate, over: live, key: key)
         admit(candidate.allWindows.map(\.windowID), toWorkspace: key.workspace)
         return .inserted
     }
@@ -3525,15 +3526,6 @@ extension TilingEngine.LayoutApplicationOutcome {
         case let .accepted(_, progress): return progress
         case let .rejectedRestored(_, _, progress): return progress
         case let .degraded(_, _, _, _, progress): return progress
-        }
-    }
-}
-
-private extension FrameSizingAttempt.Verdict {
-    var failure: FrameSizingFailure? {
-        switch self {
-        case .accepted: nil
-        case .rejected(let reason), .unknown(let reason): reason
         }
     }
 }

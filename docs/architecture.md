@@ -425,6 +425,20 @@ The snapshot file keeps each tiled window's raw title, on this Mac
 only. Deleting `layout-snapshots.json` (and any `.unreadable` copy)
 while HyprMac is quit clears every snapshot.
 
+## Suppression timing
+
+`SuppressionRegistry` holds one expiry per `SuppressionKey`. A new suppression only ever extends it.
+
+| Key | Delay | Set by |
+|---|---|---|
+| `mouseFocus` | 0.15 s | Keyboard actions, workspace switches, drags, floater raises |
+| `activationSwitch` | 0.5 s | Programmatic focus and raises |
+| `workspaceTransition` | 1.5 s | Workspace switches, moves, scratchpad changes |
+| `workspaceTransition` | 3 s | Display notification, reconcile, the retile after a transition |
+| `workspaceTransition` | 4 s | Sleep, wake, lock, unlock |
+| `workspaceTransition` | 3 or 6 s | A display timer that waits again: the stability window plus 1 s |
+| `workspaceTransition` | 6 s | A change within 20 s of a wake: `DisplaySettle.wakeSettleWindow` plus 1 s |
+
 ## Threading
 
 All window management runs on the main thread. `DebugLogFile` and
@@ -815,12 +829,6 @@ this list is the index.
 
 These are not bugs:
 
-- **`screenUnderCursor()`** is a helper on `WindowManager` passed as a
-  closure to `ActionDispatcher`, `WorkspaceOrchestrator` and
-  `ScratchpadController`. It belongs on `DisplayManager`.
-- **`subtract()` rect-strip helper** exists twice: `FocusBorder`
-  (`NSRect`) and `WindowStacking` (`CGRect`). `DimmingOverlay` uses
-  `CGPath.subtracting` instead.
 - **Code with no production caller:** `BSPTree.compact`, `BSPTree.smartInsert`
   and `RetileAllPlanner.pack`. Only tests call them.
 - **Forgetting a window is split in two** —

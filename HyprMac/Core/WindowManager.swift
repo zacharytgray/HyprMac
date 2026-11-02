@@ -274,7 +274,7 @@ class WindowManager {
             suppressions: suppressions,
             revalidation: minimaRevalidation
         )
-        self.workspaceOrchestrator.screenUnderCursor = { [weak self] in self?.screenUnderCursor() ?? NSScreen.main! }
+        self.workspaceOrchestrator.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() ?? NSScreen.main! }
         self.workspaceOrchestrator.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
         self.workspaceOrchestrator.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         self.workspaceOrchestrator.updatePositionCache = { [weak self] in self?.updatePositionCache() }
@@ -321,7 +321,7 @@ class WindowManager {
             focusBorder: focusBorder,
             suppressions: suppressions
         )
-        scratchpad.screenUnderCursor = { [weak self] in self?.screenUnderCursor() }
+        scratchpad.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() }
         scratchpad.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
         scratchpad.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         scratchpad.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
@@ -350,7 +350,7 @@ class WindowManager {
             guard let self else { return false }
             return self.mouseButtonDown
                 || self.tiledDragHandler.isFinishingDrag
-                || self.suppressions.isSuppressed("workspace-transition")
+                || self.suppressions.isSuppressed(.workspaceTransition)
         }
 
         hotkeyManager.onAction = { [weak self] action in
@@ -413,7 +413,7 @@ class WindowManager {
         }
         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
-        mouseTracker.isMouseFocusSuppressed = { [weak self] in self?.suppressions.isSuppressed("mouse-focus") ?? false }
+        mouseTracker.isMouseFocusSuppressed = { [weak self] in self?.suppressions.isSuppressed(.mouseFocus) ?? false }
         mouseTracker.lastFocusedID = { [weak self] in self?.focusController.lastFocusedID ?? 0 }
         mouseTracker.recordFocus = { [weak self] id, reason in self?.focusController.recordFocus(id, reason: reason) }
 
@@ -503,7 +503,7 @@ class WindowManager {
             return self.mouseButtonDown
                 || self.tiledDragHandler.isFinishingDrag
                 || self.displayTransitionPending
-                || self.suppressions.isSuppressed("workspace-transition")
+                || self.suppressions.isSuppressed(.workspaceTransition)
         }
 
         // action dispatcher — owns the per-Action routing previously in handleAction.
@@ -525,7 +525,7 @@ class WindowManager {
         actionDispatcher.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
         actionDispatcher.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         actionDispatcher.updatePositionCache = { [weak self] in self?.updatePositionCache() }
-        actionDispatcher.screenUnderCursor = { [weak self] in self?.screenUnderCursor() ?? NSScreen.main! }
+        actionDispatcher.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() ?? NSScreen.main! }
         actionDispatcher.applyForgottenIDCleanup = { [weak self] id in self?.applyForgottenIDExternalCleanup(id) }
         actionDispatcher.animatedRetile = { [weak self] windows in
             self?.animatedRetile(windows: windows) ?? []
@@ -1052,8 +1052,7 @@ class WindowManager {
             // the floater hit-test miss entirely.
             let downCG = TiledDragEvent.point(event: event,
                                               primaryHeight: self.displayManager.primaryScreenHeight)
-            let downNS = CGPoint(x: downCG.x,
-                                 y: self.displayManager.primaryScreenHeight - downCG.y)
+            let downNS = self.displayManager.flippedY(downCG)
             self.mouseDownPointCG = downCG
             // a press is what opens a menu, so the next hover must read a fresh list
             self.mouseTracker.invalidateWindowListCache()
@@ -1088,8 +1087,7 @@ class WindowManager {
             // scratchpad is quasimodal: a click outside every member dismisses
             // it in the same tick, so the click lands on the tile it aimed at
             if self.scratchpad.isVisible {
-                let cgPoint = CGPoint(x: downNS.x,
-                                      y: self.displayManager.primaryScreenHeight - downNS.y)
+                let cgPoint = self.displayManager.flippedY(downNS)
                 self.scratchpad.handleMouseDown(atCG: cgPoint, synthetic: Self.isOwnSyntheticEvent(event))
             }
         }
@@ -1289,7 +1287,7 @@ class WindowManager {
         // while the scratchpad is up, hovering the dimmed tiles behind it
         // must not steal focus — the layer is quasimodal
         if scratchpad.isVisible && !scratchpad.isSummoned(window.windowID) { return }
-        suppressions.suppress("activation-switch", for: 0.5)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
         tiledFocusRouter.focus(window, reason: "ffm", fallback: .activateAndClick)
         updateFocusBorder(for: window)
     }
@@ -1567,7 +1565,7 @@ class WindowManager {
     /// finally the nearest tiled window's center. Each candidate must be
     /// selectable in the cursor's current workspace context.
     private func ensureFocus() {
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
 
         // scratchpad is quasimodal: focus belongs to a summoned member. the
         // resolver below is scoped to the cursor's *background* workspace
@@ -1585,7 +1583,7 @@ class WindowManager {
             return
         }
 
-        let screen = screenUnderCursor()
+        let screen = displayManager.screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
         let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
 
@@ -1625,9 +1623,7 @@ class WindowManager {
         }
 
         // convert mouse to CG coords
-        let mouseNS = NSEvent.mouseLocation
-        let cgY = displayManager.primaryScreenHeight - mouseNS.y
-        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+        let cgPoint = displayManager.flippedY(NSEvent.mouseLocation)
 
         // floating windows are visually above tiled windows
         for wid in stateCache.floatingWindowIDs where wsWindows.contains(wid) {
@@ -1730,21 +1726,6 @@ class WindowManager {
         }
     }
 
-    /// Return the screen under the mouse cursor.
-    ///
-    /// Shared with `WorkspaceOrchestrator` and `ActionDispatcher` via
-    /// closure handles. Focused-window-based detection is unreliable
-    /// immediately after a workspace switch — the focused window can still
-    /// belong to the previous screen — so cursor position is the
-    /// authoritative signal.
-    private func screenUnderCursor() -> NSScreen {
-        let mouseNS = NSEvent.mouseLocation
-        let cgY = displayManager.primaryScreenHeight - mouseNS.y
-        return displayManager.screen(at: CGPoint(x: mouseNS.x, y: cgY))
-            ?? displayManager.screens.first
-            ?? NSScreen.main!
-    }
-
     // MARK: - menu bar queries
 
     /// Regular workspaces that hold at least one live, non-hidden window.
@@ -1793,8 +1774,7 @@ class WindowManager {
                     workspaceManager.removeWindow(w.windowID)
                 }
                 if !stateCache.floatingWindowIDs.contains(w.windowID) {
-                    stateCache.floatingWindowIDs.insert(w.windowID)
-                    w.isFloating = true
+                    stateCache.setFloating(true, window: w)
                     hyprLog(.debug, .lifecycle, "disabled monitor change: floated '\(w.title ?? "?")'")
                 }
             }
@@ -1807,8 +1787,7 @@ class WindowManager {
                       wScreen == screen else { continue }
                 // only unfloat if it was auto-floated (no workspace assignment = was on disabled monitor)
                 if stateCache.floatingWindowIDs.contains(w.windowID) && workspaceManager.workspaceFor(w.windowID) == nil {
-                    stateCache.floatingWindowIDs.remove(w.windowID)
-                    w.isFloating = false
+                    stateCache.setFloating(false, window: w)
                     hyprLog(.debug, .lifecycle, "re-enabled monitor: unfloated '\(w.title ?? "?")'")
                 }
             }
@@ -1876,16 +1855,14 @@ class WindowManager {
             if let reason = floatingController.autoFloatReason(
                 w, excludedBundleIDs: Set(config.excludedBundleIDs)
             ), !stateCache.floatingWindowIDs.contains(w.windowID) {
-                stateCache.floatingWindowIDs.insert(w.windowID)
-                w.isFloating = true
+                stateCache.setFloating(true, window: w)
                 hyprLog(.debug, .lifecycle, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
             }
 
             // auto-float windows on disabled monitors — don't assign workspace
             if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
                 if !stateCache.floatingWindowIDs.contains(w.windowID) {
-                    stateCache.floatingWindowIDs.insert(w.windowID)
-                    w.isFloating = true
+                    stateCache.setFloating(true, window: w)
                     hyprLog(.debug, .lifecycle, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                 }
                 continue
@@ -2046,14 +2023,7 @@ class WindowManager {
             hyprLog(.notice, .lifecycle, "retile deferred mid-display-transition")
             return []
         }
-        let allWindows = windows ?? accessibility.getAllWindows()
-        tilingEngine.primeMinimumSizes(allWindows)
-
-        for w in allWindows {
-            if stateCache.floatingWindowIDs.contains(w.windowID) {
-                w.isFloating = true
-            }
-        }
+        let allWindows = freshWalk(windows)
 
         // for each enabled monitor, tile the windows that belong to its active workspace
         var results: [TilingEngine.AdmissionResult] = []
@@ -2229,7 +2199,7 @@ class WindowManager {
     /// → AX's reported focused window → `nil`. Each candidate must be
     /// selectable in the cursor's current workspace.
     private func currentFocusedWindow() -> HyprWindow? {
-        let screen = screenUnderCursor()
+        let screen = displayManager.screenUnderCursor()
         let workspace = workspaceManager.workspaceForScreen(screen)
         let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
         let bid = focusBorder.trackedWindowID ?? 0
@@ -2343,7 +2313,7 @@ class WindowManager {
         guard let w = stateCache.cachedWindows[id] else { return }
         guard let frame = mouseDownFloatingFrame ?? w.frame else { return }
 
-        let downCG = CGPoint(x: downPointNS.x, y: displayManager.primaryScreenHeight - downPointNS.y)
+        let downCG = displayManager.flippedY(downPointNS)
         dimDrag = DimDragState(id: id, window: w, startFrame: frame, downPointCG: downCG)
     }
 
@@ -2364,8 +2334,7 @@ class WindowManager {
     /// detected (delta math can't model resizes).
     private func updateDimDrag() {
         guard var drag = dimDrag else { return }
-        let mouseNS = NSEvent.mouseLocation
-        let curCG = CGPoint(x: mouseNS.x, y: displayManager.primaryScreenHeight - mouseNS.y)
+        let curCG = displayManager.flippedY(NSEvent.mouseLocation)
 
         // resize probe (~10Hz) runs confirmed or not: a left/top-edge resize
         // moves the origin too and would otherwise confirm as a move and
@@ -2420,8 +2389,7 @@ class WindowManager {
     /// move the hit test off the clicked window, and the window-list hit at
     /// that point, which knows when a tile has buried a floater.
     private func syncFocusTrackerToCursor(at mouseNS: NSPoint, hit: WindowStacking.Hit) {
-        let cgY = displayManager.primaryScreenHeight - mouseNS.y
-        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+        let cgPoint = displayManager.flippedY(mouseNS)
 
         // floaters and newcomers in explicit recovery are both drawn over
         // the tiles, so both are hit-tested before the tiled rects
@@ -2758,7 +2726,7 @@ class WindowManager {
             hidden: hidden,
             floating: stateCache.floatingWindowIDs,
             focusedWindowID: focusController.lastFocusedID,
-            cursorScreen: screens.isEmpty ? nil : screenUnderCursor().localizedName,
+            cursorScreen: screens.isEmpty ? nil : displayManager.screenUnderCursor().localizedName,
             apps: apps,
             names: config.workspaceNames))
     }
@@ -2771,7 +2739,7 @@ class WindowManager {
             return
         }
         guard Self.runsWhilePaused(action) || config.enabled else { return }
-        suppressions.suppress("mouse-focus", for: 0.15)
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
         handleAction(action)
         // a workspace switch or the scratchpad mid-drag changes where the
         // drop would land, even with the pointer standing still
@@ -2954,13 +2922,18 @@ class WindowManager {
     /// Nothing special: the same path a retile takes, down to the
     /// bookkeeping, so a refusal rolls back, marks the key, and hands
     /// whatever it stranded to the recovery exactly as it always would.
+    /// What every pass needs first: walk (unless the caller already did),
+    /// prime minima, stamp floaters. A pass that skips one drops tiles.
+    private func freshWalk(_ windows: [HyprWindow]? = nil) -> [HyprWindow] {
+        let allWindows = windows ?? accessibility.getAllWindows()
+        tilingEngine.primeMinimumSizes(allWindows)
+        stateCache.stampFloating(allWindows)
+        return allWindows
+    }
+
     @discardableResult
     private func reapplyLayout(onWorkspace workspace: Int, screen: NSScreen) -> TilingEngine.AdmissionResult {
-        let allWindows = accessibility.getAllWindows()
-        tilingEngine.primeMinimumSizes(allWindows)
-        for w in allWindows where stateCache.floatingWindowIDs.contains(w.windowID) {
-            w.isFloating = true
-        }
+        let allWindows = freshWalk()
         let assigned = workspaceManager.windowIDs(onWorkspace: workspace)
         let windows = allWindows.filter { assigned.contains($0.windowID) }
         let result = admissionPass.run(windows, onWorkspace: workspace, screen: screen)
@@ -3042,7 +3015,7 @@ class WindowManager {
         }
 
         // dock-click workspace switch — only when NOT suppressed by FFM/switch/raise
-        if !causedByHyprMac && !suppressions.isSuppressed("activation-switch") {
+        if !causedByHyprMac && !suppressions.isSuppressed(.activationSwitch) {
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
                 let pid = app.processIdentifier
                 let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
@@ -3151,7 +3124,7 @@ class WindowManager {
         // reads as mass-gone and OS-restored frames read as drift — both
         // dismantle the layout off bad data before any display-change
         // suppression arms.
-        suppressions.suppress("workspace-transition", for: 4.0)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.systemInterruption)
         hyprLog(.notice, .lifecycle, "discovery suppressed 4s around system interruption")
         // lock and display sleep last longer than that. discovery holds
         // every missing window from the start of the span to its end
@@ -3164,7 +3137,7 @@ class WindowManager {
         if DisplaySettle.resettlesAfterInterruption(transitionPending: displayTransitionPending,
                                                     sessionInterrupted: discovery.isSessionInterrupted) {
             displayChangeGeneration += 1
-            suppressions.suppress("workspace-transition", for: DisplaySettle.wakeSettleWindow + 1)
+            suppressions.suppress(.workspaceTransition, for: DisplaySettle.wakeSettleWindow + 1)
             hyprLog(.notice, .lifecycle, "display reconcile settles \(Int(DisplaySettle.wakeSettleWindow))s from the end of the interruption")
             scheduleDisplayReconcile(stabilityWindow: DisplaySettle.wakeSettleWindow)
         }
@@ -3238,7 +3211,7 @@ class WindowManager {
         // topology change and the reconcile below reads windows at their
         // OS-shuffled positions and drift-reassigns them to whatever
         // workspace happens to own the screen they got dumped on.
-        suppressions.suppress("workspace-transition", for: 3.0)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.displaySettle)
         displayTransitionPending = true
         displayChangeGeneration += 1
         // after a wake the displays come back one at a time over several
@@ -3247,7 +3220,7 @@ class WindowManager {
         let recentWake = DisplaySettle.isRecentWake(
             sinceInterruption: Date().timeIntervalSince(lastSystemInterruptionAt))
         if recentWake {
-            suppressions.suppress("workspace-transition", for: DisplaySettle.wakeSettleWindow + 1)
+            suppressions.suppress(.workspaceTransition, for: DisplaySettle.wakeSettleWindow + 1)
         }
         scheduleDisplayReconcile(stabilityWindow: DisplaySettle.stabilityWindow(recentWake: recentWake))
     }
@@ -3276,13 +3249,13 @@ class WindowManager {
                 // a reconcile from the partial window list would re-home every
                 // workspace and tile without the windows it is missing
                 hyprLog(.notice, .lifecycle, "display reconcile deferred: session interrupted")
-                self.suppressions.suppress("workspace-transition", for: stabilityWindow + 1)
+                self.suppressions.suppress(.workspaceTransition, for: stabilityWindow + 1)
                 self.scheduleDisplayReconcile(stabilityWindow: stabilityWindow)
                 return
             case .stillChanging:
                 // the polls stay held off for the whole beat, not three seconds
                 // of a five-second one
-                self.suppressions.suppress("workspace-transition", for: stabilityWindow + 1)
+                self.suppressions.suppress(.workspaceTransition, for: stabilityWindow + 1)
                 self.scheduleDisplayReconcile(stabilityWindow: stabilityWindow)
                 return
             case .backAsItWas:
@@ -3291,7 +3264,7 @@ class WindowManager {
                 // over frames that already stand it only reads
                 hyprLog(.notice, .lifecycle, "screen layout back as it was after a transition — retiling")
                 self.displayTransitionPending = false
-                self.suppressions.suppress("workspace-transition", for: 3.0)
+                self.suppressions.suppress(.workspaceTransition, for: SuppressionDelay.displaySettle)
                 self.tileAllVisibleSpaces()
                 return
             case .reconcile(let settled):
@@ -3305,7 +3278,7 @@ class WindowManager {
             // cover the reconcile itself plus a settle tail — the retile it
             // runs moves every window, and the first post-reconcile poll
             // must not read those moves as drift.
-            self.suppressions.suppress("workspace-transition", for: 3.0)
+            self.suppressions.suppress(.workspaceTransition, for: SuppressionDelay.displaySettle)
             self.displayTransitionPending = false
             // the fingerprint refreshed DisplayManager; initializeMonitors runs
             // before TilingEngine.handleDisplayChange so the home-screen
@@ -3947,11 +3920,7 @@ private extension WindowManager {
         }
         admissionRecovery.attempt = { [weak self] workspace, screen, bypass, keepOnTimeout in
             guard let self else { return AdmissionRecovery.AttemptResult() }
-            let allWindows = self.accessibility.getAllWindows()
-            self.tilingEngine.primeMinimumSizes(allWindows)
-            for w in allWindows where self.stateCache.floatingWindowIDs.contains(w.windowID) {
-                w.isFloating = true
-            }
+            let allWindows = self.freshWalk()
             let assigned = self.workspaceManager.windowIDs(onWorkspace: workspace)
             let windows = allWindows.filter { assigned.contains($0.windowID) }
             let result = self.tilingEngine.retryAdmission(
@@ -3994,11 +3963,7 @@ private extension WindowManager {
         }
         admissionRecovery.retileAfterFallback = { [weak self] workspace, screen in
             guard let self else { return [] }
-            let allWindows = self.accessibility.getAllWindows()
-            self.tilingEngine.primeMinimumSizes(allWindows)
-            for w in allWindows where self.stateCache.floatingWindowIDs.contains(w.windowID) {
-                w.isFloating = true
-            }
+            let allWindows = self.freshWalk()
             let assigned = self.workspaceManager.windowIDs(onWorkspace: workspace)
             let windows = allWindows.filter { assigned.contains($0.windowID) }
             // an ordinary pass, no bypass: the newcomer is floating now, so

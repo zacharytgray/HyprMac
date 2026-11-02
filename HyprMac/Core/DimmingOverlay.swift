@@ -575,8 +575,7 @@ class DimmingOverlay {
     // convert top-left CG rect to panel-local NS rect, clipped to the screen.
     // returns nil if the rect doesn't intersect this screen.
     private func localRect(cgRect: CGRect, screenNS: NSRect) -> NSRect? {
-        let nsY = primaryScreenHeight - cgRect.origin.y - cgRect.height
-        let nsRect = NSRect(x: cgRect.origin.x, y: nsY, width: cgRect.width, height: cgRect.height)
+        let nsRect = CoordinateSpace.nsRect(fromCG: cgRect, primaryHeight: primaryScreenHeight)
         let clipped = nsRect.intersection(screenNS)
         guard !clipped.isEmpty else { return nil }
         return NSRect(x: clipped.origin.x - screenNS.origin.x,

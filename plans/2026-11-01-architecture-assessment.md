@@ -297,8 +297,8 @@ Things this phase found:
   it like `displayFingerprint()`.
 - The harness flag must be `'<false/>'`. A bare `NO` reaches `UserDefaults` as a string, which
   `RuntimeVariant` ignores.
-- `FocusBorder.subtract` and `WindowStacking.subtract` differ on an empty hole. Both cover the
-  whole rect, but `FocusBorder` returns four strips. `RectSubtractionTests` pins this for step 3.5.
+- `FocusBorder.subtract` and `WindowStacking.subtract` differed on an empty hole, though both
+  covered the whole rect. Step 3.5 merged them into `WindowStacking.subtract`.
 - `testWhatsNewDescribesOnlyThe<version>Changes` is now checked before the release script bumps
   anything.
 
@@ -313,6 +313,20 @@ Things this phase found:
 ### Phase 3: one helper per copied rule
 
 Low risk. These target the repeated bug class.
+
+Status on 2026-11-02: done, with these limits. None of it is checked live yet.
+
+- `withPassHold` was skipped. A closure would re-indent eight engine functions to save two lines
+  each, and the three lines are hard to get wrong.
+- `dropTree` covers the four sites that clear all three tables. The two sites that only remove a
+  tree keep doing that (the tiled drag's empty source, the orphan prune).
+- `freshWalk` covers the four sites that did walk, prime and stamp. `WorkspaceOrchestrator`'s two
+  sites only stamp, and `classifyAndAssign`, `updatePositionCache` and the poll only prime. Adding
+  the missing step would change behavior.
+- `setFloating` covers the 20 adjacent pairs. Sites that hold only an id, or do other work between
+  the two writes, stay as they are, as do Hypr+F's temporary flips.
+- `Keybind.displayString` keeps its own modifier order. It is a different format from the badges.
+- `MouseTrackingManager`, `FocusBorder` and `FocusBrackets` still convert coordinates inline.
 
 | Step | Change | Traps | Tests |
 |---|---|---|---|

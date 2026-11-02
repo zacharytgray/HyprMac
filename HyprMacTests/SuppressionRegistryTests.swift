@@ -10,29 +10,29 @@ final class SuppressionRegistryTests: XCTestCase {
 
     func testNewKeyIsNotSuppressed() {
         let r = SuppressionRegistry()
-        XCTAssertFalse(r.isSuppressed("anything"))
+        XCTAssertFalse(r.isSuppressed(.mouseFocus))
     }
 
     func testSuppressedKeyReadsTrue() {
         let r = SuppressionRegistry()
-        r.suppress("k", for: 1.0)
-        XCTAssertTrue(r.isSuppressed("k"))
+        r.suppress(.mouseFocus, for: 1.0)
+        XCTAssertTrue(r.isSuppressed(.mouseFocus))
     }
 
     func testClearedKeyReadsFalse() {
         let r = SuppressionRegistry()
-        r.suppress("k", for: 1.0)
-        r.clear("k")
-        XCTAssertFalse(r.isSuppressed("k"))
+        r.suppress(.mouseFocus, for: 1.0)
+        r.clear(.mouseFocus)
+        XCTAssertFalse(r.isSuppressed(.mouseFocus))
     }
 
     func testClearAllRemovesEveryKey() {
         let r = SuppressionRegistry()
-        r.suppress("a", for: 1.0)
-        r.suppress("b", for: 1.0)
+        r.suppress(.activationSwitch, for: 1.0)
+        r.suppress(.workspaceTransition, for: 1.0)
         r.clearAll()
-        XCTAssertFalse(r.isSuppressed("a"))
-        XCTAssertFalse(r.isSuppressed("b"))
+        XCTAssertFalse(r.isSuppressed(.activationSwitch))
+        XCTAssertFalse(r.isSuppressed(.workspaceTransition))
     }
 
     // MARK: - expiry
@@ -40,56 +40,56 @@ final class SuppressionRegistryTests: XCTestCase {
     func testExpiredKeyReadsFalse() {
         let r = SuppressionRegistry()
         // negative duration produces an expiry already in the past
-        r.suppress("k", for: -1.0)
-        XCTAssertFalse(r.isSuppressed("k"))
+        r.suppress(.mouseFocus, for: -1.0)
+        XCTAssertFalse(r.isSuppressed(.mouseFocus))
     }
 
     func testZeroDurationExpiresImmediately() {
         let r = SuppressionRegistry()
-        r.suppress("k", for: 0)
+        r.suppress(.mouseFocus, for: 0)
         // is...Suppressed compares with >=, so an expiry equal to now is expired
-        XCTAssertFalse(r.isSuppressed("k"))
+        XCTAssertFalse(r.isSuppressed(.mouseFocus))
     }
 
     // MARK: - extend semantics (later expiry wins, never shortens)
 
     func testExtendingWithLaterExpiryPersists() {
         let r = SuppressionRegistry()
-        r.suppress("k", for: 0.05)
-        r.suppress("k", for: 5.0)
+        r.suppress(.mouseFocus, for: 0.05)
+        r.suppress(.mouseFocus, for: 5.0)
         // first short window has long since elapsed by now in real time, but
         // the second long suppression should still be active.
         Thread.sleep(forTimeInterval: 0.1)
-        XCTAssertTrue(r.isSuppressed("k"))
+        XCTAssertTrue(r.isSuppressed(.mouseFocus))
     }
 
     func testShorterDurationDoesNotShortenExistingSuppression() {
         let r = SuppressionRegistry()
-        r.suppress("k", for: 5.0)
-        r.suppress("k", for: 0.001)
+        r.suppress(.mouseFocus, for: 5.0)
+        r.suppress(.mouseFocus, for: 0.001)
         Thread.sleep(forTimeInterval: 0.05)
-        XCTAssertTrue(r.isSuppressed("k"))
+        XCTAssertTrue(r.isSuppressed(.mouseFocus))
     }
 
     // MARK: - keys are independent
 
     func testKeysAreIndependent() {
         let r = SuppressionRegistry()
-        r.suppress("a", for: 5.0)
-        XCTAssertTrue(r.isSuppressed("a"))
-        XCTAssertFalse(r.isSuppressed("b"))
-        r.clear("a")
-        r.suppress("b", for: 5.0)
-        XCTAssertFalse(r.isSuppressed("a"))
-        XCTAssertTrue(r.isSuppressed("b"))
+        r.suppress(.activationSwitch, for: 5.0)
+        XCTAssertTrue(r.isSuppressed(.activationSwitch))
+        XCTAssertFalse(r.isSuppressed(.workspaceTransition))
+        r.clear(.activationSwitch)
+        r.suppress(.workspaceTransition, for: 5.0)
+        XCTAssertFalse(r.isSuppressed(.activationSwitch))
+        XCTAssertTrue(r.isSuppressed(.workspaceTransition))
     }
 
     // MARK: - reason logging path doesn't crash
 
     func testReasonOverloadDoesNotCrash() {
         let r = SuppressionRegistry()
-        r.suppress("k", for: 0.1, reason: "test reason")
-        XCTAssertTrue(r.isSuppressed("k"))
+        r.suppress(.mouseFocus, for: 0.1, reason: "test reason")
+        XCTAssertTrue(r.isSuppressed(.mouseFocus))
     }
 }
 

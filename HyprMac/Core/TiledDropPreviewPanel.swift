@@ -25,10 +25,7 @@ final class TiledDropPreviewPanel {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         // CG top-left origin to NS bottom-left, against the primary screen.
-        // a screen left of or above the primary has negative coordinates in
-        // both, and the one formula covers it
-        let frame = NSRect(x: cgRect.minX, y: primaryScreenHeight - cgRect.maxY,
-                           width: cgRect.width, height: cgRect.height)
+        let frame = CoordinateSpace.nsRect(fromCG: cgRect, primaryHeight: primaryScreenHeight)
         panel.setFrame(frame, display: false)
         if let layer = panel.contentView?.layer {
             CATransaction.begin()

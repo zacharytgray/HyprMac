@@ -722,9 +722,7 @@ final class ActionDispatcher {
     /// cursor so the warp lands accurately, then re-associates after a
     /// short delay.
     private func warpToMenuBar() {
-        let mouseNS = NSEvent.mouseLocation
-        let cgY = displayManager.primaryScreenHeight - mouseNS.y
-        let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+        let cgPoint = displayManager.flippedY(NSEvent.mouseLocation)
 
         guard let screen = displayManager.screen(at: cgPoint) else { return }
         let frame = screen.frame

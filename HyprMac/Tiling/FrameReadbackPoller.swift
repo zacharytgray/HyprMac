@@ -120,11 +120,7 @@ struct FrameReadbackPoller {
 
     func applyRestoration(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
                           gap: CGFloat, generation requestedGeneration: UInt64) -> Result {
-        var strictConfiguration = configuration
-        strictConfiguration.sizeOvershootTolerance = strictConfiguration.sizeTolerance
-        strictConfiguration.sizeUndershootTolerance = strictConfiguration.sizeTolerance
-        strictConfiguration.aggregateSafetySlack = strictConfiguration.sizeTolerance
-        strictConfiguration.correspondenceOnly = true
+        var strictConfiguration = configuration.restorationStrict
         // the rollback is the safety net: a refused candidate is undone by
         // it, and a rollback that fails leaves the candidate's frames under
         // the old tree. it returns as soon as its frames read back stable,

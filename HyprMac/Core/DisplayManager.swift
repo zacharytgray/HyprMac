@@ -93,6 +93,21 @@ class DisplayManager {
         )
     }
 
+    /// `point` in the other coordinate system. The flip is its own inverse, so
+    /// it goes either way between NS and CG.
+    func flippedY(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x, y: primaryScreenHeight - point.y)
+    }
+
+    /// The screen under the mouse cursor. Focused-window-based detection is
+    /// unreliable right after a workspace switch, since the focused window can
+    /// still belong to the previous screen, so the cursor is the signal.
+    func screenUnderCursor() -> NSScreen {
+        screen(at: flippedY(NSEvent.mouseLocation))
+            ?? screens.first
+            ?? NSScreen.main!
+    }
+
     /// Full physical display bounds in Core Graphics coordinates.
     func cgFullRect(for screen: NSScreen) -> CGRect {
         let frame = screen.frame

@@ -64,6 +64,23 @@ final class WindowStateCache {
     /// auto-floated by depth, min-size, or excluded-app rules.
     var floatingWindowIDs: Set<CGWindowID> = []
 
+    /// A window's floating state lives in two places. Change them together.
+    func setFloating(_ floating: Bool, window: HyprWindow) {
+        if floating {
+            floatingWindowIDs.insert(window.windowID)
+        } else {
+            floatingWindowIDs.remove(window.windowID)
+        }
+        window.isFloating = floating
+    }
+
+    /// Fresh `HyprWindow`s start tiled. Mark the floaters before a pass reads them.
+    func stampFloating(_ windows: [HyprWindow]) {
+        for window in windows where floatingWindowIDs.contains(window.windowID) {
+            window.isFloating = true
+        }
+    }
+
     /// Subset of `hiddenWindowIDs` that can return on their own
     /// (minimized, app hidden via Cmd-H, still listed by the app because
     /// it sits on another Space or in full-screen, or AX unreadable when

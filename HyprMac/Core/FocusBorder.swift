@@ -584,7 +584,7 @@ class FocusBorder {
                 y: (windowCGRect.maxY + expansion) - occCG.maxY,
                 width: occCG.width,
                 height: occCG.height)
-            pieces = pieces.flatMap { Self.subtract(occLocal, from: $0) }
+            pieces = pieces.flatMap { WindowStacking.subtract(occLocal, from: $0) }
         }
 
         let path = CGMutablePath()
@@ -602,32 +602,6 @@ class FocusBorder {
     }
 
     // returns up to 4 strips representing `rect` minus `hole`.
-    // same strips as WindowStacking.subtract, in a different order. order
-    // does not matter here: every strip joins one mask path.
-    static func subtract(_ hole: NSRect, from rect: NSRect) -> [NSRect] {
-        guard rect.intersects(hole) else { return [rect] }
-        let clipped = rect.intersection(hole)
-        if clipped == rect { return [] }
-        var pieces: [NSRect] = []
-        if rect.maxY > clipped.maxY {
-            pieces.append(NSRect(x: rect.minX, y: clipped.maxY,
-                                 width: rect.width, height: rect.maxY - clipped.maxY))
-        }
-        if clipped.minY > rect.minY {
-            pieces.append(NSRect(x: rect.minX, y: rect.minY,
-                                 width: rect.width, height: clipped.minY - rect.minY))
-        }
-        if clipped.minX > rect.minX {
-            pieces.append(NSRect(x: rect.minX, y: clipped.minY,
-                                 width: clipped.minX - rect.minX, height: clipped.height))
-        }
-        if rect.maxX > clipped.maxX {
-            pieces.append(NSRect(x: clipped.maxX, y: clipped.minY,
-                                 width: rect.maxX - clipped.maxX, height: clipped.height))
-        }
-        return pieces
-    }
-
     // MARK: - panel setup
 
     private func makePanel(frame: NSRect) -> NSPanel {

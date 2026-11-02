@@ -80,7 +80,7 @@ class MouseTrackingManager {
     var tiledPositions: () -> [CGWindowID: CGRect] = { [:] }
     var onFocusForFFM: (HyprWindow) -> Void = { _ in }
     var onUpdateFocusBorder: (HyprWindow) -> Void = { _ in }
-    // routed to SuppressionRegistry["mouse-focus"] by WindowManager
+    // routed to `SuppressionKey.mouseFocus` by WindowManager
     var isMouseFocusSuppressed: () -> Bool = { false }
     // minimum spacing between eligible checks. skipped events are not replayed.
     // WindowManager derives this from the user-configured response rate.
@@ -133,7 +133,7 @@ class MouseTrackingManager {
     /// skips drags, `menuTracking` and
     /// `dockIsActive` skip transient OS UI that would race with focus
     /// changes, and `isMouseFocusSuppressed` honors the post-action quiet window
-    /// owned by `SuppressionRegistry["mouse-focus"]`.
+    /// owned by ``SuppressionKey.mouseFocus``.
     private func isFFMEligible() -> Bool {
         guard isFocusFollowsMouseEnabled() else { return false }
         // with the scratchpad up, hover moves focus between its members like
