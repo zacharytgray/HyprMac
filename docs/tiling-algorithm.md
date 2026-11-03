@@ -301,7 +301,7 @@ The deadline grows by 80 ms for every target past three and by the
 position settle budget for every position-first target, and the sample
 limit with it.
 
-The forward passes of one attempt share one cap (`TilingEngine.passBudget`,
+The forward passes of one attempt share one cap (`PassBudget.total`,
 two seconds): the candidate, its adjusted pass, the topology recovery and
 the timeout recovery's retry. Each pass's deadline is cut to what is left
 when it starts, and a pass after the candidate with less than a quarter

@@ -234,3 +234,87 @@ final class GeometryLedgerTests: XCTestCase {
         XCTAssertFalse(ledger.isVacated("b"))
     }
 }
+
+final class ParkAttemptTests: XCTestCase {
+    private let display = CGRect(x: 0, y: 0, width: 1512, height: 982)
+    private let corner = CGPoint(x: 1511, y: 981)
+    private var clock: TimeInterval = 0
+    private var frames: [CGWindowID: () -> CGRect] = [:]
+    private var written: [CGWindowID] = []
+    private var timeoutsSet = 0
+    private var current = true
+
+    private var io: FrameSizingIO {
+        FrameSizingIO(
+            setMessagingTimeout: { [unowned self] _, _ in self.timeoutsSet += 1; return .success },
+            writeSize: { _, _, _ in .success },
+            writePosition: { [unowned self] id, _, _ in self.written.append(id); return .success },
+            readPosition: { [unowned self] id, _ in (.success, self.frames[id]?().origin) },
+            readSize: { [unowned self] id, _ in (.success, self.frames[id]?().size) },
+            now: { [unowned self] in self.clock },
+            sleep: { [unowned self] in self.clock += $0 },
+            currentGeneration: { 1 })
+    }
+
+    private func park(_ ids: [CGWindowID], originals: [CGWindowID: CGRect]? = nil) -> TilingEngine.SoleWindowParkingResult {
+        ParkAttempt(io: io, isCurrent: { [unowned self] in self.current })
+            .run(windowIDs: ids, originals: originals ?? Dictionary(uniqueKeysWithValues: ids.map { ($0, .zero) }),
+                 at: corner, displayFrames: [display])
+    }
+
+    private func isParked(_ result: TilingEngine.SoleWindowParkingResult) -> Bool {
+        if case .parked = result { return true }
+        return false
+    }
+
+    func testTwoMatchingHiddenReadsPark() {
+        frames[1] = { [corner] in CGRect(origin: corner, size: CGSize(width: 800, height: 600)) }
+        XCTAssertTrue(isParked(park([1])))
+        XCTAssertEqual(written, [1])
+        XCTAssertEqual(clock, 0.03, accuracy: 0.001, "the first read can't count as settled")
+    }
+
+    func testNeverSetsAMessagingTimeout() {
+        frames[1] = { [corner] in CGRect(origin: corner, size: CGSize(width: 800, height: 600)) }
+        _ = park([1])
+        XCTAssertEqual(timeoutsSet, 0)
+    }
+
+    func testAWindowCutToTheCornerScreensHeightStillParks() {
+        frames[1] = { [corner] in CGRect(origin: corner, size: CGSize(width: 800, height: 982)) }
+        XCTAssertTrue(isParked(park([1])))
+    }
+
+    func testAWindowStillMovingWithinOnePointCountsAsStable() {
+        var x: CGFloat = 1511
+        frames[1] = { x += 0.5; return CGRect(x: x, y: 981, width: 800, height: 600) }
+        XCTAssertTrue(isParked(park([1])))
+    }
+
+    func testAWindowThatMovesMoreThanAPointIsNotSettled() {
+        var reads = 0
+        frames[1] = { reads += 1; return CGRect(x: 1520 + CGFloat(reads) * 5, y: 981, width: 800, height: 600) }
+        guard case let .degraded(reason) = park([1]) else { return XCTFail("parked") }
+        XCTAssertEqual(reason, .geometryMismatch(1))
+    }
+
+    func testAWindowStillOnScreenTimesOut() {
+        frames[1] = { CGRect(x: 100, y: 100, width: 800, height: 600) }
+        guard case let .degraded(reason) = park([1]) else { return XCTFail("parked") }
+        XCTAssertEqual(reason, .geometryMismatch(1))
+        XCTAssertGreaterThanOrEqual(clock, 0.36)
+    }
+
+    func testASupersededPassWritesNothing() {
+        current = false
+        guard case let .degraded(reason) = park([1]) else { return XCTFail("parked") }
+        XCTAssertEqual(reason, .superseded)
+        XCTAssertTrue(written.isEmpty)
+    }
+
+    func testAWindowWithNoCapturedOriginalFails() {
+        frames[1] = { [corner] in CGRect(origin: corner, size: CGSize(width: 800, height: 600)) }
+        guard case let .degraded(reason) = park([1], originals: [:]) else { return XCTFail("parked") }
+        XCTAssertEqual(reason, .windowUnavailable(1))
+    }
+}

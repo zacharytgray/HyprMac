@@ -415,6 +415,13 @@ Pure types with direct tests, one per PR. All tree mutators stay in
 Afterward: an explicit `keptUnverified` signal, replacing the shape decode at
 `:2382-2386`.
 
+**Status 2026-11-02:** all seven steps and the explicit signal (`keptWithoutRollback`) are built,
+with direct tests for each new type. `TilingEngine.swift` is about 3400 lines, and every tree
+mutator stays in it. Not checked live: one cross-monitor refusal (6.3), a real refusal and a real
+timeout (6.6), and Hypr+F with a tall window (6.7). `applyVerifiedLayoutAttempt` keeps its statement
+order across its new private steps. `ParkAttempt` now reads and writes through `FrameSizingIO`, so
+tests drive it with a fake instead of real AX.
+
 ### Phase 7: move folders last
 
 `git mv` plus `xcodegen generate`, no code changes. Group `Core/` by domain:

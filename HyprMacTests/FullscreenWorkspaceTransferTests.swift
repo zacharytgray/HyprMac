@@ -274,9 +274,9 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
 
     func testParkingPredicateAcceptsClampedSliverAndRejectsVisibleWindow() {
         let display = CGRect(x: 0, y: 0, width: 1600, height: 1000)
-        XCTAssertTrue(TilingEngine.isHiddenParkedFrame(
+        XCTAssertTrue(ParkAttempt.isHiddenParkedFrame(
             CGRect(x: 1599, y: 930, width: 600, height: 500), on: [display]))
-        XCTAssertFalse(TilingEngine.isHiddenParkedFrame(
+        XCTAssertFalse(ParkAttempt.isHiddenParkedFrame(
             CGRect(x: 1500, y: 930, width: 600, height: 500), on: [display]))
     }
 

@@ -27,6 +27,7 @@
 		09DE10C8496EE7B7E22EE6FE /* FocusResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CBE154F4BAE1BAF07AB34D4 /* FocusResolution.swift */; };
 		0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */; };
 		0B621FA3924502E4300929E5 /* UserConfigDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A04F6036754CB1510546DFC /* UserConfigDefaults.swift */; };
+		0CFEDE16FAF291E190636DE2 /* ParkAttempt.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7BA6748D31B78A95CE18B0E /* ParkAttempt.swift */; };
 		0D4C6B4D33142A677A590C35 /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 593D96A7340421A4588DE5D5 /* DisplayManager.swift */; };
 		0EC054FF63BC70FA9540C8DE /* CursorManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB92BD985DAC4292DE1C57F /* CursorManager.swift */; };
 		0FC4AF3EF564386A97DBECD0 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */; };
@@ -308,6 +309,7 @@
 		E65C3CF253082AC6E46E772F /* Action.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B20DF87F29CD5B1164F1E80 /* Action.swift */; };
 		E6B34B59205F9ED0E806F291 /* CoordinateSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0116BE6F796AC619B0BD6B /* CoordinateSpace.swift */; };
 		E6D5E0F45C7A868767711DB2 /* TiledDragFeedbackReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED60042FE9D6F1A775F97858 /* TiledDragFeedbackReconciler.swift */; };
+		E746F728FF8F6E5A9EC338ED /* ParkAttempt.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7BA6748D31B78A95CE18B0E /* ParkAttempt.swift */; };
 		E75F4991C42DA20A1A207121 /* HyprMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A034E555A586C182E187021F /* HyprMacApp.swift */; };
 		E7E24ABBCC37A37498737EEF /* WorkspaceOverviewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4409646A5AA8442EA2A0A34C /* WorkspaceOverviewController.swift */; };
 		E8228FA6FF3AF82D8C05C728 /* ConfigUpdateCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFAD1F70A0E024E16719373F /* ConfigUpdateCoordinator.swift */; };
@@ -526,6 +528,7 @@
 		B4B8A362BCC405405997D733 /* ConfigStoreWatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigStoreWatcherTests.swift; sourceTree = "<group>"; };
 		B508954B7CC67DE0AB417D2E /* RatioMemoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RatioMemoryTests.swift; sourceTree = "<group>"; };
 		B6FC3298BBD003F3AD7DAC44 /* WindowCornerRadius.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCornerRadius.swift; sourceTree = "<group>"; };
+		B7BA6748D31B78A95CE18B0E /* ParkAttempt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParkAttempt.swift; sourceTree = "<group>"; };
 		B9927DB9594D281BB5179CA3 /* LayoutEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngine.swift; sourceTree = "<group>"; };
 		B9C3A29473C9D3ECD870EB22 /* DragSwapHandlerInsertionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DragSwapHandlerInsertionTests.swift; sourceTree = "<group>"; };
 		BB697B2619BEB7E2434E157E /* WelcomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeView.swift; sourceTree = "<group>"; };
@@ -951,6 +954,7 @@
 				F5732D75E720237317C4CCD3 /* LayoutTreeCodec.swift */,
 				80DEDE87B2D877B2B57C6767 /* MinSizeMemory.swift */,
 				6AF564A30012810C25B9FD63 /* NewcomerRefusal.swift */,
+				B7BA6748D31B78A95CE18B0E /* ParkAttempt.swift */,
 				28002D0AD1DFC9F02FBB78FC /* PassBudget.swift */,
 				D241E41E02E376AC3FE573BA /* RollbackPlan.swift */,
 				72B6952D8617CE03DF8A8E96 /* TiledDragSnapshot.swift */,
@@ -1194,6 +1198,7 @@
 				27F175436F430C8EC82672E1 /* MinimaRevalidation.swift in Sources */,
 				94D0B3F1FB21CB77289D4AF0 /* MouseTrackingManager.swift in Sources */,
 				168E8536EF9F93533C18DFBE /* NewcomerRefusal.swift in Sources */,
+				0CFEDE16FAF291E190636DE2 /* ParkAttempt.swift in Sources */,
 				F796DE8B56511CF5325B6F7D /* PassBudget.swift in Sources */,
 				59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */,
 				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
@@ -1327,6 +1332,7 @@
 				017A249199B7F80BF9F3D051 /* MinimaRevalidation.swift in Sources */,
 				AC8E138C14F6C9F7C3B5FE2B /* MouseTrackingManager.swift in Sources */,
 				BACD47346AB8972892D8DA10 /* NewcomerRefusal.swift in Sources */,
+				E746F728FF8F6E5A9EC338ED /* ParkAttempt.swift in Sources */,
 				8DBC52E0F9E7B680EDD2F573 /* PassBudget.swift in Sources */,
 				35764B87C3B878BA57801CA5 /* PermissionsGate.swift in Sources */,
 				DDF87D62ED61F50A5F0681B9 /* PollingScheduler.swift in Sources */,

@@ -169,6 +169,13 @@ live for the entire app lifetime. The process-wide singletons are
 | `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown and the focus invariant. Puts floaters an old tile covers back on top, then focuses and lifts the target. |
 | `WindowStacking` | Pure rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, and the tiles covering each floater. |
 | `TiledDragHandler` | Owns captured press/release state, cancellation, and verified cache updates. |
+| `LayoutTreeCodec` | A tree's shape to and from its saved form. Builds fresh nodes only. |
+| `PassBudget` | The time one verified attempt's forward passes share. Rollbacks stay outside it. |
+| `RollbackPlan` | Which windows a refused layout's rollback puts back. |
+| `CrossScreenWriteOrder` | Whether a window crossing screens is sized before it moves, or moved first. |
+| `NewcomerRefusal` | Which newcomers an admission retry leaves out. |
+| `GeometryLedger` | The unverified and vacated marks on each tree's key. |
+| `ParkAttempt` | Parks windows by position and checks they stay hidden. |
 | `TiledDragTransaction` | Builds isolated insertion, swap, or resize candidates, within one tree or across two monitors' trees, and verifies frames before commit. |
 | `TiledDropPlanner` | Picks a tiled drop's target tile and edge. The drop and its live preview both call it, so they cannot disagree. |
 | `TiledDragPreviewSession` | Throttles the live drop preview: at most 60 updates a second, the last move held, a redraw only when the landing rect changes. |

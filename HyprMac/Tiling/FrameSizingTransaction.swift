@@ -844,6 +844,9 @@ struct FrameSizingProgressReport: Equatable {
     var restoration: FrameSizingAttempt.Progress?
     /// restored originals that overlap each other. diagnostic only.
     var restorationOverlaps: [FrameSizingOverlap] = []
+    /// a timed-out pass kept where it stands: every frame went out, the app
+    /// didn't answer, and nothing rolled back
+    var keptWithoutRollback = false
 
     /// every id either attempt issued a setter for. evidence of possible
     /// mutation, never proof a frame landed.
