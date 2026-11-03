@@ -344,6 +344,24 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         XCTAssertNotEqual(result.manager.workspaceFor(result.moverID), result.source)
     }
 
+    // the park check has a 0.36 s deadline, and a 30 ms sleep can take 230 ms
+    // on the hub, so real time made the settle test fail on some runs
+    private static func virtualClockIO(windows: [CGWindowID: HyprWindow],
+                                       currentGeneration: @escaping () -> UInt64) -> FrameSizingIO {
+        let real = FrameSizingIO.accessibility(windows: windows, currentGeneration: currentGeneration)
+        var elapsed: TimeInterval = 0
+        return FrameSizingIO(setMessagingTimeout: real.setMessagingTimeout,
+                             writeSize: real.writeSize,
+                             writePosition: real.writePosition,
+                             readPosition: real.readPosition,
+                             readSize: real.readSize,
+                             now: { elapsed },
+                             sleep: { elapsed += $0 },
+                             currentGeneration: real.currentGeneration,
+                             beginFrameWrite: real.beginFrameWrite,
+                             endFrameWrite: real.endFrameWrite)
+    }
+
     private func runSiblingPark(_ sibling: TransferWindow) throws
         -> (rejected: Bool, manager: WorkspaceManager, source: Int, moverID: CGWindowID) {
         let screen = TransferScreen(x: 0)
@@ -357,7 +375,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             manager.assignWindow(window.windowID, toWorkspace: source)
             state.cachedWindows[window.windowID] = window
         }
-        let engine = TilingEngine(displayManager: display)
+        let engine = TilingEngine(displayManager: display, frameSizingIOFactory: Self.virtualClockIO)
         engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(

@@ -147,3 +147,5 @@ Overview and settings:
     five, search works, heavy content scrolls, and key 0 selects workspace 10.
 15. With an existing config, old default shortcuts migrate. Occupied F,
     Shift+T, 0 and Shift+0 chords keep their custom bindings.
+
+A short real sleep can run long on the hub: `Thread.sleep(0.03)` measured about 210 ms there in November 2026, against 35 ms on the MacBook. A test that races a sleep against a wall-clock deadline fails on some runs. Give it a virtual clock through `FrameSizingIO`.

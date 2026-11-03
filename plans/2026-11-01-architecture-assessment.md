@@ -202,7 +202,7 @@ intermittent ones get a `.notice` log first, then a fix once the cause is seen.
 | B11 | The tour's menu bar legend shows `● ○`; the menu bar draws `■ □` | `TourView.swift:578-586`, `MenuBarView.swift:286-289` | Read | Decision D7 |
 | B12 | Settings footer and overlay hard-code Hypr+Ctrl+S/R and their own chord, which is wrong after a rebind | `GeneralSettingsView.swift:323`, `KeybindOverlayController.swift:553-554` | Read | Use the live chord, as the tour does |
 | B13 | A degraded restoration after a refused move leaves the window on the destination. The next poll reads drift and completes the move the user saw refused. No recovery owns it | `WorkspaceOrchestrator.swift:674-681`, `ActionDispatcher.swift:232-233` | Inferred | `.notice` when drift follows a degraded restoration |
-| B14 | Holding Option during a tiled drag: the window is resized during the drag (`settle read` shows `dw=343`), and a swap ended `degraded` with the red shake | Live, 2026-11-02, same on `aa883ee` and `c61925f`. Suspect macOS's own Option-drag tiling, not confirmed | Swap trigger removed: Option was an undocumented leftover from `93bfedf`, and only Hypr swaps now | Check a plain drag with Option held live |
+| B14 | Holding Option during a tiled drag: the window is resized during the drag (`settle read` shows `dw=343`), and a swap ended `degraded` with the red shake | Live, 2026-11-02, same on `aa883ee` and `c61925f`. Suspect macOS's own Option-drag tiling, not confirmed | Swap trigger removed: Option was an undocumented leftover from `93bfedf`, and only Hypr swaps now. Live at `c40f478`, a plain drag with Option held still ends `degraded` with the shake, the window at half the screen off its slot | Confirm the cause by hand before any fix |
 
 ## Decisions
 
@@ -433,8 +433,40 @@ declarations to `PrivateAPI/`. Add the Release universal build from
 This has no runtime risk, but it conflicts with every open branch, so it goes when
 the queue is empty.
 
-**Status 2026-11-02:** moved, with the open PRs still open, as asked. Only `WindowManager.swift` stays
+**Status 2026-11-02:** moved, with the open PRs still open, as asked. Live at `c40f478`, one display,
+real input on test windows: all of phase 5's checks again, a real refused drop, Hypr+F and back
+(windows not taller than the screen), and a menu surviving a bare Hypr press all pass. The first drag
+of a just-floated window came up about 75 pt short horizontally in three runs; later drags were
+within 5 pt, and HyprMac wrote no frame. Not known whether real input does this. Only `WindowManager.swift` stays
 at the top of `Core/`. The SkyLight declarations lost `private` when they moved to `PrivateAPI/`.
+
+Second live run at `c40f478`, 2026-11-02. iCloud: edits on the hub reached the laptop in about 10
+seconds through a real atomic replace, the watcher re-armed each time, including once when the file
+was missing at the first re-arm, the link stayed intact, and nothing was written back. `brctl evict`
+refuses while HyprMac runs, because the watcher holds the file open. A virtual display (private
+`CGVirtualDisplay`) gave a real plug and unplug: workspaces moved over and back, no window was lost,
+and the built-in layout restored in place. A cross-monitor drop with no room was refused and restored
+with the red shake. The "short first drag" was the window stopping at x=0, not a HyprMac write.
+
+Third live run at `c40f478`, 2026-11-03, docked on two real displays, with a portrait one left of
+primary. Passed: cross-monitor drops both ways with the preview, keybind move to a monitor, a floater
+crossing displays, Hypr+F parking on the left display, an 1870 pt window parked and back at full size,
+a third display on and off, and launch with a really evicted settings file. Plugging a display restored
+that display set's saved layout, as designed. One hover after a Hypr swap took no focus with no log
+line, 0 of 7 on retry, the second silent miss seen: add `.notice` logs before any fix. Not checked: a
+Hypr swap across displays, a save from the app reaching the hub, lock and sleep.
+
+Dim cutout, 2026-11-03. Checked by eye: it followed a dragged floater, but started late on a fast drag.
+Measured on macOS 27.0.1 with Teams, 7 plain drags: the window list saw the move 2 to 10 ms after the
+cursor, and AX 82 to 112 ms after the window list. The tracker now reads the window list instead of AX.
+Tried on the laptop by hand: it works. A save from the app reached the hub (same hash on both Macs).
+Lock and sleep passed by hand. Still not checked: a Hypr swap across displays, unplugging a real monitor.
+
+`testParkedSiblingThatSettlesWhileHiddenStillParks` failed some runs on the hub, at c40f478 too. Measured:
+`Thread.sleep(0.03)` takes about 210 ms (up to 230) on the hub, even in a plain process, and 33 to 35 ms on the
+laptop, so the 0.36 s park deadline ran out. Test problem, not a laptop one. The two sibling park tests now
+use a virtual clock. `testScheduleAfterPollFiresAgain` failed once in the same way and now waits for the real
+fire. Other tests with fixed delays may still fail on the hub. Why the hub's sleeps run long was not chased.
 
 ## Do not do these
 
