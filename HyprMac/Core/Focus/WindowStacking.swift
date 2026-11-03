@@ -85,6 +85,16 @@ enum WindowStacking {
         return decode(raw)
     }
 
+    /// One window's frame from the window list. A dragged window's frame is
+    /// current here, where AX reports it about 100 ms late.
+    static func bounds(of id: CGWindowID) -> CGRect? {
+        var id = UnsafeRawPointer(bitPattern: UInt(id))
+        guard let ids = CFArrayCreate(kCFAllocatorDefault, &id, 1, nil),
+              let list = CGWindowListCreateDescriptionFromArray(ids) as? [[String: Any]],
+              let raw = list.first?[kCGWindowBounds as String] as? NSDictionary else { return nil }
+        return CGRect(dictionaryRepresentation: raw as CFDictionary)
+    }
+
     static func decode(_ raw: [[String: Any]]) -> [StackedWindow] {
         raw.compactMap(StackedWindow.init(info:))
     }

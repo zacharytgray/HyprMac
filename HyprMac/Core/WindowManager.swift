@@ -1870,7 +1870,7 @@ class WindowManager {
 
         let downCG = displayManager.flippedY(downPointNS)
         dimDrag.arm(id: id,
-                    probe: .init(size: { w.size }, position: { w.position }, frame: { w.frame }),
+                    readFrame: { WindowStacking.bounds(of: id) },
                     startFrame: frame, downPointCG: downCG)
     }
 

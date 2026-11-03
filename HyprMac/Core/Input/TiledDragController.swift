@@ -234,12 +234,7 @@ final class TiledDragController {
     /// own rule, from the window list rather than AX. A press that selects
     /// text is `.unmoved`, an edge drag `.resize`.
     private func tiledDragGesture(_ snapshot: TiledDragSnapshot) -> TiledDragGesture? {
-        var id = UnsafeRawPointer(bitPattern: UInt(snapshot.draggedID))
-        guard let ids = CFArrayCreate(kCFAllocatorDefault, &id, 1, nil),
-              let list = CGWindowListCreateDescriptionFromArray(ids) as? [[String: Any]],
-              let raw = list.first?[kCGWindowBounds as String] as? NSDictionary,
-              let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary) else { return nil }
-        return snapshot.gesture(to: bounds)
+        WindowStacking.bounds(of: snapshot.draggedID).map(snapshot.gesture(to:))
     }
 
     private func exactScreen(containing point: CGPoint) -> NSScreen? {
