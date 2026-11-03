@@ -84,6 +84,10 @@ class WindowManager {
     // per-action routing. handleAction runs the gates first.
     private var actionDispatcher: ActionDispatcher!
 
+    private var statusPresenter: WorkspaceStatusPresenter!
+    private var placement: WindowPlacement!
+    private var focusResolver: FocusResolver!
+
     // workspace switch / move / move-to-monitor workflows.
     private var workspaceOrchestrator: WorkspaceOrchestrator!
     private var scratchpad: ScratchpadController!
@@ -245,7 +249,7 @@ class WindowManager {
             revalidation: minimaRevalidation
         )
         self.workspaceOrchestrator.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() ?? NSScreen.main! }
-        self.workspaceOrchestrator.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
+        self.workspaceOrchestrator.currentFocusedWindow = { [weak self] in self?.focusResolver.currentFocusedWindow() }
         self.workspaceOrchestrator.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         self.workspaceOrchestrator.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] windows in
@@ -259,7 +263,7 @@ class WindowManager {
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
         self.workspaceOrchestrator.onDidSwitch = { [weak self] _, _ in
-            self?.updateMenuBarState()
+            self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()
         }
         self.workspaceOrchestrator.excludedBundleIDs = { [weak self] in
@@ -292,7 +296,7 @@ class WindowManager {
             suppressions: suppressions
         )
         scratchpad.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() }
-        scratchpad.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
+        scratchpad.currentFocusedWindow = { [weak self] in self?.focusResolver.currentFocusedWindow() }
         scratchpad.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         scratchpad.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         scratchpad.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
@@ -349,7 +353,7 @@ class WindowManager {
                 } else if let popup = self.mouseTracker.openPopup(maxAge: 0) {
                     hyprLog(.notice, .focus, "ensureFocus skipped: popup wid=\(popup.windowID) layer=\(popup.layer)")
                 } else {
-                    self.ensureFocus()
+                    self.focusResolver.ensureFocus()
                 }
             }
             // visual cue: corner brackets snap inward around the focused
@@ -373,7 +377,7 @@ class WindowManager {
         mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
         mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
         mouseTracker.floatingWindowIDs = { [weak self] in self?.stateCache.floatingWindowIDs ?? [] }
-        mouseTracker.isWindowVisible = { [weak self] wid in self?.isInteractive(wid) ?? false }
+        mouseTracker.isWindowVisible = { [weak self] wid in self?.focusResolver.isInteractive(wid) ?? false }
         mouseTracker.cachedWindow = { [weak self] wid in self?.stateCache.cachedWindows[wid] }
         mouseTracker.tiledPositions = { [weak self] in
             guard let self else { return [:] }
@@ -458,7 +462,7 @@ class WindowManager {
             guard let self else { return false }
             return self.mouseDragLifecycle.releaseRequestsSwap(hyprHeld: self.hyprHeld, optionDown: optionDown)
         }
-        tiledDrag.visibleFloatingWindows = { [weak self] in self?.visibleFloatingWindows() ?? [] }
+        tiledDrag.visibleFloatingWindows = { [weak self] in self?.focusResolver.visibleFloatingWindows() ?? [] }
         tiledDrag.acceptTiledDragCapture = { [weak self] frames in self?.acceptTiledDragCapture(frames) }
         tiledDrag.isFullscreenSuppressed = { [weak self] w in self?.isFullscreenSuppressed(focused: w) ?? false }
         tiledDrag.refreshDimming = { [weak self] rects in self?.refreshDimming(tiledRectsOverride: rects) }
@@ -469,7 +473,7 @@ class WindowManager {
         focusBorder.onErrorFeedbackFinished = { [weak self] in
             guard let self else { return }
             guard self.isRunning, self.config.showFocusBorder,
-                  let focused = self.currentFocusedWindow() else { return }
+                  let focused = self.focusResolver.currentFocusedWindow() else { return }
             self.updateFocusBorder(for: focused)
         }
         driftMonitor.isSuspended = { [weak self] in
@@ -496,7 +500,7 @@ class WindowManager {
             floatingController: floatingController,
             config: config
         )
-        actionDispatcher.currentFocusedWindow = { [weak self] in self?.currentFocusedWindow() }
+        actionDispatcher.currentFocusedWindow = { [weak self] in self?.focusResolver.currentFocusedWindow() }
         actionDispatcher.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         actionDispatcher.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         actionDispatcher.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() ?? NSScreen.main! }
@@ -541,6 +545,38 @@ class WindowManager {
             self.workspaceOrchestrator.switchWorkspace(workspace, preferredWindowID: windowID)
         }
 
+        self.statusPresenter = WorkspaceStatusPresenter(
+            config: config,
+            accessibility: accessibility,
+            displayManager: displayManager,
+            workspaceManager: workspaceManager,
+            tilingEngine: tilingEngine,
+            stateCache: stateCache,
+            scratchpad: scratchpad,
+            focusController: focusController)
+        self.placement = WindowPlacement(
+            config: config,
+            accessibility: accessibility,
+            displayManager: displayManager,
+            workspaceManager: workspaceManager,
+            tilingEngine: tilingEngine,
+            stateCache: stateCache,
+            floatingController: floatingController,
+            scratchpad: scratchpad,
+            actionDispatcher: actionDispatcher,
+            workspaceOrchestrator: workspaceOrchestrator)
+        self.focusResolver = FocusResolver(
+            displayManager: displayManager,
+            workspaceManager: workspaceManager,
+            stateCache: stateCache,
+            accessibility: accessibility,
+            focusController: focusController,
+            focusBorder: focusBorder,
+            scratchpad: scratchpad,
+            suppressions: suppressions,
+            tiledFocusRouter: tiledFocusRouter)
+        focusResolver.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+
         configureStatusExport()
         configureLiveConfigUpdates()
         hotkeyManager.updateHyprKey(config.hyprKey)
@@ -555,7 +591,7 @@ class WindowManager {
             return self.isRunning && self.config.statusExportEnabled
         }
         statusExporter.hookCommand = { [weak self] in self?.config.statusHookCommand }
-        statusExporter.snapshot = { [weak self] in self?.statusSnapshot() }
+        statusExporter.snapshot = { [weak self] in self?.statusPresenter.statusSnapshot() }
         focusController.onChange = { [weak self] in self?.statusExporter.noteChange() }
         // workspace names, the toggle itself. objectWillChange fires before
         // the write, so the note waits a turn to see the new value
@@ -777,7 +813,7 @@ class WindowManager {
             // initial distribution. the timer is now a slow (10s) safety net;
             // AX notifications above are the primary trigger.
             self.pollingScheduler.start()
-            self.dumpState(reason: "startup")
+            self.statusPresenter.dumpState(reason: "startup")
         }
 
         // SIGUSR1 dumps state on demand over ssh. the default handler
@@ -785,7 +821,7 @@ class WindowManager {
         // source pick it up on the main thread.
         signal(SIGUSR1, SIG_IGN)
         let dumpSignal = DispatchSource.makeSignalSource(signal: SIGUSR1, queue: .main)
-        dumpSignal.setEventHandler { [weak self] in self?.dumpState(reason: "SIGUSR1") }
+        dumpSignal.setEventHandler { [weak self] in self?.statusPresenter.dumpState(reason: "SIGUSR1") }
         dumpSignal.resume()
         dumpStateSignalSource = dumpSignal
 
@@ -903,48 +939,6 @@ class WindowManager {
         focusBorder.hideFloatingBorders()
         dimmingOverlay.hideAll()
         hyprLog(.debug, .lifecycle, "stopped")
-    }
-
-    /// Log a snapshot of workspace, cache and tree state at `.notice`
-    /// so it survives in `log show` as well as the debug log file.
-    ///
-    /// Fired once after the initial tile and on every `SIGUSR1`
-    /// (`kill -USR1 $(pgrep -x 'HyprMac Debug')`). Ids only — no window
-    /// titles ever enter these lines.
-    func dumpState(reason: String) {
-        let enabled = workspaceManager.enabledScreensLeftToRight()
-        var homes: [Int: String] = [:]
-        var trees: [Int: [CGWindowID]] = [:]
-        var visible: Set<Int> = []
-        for ws in Constants.workspaceRange {
-            if workspaceManager.isWorkspaceVisible(ws) { visible.insert(ws) }
-            guard let home = workspaceManager.homeScreenForWorkspace(ws) else { continue }
-            homes[ws] = home.localizedName
-            trees[ws] = tilingEngine.windowIDs(inTreeForWorkspace: ws, screen: home)
-        }
-
-        let dump = StateDumpFormatter(
-            screens: enabled.map {
-                .init(name: $0.localizedName, visibleWorkspace: workspaceManager.workspaceForScreen($0))
-            },
-            homeScreenNames: homes,
-            visibleWorkspaces: visible,
-            assignments: workspaceManager.allWindowWorkspaces(),
-            hidden: stateCache.hiddenWindowIDs,
-            reserved: stateCache.reservedHiddenWindowIDs,
-            floating: stateCache.floatingWindowIDs,
-            trees: trees,
-            scratchpad: scratchpad.members,
-            knownCount: stateCache.knownWindowIDs.count,
-            minima: tilingEngine.knownMinimumSizes,
-            pendingRecovery: tilingEngine.pendingRecoveryWindowIDs,
-            unverifiedGeometry: tilingEngine.unverifiedGeometryWindowIDs
-        )
-
-        hyprLog(.notice, .lifecycle, "state dump (\(reason))")
-        for line in dump.lines() {
-            hyprLog(.notice, .lifecycle, line)
-        }
     }
 
     /// Restore every window assigned to a non-visible workspace to a sane
@@ -1511,122 +1505,6 @@ class WindowManager {
         return rects
     }
 
-    /// Re-establish a coherent focus on bare Hypr keydown.
-    ///
-    /// The visible focus border is the primary source of truth for intent,
-    /// as long as the bordered window belongs to the cursor's workspace.
-    /// A front app that changed wins first: its focused window is adopted.
-    /// When that fails, fallbacks are tried in priority order: the last
-    /// recorded focus, floating window under the cursor (drawn on top),
-    /// tiled window under the cursor, AX's reported focused window, and
-    /// finally the nearest tiled window's center. Each candidate must be
-    /// selectable in the cursor's current workspace context.
-    private func ensureFocus() {
-        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
-
-        // scratchpad is quasimodal: focus belongs to a summoned member. the
-        // resolver below is scoped to the cursor's *background* workspace
-        // (screenUnderCursor never maps to ws 0), so letting it run would
-        // focus — and front — a tile under the cursor, dismissing the layer.
-        // just re-assert the current member and stop.
-        if scratchpad.isVisible {
-            let current = focusBorder.trackedWindowID ?? focusController.lastFocusedID
-            if scratchpad.isSummoned(current), let w = stateCache.cachedWindows[current] {
-                w.focusWithoutRaise()
-                updateFocusBorder(for: w)
-            } else {
-                scratchpad.refocusMember(reason: "ensureFocus-scratchpad")
-            }
-            return
-        }
-
-        let screen = displayManager.screenUnderCursor()
-        let workspace = workspaceManager.workspaceForScreen(screen)
-        let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
-
-        // the user switched apps behind our back: Cmd-Tab, a Dock click, an
-        // app that opened its own window. the app in front wins over what
-        // we remember, when its focused window is a valid target here.
-        // within one app AX focus is not trusted (multi-window apps lag
-        // and diverge), so only a change of app counts. a bare Hypr press
-        // used to activate the remembered window and yank focus back
-        if let front = NSWorkspace.shared.frontmostApplication,
-           let remembered = stateCache.cachedWindows[focusBorder.trackedWindowID ?? focusController.lastFocusedID],
-           front.processIdentifier != remembered.ownerPID,
-           let focused = accessibility.getFocusedWindow(),
-           focused.ownerPID == front.processIdentifier,
-           isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
-            hyprLog(.notice, .focus, "ensureFocus: front app changed to \(focused.windowID) — adopting it")
-            focusController.recordFocus(focused.windowID, reason: "ensureFocus-frontApp")
-            updateFocusBorder(for: focused)
-            return
-        }
-
-        if let tid = focusBorder.trackedWindowID,
-           isSelectableInCurrentContext(tid, workspaceWindows: wsWindows),
-           let w = stateCache.cachedWindows[tid] {
-            focusController.recordFocus(tid, reason: "ensureFocus-trackedID")
-            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
-            updateFocusBorder(for: w)
-            return
-        }
-
-        if focusController.lastFocusedID != 0,
-           isSelectableInCurrentContext(focusController.lastFocusedID, workspaceWindows: wsWindows),
-           let w = stateCache.cachedWindows[focusController.lastFocusedID] {
-            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
-            updateFocusBorder(for: w)
-            return
-        }
-
-        // convert mouse to CG coords
-        let cgPoint = displayManager.flippedY(NSEvent.mouseLocation)
-
-        // floating windows are visually above tiled windows
-        for wid in stateCache.floatingWindowIDs where wsWindows.contains(wid) {
-            guard let w = stateCache.cachedWindows[wid], let frame = w.frame else { continue }
-            if frame.contains(cgPoint) {
-                w.focusWithoutRaise()
-                focusController.recordFocus(wid, reason: "ensureFocus-floating")
-                updateFocusBorder(for: w)
-                return
-            }
-        }
-
-        // tiled window under cursor
-        for (wid, rect) in stateCache.tiledPositions {
-            if wsWindows.contains(wid), rect.contains(cgPoint),
-               let w = stateCache.cachedWindows[wid] {
-                focusController.recordFocus(wid, reason: "ensureFocus-tiled")
-                tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
-                updateFocusBorder(for: w)
-                return
-            }
-        }
-
-        // whatever AX says is focused, if it is on this workspace
-        if let focused = accessibility.getFocusedWindow(),
-           isSelectableInCurrentContext(focused.windowID, workspaceWindows: wsWindows) {
-            focusController.recordFocus(focused.windowID, reason: "ensureFocus-ax")
-            updateFocusBorder(for: focused)
-            return
-        }
-
-        // deterministic fallback: nearest tiled window center on this workspace
-        let fallback = stateCache.tiledPositions
-            .filter { wsWindows.contains($0.key) }
-            .min { lhs, rhs in
-                let lhsCenter = CGPoint(x: lhs.value.midX, y: lhs.value.midY)
-                let rhsCenter = CGPoint(x: rhs.value.midX, y: rhs.value.midY)
-                return distanceSquared(lhsCenter, cgPoint) < distanceSquared(rhsCenter, cgPoint)
-            }
-        if let (wid, _) = fallback, let w = stateCache.cachedWindows[wid] {
-            focusController.recordFocus(wid, reason: "ensureFocus-fallback")
-            tiledFocusRouter.focus(w, reason: "ensureFocus", fallback: .activate)
-            updateFocusBorder(for: w)
-        }
-    }
-
     // MARK: - action dispatch
 
     /// Run an action through the gates, then the dispatcher. Called from the
@@ -1642,7 +1520,7 @@ class WindowManager {
         }
         switch decision.outcome {
         case .toggleOverview:
-            let overview = workspaceOverviewSnapshots()
+            let overview = statusPresenter.workspaceOverviewSnapshots()
             workspaceOverview.toggle(snapshots: overview.workspaces, scratchpad: overview.scratchpad)
         case .dropMidDisplayTransition:
             // workspace flows park/unpark and then focus+warp. mid-display-
@@ -1681,31 +1559,6 @@ class WindowManager {
         case .dispatch:
             actionDispatcher.dispatch(action)
         }
-    }
-
-    // MARK: - menu bar queries
-
-    /// Regular workspaces that hold at least one live, non-hidden window.
-    /// Hidden windows (minimized or closed apps still running) are excluded
-    /// so the menu bar grid does not show ghost occupancy.
-    func occupiedWorkspaces() -> Set<Int> {
-        var result = Set<Int>()
-        for ws in Constants.workspaceRange {
-            // exclude hidden windows (minimized/closed but app still running)
-            let live = workspaceManager.windowIDs(onWorkspace: ws).subtracting(stateCache.hiddenWindowIDs)
-            if !live.isEmpty {
-                result.insert(ws)
-            }
-        }
-        return result
-    }
-
-    /// Workspace currently visible on each enabled screen, in screen order.
-    /// Disabled monitors are omitted entirely.
-    func activeWorkspaces() -> [Int] {
-        displayManager.screens
-            .filter { !workspaceManager.isMonitorDisabled($0) }
-            .map { workspaceManager.workspaceForScreen($0) }
     }
 
     // MARK: - disabled monitor handling
@@ -1780,53 +1633,10 @@ class WindowManager {
     @discardableResult
     func snapshotAndTile() -> [HyprWindow] {
         let allWindows = accessibility.getAllWindows()
-        classifyAndAssign(allWindows)
-        distributeWindowsAcrossWorkspaces(allWindows)
+        placement.classifyAndAssign(allWindows)
+        placement.distributeWindowsAcrossWorkspaces(allWindows)
         tileAllVisibleSpaces()
         return allWindows
-    }
-
-    /// Classification half of the snapshot: capture original frames,
-    /// register ownership, auto-float excluded apps and disabled-monitor
-    /// windows, and assign unassigned windows to their physical screen's
-    /// active workspace. Idempotent — already-known windows keep their
-    /// state and workspace assignment.
-    private func classifyAndAssign(_ allWindows: [HyprWindow]) {
-        tilingEngine.primeMinimumSizes(allWindows)
-        for w in allWindows {
-            if let frame = w.frame, stateCache.originalFrames[w.windowID] == nil {
-                // only save if the frame is actually visible on some screen.
-                // after a restart, windows may still be at the previous session's hide corner.
-                let onScreen = displayManager.screens.contains { screen in
-                    frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
-                }
-                if onScreen {
-                    stateCache.originalFrames[w.windowID] = frame
-                }
-            }
-            stateCache.cachedWindows[w.windowID] = w
-            stateCache.knownWindowIDs.insert(w.windowID)
-            stateCache.windowOwners[w.windowID] = w.ownerPID
-
-            // auto-float excluded apps and explicitly fixed-size windows
-            if let reason = floatingController.autoFloatReason(
-                w, excludedBundleIDs: Set(config.excludedBundleIDs)
-            ), !stateCache.floatingWindowIDs.contains(w.windowID) {
-                stateCache.setFloating(true, window: w)
-                hyprLog(.debug, .lifecycle, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
-            }
-
-            // auto-float windows on disabled monitors — don't assign workspace
-            if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
-                if !stateCache.floatingWindowIDs.contains(w.windowID) {
-                    stateCache.setFloating(true, window: w)
-                    hyprLog(.debug, .lifecycle, "auto-float on disabled monitor: '\(w.title ?? "?")'")
-                }
-                continue
-            }
-
-            assignToScreenWorkspace(w)
-        }
     }
 
     /// Non-destructive reaction to a monitor topology change.
@@ -1855,8 +1665,8 @@ class WindowManager {
             }
         )
         let allWindows = accessibility.getAllWindows()
-        classifyAndAssign(allWindows)
-        reparkHiddenWorkspaceWindows(allWindows)
+        placement.classifyAndAssign(allWindows)
+        placement.reparkHiddenWorkspaceWindows(allWindows)
         tileAllVisibleSpaces(windows: allWindows)
         // a known display configuration came back — put windows on the
         // workspaces the saved layout had them on. only the settled
@@ -1945,21 +1755,6 @@ class WindowManager {
                                         failed: failed, screen: screen)
     }
 
-    /// Re-park every window assigned to a hidden workspace at the current
-    /// global hide position. After a monitor connect/disconnect the
-    /// rightmost screen — and with it the park corner — can move; windows
-    /// left at the old corner would sit fully visible mid-screen (or on a
-    /// dead coordinate) while their workspace is still hidden.
-    private func reparkHiddenWorkspaceWindows(_ allWindows: [HyprWindow]) {
-        for w in allWindows {
-            guard let ws = workspaceManager.workspaceFor(w.windowID),
-                  !workspaceManager.isWorkspaceVisible(ws),
-                  let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first
-            else { continue }
-            workspaceManager.hideInCorner(w, on: screen)
-        }
-    }
-
     /// Tile each enabled screen's active workspace with the windows
     /// assigned to it.
     ///
@@ -2024,186 +1819,6 @@ class WindowManager {
         return results
     }
 
-    /// Spread every tiling-eligible window across workspaces so no single
-    /// workspace is forced past its dwindle depth.
-    ///
-    /// Workspaces fill in numeric order, with each workspace's capacity
-    /// derived from its statically anchored monitor. Anything that does not
-    /// fit even in the tenth workspace is auto-floated. Called from every
-    /// `start()` (including resume from pause), Retile All and a Max Splits
-    /// change, through `snapshotAndTile`.
-    private func distributeWindowsAcrossWorkspaces(_ allWindows: [HyprWindow]) {
-        hyprLog(.notice, .lifecycle, "distributeWindowsAcrossWorkspaces ENTER — full redistribute about to run (this rewrites workspace assignments)")
-        // the homes' order, so a stacked desk fills the primary first here too
-        let screens = workspaceManager.enabledScreensLeftToRight()
-        guard !screens.isEmpty else { return }
-
-        let allWids = Set(allWindows.map { $0.windowID })
-
-        // full redistribution: un-float everything except excluded apps and
-        // non-standard windows (dialogs, sheets, floating panels).
-        let excluded = Set(config.excludedBundleIDs)
-        let keepFloating = Set(allWindows.filter {
-            RetileAllPlanner.shouldRemainFloating(
-                isAutoFloat: floatingController.shouldAutoFloat($0, excludedBundleIDs: excluded),
-                isOnDisabledMonitor: displayManager.screen(for: $0).map(workspaceManager.isMonitorDisabled) == true
-            )
-        }.map { $0.windowID })
-        for wid in stateCache.floatingWindowIDs where !keepFloating.contains(wid) && allWids.contains(wid) {
-            // scratchpad members survive Retile All — unfloating them would
-            // dissolve the layer and drag parked windows into the trees
-            if scratchpad.contains(wid) { continue }
-            stateCache.floatingWindowIDs.remove(wid)
-            if let w = allWindows.first(where: { $0.windowID == wid }) {
-                w.isFloating = false
-            }
-        }
-
-        // Include every tracked regular workspace, including parked windows
-        // that AX omits, and globally sort with newly discovered windows.
-        let excludedWids = stateCache.floatingWindowIDs
-            .union(stateCache.hiddenWindowIDs)
-            .union(scratchpad.members)
-        let tilingWids = RetileAllPlanner.eligibleWindowIDs(
-            workspaceAssignments: workspaceManager.regularWorkspaceWindowIDs(),
-            discoveredWindowIDs: allWids,
-            excludedWindowIDs: excludedWids
-        )
-
-        // floaters first: the tiled pass below can return early
-        placePinnedFloaters(allWindows)
-
-        guard !tilingWids.isEmpty else { return }
-
-        let plan = startupPlacement(windowIDs: tilingWids, windows: allWindows, screens: screens)
-        for workspace in plan.assignments.keys.sorted() {
-            for windowID in plan.assignments[workspace] ?? [] {
-                workspaceManager.assignWindow(windowID, toWorkspace: workspace)
-            }
-        }
-
-        // any remaining (all workspaces full) — auto-float
-        for wid in plan.overflow {
-            stateCache.floatingWindowIDs.insert(wid)
-            if let w = allWindows.first(where: { $0.windowID == wid }) {
-                w.isFloating = true
-                if let original = stateCache.originalFrames[wid] {
-                    w.placeFloating(original, reason: "all workspaces full, original frame",
-                                    displayManager: displayManager)
-                }
-                hyprLog(.debug, .lifecycle, "all workspaces full — auto-floating '\(w.title ?? "?")'")
-            }
-        }
-
-        // hide windows on non-visible workspaces
-        for wid in tilingWids where !stateCache.floatingWindowIDs.contains(wid) {
-            guard let assignedWs = workspaceManager.workspaceFor(wid),
-                  !workspaceManager.isWorkspaceVisible(assignedWs) else { continue }
-            if let w = allWindows.first(where: { $0.windowID == wid }) {
-                let screen = workspaceManager.homeScreenForWorkspace(assignedWs) ?? screens[0]
-                workspaceManager.hideInCorner(w, on: screen)
-            }
-        }
-
-        hyprLog(.debug, .lifecycle, "distributed \(tilingWids.count) windows across \(plan.assignments.count) slot(s), \(screens.count) monitor(s)")
-    }
-
-    /// Retile All's half of window rules for floaters: a pinned app's
-    /// floating window (Never tile, fixed size) goes to its pin too. Hidden
-    /// windows keep their workspace, scratchpad members stay in the layer,
-    /// and a floater on a disabled monitor stays there.
-    private func placePinnedFloaters(_ allWindows: [HyprWindow]) {
-        guard !config.windowRules.isEmpty else { return }
-        let byID = Dictionary(allWindows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
-        let candidates = stateCache.floatingWindowIDs.filter { id in
-            guard let window = byID[id], !stateCache.hiddenWindowIDs.contains(id),
-                  !scratchpad.contains(id) else { return false }
-            return displayManager.screen(for: window).map(workspaceManager.isMonitorDisabled) != true
-        }
-        let moves = RetileAllPlanner.pinnedFloaterMoves(
-            floatingWindowIDs: Array(candidates),
-            workspaceFor: workspaceManager.workspaceFor,
-            pinnedWorkspaceFor: { [self] id in byID[id].flatMap(actionDispatcher.pinnedWorkspace(for:)) }
-        )
-        for move in moves {
-            guard let window = byID[move.windowID] else { continue }
-            workspaceManager.moveWindow(move.windowID, toWorkspace: move.to)
-            workspaceOrchestrator.placePinnedFloater(window, onWorkspace: move.to, fromWorkspace: move.from)
-        }
-    }
-
-    /// Assign `window` to the active workspace on its physical screen, but
-    /// only if it has no existing assignment. Used during snapshot so an
-    /// already-placed window is not bounced off its current workspace.
-    private func assignToScreenWorkspace(_ window: HyprWindow) {
-        guard workspaceManager.workspaceFor(window.windowID) == nil else { return }
-        if let screen = displayManager.screen(for: window) ?? displayManager.screens.first {
-            let ws = workspaceManager.workspaceForScreen(screen)
-            workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
-        }
-    }
-
-    /// Return the window the user actually intends to control.
-    ///
-    /// AX's `kAXFocusedWindowAttribute` lags or diverges from reality for
-    /// multi-window apps (Finder, Teams); `focusWithoutRaise` — used by FFM
-    /// and `Hypr+Arrow` — does not reliably update it. The internal focus
-    /// tracker is the source of truth: it's updated on every focus action
-    /// and on manual clicks, so it stays in sync with what the user
-    /// actually pointed at last.
-    ///
-    /// Resolution order: `focusBorder.trackedWindowID` → `lastFocusedID`
-    /// → AX's reported focused window → `nil`. Each candidate must be
-    /// selectable in the cursor's current workspace.
-    private func currentFocusedWindow() -> HyprWindow? {
-        let screen = displayManager.screenUnderCursor()
-        let workspace = workspaceManager.workspaceForScreen(screen)
-        let wsWindows = workspaceManager.windowIDs(onWorkspace: workspace)
-        let bid = focusBorder.trackedWindowID ?? 0
-        let lid = focusController.lastFocusedID
-
-        let resolved = FocusResolution.resolve(
-            borderID: focusBorder.trackedWindowID,
-            lastFocusedID: lid,
-            isSelectable: { isSelectableInCurrentContext($0, workspaceWindows: wsWindows) },
-            cachedWindow: { stateCache.cachedWindows[$0] },
-            axFocused: { accessibility.getFocusedWindow() },
-            // nothing focused inside the layer: act on its most recent member
-            scratchpadMember: { scratchpad.focusTarget })
-        guard let resolved else {
-            hyprLog(.debug, .focus, "currentFocused → nil ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
-            return nil
-        }
-        let id = resolved.window.windowID
-        switch resolved.source {
-        case .border:
-            hyprLog(.debug, .focus, "currentFocused → border=\(id) ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
-        case .lastFocused:
-            hyprLog(.debug, .focus, "currentFocused → last=\(id) ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
-        case .accessibility:
-            hyprLog(.debug, .focus, "currentFocused → ax=\(id) ws=\(workspace) screen=\(screen.localizedName) (border=\(bid) last=\(lid))")
-        case .scratchpadMember:
-            hyprLog(.debug, .focus, "currentFocused → scratchpad member=\(id) (border=\(bid) last=\(lid))")
-        }
-        return resolved.window
-    }
-
-    /// `true` when `id` may take focus now. While the scratchpad is up only
-    /// its summoned members do; the workspace under the scrim is out.
-    private func isInteractive(_ id: CGWindowID) -> Bool {
-        scratchpad.isVisible ? scratchpad.isSummoned(id) : workspaceManager.isWindowVisible(id)
-    }
-
-    /// See `FocusResolution.isSelectable`.
-    private func isSelectableInCurrentContext(_ windowID: CGWindowID, workspaceWindows: Set<CGWindowID>) -> Bool {
-        FocusResolution.isSelectable(windowID,
-                                     scratchpadVisible: scratchpad.isVisible,
-                                     isSummoned: { scratchpad.isSummoned($0) },
-                                     workspaceWindows: workspaceWindows,
-                                     floatingWindowIDs: stateCache.floatingWindowIDs,
-                                     isWindowVisible: { workspaceManager.isWindowVisible($0) })
-    }
-
     /// Accept the verified mouse-down frame batch. Also note the floating
     /// window under the click (if any) — and its frame — so the
     /// drag monitor knows to hide that floater's border for the drag
@@ -2244,13 +1859,6 @@ class WindowManager {
             guard let self, let later = self.stateCache.cachedWindows[id]?.frame,
                   later != frame else { return }
             self.noteFloaterDrag(id, from: start, settled: true)
-        }
-    }
-
-    private func visibleFloatingWindows() -> [HyprWindow] {
-        stateCache.floatingWindowIDs.compactMap { id in
-            guard isInteractive(id) else { return nil }
-            return stateCache.cachedWindows[id]
         }
     }
 
@@ -2346,12 +1954,6 @@ class WindowManager {
     }
 
 
-    private func distanceSquared(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
-        let dx = a.x - b.x
-        let dy = a.y - b.y
-        return dx * dx + dy * dy
-    }
-
     /// Collect frames for every visible floating window in `source`,
     /// optionally inset by `-padding` (negative inset enlarges) so dim
     /// cutouts can leave breathing room around the floater outline.
@@ -2392,7 +1994,7 @@ class WindowManager {
             }
         }
         refreshFloatingBorders(windows: allWindows)
-        updateMenuBarState()
+        statusPresenter.updateMenuBarState()
         refreshWorkspaceOverview(windows: allWindows)
 
         // keep focus border tracking window position (retile, resize, etc.)
@@ -2490,141 +2092,13 @@ class WindowManager {
             floaterOccluders: floaterOccluders)
     }
 
-    /// Publish workspace glyphs and monitor snapshots for the menu.
-    private func updateMenuBarState() {
-        let active = Set(activeWorkspaces())
-        let occupied = occupiedWorkspaces()
-        let floating = workspacesWithFloatingWindows()
-        let labelText = MenuBarPresentation.workspaceGlyphs(
-            active: active, occupied: occupied, floating: floating)
-        let enabledScreens = workspaceManager.enabledScreensLeftToRight()
-        let monitors = enabledScreens.enumerated().map {
-            index, screen in
-                let anchored = workspaceManager.workspacesAnchoredTo(screen)
-                return MenuBarMonitorSnapshot(
-                    id: index,
-                    name: screen.localizedName,
-                    currentWorkspace: workspaceManager.workspaceForScreen(screen),
-                    isPortrait: screen.frame.height > screen.frame.width,
-                    workspaces: anchored.map { workspace in
-                        MenuBarWorkspaceBadge(
-                            id: workspace,
-                            isActive: active.contains(workspace),
-                            isOccupied: occupied.contains(workspace),
-                            hasFloatingWindows: floating.contains(workspace))
-                    })
-            }
-        let scratchpadCount = scratchpad.members.count
-        let scratchpadVisible = scratchpad.isVisible
-
-        DispatchQueue.main.async {
-            let state = MenuBarState.shared
-            state.labelText = labelText
-            state.monitors = monitors
-            state.scratchpadCount = scratchpadCount
-            state.scratchpadVisible = scratchpadVisible
-            state.hasData = true
-        }
-    }
-
-    /// Read-only. `windows` is a snapshot the caller already walked, so a
-    /// refresh from a poll or a retile doesn't walk AX a second time.
-    private func workspaceOverviewSnapshots(windows: [HyprWindow]? = nil) -> (workspaces: [WorkspaceSnapshot], scratchpad: [WorkspaceWindowSnapshot]) {
-        let active = Set(activeWorkspaces())
-        let currentWindows = Dictionary((windows ?? accessibility.getAllWindows()).map { ($0.windowID, $0) },
-                                        uniquingKeysWith: { first, _ in first })
-        let currentWindowIDs = Set(currentWindows.keys)
-        let knownOrCachedWindowIDs = stateCache.knownWindowIDs.union(stateCache.cachedWindows.keys)
-        let hiddenWindowIDs = stateCache.hiddenWindowIDs
-        let reservedHidden = stateCache.reservedHiddenWindowIDs
-        let intendedFrames = tilingEngine.intendedTileRects()
-
-        func snapshot(_ id: CGWindowID, screenFrame: CGRect) -> WorkspaceWindowSnapshot {
-            let window = currentWindows[id] ?? stateCache.cachedWindows[id]
-            let owner = window?.ownerPID ?? stateCache.windowOwners[id]
-            let app = owner.flatMap { NSRunningApplication(processIdentifier: $0) }
-            let bundleID = window?.bundleID ?? app?.bundleIdentifier
-            let appName = app?.localizedName ?? bundleID ?? "Unknown app"
-            let isFloating = stateCache.floatingWindowIDs.contains(id)
-            let frame = isFloating
-                ? (workspaceManager.savedFloatingFrame(for: id) ?? window?.cachedFrame ?? stateCache.originalFrames[id])
-                : (intendedFrames[id] ?? stateCache.tiledPositions[id] ?? window?.cachedFrame ?? stateCache.originalFrames[id])
-            return WorkspaceWindowSnapshot(
-                id: id,
-                title: window?.title ?? appName,
-                bundleID: bundleID,
-                appName: appName,
-                normalizedFrame: WorkspaceOverviewPresentation.normalized(frame, in: screenFrame),
-                isFloating: isFloating)
-        }
-
-        let workspaces = Constants.workspaceRange.compactMap { workspace -> WorkspaceSnapshot? in
-            guard let screen = workspaceManager.homeScreenForWorkspace(workspace) else { return nil }
-            let screenFrame = displayManager.cgRect(for: screen)
-            let visibleIDs = WorkspaceOverviewPresentation.displayedWindowIDs(
-                assigned: workspaceManager.windowIDs(onWorkspace: workspace),
-                current: currentWindowIDs,
-                knownOrCached: knownOrCachedWindowIDs,
-                hidden: hiddenWindowIDs,
-                reservedHidden: reservedHidden)
-            let windows = visibleIDs.map {
-                snapshot($0, screenFrame: screenFrame)
-            }
-            return WorkspaceSnapshot(
-                id: workspace,
-                monitorID: workspaceManager.screenID(for: screen),
-                monitorName: screen.localizedName,
-                isActive: active.contains(workspace),
-                windows: windows)
-        }
-        let scratchFrame = displayManager.screens.first.map { displayManager.cgRect(for: $0) } ?? .zero
-        let scratchIDs = WorkspaceOverviewPresentation.displayedWindowIDs(
-            assigned: scratchpad.members,
-            current: currentWindowIDs,
-            knownOrCached: knownOrCachedWindowIDs,
-            hidden: hiddenWindowIDs,
-            reservedHidden: reservedHidden)
-        let scratchWindows = scratchIDs.map { snapshot($0, screenFrame: scratchFrame) }
-        return (workspaces, scratchWindows)
-    }
-
     /// Live overview: new windows, closes, moves and retiles show up while
     /// Hypr+O is open. No-op (and no AX walk) while it is closed.
     private func refreshWorkspaceOverview(windows: [HyprWindow]? = nil) {
         // the switch, the poll and the position cache all end here, so a
         // status bar hears of every change the overview would show
         statusExporter.noteChange()
-        workspaceOverview.refreshIfOpen { workspaceOverviewSnapshots(windows: windows) }
-    }
-
-    /// Read-only, no AX walk: workspace state plus app names from the owners.
-    private func statusSnapshot() -> StatusSnapshot {
-        let assigned = workspaceManager.regularWorkspaceWindowIDs()
-        let members = scratchpad.members
-        let hidden = stateCache.hiddenWindowIDs
-        var apps: [CGWindowID: StatusSnapshot.Input.App] = [:]
-        for id in assigned.values.reduce(members, { $0.union($1) }).subtracting(hidden) {
-            let window = stateCache.cachedWindows[id]
-            let app = (stateCache.windowOwners[id] ?? window?.ownerPID)
-                .flatMap { NSRunningApplication(processIdentifier: $0) }
-            let bundleID = window?.bundleID ?? app?.bundleIdentifier
-            apps[id] = .init(name: app?.localizedName ?? bundleID ?? "Unknown app", bundleID: bundleID)
-        }
-        let screens = workspaceManager.enabledScreensLeftToRight()
-        return StatusSnapshot.build(.init(
-            screens: screens.map { .init(name: $0.localizedName, visibleWorkspace: workspaceManager.workspaceForScreen($0)) },
-            homeScreens: Dictionary(uniqueKeysWithValues: Constants.workspaceRange.compactMap { ws in
-                workspaceManager.homeScreenForWorkspace(ws).map { (ws, $0.localizedName) }
-            }),
-            assigned: assigned,
-            scratchpad: members,
-            scratchpadVisible: scratchpad.isVisible,
-            hidden: hidden,
-            floating: stateCache.floatingWindowIDs,
-            focusedWindowID: focusController.lastFocusedID,
-            cursorScreen: screens.isEmpty ? nil : displayManager.screenUnderCursor().localizedName,
-            apps: apps,
-            names: config.workspaceNames))
+        workspaceOverview.refreshIfOpen { statusPresenter.workspaceOverviewSnapshots(windows: windows) }
     }
 
     /// A keybind press or an action link. Pause and resume always work; the
@@ -2663,7 +2137,7 @@ class WindowManager {
             guard isRunning else { return }
             // a repeat click cycles that workspace's windows
             if !displayTransitionPending,
-               let next = ExternalCommand.nextFocusTarget(on: workspace, in: statusSnapshot()) {
+               let next = ExternalCommand.nextFocusTarget(on: workspace, in: statusPresenter.statusSnapshot()) {
                 scratchpad.hide(reason: .workspaceAction)
                 workspaceOrchestrator.switchWorkspace(workspace, preferredWindowID: next)
             } else {
@@ -2673,18 +2147,6 @@ class WindowManager {
             hyprLog(.debug, .lifecycle, "hyprmac:// action \(ActionDispatcher.discriminator(for: action))")
             performUserAction(action)
         }
-    }
-
-    /// Workspaces that hold at least one live floating window.
-    private func workspacesWithFloatingWindows() -> Set<Int> {
-        var result = Set<Int>()
-        let liveFloating = stateCache.floatingWindowIDs.subtracting(stateCache.hiddenWindowIDs)
-        for workspace in Constants.workspaceRange {
-            if !workspaceManager.windowIDs(onWorkspace: workspace).isDisjoint(with: liveFloating) {
-                result.insert(workspace)
-            }
-        }
-        return result
     }
 
     // MARK: - poll
@@ -2751,7 +2213,7 @@ class WindowManager {
         // frames in this snapshot are what it replaced. drift is the
         // question for a poll that changed nothing.
         if !retiled { applyTiledDrift(allWindows) }
-        repairParkedWindows(allWindows)
+        placement.repairParkedWindows(allWindows)
         tiledDragFeedback.reconcile(with: retileResults, allWindows: allWindows)
         refreshWorkspaceOverview(windows: allWindows)
         // a guarded cycle diffed nothing, so it can't have seen the close —
@@ -2835,30 +2297,6 @@ class WindowManager {
         let result = admissionPass.run(windows, onWorkspace: workspace, screen: screen)
         updatePositionCache(windows: allWindows)
         return result
-    }
-
-    /// Park self-repair: a hidden-workspace window the OS (or its own app)
-    /// moved back on-screen would otherwise sit visible forever — nothing
-    /// re-parks in steady state and drift deliberately ignores hidden-ws
-    /// windows. Runs after applyChanges so a just-reassigned returned
-    /// window (recycled-id reopen) is already on its visible workspace and
-    /// exempt. Re-parking is idempotent, so a stale AX read of a window
-    /// that is really parked just re-asserts the park.
-    private func repairParkedWindows(_ allWindows: [HyprWindow]) {
-        for w in allWindows {
-            guard let ws = workspaceManager.workspaceFor(w.windowID),
-                  !workspaceManager.isWorkspaceVisible(ws),
-                  let frame = w.frame
-            else { continue }
-            let substantiallyVisible = displayManager.screens.contains { screen in
-                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
-            }
-            guard substantiallyVisible,
-                  let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first
-            else { continue }
-            hyprLog(.notice, .lifecycle, "park repair: '\(w.title ?? "?")' (\(w.windowID)) on hidden ws\(ws) reads visible — re-parking")
-            workspaceManager.hideInCorner(w, on: screen)
-        }
     }
 
     // MARK: - observers
@@ -2976,11 +2414,11 @@ class WindowManager {
     /// left a fullscreen app's Space. Re-evaluate chrome visibility from
     /// the new focus target.
     @objc private func activeSpaceDidChange(_ notification: Notification) {
-        if isFullscreenSuppressed(focused: currentFocusedWindow()) {
+        if isFullscreenSuppressed(focused: focusResolver.currentFocusedWindow()) {
             focusBorder.hide()
             focusBorder.hideFloatingBorders()
             dimmingOverlay.hideAll()
-        } else if let w = currentFocusedWindow() {
+        } else if let w = focusResolver.currentFocusedWindow() {
             updateFocusBorder(for: w)
         }
     }
@@ -3227,53 +2665,6 @@ private extension WindowManager {
 }
 
 private extension WindowManager {
-    private func startupPlacement(windowIDs: [CGWindowID], windows: [HyprWindow], screens: [NSScreen]) -> RetileAllPlan {
-        let byID = Dictionary(windows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
-        let frames = Dictionary(uniqueKeysWithValues: windows.compactMap { window in
-            window.frame.map { (window.windowID, $0) }
-        })
-        let focusedID = accessibility.getFocusedWindow()?.windowID
-        let order = { (ids: [CGWindowID]) in
-            RetileAllPlanner.startupWindowOrder(windowIDs: ids, framesByID: frames, focusedWindowID: focusedID)
-        }
-        // pinned apps' windows go to their rule's workspace, whichever display
-        // they sit on, and claim it before the screen batches fill it. a
-        // parked window AX omits is looked up in the cache, when the cache has it
-        let pinned = RetileAllPlanner.pinnedStartupBatches(
-            windowIDs: windowIDs,
-            pinnedWorkspaceFor: { [self] id in
-                (byID[id] ?? stateCache.cachedWindows[id]).flatMap(actionDispatcher.pinnedWorkspace(for:))
-            },
-            order: order
-        )
-        let screenBatches = screens.map { screen in
-            let localIDs = pinned.unpinned.filter { id in
-                let assignedHome = workspaceManager.workspaceFor(id).flatMap(workspaceManager.homeScreenForWorkspace)
-                let home = assignedHome ?? byID[id].flatMap(displayManager.screen(for:)) ?? screens[0]
-                return home == screen
-            }
-            return RetileAllBatch(
-                preferredWorkspace: workspaceManager.workspaceForScreen(screen),
-                windowIDs: order(localIDs)
-            )
-        }
-        let batches = pinned.batches + screenBatches
-        let reserved = Dictionary(uniqueKeysWithValues: Constants.workspaceRange.map { workspace in
-            (workspace, workspaceManager.windowIDs(onWorkspace: workspace)
-                .intersection(stateCache.reservedHiddenWindowIDs)
-                .subtracting(stateCache.floatingWindowIDs))
-        })
-        return RetileAllPlanner.admitStartupBatches(
-            batches,
-            workspaceCount: workspaceManager.workspaceCount,
-            reservedAssignments: reserved
-        ) { [self] workspace in
-            guard let home = workspaceManager.homeScreenForWorkspace(workspace),
-                  screens.contains(home) else { return 0 }
-            return RetileAllPlanner.workspaceCapacity(maxDepth: tilingEngine.maxDepth(for: home))
-        }
-    }
-
     /// Give `admissionRecovery` its probes and its two actions.
     ///
     /// Everything it can do is here: run one more tiling pass with only the
