@@ -433,6 +433,9 @@ declarations to `PrivateAPI/`. Add the Release universal build from
 This has no runtime risk, but it conflicts with every open branch, so it goes when
 the queue is empty.
 
+**Status 2026-11-02:** moved, with the open PRs still open, as asked. Only `WindowManager.swift` stays
+at the top of `Core/`. The SkyLight declarations lost `private` when they moved to `PrivateAPI/`.
+
 ## Do not do these
 
 | Idea | Why not |

@@ -17,12 +17,14 @@ This document is the structural narrative.
 HyprMac/
 ├── App/                      lifecycle, settings shell, menu bar
 ├── Core/
-│   ├── Discovery/            discovery diff, AX observers, admission filter, drift
-│   ├── Input/                verified tiled-drag sessions, drop preview throttle
-│   ├── Orchestration/        action dispatch, polling, admission recovery, config routing
-│   ├── State/                window state cache, focus, suppressions
-│   ├── Workspace/            workspace orchestration, layout restore
-│   └── *.swift               long-lived per-subsystem managers
+│   ├── Chrome/               focus border and brackets, dim, drop preview, overlays
+│   ├── Discovery/            AX bridge, discovery diff, AX observers, admission filter, drift
+│   ├── Focus/                focus resolving and routing, window stack, floating windows
+│   ├── Input/                hotkeys, Hypr remap, mouse tracking, verified tiled drags
+│   ├── Orchestration/        action dispatch, polling, admission recovery, config routing, status export
+│   ├── State/                window state cache, suppressions
+│   ├── Workspace/            workspaces, displays, scratchpad, placement, layout restore
+│   └── WindowManager.swift   wires everything together
 ├── Tiling/                   BSP trees, layout, frame readback
 ├── Models/                   windows, keybinds, actions, persisted config
 ├── Persistence/              config I/O, schema migration, layout snapshots
@@ -198,7 +200,7 @@ live for the entire app lifetime. The process-wide singletons are
 
 Tiled drags use `TiledDragHandler`. `ProbeFrame` is a Debug-only `--probe-frame` diagnostic.
 
-## Orchestration layer (Core/Orchestration + Core/State + Core/Discovery)
+## Orchestration layer (Core/Orchestration + Core/State + Core/Focus + Core/Discovery)
 
 These types decompose what would otherwise be a monolithic
 `WindowManager`. Each owns one concern and exposes a small surface:
