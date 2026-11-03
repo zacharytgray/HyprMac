@@ -194,8 +194,8 @@ extension Action: Codable {
     }
 
     /// Decode a `Direction`, logging a warning and falling back to
-    /// `.right` on a malformed string. A typo in a hand-edited config
-    /// must not crash the app.
+    /// `.right` on a malformed string, so the bind is kept rather than
+    /// dropped. Pinned by `KeybindDecoderToleranceTests`.
     private static func decodeDirection(_ c: KeyedDecodingContainer<PayloadKey>,
                                         field: String) throws -> Direction {
         let raw = try c.decode(String.self, forKey: ._0)

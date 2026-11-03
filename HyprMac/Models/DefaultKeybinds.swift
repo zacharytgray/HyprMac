@@ -7,8 +7,8 @@ import Carbon
 
 extension Keybind {
     /// Built-in keybind set seeded into a fresh user config and
-    /// merged into existing configs on upgrade. Source for the
-    /// reference table in CLAUDE.md.
+    /// merged into existing configs on upgrade. Mirrored by hand in
+    /// the README's default keybinds table.
     static let defaults: [Keybind] = {
         var binds: [Keybind] = []
 

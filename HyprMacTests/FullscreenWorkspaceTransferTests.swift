@@ -96,7 +96,7 @@ final class SoleWindowTransferEngineTests: XCTestCase {
         let sibling = makeWindow(id: 4102)
         trace.frames[mover.windowID] = CGRect(x: 20, y: 20, width: 500, height: 500)
         trace.frames[sibling.windowID] = CGRect(x: 540, y: 20, width: 500, height: 500)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: 1, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: 1, screen: screen)
 
         let result = engine.prepareSoleWindowTransfer(
             mover, sourceWindows: [mover, sibling], fromWorkspace: 1,
@@ -242,7 +242,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         state.floatingWindowIDs.insert(mover.windowID)
         mover.isFloating = true
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -274,9 +274,9 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
 
     func testParkingPredicateAcceptsClampedSliverAndRejectsVisibleWindow() {
         let display = CGRect(x: 0, y: 0, width: 1600, height: 1000)
-        XCTAssertTrue(TilingEngine.isHiddenParkedFrame(
+        XCTAssertTrue(ParkAttempt.isHiddenParkedFrame(
             CGRect(x: 1599, y: 930, width: 600, height: 500), on: [display]))
-        XCTAssertFalse(TilingEngine.isHiddenParkedFrame(
+        XCTAssertFalse(ParkAttempt.isHiddenParkedFrame(
             CGRect(x: 1500, y: 930, width: 600, height: 500), on: [display]))
     }
 
@@ -300,7 +300,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             state.cachedWindows[window.windowID] = window
         }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -344,6 +344,24 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         XCTAssertNotEqual(result.manager.workspaceFor(result.moverID), result.source)
     }
 
+    // the park check has a 0.36 s deadline, and a 30 ms sleep can take 230 ms
+    // on the hub, so real time made the settle test fail on some runs
+    private static func virtualClockIO(windows: [CGWindowID: HyprWindow],
+                                       currentGeneration: @escaping () -> UInt64) -> FrameSizingIO {
+        let real = FrameSizingIO.accessibility(windows: windows, currentGeneration: currentGeneration)
+        var elapsed: TimeInterval = 0
+        return FrameSizingIO(setMessagingTimeout: real.setMessagingTimeout,
+                             writeSize: real.writeSize,
+                             writePosition: real.writePosition,
+                             readPosition: real.readPosition,
+                             readSize: real.readSize,
+                             now: { elapsed },
+                             sleep: { elapsed += $0 },
+                             currentGeneration: real.currentGeneration,
+                             beginFrameWrite: real.beginFrameWrite,
+                             endFrameWrite: real.endFrameWrite)
+    }
+
     private func runSiblingPark(_ sibling: TransferWindow) throws
         -> (rejected: Bool, manager: WorkspaceManager, source: Int, moverID: CGWindowID) {
         let screen = TransferScreen(x: 0)
@@ -357,8 +375,8 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             manager.assignWindow(window.windowID, toWorkspace: source)
             state.cachedWindows[window.windowID] = window
         }
-        let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        let engine = TilingEngine(displayManager: display, frameSizingIOFactory: Self.virtualClockIO)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -397,7 +415,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             state.cachedWindows[window.windowID] = window
         }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -440,7 +458,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         }
         sibling.onParkingWrite = { manager.assignWindow(4599, toWorkspace: destination) }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -482,7 +500,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
         }
         sibling.onParkingWrite = { provided = [replacement] }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: source, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: source, screen: screen)
         let border = FocusBorder()
         let orchestrator = WorkspaceOrchestrator(
             workspaceManager: manager, tilingEngine: engine,
@@ -541,7 +559,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             manager.assignWindow(window.windowID, toWorkspace: 1)
             state.cachedWindows[window.windowID] = window
         }
-        engine.prepareTileLayout([mover, sibling], onWorkspace: 1, screen: builtIn)
+        engine.seedTree([mover, sibling], onWorkspace: 1, screen: builtIn)
         let orchestrator = makeOrchestrator(manager, engine, display, state)
         orchestrator.actualFocusedWindow = { mover }
         orchestrator.allWindows = { [mover, sibling] }
@@ -581,7 +599,7 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
             state.cachedWindows[window.windowID] = window
         }
         let engine = TilingEngine(displayManager: display)
-        engine.prepareTileLayout([mover, sibling], onWorkspace: 1, screen: screen)
+        engine.seedTree([mover, sibling], onWorkspace: 1, screen: screen)
         let orchestrator = makeOrchestrator(manager, engine, display, state)
         orchestrator.actualFocusedWindow = { mover }
         orchestrator.allWindows = { [mover, sibling] }

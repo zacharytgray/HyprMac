@@ -40,9 +40,8 @@ final class PollingScheduler {
     private var scheduleGeneration: UInt64 = 0
     private let onPoll: () -> Void
 
-    /// Optional suppression check. When the closure returns `true`, both
-    /// timer ticks and scheduled fires are dropped. Default returns `false`,
-    /// so existing call sites are unaffected.
+    /// Optional suppression check. When the closure returns `true`, timer
+    /// ticks are dropped and scheduled fires defer.
     var isSuppressed: () -> Bool = { false }
 
     /// `periodicInterval` defaults to the 10s reconcile net; tests inject a
@@ -93,9 +92,9 @@ final class PollingScheduler {
     /// lands inside a suppression window is deferred (retried at 0.3s),
     /// not dropped: with event-driven triggers there is no 1 Hz timer
     /// behind us to catch a lost event, so dropping a suppressed poll
-    /// would leave the change invisible until the 10s reconcile. Every
-    /// suppression is time-bounded (≤4s), so the deferral terminates;
-    /// `stop()` clears `pendingPoll`, which cancels a deferral in flight.
+    /// would leave the change invisible until the 10s reconcile. Registry
+    /// suppressions are time-bounded (≤6s). A held mouse button or a finishing
+    /// drag defers until it ends. `stop()` clears `pendingPoll`, which cancels a deferral in flight.
     func schedule(after delay: TimeInterval = 0.2) {
         let deadline = DispatchTime.now() + delay
         if pendingPoll {

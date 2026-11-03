@@ -56,12 +56,17 @@ Tests do not prove window behavior; say so if you did not check it live.
 - `docs/laptop-debug-deployment.md`: `build-debug.sh` and the MacBook redeploy recipe.
 - `docs/debugging.md`: log subsystems, `/usr/bin/log`, file log, debug recipes.
 - `docs/release.md`: What's New step, `scripts/release.sh`, failure recovery.
-- `docs/architecture.md`: component graph, ownership, threading, module layout.
+- `docs/architecture.md`: component map, ownership, threading, module layout.
 - `docs/tiling-algorithm.md`: dwindle, smart insert, layout passes, drag classification.
 - `docs/keybinds-and-actions.md`: Action wire format, frozen keys, decoder tolerance.
 - `docs/coordinate-systems.md`: NSScreen vs CG origins. Read it before frame math.
 - `docs/external-control.md`: `hyprmac://action/…` links for other apps; frozen link names.
-- Other `docs/*.md` and `plans/`: dated audits and plans. Their facts go stale.
+- `docs/status-bar.md`: `state.json`, the change hook and `hyprmac://` links for status bars.
+- `docs/settings-polish.md`: hover rates, focus appearance defaults, window radius research.
+- `docs/desktop-switching-notes.md`: why workspaces are virtual.
+- `plans/2026-11-01-architecture-assessment.md`: known problems, likely bugs, the refactor
+  path, and what not to do. Read it before a refactor.
+- Other `plans/`: dated plans. Their facts go stale.
 
 Top-level layout: `HyprMac/` app source, `HyprMacTests/` unit tests, `scripts/` build, test and
 release scripts, `Casks/` Homebrew cask, `tools/` standalone SkyLight probe.

@@ -410,7 +410,7 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
             displayManager: DisplayManager(),
             frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
         )
-        _ = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([first, second], onWorkspace: 1, screen: screen)
         let tree = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen))
         let originalOrder = tree.allWindows.map(\.windowID)
         trace.frames = Dictionary(uniqueKeysWithValues: tree.layout(
@@ -427,9 +427,9 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         XCTAssertEqual(trace.restorationStarts, 1)
     }
 
-    func testPreparedSwapReturnsFalseAndRestoresTreeAfterUnknownRead() throws {
+    func testSwapReturnsFalseAndRestoresTreeAfterUnknownRead() throws {
         guard let screen = NSScreen.main ?? NSScreen.screens.first else {
-            throw XCTSkip("no NSScreen available — prepared swap requires a display")
+            throw XCTSkip("no NSScreen available — swap requires a display")
         }
         let first = makeWindow(id: 21)
         let second = makeWindow(id: 22)
@@ -438,7 +438,7 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
             displayManager: DisplayManager(),
             frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
         )
-        _ = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([first, second], onWorkspace: 1, screen: screen)
         let tree = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen))
         let originalOrder = tree.allWindows.map(\.windowID)
         let originals = Dictionary(uniqueKeysWithValues: tree.layout(
@@ -448,45 +448,12 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         ).map { ($0.0.windowID, $0.1) })
         trace.frames = originals
 
-        let prepared = try XCTUnwrap(
-            engine.prepareSwapLayout(first, second, onWorkspace: 1, screen: screen)
-        )
-        trace.frames = Dictionary(uniqueKeysWithValues: prepared.map { ($0.0.windowID, $0.1) })
-        let accepted = engine.applyComputedLayout(onWorkspace: 1, screen: screen)
+        let accepted = engine.swapWindows(first, second, onWorkspace: 1, screen: screen)
 
         XCTAssertFalse(accepted)
         XCTAssertEqual(tree.allWindows.map(\.windowID), originalOrder)
         XCTAssertEqual(trace.frames, originals)
         XCTAssertEqual(trace.failedReads, 1)
-        XCTAssertEqual(trace.restorationStarts, 1)
-    }
-
-    func testPreparedToggleFailureRestoresPreAnimationFramesAndTree() throws {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
-            throw XCTSkip("prepared toggle integration requires a display")
-        }
-        let first = makeWindow(id: 61)
-        let second = makeWindow(id: 62)
-        let trace = OneUnknownReadTrace()
-        let engine = TilingEngine(
-            displayManager: DisplayManager(),
-            frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
-        )
-        let initial = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
-        let tree = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen))
-        let originals = Dictionary(uniqueKeysWithValues: initial.map { ($0.0.windowID, $0.1) })
-        let originalOverride = tree.root.splitOverride
-        trace.frames = originals
-
-        let prepared = try XCTUnwrap(
-            engine.prepareToggleSplitLayout(first, onWorkspace: 1, screen: screen)
-        )
-        trace.frames = Dictionary(uniqueKeysWithValues: prepared.map { ($0.0.windowID, $0.1) })
-        let accepted = engine.applyComputedLayout(onWorkspace: 1, screen: screen)
-
-        XCTAssertFalse(accepted)
-        XCTAssertEqual(tree.root.splitOverride, originalOverride)
-        XCTAssertEqual(trace.frames, originals)
         XCTAssertEqual(trace.restorationStarts, 1)
     }
 
@@ -504,7 +471,7 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 displayManager: DisplayManager(),
                 frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
             )
-            let prepared = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
+            let prepared = engine.seedTree([first, second], onWorkspace: 1, screen: screen)
             // a little off their slots: a layout the windows already stand
             // on is accepted from the capture and writes nothing
             let originals = Dictionary(uniqueKeysWithValues: prepared.map {
@@ -517,13 +484,12 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 engine.tileWindows([first, second], onWorkspace: 1, screen: screen)
             case .tileScratchpad:
                 _ = engine.tileScratchpad([first, second], screen: screen, in: rect)
-            case .addWindowRetile:
+            case .tileWindowsWithNewcomer:
                 let third = makeWindow(id: entryPoint.baseID + 2)
                 trace.frames[third.windowID] = CGRect(x: 100, y: 100, width: 300, height: 300)
-                engine.addWindow(third, toWorkspace: 1, on: screen)
-            case .computedLayout:
-                _ = engine.prepareToggleSplitLayout(first, onWorkspace: 1, screen: screen)
-                XCTAssertFalse(engine.applyComputedLayout(onWorkspace: 1, screen: screen))
+                engine.tileWindows([first, second, third], onWorkspace: 1, screen: screen)
+            case .swapWindows:
+                XCTAssertFalse(engine.swapWindows(first, second, onWorkspace: 1, screen: screen))
             }
 
             XCTAssertEqual(trace.frames.filter { originals[$0.key] != nil }, originals,
@@ -531,38 +497,6 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
             XCTAssertEqual(trace.restorationStarts, 1,
                            "\(entryPoint) must perform one verified restoration")
         }
-    }
-
-    func testMembershipChangeInvalidatesPreparedSwapWithoutRestoringOldState() throws {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
-            throw XCTSkip("prepared operation integration requires a display")
-        }
-        let first = makeWindow(id: 51)
-        let second = makeWindow(id: 52)
-        let third = makeWindow(id: 53)
-        let trace = OneUnknownReadTrace()
-        let engine = TilingEngine(
-            displayManager: DisplayManager(),
-            frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
-        )
-        let initial = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
-        trace.frames = Dictionary(uniqueKeysWithValues: initial.map { ($0.0.windowID, $0.1) })
-        _ = try XCTUnwrap(engine.prepareSwapLayout(first, second, onWorkspace: 1, screen: screen))
-
-        let newer = engine.prepareTileLayout([first, second, third], onWorkspace: 1, screen: screen)
-        // a little off the slots, so the newer layout is written rather than
-        // accepted from the capture
-        trace.frames = Dictionary(uniqueKeysWithValues: newer.map {
-            ($0.0.windowID, $0.1.insetBy(dx: 5, dy: 5))
-        })
-        let newerFrames = trace.frames
-        let accepted = engine.applyComputedLayout(onWorkspace: 1, screen: screen)
-
-        XCTAssertFalse(accepted)
-        XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: screen)?.allWindows.map(\.windowID),
-                       [second.windowID, first.windowID, third.windowID])
-        XCTAssertEqual(trace.frames, newerFrames)
-        XCTAssertEqual(trace.restorationStarts, 1)
     }
 
     func testFailedDirectMutationsRestoreTreeStateAndFrames() throws {
@@ -578,7 +512,7 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 displayManager: DisplayManager(),
                 frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
             )
-            let prepared = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
+            let prepared = engine.seedTree([first, second], onWorkspace: 1, screen: screen)
             let tree = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen))
             let originals = Dictionary(uniqueKeysWithValues: prepared.map { ($0.0.windowID, $0.1) })
             trace.frames = originals
@@ -587,10 +521,6 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
             let splitOverride = tree.root.splitOverride
 
             switch mutation {
-            case .applyResize:
-                var resized = try XCTUnwrap(originals[first.windowID])
-                resized.size.width += 80
-                engine.applyResize(first, newFrame: resized, onWorkspace: 1, screen: screen)
             case .toggleSplit:
                 engine.toggleSplit(first, onWorkspace: 1, screen: screen)
             case .resizeInDirection:
@@ -622,7 +552,7 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 displayManager: DisplayManager(),
                 frameSizingIOFactory: { _, generation in trace.io(generation: generation) }
             )
-            let prepared = engine.prepareTileLayout([first, second], onWorkspace: 1, screen: screen)
+            let prepared = engine.seedTree([first, second], onWorkspace: 1, screen: screen)
             // a little off the slots: the mutation fires on the first read
             // after a write, and a layout already in place writes nothing
             trace.frames = Dictionary(uniqueKeysWithValues: prepared.map {
@@ -637,8 +567,8 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 case .padding: engine.outerPadding += 1
                 case .removeWindow: engine.removeWindowID(second.windowID)
                 case .display: engine.handleDisplayChange(currentScreens: [], homeScreenForWorkspace: { _ in nil })
-                case .prepareToggle:
-                    _ = engine.prepareToggleSplitLayout(first, onWorkspace: 1, screen: screen)
+                case .toggleSplit:
+                    engine.toggleSplit(first, onWorkspace: 1, screen: screen)
                 case .forceInsertNoFit:
                     _ = engine.forceInsertWindow(
                         makeWindow(id: change.baseID + 2), toWorkspace: 1, on: screen
@@ -646,12 +576,11 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
                 }
             }
 
-            let accepted = engine.applyComputedLayout(onWorkspace: 1, screen: screen)
+            let accepted = engine.swapWindows(first, second, onWorkspace: 1, screen: screen)
 
             // a refused force insert is the one change that changes nothing:
-            // the candidate is private and discarded, no pending insert is
-            // consumed and no generation is spent, so the layout in flight is
-            // still describing the truth and is left to finish. Every other
+            // the candidate is private and discarded and no generation is
+            // spent, so the layout in flight is still describing the truth and is left to finish. Every other
             // change here mutates something the layout was computed from.
             XCTAssertEqual(accepted, change == .forceInsertNoFit,
                            "\(change) supersession")
@@ -796,11 +725,10 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
 }
 
 private enum DirectMutation: CaseIterable {
-    case applyResize, toggleSplit, resizeInDirection
+    case toggleSplit, resizeInDirection
 
     var baseID: CGWindowID {
         switch self {
-        case .applyResize: 201
         case .toggleSplit: 211
         case .resizeInDirection: 221
         }
@@ -808,7 +736,7 @@ private enum DirectMutation: CaseIterable {
 }
 
 private enum ReentrantStateChange: CaseIterable, Equatable {
-    case gap, padding, removeWindow, display, prepareToggle, forceInsertNoFit
+    case gap, padding, removeWindow, display, toggleSplit, forceInsertNoFit
 
     var baseID: CGWindowID {
         switch self {
@@ -816,21 +744,21 @@ private enum ReentrantStateChange: CaseIterable, Equatable {
         case .padding: 311
         case .removeWindow: 321
         case .display: 331
-        case .prepareToggle: 341
+        case .toggleSplit: 341
         case .forceInsertNoFit: 351
         }
     }
 }
 
 private enum OrdinaryEntryPoint: CaseIterable {
-    case tileWindows, tileScratchpad, addWindowRetile, computedLayout
+    case tileWindows, tileScratchpad, tileWindowsWithNewcomer, swapWindows
 
     var baseID: CGWindowID {
         switch self {
         case .tileWindows: 101
         case .tileScratchpad: 111
-        case .addWindowRetile: 121
-        case .computedLayout: 131
+        case .tileWindowsWithNewcomer: 121
+        case .swapWindows: 131
         }
     }
 }
@@ -1361,7 +1289,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
     /// stopping mid-write
     func testARollbackAfterACandidateThatSpentTheBudgetRestoresEveryWindow() {
         let (engine, tree, trace, originals) = fixture(3)
-        trace.firstWriteCost = TilingEngine.passBudget + 0.1
+        trace.firstWriteCost = PassBudget.total + 0.1
         // nine setters at 50 ms: past the floor, inside the rollback's own
         trace.setterCost = 0.05
 
@@ -1372,7 +1300,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
             return XCTFail("expected a complete rollback, got \(outcome)")
         }
         XCTAssertEqual(trace.frames, originals, "every window is back")
-        XCTAssertGreaterThan(trace.now, TilingEngine.passBudget, "the candidate spent the budget")
+        XCTAssertGreaterThan(trace.now, PassBudget.total, "the candidate spent the budget")
     }
 
     /// the candidate and its rollback leave less than the floor of the
@@ -1395,7 +1323,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
         XCTAssertTrue(reason.isDirectCannotComplete, "\(reason)")
         XCTAssertEqual(trace.setters, 48, "the candidate's 24 and the rollback's 24, no retry")
         XCTAssertEqual(trace.frames, originals)
-        XCTAssertLessThan(trace.now, TilingEngine.passBudget)
+        XCTAssertLessThan(trace.now, PassBudget.total)
     }
 
     /// the admission recovery's narrowing rounds share one budget. an
@@ -1406,7 +1334,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
         let fixture = timeoutRecoveryFixture(mode: .readTimeout)
 
         let outcome = fixture.engine.sharingOnePassBudget { () -> TilingEngine.LayoutApplicationOutcome in
-            fixture.trace.advance(by: TilingEngine.passBudget - 0.1)
+            fixture.trace.advance(by: PassBudget.total - 0.1)
             XCTAssertFalse(fixture.engine.passBudgetLeft)
             return fixture.engine.applyVerifiedLayout(fixture.tree, in: fixture.usable,
                                                       generation: fixture.generation,

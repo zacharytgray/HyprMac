@@ -39,10 +39,13 @@ Two tiers, defined in `Shared/Log.swift`:
   emits only when the `HyprMacVerboseLogging` `UserDefault` is
   set.
 
-`privacy: .public` is applied to every message because the only
-metadata that enters log strings is safe (window IDs, workspace
-numbers, screen names, action names, durations). Free-text user
-input must not enter log strings.
+`privacy: .public` is applied to every message, so nothing in a log
+line is redacted. Most lines carry only window IDs, workspace numbers,
+screen names, action names and durations. Some lines also carry
+window titles, such as discovery's `window returned:`, `new window:`,
+`FLAP:`, `drift:` and `AX filter dropped:`, and lines from the scratchpad,
+workspace moves and the engine. Command text must
+not enter log strings.
 
 ## Categories
 
@@ -59,6 +62,10 @@ lifecycle      accessibility space         display
 Categories surface as the `category` field in Console, so you can
 filter by subsystem + category to scope logs to one subsystem
 without scrolling through everything.
+
+`LogCategory` has more names than the code uses. These have no log sites today:
+`input`, `drag`, `ui`, `animator`, `dimming`, `overlay`, `migration`, `sync`,
+`accessibility`, `space`, `display`.
 
 ## Console.app filter recipes
 
@@ -85,22 +92,22 @@ subsystem:com.zachgray.HyprMac category:tiling
 subsystem:com.zachgray.HyprMac category:any messageType:error,fault,default
 ```
 
-(`messageType:default` covers `.notice`. `messageType:info` covers
-`.info`. `messageType:debug` covers `.debug`.)
+(`messageType:default` covers `.notice`. `messageType:debug` covers both
+`.info` and `.debug`, since the trace tier all goes out at debug level.)
 
 Save the filter via Action → Save Search so it lands in the sidebar.
 
 ## Streaming to a file
 
 ```
-log stream --predicate 'subsystem == "com.zachgray.HyprMac"' --info
+/usr/bin/log stream --level info --predicate 'subsystem == "com.zachgray.HyprMac"'
 ```
 
-Add `--debug` for trace logs (DEBUG builds, or Release with the
+Use `--level debug` for trace logs (DEBUG builds, or Release with the
 verbose toggle below). Pipe through `tee` to keep a copy:
 
 ```
-log stream --predicate 'subsystem == "com.zachgray.HyprMac"' --info | tee hyprmac.log
+/usr/bin/log stream --level info --predicate 'subsystem == "com.zachgray.HyprMac"' | tee hyprmac.log
 ```
 
 Predicate variants:
@@ -113,15 +120,14 @@ Predicate variants:
 --predicate 'subsystem == "com.zachgray.HyprMac" && (category == "tiling" || category == "discovery")'
 
 # warnings and above only
---predicate 'subsystem == "com.zachgray.HyprMac"' --level warning
+--predicate 'subsystem == "com.zachgray.HyprMac" && (messageType == error || messageType == fault)'
 ```
 
 ## Debug builds keep a file log
 
 macOS never persists os_log `.debug` lines. By the time you run `log
 show` after a bug, only `.notice` and above survive — every `retile:
-workspace=`, `workspace N full`, `window gone:` and poll-timing line
-is already gone. So debug builds also append every `hyprLog` call, at
+workspace=`, `window gone:` and poll-timing line is already gone. So debug builds also append every `hyprLog` call, at
 every level and every category, to a plain text file.
 
 Path (one file per bundle id, so the debug app and a release build
@@ -134,7 +140,7 @@ never share):
 One line per call, format stable:
 
 ```
-2026-09-12T19:41:02.123-0500 [notice] [discovery] window gone: 1304
+2026-09-12T19:41:02.123-0500 [debug] [discovery] window gone: 1304
 ```
 
 Timestamp, then `[level]`, then `[category]`, then the message.
@@ -173,7 +179,7 @@ verdict. Every line carries `phase=`, one of `candidate`, `adjusted` or
 `restoration`: `candidate` is the first try at a layout, `adjusted` the
 retry after min-size ratio adjustment, `restoration` the rollback to
 captured original frames. The fourth phase, `capture`, writes nothing and
-logs no trace line; it appears only in typed results. Four line names:
+logs no trace line; it appears only in typed results. The line shapes:
 
 - `frame write: wid=<id> phase=<…> target=(x,y,w,h)` — once per window,
   before its writes. The target is the frame the layout asked for.
@@ -292,9 +298,7 @@ position settle cut short: wid=<id> phase=candidate after=<n>ms samples=<n> last
 A position-first window whose old size, put at its target origin, would hang
 off the destination screen moves first to the nearest origin where that old
 size stands on the screen, is sized there, then moves to its target. Its
-`steps=` then read `position,settle,size,position2,size2`. A parked Ghostty
-window moved to a bottom slot hung below every screen and ignored both size
-writes until it was staged (issue #43). A min-size refusal read from a
+`steps=` then read `position,settle,size,position2,size2`. A min-size refusal read from a
 position-first window stays that window's: its `min-size record:` line ends in
 `shared=false` and the app hint does not move.
 
@@ -341,7 +345,7 @@ The admission recovery's timeout lines, all `[notice] [tiling]`:
   later layout that tiles the window releases it.
 
 `MinSizeMemory` then logs what it did with that evidence under
-`category: lifecycle`, in three shapes:
+`category: lifecycle`, in these shapes:
 
 - `min-size record: wid=<id> old=none new=<w>x<h> axis=width+height
   source=<seeded|appHint|observed>` — the mirror on a window being picked
@@ -427,7 +431,13 @@ the request gets one attempt with them set aside. Look for what follows:
   tiling pass can log it, not just a bypassed one. Nothing routes the window
   anywhere: a fit refusal never sends a window to another workspace. It stays
   on its assigned workspace, where it already is, and `AdmissionRecovery`
-  decides what becomes of it.
+  decides what becomes of it: its recovery turn checks ownership and floats
+  without another sizing attempt.
+- `adjusted layout cannot resolve observed constraints — restoring` — an
+  impossible adjusted layout. There is no adjusted write.
+- An incompatible returning incumbent produces `noFittingSlot(id)` and keeps
+  the whole key unverified without writing. It is excluded from recovery
+  fallback IDs.
 
 The workspace-full check uses the same vocabulary on its own line:
 `workspace <N> full: incoming=<id> tiled=<n> max=<m> axis=count
@@ -455,7 +465,7 @@ Window ids only; no titles.
 
 ## On-demand state dump
 
-`WindowManager.dumpState(reason:)` logs a `.notice` block under
+`WorkspaceStatusPresenter.dumpState(reason:)` logs a `.notice` block under
 `category: lifecycle` describing workspace, cache and tree state. It
 runs once at startup right after the initial tile (`reason: startup`)
 and on every `SIGUSR1`:
@@ -647,7 +657,7 @@ comes back untrusted (see
 
 ```bash
 /usr/bin/open -n -W --stdout /tmp/probe.out --stderr /tmp/probe.err \
-  '/Users/zgray/Applications/HyprMac Debug.app' \
+  '/Applications/HyprMac Debug.app' \
   --args --probe-frame <wid> <x> <y> <w> <h>
 cat /tmp/hyprmac-probe-frame.txt
 ```
@@ -679,7 +689,7 @@ remove the key entirely.)
 
 ## DEBUG-only knobs
 
-Two compile-time knobs in `LogConfig`, both in DEBUG builds only:
+Two compile-time knobs in `LogConfig`. `traceMinimum` applies only in DEBUG builds; `enabledCategories` also filters Release verbose logging:
 
 - `LogConfig.traceMinimum` — raises the trace-tier ceiling.
   Setting it to `.info` suppresses every `.debug` log;
@@ -699,8 +709,9 @@ a noisy bug.
 subsystem:com.zachgray.HyprMac category:focus
 ```
 
-Every `FocusStateController.recordFocus` call logs the
-`from → to` transition with a short reason tag (`ensureFocus-tiled`,
+Every `FocusStateController.recordFocus` call logs the `from → to`
+transition at `.debug`, so read it in the file log or a live stream. It
+carries a short reason tag (`ensureFocus-tiled`,
 `syncTracker-floating`, `cycleFocus`, etc.). Walk the log
 backwards from the unexpected focus state to find the trigger.
 `syncTracker-recovery` is the click hit-test landing on a newcomer in
@@ -710,32 +721,18 @@ not floating, so it gets its own tag rather than borrowing
 
 ### Same-app tiled/floating focus flicker
 
-A Safari capture on September 14, 2026 exposed a focus/z-order feedback
-loop. On build `1d4818448504+f0bab264c279`, hovering tiled window `42533`
-while Safari floater `44870` was visible caused repeated reconciliation
-passes about 200 ms apart. Each pass raised the floater, then restored
-`tiled` focus through `focusWithoutRaise`, which generated another Safari
-focused-window notification and poll. The logged suppression pair identifies
-`raiseBehind` as the writer; the old build did not log its individual raise
-IDs or AX raise return codes. The former Hypr+F binding (now Hypr+Shift+T) recorded `42533 → 44870` at
-21:20:33.700 CDT, followed by a stale restore to `42533` at 21:20:33.763.
-A later tiled hover restarted the loop. These are stable window IDs, not
-page titles.
-
-Automatic raising now leaves floating siblings of the focused tiled app
-alone. Safari can reorder sibling windows when main/key focus is restored,
-so repeatedly enforcing floater-on-top conflicts with the selected tile.
-Cross-app raising and explicit Hypr+Shift+T remain available. Hover can select a
-visible topmost floater by its physical window ID. A delayed restore must
-still refer to the current, visible, known tiled focus target and must not
-run during menu tracking or scratchpad display.
+`raiseBehind` skips floaters of the focused tile's own app. Safari can reorder
+sibling windows when focus returns to a tile, so raising a same-app floater
+fights the selected tile. Cross-app raising and explicit Hypr+Shift+T remain
+available. Hover can select a visible topmost floater by its window ID. A
+delayed restore must still refer to the current, visible, known tiled focus
+target, and does not run during menu tracking or scratchpad display.
 
 Actual reconciliation writes log `raise behind: wids=[…] under=[…] focus=<id>
 front=<pid>`, `raise behind failed: wid=<id> rc=<AXError>`, and
-`raise behind restore: wid=<id>` at notice level. Same-app passes that write
+`raise behind restore: wid=<id> (front moved <pid> → <pid>)` at notice level. Same-app passes that write
 nothing stay silent. Correlate these with `ffm-topmost-floating`, ordinary
 `ffm-topmost`, `cycleFocus`, and `ax event: focusedWindowChanged pid=<pid>`.
-The next section covers the lines added for issue #10.
 
 Live acceptance requires two overlapping Safari windows, one tiled and one
 floating after admission refusal. Hover each exposed window in turn, move
@@ -743,94 +740,55 @@ to another app, then press Hypr+Shift+T. Check exact AX window identity and stab
 z-order as well as the visible result; unit tests cannot establish macOS AX
 behavior. Keep existing logs before restarting the app.
 
-### Floaters, open menus and no-raise focus (issue #10)
+### Floaters and open menus (issue #10)
 
-The report: with tiled windows and a floater on the same workspace, a
-Chrome bookmark-folder menu closed as soon as it opened, and some apps
-(Zoom) flickered between focused and unfocused. A related problem with
-focus-follows-mouse: moving off a floater onto the tile behind it lifted
-the tile over the floater.
+The rule, decided November 2: the focused window sits above a floater wherever they
+overlap, and a floater is on top of every other tile. It applies to hover and click
+alike. True always-on-top isn't available: a window level needs SIP off, and raising
+the floater after each click blinked on every click and took the keyboard for a moment.
 
-What the source showed:
+Two facts drive the guards. Chrome's bookmark folders are not NSMenus. They are windows
+at `kCGPopUpMenuWindowLevel` (101), so the HIToolbox menu-tracking guard does not see
+them. And `focusWithoutRaise` is not raise-free: it writes kAXMain, may call
+`NSRunningApplication.activate`, and posts key-window events, which bring the app's
+windows forward and can dismiss menus. The hover path adds a synthetic title-bar click.
 
-- `raiseBehind` ran 50 ms after every app activation and at the end of every
-  discovery pass. A click on a tile lifts it over the floater, so the next
-  pass raised the floater and, 20 ms later, restored focus to the tile with
-  `focusWithoutRaise`. That restore writes kAXMain, may call
-  `activate()`, and posts key-window events, and its own comment said those
-  events dismiss menus. Chrome's bookmark folders are not NSMenus
-  (chromium maps a views `TYPE_MENU` widget to `kCGPopUpMenuWindowLevel`,
-  101), so the HIToolbox menu-tracking guard never saw them.
-- Hover hit-testing skipped every window whose layer is not 0. With a menu
-  hanging over a floater, the pointer "hit" the floater and focus-follows-mouse
-  focused it with a synthetic click.
-- Nothing limited `raiseBehind`. An app that activates itself when raised,
-  or a raise Tahoe ignores, could repeat raise and restore on every
-  activation.
-- `focusWithoutRaise` is not raise-free: kAXMain plus
-  `NSRunningApplication.activate` bring the app's main and key windows
-  forward, and the hover path adds a synthetic title-bar click.
+How it works:
 
-What changed:
-
-- `WindowStacking` reads the window list. An open popup is a window of the
-  frontmost app at layer 101 or above (below the screen saver). Hover focus,
-  `refocusUnderCursor`, `raiseBehind`, its restore, the focus invariant, the
-  focus repair on a bare Hypr press, and the no-raise fallback all stand
-  down while one is open. A popup-level window open longer than 30 s is
-  treated as part of its app and stops counting. A raised window of the
-  frontmost app under the pointer (a menu, a floating panel) is never
-  hit-tested through. Other apps' high windows are still skipped, so a
-  click-through overlay does not freeze focus.
-- `raiseBehind` only raises a floater a tile actually overlaps, checks the
-  stack 50 ms later, and restores focus only when the raise moved the front
-  app away from the focused tile. `RaiseBehindThrottle` cools a
-  floater/tile pair down after a raise that did not lift it (30 s), a raise
-  within 1 s of our own restore (the loop), or 4 raises in 5 s (10 s). The
-  loop cooldown starts at 15 s and doubles with each loop up to 600 s. A
-  pair quiet for 300 s after its cooldown ends starts over at 15 s.
-- `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus
-  invariant, the raise restore and the click re-raise. Workspace switches,
-  window moves and the scratchpad still use their own focus calls, which can
-  lift a tile. When a floater covers the target tile it sends only
-  `_SLPSSetFrontProcessWithOptions` and
-  the key-window event records, as yabai does, plus yabai's lost/gained pair
-  when focus moves inside the frontmost app. No kAXMain write, no
-  `activate()`, no click. 80 ms later it checks whether the target app is
-  frontmost and the target window is AX-focused. If not, it falls back to
-  the usual path and logs it, unless a menu opened or the user switched to
-  another app meanwhile. Hypr+Arrow warps the cursor to the part of the
-  tile the floater leaves uncovered.
-- The dim cuts a floater's hole only where the floater is in front. For
-  each floater, `WindowStacking.occluders` lists the tiles stacked above it
-  in the window list, and `DimmingOverlay` takes them back out of the hole.
-  Before this, clicking a tile over a floater left a bright rectangle on
-  the tile where the floater used to show. A floater the list does not show
-  keeps its whole hole, as before. The cutouts are redrawn when the stack
-  can change: after a click's mouse-up, a focused or main window change, an
-  app activation, a raise-behind or click re-raise, and the usual focus
-  path. `scheduleRestackRefresh` coalesces each burst into one refresh.
-  That refresh reads the window list once for the dim and once more for
-  the border occlusion when the border is on. It runs per event, not per
-  mouse move, and only while a floater is visible.
-- The click re-raise keeps floaters in front of tiles after a click. About
-  40 ms after the mouse-up of a real click on a tile (not a drag, not a
-  Hypr or Option gesture, not our own synthetic click), each floater on the
-  same workspace that the tile now covers gets an AXRaise. 50 ms later the
-  stack is checked, and keyboard focus goes back to the tile through
-  `TiledFocusRouter` (`reason=click-reraise`), so the tile stays key with
-  the floater on top. The click itself reaches the tile as usual. It stands
-  down while a menu tracks or a popup is open, while the scratchpad is up,
-  when focus has moved on, and when the click landed inside the floater's
-  frame, since raising it would cover the spot just clicked. A raise that
-  leaves the floater under the tile, or a refocus that misses, cools the
-  pair down for 30 s, so an app that refuses stops costing a flicker per
-  click. A click re-raise counts toward no burst, since it follows one
-  click. When the floater's app took the front, the click counts as a
-  loop and the pair cools at once, on the same doubling scale.
-- A click is credited to the window the window list puts under the
-  pointer when that window is one of ours, so a floater a tile has buried
-  no longer takes the focus tracker from the tile that got the click.
+- `WindowStacking` reads the window list. An open popup is a window of the frontmost
+  app at layer 101 or above (below the screen saver). Hover focus,
+  `refocusUnderCursor`, both raises, the focus invariant and the focus repair on a bare
+  Hypr press all stand down while one is open. A popup-level window open longer than
+  30 s is treated as part of its app and stops counting. A raised window of the
+  frontmost app under the pointer (a menu, a floating panel) is never hit-tested
+  through. Other apps' high windows are still skipped, so a click-through overlay does
+  not freeze focus.
+- `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus invariant and
+  the focus repair. It calls `raiseFloatersBeforeFocus`, then the usual focus, which
+  lifts the target. Order matters. A floater under the old tile goes up first, so it
+  moves straight from over that tile to under the new one and never shows over the
+  window taking focus.
+  The usual focus lifts only some apps (Dia, not Terminal), so `liftOverFloaters` then
+  raises the target if a floater is still over it, and checks once more 60 ms later.
+- `raiseBehind` is the backstop, on an app activation, after a click's mouse-up, and on
+  each poll. It ignores the focused tile, so a floater only it covers is left alone. If
+  a click lifted the new tile before anything could run (no hover first), it raises the
+  floater and lifts the tile again in the same turn, which shows as a blink of about
+  70 ms over that tile.
+- AXRaise on another app's window does nothing on macOS 27 (`raise behind ineffective`),
+  so both raises front the floater's app first (`frontApp`, SkyLight with no activate).
+  Keys go to the front app, so a raise waits 250 ms after the last key and for the last
+  raise's 400 ms hand-off, and never runs during a mouse press. Keys typed in the short
+  time the floater's app is in front land there.
+- A fronted raise gets up to 230 ms to land. A miss rests 1 s, then 2 and 4, retrying
+  after each until three in a row, then waits for the next click. A plain raise, with
+  another app in front, cools the pair for 30 s or after 4 raises in 5 s, and a fronted
+  raise clears that.
+- The dim cuts a floater's hole only where the floater is in front. For each floater,
+  `WindowStacking.occluders` lists the tiles stacked above it, and `DimmingOverlay`
+  takes them back out of the hole. The cutouts are redrawn when the stack can change.
+  `scheduleRestackRefresh` coalesces each burst into one refresh, and it runs only while
+  a floater is visible.
 
 Log lines, all at notice level:
 
@@ -840,90 +798,31 @@ Log lines, all at notice level:
 | `ffm resumed: popup <id> gone` | mouse | hover focus back |
 | `ignoring popup <id> pid=<pid> layer=<n>: open 30s, treated as part of the app` | mouse | a menu-level window that never closes no longer counts for any guard |
 | `refocus under cursor skipped: popup …` | mouse | post-click refocus held off |
+| `raise before focus: wids=[…] under=[…] focus=<id>` | floating | floaters raised from under the old tile before the new one lifts |
+| `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised by the backstop, and the tiles that covered them |
 | `raise behind deferred: popup wid=<id> pid=<pid> layer=<n>` | floating | raise held until the menu closes |
-| `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised, and the tiles that covered them |
-| `raise behind ineffective: wid=<id> still under <id> — cooldown 30s` | floating | the window server kept the tile on top |
-| `raise behind kept focus: wid=<id> front=<pid>` | floating | no restore sent |
-| `raise behind restore: wid=<id> (front moved <pid> → <pid>)` | floating | the raised app took focus; it went back |
+| `raise behind ineffective: wid=<id> still under <id> — cooldown <n>s` | floating | the raise didn't land |
+| `raise behind kept focus: wid=<id> front=<pid>` | floating | no backstop restore needed |
+| `raise behind restore: wid=<id> (front moved <pid> → <pid>)` | floating | the floater's app still had the front, so it went back |
 | `raise behind restore skipped: popup wid=<id> layer=<n>` | floating | a menu opened meanwhile, so focus stayed where it was |
-| `raise behind cooldown: pair=<floater>/<tile> reason=loop\|burst for <n>s` | floating | loop or burst stopped |
-| `no-raise focus: wid=<id> pid=<pid> reason=<why> floaters=[…] layers=[…] front=<pid> crossApp=<bool> prevKey=<id>` | focus | a covered tile was focused without activate or click. `layers` 3 means the floater was at the floating level; `crossApp=true` means SkyLight had to switch the front process |
-| `no-raise focus verify: wid=<id> … front=<pid> (want <pid>) key=<id> floatersAbove=[…] layers=[…] buried=[…] → landed\|missed, floaters kept above\|buried` | focus | whether focus landed, and whether the floaters stayed above the tile |
-| `no-raise focus fallback: wid=<id> path=activate\|activate+click after a miss (front=<pid> want <pid>, key=<id>); this lifts the tile over […]` | focus | it did not land; the usual path ran and lifts the tile |
-| `no-raise focus superseded: wid=<id>` | focus | a newer focus replaced a same-app hand-off |
-| `no-raise focus verify: wid=<id> superseded` | focus | a newer focus came before the check |
-| `no-raise focus fallback skipped: …` | focus | a menu opened, or the user switched apps, meanwhile |
 | `focus invariant skipped: popup …` | focus | the invariant held off |
 | `ensureFocus skipped: popup …` | focus | a bare Hypr press left the menu open |
-| `click re-raise: floater=<id> tile=<id> sameApp=<bool> → on top` | floating | a click buried the floater and the raise put it back |
-| `click re-raise: … → ineffective — cooldown 30s` | floating | the window server kept the tile on top; the pair rests |
-| `click re-raise: … → skipped(<reason>)` | floating | `click under floater`, `focus moved`, `popup …`, `menu tracking`, `scratchpad`, `tile app not front`. A cooldown skip logs at debug |
-| `click re-raise failed: wid=<id> rc=<n>` | floating | AXRaise returned an error |
-| `click re-raise refocus missed: tile=<id> floaters=[…] — cooldown 30s` | floating | the tile did not stay key under the floater |
-| `click re-raise refocus skipped: …` | floating | focus moved, a menu or popup opened, or the scratchpad came up before the hand-back. The floater may stay key |
 
-One repro answers the Tahoe question. If `verify` says `landed` with the
-floater in `floatersAbove` and an empty `buried`, the no-raise path works
-there. If it says `missed` and a `fallback` line follows, Tahoe refused it
-and hover onto a covered tile still lifts the tile, as before. On the
-MacBook (macOS 27, Safari only, September 26) hover, Hypr+Arrow and typing
-into a covered tile all logged `landed` with the floater in
-`floatersAbove`. Every one of those had the target's app already in
-front. No-raise focus that has to switch the front process
-(`crossApp=true`) has not been seen live yet.
-
-Cross-app AXRaise does not work on macOS 27. The same day, a Messages
-Quick Look preview under a Safari tile logged `raise behind: wids=[5252]
-under=[71889]` and then `raise behind ineffective: wid=5252 still under
-71889`. So raise-behind and the click re-raise can only lift a floater of
-the tile's own app. A floater of another app stays in front only if focus
-never lifts the tile over it, which is the no-raise path's job.
-
-Floating-level floaters. AppKit puts a floating panel (a Quick Look
-preview, an inspector) at the floating level, CG layer 3, while its app is
-active, and drops it to layer 0 when the app deactivates. The floater rules
-used to look at layer 0 only. After a click on the preview made Messages
-active, the preview sat at layer 3 and hover onto a Safari tile saw no
-covering floater. It took the usual path, activated Safari, the preview
-dropped to layer 0, and the tile came up over it. Now a window HyprMac
-manages as a floater counts on layer 0 or layer 3 in the router,
-raise-behind, the click re-raise and the dim cutouts. A layer-3 floater is
-above every tile, so its cutout is whole. Unmanaged layer-3 windows are
-still ignored, and a raised window of the front app that we do not manage
-still blocks hover. Hovering a managed floater at layer 3 is a hit on that
-floater, and so is a click on it.
-
-For that repro, click the preview, then hover a Safari tile. It should log
-`no-raise focus: wid=<tile> pid=<safari> reason=ffm floaters=[<preview>]
-layers=[3] front=<messages> crossApp=true`. Then one of:
-
-- `no-raise focus verify: … front=<safari> (want <safari>) key=<tile> …
-  → landed, floaters kept above`: the process switch worked and the
-  preview stayed in front after dropping to layer 0.
-- `… → landed, floaters buried`: focus moved, but the preview fell under
-  the tile. A `raise behind … ineffective` line usually follows.
-- `… → missed, …` then `no-raise focus fallback: … after a miss (…)`:
-  SkyLight would not switch the front process. The usual path ran and
-  lifted the tile, as before this fix.
-
-For the click re-raise, click a tile beside a floater. Same app should log
-`click re-raise: … sameApp=true → on top`, then `no-raise focus: …
-reason=click-reraise` and `no-raise focus verify: … → landed, floaters
-kept above`. A cross-app pair logs `→ ineffective — cooldown 30s` once per
-30 s, as on macOS 27. The tile then stays on top, and the dim shows the
-floater only where it is in front.
+Floating-level floaters. AppKit puts a floating panel (a Quick Look preview, an
+inspector) at the floating level, CG layer 3, while its app is active, and drops it to
+layer 0 when the app deactivates. A window HyprMac manages as a floater counts on layer
+0 or layer 3 in raise-behind and the dim cutouts. A layer-3 floater is above every tile,
+so its cutout is whole. Unmanaged layer-3 windows are still ignored, and a raised window
+of the front app that we do not manage still blocks hover. Hovering a managed floater at
+layer 3 is a hit on that floater, and so is a click on it.
 
 ### A floater changed size or left the screen
 
-The report (September 26): a floating window dragged onto the S34C65xT
-ultrawide grew far past the screen and off its edge. The notice log showed
-only the drag. The cause is not confirmed. Reading the source found no code
-that scales a floater's size by a ratio between screens, and no frame write
-at all for a plain title-bar drag of a floater: the drag capture is
-ineligible under a floater, discovery's screen drift skips floaters, and the
-floater keeps its workspace.
+HyprMac writes no frame for a plain title-bar drag of a floater: the drag
+capture is ineligible under a floater, discovery's screen drift skips floaters,
+and the floater keeps its workspace.
 
-Every frame HyprMac writes to a floater now goes through
+Every frame HyprMac writes to a floater goes through
 `FloatingFramePlacement` (`HyprWindow.placeFloating`). It logs one
 `[notice] [floating]` line and clamps the frame into the destination
 screen's usable frame, shrinking it if it is too big and moving it in if it
@@ -946,47 +845,27 @@ A floater drag also logs, 0.18 s after the release:
 floater drag: wid=<id> from=(x, y, w, h) on '<screen>' @<n>x to=(x, y, w, h) on '<screen>' @<n>x resized=<bool> fitsUsable=<bool>
 ```
 
-and `floater drag +1s: …` if the frame is still changing a second later. On
-the next repro: a `floater drag` line with `resized=true` and no `floating
+and `floater drag +1s: …` if the frame is still changing a second later.
+A `floater drag` line with `resized=true` and no `floating
 frame write` line before it means the app or macOS changed the size, not
 HyprMac. A `floating frame write` line names the path that did it.
 
 ### Rejected drag feedback and source restoration
 
-A September 14 capture exposed two drag regressions. At 21:47:17.362 CDT,
-a rejected Terminal move restored its frames; the delayed cursor refocus
-started at .371. With `showFocusBorder=false`, that ordinary focus refresh
-called `hide()` and canceled the rejection panel after only a few frames.
-Persistent border refreshes now defer to the bounded error feedback interval.
-Explicit teardown (fullscreen, workspace changes, shutdown, or disabling
-chrome) still cancels it. Natural completion resolves current focus afresh;
-it does not replay a captured window or frame. Notice lines
-`error feedback begin/end/cancel: wid=<id>` distinguish completion from
-cancellation without recording titles.
-
-The message now holds still for 1.15 seconds after the brief shake, one
-second longer than before. The error panel does not supply focus identity
+Persistent border refreshes defer to the bounded error feedback interval.
+Explicit teardown (fullscreen, workspace changes, shutdown, or disabling chrome)
+still cancels it. Natural completion resolves current focus afresh; it does not
+replay a captured window or frame. Notice lines `error feedback
+begin/end/cancel: wid=<id>` tell completion from cancellation. The message holds
+still for 1.15 s after the shake. The error panel does not supply focus identity
 during that interval; keyboard actions follow the latest recorded focus.
-Float-to-tile feedback distinguishes no fitting slot from an app returning
-different geometry: the latter says it did not accept the tile size.
+Float-to-tile feedback tells no fitting slot from an app returning different
+geometry: the latter says it did not accept the tile size.
 
-At 21:49:23.963, a cross-monitor Terminal drag was classified as a manual
-resize because its released size differed from the captured size. There was
-no target on the source monitor, but that did not prevent the resize from
-changing the source tree ratios to 0.85 and 0.59. The accepted pass placed
-Terminal `45845` in a 162-point-high band; the app read back 169 points.
-A later rejected drag correctly restored that already-corrupted layout.
-A resized no-target release whose frame center is outside the source usable
-frame now restores the captured source frames without replacing its tree.
-Ordinary on-source resize behavior remains available.
-
-Trying to return Terminal beside Messages also exposed a mismatch between
-ordinary tiling and drag insertion. Ordinary tiling had verified an adjusted
-619-point Messages window beside a 437-point Terminal slot. Drag insertion
-started with equal halves and rejected Messages at 528 points. Drag candidates
-now adjust their private ratios for known minimum sizes before AX writes,
-then pass through the existing readback and restoration checks. This does
-not publish unverified frames or change admission recovery.
+A resized no-target release whose frame center is outside the source usable frame
+restores the captured source frames without replacing its tree. Drag candidates
+adjust their private ratios for known minimum sizes before any AX write, then
+pass through the usual readback and restoration checks.
 
 ### Tiled drag decisions and drops across monitors
 
@@ -1003,7 +882,7 @@ mode is `none` or the gesture is `unmoved`. Turn on `HyprMacVerboseLogging`
   the point is on the source tiles it adds `tiles=[…]`, one entry per source
   tile.
 - `tiled drag mode: dragged=<id> swap=<bool> mode=<insert(<id> <edge>)|swap(<id>)|crossMonitor|none …>`.
-- For `crossMonitor`, WindowManager may log `tiled drag across monitors
+- For `crossMonitor`, `TiledDragController` may log `tiled drag across monitors
   refused on <name>: <reason>` (a disabled monitor, the scratchpad). The
   engine then logs either `tiled drag across monitors declined: …
   reason=<…>`, and the release restores, or `tiled drag across monitors
@@ -1018,7 +897,7 @@ mode is `none` or the gesture is `unmoved`. Turn on `HyprMacVerboseLogging`
   restores. A failed read logs `tiled drag settle read failed: …
   reason=<trace>` instead.
 - For a plain move across monitors:
-  - `tiled drag across monitors targets: point=cg(…) tiles=[<id>
+  - `tiled drag across monitors targets: dragged=<id> point=cg(…) tiles=[<id>
     frame=(x,y,w,h) dist=<d> l=<> r=<> t=<> b=<>; …] chosen=<id> <edge>`. The
     frames are the release tree's layout slots, the same ones the live drop
     preview uses. The four fractions are the normalized distances to each
@@ -1040,69 +919,15 @@ skipped: phase=<…> reason=<trace> ids=[…] — the drop's time budget is spen
 
 ### Tab detach followed by a false restoration warning
 
-A September 15, 2026 capture separates two Safari events. Window `64757`
-was admitted with complete, stable readback at 18:58:11.138 CDT. It did not
-produce the restoration failure. A later tab detach produced this sequence:
-
-- 18:58:21.710 and .735: AX window-created notifications arrived during the drag.
-- 18:58:22.240: drag `61918` ended degraded. Its release-time frame read failed;
-  restoring the captured three-window layout failed on `51138` when the
-  Enhanced UI read returned `-25204`. No restoration writes completed.
-- 18:58:22.723: error feedback began for `61918`.
-- 18:58:22.780: the deferred discovery poll ran.
-- 18:58:22.852: discovery's ordinary admission transaction, generation `3457`,
-  verified all four windows (`51138`, `61918`, `64724`, and newcomer `64765`)
-  with complete, stable readback.
-- 18:58:24.350: the error feedback ended, about 1.5 seconds after recovery.
-
-This was successor-transaction recovery, not a logged admission retry. The
-release path in `TiledDragTransaction.dropRelease` calls restoration when
-its classification read fails. Failed restoration returns `.degraded`.
-`WindowManager.completeTiledDrag` originally treated that local result as
-final and immediately emitted the restoration warning. `PollingScheduler`
-keeps discovery suppressed until drag completion, so the queued discovery
-could only establish the successful full-operation outcome afterward.
-The focus border's bounded error interval then preserved the stale warning.
-
-Degraded drag feedback now waits for the existing post-drag discovery poll.
-The poll passes its actual admission results to feedback reconciliation; only
-a newer result for the same workspace and physical display can resolve it.
-Cancellation requires accepted, complete membership, including newcomers a
-failed successor admission stranded. A successful retile of only the old
-incumbents cannot conceal floating fallback. The existing bounded admission
-retry may finish the operation; unreadable or held recovery reports failure
-without waiting indefinitely.
-
-Failure diagnostics and cache invalidation remain immediate. A persistent
-failure emits once. If a later transaction verifies the complete operation
-while its warning is visible, cancellation uses that flash's render token.
-It cannot hide a newer unrelated error. No app identity, title, or added
-timing grace period participates in the decision.
-
-Verification on the isolated branch based on `46c2496`:
-
-- The exact release-read failure, restoration-write failure, and accepted
-  four-window successor sequence fails on the unmodified baseline solely
-  because the warning survives (`build/investigation/exact-baseline-red.log`).
-- The fixed-screen regression passes for Safari and TextEdit newcomers.
-  Focused feedback, drag, admission recovery, and border tests: 120 tests,
-  zero failures (`build/sizing/isolated-tests/safari-feedback-final.log`).
-- `scripts/test-isolated.sh --debug-variant`: 884 tests, 23 existing skips,
-  zero failures (`build/investigation/verified-suite.log`).
-- The dedicated Debug scheme builds unsigned for arm64 and x86_64
-  (`build/investigation/verified-debug-build.log`).
-- Independent source review and `git diff --check` pass. The tests exercise
-  real sizing transactions plus feedback and border components; they do not
-  replace live verification of the complete macOS notification path.
-
-Live acceptance update, September 15, 2026: the signed universal Debug build
-`f66ba8ac2692+972a10741228` replaced the canonical MacBook debug app at the
-user's request. Its signature and installed checksum verified; startup logged
-Accessibility trust and successful manager startup. HyprMac configuration
-JSON hashes were unchanged, and the previous app was archived for rollback.
-The user then confirmed that the fix works and authorized landing it on main.
-This confirms the reported Safari symptom; the broader manual matrix for
-another app and deliberately unrecovered failures was not separately run.
+A tab detach during a drag can fail the release read and the restoration, then
+recover in the discovery pass that follows. `PollingScheduler` keeps discovery
+suppressed until the drag completes, so degraded drag feedback waits for the
+post-drag discovery poll. Only a newer result for the same workspace and display
+can resolve it, and it needs accepted, complete membership including newcomers.
+A successful retile of only the old incumbents does not hide a floating fallback.
+A persistent failure warns once. A later accepted transaction cancels a warning
+still showing, by that flash's render token, so it cannot hide a newer error.
+Failure logs and cache invalidation stay immediate.
 
 ### "Why didn't a swap take effect?"
 
@@ -1125,7 +950,7 @@ this revalidation scope only through their matching final application.
 ### "Why is dimming wrong?"
 
 ```
-subsystem:com.zachgray.HyprMac (category:dimming || category:focus || category:lifecycle)
+subsystem:com.zachgray.HyprMac (category:focus || category:lifecycle)
 ```
 
 The dim mask reacts to focus changes; mismatches usually trace back
@@ -1148,7 +973,8 @@ subsystem:com.zachgray.HyprMac category:discovery
 ```
 
 `window returned`, `new window`, `window hidden`, and `window
-gone` log every transition. `WindowStateCache.knownWindowIDs`
+gone` log every transition. `new window` and `window gone` are
+`.debug`, so they are only in the file log. `WindowStateCache.knownWindowIDs`
 tracks the "seen since launch" set; a window appearing as `new`
 when the user un-hides it usually means it was forgotten too
 aggressively (e.g. on app terminate before the visibility change
@@ -1203,11 +1029,8 @@ after an unlock, that poll comes once the 4-second hold below is over.
 Every notification listed above, and `didWake`, goes through
 `systemInterruption`. Each one arms the 4-second `discovery suppressed`
 hold, resets the hotkey state, clears a stuck Dock flag, ends menu tracking
-and hides the scratchpad. `screensDidSleep` is new to that list, so display
-sleep on its own now does all of that as well. Before the span existed, a
-lock that outlasted the 4-second hold and the three mass-gone skips marked
-every window hidden, and the unlock rebuilt each tree in reading order with
-default ratios.
+and hides the scratchpad. So display
+sleep on its own does all of that as well.
 
 ### A window vanished for a poll and came back somewhere else
 
@@ -1287,21 +1110,22 @@ to update.
 
 Symptom: two tiled windows, one keeps snapping full-screen and back
 every ~1 s while the other stays put; dimming redraws with each snap.
-Mechanism: an app whose main thread stalls fails its AX reads for a
-poll cycle, all its windows drop from that `getAllWindows` snapshot,
-discovery marks them gone→hidden, the sibling's node is promoted and
-retiled to the full rect; the next healthy cycle returns them and
-retiles back. Notice-tier evidence chain (all `category: discovery`):
+Mechanism: a window marked gone→hidden promotes its sibling's node, which
+retiles to the full rect; the next healthy cycle returns it and retiles
+back. An app whose main thread stalls should no longer cause this: windows
+the window server still shows are held in place (`holding N unreadable
+window(s)`, see "A window vanished for a poll"). Notice-tier evidence chain (all `category: discovery`):
 
-- `AX window-list read FAILED for <bundle>` / `recovered after N
-  failed cycle(s)` — the root cause, logged on outage edges only.
+- `AX window-list read FAILED for <bundle>` / `AX window-list read recovered
+  for <bundle> after N failed cycle(s)` — the root cause, logged on outage
+  edges only.
 - `AX frame read FAILED for N window(s) of <bundle>` — per-window
   variant of the same failure.
 - `window hidden: <id> (<bundle>)` / `window returned` — the
   discovery transitions.
-- `FLAP: '<title>' returned <ms>ms after vanishing` — a return within
+- `FLAP: '<title>' (<id>) returned <ms>ms after vanishing` — a return within
   5 s of vanishing, i.e. almost certainly not a real minimize.
-- `discovery retile: gone=[...] returned=[...]` — one line per
+- `discovery retile: new=[...] gone=[...] returned=[...] drift=[...]` — one line per
   discovery-driven re-layout naming its cause.
 
 Pull with:
@@ -1315,49 +1139,28 @@ Pull with:
 - `WindowManager` lifecycle — `category: lifecycle`.
 - Action dispatch and routing — `category: orchestration`.
 - Focus transitions — `category: focus`.
-- Tile mutations and swap decisions — `category: tiling`.
+- Tile mutations and drag decisions — `category: tiling`. Swap refusals are in `orchestration`.
 - Workspace switches and moves — `category: workspace`.
 - Discovery diff results — `category: discovery`.
-- Drag classification — `category: drag`.
+- Hover and clicks — `category: mouse`.
+- The event tap and Hypr key — `category: hotkey`.
 - Floating window operations — `category: floating`.
+- Border and error feedback — `category: border`.
 - Suppression registry decisions — `category: state`.
 - Config load/save — `category: config`.
+- `state.json` and layout snapshots — `category: persistence` and `lifecycle`.
 
 `grep -rn 'hyprLog(.notice\|hyprLog(.warning\|hyprLog(.error\|hyprLog(.fault' HyprMac/`
-gives a complete index of diagnostic-tier sites.
+gives an index of diagnostic-tier sites. It misses a level chosen at run time.
 
+## Admission topology recovery
 
-## Stability audit log changes, September 13 evening
-
-A preflight refusal logs `no fitting tile slot: wid=<id> ws<N> — staying
-in place`. It routes the window nowhere. Its recovery turn checks ownership
-and floats without running another sizing attempt. An
-impossible adjusted layout logs `adjusted layout cannot resolve observed
-constraints — restoring`; there is no adjusted write in that case.
-
-An incompatible returning incumbent produces `noFittingSlot(id)` and keeps the
-whole key unverified without writing. It is excluded from recovery fallback
-IDs. See [the audit](stability-audit-2026-09-13.md) for the exact test evidence
-and remaining manual gates. Earlier log examples describe their dated builds.
-
-## Portrait startup admission recovery
-
-A depth-two batch on a 1064×1874 usable portrait display previously chose a
-two-column grid. Its half-width slots were 528 points, while four observed
-window widths were 574, 528, 708, and 640. The same four windows fit at the
-same depth when both child splits use the vertical axis.
-
-The startup failure had two stages. The initial write failed before readback,
-so it learned no constraints. The automatic retry built the same grid from
-seeded minima, then learned the real widths. Ratio adjustment could not make
-that topology fit, so recovery floated the batch.
-
-Smart insertion now tries the alternate axis when the preferred aspect-ratio
-split cannot satisfy both windows. If an automatic retry starts from an empty
-live key and its first write learns constraints that ratio adjustment cannot
-resolve, it gets one private topology rebuild using that evidence. The rebuilt
-layout must pass normal verified readback before publication; otherwise the
-existing rollback runs. Ordinary retiles, explicit insertion, drag, incumbent
-trees, saved split directions, hidden windows, disabled windows, and scratchpad
-layouts do not opt into this rebuild. A workspace overflow router was not
-needed because the four-window batch fits the original workspace and depth.
+Smart insertion tries the alternate axis when the preferred aspect-ratio split
+cannot satisfy both windows. If an automatic retry starts from an empty live key
+and its first write learns constraints that ratio adjustment cannot resolve, it
+gets one private topology rebuild using that evidence: `admission topology
+recovery: ids=…`, then `admission topology recovery accepted` if the rebuilt
+layout passes normal verified readback. Otherwise the usual rollback runs.
+Ordinary retiles, explicit insertion, drag, incumbent trees, saved split
+directions, hidden windows, disabled windows and scratchpad layouts do not use
+this rebuild.

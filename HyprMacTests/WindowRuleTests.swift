@@ -164,8 +164,8 @@ final class WindowRuleTests: XCTestCase {
     // MARK: - Retile All keybind
 
     func testRetileAllBehavesLikeTheOtherLayoutWideActions() {
-        XCTAssertTrue(WindowManager.isDroppedMidDisplayTransition(.retileAll))
-        XCTAssertTrue(WindowManager.cancelsPendingRecovery(.retileAll))
+        XCTAssertTrue(ActionPolicy.isDroppedMidDisplayTransition(.retileAll))
+        XCTAssertTrue(ActionPolicy.cancelsPendingRecovery(.retileAll))
         XCTAssertTrue(HotkeyManager.ignoresAutorepeat(.retileAll))
         XCTAssertFalse(HotkeyManager.actionIsAvailable(.retileAll, tilingEnabled: false))
         XCTAssertEqual(KeybindCategory.from(.retileAll), .system)

@@ -80,16 +80,18 @@ schemes intentionally:
 
 - **User-facing per-monitor config** — keyed by
   `NSScreen.localizedName`. This includes
-  `config.disabledMonitors`, `config.maxSplitsPerMonitor`, and
+  `config.disabledMonitors`, `config.maxSplitsPerMonitor`,
+  `config.outerPaddingPerMonitor`, `config.workspaceMonitors`, and
   every per-monitor row in the settings UI. Config files written
   before a monitor unplug must continue to apply when that monitor
   reappears, so the key has to be stable across power events. The
   localized name is the closest stable identifier macOS exposes
   through `NSScreen`.
 - **Internal-only state** — keyed by `CGDirectDisplayID`. This
-  includes `DimmingOverlay`'s panel cache. The display ID is
-  guaranteed unique across plug events for the same physical
-  display, even when two monitors share a localized name.
+  includes `DimmingOverlay`'s panel cache. The display ID tells two
+  monitors with one localized name apart, but it can change across a wake,
+  so nothing that must outlive a wake is keyed by it. The display fingerprint
+  and the last-shown workspace use name and frame instead.
 
 The `WorkspaceManager.screenID(for:)` integer is its own thing —
 derived from `screen.frame.origin` so two screens at the same
@@ -108,37 +110,23 @@ introducing an unfamiliar identifier into the settings UI.
 
 ## Coordinate-conversion duplication
 
-The CG↔NS conversion currently appears inline in:
-
-- `MouseTrackingManager.handleMouseMove` and `refocusUnderCursor`
-- `FocusBorder.panelRect(for:)`
-- `DimmingOverlay.localRect(cgRect:screenNS:)` (and the inverse for
-  the dim path computation)
-- `WindowManager.screenUnderCursor`,
-  `WindowManager.captureMouseDownFrames`,
-  `WindowManager.syncFocusTrackerToCursor`,
-  `WindowManager.refreshDimming`
-
-`Shared/CoordinateSpace.swift` is the agreed home for a shared
-helper. The extraction is deferred until a third caller appears or
-until the conversion grows beyond `primaryScreenHeight - y` — two
-inline copies of a one-liner do not yet justify the indirection.
+`DisplayManager.flippedY` converts a point in either direction.
+`CoordinateSpace.nsRect(fromCG:primaryHeight:)` converts a rect, for the
+overlays that keep their own copy of the primary height. `MouseTrackingManager`,
+`FocusBorder` and `FocusBrackets` still write the conversion inline.
+`Shared/CoordinateSpace.swift` also holds the shared `CGRect` helpers
+(`isSubstantiallyVisible`, `clamped(into:)`).
 
 ## `subtract()` rect-strip helper
 
-Both `DimmingOverlay` and `FocusBorder` use a `subtract(hole, from
-rect)` helper that returns up to four strips representing
-`rect - hole`. The implementations are identical. Same rationale as
-above: two callers do not yet justify a `Shared/Geometry.swift`
-extraction. The third caller (or any meaningful expansion of
-`Shared/CoordinateSpace.swift` into a geometry section) is the right
-moment to fold both.
+`WindowStacking.subtract` returns up to four strips representing `rect - hole`.
+`FocusBorder` shares it. `DimmingOverlay` uses `CGPath.subtracting` instead.
 
 ## Edge cases
 
 ### Cross-monitor window moves
 
-When `HyprWindow.setFrame` moves a window across screens, macOS
+When `FrameSizingAttempt` moves a window across screens, macOS
 clamps the resize against the *current* screen's bounds. The
 resize-move-resize order is used for that reason:
 
@@ -149,14 +137,9 @@ resize-move-resize order is used for that reason:
 
 Step 3 is an attempt, not a guarantee. It removes the *source* screen's
 clamp; it does not make the app answer. An app with its own idea of a legal
-size answers with that size however many times it is asked: evidence `04`
-shows Terminal answering 1534 to a repeated 1874 request on the portrait
-display, same order, same numbers, every attempt. Treat the third write as
-the best available request and read the frame back to find out what happened
-— `FrameSizingAttempt` does exactly that.
-
-Same-screen tile updates pass `crossMonitor: false` and skip step 3
-to save one AX call per window per retile.
+size answers with that size however many times it is asked. Treat the third
+write as the best available request and read the frame back to find out what
+happened — `FrameSizingAttempt` does exactly that.
 
 Step 1 assumes the source screen can hold the target size. A verified layout
 moves a window first instead when it is parked or when its target is bigger
@@ -166,26 +149,30 @@ write order paragraph under "Two-pass layout" in
 
 ### Hide-corner sliver
 
-Hidden workspace windows park at
-`screen.frame.maxX - 1, primaryScreenHeight - screen.frame.minY - 1`
-(in CG). macOS leaves a 1 px sliver visible regardless — fully
-off-screen windows trigger window-recovery alerts in some apps. The
-sliver is the lesser evil.
+Hidden workspace windows all park at one global point
+(`WorkspaceManager.hidePosition`): 1 pt inside the bottom-right of the
+rightmost monitor's visible frame, in CG. Monitors that share the rightmost
+edge resolve to the lowest. macOS leaves a 1 px sliver visible. See
+"Workspaces" in `docs/architecture.md`.
 
 ### Display change ordering
 
-On `NSApplication.didChangeScreenParameters`,
-`DisplayManager.refresh` runs automatically. The downstream sequence
-must then be:
+On `NSApplication.didChangeScreenParameters`, `DisplayManager.refresh` runs
+automatically. `WindowManager.screenParametersChanged` ignores a fire whose
+fingerprint is unchanged. Otherwise it saves the departing layout, hides the
+scratchpad, suppresses polling, and waits for the topology to hold still for
+2 s, or 5 s within 20 s of a sleep, wake or lock. Then
+`reconcileAfterDisplayChange` runs:
 
-1. `WorkspaceManager.initializeMonitors()` — reassigns workspaces
-   to the new screen set.
+1. `WorkspaceManager.initializeMonitors()` — refreshes each monitor's
+   visible workspace for the new screen set.
 2. `TilingEngine.handleDisplayChange(currentScreens:
-   homeScreenForWorkspace:)` — migrates trees from vanished screens
-   to their workspaces' new home screens; prunes orphans.
-3. `WindowManager.snapshotAndTile()` — re-snapshot windows and
-   tile.
+   homeScreenForWorkspace:)` — migrates trees to each workspace's current
+   home; prunes orphans.
+3. `classifyAndAssign`, then `reparkHiddenWorkspaceWindows` — re-parks hidden
+   workspaces at the possibly moved corner.
+4. `tileAllVisibleSpaces` — retiles visible workspaces.
 
-Reversing 1 and 2 prunes the home-screen mapping before the engine
-queries it and orphans the migration. `WindowManager.screenParametersChanged`
-runs them in this order with a 0.5 s delay so AX has time to settle.
+Reversing 1 and 2 feeds the engine a stale home-screen mapping.
+A display change does not call `snapshotAndTile`: that redistributes every
+window, and assignments must survive.

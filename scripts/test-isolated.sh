@@ -96,5 +96,12 @@ xcodebuild build-for-testing \
     -destination 'platform=macOS' -derivedDataPath "$AUDIT_DIR/derived" \
     CODE_SIGNING_ALLOWED=NO
 
+# a run starts from no config, whatever the last run left behind
+rm -rf "$AUDIT_DIR/home/Library/Application Support/HyprMac" \
+    "$AUDIT_DIR/home/Library/Mobile Documents"
+
 PRODUCTS="$AUDIT_DIR/derived/Build/Products/Debug"
-"$(xcrun -f xctest)" -XCTest "$SELECTION" "$PRODUCTS/HyprMacTests.xctest"
+# debug builds inherit the release app's real prefs, which CFFIXED_USER_HOME
+# does not redirect. keep the iCloud symlink out of the isolated home. the value
+# is plist syntax: a bare NO reads as a string, and RuntimeVariant ignores it.
+"$(xcrun -f xctest)" -iCloudSyncEnabled '<false/>' -XCTest "$SELECTION" "$PRODUCTS/HyprMacTests.xctest"

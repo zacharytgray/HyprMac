@@ -71,7 +71,7 @@ final class WorkspaceOrchestratorMoveTests: XCTestCase {
         let usable = displayManager.cgRect(for: screen)
         trace.frames[tenant.windowID] = CGRect(x: usable.minX + 20, y: usable.minY + 20,
                                                width: 120, height: 120)
-        tilingEngine.prepareTileLayout([tenant], onWorkspace: destination, screen: screen)
+        tilingEngine.seedTree([tenant], onWorkspace: destination, screen: screen)
         tenant.observedMinSize = minimum
         tenant.minSizeProvenance = provenance
         tilingEngine.primeMinimumSizes([tenant])

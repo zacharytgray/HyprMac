@@ -1,4 +1,4 @@
-// Reusable color picker row used by the Tiling tab for the focus
+// Reusable color picker row used by the Layout tab for the focus
 // border and floating border colors.
 
 import SwiftUI

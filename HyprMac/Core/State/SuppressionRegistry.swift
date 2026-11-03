@@ -3,44 +3,65 @@
 
 import Foundation
 
+enum SuppressionKey: String {
+    /// Gates the dock-click workspace switch in `appDidActivate` after a
+    /// programmatic focus or raise.
+    case activationSwitch = "activation-switch"
+    /// Gates focus-follows-mouse after a keyboard action, workspace switch,
+    /// drag, or floater raise.
+    case mouseFocus = "mouse-focus"
+    /// Holds polls and drift through switches, moves, the scratchpad, display
+    /// settle and wake.
+    case workspaceTransition = "workspace-transition"
+}
+
+/// How long each kind of event holds a key. The settle windows in
+/// `DisplaySettle` add to these. `docs/architecture.md` has the table.
+enum SuppressionDelay {
+    static let activationSwitch: TimeInterval = 0.5
+    static let mouseFocus: TimeInterval = 0.15
+    /// A workspace switch, move or scratchpad change.
+    static let transition: TimeInterval = 1.5
+    /// A reconcile or retile that moves every window, plus a settle tail.
+    static let displaySettle: TimeInterval = 3.0
+    /// Sleep, wake, lock and unlock.
+    static let systemInterruption: TimeInterval = 4.0
+}
+
 /// Date-gated suppression registry shared by orchestration code paths.
 ///
 /// Owns time-bounded "should I skip this because something just happened"
-/// flags. Two keys are in active use:
+/// flags, one per `SuppressionKey`.
 ///
-/// - `"activation-switch"` — gates the dock-click workspace switch in
-///   `appDidActivate` after a programmatic focus or raise (≈ 0.5 s).
-/// - `"mouse-focus"` — gates focus-follows-mouse after a keyboard action,
-///   workspace switch, drag, or floater raise (0.15–0.3 s).
-/// Reentrancy guards (e.g. `FloatingWindowController.isRaisingFloaters`)
+/// Reentrancy guards (e.g. `FloatingWindowController.isRaising`)
 /// and in-flight scheduling tokens (e.g. `PollingScheduler`'s coalesce
 /// flag) intentionally do not live here — those are not time gates.
 ///
 /// Threading: main-thread only. No synchronization.
 final class SuppressionRegistry {
-    private var until: [String: Date] = [:]
+    private var until: [SuppressionKey: Date] = [:]
 
     /// Suppress `key` for `duration` seconds from now.
     ///
     /// Extends an existing suppression if the new expiry is later; never
     /// shortens. `reason`, when supplied, logs at `.notice` so the
     /// suppression is greppable in Console.
-    func suppress(_ key: String, for duration: TimeInterval, reason: String? = nil) {
+    func suppress(_ key: SuppressionKey, for duration: TimeInterval, reason: String? = nil) {
         let newExpiry = Date().addingTimeInterval(duration)
         if let existing = until[key], existing > newExpiry {
             return
         }
         until[key] = newExpiry
         if let reason = reason {
-            hyprLog(.notice, .state, "suppress \(key) for \(duration)s — \(reason)")
+            hyprLog(.notice, .state, "suppress \(key.rawValue) for \(duration)s — \(reason)")
         } else {
-            hyprLog(.debug, .state, "suppress \(key) for \(duration)s")
+            hyprLog(.debug, .state, "suppress \(key.rawValue) for \(duration)s")
         }
     }
 
     /// `true` while `key`'s expiry is still in the future. Lazily reaps
     /// expired entries on read.
-    func isSuppressed(_ key: String) -> Bool {
+    func isSuppressed(_ key: SuppressionKey) -> Bool {
         guard let expiry = until[key] else { return false }
         if Date() >= expiry {
             until.removeValue(forKey: key)
@@ -50,12 +71,11 @@ final class SuppressionRegistry {
     }
 
     /// Drop `key` immediately, regardless of its expiry.
-    func clear(_ key: String) {
+    func clear(_ key: SuppressionKey) {
         until.removeValue(forKey: key)
     }
 
-    /// Drop every active suppression. Used on `WindowManager.stop()` to
-    /// reset state for a clean restart.
+    /// Drop every active suppression.
     func clearAll() {
         until.removeAll()
         expectedActivations.removeAll()

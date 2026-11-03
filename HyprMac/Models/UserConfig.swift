@@ -11,7 +11,7 @@ import Combine
 ///
 /// Each public field is `@Published` so SwiftUI views and Combine
 /// subscribers re-render on change. Every mutation writes through to
-/// `ConfigStore` (debounce by `isReloading` during programmatic
+/// `ConfigStore` (except while `isReloading` is set during programmatic
 /// reloads) and emits notifications to drive `WindowManager`'s live
 /// re-tile / re-bind paths.
 ///
@@ -69,11 +69,11 @@ class UserConfig: ObservableObject {
     @Published var showFocusBorder: Bool {
         didSet { persistRuntimeChange() }
     }
-    // hex string like "007AFF" — nil means system accent color
+    // hex string like "007AFF" — nil means brand cyan
     @Published var focusBorderColorHex: String? {
         didSet { persistRuntimeChange() }
     }
-    // hex string for floating window border — nil means default orange
+    // hex string for floating window border — nil means brand magenta
     @Published var floatingBorderColorHex: String? {
         didSet { persistRuntimeChange() }
     }
@@ -186,22 +186,22 @@ class UserConfig: ObservableObject {
     ///
     /// Every `@Published` property writes to disk in its `didSet`
     /// unless this flag is `true`. Without the flag, a single
-    /// `reloadFromDisk` would rewrite the file 17 times — once per
-    /// property update — and the file watcher would observe each
+    /// `reloadFromDisk` would rewrite the file once per
+    /// property update, and the file watcher would observe each
     /// write and re-fire reload in a tight loop. Set `true` *before*
     /// mass property updates, then `false`. Main-thread only.
     private var isReloading = false
 
     private let store: ConfigStore
 
-    // path-shaped accessor used by SettingsView's "Reveal in Finder" affordance
     var configURL: URL { store.localConfigURL }
 
     var isICloudDriveAvailable: Bool { store.isICloudDriveAvailable }
 
-    init() {
-        self.store = ConfigStore()
-        self.iCloudSyncEnabled = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled")
+    init(store: ConfigStore = ConfigStore(),
+         iCloudSyncEnabled: Bool = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled")) {
+        self.store = store
+        self.iCloudSyncEnabled = iCloudSyncEnabled
 
         let monitorConfig = store.loadSavedMonitorConfig()
         let savedConfig = store.loadSavedConfig()
@@ -281,12 +281,20 @@ class UserConfig: ObservableObject {
         self.outerPaddingPerMonitor = monitorConfig?.outerPaddingPerMonitor ?? [:]
         self.workspaceMonitors = monitorConfig?.workspaceMonitors ?? [:]
 
+        var relinked = false
         if iCloudSyncEnabled {
-            store.ensureICloudSymlinkIntegrity(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
+            relinked = store.ensureICloudSymlinkIntegrity(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
         }
+        store.holdWritesIfLinkUnusable()
 
         if resolved.needsLocalWrite {
             store.writeSavedMonitorConfig(makeSavedMonitorConfig())
+        }
+
+        // the values above came from the local file the link just replaced.
+        // saving them would write old settings over iCloud
+        if relinked {
+            reloadFromDisk()
         }
 
         store.onFileChanged = { [weak self] in self?.reloadFromDisk() }
@@ -390,7 +398,11 @@ class UserConfig: ObservableObject {
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames)
     }
 
+    // one update: one save and one runtime signal, like resetAppearanceToDefaults.
+    // the button has no confirmation, so what it replaces gets a copy
     func resetToDefaults() {
+        store.keepCopiesBeforeReset()
+        isReloading = true
         keybinds = Keybind.defaults
         gapSize = UserConfigDefaults.gapSize
         outerPadding = UserConfigDefaults.outerPadding
@@ -425,6 +437,9 @@ class UserConfig: ObservableObject {
         statusExportEnabled = false
         statusHookCommand = nil
         externalControlEnabled = false
+        isReloading = false
+        save()
+        didApplyRuntimeChange.send()
     }
 
     /// Restore the controls in Focus Chrome without changing layout,
@@ -539,11 +554,9 @@ class UserConfig: ObservableObject {
     }
 }
 
-// fallback used by ConfigStore's iCloud snapshot closure when the UserConfig
-// reference has been deallocated — empty defaults are acceptable because the
-// only call site is "user just toggled iCloud on a machine that's already
-// shutting down," and we'd rather write a well-formed empty config than
-// crash on a force-unwrap.
+// fallback for the iCloud snapshot closures if UserConfig is gone. unreachable
+// in practice, since UserConfig.shared lives for the whole process. test
+// fixtures read it too.
 extension SavedConfig {
     static var empty: SavedConfig {
         SavedConfig(
@@ -588,10 +601,8 @@ extension UserConfig {
 
 extension NSColor {
     // returns nil + logs at .warning on malformed input. callers fall back
-    // to a system color (controlAccentColor / systemOrange) so a corrupt or
-    // empty hex string can't take down the focus-border / floating-border
-    // pipeline. retained as `fromHex` for compat with existing call sites;
-    // the logging is the phase-6 hardening per §11.1.
+    // to the brand colors, so a corrupt or empty hex string can't take down
+    // the focus-border / floating-border pipeline.
     static func fromHex(_ hex: String) -> NSColor? {
         let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         guard h.count == 6, let val = UInt64(h, radix: 16) else {

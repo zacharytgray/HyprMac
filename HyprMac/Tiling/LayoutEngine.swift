@@ -147,11 +147,13 @@ struct LayoutEngine {
                                   maxDepth: Int,
                                   rect: CGRect,
                                   minimumSize: (HyprWindow?) -> CGSize,
+                                  skippingTenants: Set<CGWindowID> = [],
                                   noting: ((SlotRefusal) -> Void)? = nil)
         -> (leaf: BSPNode, direction: SplitDirection)? {
         let leaves = tree.root.allLeavesRightToLeft()
         for pass in 0...1 {
             for leaf in leaves {
+                if let tenant = leaf.window?.windowID, skippingTenants.contains(tenant) { continue }
                 guard leaf.depth < maxDepth else {
                     if pass == 1, let noting {
                         let leafRect = tree.rectForNode(leaf, in: rect, gap: gapSize, padding: outerPadding) ?? .zero
@@ -205,12 +207,13 @@ struct LayoutEngine {
     }
 
     /// Smart-insert via `fittingLeaf`. Returns false if no leaf accepts the
-    /// pair (caller usually auto-floats in that case).
+    /// pair; the pass then reports a refusal (see `AdmissionRecovery`).
     @discardableResult
     func smartInsertFitting(_ window: HyprWindow,
                             into tree: BSPTree,
                             maxDepth: Int,
                             rect: CGRect,
+                            skippingTenants: Set<CGWindowID> = [],
                             minimumSize: (HyprWindow?) -> CGSize) -> Bool {
         if tree.root.isEmpty {
             tree.root.window = window
@@ -218,7 +221,8 @@ struct LayoutEngine {
         }
 
         guard let placement = fittingPlacement(for: window, in: tree, maxDepth: maxDepth,
-                                               rect: rect, minimumSize: minimumSize) else {
+                                               rect: rect, minimumSize: minimumSize,
+                                               skippingTenants: skippingTenants) else {
             return false
         }
 

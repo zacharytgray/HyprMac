@@ -1,5 +1,7 @@
 # Scratchpad layer — floating windows redesign
 
+Status: shipped, then changed. Overflow no longer goes to the scratchpad. See `ScratchpadController.swift` for current behavior.
+
 Synthesis of a 4-lens design panel (Hyprland-fidelity, macOS-native, minimal-change,
 blue-sky; 12 concepts, each adversarially judged against the real code). All four
 lenses independently converged on the same shape.

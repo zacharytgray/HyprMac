@@ -6,13 +6,14 @@ import Foundation
 import AppKit
 
 /// Conversion namespace for CG ↔ NS coordinate work.
-///
-/// Today the active conversions live inline in the call sites
-/// (`MouseTrackingManager`, `FocusBorder`, `DimmingOverlay`,
-/// `DisplayManager`). This enum is the agreed home for the next
-/// shared helper if a third caller appears or if the conversion
-/// pattern grows beyond `primaryScreenHeight - y`.
-enum CoordinateSpace {}
+enum CoordinateSpace {
+    /// A top-left CG rect as a bottom-left NS rect. A screen left of or above
+    /// the primary has negative coordinates in both, and this one formula
+    /// covers it.
+    static func nsRect(fromCG rect: CGRect, primaryHeight: CGFloat) -> NSRect {
+        NSRect(x: rect.minX, y: primaryHeight - rect.maxY, width: rect.width, height: rect.height)
+    }
+}
 
 extension CGRect {
     /// `true` when at least `threshold` of this rect's area overlaps

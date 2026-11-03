@@ -147,18 +147,6 @@ final class WindowStackingTests: XCTestCase {
                        [10: [tileA]])
     }
 
-    func testExposedPointAvoidsTheCoveringFloater() throws {
-        let tile = CGRect(x: 0, y: 0, width: 1000, height: 800)
-        let floater = CGRect(x: 200, y: 150, width: 600, height: 500)
-
-        let point = try XCTUnwrap(WindowStacking.exposedPoint(of: tile, coveredBy: [floater]))
-
-        XCTAssertTrue(tile.contains(point))
-        XCTAssertFalse(floater.contains(point))
-        XCTAssertNil(WindowStacking.exposedPoint(of: tile, coveredBy: [tile.insetBy(dx: -10, dy: -10)]))
-        XCTAssertEqual(WindowStacking.exposedPoint(of: tile, coveredBy: []), CGPoint(x: 500, y: 400))
-    }
-
     func testFloatersBelowATileAreTheOnesAClickBuried() {
         let tile = win(11, CGRect(x: 0, y: 0, width: 800, height: 800))
         let buried = win(10, pid: otherPID, CGRect(x: 100, y: 100, width: 300, height: 300))
@@ -291,23 +279,6 @@ final class RaiseBehindThrottleTests: XCTestCase {
         XCTAssertEqual(throttle.decide(pair, now: 0.05 + throttle.ineffectiveCooldown + 0.01), .raise)
     }
 
-    func testARaiseRightAfterOurRestoreIsTreatedAsALoop() {
-        var throttle = RaiseBehindThrottle()
-        XCTAssertEqual(throttle.decide(pair, now: 0), .raise)
-        throttle.noteRestore([pair], now: 0.1)
-
-        XCTAssertEqual(throttle.decide(pair, now: 0.3),
-                       .cooldownStarted(reason: "loop", duration: throttle.loopCooldown))
-    }
-
-    func testARestoreLongAgoIsNotALoop() {
-        var throttle = RaiseBehindThrottle()
-        XCTAssertEqual(throttle.decide(pair, now: 0), .raise)
-        throttle.noteRestore([pair], now: 0.1)
-
-        XCTAssertEqual(throttle.decide(pair, now: 0.1 + throttle.echoWindow + 0.01), .raise)
-    }
-
     func testABurstOfRaisesCoolsDownAndOtherPairsStayFree() {
         var throttle = RaiseBehindThrottle()
         for step in 0..<throttle.burstLimit {
@@ -321,251 +292,18 @@ final class RaiseBehindThrottleTests: XCTestCase {
 }
 
 final class TiledFocusRouterTests: XCTestCase {
-    private var router: TiledFocusRouter!
-    private var windows: [StackedWindow] = []
-    private var floaters: Set<CGWindowID> = [10]
-    private var front: pid_t? = otherPID
-    private var keys: [pid_t: CGWindowID] = [:]
-    private var lastFocused: CGWindowID = 11
-    private var generation: UInt64 = 1
-    private var popup: StackedWindow?
-    private var calls: [String] = []
-    private var scheduled: [(TimeInterval, () -> Void)] = []
+    func testFloatersGoBackUpBeforeTheTargetLifts() {
+        let router = TiledFocusRouter()
+        var steps: [String] = []
+        router.noteActivation = { steps.append("note \($0)") }
+        router.raiseFloatersBeforeFocus = { steps.append("floaters for \($0.windowID)") }
+        router.usualFocus = { w, fallback in steps.append("focus \(w.windowID) \(fallback.rawValue)") }
+        router.liftOverFloaters = { steps.append("lift \($0.windowID)") }
 
-    private let target = makeWindow(id: 11, pid: frontPID)
-    private let tileRect = CGRect(x: 0, y: 0, width: 1000, height: 800)
-    private let floaterRect = CGRect(x: 200, y: 150, width: 600, height: 500)
+        router.focus(makeWindow(id: 11, pid: 100), reason: "ffm", fallback: .activateAndClick)
 
-    override func setUp() {
-        super.setUp()
-        windows = [win(10, pid: otherPID, floaterRect), win(11, tileRect)]
-        router = TiledFocusRouter()
-        router.windowList = { [unowned self] in self.windows }
-        router.visibleFloaterIDs = { [unowned self] in self.floaters }
-        router.isTiled = { $0 == 11 }
-        router.frontmostPID = { [unowned self] in self.front }
-        router.keyWindowID = { [unowned self] pid in self.keys[pid] }
-        router.postWindowFocus = { [unowned self] pid, wid, gained in
-            self.calls.append("event \(wid) \(gained ? "gained" : "lost")")
-        }
-        router.makeFrontAndKey = { [unowned self] w in self.calls.append("front+key \(w.windowID)"); return "ok" }
-        router.usualFocus = { [unowned self] w, fallback in self.calls.append("usual \(w.windowID) \(fallback.rawValue)") }
-        router.lastFocusedID = { [unowned self] in self.lastFocused }
-        router.focusGeneration = { [unowned self] in self.generation }
-        router.openPopup = { [unowned self] in self.popup }
-        router.schedule = { [unowned self] delay, body in self.scheduled.append((delay, body)) }
-    }
-
-    private func runScheduled() {
-        while !scheduled.isEmpty { scheduled.removeFirst().1() }
-    }
-
-    func testAnUncoveredTileTakesTheUsualPathRightAway() {
-        floaters = []
-
-        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
-
-        XCTAssertEqual(route.path, .usual)
-        XCTAssertEqual(calls, ["usual 11 activate+click"])
-        XCTAssertTrue(scheduled.isEmpty)
-    }
-
-    func testAFloaterAtTheFloatingLevelTakesTheNoRaisePath() {
-        // the floater's app is in front, so its panel sits at layer 3
-        windows = [win(10, pid: otherPID, layer: 3, floaterRect), win(11, tileRect)]
-
-        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
-
-        XCTAssertEqual(route.path, .noRaise, "activating the tile's app would drop the panel under the tile")
-        XCTAssertEqual(calls, ["front+key 11"])
-    }
-
-    func testACrossAppNoRaiseThatBuriesTheFloaterIsNotSuccess() {
-        windows = [win(10, pid: otherPID, layer: 3, floaterRect), win(11, tileRect)]
-        var results: [Bool] = []
-        router.focus(target, reason: "ffm", fallback: .activateAndClick) { results.append($0) }
-        // the process switch landed; the panel dropped to layer 0 under the tile
-        front = frontPID
-        keys[frontPID] = 11
-        windows = [win(11, tileRect), win(10, pid: otherPID, floaterRect)]
-        runScheduled()
-
-        XCTAssertEqual(results, [false])
-        XCTAssertEqual(calls, ["front+key 11"], "focus landed, so no fallback")
-    }
-
-    func testAnUnmanagedFloatingLevelWindowDoesNotChangeThePath() {
-        floaters = []
-        windows = [win(10, pid: otherPID, layer: 3, floaterRect), win(11, tileRect)]
-
-        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
-
-        XCTAssertEqual(route.path, .usual)
-    }
-
-    func testAFloaterBehindTheTileDoesNotChangeThePath() {
-        windows.reverse()
-
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-
-        XCTAssertEqual(calls, ["usual 11 activate+click"])
-    }
-
-    func testACoveredTileIsFocusedWithoutActivateOrClickAndChecked() {
-        let route = router.focus(target, reason: "ffm", fallback: .activateAndClick)
-
-        XCTAssertEqual(route.path, .noRaise)
-        XCTAssertEqual(calls, ["front+key 11"])
-        XCTAssertEqual(scheduled.map(\.0), [TiledFocusRouter.verifyDelay])
-
-        // the app came forward and the tile is key; the floater stayed above
-        front = frontPID
-        keys[frontPID] = 11
-        runScheduled()
-
-        XCTAssertEqual(calls, ["front+key 11"], "no fallback when focus landed")
-    }
-
-    func testAMissedFocusFallsBackToTheCallersUsualPath() {
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-        runScheduled()
-
-        XCTAssertEqual(calls, ["front+key 11", "usual 11 activate+click"])
-    }
-
-    func testTheAppFrontButAnotherWindowKeyIsAMiss() {
-        router.focus(target, reason: "focusInDirection", fallback: .activate)
-        front = frontPID
-        keys[frontPID] = 77
-        runScheduled()
-
-        XCTAssertEqual(calls.last, "usual 11 activate")
-    }
-
-    func testANewerFocusCancelsTheFallback() {
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-        lastFocused = 12
-        generation += 1
-        runScheduled()
-
-        XCTAssertEqual(calls, ["front+key 11"])
-    }
-
-    func testAnOpenPopupCancelsTheFallback() {
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-        popup = win(99, layer: 101, CGRect(x: 0, y: 0, width: 100, height: 100))
-        runScheduled()
-
-        XCTAssertEqual(calls, ["front+key 11"])
-    }
-
-    func testMenuTrackingCancelsTheFallback() {
-        router.isMenuTracking = { true }
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-        runScheduled()
-
-        XCTAssertEqual(calls, ["front+key 11"])
-    }
-
-    func testAnAppSwitchMeanwhileCancelsTheFallback() {
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-        // the user pressed Cmd-Tab to a third app before the check
-        front = 300
-        runScheduled()
-
-        XCTAssertEqual(calls, ["front+key 11"])
-    }
-
-    func testWithinTheFrontAppKeyIsHandedOverFirst() {
-        front = frontPID
-        keys[frontPID] = 12
-
-        router.focus(target, reason: "ffm", fallback: .activateAndClick)
-        XCTAssertEqual(calls, ["event 12 lost"])
-        XCTAssertEqual(scheduled.map(\.0), [TiledFocusRouter.keyHandoffDelay])
-
-        scheduled.removeFirst().1()
-        XCTAssertEqual(calls, ["event 12 lost", "event 11 gained", "front+key 11"])
-    }
-
-    func testAnAlreadyKeyTileGetsNoEvents() {
-        front = frontPID
-        keys[frontPID] = 11
-
-        let route = router.focus(target, reason: "ensureFocus", fallback: .activate)
-
-        XCTAssertEqual(route.path, .alreadyFocused)
-        XCTAssertTrue(calls.isEmpty)
-        XCTAssertTrue(scheduled.isEmpty)
-    }
-
-    func testTheWarpPointIsOnTheUncoveredPartOfTheTile() throws {
-        let route = router.focus(target, reason: "focusInDirection", fallback: .activate)
-
-        let point = try XCTUnwrap(route.warpPoint)
-        XCTAssertTrue(tileRect.contains(point))
-        XCTAssertFalse(floaterRect.contains(point))
-    }
-
-    // MARK: - result for the click re-raise
-
-    func testTheResultSaysTheTileIsKeyUnderTheFloater() {
-        var results: [Bool] = []
-        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
-        front = frontPID
-        keys[frontPID] = 11
-        runScheduled()
-
-        XCTAssertEqual(results, [true])
-    }
-
-    func testAnAlreadyKeyTileReportsSuccessAtOnce() {
-        front = frontPID
-        keys[frontPID] = 11
-        var results: [Bool] = []
-
-        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
-
-        XCTAssertEqual(results, [true])
-    }
-
-    func testAMissReportsFailure() {
-        var results: [Bool] = []
-        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
-        runScheduled()
-
-        XCTAssertEqual(results, [false])
-    }
-
-    func testLandingAboveTheFloaterIsNotSuccess() {
-        var results: [Bool] = []
-        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
-        front = frontPID
-        keys[frontPID] = 11
-        // the tile came up over the floater after all
-        windows.reverse()
-        runScheduled()
-
-        XCTAssertEqual(results, [false])
-    }
-
-    func testTheUsualPathReportsFailure() {
-        floaters = []
-        var results: [Bool] = []
-
-        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
-
-        XCTAssertEqual(results, [false])
-    }
-
-    func testASupersededFocusReportsNothing() {
-        var results: [Bool] = []
-        router.focus(target, reason: "click-reraise", fallback: .activate) { results.append($0) }
-        lastFocused = 12
-        generation += 1
-        runScheduled()
-
-        XCTAssertEqual(results, [])
+        XCTAssertEqual(steps, ["note 100", "floaters for 11", "focus 11 activate+click", "lift 11"],
+                       "in that order, or the floater pops over the window taking focus")
     }
 }
 
@@ -876,63 +614,5 @@ final class FloatingFramePlacementTests: XCTestCase {
         XCTAssertTrue(line.contains("from=(40, 60, 1000, 700) on 'Built-in Retina Display' @2x"), line)
         XCTAssertTrue(line.contains("on 'S34C65xT' @1x"), line)
         XCTAssertTrue(line.contains("clamped from"), line)
-    }
-}
-
-final class RaiseBehindLoopEscalationTests: XCTestCase {
-    /// a floater whose app takes the front on every raise used to come back
-    /// every fifteen seconds. each loop doubles the cooldown up to the cap,
-    /// and a pair that loops again right after each cooldown stays there
-    func testEachLoopDoublesTheCooldown() {
-        var throttle = RaiseBehindThrottle()
-        let pair = RaiseBehindThrottle.Pair(floater: 1, tile: 2)
-        var now: TimeInterval = 0
-        var durations: [TimeInterval] = []
-        for _ in 0..<8 {
-            XCTAssertEqual(throttle.decide(pair, now: now), .raise)
-            throttle.noteRestore([pair], now: now)
-            guard case let .cooldownStarted(reason, duration) = throttle.decide(pair, now: now) else {
-                return XCTFail("expected a loop cooldown")
-            }
-            XCTAssertEqual(reason, "loop")
-            durations.append(duration)
-            now += duration + 1
-        }
-        XCTAssertEqual(durations, [15, 30, 60, 120, 240, 480, 600, 600])
-    }
-
-    /// a pair quiet for a while starts its escalation over: one loop an
-    /// hour ago is not a reason for a ten-minute cooldown now. the quiet
-    /// span starts when the cooldown ends, since the pair cannot loop before
-    func testTheLoopCountDecaysAfterAQuietSpell() {
-        var throttle = RaiseBehindThrottle()
-        let pair = RaiseBehindThrottle.Pair(floater: 1, tile: 2)
-        throttle.noteLoop([pair], now: 0)
-        throttle.noteLoop([pair], now: 16)
-        XCTAssertEqual(throttle.cooldown(pair, now: 17)?.remaining ?? 0, 29, accuracy: 0.001, "second loop: 30 s")
-
-        // the cooldown ends at 46. quiet for less than the decay after it
-        throttle.noteLoop([pair], now: 46 + throttle.loopDecay - 1)
-        XCTAssertEqual(throttle.cooldown(pair, now: 46 + throttle.loopDecay)?.remaining ?? 0, 59,
-                       accuracy: 0.001, "not quiet long enough after the cooldown: 60 s")
-
-        let end = 46 + throttle.loopDecay - 1 + 60
-        throttle.noteLoop([pair], now: end + throttle.loopDecay + 1)
-        XCTAssertEqual(throttle.cooldown(pair, now: end + throttle.loopDecay + 2)?.remaining ?? 0, 14,
-                       accuracy: 0.001, "quiet for the decay span: back to 15 s")
-    }
-
-    /// the click re-raise asks `cooldown`, which never saw a restore, so a
-    /// self-activating floater blinked on every click. a loop noted from
-    /// the click cools the pair at once
-    func testALoopNotedFromAClickCoolsThePairAtOnce() {
-        var throttle = RaiseBehindThrottle()
-        let pair = RaiseBehindThrottle.Pair(floater: 1, tile: 2)
-        XCTAssertNil(throttle.cooldown(pair, now: 0))
-        throttle.noteLoop([pair], now: 0)
-        XCTAssertEqual(throttle.cooldown(pair, now: 1)?.reason, "loop")
-        XCTAssertNil(throttle.cooldown(pair, now: 16))
-        throttle.noteLoop([pair], now: 16)
-        XCTAssertNotNil(throttle.cooldown(pair, now: 40), "the second loop cools for thirty seconds")
     }
 }

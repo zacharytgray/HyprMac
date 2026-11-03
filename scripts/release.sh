@@ -47,6 +47,11 @@ if gh release view "v$NEW_VERSION" --repo "$REPO" >/dev/null 2>&1; then
     echo "ERROR: GitHub release v$NEW_VERSION already exists." >&2
     exit 1
 fi
+WHATS_NEW_TEST="testWhatsNewDescribesOnlyThe${NEW_VERSION//./}Changes"
+if ! grep -q "func $WHATS_NEW_TEST" HyprMacTests/WelcomeContentTests.swift; then
+    echo "ERROR: $WHATS_NEW_TEST not found. Update What's New for v$NEW_VERSION first." >&2
+    exit 1
+fi
 
 echo "=== HyprMac Release v$NEW_VERSION ==="
 
@@ -77,7 +82,7 @@ if ! scripts/test-isolated.sh "$SPARKLE_FRAMEWORK" >"$TEST_OUT" 2>&1; then
     exit 1
 fi
 SUMMARY=$(grep -E '^[[:space:]]*Executed [0-9]+ tests' "$TEST_OUT" | tail -1)
-if [[ -z "$SUMMARY" || "$SUMMARY" != *"0 failures"* ]]; then
+if [[ -z "$SUMMARY" || "$SUMMARY" != *"0 failures"* || "$SUMMARY" =~ Executed\ 0\ tests ]]; then
     tail -80 "$TEST_OUT" >&2
     echo "ERROR: passing test summary not found." >&2
     exit 1

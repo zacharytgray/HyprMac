@@ -90,10 +90,10 @@ enum LogConfig {
 /// Independently of all that, every call is appended to
 /// `DebugLogFile` while `LogConfig.persistentFileLog` is on.
 ///
-/// `privacy: .public` is applied across the board because the only
-/// metadata that enters log strings is safe (window IDs, workspace
-/// numbers, screen names, action names, durations). Free-text user
-/// input must not enter log strings.
+/// `privacy: .public` is applied across the board, so nothing is redacted.
+/// Most lines carry only window IDs, workspace numbers, screen names, action
+/// names and durations. Some lines also carry window titles. Command
+/// text must not enter log strings.
 func hyprLog(_ level: LogLevel = .debug,
              _ category: LogCategory,
              _ message: @autoclosure () -> String) {

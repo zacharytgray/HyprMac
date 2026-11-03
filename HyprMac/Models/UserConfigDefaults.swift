@@ -76,6 +76,6 @@ enum UserConfigDefaults {
     static let scratchpadRegionInset: CGFloat = 0.06
     static let restoreLayoutOnLaunch: Bool = false
     // focusBorderColorHex / floatingBorderColorHex are nil by default —
-    // resolvedFocusBorderColor / resolvedFloatingBorderColor compute the
-    // system color when nil.
+    // resolvedFocusBorderColor / resolvedFloatingBorderColor use brand cyan
+    // and magenta when nil.
 }

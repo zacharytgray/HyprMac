@@ -120,11 +120,7 @@ struct FrameReadbackPoller {
 
     func applyRestoration(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
                           gap: CGFloat, generation requestedGeneration: UInt64) -> Result {
-        var strictConfiguration = configuration
-        strictConfiguration.sizeOvershootTolerance = strictConfiguration.sizeTolerance
-        strictConfiguration.sizeUndershootTolerance = strictConfiguration.sizeTolerance
-        strictConfiguration.aggregateSafetySlack = strictConfiguration.sizeTolerance
-        strictConfiguration.correspondenceOnly = true
+        var strictConfiguration = configuration.restorationStrict
         // the rollback is the safety net: a refused candidate is undone by
         // it, and a rollback that fails leaves the candidate's frames under
         // the old tree. it returns as soon as its frames read back stable,
@@ -325,7 +321,7 @@ struct FrameReadbackPoller {
     }
 
     /// Whether this window's oversize may teach a minimum, and if not, why
-    /// not. Nil means the evidence is good: this window's three setters all
+    /// not. Nil means the evidence is good: this window's setters all
     /// returned success, every target read back and settled, the window is
     /// at the origin it was given, and the attempt ended in a geometric
     /// refusal rather than an I/O error.

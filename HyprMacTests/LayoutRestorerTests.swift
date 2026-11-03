@@ -475,23 +475,23 @@ final class LayoutRestorerTests: XCTestCase {
 
     // mid-transition the key and the trees are in flux; save and restore wait
     func testSaveAndRestoreWaitOutADisplayTransition() {
-        XCTAssertTrue(WindowManager.isDroppedMidDisplayTransition(.saveLayout))
-        XCTAssertTrue(WindowManager.isDroppedMidDisplayTransition(.restoreLayout))
-        XCTAssertTrue(WindowManager.isDroppedMidDisplayTransition(.moveToWorkspace(2)))
-        XCTAssertFalse(WindowManager.isDroppedMidDisplayTransition(.focusDirection(.left)))
+        XCTAssertTrue(ActionPolicy.isDroppedMidDisplayTransition(.saveLayout))
+        XCTAssertTrue(ActionPolicy.isDroppedMidDisplayTransition(.restoreLayout))
+        XCTAssertTrue(ActionPolicy.isDroppedMidDisplayTransition(.moveToWorkspace(2)))
+        XCTAssertFalse(ActionPolicy.isDroppedMidDisplayTransition(.focusDirection(.left)))
     }
 
     // a Dock resize or arrangement drag settles under the same key and must
     // not pull back an older snapshot
     func testOnlyANewDisplaySetRestoresAfterSettle() {
-        XCTAssertFalse(WindowManager.restoresAfterSettle(from: "A:1512x982", to: "A:1512x982"))
-        XCTAssertTrue(WindowManager.restoresAfterSettle(from: "A:1512x982|B:2560x1440", to: "A:1512x982"))
-        XCTAssertTrue(WindowManager.restoresAfterSettle(from: "A:1512x982", to: "A:1512x982|B:2560x1440"))
+        XCTAssertFalse(DisplaySettle.restoresAfterSettle(from: "A:1512x982", to: "A:1512x982"))
+        XCTAssertTrue(DisplaySettle.restoresAfterSettle(from: "A:1512x982|B:2560x1440", to: "A:1512x982"))
+        XCTAssertTrue(DisplaySettle.restoresAfterSettle(from: "A:1512x982", to: "A:1512x982|B:2560x1440"))
     }
 
     // saving changes no layout, so a pending admission retry stays armed
     func testSaveLeavesPendingRecoveryAloneButRestoreCancelsIt() {
-        XCTAssertFalse(WindowManager.cancelsPendingRecovery(.saveLayout))
-        XCTAssertTrue(WindowManager.cancelsPendingRecovery(.restoreLayout))
+        XCTAssertFalse(ActionPolicy.cancelsPendingRecovery(.saveLayout))
+        XCTAssertTrue(ActionPolicy.cancelsPendingRecovery(.restoreLayout))
     }
 }

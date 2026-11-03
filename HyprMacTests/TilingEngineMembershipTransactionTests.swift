@@ -755,12 +755,12 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertEqual(Set(f.engine.existingTree(forWorkspace: 1, screen: f.screen)?.allWindows.map(\.windowID) ?? []), Set(f.windows.map(\.windowID)))
     }
 
-    func testRejectedAddWindowKeepsPriorMembership() throws {
+    func testRejectedNewcomerKeepsPriorMembership() throws {
         let f = try fixture()
         f.trace.rejectNextRead = true
         let before = f.tree.structuralFingerprint()
 
-        f.engine.addWindow(f.windows[2], toWorkspace: 1, on: f.screen)
+        f.engine.tileWindows(f.windows, onWorkspace: 1, screen: f.screen)
 
         XCTAssertEqual(f.engine.existingTree(forWorkspace: 1, screen: f.screen)?.structuralFingerprint(), before)
     }
@@ -1292,7 +1292,7 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }))
         let tenant = makeWindow(id: 32951)
         let held = makeWindow(id: 32952)
-        _ = engine.prepareTileLayout([tenant, held], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([tenant, held], onWorkspace: 1, screen: screen)
         // side by side at 796 by 1000 each, and neither leaf can be split
         // for a third either way: both floors need 700 on both axes. with
         // the held member's leaf dropped the tenant would have the whole
@@ -1886,7 +1886,7 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         }
         let trace = MembershipTrace()
         let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }), frameSizingIOFactory: { _, generation in trace.io(generation) })
-        _ = engine.prepareTileLayout(Array(windows.prefix(2)), onWorkspace: 1, screen: screen)
+        _ = engine.seedTree(Array(windows.prefix(2)), onWorkspace: 1, screen: screen)
         let tree = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen))
         tree.root.splitRatio = 0.6
         tree.root.userSetRatio = true
@@ -1921,30 +1921,20 @@ final class TilingEngineSwapRevalidationTests: XCTestCase {
                           ?? .infinity, 1700)
     }
 
-    func testPreparedSwapCarriesItsScopedRevalidationIntoFinalApply() throws {
+    func testSupersededSwapCannotReuseItsBypass() throws {
         let f = try fixture(provenance: .observed)
+        f.trace.onWrite = { [weak trace = f.trace, engine = f.engine] in
+            trace?.onWrite = nil
+            _ = engine.beginLayoutGeneration()
+        }
 
-        XCTAssertNotNil(f.engine.prepareSwapLayout(f.windows[0], f.windows[3],
-                                                    onWorkspace: 1, screen: f.screen))
-        XCTAssertTrue(f.engine.applyComputedLayout(onWorkspace: 1, screen: f.screen))
-        XCTAssertLessThan(f.engine.knownMinimumSizes[f.windows[0].windowID]?.size.width
-                          ?? .infinity, 1700)
-    }
+        XCTAssertFalse(f.engine.swapWindows(f.windows[0], f.windows[3],
+                                            onWorkspace: 1, screen: f.screen))
 
-    func testSupersededPreparedSwapCannotReuseItsBypassOrWriteStaleFrames() throws {
-        let f = try fixture(provenance: .observed)
-        XCTAssertNotNil(f.engine.prepareSwapLayout(f.windows[0], f.windows[3],
-                                                    onWorkspace: 1, screen: f.screen))
-
-        _ = f.engine.beginLayoutGeneration()
         f.engine.forgetMinimumSize(windowID: f.windows[0].windowID)
         f.windows[0].observedMinSize = CGSize(width: 1700, height: 0)
         f.windows[0].minSizeProvenance = .seeded
         f.engine.primeMinimumSizes(f.windows)
-        f.trace.written = []
-
-        XCTAssertFalse(f.engine.applyComputedLayout(onWorkspace: 1, screen: f.screen))
-        XCTAssertTrue(f.trace.written.isEmpty)
         XCTAssertFalse(f.engine.canSwapWindows(f.windows[0], f.windows[3],
                                                onWorkspace: 1, screen: f.screen),
                        "the superseded operation's learned-bound bypass must be gone")
@@ -1993,7 +1983,7 @@ final class TilingEngineSwapRevalidationTests: XCTestCase {
             displayManager: DisplayManager(screenSource: { [screen] }),
             frameSizingIOFactory: { _, generation in trace.io(generation) })
         let windows = (981...984).map { makeWindow(id: CGWindowID($0)) }
-        _ = engine.prepareTileLayout(windows, onWorkspace: 1, screen: screen)
+        _ = engine.seedTree(windows, onWorkspace: 1, screen: screen)
         let tree = try XCTUnwrap(engine.existingTree(forWorkspace: 1, screen: screen))
         let rect = engine.displayManager.cgRect(for: screen)
         trace.frames = Dictionary(uniqueKeysWithValues: tree.layout(

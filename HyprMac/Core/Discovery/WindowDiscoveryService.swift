@@ -118,7 +118,7 @@ final class WindowDiscoveryService {
     /// When each id went gone-but-pid-alive. A return within seconds is a
     /// flap — a stale/partial AX snapshot, not a real minimize — and each
     /// flap cycle drives two retiles (sibling expands full-screen, then
-    /// shrinks back). Diag for the retile-flicker investigation.
+    /// shrinks back). See "Retile churn" in docs/debugging.md.
     private var hiddenAt: [CGWindowID: Date] = [:]
     private static let flapWindowSec: TimeInterval = 5.0
 
@@ -443,16 +443,14 @@ final class WindowDiscoveryService {
                 isSizeSettable: isWindowSizeSettable(w),
                 isQuickLookPanel: w.isQuickLookPanel
             ) {
-                stateCache.floatingWindowIDs.insert(w.windowID)
-                w.isFloating = true
+                stateCache.setFloating(true, window: w)
                 hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
             }
 
             // auto-float on disabled monitors — surface so caller skips workspace assignment
             if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
                 if !stateCache.floatingWindowIDs.contains(w.windowID) {
-                    stateCache.floatingWindowIDs.insert(w.windowID)
-                    w.isFloating = true
+                    stateCache.setFloating(true, window: w)
                     hyprLog(.debug, .discovery, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                 }
                 newOnDisabled.insert(w.windowID)

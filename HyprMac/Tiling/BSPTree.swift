@@ -16,8 +16,8 @@ enum BSPTargetEdge: CaseIterable, Equatable {
 /// API the tiling engine drives.
 ///
 /// Default insert places the new window at the deepest-right leaf,
-/// matching the dwindle convention. `smartInsert` refines this by
-/// backtracking to shallower leaves when a child would fall below
+/// matching the dwindle convention. `LayoutEngine.smartInsertFitting`
+/// refines this by backtracking to shallower leaves when a child would fall below
 /// `TilingConfig.minSlotDimension` on a constrained monitor (typical
 /// vertical displays). Long-form algorithm walkthroughs live in
 /// `docs/tiling-algorithm.md`.
@@ -277,9 +277,7 @@ class BSPTree {
 
     /// Insert a window via plain dwindle: split the deepest-right leaf.
     ///
-    /// Used as a fallback path when smart-insert isn't applicable (empty tree,
-    /// forceInsertWindow path-B reinsert) or when the caller has already
-    /// validated geometry. Most production callers should use ``smartInsert``.
+    /// Plain dwindle. Tests only.
     ///
     /// - Returns: `false` if splitting the deepest-right leaf would exceed
     ///   `maxDepth`; `true` otherwise. On false, the tree is unchanged.
@@ -302,7 +300,8 @@ class BSPTree {
         return true
     }
 
-    /// Dwindle insert with backtracking on constrained monitors.
+    /// Dwindle insert with backtracking on constrained monitors. Tests and
+    /// `compact` only; production uses `LayoutEngine.smartInsertFitting`.
     ///
     /// Walks leaves deepest-right first; the first leaf whose split would
     /// produce children at or above `minSlotDimension` on both axes wins.
@@ -373,8 +372,7 @@ class BSPTree {
     ///
     /// No longer called on removal — sibling promotion in `BSPNode.remove`
     /// preserves the surviving arrangement, and rebuilding here reshuffled
-    /// unrelated windows on every close/hide. Kept for explicit rebuilds
-    /// (tests, potential future Retile All hook). All split overrides and
+    /// unrelated windows on every close/hide. Tests only. All split overrides and
     /// user-set ratios are dropped — a structural rebuild voids both.
     func compact(maxDepth: Int, in rect: CGRect, gap: CGFloat, padding: CGFloat, minSlotDimension: CGFloat) {
         let windows = allWindows // left-to-right preserves insertion order
@@ -665,7 +663,6 @@ class BSPTree {
     }
 
     /// The most recently inserted window — i.e., the dwindle spiral's tip.
-    /// Used by forceInsertWindow for eviction selection.
     func deepestRightLeafWindow() -> HyprWindow? {
         return deepestRightLeaf(root)?.window
     }
@@ -681,13 +678,12 @@ class BSPTree {
     /// splitOverride, and both halves of the ratio memory: the saved boundary a
     /// leaf carries and the pending restore a fresh split is waiting on).
     /// Pair with `restore(_:)` to scope a speculative mutation —
-    /// e.g., `canSwapWindows` mutates the tree to test a hypothetical layout
+    /// e.g., `swapFit` mutates the tree to test a hypothetical layout
     /// and rewinds via the snapshot.
     ///
     /// Topology (left/right pointers) is **not** captured. Speculative paths
-    /// that need topology rewind must restore that themselves; in practice the
-    /// only current caller (canSwapWindows) only mutates window references and
-    /// ratios, not topology.
+    /// that need topology rewind must restore that themselves; today's callers
+    /// only change window references and ratios, not topology.
     struct Snapshot {
         fileprivate let states: [NodeState]
         fileprivate struct NodeState {

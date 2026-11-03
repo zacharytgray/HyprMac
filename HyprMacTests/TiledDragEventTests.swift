@@ -21,14 +21,12 @@ final class TiledDragEventTests: XCTestCase {
                        CGPoint(x: 310, y: 420))
     }
 
-    func testOptionRequestsSwapAtRelease() throws {
-        let withoutOption = try makeEvent(type: .leftMouseUp, point: .zero)
+    // only Hypr swaps on a drag. holding Option at release is a plain drop
+    func testOptionDoesNotRequestSwapAtRelease() throws {
         let withOption = try makeEvent(type: .leftMouseUp, point: .zero, optionDown: true)
 
-        XCTAssertFalse(TiledDragEvent.release(event: withoutOption, primaryHeight: 900,
+        XCTAssertFalse(TiledDragEvent.release(event: withOption, primaryHeight: 900,
                                               sawDragEvent: true).swapRequested)
-        XCTAssertTrue(TiledDragEvent.release(event: withOption, primaryHeight: 900,
-                                             sawDragEvent: true).swapRequested)
     }
 
     func testSemanticSwapIntentDoesNotRequireAPlatformModifier() throws {

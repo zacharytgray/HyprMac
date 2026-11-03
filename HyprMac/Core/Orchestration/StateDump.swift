@@ -1,4 +1,4 @@
-// Pure formatting for `WindowManager.dumpState`. Takes plain values —
+// Pure formatting for `WorkspaceStatusPresenter.dumpState`. Takes plain values —
 // screen names, id sets, the workspace map — so the block can be
 // asserted line for line without AppKit or a live tree.
 
@@ -39,12 +39,9 @@ struct StateDumpFormatter {
     /// `MinSizeMemory`. The source is printed because a seeded hint and a
     /// bound the app actually refused are not the same claim.
     var minima: [CGWindowID: MinSizeMemory.Entry] = [:]
-    /// Windows waiting on a bounded recovery attempt. Nothing produces
-    /// these yet — the line is here so the shape is stable once
-    /// admission recovery lands.
+    /// Windows waiting on a bounded recovery attempt.
     var pendingRecovery: Set<CGWindowID> = []
-    /// Windows whose on-screen geometry was never verified. Same: no
-    /// producer yet, the line reports what exists.
+    /// Windows whose on-screen geometry was never verified.
     var unverifiedGeometry: Set<CGWindowID> = []
 
     private static let workspaceRange = Constants.workspaceRange

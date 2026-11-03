@@ -1,241 +1,5 @@
 import Cocoa
 
-enum FrameSizingFailure: Equatable {
-    indirect case cleanupFailed(CGWindowID, primary: FrameSizingFailure?, error: AXError)
-    case writeFailed(CGWindowID, AXError)
-    case readFailed(CGWindowID, AXError)
-    case deadlineExceeded
-    case attemptsExhausted
-    case noFittingSlot(CGWindowID)
-    case geometryMismatch(CGWindowID)
-    case outsideUsableFrame(CGWindowID)
-    case overlap(CGWindowID, CGWindowID)
-    case gapViolation(CGWindowID, CGWindowID)
-    case windowUnavailable(CGWindowID)
-    case duplicateWindowID(CGWindowID)
-    case invalidFrame(CGWindowID)
-    case superseded
-}
-
-extension FrameSizingFailure {
-    /// The app did not answer in time: the attempt ran out of budget, the
-    /// readback never settled, or AX gave up waiting (`cannotComplete` is
-    /// what a messaging timeout returns). None of these says the app refused
-    /// the frames. Admission recovery retries them instead of floating.
-    var isTimeout: Bool {
-        switch self {
-        case .deadlineExceeded, .attemptsExhausted:
-            return true
-        case let .writeFailed(_, error), let .readFailed(_, error):
-            return error == .cannotComplete
-        case let .cleanupFailed(_, primary, error):
-            return primary?.isTimeout ?? (error == .cannotComplete)
-        default:
-            return false
-        }
-    }
-
-    /// AX did not carry out or did not answer a call: a setter, a read, or
-    /// the cleanup after them came back with an error, or the attempt ran
-    /// out of time. It says nothing about whether the frames fit, so the
-    /// same layout may land on a later pass. Seen live: a browser window
-    /// refused its grow into a closed neighbour's slot and took it 250 ms
-    /// later.
-    var isAXFailure: Bool {
-        switch self {
-        case .writeFailed, .readFailed, .cleanupFailed: return true
-        default: return isTimeout
-        }
-    }
-
-    /// A setter or read that AX gave up on itself, not wrapped in a cleanup
-    /// failure. What an AX timeout recovery may try again.
-    var isDirectCannotComplete: Bool {
-        switch self {
-        case .writeFailed(_, .cannotComplete), .readFailed(_, .cannotComplete): true
-        default: false
-        }
-    }
-
-    /// The windows the failure names: the one that refused or lost its
-    /// frame, both of an overlapping or gapless pair, the primary failure's
-    /// windows behind a cleanup failure. Empty for the failures nobody
-    /// caused — a deadline, an exhausted attempt budget, a superseded pass.
-    /// The admission recovery reads it as the newcomers to give up on while
-    /// the rest of a refused arrangement gets its pass again.
-    var namedWindowIDs: Set<CGWindowID> {
-        switch self {
-        case let .cleanupFailed(id, primary, _):
-            return primary?.namedWindowIDs ?? [id]
-        case let .writeFailed(id, _), let .readFailed(id, _),
-             let .noFittingSlot(id), let .geometryMismatch(id), let .outsideUsableFrame(id),
-             let .windowUnavailable(id), let .duplicateWindowID(id), let .invalidFrame(id):
-            return [id]
-        case let .overlap(first, second), let .gapViolation(first, second):
-            return [first, second]
-        case .deadlineExceeded, .attemptsExhausted, .superseded:
-            return []
-        }
-    }
-
-    /// The failure with raw AX codes. The synthesized description prints
-    /// `__C.AXError`, which does not say which error it was.
-    var trace: String {
-        switch self {
-        case let .writeFailed(id, error): return "writeFailed(\(id), \(error.rawValue))"
-        case let .readFailed(id, error): return "readFailed(\(id), \(error.rawValue))"
-        case let .cleanupFailed(id, primary, error):
-            return "cleanupFailed(\(id), primary: \(primary?.trace ?? "nil"), \(error.rawValue))"
-        default: return "\(self)"
-        }
-    }
-}
-
-struct FrameSizingIO {
-    let setMessagingTimeout: (CGWindowID, TimeInterval) -> AXError
-    let writeSize: (CGWindowID, CGSize, TimeInterval) -> AXError
-    let writePosition: (CGWindowID, CGPoint, TimeInterval) -> AXError
-    let readPosition: (CGWindowID, TimeInterval) -> (AXError, CGPoint?)
-    let readSize: (CGWindowID, TimeInterval) -> (AXError, CGSize?)
-    let now: () -> TimeInterval
-    let sleep: (TimeInterval) -> Void
-    let currentGeneration: () -> UInt64
-    var beginFrameWrite: (CGWindowID, TimeInterval, () -> FrameSizingFailure?) -> AXFrameWriteBatch.BeginResult = {
-        windowID, _, _ in .ready(.noop(windowID: windowID))
-    }
-    var endFrameWrite: (AXFrameWriteBatch.Token, TimeInterval, () -> FrameSizingFailure?) -> AXFrameWriteBatch.EndResult = {
-        _, _, _ in .restored
-    }
-    /// Diagnostic only: the window's frame before its writes and after each
-    /// setter, for the `frame write trace:` notice on a refused attempt. nil
-    /// skips those reads; production sets it only with
-    /// `LogConfig.frameWriteTrace` on.
-    var traceFrame: ((CGWindowID) -> CGRect?)?
-}
-
-extension FrameSizingIO {
-    static func accessibility(windows: [CGWindowID: HyprWindow],
-                              currentGeneration: @escaping () -> UInt64) -> FrameSizingIO {
-        var io = FrameSizingIO(
-            setMessagingTimeout: { id, timeout in
-                windows[id]?.setMessagingTimeout(timeout) ?? .invalidUIElement
-            },
-            writeSize: { id, size, _ in windows[id]?.writeSize(size) ?? .invalidUIElement },
-            writePosition: { id, position, _ in windows[id]?.writePosition(position) ?? .invalidUIElement },
-            readPosition: { id, _ in windows[id]?.readPosition() ?? (.invalidUIElement, nil) },
-            readSize: { id, _ in windows[id]?.readSize() ?? (.invalidUIElement, nil) },
-            now: { ProcessInfo.processInfo.systemUptime },
-            sleep: { Thread.sleep(forTimeInterval: $0) },
-            currentGeneration: currentGeneration,
-            beginFrameWrite: { id, timeout, checkpoint in
-                windows[id]?.beginFrameWrite(timeout: timeout, checkpoint: checkpoint)
-                    ?? .failed(.invalidUIElement)
-            },
-            endFrameWrite: { token, timeout, checkpoint in
-                AXFrameWriteBatch.accessibility.end(token, timeout: timeout,
-                                                    checkpoint: checkpoint)
-            }
-        )
-        if LogConfig.frameWriteTrace {
-            io.traceFrame = { id in
-                guard let window = windows[id],
-                      case let (.success, origin?) = window.readPosition(),
-                      case let (.success, size?) = window.readSize() else { return nil }
-                return CGRect(origin: origin, size: size)
-            }
-        }
-        return io
-    }
-}
-
-struct FrameSizingConfiguration {
-    var deadline: TimeInterval = 0.36
-    var pollInterval: TimeInterval = 0.03
-    var maximumAttempts: Int = 12
-    var positionTolerance: CGFloat = 1
-    var sizeTolerance: CGFloat = 1
-    // cell-quantizing apps (terminals) round a target to whole character
-    // cells, in either direction. restoration pins both back to sizeTolerance.
-    var sizeOvershootTolerance: CGFloat = TilingConfig.frameToleranceXPx
-    var sizeUndershootTolerance: CGFloat = TilingConfig.frameToleranceXPx
-    /// How far the aggregate checks — actual overlap and escape past the
-    /// far edges — bend, which is comparison slack for a readback that
-    /// lands a fraction off, not room to round into. It is deliberately
-    /// independent of the size tolerances: an app may round its own size to
-    /// a whole cell, but two windows still may not sit on top of each other
-    /// and no window may leave the screen.
-    var aggregateSafetySlack: CGFloat = 1
-    var stableTolerance: CGFloat = 0.01
-    var requiredStableSamples: Int = 2
-    var minimumMismatchSettle: TimeInterval = 0.24
-    var perCallTimeout: TimeInterval = 0.1
-    /// Windows that move before they are sized. The engine picks them: a
-    /// parked window, or one whose target is bigger than the screen it
-    /// stands on. A size written there would be clamped by that screen, and
-    /// a parked window can stay constrained by its old display for a short
-    /// time after it moves. Each waits for its position to settle, for at
-    /// most `positionSettleBudget`, before it is sized. Every other window
-    /// sizes first.
-    var positionSettleWindowIDs: Set<CGWindowID> = []
-    /// Position-first windows whose old size, put at their target origin,
-    /// would hang off the destination screen. Each moves here first, where
-    /// that old size stands on the screen, is sized, then moves to its
-    /// target. Issue #43: a parked Ghostty window moved to a bottom slot hung
-    /// below every screen and ignored both size writes.
-    var stagingOrigins: [CGWindowID: CGPoint] = [:]
-    /// Restoration only. A rollback asks every window to go back where it
-    /// was, so the question is per-window correspondence, not whether the
-    /// result is a valid tiled arrangement. Originals that overlapped each
-    /// other before the candidate ran still overlap after it, and that is
-    /// not a failed rollback — the overlap is reported on the result
-    /// instead of rejecting it.
-    var correspondenceOnly = false
-    /// The budget for a pass that moves a window onto a screen with a
-    /// different backing scale factor. The app redraws everything at the
-    /// new scale while our AX calls wait behind it. On the MacBook's 2x
-    /// panel the first write after a hop from a 1x external missed 0.36 s on
-    /// every move, and the retry 250 ms later usually verified.
-    var scaleChangeDeadline: TimeInterval = 1.0
-
-    /// The most a position-first write waits for its position to settle.
-    /// A move that never reads back on target used to poll out the whole
-    /// deadline with no size written, so the attempt could only time out.
-    /// Past this the size goes out anyway and the readback judges. A third
-    /// of the deadline, so it grows with the scale-change budget; a
-    /// deadline grown for the targets pins it instead, so each settle may
-    /// spend exactly what was added for it and no more.
-    var positionSettleBudget: TimeInterval { positionSettleBudgetOverride ?? deadline / 3 }
-    var positionSettleBudgetOverride: TimeInterval?
-    /// The most the deadline may grow to, by any budget: what is left of
-    /// the attempt's whole budget when this pass starts. nil is no cap.
-    var deadlineCap: TimeInterval?
-
-    /// `deadline`, within the cap.
-    func capped(_ deadline: TimeInterval) -> TimeInterval {
-        deadlineCap.map { min(deadline, $0) } ?? deadline
-    }
-
-    /// This configuration with the scale-change budget. The sample limit
-    /// grows with the deadline so the settle loop can use the extra time.
-    var withScaleChangeBudget: FrameSizingConfiguration {
-        var extended = self
-        extended.deadline = capped(max(deadline, scaleChangeDeadline))
-        extended.maximumAttempts = max(maximumAttempts,
-                                       Int((extended.deadline / pollInterval).rounded(.up)))
-        return extended
-    }
-
-    /// This configuration for the one retry an AX messaging timeout gets: a
-    /// longer per-call timeout and deadline, never shorter than this one's.
-    /// The verified layout's timeout recovery and the tiled drag both use it.
-    var withTimeoutRecoveryBudget: FrameSizingConfiguration {
-        var relaxed = self
-        relaxed.deadline = capped(max(deadline, 0.75))
-        relaxed.perCallTimeout = max(perCallTimeout, 0.25)
-        return relaxed
-    }
-}
-
 /// Two windows that sit on top of each other. Only the restoration phase
 /// produces these, as a diagnostic: restored originals are never published
 /// as a tiled layout, so an overlap between them is a fact about where the
@@ -262,6 +26,13 @@ struct FrameSizingAttempt {
         case accepted
         case rejected(FrameSizingFailure)
         case unknown(FrameSizingFailure)
+
+        var failure: FrameSizingFailure? {
+            switch self {
+            case .accepted: nil
+            case .rejected(let reason), .unknown(let reason): reason
+            }
+        }
     }
 
     /// What an attempt is known to have done, carried on every result so a
@@ -270,7 +41,7 @@ struct FrameSizingAttempt {
     ///
     /// `possiblyWritten` records that a setter was issued — it is evidence
     /// of a possible mutation, never proof the app applied the frame.
-    /// `writesCompleted` means all three frame setters returned success for
+    /// `writesCompleted` means every frame setter returned success for
     /// that window; the cleanup that follows carries its own error.
     struct Progress: Equatable {
         var phase: FrameSizingPhase = .candidate
@@ -445,9 +216,9 @@ struct FrameSizingAttempt {
         return out(Result(verdict: .accepted, actualFrames: frames))
     }
 
-    /// Traced wrapper around the attempt. Every line is `.debug` and built
-    /// inside `hyprLog`'s autoclosure, so nothing is formatted unless the
-    /// file log or the trace tier is on.
+    /// Traced wrapper around the attempt. `.debug` lines are built inside
+    /// `hyprLog`'s autoclosure, so they are formatted only when the file log or
+    /// the trace tier is on. Timeouts and refusals log at `.notice`.
     func apply(targets: [Target], usableFrame: CGRect, gap: CGFloat,
                generation: UInt64, phase: FrameSizingPhase = .candidate) -> Result {
         let started = io.now()
@@ -826,7 +597,7 @@ struct FrameSizingAttempt {
             return end(token, windowID: target.windowID, preserving: primary,
                        checkpoint: checkpoint)
         }
-        // all three setters returned success. record that before cleanup —
+        // every setter returned success. record that before cleanup —
         // a cleanup error is its own failure and does not unwrite them.
         progress.writesCompleted.insert(target.windowID)
         traceSteps(true)
@@ -897,12 +668,7 @@ struct FrameSizingAttempt {
 
     private func cleanupFailure(_ windowID: CGWindowID, primary: Result,
                                 error: AXError) -> Result {
-        let reason: FrameSizingFailure?
-        switch primary.verdict {
-        case .accepted: reason = nil
-        case let .rejected(failure), let .unknown(failure): reason = failure
-        }
-        return Result(verdict: .unknown(.cleanupFailed(windowID, primary: reason, error: error)),
+        return Result(verdict: .unknown(.cleanupFailed(windowID, primary: primary.verdict.failure, error: error)),
                       actualFrames: primary.actualFrames)
     }
 
@@ -1078,6 +844,9 @@ struct FrameSizingProgressReport: Equatable {
     var restoration: FrameSizingAttempt.Progress?
     /// restored originals that overlap each other. diagnostic only.
     var restorationOverlaps: [FrameSizingOverlap] = []
+    /// a timed-out pass kept where it stands: every frame went out, the app
+    /// didn't answer, and nothing rolled back
+    var keptWithoutRollback = false
 
     /// every id either attempt issued a setter for. evidence of possible
     /// mutation, never proof a frame landed.
@@ -1085,7 +854,7 @@ struct FrameSizingProgressReport: Equatable {
         candidate.possiblyWritten.union(restoration?.possiblyWritten ?? [])
     }
 
-    /// Every target had all three setters return success and the final
+    /// Every target had every setter return success and the final
     /// readback was complete and stable, or the layout already stood and
     /// its capture was the readback. An empty target set satisfies the
     /// write and readback conditions vacuously and is not evidence of
@@ -1176,10 +945,7 @@ struct FrameSizingTransaction {
 
     private static func strict(_ attempt: FrameSizingAttempt) -> FrameSizingAttempt {
         var strictAttempt = attempt
-        strictAttempt.configuration.sizeOvershootTolerance = strictAttempt.configuration.sizeTolerance
-        strictAttempt.configuration.sizeUndershootTolerance = strictAttempt.configuration.sizeTolerance
-        strictAttempt.configuration.aggregateSafetySlack = strictAttempt.configuration.sizeTolerance
-        strictAttempt.configuration.correspondenceOnly = true
+        strictAttempt.configuration = attempt.configuration.restorationStrict
         return strictAttempt
     }
 
@@ -1195,11 +961,7 @@ struct FrameSizingTransaction {
                          _ again: (FrameSizingAttempt) -> FrameSizingAttempt.Result)
         -> FrameSizingAttempt.Result {
         guard recoversTimeouts else { return first }
-        let reason: FrameSizingFailure
-        switch first.verdict {
-        case .accepted: return first
-        case let .rejected(failure), let .unknown(failure): reason = failure
-        }
+        guard let reason = first.verdict.failure else { return first }
         guard reason.isDirectCannotComplete, first.progress.timeoutShapedCannotComplete,
               attempt.io.currentGeneration() == generation else { return first }
         guard recoveryAllowed() else {

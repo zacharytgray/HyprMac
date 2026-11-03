@@ -176,7 +176,6 @@ struct MenuBarView: View {
 private struct MenuBarRow<Trailing: View>: View {
     let label: String
     let icon: String
-    let shortcut: String?
     let destructive: Bool
     let action: () -> Void
     let trailing: () -> Trailing
@@ -185,13 +184,11 @@ private struct MenuBarRow<Trailing: View>: View {
 
     init(_ label: String,
          icon: String,
-         shortcut: String? = nil,
          destructive: Bool = false,
          action: @escaping () -> Void,
          @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
         self.label = label
         self.icon = icon
-        self.shortcut = shortcut
         self.destructive = destructive
         self.action = action
         self.trailing = trailing
@@ -210,11 +207,6 @@ private struct MenuBarRow<Trailing: View>: View {
                     .lineLimit(1)
                     .layoutPriority(1)
                 Spacer()
-                if let shortcut {
-                    Text(shortcut)
-                        .font(.hyprMono)
-                        .foregroundStyle(Color.hyprTextSecondary)
-                }
                 trailing()
             }
             .padding(.horizontal, HyprSpacing.md)
@@ -234,7 +226,7 @@ private struct MenuBarRow<Trailing: View>: View {
 // Bridge for the menu bar label between WindowManager (which knows the
 // workspace state but is not available at app init) and the SwiftUI
 // MenuBarExtra label (which is built before WindowManager exists).
-// WindowManager.updateMenuBarState writes to .shared after every poll;
+// WorkspaceStatusPresenter.updateMenuBarState writes to .shared after every poll;
 // WorkspaceIndicatorLabel observes it.
 class MenuBarState: ObservableObject {
     static let shared = MenuBarState()
@@ -339,11 +331,4 @@ struct WorkspaceIndicatorLabel: View {
             Image(systemName: "rectangle.split.2x2")
         }
     }
-}
-
-extension Notification.Name {
-    static let hyprMacRetileAll = Notification.Name("hyprMacRetileAll")
-    static let hyprMacWorkspaceChanged = Notification.Name("hyprMacWorkspaceChanged")
-    // posted once per dispatched hotkey action; Tour's try-it hint observes it
-    static let hyprMacActionDispatched = Notification.Name("hyprMacActionDispatched")
 }

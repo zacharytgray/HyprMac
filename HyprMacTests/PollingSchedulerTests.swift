@@ -58,20 +58,23 @@ final class PollingSchedulerTests: XCTestCase {
 
     func testScheduleAfterPollFiresAgain() {
         var fireCount = 0
-        let scheduler = PollingScheduler { fireCount += 1 }
-        let firstFired = expectation(description: "first poll fired")
+        var onFire: (() -> Void)?
+        let scheduler = PollingScheduler {
+            fireCount += 1
+            onFire?()
+        }
         let secondFired = expectation(description: "second poll fired")
 
         scheduler.start()
-        // first poll, wait for it to land, then schedule a second.
+        // waits for the real fire, not a fixed delay: timers can run late.
         // the in-flight token must clear on fire so a new schedule takes effect.
-        scheduler.schedule(after: 0.05)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
-            firstFired.fulfill()
-            scheduler.schedule(after: 0.05)
+        onFire = {
+            onFire = { secondFired.fulfill() }
+            DispatchQueue.main.async { scheduler.schedule(after: 0.05) }
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { secondFired.fulfill() }
-        wait(for: [firstFired, secondFired], timeout: 1.0)
+        scheduler.schedule(after: 0.05)
+        wait(for: [secondFired], timeout: 5.0)
+        scheduler.stop()
         XCTAssertEqual(fireCount, 2)
     }
 
