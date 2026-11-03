@@ -905,8 +905,7 @@ presses do not start tiled insertion.
 
 The mouse-up event supplies the release point. The mouse lifecycle latches the
 logical Hypr key when it is held at press, pressed during the drag, or still
-held at release. Option at release remains a compatibility shortcut. After
-the 100 ms settle delay, a bounded read of the captured dragged window
+held at release. After the 100 ms settle delay, a bounded read of the captured dragged window
 separates manual resizing from movement (`TiledDragSnapshot.gesture`). The
 window is unmoved when its position and size are each within a point of the
 captured frame, so text selection does not rearrange unmoved windows. It is a
@@ -938,7 +937,7 @@ there, a change over 20 points as before.
 An ordinary move chooses a target from the release point within the source
 workspace and physical display. The nearest normalized target edge selects
 left, right, top, or bottom insertion; ties use that order. A latched Hypr
-gesture or Option at release requests a same-tree swap instead. A release on
+gesture requests a same-tree swap instead. A release on
 the source display without a target restores and verifies the captured
 frames, silently: nothing was written before the refusal, the window goes
 back to its slot, and the key keeps speaking for its geometry. Every other
@@ -985,7 +984,7 @@ drop places the window the way a same-tree drop does:
   edge, with the same edge rule and the same split.
 - In a gap or the padding, the nearest tile takes it, the lower id on a tie.
   The edge is measured from the point clamped into that tile.
-- A latched Hypr gesture or Option at release swaps it with that tile. The
+- A latched Hypr gesture swaps it with that tile. The
   two windows trade leaves, trees and workspaces. Both topologies stay as
   they were. Ratios move only for a known-minimum conflict, as on any drop.
 - A workspace with no tiles takes the window as its tree root, swap or not.
@@ -1072,7 +1071,7 @@ What it shows:
 - **Plain insert, on either monitor:** the rect the dragged window would get.
   That is its slot in the candidate tree the drop would build, with the same
   known-minimum adjustment.
-- **Swap (Hypr latched or held, or Option):** the whole target tile.
+- **Swap (Hypr latched or held):** the whole target tile.
 - **An empty workspace on another monitor:** that screen's tiling rect, inside
   the outer padding.
 - **Nothing** wherever the drop would restore: a gap on the source, a disabled

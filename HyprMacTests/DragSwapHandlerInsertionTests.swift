@@ -219,26 +219,26 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
     func testMouseDragLifecycleLatchesHyprAcrossTheWholeGesture() {
         var heldAtPress = MouseDragLifecycleState()
         heldAtPress.beginPress(hyprHeld: true)
-        XCTAssertTrue(heldAtPress.releaseRequestsSwap(hyprHeld: false, optionDown: false))
+        XCTAssertTrue(heldAtPress.releaseRequestsSwap(hyprHeld: false))
 
         var pressedDuringDrag = MouseDragLifecycleState()
         pressedDuringDrag.beginPress(hyprHeld: false)
         pressedDuringDrag.observeDrag(hyprHeld: true)
-        XCTAssertTrue(pressedDuringDrag.releaseRequestsSwap(hyprHeld: false, optionDown: false))
+        XCTAssertTrue(pressedDuringDrag.releaseRequestsSwap(hyprHeld: false))
 
         var pressedNearRelease = MouseDragLifecycleState()
         pressedNearRelease.beginPress(hyprHeld: false)
         pressedNearRelease.noteHyprKeyDown()
-        XCTAssertTrue(pressedNearRelease.releaseRequestsSwap(hyprHeld: false, optionDown: false))
+        XCTAssertTrue(pressedNearRelease.releaseRequestsSwap(hyprHeld: false))
     }
 
-    func testMouseDragLifecycleUsesReleaseStateAndKeepsOptionCompatibility() {
+    func testMouseDragLifecycleUsesReleaseState() {
         var state = MouseDragLifecycleState()
         state.beginPress(hyprHeld: false)
 
-        XCTAssertFalse(state.releaseRequestsSwap(hyprHeld: false, optionDown: false))
-        XCTAssertTrue(state.releaseRequestsSwap(hyprHeld: true, optionDown: false))
-        XCTAssertTrue(state.releaseRequestsSwap(hyprHeld: false, optionDown: true))
+        XCTAssertFalse(state.releaseRequestsSwap(hyprHeld: false))
+        XCTAssertTrue(state.releaseRequestsSwap(hyprHeld: true))
+        XCTAssertFalse(state.releaseRequestsSwap(hyprHeld: false))
     }
 
     func testPressResolverRequiresOneActualTileAndNoOccluder() {
@@ -258,7 +258,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
             pointer: CGPoint(x: 300, y: 25), tiledFrames: tiles, occluderFrames: [:]))
     }
 
-    func testDeferredReleaseKeepsExactSnapshotPointerAndOption() {
+    func testDeferredReleaseKeepsExactSnapshotPointerAndSwapRequest() {
         let first = snapshot(draggedID: 1)
         let scheduler = DeferredScheduler()
         var capturedPoint: CGPoint?
@@ -284,7 +284,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
 
         coordinator.mouseDown(at: CGPoint(x: 20, y: 30))
         coordinator.mouseUp(TiledDragRelease(
-            pointer: CGPoint(x: 220, y: 40), optionDown: false, sawDragEvent: true
+            pointer: CGPoint(x: 220, y: 40), swapRequested: false, sawDragEvent: true
         ))
 
         XCTAssertEqual(capturedPoint, CGPoint(x: 20, y: 30))
@@ -297,7 +297,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         XCTAssertEqual(reports, 1)
     }
 
-    func testOptionAtMouseUpSelectsExplicitSwap() {
+    func testSwapRequestAtMouseUpSelectsExplicitSwap() {
         let captured = snapshot(draggedID: 7)
         let scheduler = DeferredScheduler()
         var mode: TiledDragMode?
@@ -311,13 +311,13 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
 
         coordinator.mouseDown(at: .zero)
         coordinator.mouseUp(TiledDragRelease(pointer: CGPoint(x: 10, y: 20),
-                                              optionDown: true, sawDragEvent: true))
+                                              swapRequested: true, sawDragEvent: true))
         scheduler.run(0)
 
         XCTAssertSwap(mode, targetID: 8)
     }
 
-    func testSemanticHyprIntentSelectsExplicitSwapWithoutOption() {
+    func testSemanticHyprIntentSelectsExplicitSwap() {
         let captured = snapshot(draggedID: 7)
         let scheduler = DeferredScheduler()
         var mode: TiledDragMode?
@@ -356,7 +356,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
         coordinator.mouseDown(at: .zero)
         coordinator.mouseUp(TiledDragRelease(pointer: CGPoint(x: 2, y: 2),
-                                              optionDown: false, sawDragEvent: true))
+                                              swapRequested: false, sawDragEvent: true))
         scheduler.run(0)
         XCTAssertEqual(applied, 1)
         XCTAssertNil(receivedMode)
@@ -373,7 +373,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
         clickCoordinator.mouseDown(at: .zero)
         clickCoordinator.mouseUp(TiledDragRelease(pointer: CGPoint(x: 500, y: 500),
-                                                   optionDown: true, sawDragEvent: false))
+                                                   swapRequested: true, sawDragEvent: false))
         XCTAssertEqual(clickScheduler.jobCount, 0)
         XCTAssertEqual(clickApplications, 0)
         XCTAssertFalse(clickCoordinator.isFinishingDrag)
@@ -392,10 +392,10 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
 
         coordinator.mouseDown(at: CGPoint(x: 1, y: 1))
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false, sawDragEvent: true))
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false, sawDragEvent: true))
         nextID = 2
         coordinator.mouseDown(at: CGPoint(x: 2, y: 2))
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false, sawDragEvent: true))
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false, sawDragEvent: true))
 
         scheduler.run(0)
         XCTAssertTrue(coordinator.isFinishingDrag)
@@ -426,7 +426,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
 
         coordinator.mouseDown(at: CGPoint(x: 1, y: 0))
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
         scheduler.run(0)
 
@@ -447,7 +447,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
                 if snapshot.draggedID == 1 {
                     nextID = 2
                     coordinator.mouseDown(at: CGPoint(x: 2, y: 0))
-                    coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+                    coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                                           sawDragEvent: true))
                 }
                 return .superseded
@@ -458,7 +458,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
 
         coordinator.mouseDown(at: CGPoint(x: 1, y: 0))
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
         scheduler.run(0)
 
@@ -488,19 +488,19 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
 
         result = .ineligible(.floating)
         coordinator.mouseDown(at: .zero)
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
         XCTAssertTrue(reports.isEmpty)
 
         result = .unknown(.deadlineExceeded)
         coordinator.mouseDown(at: .zero)
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: false))
         XCTAssertTrue(reports.isEmpty)
 
         coordinator.mouseDown(at: .zero)
         XCTAssertTrue(reports.isEmpty)
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
 
         XCTAssertEqual(reports, ["deadline"])
@@ -840,7 +840,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
 
         coordinator.mouseDown(at: .zero)
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
         scheduler.run(0)
 
@@ -870,14 +870,14 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
                 if completion.snapshot.draggedID == 81 {
                     next = second
                     coordinator.mouseDown(at: CGPoint(x: 2, y: 0))
-                    coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+                    coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                                           sawDragEvent: true))
                 }
             }
         )
 
         coordinator.mouseDown(at: CGPoint(x: 1, y: 0))
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
         scheduler.run(0)
 
@@ -927,7 +927,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
 
         handler.handleMouseDown(at: CGPoint(x: 12, y: 34))
         handler.handleMouseUp(TiledDragRelease(pointer: CGPoint(x: 350, y: 250),
-                                               optionDown: true, sawDragEvent: true))
+                                               swapRequested: true, sawDragEvent: true))
 
         XCTAssertEqual(downPoint, CGPoint(x: 12, y: 34))
         XCTAssertEqual(published, combined)
@@ -968,7 +968,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
 
         handler.handleMouseDown(at: .zero)
-        handler.handleMouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        handler.handleMouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                                sawDragEvent: true))
         scheduler.run(0)
         XCTAssertEqual(written?[101], verified[101])
@@ -978,7 +978,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         written = nil
         captureResult = .unknown(.deadlineExceeded)
         handler.handleMouseDown(at: .zero)
-        handler.handleMouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        handler.handleMouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                                sawDragEvent: true))
         XCTAssertEqual(captureFailures, 1)
         XCTAssertNil(written)
@@ -1004,7 +1004,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
 
         handler.handleMouseDown(at: press)
         handler.handleMouseUp(TiledDragRelease(
-            pointer: release, optionDown: false,
+            pointer: release, swapRequested: false,
             sawDragEvent: TiledDragEvent.isDrag(from: press, to: release, sawDragEvent: true)))
 
         XCTAssertEqual(captureFailures, 0)
@@ -1031,7 +1031,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
 
         handler.handleMouseDown(at: .zero)
-        handler.handleMouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        handler.handleMouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                                sawDragEvent: true))
         scheduler.run(0)
 
@@ -1059,7 +1059,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
 
         handler.handleMouseDown(at: .zero)
         handler.handleMouseUp(TiledDragRelease(pointer: CGPoint(x: 2, y: 0),
-                                               optionDown: false, sawDragEvent: true))
+                                               swapRequested: false, sawDragEvent: true))
         XCTAssertTrue(handler.isFinishingDrag)
         scheduler.run(0)
 
@@ -1103,7 +1103,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         )
 
         handler.handleMouseDown(at: activePoint)
-        handler.handleMouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        handler.handleMouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                                sawDragEvent: true))
         scheduler.run(0)
 
@@ -1121,7 +1121,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         coordinator = TiledDragSessionCoordinator(
             capture: { point in
                 if point.x == 2 {
-                    coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+                    coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                                           sawDragEvent: true))
                     return .captured(second)
                 }
@@ -1137,12 +1137,12 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
         coordinator.mouseDown(at: CGPoint(x: 2, y: 0))
         XCTAssertEqual(scheduler.jobCount, 0)
 
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
         XCTAssertEqual(scheduler.jobCount, 0)
 
         coordinator.mouseDown(at: CGPoint(x: 3, y: 0))
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
         XCTAssertEqual(scheduler.jobCount, 1)
         scheduler.run(0)
@@ -1188,7 +1188,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
             schedule: scheduler.schedule,
             report: { _ in reports += 1 })
         coordinator.mouseDown(at: .zero)
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
 
         coordinator.cancel()
@@ -1210,7 +1210,7 @@ final class DragSwapHandlerInsertionTests: XCTestCase {
             report: { _ in XCTFail("canceled capture reported") })
 
         coordinator.mouseDown(at: .zero)
-        coordinator.mouseUp(TiledDragRelease(pointer: .zero, optionDown: false,
+        coordinator.mouseUp(TiledDragRelease(pointer: .zero, swapRequested: false,
                                               sawDragEvent: true))
 
         XCTAssertEqual(scheduler.jobCount, 0)

@@ -29,13 +29,12 @@ final class TiledDragController {
     // per drag: each other display's tree as a drop there would find it,
     // kept while its workspace and tree stay what they were
     private var dropPreviewTargets: [CGDirectDisplayID: (workspace: Int, target: TiledDragCrossTarget)] = [:]
-    private var dragOptionDown = false
 
     // WindowManager-side helpers
     var isManagerRunning: () -> Bool = { false }
     /// the current press, global CG. written before the handler hears of it
     var pressPoint: () -> CGPoint? = { nil }
-    var releaseRequestsSwap: (_ optionDown: Bool) -> Bool = { _ in false }
+    var releaseRequestsSwap: () -> Bool = { false }
     var visibleFloatingWindows: () -> [HyprWindow] = { [] }
     var acceptTiledDragCapture: ([CGWindowID: CGRect]) -> Void = { _ in }
     var isFullscreenSuppressed: (HyprWindow) -> Bool = { _ in false }
@@ -75,16 +74,9 @@ final class TiledDragController {
     func handleMouseUp(_ release: TiledDragRelease) { tiledDragHandler.handleMouseUp(release) }
     func cancel() { tiledDragHandler.cancel() }
 
-    /// A drop changes with the workspace under it and the swap keys, even
+    /// A drop changes with the workspace under it and the Hypr key, even
     /// with the pointer standing still.
     func refreshPreview() { dropPreview.refresh() }
-
-    /// Option held during a tiled drag turns its drop into a swap.
-    func noteOptionKey(down: Bool) {
-        guard dropPreview.isActive else { return }
-        dragOptionDown = down
-        dropPreview.refresh()
-    }
 
     /// Hide the drop preview and forget the drag's release trees.
     func endTiledDropPreview() {
@@ -167,7 +159,6 @@ final class TiledDragController {
     /// is the drop's own call: see `tiledDropPreviewFrame`.
     func updateTiledDropPreview(_ event: NSEvent) {
         let point = TiledDragEvent.point(event: event, primaryHeight: displayManager.primaryScreenHeight)
-        dragOptionDown = event.modifierFlags.contains(.option)
         if !dropPreview.isActive {
             guard isRunning, config.enabled, let snapshot = tiledDragHandler.pressSnapshot,
                   TiledDragEvent.isDrag(from: pressPoint(), to: point, sawDragEvent: true) else {
@@ -195,7 +186,7 @@ final class TiledDragController {
         guard isRunning, tiledDragHandler.pressSnapshot?.generation == snapshot.generation,
               tilingEngine.currentLayoutGeneration == snapshot.generation,
               tiledDragGesture(snapshot) == .move else { return nil }
-        let swap = releaseRequestsSwap(dragOptionDown)
+        let swap = releaseRequestsSwap()
         var release = TiledDropRelease.source
         var target: TiledDragCrossTarget?
         if let screen = exactFullScreen(containing: point),

@@ -125,7 +125,6 @@ class WindowManager {
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
     private var mouseDragMonitor: Any?
-    private var dragFlagsMonitor: Any?
     private var mouseDragLifecycle = MouseDragLifecycleState()
     private var mouseButtonDown: Bool { mouseDragLifecycle.buttonDown }
     private var mouseDraggedSinceDown: Bool { mouseDragLifecycle.sawDragEvent }
@@ -458,9 +457,9 @@ class WindowManager {
             feedback: tiledDragFeedback)
         tiledDrag.isManagerRunning = { [weak self] in self?.isRunning ?? false }
         tiledDrag.pressPoint = { [weak self] in self?.mouseDownPointCG }
-        tiledDrag.releaseRequestsSwap = { [weak self] optionDown in
+        tiledDrag.releaseRequestsSwap = { [weak self] in
             guard let self else { return false }
-            return self.mouseDragLifecycle.releaseRequestsSwap(hyprHeld: self.hyprHeld, optionDown: optionDown)
+            return self.mouseDragLifecycle.releaseRequestsSwap(hyprHeld: self.hyprHeld)
         }
         tiledDrag.visibleFloatingWindows = { [weak self] in self?.focusResolver.visibleFloatingWindows() ?? [] }
         tiledDrag.acceptTiledDragCapture = { [weak self] frames in self?.acceptTiledDragCapture(frames) }
@@ -1075,11 +1074,6 @@ class WindowManager {
             // the scrim stays: re-shown later it would come back above the members
             if !self.scratchpad.isVisible { self.dimmingOverlay.hideAll() }
         }
-        // Option held during a tiled drag turns its drop into a swap, and the
-        // preview must say so even when the pointer is standing still
-        dragFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            self?.tiledDrag.noteOptionKey(down: event.modifierFlags.contains(.option))
-        }
         mouseUpMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
             let shouldDetectDrag = self?.mouseDraggedSinceDown ?? false
             let draggedFloatingID = self?.mouseDownFloatingWindowID ?? 0
@@ -1106,9 +1100,7 @@ class WindowManager {
                     event: event,
                     primaryHeight: primaryHeight,
                     sawDragEvent: isDrag,
-                    swapRequested: self.mouseDragLifecycle.releaseRequestsSwap(
-                        hyprHeld: self.hyprHeld,
-                        optionDown: event.modifierFlags.contains(.option)))
+                    swapRequested: self.mouseDragLifecycle.releaseRequestsSwap(hyprHeld: self.hyprHeld))
                 self.tiledDrag.handleMouseUp(release)
                 // a click lifts the tile, which is fine: it has focus now. the tile
                 // that lost focus may still cover a floater, so check for that,
@@ -1170,12 +1162,10 @@ class WindowManager {
         if let m = mouseDownMonitor { NSEvent.removeMonitor(m) }
         if let m = mouseDragMonitor { NSEvent.removeMonitor(m) }
         if let m = mouseUpMonitor { NSEvent.removeMonitor(m) }
-        if let m = dragFlagsMonitor { NSEvent.removeMonitor(m) }
         mouseMoveMonitor = nil
         mouseDownMonitor = nil
         mouseDragMonitor = nil
         mouseUpMonitor = nil
-        dragFlagsMonitor = nil
         tiledDrag.endTiledDropPreview()
         mouseDownPointCG = nil
         mouseDownFloatingWindowID = 0

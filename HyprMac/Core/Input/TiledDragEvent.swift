@@ -31,7 +31,7 @@ struct TiledDragEvent {
     static func release(event: NSEvent, primaryHeight: CGFloat,
                         sawDragEvent: Bool, swapRequested: Bool = false) -> TiledDragRelease {
         TiledDragRelease(pointer: point(event: event, primaryHeight: primaryHeight),
-                         swapRequested: swapRequested || event.modifierFlags.contains(.option),
+                         swapRequested: swapRequested,
                          sawDragEvent: sawDragEvent)
     }
 }

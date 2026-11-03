@@ -25,8 +25,8 @@ struct MouseDragLifecycleState {
         swapRequested = true
     }
 
-    func releaseRequestsSwap(hyprHeld: Bool, optionDown: Bool) -> Bool {
-        swapRequested || hyprHeld || optionDown
+    func releaseRequestsSwap(hyprHeld: Bool) -> Bool {
+        swapRequested || hyprHeld
     }
 
     mutating func finishPress() {
@@ -50,10 +50,6 @@ struct TiledDragRelease: Equatable {
         self.pointer = pointer
         self.swapRequested = swapRequested
         self.sawDragEvent = sawDragEvent
-    }
-
-    init(pointer: CGPoint, optionDown: Bool, sawDragEvent: Bool) {
-        self.init(pointer: pointer, swapRequested: optionDown, sawDragEvent: sawDragEvent)
     }
 }
 

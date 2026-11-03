@@ -401,7 +401,7 @@ final class TiledDragTransactionTests: XCTestCase {
     func testAcceptedTopEdge() { assertAccepted(edge: .top) }
     func testAcceptedBottomEdge() { assertAccepted(edge: .bottom) }
 
-    func testOptionSwapUsesCandidateAndPreservesSource() {
+    func testSwapUsesCandidateAndPreservesSource() {
         let (tree, _, context) = fixture()
         let originalOrder = tree.allWindows.map(\.windowID)
         let originalFingerprint = tree.structuralFingerprint()
@@ -554,7 +554,7 @@ final class TiledDragTransactionTests: XCTestCase {
         XCTAssertTrue(fake.writes.isEmpty)
     }
 
-    func testOptionSwapOverCurrentMaxDepthRestoresWithoutCandidateWrites() {
+    func testSwapOverCurrentMaxDepthRestoresWithoutCandidateWrites() {
         let (tree, _, base) = fixture()
         let context = contextCopy(base, maxDepth: 1)
         let originals = layoutFrames(tree, context)

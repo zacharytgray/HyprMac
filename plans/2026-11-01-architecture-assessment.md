@@ -202,6 +202,7 @@ intermittent ones get a `.notice` log first, then a fix once the cause is seen.
 | B11 | The tour's menu bar legend shows `● ○`; the menu bar draws `■ □` | `TourView.swift:578-586`, `MenuBarView.swift:286-289` | Read | Decision D7 |
 | B12 | Settings footer and overlay hard-code Hypr+Ctrl+S/R and their own chord, which is wrong after a rebind | `GeneralSettingsView.swift:323`, `KeybindOverlayController.swift:553-554` | Read | Use the live chord, as the tour does |
 | B13 | A degraded restoration after a refused move leaves the window on the destination. The next poll reads drift and completes the move the user saw refused. No recovery owns it | `WorkspaceOrchestrator.swift:674-681`, `ActionDispatcher.swift:232-233` | Inferred | `.notice` when drift follows a degraded restoration |
+| B14 | Holding Option during a tiled drag: the window is resized during the drag (`settle read` shows `dw=343`), and a swap ended `degraded` with the red shake | Live, 2026-11-02, same on `aa883ee` and `c61925f`. Suspect macOS's own Option-drag tiling, not confirmed | Swap trigger removed: Option was an undocumented leftover from `93bfedf`, and only Hypr swaps now | Check a plain drag with Option held live |
 
 ## Decisions
 
@@ -387,9 +388,14 @@ Skip unless pain remains: moving the display settle's state, and a `ChromePresen
 lines to about 2800. 5.1 and the pure half of 5.3 were already done in phase 2. New:
 `FloatingDimDragTracker`, `TiledDragFeedbackCoordinator`, `TiledDragController`,
 `WorkspaceStatusPresenter`, `WindowPlacement`, `FocusResolver`. The moves are verbatim apart from
-renames and closures. Tests cover the tracker and the feedback coordinator, which had none. The
-**Live** checks for 5.3 and 5.5 are still owed, on top of what phases 1 to 4 owe. The line numbers
-in the table refer to 670626a and no longer apply.
+renames and closures. Tests cover the tracker and the feedback coordinator, which had none. The line numbers in the table refer to 670626a and no longer apply.
+
+Live on the MacBook, one display, real input on test windows, at `c61925f`: hover, click, jitter,
+drop on own slot, content drag, insert drop with preview, Hypr+drag swap, border resize, bare Hypr,
+moves, overview and scratchpad all pass. Floater drag moves the window and leaves the tiles alone,
+with no frame write logged, but it travelled 16 of 90 pt horizontally for a reason not found.
+Holding Option failed on the previous build as well, and that swap trigger is now gone (B14). Still owed: drags across monitors, plug,
+unplug, lock, sleep, the dim cutout by eye, menu open plus Hypr, and what phases 1 to 4 owe.
 
 ### Phase 6: real types in `TilingEngine`
 
@@ -451,7 +457,7 @@ Run on the MacBook Debug build for any step marked **Live**. It extends
 `docs/testing.md`:
 
 - Click a tile under a floater. Drag a floater with dim on.
-- Tile drag on one monitor and across. Hypr+drag and Option+drag swap. Press Hypr
+- Tile drag on one monitor and across. Hypr+drag swap. Press Hypr
   during a drag.
 - Menu open plus Hypr key.
 - Monitor unplug and replug. Lock and unlock. Sleep and wake. Pause inside a settle.
