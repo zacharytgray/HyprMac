@@ -89,16 +89,6 @@ class TilingEngine {
         let insertedIDs: Set<CGWindowID>
     }
 
-    private struct UnverifiedRecord {
-        var windowIDs: Set<CGWindowID>
-        var insertedIDs: Set<CGWindowID>
-        /// every attempt on this key since the last accepted layout put its
-        /// own originals back, verified. False the moment one did not, and
-        /// it never recovers until an accepted layout drops the record —
-        /// because from then on nobody knows where the incumbents are.
-        var restorationVerifiedThroughout: Bool
-    }
-
     /// What one tiling pass did with the windows it had just inserted.
     ///
     /// The failure's own window id is not the newcomer's id. A candidate
@@ -214,14 +204,8 @@ class TilingEngine {
     private var scratchpadRegions: [TilingKey: CGRect] = [:]
     // verified admission survives a temporary hide and a screen migration.
     private var admittedWindowIDs: [Int: Set<CGWindowID>] = [:]
-    /// Keys whose last layout attempt did not produce verified geometry.
-    /// Set by any non-accepted attempt, cleared by an accepted one or by
-    /// lifecycle cleanup. `intendedTileRects` omits these keys; `intendedRect(for:)`
-    /// and `scratchpadTileRects` do not.
-    private var unverified: [TilingKey: UnverifiedRecord] = [:]
-    /// Keys a window left since their last accepted layout. Until one is
-    /// accepted, the frames on screen still hold the gap it left.
-    private var vacatedKeys: Set<TilingKey> = []
+    /// What the engine can't vouch for about each key's frames.
+    private var ledger = GeometryLedger<TilingKey>()
     let displayManager: DisplayManager
 
     /// Gap between adjacent tiles, in pixels. Default from
@@ -322,8 +306,7 @@ class TilingEngine {
     }
 
     private func clearLayoutMarks(_ key: TilingKey) {
-        unverified.removeValue(forKey: key)
-        vacatedKeys.remove(key)
+        ledger.clear(key)
     }
 
     /// Install a candidate that passed. A live tree keeps its identity, since
@@ -396,7 +379,7 @@ class TilingEngine {
             rememberSlot(of: w, in: t, key: key)
             t.remove(w)
             t.root.pruneEmptyNodes()
-            vacatedKeys.insert(key)
+            ledger.noteVacated(key)
             // the membership changed here, not in the pass that follows, so
             // the pass would keep the ratios: a split skewed for a min-size
             // app stayed skewed after that app was gone. user-set ratios
@@ -488,7 +471,7 @@ class TilingEngine {
         let candidates = trees.filter { $0.key.workspace == workspace && !$0.value.allWindows.isEmpty }
             .sorted { ($1.value.allWindows.count, $0.key.screenID) < ($0.value.allWindows.count, $1.key.screenID) }
         for (_, t) in candidates {
-            if let root = Self.serialize(t.root, keeping: fallbackPins(in: t), ref: ref) { return root }
+            if let root = LayoutTreeCodec.serialize(t.root, keeping: fallbackPins(in: t), ref: ref) { return root }
         }
         return nil
     }
@@ -574,7 +557,7 @@ class TilingEngine {
 
         var placed = Set<CGWindowID>()
         let candidate = BSPTree()
-        if let built = Self.build(root, resolve: { ref in
+        if let built = LayoutTreeCodec.build(root, resolve: { ref in
             guard let w = resolve(ref), tileableIDs.contains(w.windowID),
                   placed.insert(w.windowID).inserted else { return nil }
             return w
@@ -631,8 +614,8 @@ class TilingEngine {
         if !held.isEmpty { heldByKey[key, default: []].formUnion(held.map(\.windowID)) }
         if !applyFrames {
             // parked windows: the tree speaks for nothing on screen until a show verifies it
-            mark(key, windowIDs: Set(candidate.allWindows.map(\.windowID)),
-                 insertedIDs: Set(insertedIDs), restored: false)
+            ledger.mark(key, windowIDs: Set(candidate.allWindows.map(\.windowID)),
+                        insertedIDs: Set(insertedIDs), restored: false)
         }
         // a stale tree for this workspace on another screen must not keep
         // a window the rebuilt tree now holds
@@ -650,30 +633,6 @@ class TilingEngine {
         return .rebuilt(inserted: insertedIDs.count, refusedNewcomers: refusedIDs)
     }
 
-    private static func build(_ node: LayoutNode, resolve: (SavedWindowRef) -> HyprWindow?) -> BSPNode? {
-        switch node {
-        case .leaf(let ref):
-            return resolve(ref).map { BSPNode(window: $0) }
-        case let .split(override, ratio, userSet, left, right):
-            switch (build(left, resolve: resolve), build(right, resolve: resolve)) {
-            case (nil, nil):
-                return nil
-            case (let only?, nil), (nil, let only?):
-                return only
-            case (let l?, let r?):
-                let n = BSPNode()
-                n.left = l
-                n.right = r
-                l.parent = n
-                r.parent = n
-                n.splitOverride = override
-                n.splitRatio = ratio
-                n.userSetRatio = userSet
-                return n
-            }
-        }
-    }
-
     private static func maxLeafDepth(_ node: BSPNode, depth: Int = 0) -> Int {
         guard let l = node.left, let r = node.right else { return depth }
         return max(maxLeafDepth(l, depth: depth + 1), maxLeafDepth(r, depth: depth + 1))
@@ -684,28 +643,6 @@ class TilingEngine {
         case .accepted: return nil
         case let .rejectedRestored(reason, _, _): return reason
         case let .degraded(reason, _, _, _, _): return reason
-        }
-    }
-
-    private static func serialize(_ node: BSPNode, keeping fallbacks: Set<ObjectIdentifier>,
-                                  ref: (HyprWindow) -> SavedWindowRef?) -> LayoutNode? {
-        if let window = node.window {
-            return ref(window).map(LayoutNode.leaf)
-        }
-        guard let left = node.left, let right = node.right else { return nil }
-        switch (serialize(left, keeping: fallbacks, ref: ref), serialize(right, keeping: fallbacks, ref: ref)) {
-        case (nil, nil):
-            return nil
-        case (let only?, nil), (nil, let only?):
-            return only
-        case (let l?, let r?):
-            // an axis smart insert pinned is this screen's, and the rect
-            // gives it back; only togglesplit goes into the snapshot, and a
-            // fallback axis the rect would not give back
-            let leftOut = node.splitOverrideIsAutomatic && !fallbacks.contains(ObjectIdentifier(node))
-            return .split(override: leftOut ? nil : node.splitOverride,
-                          ratio: node.splitRatio,
-                          userSet: node.userSetRatio, left: l, right: r)
         }
     }
 
@@ -904,7 +841,7 @@ class TilingEngine {
             // arrangement while the windows sit in the post-drag one, and
             // nothing put them back. a swap would otherwise end up
             // advertising each window the other's slot.
-            mark(key, windowIDs: snapshot.context.memberIDs, insertedIDs: [], restored: false)
+            ledger.mark(key, windowIDs: snapshot.context.memberIDs, insertedIDs: [], restored: false)
             hyprLog(.notice, .tiling, "drag accepted but not fully written — tree not published")
             return outcome
         }
@@ -936,7 +873,7 @@ class TilingEngine {
             if case .preflight = reason { return }
             restored = true
         }
-        mark(key, windowIDs: snapshot.context.memberIDs, insertedIDs: [], restored: restored)
+        ledger.mark(key, windowIDs: snapshot.context.memberIDs, insertedIDs: [], restored: restored)
     }
 
     /// The release screen's side of a cross-monitor drop.
@@ -1083,13 +1020,13 @@ class TilingEngine {
             var restored = false
             if case .rejectedRestored = result { restored = true }
             if trees[sourceKey] === snapshot.sourceTree {
-                mark(sourceKey, windowIDs: snapshot.context.memberIDs, insertedIDs: [],
-                     restored: restored)
+                ledger.mark(sourceKey, windowIDs: snapshot.context.memberIDs, insertedIDs: [],
+                            restored: restored)
             }
             if let live = target.live,
                let targetKey = trees.first(where: { $0.value === live })?.key {
-                mark(targetKey, windowIDs: cross.target.memberIDs, insertedIDs: [],
-                     restored: restored)
+                ledger.mark(targetKey, windowIDs: cross.target.memberIDs, insertedIDs: [],
+                            restored: restored)
             }
             return .acrossTrees(result, cross)
         }
@@ -1100,9 +1037,9 @@ class TilingEngine {
               trees[targetKey] === target.live else { return .superseded }
         // the same publication gate as a same-tree drop, over both screens
         guard progress.candidateVerified, let targetCandidate = cross.targetCandidate else {
-            mark(sourceKey, windowIDs: snapshot.context.memberIDs, insertedIDs: [], restored: false)
+            ledger.mark(sourceKey, windowIDs: snapshot.context.memberIDs, insertedIDs: [], restored: false)
             if target.live != nil {
-                mark(targetKey, windowIDs: cross.target.memberIDs, insertedIDs: [], restored: false)
+                ledger.mark(targetKey, windowIDs: cross.target.memberIDs, insertedIDs: [], restored: false)
             }
             hyprLog(.notice, .tiling, "drag across monitors accepted but not fully written"
                     + " — trees not published")
@@ -1224,11 +1161,7 @@ class TilingEngine {
             // it on migration would let the same unverified windows start
             // advertising intended rects under the new key without a single
             // accepted layout.
-            if let carried = unverified.removeValue(forKey: oldKey) {
-                mark(newKey, windowIDs: carried.windowIDs, insertedIDs: carried.insertedIDs,
-                     restored: carried.restorationVerifiedThroughout)
-            }
-            if vacatedKeys.remove(oldKey) != nil { vacatedKeys.insert(newKey) }
+            ledger.carry(from: oldKey, to: newKey)
             // a tree may already exist on the destination if the workspace had
             // been visited there before. keep the larger one and merge the
             // other's windows into it — dropping a tree wholesale orphaned its
@@ -1267,8 +1200,7 @@ class TilingEngine {
 
         // a pruned key takes its mark with it. a migrated one already
         // moved its mark above.
-        unverified = unverified.filter { trees[$0.key] != nil }
-        vacatedKeys = vacatedKeys.filter { trees[$0] != nil }
+        ledger.prune { trees[$0] != nil }
     }
 
     private var layoutEngine: LayoutEngine {
@@ -1281,38 +1213,12 @@ class TilingEngine {
         ioFactory: frameSizingIOFactory
     )
 
-    /// The most the forward passes of one verified layout attempt may hold
-    /// the main thread: the candidate, its adjusted pass, the topology
-    /// recovery and the timeout recovery's retry share it. Summed, their
-    /// own deadlines came to more than three seconds, plus the per-target
-    /// and scale-change growth. Each is capped at what is left when it
-    /// starts; a pass after the candidate with less than `passBudgetFloor`
-    /// left does not start, and the rollback follows instead.
-    ///
-    /// The rollbacks are outside it. A rollback is the safety net that puts
-    /// every window back, and one cut short stops mid-write with some
-    /// windows still on candidate frames under the old tree. Each keeps its
-    /// own deadline: 0.75 s plus 80 ms per target past three, or the
-    /// scale-change budget when it carries a window back across scales.
-    ///
-    /// The clock runs from the attempt's start, so a rollback's time counts
-    /// against the passes after it, but nothing cuts the rollback itself.
-    /// The real worst case for one attempt is the capture before it
-    /// (0.36 s), 2 s of passes, and one last rollback on its own deadline,
-    /// plus one AX call past each pass's last check (100 ms, 250 ms on the
-    /// timeout retry). Eight windows on one scale: 0.36 + 2 + 1.15, about
-    /// 3.5 s.
-    static let passBudget: TimeInterval = 2.0
-    /// The least a pass gets: the candidate is never cut below it, and a
-    /// later pass that would be is skipped.
-    static let passBudgetFloor: TimeInterval = 0.25
-
-    /// When set, every verified attempt draws on the one `passBudget`
+    /// When set, every verified attempt draws on the one `PassBudget`
     /// started then instead of starting its own.
     private var sharedPassBudgetStart: TimeInterval?
 
     /// Run `body` with every verified attempt in it sharing one
-    /// `passBudget`, started now. The admission recovery runs a key's
+    /// `PassBudget`, started now. The admission recovery runs a key's
     /// narrowing rounds in one, so four rounds cannot hold the main thread
     /// for four budgets. The rollbacks keep their own deadlines.
     func sharingOnePassBudget<T>(_ body: () -> T) -> T {
@@ -1326,7 +1232,7 @@ class TilingEngine {
     /// attempt. Always true outside `sharingOnePassBudget`.
     var passBudgetLeft: Bool {
         guard let start = sharedPassBudgetStart else { return true }
-        return Self.passBudget - (readbackPoller.now - start) >= Self.passBudgetFloor
+        return PassBudget(started: start).forLaterPass(at: readbackPoller.now) != nil
     }
 
     private lazy var timeoutRecoveryPoller: FrameReadbackPoller = {
@@ -1474,40 +1380,21 @@ class TilingEngine {
         ids.formUnion(outcome.progress.candidate.targetIDs)
         var restored = false
         if case .rejectedRestored = outcome { restored = true }
-        mark(key, windowIDs: ids, insertedIDs: Set(inserted), restored: restored)
-    }
-
-    /// Mark `key` unverified, folding this attempt's rollback into whatever
-    /// earlier attempts on the same key already said. A single failed
-    /// rollback anywhere in the run is enough: a restoration writes the
-    /// frames it captured when it started, so once one of them leaves the
-    /// incumbents somewhere unplanned, every later rollback faithfully
-    /// restores that.
-    private func mark(_ key: TilingKey, windowIDs: Set<CGWindowID>,
-                      insertedIDs: Set<CGWindowID>, restored: Bool) {
-        if var existing = unverified[key] {
-            existing.windowIDs.formUnion(windowIDs)
-            existing.insertedIDs.formUnion(insertedIDs)
-            existing.restorationVerifiedThroughout = existing.restorationVerifiedThroughout && restored
-            unverified[key] = existing
-            return
-        }
-        unverified[key] = UnverifiedRecord(windowIDs: windowIDs, insertedIDs: insertedIDs,
-                                           restorationVerifiedThroughout: restored)
+        ledger.mark(key, windowIDs: ids, insertedIDs: Set(inserted), restored: restored)
     }
 
     /// Every `(workspace, screen)` whose geometry the engine cannot speak
     /// for. The state dump and tests read it.
     var unverifiedLayouts: [UnverifiedLayout] {
-        unverified.keys.sorted { ($0.workspace, $0.screenID) < ($1.workspace, $1.screenID) }
+        ledger.unverifiedKeys.sorted { ($0.workspace, $0.screenID) < ($1.workspace, $1.screenID) }
             .map { key in
                 let screen = displayManager.screens.first {
                     TilingKey(workspace: key.workspace, screen: $0) == key
                 }
                 let treeIDs = Set(trees[key]?.allWindows.map(\.windowID) ?? [])
                 return UnverifiedLayout(workspace: key.workspace, screen: screen,
-                                        windowIDs: (unverified[key]?.windowIDs ?? []).union(treeIDs),
-                                        insertedIDs: unverified[key]?.insertedIDs ?? [])
+                                        windowIDs: (ledger.unverifiedRecord(for: key)?.windowIDs ?? []).union(treeIDs),
+                                        insertedIDs: ledger.unverifiedRecord(for: key)?.insertedIDs ?? [])
             }
     }
 
@@ -1535,7 +1422,7 @@ class TilingEngine {
     func markUnverifiedGeometry(forWorkspace workspace: Int, screen: NSScreen, reason: String) {
         let key = TilingKey(workspace: workspace, screen: screen)
         guard let tree = trees[key] else { return }
-        mark(key, windowIDs: Set(tree.allWindows.map(\.windowID)), insertedIDs: [], restored: false)
+        ledger.mark(key, windowIDs: Set(tree.allWindows.map(\.windowID)), insertedIDs: [], restored: false)
         hyprLog(.notice, .tiling, "unverified mark set for ws\(workspace): \(reason)")
     }
 
@@ -1553,12 +1440,10 @@ class TilingEngine {
     @discardableResult
     func clearUnverifiedGeometry(forWorkspace workspace: Int, screen: NSScreen) -> Bool {
         let key = TilingKey(workspace: workspace, screen: screen)
-        guard let record = unverified[key] else { return true }
-        guard record.restorationVerifiedThroughout else {
+        guard ledger.clearUnverifiedIfRestored(key) else {
             hyprLog(.notice, .tiling, "unverified mark kept for ws\(workspace): a rollback did not verify")
             return false
         }
-        unverified.removeValue(forKey: key)
         return true
     }
 
@@ -1612,20 +1497,19 @@ class TilingEngine {
         // it. that pass, and a rollback carrying it back, get the longer
         // budget; nothing else does.
         let scaleChanges = scaleChanges(originalFrames, destination: rect)
-        // one budget for the forward passes, see `passBudget`. the
+        // one budget for the forward passes, see `PassBudget`. the
         // rollbacks are not in it
-        let passStarted = sharedPassBudgetStart ?? readbackPoller.now
-        func remaining() -> TimeInterval { Self.passBudget - (readbackPoller.now - passStarted) }
+        let budget = PassBudget(started: sharedPassBudgetStart ?? readbackPoller.now)
         func budgeted(_ poller: FrameReadbackPoller) -> FrameReadbackPoller {
-            poller.withRemainingBudget(max(Self.passBudgetFloor, remaining()))
+            poller.withRemainingBudget(budget.forCandidate(at: readbackPoller.now))
         }
         // a pass after the candidate: capped at what is left, or nil when
         // that is under the floor
         func laterPass(_ poller: FrameReadbackPoller, _ name: String) -> FrameReadbackPoller? {
-            let left = remaining()
-            guard left >= Self.passBudgetFloor else {
+            let now = readbackPoller.now
+            guard let left = budget.forLaterPass(at: now) else {
                 hyprLog(.notice, .tiling, "verified layout \(name) skipped: "
-                        + "\(Int((left * 1000).rounded()))ms of the pass budget left")
+                        + "\(Int((budget.remaining(at: now) * 1000).rounded()))ms of the pass budget left")
                 return nil
             }
             return poller.withRemainingBudget(left)
@@ -1746,32 +1630,11 @@ class TilingEngine {
                              actualFrames: terminal.actualFrames,
                              progress: candidateProgress)
         }
-        // a newcomer whose original is off the restoration rect — it stood on
-        // the screen it was moved from, or was parked — was never part of the
-        // tree being rolled back. writing it back there would put an assigned
-        // window on a screen that does not show its workspace, and a rollback
-        // across displays is another scale hop that can land short itself.
-        // it stays wherever the candidate left it: on this screen if its
-        // writes went out, where it was if they never reached it. an
-        // ordinary pass reports it stranded for the admission recovery;
-        // other callers decide for themselves. the incumbents still go back.
-        // an original is a restoration target when it lies within the
-        // restoration rect by the same slack the rollback's own validation
-        // grants its readback. a parked one is a sliver past the edge, and
-        // one on another screen is not there at all; one a point over the
-        // edge, a half-point rounding or a min-height window against the
-        // Dock, is exactly where the window was and goes back there. strict
-        // containment refused the rollback of the whole key for that point
-        // and left the candidate frames on screen under the old tree
-        let reach = restorationFrame.insetBy(dx: -FrameSizingConfiguration().aggregateSafetySlack,
-                                             dy: -FrameSizingConfiguration().aggregateSafetySlack)
-        let leftInPlace = newcomerIDs.filter { id in
-            originalFrames[id].map { !reach.contains($0) } ?? false
-        }
-        if let invalidOriginalID = originalFrames.keys.sorted().first(where: { windowID in
-            !leftInPlace.contains(windowID)
-                && (originalFrames[windowID].map { !reach.contains($0) } ?? true)
-        }) {
+        let leftInPlace: Set<CGWindowID>
+        switch RollbackPlan.make(originalFrames: originalFrames, newcomerIDs: newcomerIDs,
+                                 restorationFrame: restorationFrame,
+                                 slack: FrameSizingConfiguration().aggregateSafetySlack) {
+        case let .refused(invalidOriginalID):
             // an original parked off the usable frame is not a restoration
             // target, so the candidate writes stay where they landed. the
             // tree keeps its prior ratios: nothing here was verified
@@ -1780,6 +1643,8 @@ class TilingEngine {
                              restorationAttempted: false,
                              actualFrames: terminal.actualFrames,
                              progress: candidateProgress)
+        case let .restore(leavingInPlace):
+            leftInPlace = leavingInPlace
         }
         if !leftInPlace.isEmpty {
             hyprLog(.notice, .tiling, "verified layout rollback leaves newcomers in place: ids=["
@@ -1794,7 +1659,7 @@ class TilingEngine {
         // boundary is slow for the same reason the candidate was
         let restoresAcrossScales = originals.contains { scaleChanges[$0.0.windowID] != nil }
         // the safety net keeps its own deadline, whatever the passes before
-        // it spent: see `passBudget`
+        // it spent: see `PassBudget`
         let restorationPoller = restoresAcrossScales ? scalePoller : readbackPoller
         let restored = restorationPoller.applyRestoration(originals, usableFrame: restorationFrame,
                                                           gap: gapSize, generation: generation)
@@ -1947,24 +1812,6 @@ class TilingEngine {
         String(format: "%gx", Double(factor))
     }
 
-    /// How a window crossing onto another screen takes its frame, and why.
-    enum CrossScreenWriteOrder: CustomStringConvertible {
-        /// resized on the screen it stands on, moved, resized again
-        case sizeFirst(source: String)
-        /// parked, hidden or on no screen: moved, then resized
-        case positionFirstParked
-        /// bigger than the screen it stands on: moved, then resized
-        case positionFirst(tooSmallSource: String)
-
-        var description: String {
-            switch self {
-            case let .sizeFirst(source): return "size-first (fits source \(source))"
-            case .positionFirstParked: return "position-first (parked)"
-            case let .positionFirst(source): return "position-first (does not fit source \(source))"
-            }
-        }
-    }
-
     /// The windows crossing onto `rect` that move before they are sized. A
     /// window is crossing when its captured original is less than half on
     /// `rect`, and each one logs its order once per attempt.
@@ -2022,19 +1869,13 @@ class TilingEngine {
 
     private func crossScreenWriteOrder(from original: CGRect,
                                        targetSize: CGSize) -> CrossScreenWriteOrder {
-        // a hide-corner sliver counts for the screen it is parked on, so
-        // check the frame really stands there before trusting that screen
-        guard let source = displayManager.screen(containingMostOf: original),
-              original.isSubstantiallyVisible(on: displayManager.cgFullRect(for: source)) else {
-            return .positionFirstParked
+        let source = displayManager.screen(containingMostOf: original).map { screen in
+            CrossScreenWriteOrder.Source(name: screen.localizedName,
+                                         fullFrame: displayManager.cgFullRect(for: screen),
+                                         usableFrame: displayManager.cgRect(for: screen))
         }
-        let usable = displayManager.cgRect(for: source)
-        let slack = FrameSizingConfiguration().sizeTolerance
-        guard targetSize.width <= usable.width + slack,
-              targetSize.height <= usable.height + slack else {
-            return .positionFirst(tooSmallSource: source.localizedName)
-        }
-        return .sizeFirst(source: source.localizedName)
+        return .decide(from: original, targetSize: targetSize, source: source,
+                       sizeSlack: FrameSizingConfiguration().sizeTolerance)
     }
 
     // both passes teach the same memory. the adjusted pass is where a
@@ -2264,7 +2105,7 @@ class TilingEngine {
         let t = m.tree
         let rect = m.rect
         if let live, !Set(live.allWindows.map(\.windowID)).isSubset(of: t.allWindows.map(\.windowID)) {
-            vacatedKeys.insert(key)
+            ledger.noteVacated(key)
         }
 
         let refusedIncumbents = Set(m.refusedWindows.map(\.windowID)).intersection(incumbents)
@@ -2272,7 +2113,7 @@ class TilingEngine {
             // publishing only the subset would hide an incumbent from geometry tracking.
             let ids = Set(windows.filter { !$0.isFloating }.map(\.windowID))
             let inserted = Set(m.insertedWindows.map(\.windowID)).subtracting(incumbents)
-            mark(key, windowIDs: ids, insertedIDs: inserted, restored: false)
+            ledger.mark(key, windowIDs: ids, insertedIDs: inserted, restored: false)
             return admissionResult(.degraded(candidateReason: .noFittingSlot(id),
                                               restorationReason: nil, restorationAttempted: false,
                                               actualFrames: [:], progress: FrameSizingProgressReport()),
@@ -2366,7 +2207,7 @@ class TilingEngine {
             failure = candidateReason
         }
         // an empty key has no gap to fill
-        let vacated = vacatedKeys.contains(key) && !published.isEmpty
+        let vacated = ledger.isVacated(key) && !published.isEmpty
         return AdmissionResult(workspace: workspace, screen: screen, generation: generation,
                                insertedIDs: inserted, publishedIDs: published,
                                failure: failure, restoredIDs: restored, refusedIDs: refused,
@@ -2458,30 +2299,12 @@ class TilingEngine {
                            alsoRestoringWithin: restorationReach)
     }
 
-    /// The fewest newcomers to leave out so the rest fit beside the
-    /// incumbents on the known floors. Drops the newcomer whose removal makes
-    /// the rest fit, else the one with the biggest floor, and repeats. nil
-    /// when no newcomer would be left to tile.
+    /// See `NewcomerRefusal`.
     private func newcomersToRefuse(_ judged: [HyprWindow], newcomers: Set<CGWindowID>,
                                    onWorkspace workspace: Int, screen: NSScreen) -> Set<CGWindowID>? {
-        var kept = judged
-        var dropped: Set<CGWindowID> = []
-        while !fitWindows(kept, onWorkspace: workspace, screen: screen) {
-            let candidates = kept.filter { newcomers.contains($0.windowID) }.sorted { lhs, rhs in
-                let left = minimumSize(for: lhs), right = minimumSize(for: rhs)
-                let leftArea = left.width * left.height, rightArea = right.width * right.height
-                return leftArea != rightArea ? leftArea > rightArea : lhs.windowID > rhs.windowID
-            }
-            guard let first = candidates.first else { return nil }
-            let drop = candidates.first { candidate in
-                fitWindows(kept.filter { $0.windowID != candidate.windowID },
-                           onWorkspace: workspace, screen: screen)
-            } ?? first
-            kept.removeAll { $0.windowID == drop.windowID }
-            dropped.insert(drop.windowID)
-        }
-        guard kept.contains(where: { newcomers.contains($0.windowID) }) else { return nil }
-        return dropped
+        NewcomerRefusal.choose(judged, newcomers: newcomers,
+                               minimumSize: { minimumSize(for: $0) },
+                               fits: { fitWindows($0, onWorkspace: workspace, screen: screen) })
     }
 
     /// Tile everything but `dropped`, and report `dropped` refused so the
@@ -2652,7 +2475,7 @@ class TilingEngine {
             // caller's actual-frame fallback, together rather than one at
             // a time, which is the only consistent thing to do when the
             // tree and the screen disagree.
-            if unverified[key] != nil {
+            if ledger.isUnverified(key) {
                 hyprLog(.debug, .tiling, "intendedRects: tree ws\(key.workspace) sid=\(key.screenID) unverified — omitted (\(t.allWindows.count) windows)")
                 continue
             }
@@ -2702,7 +2525,7 @@ class TilingEngine {
                 t.remove(window)
                 t.root.pruneEmptyNodes()
                 t.root.resetSplitRatios()
-                vacatedKeys.insert(key)
+                ledger.noteVacated(key)
                 if let screen = displayManager.screens.first(where: {
                     TilingKey(workspace: workspace, screen: $0) == key
                 }) {
@@ -3255,7 +3078,7 @@ class TilingEngine {
     func markWorkspaceGeometryUnverified(_ workspace: Int, screen: NSScreen,
                                          windowIDs: Set<CGWindowID>) {
         let key = TilingKey(workspace: workspace, screen: screen)
-        mark(key, windowIDs: windowIDs, insertedIDs: [], restored: false)
+        ledger.mark(key, windowIDs: windowIDs, insertedIDs: [], restored: false)
     }
 
     func commitPreparedSoleWindowTransfer(_ prepared: PreparedSoleWindowTransfer) -> Bool {
@@ -3400,7 +3223,7 @@ class TilingEngine {
             tree.remove(window)
             tree.root.pruneEmptyNodes()
             tree.root.resetSplitRatios()
-            vacatedKeys.insert(key)
+            ledger.noteVacated(key)
             if tree.allWindows.isEmpty {
                 dropTree(key)
             }

@@ -1289,7 +1289,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
     /// stopping mid-write
     func testARollbackAfterACandidateThatSpentTheBudgetRestoresEveryWindow() {
         let (engine, tree, trace, originals) = fixture(3)
-        trace.firstWriteCost = TilingEngine.passBudget + 0.1
+        trace.firstWriteCost = PassBudget.total + 0.1
         // nine setters at 50 ms: past the floor, inside the rollback's own
         trace.setterCost = 0.05
 
@@ -1300,7 +1300,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
             return XCTFail("expected a complete rollback, got \(outcome)")
         }
         XCTAssertEqual(trace.frames, originals, "every window is back")
-        XCTAssertGreaterThan(trace.now, TilingEngine.passBudget, "the candidate spent the budget")
+        XCTAssertGreaterThan(trace.now, PassBudget.total, "the candidate spent the budget")
     }
 
     /// the candidate and its rollback leave less than the floor of the
@@ -1323,7 +1323,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
         XCTAssertTrue(reason.isDirectCannotComplete, "\(reason)")
         XCTAssertEqual(trace.setters, 48, "the candidate's 24 and the rollback's 24, no retry")
         XCTAssertEqual(trace.frames, originals)
-        XCTAssertLessThan(trace.now, TilingEngine.passBudget)
+        XCTAssertLessThan(trace.now, PassBudget.total)
     }
 
     /// the admission recovery's narrowing rounds share one budget. an
@@ -1334,7 +1334,7 @@ final class TilingEnginePassBudgetTests: XCTestCase {
         let fixture = timeoutRecoveryFixture(mode: .readTimeout)
 
         let outcome = fixture.engine.sharingOnePassBudget { () -> TilingEngine.LayoutApplicationOutcome in
-            fixture.trace.advance(by: TilingEngine.passBudget - 0.1)
+            fixture.trace.advance(by: PassBudget.total - 0.1)
             XCTAssertFalse(fixture.engine.passBudgetLeft)
             return fixture.engine.applyVerifiedLayout(fixture.tree, in: fixture.usable,
                                                       generation: fixture.generation,
