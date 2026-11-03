@@ -298,10 +298,11 @@ final class TiledFocusRouterTests: XCTestCase {
         router.noteActivation = { steps.append("note \($0)") }
         router.raiseFloatersBeforeFocus = { steps.append("floaters for \($0.windowID)") }
         router.usualFocus = { w, fallback in steps.append("focus \(w.windowID) \(fallback.rawValue)") }
+        router.liftOverFloaters = { steps.append("lift \($0.windowID)") }
 
         router.focus(makeWindow(id: 11, pid: 100), reason: "ffm", fallback: .activateAndClick)
 
-        XCTAssertEqual(steps, ["note 100", "floaters for 11", "focus 11 activate+click"],
+        XCTAssertEqual(steps, ["note 100", "floaters for 11", "focus 11 activate+click", "lift 11"],
                        "in that order, or the floater pops over the window taking focus")
     }
 }

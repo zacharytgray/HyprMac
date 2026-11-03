@@ -753,6 +753,33 @@ final class FloatingWindowController {
         }
     }
 
+    /// Put a tile that just took focus above any floater still over it. Its app
+    /// was fronted by the focus, so the AXRaise lands. An app can take a moment to
+    /// come to the front, so it checks again once if focus hasn't moved on.
+    func liftOverFloaters(_ target: HyprWindow, retrying: Bool = true) {
+        guard !stateCache.floatingWindowIDs.contains(target.windowID),
+              !isScratchpadVisible(), !isMenuTracking(),
+              focusController.lastFocusedID == target.windowID else { return }
+        let floaters = stateCache.floatingWindowIDs.filter(workspaceManager.isWindowVisible)
+        guard !floaters.isEmpty, let windows = windowListForZOrder().map(WindowStacking.decode),
+              findPopup(windows, frontmostPID()) == nil else { return }
+        let targetFrame = windows.first { $0.windowID == target.windowID }?.bounds
+        let over = WindowStacking.floaters(above: target.windowID, among: floaters, in: windows).filter { floater in
+            guard let targetFrame, let frame = floater.bounds else { return true }
+            return WindowStacking.overlaps(targetFrame, frame)
+        }
+        guard !over.isEmpty else { return }
+        let rc = performRaise(target)
+        if rc != .success {
+            hyprLog(.notice, .floating, "lift over floaters failed: wid=\(target.windowID) rc=\(rc.rawValue)")
+        }
+        if retrying {
+            scheduleAfter(Self.frontedRecheckDelay) { [weak self] in
+                self?.liftOverFloaters(target, retrying: false)
+            }
+        }
+    }
+
     /// Whether a raise that fronts another app has to wait, and if so, try
     /// again when it can. Rapid clicks, a focus still settling and typing all
     /// wait, and the floater comes back up once they stop.

@@ -1727,6 +1727,44 @@ final class FloatingRaiseRegressionTests: XCTestCase {
         XCTAssertEqual(raises, 0, "the target is taking focus, so it stays over the floater")
     }
 
+    // hovering Dia lifted it and hovering Terminal didn't
+    func testATileTakingFocusIsLiftedOverAFloaterStillOverIt() {
+        let (controller, cache, _, focus) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises: [CGWindowID] = []
+        focus.recordFocus(11, reason: "hover")
+        controller.windowListForZOrder = { Self.raisedStack }
+        controller.performRaise = { raises.append($0.windowID); return .success }
+        controller.scheduleAfter = { _, _ in }
+
+        controller.liftOverFloaters(cache.cachedWindows[11]!)
+
+        XCTAssertEqual(raises, [11])
+    }
+
+    func testATileAlreadyOverTheFloaterIsNotRaised() {
+        let (controller, cache, _, focus) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises = 0
+        focus.recordFocus(11, reason: "hover")
+        controller.windowListForZOrder = { Self.coveredStack }
+        controller.performRaise = { _ in raises += 1; return .success }
+
+        controller.liftOverFloaters(cache.cachedWindows[11]!)
+
+        XCTAssertEqual(raises, 0)
+    }
+
+    func testTheLiftStandsDownOnceFocusHasMovedOn() {
+        let (controller, cache, _, focus) = makeController(tiledPID: 100, floatingPID: 200)
+        var raises = 0
+        focus.recordFocus(13, reason: "newer")
+        controller.windowListForZOrder = { Self.raisedStack }
+        controller.performRaise = { _ in raises += 1; return .success }
+
+        controller.liftOverFloaters(cache.cachedWindows[11]!)
+
+        XCTAssertEqual(raises, 0)
+    }
+
     func testAFocusChangeSkipsTheRaiseWhileTyping() {
         let (controller, cache, _, _) = makeController(tiledPID: 100, floatingPID: 200)
         var raises = 0

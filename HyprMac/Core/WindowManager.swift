@@ -448,6 +448,9 @@ class WindowManager {
         tiledFocusRouter.raiseFloatersBeforeFocus = { [weak self] target in
             self?.floatingController.raiseFloatersBeforeFocus(target)
         }
+        tiledFocusRouter.liftOverFloaters = { [weak self] target in
+            self?.floatingController.liftOverFloaters(target)
+        }
         suppressions.frontmostPID = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
         tiledFocusRouter.noteActivation = { [weak self] pid in self?.suppressions.expectActivation(of: pid) }
         // every focus HyprMac asks a window for, whichever path asks

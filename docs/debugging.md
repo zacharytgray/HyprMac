@@ -768,6 +768,8 @@ How it works:
   lifts the target. Order matters. A floater under the old tile goes up first, so it
   moves straight from over that tile to under the new one and never shows over the
   window taking focus.
+  The usual focus lifts only some apps (Dia, not Terminal), so `liftOverFloaters` then
+  raises the target if a floater is still over it, and checks once more 60 ms later.
 - `raiseBehind` is the backstop, on an app activation, after a click's mouse-up, and on
   each poll. It ignores the focused tile, so a floater only it covers is left alone. If
   a click lifted the new tile before anything could run (no hover first), it raises the
