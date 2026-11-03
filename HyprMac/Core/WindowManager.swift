@@ -79,10 +79,7 @@ class WindowManager {
 
     // verified tiled drag capture and completion.
     private var tiledDragHandler: TiledDragHandler!
-    private var tiledDragFeedback = TiledDragFeedbackReconciler()
-    private var pendingTiledDragCompletion: TiledDragCompletion?
-    private var activeTiledDragFeedback: (key: TiledDragFeedbackKey,
-                                           layoutGeneration: UInt64, borderToken: Int)?
+    private var tiledDragFeedback: TiledDragFeedbackCoordinator!
 
     // live highlight of where a tiled drag will land. the frames come from
     // the press capture and the trees, never from AX while the pointer moves
@@ -157,24 +154,9 @@ class WindowManager {
     // armed when a drag starts on a visible floating window while dim is on
     // (normal mode). drives dimmingOverlay.setDragOverride so the bright carve
     // hole tracks the floater live instead of trailing on the discovery poll.
-    private struct DimDragState {
-        // startFrame + downPointCG are the tracking anchor and MUST be a
-        // consistent pair, both sampled at mouse-down (frame from the
-        // mouse-down enumeration, point from the event). during a title-bar
-        // drag the OS keeps windowOrigin == startOrigin + (cursor − downPoint)
-        // exactly, so delta math off this pair is lag-free. never re-anchor
-        // to an AX position read mid-drag — those lag a fast drag, and pairing
-        // a stale origin with a live cursor bakes the lag in as a permanent
-        // carve offset for the rest of the drag.
-        let id: CGWindowID
-        let window: HyprWindow
-        let startFrame: CGRect       // CG top-left frame at mouse-down
-        let downPointCG: CGPoint     // click point from the mouse-down event
-        var confirmed = false        // an AX read saw the window actually moving
-        var resizing = false         // classified as a resize → track the live frame
-        var lastSizeCheck: TimeInterval = 0
-    }
-    private var dimDrag: DimDragState?
+    private lazy var dimDrag = FloatingDimDragTracker(
+        setCarve: { [dimmingOverlay] id, rect in dimmingOverlay.setDragOverride(id: id, rect: rect) },
+        clearCarve: { [dimmingOverlay] in dimmingOverlay.clearDragOverride() })
 
     // true while the Hypr key is physically held. drives focusBrackets — when held,
     // every focus change re-targets the brackets so they track Hypr+arrow even
@@ -464,20 +446,14 @@ class WindowManager {
 
         wireAdmissionRecovery()
         admissionRecovery.terminalOutcome = { [weak self] workspace, screen, result in
-            self?.reconcileTiledDragRecovery(workspace: workspace, screen: screen,
-                                             result: result)
+            self?.tiledDragFeedback.reconcileRecovery(workspace: workspace, screen: screen,
+                                                      result: result)
         }
 
         self.tiledDragHandler = makeTiledDragHandler()
+        self.tiledDragFeedback = makeTiledDragFeedback()
         focusBorder.onErrorFeedbackFinishedToken = { [weak self] token in
-            guard let self else { return }
-            if let active = self.activeTiledDragFeedback, active.borderToken == token {
-                self.tiledDragFeedback.feedbackFinished(generation: active.layoutGeneration)
-                self.activeTiledDragFeedback = nil
-                if !self.tiledDragFeedback.hasPendingFeedback {
-                    self.pendingTiledDragCompletion = nil
-                }
-            }
+            self?.tiledDragFeedback.errorFinished(token: token)
         }
         focusBorder.onErrorFeedbackFinished = { [weak self] in
             guard let self else { return }
@@ -902,9 +878,7 @@ class WindowManager {
         dumpStateSignalSource = nil
         tiledDragHandler.cancel()
         endTiledDropPreview()
-        tiledDragFeedback.cancel()
-        pendingTiledDragCompletion = nil
-        activeTiledDragFeedback = nil
+        tiledDragFeedback.reset()
         _ = tilingEngine.beginLayoutGeneration()
         restoreAllWindows()
         axNotifications.detachAll()
@@ -1086,7 +1060,7 @@ class WindowManager {
             if self.mouseDownFloatingWindowID != 0 {
                 self.focusBorder.hideFloatingBorder(for: self.mouseDownFloatingWindowID)
             }
-            self.updateDimDrag()
+            self.dimDrag.update(cursorCG: self.displayManager.flippedY(NSEvent.mouseLocation))
             guard self.preDragFocusedID == 0 else { return }
             guard let tid = self.focusBorder.trackedWindowID else { return }
             // only hide for floating windows — tiled windows can't be free-dragged
@@ -1152,9 +1126,8 @@ class WindowManager {
             self?.mouseDownPointCG = nil
             self?.mouseDownFloatingWindowID = 0
             self?.mouseDownFloatingFrame = nil
-            if self?.dimDrag != nil {
-                self?.dimDrag = nil
-                self?.dimmingOverlay.clearDragOverride()
+            if self?.dimDrag.isArmed == true {
+                self?.dimDrag.finish()
             }
             if draggedFloatingID != 0 {
                 let noteDrag = floaterDragged
@@ -1207,8 +1180,7 @@ class WindowManager {
         realClickInProgress = false
         // teardown can land mid-drag — drop the overlay's override too or a
         // stale carve hole survives until the next full update
-        dimDrag = nil
-        dimmingOverlay.clearDragOverride()
+        dimDrag.finish()
     }
 
     /// `true` for a mouse event HyprMac posted itself, such as the hover
@@ -2282,7 +2254,7 @@ class WindowManager {
     /// reads lag) while a live cursor read is already mid-flick — that
     /// mismatch permanently offset the carve by the initial flick distance.
     private func armDimDragIfFloating(downPointNS: NSPoint) {
-        dimDrag = nil
+        dimDrag.disarm()
         guard config.dimInactiveWindows, !scratchpad.isVisible,
               mouseDownFloatingWindowID != 0 else { return }
         let id = mouseDownFloatingWindowID
@@ -2290,70 +2262,9 @@ class WindowManager {
         guard let frame = mouseDownFloatingFrame ?? w.frame else { return }
 
         let downCG = displayManager.flippedY(downPointNS)
-        dimDrag = DimDragState(id: id, window: w, startFrame: frame, downPointCG: downCG)
-    }
-
-    /// Push the live carve rect for the armed floater.
-    ///
-    /// Confirmation gate: the carve holds still until an AX read sees the
-    /// window's origin actually moving under this press. Content drags (text
-    /// selection, scrollbar, a click on a window merely overlapping this
-    /// floater's frame) never move the window, so they never confirm and the
-    /// cursor can't pull the carve off a stationary window.
-    ///
-    /// Once confirmed, tracking is pure delta math off the MOUSE-DOWN anchor
-    /// pair (`startFrame` + `downPointCG`) — not the position that confirmed.
-    /// The confirming AX read lags a fast drag; the down-event pair is exact,
-    /// so the carve lands on the window's true position regardless of how far
-    /// the flick outran AX. No AX reads remain in the confirmed-move hot path.
-    /// A throttled size probe flips to live-frame reads once a resize is
-    /// detected (delta math can't model resizes).
-    private func updateDimDrag() {
-        guard var drag = dimDrag else { return }
-        let curCG = displayManager.flippedY(NSEvent.mouseLocation)
-
-        // resize probe (~10Hz) runs confirmed or not: a left/top-edge resize
-        // moves the origin too and would otherwise confirm as a move and
-        // delta-track with a frozen size.
-        if !drag.resizing {
-            let now = ProcessInfo.processInfo.systemUptime
-            if now - drag.lastSizeCheck > 0.1 {
-                drag.lastSizeCheck = now
-                if let sz = drag.window.size,
-                   abs(sz.width - drag.startFrame.width) > 2 ||
-                   abs(sz.height - drag.startFrame.height) > 2 {
-                    drag.resizing = true
-                    drag.confirmed = true
-                }
-            }
-        }
-
-        if !drag.confirmed {
-            // per-event position probe until confirmed — a real drag confirms
-            // within the first couple events, a content drag keeps the carve
-            // parked. 3px guard clears AX position noise so a stationary
-            // window never false-confirms.
-            if let pos = drag.window.position,
-               hypot(pos.x - drag.startFrame.origin.x, pos.y - drag.startFrame.origin.y) > 3 {
-                drag.confirmed = true
-            } else {
-                // window hasn't moved: the carve stays where the last full
-                // update painted it (on the window). nothing to stamp.
-                dimDrag = drag
-                return
-            }
-        }
-
-        let liveRect: CGRect
-        if drag.resizing {
-            liveRect = drag.window.frame ?? drag.startFrame
-        } else {
-            liveRect = drag.startFrame.offsetBy(dx: curCG.x - drag.downPointCG.x,
-                                                dy: curCG.y - drag.downPointCG.y)
-        }
-        dimDrag = drag
-        // match floatingFrames(expandedBy: 2): negative inset enlarges
-        dimmingOverlay.setDragOverride(id: drag.id, rect: liveRect.insetBy(dx: -2, dy: -2))
+        dimDrag.arm(id: id,
+                    probe: .init(size: { w.size }, position: { w.position }, frame: { w.frame }),
+                    startFrame: frame, downPointCG: downCG)
     }
 
     /// Hit-test the click point against floating and tiled windows and
@@ -2832,7 +2743,7 @@ class WindowManager {
         // question for a poll that changed nothing.
         if !retiled { applyTiledDrift(allWindows) }
         repairParkedWindows(allWindows)
-        reconcileTiledDragFeedback(with: retileResults, allWindows: allWindows)
+        tiledDragFeedback.reconcile(with: retileResults, allWindows: allWindows)
         refreshWorkspaceOverview(windows: allWindows)
         // a guarded cycle diffed nothing, so it can't have seen the close —
         // don't spend a recheck attempt on it, and don't let the slower
@@ -3564,39 +3475,8 @@ private extension WindowManager {
             outcome = result
             crossTree = cross
         }
-        if tiledDragFeedback.hasPendingFeedback {
-            switch outcome {
-            case .degraded:
-                // beginDegraded reports the earlier failure before replacing it.
-                break
-            case .committed, .rejectedRestored:
-                // every key this verified drop touched speaks for its members
-                var verified = [(TiledDragFeedbackKey(
-                    workspace: completion.snapshot.context.workspace,
-                    displayID: completion.snapshot.context.physicalDisplayID), affected)]
-                if let crossTree {
-                    verified.append((TiledDragFeedbackKey(
-                        workspace: crossTree.target.workspace,
-                        displayID: crossTree.target.physicalDisplayID), crossTree.target.memberIDs))
-                }
-                var actions: [TiledDragDeferredFeedbackAction] = []
-                let touched = verified.filter { tiledDragFeedback.isPending(for: $0.0) }
-                if touched.isEmpty {
-                    actions = tiledDragFeedback.reconcile(.noResult)
-                }
-                for (key, members) in touched {
-                    actions += tiledDragFeedback.reconcile(.accepted(
-                        key: key, generation: tilingEngine.currentLayoutGeneration,
-                        publishedIDs: members, expectedIDs: members))
-                }
-                applyTiledDragFeedbackActions(actions, completion: pendingTiledDragCompletion)
-                if !tiledDragFeedback.hasPendingFeedback {
-                    pendingTiledDragCompletion = nil
-                }
-            case .ignored, .superseded, .acrossTrees:
-                break
-            }
-        }
+        tiledDragFeedback.noteDropFinished(outcome, completion: completion,
+                                           crossTree: crossTree, affected: affected)
         let scope = crossTree == nil ? "" : " across monitors"
         hyprLog(.debug, .tiling, "tiled drag result: dragged=\(completion.snapshot.draggedID) "
                 + "members=\(affected.union(crossTree?.target.memberIDs ?? []).sorted()) "
@@ -3674,21 +3554,7 @@ private extension WindowManager {
             focusBorder.flashError(around: frame, windowID: completion.snapshot.draggedID,
                                    message: "Arrangement rejected; previous positions restored")
         case .degraded:
-            let key = TiledDragFeedbackKey(
-                workspace: completion.snapshot.context.workspace,
-                displayID: completion.snapshot.context.physicalDisplayID)
-            // a drop across monitors also waits on the release screen's tree
-            var releaseScreen: [TiledDragFeedbackKey: Set<CGWindowID>] = [:]
-            if let crossTree {
-                releaseScreen[TiledDragFeedbackKey(workspace: crossTree.target.workspace,
-                                                   displayID: crossTree.target.physicalDisplayID)]
-                    = crossTree.target.memberIDs
-            }
-            applyTiledDragFeedbackActions(tiledDragFeedback.beginDegraded(
-                key: key, generation: tilingEngine.currentLayoutGeneration,
-                affectedIDs: affected, alsoAwaiting: releaseScreen),
-                completion: pendingTiledDragCompletion)
-            pendingTiledDragCompletion = completion
+            tiledDragFeedback.deferDegraded(completion, crossTree: crossTree, affected: affected)
             hyprLog(.notice, .tiling, "tiled drag degraded feedback deferred until reconciliation")
             pollingScheduler.schedule()
         case nil:
@@ -3716,88 +3582,25 @@ private extension WindowManager {
                                windowID: 0, message: "Could not verify window positions")
     }
 
-    private func reportTiledDragFailure(_ completion: TiledDragCompletion) -> Int? {
-        let frame = completion.snapshot.originalFrames[completion.snapshot.draggedID]
-            ?? completion.snapshot.context.usableFrame
-        return focusBorder.flashError(around: frame, windowID: completion.snapshot.draggedID,
-                                      message: "Could not restore the tiled layout")
-    }
-
-    private func reconcileTiledDragFeedback(with results: [TilingEngine.AdmissionResult],
-                                            allWindows: [HyprWindow]) {
-        guard tiledDragFeedback.hasPendingFeedback else { return }
-        let events = results.map { result -> TiledDragFeedbackReconciliation in
-            let key = TiledDragFeedbackKey(
-                workspace: result.workspace,
-                displayID: tiledDragDisplayID(result.screen))
-            if result.failure == nil, result.strandedIDs.isEmpty {
-                let assigned = workspaceManager.windowIDs(onWorkspace: result.workspace)
-                let expected = Set(allWindows.filter {
-                    assigned.contains($0.windowID) && !isFloating($0.windowID)
-                }.map(\.windowID))
-                return .accepted(key: key, generation: result.generation,
-                                 publishedIDs: result.publishedIDs, expectedIDs: expected)
-            }
-            return .failed(key: key, generation: result.generation,
-                           requiredIDs: result.publishedIDs.union(result.strandedIDs),
-                           recoveryPending: result.strandedIDs.contains {
-                               admissionRecovery.phase(of: $0) == .awaitingRetry
-                           })
-        }
-        var activeRetry = false
-        for key in tiledDragFeedback.pendingKeys {
-            guard let screen = displayManager.screens.first(where: {
-                tiledDragDisplayID($0) == key.displayID
-            }) else { continue }
-            activeRetry = activeRetry
-                || admissionRecovery.hasActiveRetry(workspace: key.workspace, screen: screen)
-        }
-        let actions = tiledDragFeedback.reconcileNewest(events, activeRetry: activeRetry)
-        if !actions.isEmpty {
-            applyTiledDragFeedbackActions(actions, completion: pendingTiledDragCompletion)
-            pendingTiledDragCompletion = nil
-        }
-    }
-
-    private func reconcileTiledDragRecovery(workspace: Int, screen: NSScreen,
-                                            result: TilingEngine.AdmissionResult?) {
-        guard tiledDragFeedback.hasPendingFeedback else { return }
-        let key = TiledDragFeedbackKey(workspace: workspace,
-                                       displayID: tiledDragDisplayID(screen))
-        let event: TiledDragFeedbackReconciliation
-        if let result, result.failure == nil, result.strandedIDs.isEmpty {
-            let expected = Set(accessibility.getAllWindows().filter {
-                workspaceManager.workspaceFor($0.windowID) == workspace && !isFloating($0.windowID)
-            }.map(\.windowID))
-            event = .accepted(key: key, generation: result.generation,
-                              publishedIDs: result.publishedIDs, expectedIDs: expected)
-        } else {
-            event = .terminalFailure(key: key)
-        }
-        let actions = tiledDragFeedback.reconcile(event)
-        guard !actions.isEmpty else { return }
-        applyTiledDragFeedbackActions(actions, completion: pendingTiledDragCompletion)
-        pendingTiledDragCompletion = nil
-    }
-
-    private func applyTiledDragFeedbackActions(_ actions: [TiledDragDeferredFeedbackAction],
-                                               completion: TiledDragCompletion?) {
-        for action in actions {
-            switch action {
-            case let .showDegraded(key, generation):
-                guard let completion else { continue }
-                NSSound.beep()
-                if let token = reportTiledDragFailure(completion) {
-                    activeTiledDragFeedback = (key, generation, token)
-                }
-            case let .cancelDegraded(key):
-                hyprLog(.notice, .tiling, "tiled drag degraded feedback cancelled: verified reconciliation")
-                if let active = activeTiledDragFeedback, active.key == key,
-                   focusBorder.cancelErrorFeedback(token: active.borderToken) {
-                    activeTiledDragFeedback = nil
-                }
-            }
-        }
+    private func makeTiledDragFeedback() -> TiledDragFeedbackCoordinator {
+        TiledDragFeedbackCoordinator(
+            currentGeneration: { [tilingEngine = tilingEngine!] in tilingEngine.currentLayoutGeneration },
+            displayID: { [weak self] in self?.tiledDragDisplayID($0) ?? 0 },
+            screens: { [displayManager] in displayManager.screens },
+            windowIDsOnWorkspace: { [workspaceManager = workspaceManager!] in workspaceManager.windowIDs(onWorkspace: $0) },
+            workspaceFor: { [workspaceManager = workspaceManager!] in workspaceManager.workspaceFor($0) },
+            isFloating: { [weak self] in self?.isFloating($0) ?? false },
+            allWindows: { [accessibility] in accessibility.getAllWindows() },
+            isAwaitingRetry: { [admissionRecovery] in admissionRecovery.phase(of: $0) == .awaitingRetry },
+            hasActiveRetry: { [admissionRecovery] in admissionRecovery.hasActiveRetry(workspace: $0, screen: $1) },
+            beep: { NSSound.beep() },
+            showFailure: { [focusBorder] completion in
+                let frame = completion.snapshot.originalFrames[completion.snapshot.draggedID]
+                    ?? completion.snapshot.context.usableFrame
+                return focusBorder.flashError(around: frame, windowID: completion.snapshot.draggedID,
+                                              message: "Could not restore the tiled layout")
+            },
+            cancelFailure: { [focusBorder] in focusBorder.cancelErrorFeedback(token: $0) })
     }
 }
 
