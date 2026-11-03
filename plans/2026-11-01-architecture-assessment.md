@@ -383,6 +383,14 @@ Pull out leaves first. Each step needs the phase 2 tests for its region.
 Skip unless pain remains: moving the display settle's state, and a `ChromePresenter`
 (low churn).
 
+**Status 2026-11-02:** moves built on top of the floater fixes. `WindowManager` went from 4003
+lines to about 2800. 5.1 and the pure half of 5.3 were already done in phase 2. New:
+`FloatingDimDragTracker`, `TiledDragFeedbackCoordinator`, `TiledDragController`,
+`WorkspaceStatusPresenter`, `WindowPlacement`, `FocusResolver`. The moves are verbatim apart from
+renames and closures. Tests cover the tracker and the feedback coordinator, which had none. The
+**Live** checks for 5.3 and 5.5 are still owed, on top of what phases 1 to 4 owe. The line numbers
+in the table refer to 670626a and no longer apply.
+
 ### Phase 6: real types in `TilingEngine`
 
 Pure types with direct tests, one per PR. All tree mutators stay in

@@ -226,7 +226,7 @@ private struct MenuBarRow<Trailing: View>: View {
 // Bridge for the menu bar label between WindowManager (which knows the
 // workspace state but is not available at app init) and the SwiftUI
 // MenuBarExtra label (which is built before WindowManager exists).
-// WindowManager.updateMenuBarState writes to .shared after every poll;
+// WorkspaceStatusPresenter.updateMenuBarState writes to .shared after every poll;
 // WorkspaceIndicatorLabel observes it.
 class MenuBarState: ObservableObject {
     static let shared = MenuBarState()

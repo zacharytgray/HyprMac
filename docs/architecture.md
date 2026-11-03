@@ -62,7 +62,8 @@ flowchart TD
         WM --> AD["ActionDispatcher"]
         WM --> MT["MouseTrackingManager"]
         MT -.-> TFR["TiledFocusRouter"]
-        WM --> TDH["TiledDragHandler"]
+        WM --> TDC["TiledDragController"]
+        TDC --> TDH["TiledDragHandler"]
         AD --> FWC["FloatingWindowController"]
         AD --> Run["AppLauncherManager, CommandRunner"]
     end
@@ -129,8 +130,8 @@ Three paths to follow:
 - **Discovery:** an app event reaches `PollingScheduler`, then
   `WindowManager.pollWindowChanges` walks the windows, `WindowDiscoveryService`
   computes the diff, and `ActionDispatcher.applyChanges` applies it.
-- **Tiled drag:** `TiledDragHandler` runs the gesture through `WindowManager`
-  closures. `TiledDragTransaction` builds candidate trees and writes frames, and
+- **Tiled drag:** `TiledDragHandler` runs the gesture through
+  `TiledDragController` closures. `TiledDragTransaction` builds candidate trees and writes frames, and
   `TilingEngine` publishes one only when it verifies. Nothing else changes a tree.
 
 Update this map when wiring changes. Its edges were checked against the code at
@@ -146,7 +147,7 @@ live for the entire app lifetime. The process-wide singletons are
 
 | Service | Responsibility |
 |---|---|
-| `WindowManager` | Orchestrator. Wires services, drives lifecycle, owns mouse monitors and observers. |
+| `WindowManager` | Orchestrator. Wires services, drives lifecycle, owns mouse monitors and observers, the display settle's timer, and the focus chrome refresh. |
 | `HotkeyManager` | Session-level CGEventTap on a dedicated thread. Translates Hypr-key chords into `Action` values, dispatched to main. |
 | `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. Adds and removes only its own `UserKeyMapping` entry (see "Caps Lock remap"). |
 | `AccessibilityManager` | AX bridge. Enumerates windows, resolves the focused window, picks directional neighbors. |
@@ -154,6 +155,12 @@ live for the entire app lifetime. The process-wide singletons are
 | `ActionPolicy`, `ScratchpadActionRoute` | Pure gates a pressed action passes before `ActionDispatcher`. `WindowManager.handleAction` runs the effects. |
 | `DisplaySettle` | Pure decisions behind the display-change debounce. `WindowManager` keeps the timer, suppressions and reconcile. |
 | `FocusResolution` | Which window an action applies to, and what counts as selectable. |
+| `FocusResolver` | Runs those queries against live state, and repairs focus on a bare Hypr press. |
+| `WindowPlacement` | Classifies windows, distributes them across workspaces, and keeps hidden workspaces parked. |
+| `WorkspaceStatusPresenter` | Read-only views of workspace state: menu bar, overview, status export, state dump. |
+| `TiledDragController` | Capture and drop wiring for `TiledDragHandler`, the live drop preview, and what a finished drop owes. |
+| `TiledDragFeedbackCoordinator` | Holds a degraded drop's error until a later layout settles it. |
+| `FloatingDimDragTracker` | Keeps the dim's carve on a floater while it is dragged. |
 | `DockAffordance` | What an outside app activation does when none of that app's windows are on screen. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
@@ -281,7 +288,7 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
     → WindowDiscoveryService.computeChanges
     → ActionDispatcher.applyChanges
     → TiledDriftMonitor (only when the poll did not retile)
-    → repairParkedWindows
+    → WindowPlacement.repairParkedWindows
 ```
 
 Per-app AXObserver notifications are the primary discovery trigger; the

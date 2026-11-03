@@ -1,4 +1,4 @@
-// Pure formatting for `WindowManager.dumpState`. Takes plain values —
+// Pure formatting for `WorkspaceStatusPresenter.dumpState`. Takes plain values —
 // screen names, id sets, the workspace map — so the block can be
 // asserted line for line without AppKit or a live tree.
 

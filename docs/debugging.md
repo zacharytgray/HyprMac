@@ -465,7 +465,7 @@ Window ids only; no titles.
 
 ## On-demand state dump
 
-`WindowManager.dumpState(reason:)` logs a `.notice` block under
+`WorkspaceStatusPresenter.dumpState(reason:)` logs a `.notice` block under
 `category: lifecycle` describing workspace, cache and tree state. It
 runs once at startup right after the initial tile (`reason: startup`)
 and on every `SIGUSR1`:
@@ -882,7 +882,7 @@ mode is `none` or the gesture is `unmoved`. Turn on `HyprMacVerboseLogging`
   the point is on the source tiles it adds `tiles=[…]`, one entry per source
   tile.
 - `tiled drag mode: dragged=<id> swap=<bool> mode=<insert(<id> <edge>)|swap(<id>)|crossMonitor|none …>`.
-- For `crossMonitor`, WindowManager may log `tiled drag across monitors
+- For `crossMonitor`, `TiledDragController` may log `tiled drag across monitors
   refused on <name>: <reason>` (a disabled monitor, the scratchpad). The
   engine then logs either `tiled drag across monitors declined: …
   reason=<…>`, and the release restores, or `tiled drag across monitors

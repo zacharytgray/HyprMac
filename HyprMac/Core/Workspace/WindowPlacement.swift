@@ -1,6 +1,6 @@
 // Which workspace each window goes on: classify, distribute, and keep hidden
-// workspaces parked. Callers run classify, then distribute, then tile, with the
-// same array, because `isFloating` is set on objects a later pass reads.
+// workspaces parked. Callers run classify, then distribute, then tile. Classify
+// and distribute share one array, because `isFloating` is set on its objects.
 
 import Cocoa
 

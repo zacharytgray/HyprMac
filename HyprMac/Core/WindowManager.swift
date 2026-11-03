@@ -1,7 +1,7 @@
 // Central orchestrator. Wires every subsystem together, owns the long-lived
 // references, and routes hotkey actions and discovery results to the services
 // that handle them. It also holds the policy that has no service home yet:
-// focus repair, Retile All placement, the display settle, tiled drag glue.
+// the mouse gesture timeline, the display settle, and the focus chrome.
 
 import Cocoa
 import Combine

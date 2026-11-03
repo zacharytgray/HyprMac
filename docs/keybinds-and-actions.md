@@ -183,7 +183,7 @@ General → "Pin apps to workspaces" edits it, one rule per app:
   `WorkspaceOrchestrator.placePinnedFloater` carries the floater to the
   workspace's display, and parks it with that frame saved when the
   workspace is hidden.
-- **Retile All.** `WindowManager.startupPlacement` gives pinned windows
+- **Retile All.** `WindowPlacement.startupPlacement` gives pinned windows
   their own batches ahead of the screen batches, so they claim their
   workspace first. Pinned floaters move too. Hidden windows and scratchpad
   members keep their workspace. Startup and a Maximum splits change run
