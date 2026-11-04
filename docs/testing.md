@@ -21,7 +21,7 @@ otherwise inherit the release app's real preference.
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
 through `./scripts/test-isolated.sh --debug-variant`. That run gives 1926
-tests, 28 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
+tests, 29 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 
 The harness loads the test library through rpaths. It runs `xctest` directly
