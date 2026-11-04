@@ -176,6 +176,29 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(engine.knownFixedSizeApps.isEmpty)
     }
 
+    /// a window opened at its maximum looks fixed in a longer slot, but it can
+    /// still fill a shorter one, so the record does not keep it out of that
+    func testAKeptLengthDoesNotRefuseASlotAtOrUnderIt() {
+        let screen = MembershipHomeScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 1111), b = makeWindow(id: 1112)
+        let rect = engine.displayManager.cgRect(for: screen)
+        let kept = (rect.width * 0.7).rounded()
+        trace.frames[b.windowID] = CGRect(x: rect.minX + 20, y: rect.minY + 20, width: kept, height: 300)
+        trace.fixedWidth[b.windowID] = kept
+        _ = engine.tileWindows([b], onWorkspace: 1, screen: screen)
+        XCTAssertEqual(engine.fixedSize(for: b)?.length, kept)
+
+        trace.fixedWidth[b.windowID] = nil
+        trace.frames[a.windowID] = rect.insetBy(dx: 100, dy: 100)
+        trace.written = []
+        let shared = engine.tileWindows([a, b], onWorkspace: 1, screen: screen)
+        XCTAssertFalse(shared.refusedIDs.contains(b.windowID))
+        XCTAssertTrue(trace.written.contains(b.windowID))
+    }
+
     /// a rollback puts each window back where it was. an original a point
     /// past the edge of the screen, the slack the rollback's own readback
     /// is allowed, is where it was; it used to make the whole key's

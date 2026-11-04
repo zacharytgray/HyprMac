@@ -2025,6 +2025,18 @@ class TilingEngine {
                                         minimumSize: minimumSize(for:))
     }
 
+    /// A kept length only rules out a slot longer than it. A window opened at
+    /// its maximum can still fill a slot at or under that, so it gets the try.
+    private func fixedLengthRefuses(_ fixed: FixedSize, _ window: HyprWindow, tree: BSPTree,
+                                    maxDepth: Int, rect: CGRect) -> Bool {
+        let probe = tree.deepClone()
+        guard smartInsertFitting(window, into: probe, maxDepth: maxDepth, rect: rect),
+              let slot = probe.layout(in: rect, gap: gapSize, padding: outerPadding)
+                .first(where: { $0.0.windowID == window.windowID })?.1 else { return true }
+        let length = fixed.axis == .width ? slot.width : slot.height
+        return length > fixed.length + TilingConfig.frameToleranceXPx
+    }
+
     private func fittingLeaf(for window: HyprWindow?, in tree: BSPTree,
                              maxDepth: Int, rect: CGRect,
                              noting: ((LayoutEngine.SlotRefusal) -> Void)? = nil) -> BSPNode? {
@@ -2135,7 +2147,8 @@ class TilingEngine {
             slotMemory.removeValue(forKey: w.windowID)
             // a window that keeps its own length fills no slot, and asking
             // again only repeats the resize and rollback the user watched
-            if let fixed = minSizes.fixedSize(for: w) {
+            if let fixed = minSizes.fixedSize(for: w),
+               fixedLengthRefuses(fixed, w, tree: t, maxDepth: maxDepth(for: screen), rect: rect) {
                 refusedWindows.append(w)
                 hyprLog(.notice, .tiling, "no fitting tile slot: wid=\(w.windowID) ws\(workspace)"
                         + " keeps its \(fixed.axis.rawValue) at \(String(format: "%g", Double(fixed.length)))"
