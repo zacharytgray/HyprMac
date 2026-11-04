@@ -772,8 +772,11 @@ How it works:
   Hypr press all stand down while one is open. A popup-level window open longer than
   30 s is treated as part of its app and stops counting. A raised window of the
   frontmost app under the pointer (a menu, a floating panel) is never hit-tested
-  through. Other apps' high windows are still skipped, so a click-through overlay does
-  not freeze focus.
+  through, unless it is click-through: when the window server would give a click there
+  to a window further down the list, the raised one is skipped. Dia can leave a
+  display-sized window at layer 26 that takes no mouse, and it froze hover and left the
+  focus tracker stale on clicks while Dia was in front. Other apps' high windows are
+  still skipped, so a click-through overlay does not freeze focus.
 - `TiledFocusRouter` handles hover, Hypr+Arrow, Hypr keydown, the focus invariant and
   the focus repair. It calls `raiseFloatersBeforeFocus`, then the usual focus, which
   lifts the target. Order matters. A floater under the old tile goes up first, so it
@@ -807,6 +810,10 @@ Log lines, all at notice level:
 |---|---|---|
 | `ffm paused: popup wid=<id> pid=<pid> layer=<n> bounds=<rect>` | mouse | hover focus stopped for an open menu |
 | `ffm resumed: popup <id> gone` | mouse | hover focus back |
+| `ffm blocked <n>s: <reason>` | mouse | hover refused for one reason for 5 s. The reason is a held button, a menu, the Dock, the quiet window after an action, a raised window of the front app, or an unmanaged window on top |
+| `ffm unblocked after <n>s: <reason>` | mouse | that reason ended |
+| `screenshot picker open\|closed: <reason>` | lifecycle | the dim comes down while macOS's picker is up. The picker stops at the dim panel over an inactive window, whatever its `ignoresMouseEvents` and `sharingType` say |
+| `press state stuck with no button held — clearing` | mouse | a mouse-up never arrived. Hover and window polling would have stood down until the next real click |
 | `ignoring popup <id> pid=<pid> layer=<n>: open 30s, treated as part of the app` | mouse | a menu-level window that never closes no longer counts for any guard |
 | `refocus under cursor skipped: popup …` | mouse | post-click refocus held off |
 | `raise before focus: wids=[…] under=[…] focus=<id>` | floating | floaters raised from under the old tile before the new one lifts |

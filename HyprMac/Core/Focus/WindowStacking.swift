@@ -141,11 +141,16 @@ enum WindowStacking {
     /// raised windows are skipped too, so a click-through
     /// overlay cannot kill focus-follows-mouse. A managed floater raised
     /// to the floating level is a hit on that floater, whichever app is in
-    /// front; any other raised window of the frontmost app blocks.
+    /// front; any other raised window of the frontmost app blocks, unless
+    /// it is click-through. `mouseTarget` is the window the window server
+    /// would give a click at the point. When that sits below a raised window,
+    /// the raised one takes no mouse and is skipped too. Dia leaves a
+    /// display-sized one up, and it froze hover whenever Dia was in front.
     static func hitTest(_ point: CGPoint, in windows: [StackedWindow],
                         frontmostPID: pid_t?, ownPID: pid_t,
-                        managedFloaters: Set<CGWindowID> = []) -> Hit {
-        for window in windows {
+                        managedFloaters: Set<CGWindowID> = [],
+                        mouseTarget: ((CGPoint) -> CGWindowID)? = nil) -> Hit {
+        for (index, window) in windows.enumerated() {
             guard window.ownerPID != ownPID, window.alpha > 0.01,
                   let bounds = window.bounds, bounds.contains(point) else { continue }
             if window.layer == 0 {
@@ -156,6 +161,10 @@ enum WindowStacking {
             }
             if let frontmostPID, window.ownerPID == frontmostPID,
                isAppRaisedLayer(window.layer) {
+                if let target = mouseTarget?(point),
+                   windows[(index + 1)...].contains(where: { $0.windowID == target }) {
+                    continue
+                }
                 return .blocked(window)
             }
         }

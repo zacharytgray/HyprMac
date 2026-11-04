@@ -266,6 +266,24 @@ class DimmingOverlay {
         }
     }
 
+    var visiblePanels: [NSPanel] { panels.values.map(\.panel).filter(\.isVisible) }
+
+    /// Take every panel down now, with no fade. A screenshot picker opening
+    /// would otherwise catch the panel on its way out.
+    func hideImmediately() {
+        mainThreadOnly()
+        visible = false
+        hideEpoch &+= 1
+        for (_, entry) in panels {
+            for (wid, layer) in entry.windowLayers {
+                layer.removeAllAnimations()
+                layer.opacity = 0
+                entry.lastTargets[wid] = 0
+            }
+            entry.panel.orderOut(nil)
+        }
+    }
+
     /// Restack every panel above the tiles. Unconditional (not gated on
     /// visibility) — panels linger visible through the deferred fade-out, so
     /// a rapid hide→show would otherwise skip the restack.

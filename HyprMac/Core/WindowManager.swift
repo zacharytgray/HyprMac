@@ -33,6 +33,7 @@ class WindowManager {
     let focusBorder = FocusBorder()
     let focusBrackets = FocusBrackets()
     let dimmingOverlay = DimmingOverlay()
+    private let screenshotPicker = ScreenshotPickerWatcher()
     let mouseTracker = MouseTrackingManager()
     let keybindOverlay = KeybindOverlayController()
     let workspaceOverview = WorkspaceOverviewController()
@@ -384,6 +385,13 @@ class WindowManager {
                 for: self?.config.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz))
         }
         mouseTracker.isMouseButtonDown = { [weak self] in self?.mouseButtonDown ?? false }
+        mouseTracker.onStalePress = { [weak self] in self?.clearStalePress() }
+        mouseTracker.mouseTargetAt = { [weak self] point in
+            guard let self else { return 0 }
+            let number = NSWindow.windowNumber(at: self.displayManager.flippedY(point),
+                                               belowWindowWithWindowNumber: 0)
+            return CGWindowID(clamping: number)
+        }
         mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
         mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
         mouseTracker.floatingWindowIDs = { [weak self] in self?.stateCache.floatingWindowIDs ?? [] }
@@ -854,6 +862,15 @@ class WindowManager {
         dumpStateSignalSource = dumpSignal
 
         startMouseTracking()
+        screenshotPicker.onChange = { [weak self] open in
+            guard let self, self.isRunning else { return }
+            if open {
+                self.dimmingOverlay.hideImmediately()
+            } else {
+                self.refreshDimming()
+            }
+        }
+        screenshotPicker.start()
 
         let wsnc = NSWorkspace.shared.notificationCenter
         wsnc.addObserver(self, selector: #selector(appDidActivate(_:)),
@@ -960,6 +977,7 @@ class WindowManager {
         restoreAllWindows()
         axNotifications.detachAll()
         pollingScheduler.stop()
+        screenshotPicker.stop()
         stopMouseTracking()
         if !keepPauseShortcut { hotkeyManager.stop() }
         NSWorkspace.shared.notificationCenter.removeObserver(self)
@@ -1208,6 +1226,20 @@ class WindowManager {
         dimDrag.finish()
     }
 
+    /// Drops a press whose mouse-up never arrived. Hover found the state
+    /// down with no button held.
+    private func clearStalePress() {
+        mouseDragLifecycle.finishPress()
+        tiledDrag.cancel()
+        tiledDrag.endTiledDropPreview()
+        mouseDownPointCG = nil
+        mouseDownFloatingWindowID = 0
+        mouseDownFloatingFrame = nil
+        realClickInProgress = false
+        dimDrag.finish()
+        mouseTracker.invalidateWindowListCache()
+    }
+
     /// `true` for a mouse event HyprMac posted itself, such as the hover
     /// path's synthetic click. Those never count as the user's click.
     static func isOwnSyntheticEvent(_ event: NSEvent) -> Bool {
@@ -1428,6 +1460,11 @@ class WindowManager {
     ///   `focusBorder.trackedWindowID`, then `focusController.lastFocusedID`.
     private func refreshDimming(focusedID: CGWindowID? = nil,
                                 tiledRectsOverride: [CGWindowID: CGRect]? = nil) {
+        // the dim stays down while a screenshot picker is up
+        if screenshotPicker.isOpen {
+            dimmingOverlay.hideImmediately()
+            return
+        }
         // scratchpad scrim: dim every monitor edge-to-edge at .normal level.
         // members are raised ABOVE it at show time (stack recency, not
         // carve-outs), so nothing is carved and member drags never touch the

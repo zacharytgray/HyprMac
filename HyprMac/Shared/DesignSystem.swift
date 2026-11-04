@@ -116,7 +116,18 @@ class OverlayHostingView<Content: View>: NSHostingView<Content> {
 /// cursor crosses it, and each one resets the cursor to the arrow. With a
 /// customized accessibility pointer that reset re-renders the pointer
 /// image every time, which made hover focus changes expensive.
+///
+/// These panels are also hidden from screen capture. A window picker took
+/// the dim panel for the inactive window under the pointer, so the shot came
+/// out as an empty gray square of dim.
 final class ClickThroughPanel: NSPanel {
+    override init(contentRect: NSRect, styleMask style: NSWindow.StyleMask,
+                  backing backingStoreType: NSWindow.BackingStoreType, defer flag: Bool) {
+        super.init(contentRect: contentRect, styleMask: style,
+                   backing: backingStoreType, defer: flag)
+        sharingType = .none
+    }
+
     override func sendEvent(_ event: NSEvent) {
         switch event.type {
         case .mouseEntered, .mouseExited, .cursorUpdate: return

@@ -44,6 +44,20 @@ final class DimmingOverlayTests: XCTestCase {
 
     private var screens: [NSScreen] { NSScreen.screens }
 
+    func testHideImmediatelyRemovesPanelsAndUpdateBringsThemBack() throws {
+        let overlay = makeOverlay()
+        let rect = cgRectOnPrimary(x: 10, y: 10)
+        overlay.update(focusedID: 1, tiledRects: [1: rect, 2: rect], floatingRects: [:], screens: screens)
+        XCTAssertFalse(overlay.visiblePanels.isEmpty)
+
+        overlay.hideImmediately()
+        XCTAssertTrue(overlay.visiblePanels.isEmpty, "no fade: the panels are gone at once")
+
+        overlay.update(focusedID: 1, tiledRects: [1: rect, 2: rect], floatingRects: [:], screens: screens)
+        XCTAssertFalse(overlay.visiblePanels.isEmpty)
+        overlay.hideImmediately()
+    }
+
     // MARK: - enable / disable
 
     func testEnableFromOffSetsCorrectTargets() {

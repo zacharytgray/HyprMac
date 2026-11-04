@@ -56,6 +56,53 @@ final class HoverResponseRateTests: XCTestCase {
         }
     }
 
+    func testStalePressIsClearedAndHoverCarriesOn() {
+        let tracker = makeEligibleTracker()
+        var pressDown = true
+        var cleared = 0
+        var resolves = 0
+        tracker.isMouseButtonDown = { pressDown }
+        tracker.isPhysicalButtonDown = { false }
+        tracker.onStalePress = { pressDown = false; cleared += 1 }
+        tracker.resolveTopmostWindowID = { _ in resolves += 1; return 999 }
+
+        tracker.handleMouseMove()
+
+        XCTAssertEqual(cleared, 1)
+        XCTAssertEqual(resolves, 1)
+    }
+
+    func testHeldButtonStillBlocksHover() {
+        let tracker = makeEligibleTracker()
+        var cleared = 0
+        var resolves = 0
+        tracker.isMouseButtonDown = { true }
+        tracker.isPhysicalButtonDown = { true }
+        tracker.onStalePress = { cleared += 1 }
+        tracker.resolveTopmostWindowID = { _ in resolves += 1; return 999 }
+
+        tracker.handleMouseMove()
+
+        XCTAssertEqual(cleared, 0)
+        XCTAssertEqual(resolves, 0)
+        XCTAssertEqual(tracker.blockedReason, "mouse button down")
+    }
+
+    func testBlockedReasonClearsOnceHoverIsAllowedAgain() {
+        let tracker = makeEligibleTracker()
+        tracker.now = { 100 }
+        tracker.hoverThrottleInterval = { 0 }
+        tracker.resolveTopmostWindowID = { _ in nil }
+        tracker.dockIsActive = true
+
+        tracker.handleMouseMove()
+        XCTAssertEqual(tracker.blockedReason, "dock active")
+
+        tracker.dockIsActive = false
+        tracker.handleMouseMove()
+        XCTAssertNil(tracker.blockedReason)
+    }
+
     func testDisabledFocusFollowsMouseDoesNoResolveWork() {
         let tracker = makeEligibleTracker()
         var resolves = 0

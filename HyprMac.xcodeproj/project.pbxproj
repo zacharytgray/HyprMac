@@ -112,6 +112,7 @@
 		4BAA92839847FB4C276C9D23 /* ConfigMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDAAA3743D0898468DBA8EBC /* ConfigMigration.swift */; };
 		4C307BB05F3FA6FC89B4A9F5 /* FrameSizingTransactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7802C236774AA24452B3E1 /* FrameSizingTransactionTests.swift */; };
 		4CBAC337C07B929FD27142D9 /* WorkspaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB3EA6EA0A5100B595313570 /* WorkspaceManager.swift */; };
+		4CEDE06BF8322750204A2B36 /* ScreenshotPickerWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0394B5CB3AE82CEB9CC79BD /* ScreenshotPickerWatcherTests.swift */; };
 		4E300C440FEF20C7DF664515 /* DestroyRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */; };
 		4E6923775790B037E457881C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EA610EADBFADA21DC625C3 /* AppDelegate.swift */; };
 		4F02885D6EF2D5ED8B4A92F8 /* SwitchCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */; };
@@ -166,6 +167,7 @@
 		708DEC88B3AD6B85E901ADBF /* CrossScreenWriteOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46201EFD7BEA95F414A2D2CF /* CrossScreenWriteOrder.swift */; };
 		71E1D8EEA0227CA75D63F04E /* WindowStacking.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2CF1D9358724AFE225566EE /* WindowStacking.swift */; };
 		7350AB4A7C68F4970A52F4AA /* TilingEngineTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37534AED88541088ACD12A3 /* TilingEngineTypesTests.swift */; };
+		741D2164F2BBFC88D543EBE9 /* ScreenshotPickerWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 183602E03A997ED9810FD91E /* ScreenshotPickerWatcher.swift */; };
 		74EB88ADC96D2ACBC690C836 /* DimmingOverlayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556C506B51F8050F6F5E22A4 /* DimmingOverlayTests.swift */; };
 		75A6492EE898E858F5764C4D /* AppLauncherEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D1C99A7D03B871E0141DF0 /* AppLauncherEditorSheet.swift */; };
 		75E78E043A1A84C4342F6D2D /* DestroyRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */; };
@@ -175,6 +177,7 @@
 		7A55BA1F7EFA4F7177CE7F1E /* StateDump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F2DB0FB7A2441364DD7616 /* StateDump.swift */; };
 		7A66C97726B539669E56D8DD /* DwindleLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */; };
 		7B2295B46D2B165BC529E9A9 /* KeyBadgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */; };
+		7C145BCAF42E94BE71BE76F2 /* ScreenshotPickerWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 183602E03A997ED9810FD91E /* ScreenshotPickerWatcher.swift */; };
 		7CA92290394EA75D99BE6EF3 /* LoginItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A202B01AD893174E99223B4E /* LoginItemController.swift */; };
 		7DFABB5348197A0B951CFD6D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
 		7DFB8231119E7E37247B433E /* LayoutRestorerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC44CFDA4A541CD04BD4175D /* LayoutRestorerTests.swift */; };
@@ -409,6 +412,7 @@
 		16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPNodeTests.swift; sourceTree = "<group>"; };
 		16BDB1D1140B2A75DE224930 /* HyprMark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprMark.swift; sourceTree = "<group>"; };
 		17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindEditorViewModel.swift; sourceTree = "<group>"; };
+		183602E03A997ED9810FD91E /* ScreenshotPickerWatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotPickerWatcher.swift; sourceTree = "<group>"; };
 		18C35BE3ADE2DF9C15856DAC /* TiledDragHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragHandler.swift; sourceTree = "<group>"; };
 		18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingSchedulerTests.swift; sourceTree = "<group>"; };
 		1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserConfig.swift; sourceTree = "<group>"; };
@@ -553,6 +557,7 @@
 		BDCCD9FA560F875F6C457770 /* ActionWireKeyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActionWireKeyTests.swift; sourceTree = "<group>"; };
 		BE062173D513A1A60A3E704D /* ConfigStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigStore.swift; sourceTree = "<group>"; };
 		BFF82BFB0DD5A67058F96BE9 /* ForgottenWindowCleanupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForgottenWindowCleanupTests.swift; sourceTree = "<group>"; };
+		C0394B5CB3AE82CEB9CC79BD /* ScreenshotPickerWatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotPickerWatcherTests.swift; sourceTree = "<group>"; };
 		C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForceInsertWindowFallbackTests.swift; sourceTree = "<group>"; };
 		C37534AED88541088ACD12A3 /* TilingEngineTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineTypesTests.swift; sourceTree = "<group>"; };
 		C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingScheduler.swift; sourceTree = "<group>"; };
@@ -901,6 +906,7 @@
 				6988D3019CAFAAAE262E388E /* RuntimeVariantTests.swift */,
 				DBFE122D665A22CF5243E376 /* ScratchpadLayerLayoutTests.swift */,
 				7C20135BFA68C42326DDE511 /* ScratchpadPinTests.swift */,
+				C0394B5CB3AE82CEB9CC79BD /* ScreenshotPickerWatcherTests.swift */,
 				BB8DE37F0110F3E975EE8BB9 /* StateDumpFormatterTests.swift */,
 				6FF11879906CFAC20DB1166F /* StatusExportTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
@@ -941,6 +947,7 @@
 				291B4FB1A55EDA7B77928527 /* FocusBorder.swift */,
 				3C70FBFE18821270521C4A4A /* FocusBrackets.swift */,
 				B966E5108DBE5904C67C5042 /* KeybindOverlayController.swift */,
+				183602E03A997ED9810FD91E /* ScreenshotPickerWatcher.swift */,
 				84CBD2B2BF9D3574771BFEA3 /* TiledDropPreviewPanel.swift */,
 				E63DDE5C9FB47A25D46EA669 /* WindowCornerRadius.swift */,
 				705B17643AB23F91738528F9 /* WorkspaceOverviewController.swift */,
@@ -1258,6 +1265,7 @@
 				01AFBE17703E60B3CB1D8F50 /* RollbackPlan.swift in Sources */,
 				1AB9B2043A23A0FB662ECB30 /* RuntimeVariant.swift in Sources */,
 				AD5DE8DE9EEC373B5C493C02 /* ScratchpadController.swift in Sources */,
+				7C145BCAF42E94BE71BE76F2 /* ScreenshotPickerWatcher.swift in Sources */,
 				8C3306FE7A9CD13A28CA5C87 /* SettingsComponents.swift in Sources */,
 				B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */,
 				AFDFFD00A9BBCC444E730DEB /* SkyLightFunctions.swift in Sources */,
@@ -1397,6 +1405,7 @@
 				61FE0B502C7F761354726C8C /* RollbackPlan.swift in Sources */,
 				AEF86DF37CEB73E37D222EBA /* RuntimeVariant.swift in Sources */,
 				6C3DB70ECC254AE235F2CCC5 /* ScratchpadController.swift in Sources */,
+				741D2164F2BBFC88D543EBE9 /* ScreenshotPickerWatcher.swift in Sources */,
 				DFA806AC7404D54A992E432F /* SettingsComponents.swift in Sources */,
 				EF60D6F6EC01ADB59E9FDEB6 /* SettingsView.swift in Sources */,
 				44D934B1E2A8BF1D2B4FE0DB /* SkyLightFunctions.swift in Sources */,
@@ -1513,6 +1522,7 @@
 				C77DE1995895F9C4FC7A77C6 /* RuntimeVariantTests.swift in Sources */,
 				2055E558E349E0668D85DF94 /* ScratchpadLayerLayoutTests.swift in Sources */,
 				6F8CEB6AE18B352502189A31 /* ScratchpadPinTests.swift in Sources */,
+				4CEDE06BF8322750204A2B36 /* ScreenshotPickerWatcherTests.swift in Sources */,
 				78F04ED8784D47C00CF40356 /* StateDumpFormatterTests.swift in Sources */,
 				F10860BD19A5F31447601D3C /* StatusExportTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,

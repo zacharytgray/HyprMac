@@ -43,6 +43,9 @@ class MouseTrackingManager {
     // stop treating it as a popup so one odd app cannot freeze FFM or the
     // other popup guards.
     static let popupPauseLimit: CFAbsoluteTime = 30
+    // hover refused for one reason this long gets a notice line, so a stuck
+    // gate shows in `log show` without a debug stream.
+    static let blockedNoticeAfter: CFAbsoluteTime = 5
 
     // state
     // set by HIToolbox begin/end notifications — true for both menu bar menus
@@ -64,6 +67,9 @@ class MouseTrackingManager {
     // dependencies injected by WindowManager
     var isFocusFollowsMouseEnabled: () -> Bool = { false }
     var isMouseButtonDown: () -> Bool = { false }
+    var isPhysicalButtonDown: () -> Bool = { NSEvent.pressedMouseButtons != 0 }
+    // the press state says down but no button is held. drops that state
+    var onStalePress: () -> Void = {}
     var primaryScreenHeight: () -> CGFloat = { 0 }
     var mouseLocationNS: () -> CGPoint = { NSEvent.mouseLocation }
     var now: () -> CFAbsoluteTime = { CFAbsoluteTimeGetCurrent() }
@@ -74,6 +80,8 @@ class MouseTrackingManager {
     var frontmostPID: () -> pid_t? = { NSWorkspace.shared.frontmostApplication?.processIdentifier }
     var ownPID: pid_t = getpid()
     var screenAt: (CGPoint) -> NSScreen? = { _ in nil }
+    // the window the window server would give a click at a CG point
+    var mouseTargetAt: ((CGPoint) -> CGWindowID)?
     var floatingWindowIDs: () -> Set<CGWindowID> = { [] }
     var isWindowVisible: (CGWindowID) -> Bool = { _ in false }
     var cachedWindow: (CGWindowID) -> HyprWindow? = { _ in nil }
@@ -100,6 +108,10 @@ class MouseTrackingManager {
     // when each open popup was first seen, and which ones outlived the limit
     private var popupFirstSeen: [CGWindowID: CFAbsoluteTime] = [:]
     private var ignoredStalePopupIDs: Set<CGWindowID> = []
+    // why hover is refusing right now, since when, and whether that was logged
+    private var blocked: (reason: String, since: CFAbsoluteTime, logged: Bool)?
+    private var blockedThisMove = false
+    var blockedReason: String? { blocked?.reason }
 
     /// Entry point for FFM. Called from the global `NSMouseMoved`
     /// monitor on every event; gates and throttles before doing real
@@ -121,7 +133,10 @@ class MouseTrackingManager {
 
         if isInMenuBarDeadZone(cgPoint) { return }
 
-        guard let target = determineFocusTarget(at: cgPoint) else { return }
+        blockedThisMove = false
+        let target = determineFocusTarget(at: cgPoint)
+        if !blockedThisMove { clearBlocked() }
+        guard let target else { return }
         recordFocus(target.windowID, target.reason)
         onFocusForFFM(target.window)
     }
@@ -138,7 +153,17 @@ class MouseTrackingManager {
         // with the scratchpad up, hover moves focus between its members like
         // any workspace. the window closures only offer members then, so the
         // scrimmed background never takes focus.
-        if isMouseButtonDown() { hyprLog(.debug, .mouse, "ffm-bail: mouseButtonDown"); return false }
+        if isMouseButtonDown() {
+            if isPhysicalButtonDown() {
+                noteBlocked("mouse button down")
+                hyprLog(.debug, .mouse, "ffm-bail: mouseButtonDown")
+                return false
+            }
+            // a mouse-up never reached us. the next real click would clear this,
+            // and until then hover and window polling both stand down
+            hyprLog(.notice, .mouse, "press state stuck with no button held — clearing")
+            onStalePress()
+        }
         if menuTracking {
             // watchdog: HIToolbox sometimes drops endMenuTrackingNotification on
             // Tahoe, leaving menuTracking latched and FFM dead until the next
@@ -149,13 +174,41 @@ class MouseTrackingManager {
                 hyprLog(.notice, .mouse, "menuTracking stuck for \(String(format: "%.1f", age))s — force-clearing")
                 menuTracking = false
             } else {
+                noteBlocked("menu tracking")
                 hyprLog(.debug, .mouse, "ffm-bail: menuTracking (age=\(String(format: "%.1f", age))s)")
                 return false
             }
         }
-        if dockIsActive { hyprLog(.debug, .mouse, "ffm-bail: dockIsActive"); return false }
-        if isMouseFocusSuppressed() { hyprLog(.debug, .mouse, "ffm-bail: mouse-focus suppressed"); return false }
+        if dockIsActive {
+            noteBlocked("dock active")
+            hyprLog(.debug, .mouse, "ffm-bail: dockIsActive")
+            return false
+        }
+        if isMouseFocusSuppressed() {
+            noteBlocked("mouse focus suppressed")
+            hyprLog(.debug, .mouse, "ffm-bail: mouse-focus suppressed")
+            return false
+        }
         return true
+    }
+
+    /// Records why hover refused this move. One unchanged reason held for
+    /// `blockedNoticeAfter` logs once at notice level.
+    private func noteBlocked(_ reason: String) {
+        blockedThisMove = true
+        let time = now()
+        if blocked?.reason != reason { clearBlocked(); blocked = (reason, time, false) }
+        guard let current = blocked, !current.logged,
+              time - current.since >= Self.blockedNoticeAfter else { return }
+        blocked?.logged = true
+        hyprLog(.notice, .mouse, "ffm blocked \(Int(time - current.since))s: \(reason)")
+    }
+
+    private func clearBlocked() {
+        if let current = blocked, current.logged {
+            hyprLog(.notice, .mouse, "ffm unblocked after \(Int(now() - current.since))s: \(current.reason)")
+        }
+        blocked = nil
     }
 
     /// `true` when `cgPoint` is in the menu-bar dead zone — focus
@@ -194,6 +247,7 @@ class MouseTrackingManager {
         case .blocked(let raised):
             // over an open menu or a panel of the frontmost app. the window
             // below is not the target, and focusing it would close the menu.
+            noteBlocked("raised window \(raised.windowID) pid=\(raised.ownerPID) layer=\(raised.layer)")
             hyprLog(.debug, .mouse, "ffm-bail: over raised window \(raised.windowID) layer=\(raised.layer)")
             return nil
         case .window(let topmostID):
@@ -214,6 +268,7 @@ class MouseTrackingManager {
 
             // an unmanaged normal-layer window is above the tiled window
             // here, such as a popover or autocomplete panel.
+            noteBlocked("unmanaged window \(topmostID) on top")
             hyprLog(.debug, .mouse, "ffm-bail: topmost \(topmostID) not in managed (managed.count=\(managed.count), cached=\(cachedWindow(topmostID) != nil), floating=\(floating.contains(topmostID)))")
             return nil
         case .none:
@@ -371,7 +426,7 @@ class MouseTrackingManager {
     func hitTest(at point: CGPoint, maxAge: CFAbsoluteTime = MouseTrackingManager.windowListMaxAge) -> WindowStacking.Hit {
         guard let windows = stackedWindows(maxAge: maxAge) else { return .none }
         return WindowStacking.hitTest(point, in: windows, frontmostPID: frontmostPID(), ownPID: ownPID,
-                                      managedFloaters: floatingWindowIDs())
+                                      managedFloaters: floatingWindowIDs(), mouseTarget: mouseTargetAt)
     }
 
     /// What hover focus should see at `point`. An open popup of the
@@ -396,7 +451,7 @@ class MouseTrackingManager {
             pausedByPopupID = 0
         }
         return WindowStacking.hitTest(point, in: windows, frontmostPID: front, ownPID: ownPID,
-                                      managedFloaters: floatingWindowIDs())
+                                      managedFloaters: floatingWindowIDs(), mouseTarget: mouseTargetAt)
     }
 
     /// Called when a menu (app menu or right-click context menu) opens.
