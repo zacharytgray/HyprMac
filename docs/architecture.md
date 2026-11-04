@@ -725,6 +725,7 @@ Config safety, all in `ConfigStore`:
 |---|---|
 | File missing | Defaults. Normal on a first run |
 | File unreadable (truncated, garbage, wrong type in a core field) | Log a `.warning` with the reason, never the values. At launch use defaults; while running keep current settings. The file is left alone, since a read mid sync can look unreadable |
+| Any save over a file that exists but won't open | Skip the save and log a `.warning`, so nothing replaces bytes HyprMac could not copy. iCloud setup and repair stop the same way |
 | Any save over a file that doesn't decode | Copy it to `<name>.unreadable` first, for `config.json` and `monitor-config.json`. If the copy fails, the save is skipped |
 | Any save | Atomic, written to the real file behind a symlink so the iCloud link survives. A failure is logged with its error code and the old file stays |
 | Launch finds a link it can't read | Hold `config.json` saves so defaults never reach other Macs. A good file arriving ends the hold, and so does turning sync off or on. `monitor-config.json` still saves. A file lost while running isn't held, because memory holds real settings |

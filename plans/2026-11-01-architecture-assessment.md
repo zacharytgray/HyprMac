@@ -207,9 +207,8 @@ intermittent ones get a `.notice` log first, then a fix once the cause is seen.
 | B13 | A degraded restoration after a refused move leaves the window on the destination. The next poll reads drift and completes the move the user saw refused. No recovery owns it | `WorkspaceOrchestrator.swift:674-681`, `ActionDispatcher.swift:232-233` | Inferred | `.notice` when drift follows a degraded restoration |
 | B14 | Holding Option during a tiled drag: the window is resized during the drag (`settle read` shows `dw=343`), and a swap ended `degraded` with the red shake | Live, 2026-11-02, same on `aa883ee` and `c61925f`. Suspect macOS's own Option-drag tiling, not confirmed | Swap trigger removed: Option was an undocumented leftover from `93bfedf`, and only Hypr swaps now. Live at `c40f478`, a plain drag with Option held still ends `degraded` with the shake, the window at half the screen off its slot | Confirm the cause by hand before any fix |
 
-B15 (found 2026-11-03, not fixed): `keepUnreadableCopy` returns true when `Data(contentsOf:)` fails, so a save
-overwrites a file it could not open, with no copy. This is the part of B1's fix that remains. `ConfigStore.swift:259-263`.
-The log line at `:149` promises a copy in that case too.
+B15 (found and fixed 2026-11-03, not checked live): a save, iCloud setup or link repair could replace a file that
+exists but would not open, with no copy. The part of B1's fix that was missing. All three now stop instead.
 
 ## Decisions
 

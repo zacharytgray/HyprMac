@@ -393,7 +393,8 @@ Two on-disk files:
   editing this file and reopen it after.
 
 A file HyprMac can't decode is copied to `<name>.unreadable` before a save
-overwrites it. A file it can't open at all gets no copy. `<name>.replaced` holds
+overwrites it. A file that exists but won't open is not overwritten at all: the
+save is skipped until it opens again. `<name>.replaced` holds
 what iCloud set up or a reset replaced. Reading never touches the file: HyprMac
 runs on defaults until a save would replace it. With iCloud sync on, a launch
 that can't read the linked file holds `config.json` saves instead. A launch can

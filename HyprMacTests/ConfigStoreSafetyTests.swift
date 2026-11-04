@@ -233,6 +233,66 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: local), garbage)
     }
 
+    // MARK: can't be opened
+
+    private func lock(_ url: URL) throws {
+        try fm.setAttributes([.posixPermissions: 0o000], ofItemAtPath: url.path)
+    }
+
+    private func unlock(_ url: URL) throws {
+        try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+    }
+
+    func testAConfigThatWontOpenIsNotOverwritten() throws {
+        try garbage.write(to: local)
+        try lock(local)
+        store.writeSavedConfig(try XCTUnwrap(try? JSONDecoder().decode(SavedConfig.self, from: good)))
+        try unlock(local)
+        XCTAssertEqual(try Data(contentsOf: local), garbage)
+        XCTAssertNil(copy(local, "unreadable"))
+    }
+
+    func testSavingResumesOnceTheConfigOpensAgain() throws {
+        try garbage.write(to: local)
+        try lock(local)
+        let saved = try XCTUnwrap(try? JSONDecoder().decode(SavedConfig.self, from: good))
+        store.writeSavedConfig(saved)
+        try unlock(local)
+        store.writeSavedConfig(saved)
+        XCTAssertEqual(copy(local, "unreadable"), garbage)
+        XCTAssertNotNil(store.readSavedConfig().value)
+    }
+
+    func testAMonitorConfigThatWontOpenIsNotOverwritten() throws {
+        try garbage.write(to: monitor)
+        try lock(monitor)
+        store.writeSavedMonitorConfig(SavedMonitorConfig(maxSplitsPerMonitor: nil, disabledMonitors: nil))
+        try unlock(monitor)
+        XCTAssertEqual(try Data(contentsOf: monitor), garbage)
+    }
+
+    func testEnablingSyncLeavesAnICloudFileThatWontOpen() throws {
+        try good.write(to: local)
+        try putInICloud(other)
+        try lock(iCloudFile)
+        store.enableICloudSync { try! JSONDecoder().decode(SavedConfig.self, from: self.good) }
+        try unlock(iCloudFile)
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), other)
+        XCTAssertFalse(isLink(local))
+        XCTAssertEqual(try Data(contentsOf: local), good)
+    }
+
+    func testRepairLeavesALocalFileThatWontOpen() throws {
+        try other.write(to: local)
+        try putInICloud(good)
+        try lock(local)
+        let stale = store.ensureICloudSymlinkIntegrity { try! JSONDecoder().decode(SavedConfig.self, from: self.good) }
+        try unlock(local)
+        XCTAssertFalse(stale)
+        XCTAssertFalse(isLink(local))
+        XCTAssertEqual(try Data(contentsOf: local), other)
+    }
+
     func testSavingLeavesOnlyTheConfigFilesBehind() throws {
         let config = UserConfig(store: store, iCloudSyncEnabled: false)
         config.gapSize = 31

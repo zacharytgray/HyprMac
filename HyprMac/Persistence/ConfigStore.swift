@@ -255,11 +255,35 @@ final class ConfigStore {
         return current
     }
 
-    // false means the copy failed, and the caller must not overwrite the file
+    // false means the caller must not overwrite the file: the copy failed,
+    // or the file exists and can't be read to copy
     private func keepUnreadableCopy<Value: Decodable>(of url: URL, as type: Value.Type) -> Bool {
-        guard let data = try? Data(contentsOf: url),
-              (try? JSONDecoder().decode(type, from: data)) == nil else { return true }
-        return keepCopy(data, of: url, suffix: "unreadable")
+        switch contents(of: url) {
+        case .missing:
+            return true
+        case .blocked(let reason):
+            hyprLog(.warning, .config, "\(url.lastPathComponent) not saved: can't read it to keep a copy (\(reason))")
+            return false
+        case .data(let data):
+            guard (try? JSONDecoder().decode(type, from: data)) == nil else { return true }
+            return keepCopy(data, of: url, suffix: "unreadable")
+        }
+    }
+
+    private enum FileContents {
+        case missing
+        case data(Data)
+        case blocked(reason: String)
+    }
+
+    // tells a file that isn't there from one that is there and won't open.
+    // only the first is safe to replace with no copy
+    private func contents(of url: URL) -> FileContents {
+        do {
+            return .data(try Data(contentsOf: url))
+        } catch {
+            return Self.isFileMissing(error) ? .missing : .blocked(reason: Self.reason(for: error))
+        }
     }
 
     // never overwrites an older copy: the first one may be the only good
@@ -312,9 +336,16 @@ final class ConfigStore {
                 hyprLog(.warning, .config, "iCloud sync not set up: \(Self.code(of: error))")
                 return
             }
-            if let existing = try? Data(contentsOf: iCloudConfigURL), existing != data,
-               !keepCopy(existing, of: localConfigURL, suffix: "replaced") {
+            switch contents(of: iCloudConfigURL) {
+            case .missing:
+                break
+            case .blocked(let reason):
+                hyprLog(.warning, .config, "iCloud sync not set up: can't read the file there (\(reason))")
                 return
+            case .data(let existing):
+                if existing != data, !keepCopy(existing, of: localConfigURL, suffix: "replaced") {
+                    return
+                }
             }
             guard writeAtomically(data, to: iCloudConfigURL) else { return }
         }
@@ -358,10 +389,17 @@ final class ConfigStore {
             enableICloudSync(snapshot: snapshot)
             return false
         }
-        if let local = try? Data(contentsOf: localConfigURL),
-           local != (try? Data(contentsOf: iCloudConfigURL)),
-           !keepCopy(local, of: localConfigURL, suffix: "replaced") {
+        switch contents(of: localConfigURL) {
+        case .missing:
+            break
+        case .blocked(let reason):
+            hyprLog(.warning, .config, "config.json not linked to iCloud: can't read it to keep a copy (\(reason))")
             return false
+        case .data(let local):
+            if local != (try? Data(contentsOf: iCloudConfigURL)),
+               !keepCopy(local, of: localConfigURL, suffix: "replaced") {
+                return false
+            }
         }
         guard linkLocalToICloud() else { return false }
         hyprLog(.notice, .config, "config.json linked back to iCloud")
