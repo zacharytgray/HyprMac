@@ -51,7 +51,7 @@ final class WorkspaceOrchestratorMoveTests: XCTestCase {
             dimmingOverlay: DimmingOverlay(),
             suppressions: SuppressionRegistry(),
             revalidation: revalidation)
-        orchestrator.animatedRetile = { prepare, completion in prepare?(); completion?() }
+        orchestrator.retile = { prepare, completion in prepare?(); completion?() }
         orchestrator.tileAllVisibleSpaces = { _ in }
         orchestrator.screenUnderCursor = { [weak self] in self?.screen ?? NSScreen.main! }
 

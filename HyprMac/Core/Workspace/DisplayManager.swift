@@ -185,9 +185,7 @@ class DisplayManager {
         return screen(at: center)
     }
 
-    /// Resolve a screen by index. `CGSCopyManagedDisplaySpaces` and
-    /// `NSScreen.screens` use the same ordering, so the index returned
-    /// from one can index into the other.
+    /// Resolve a screen by its index in `NSScreen.screens`.
     func screen(forDisplayIndex index: Int) -> NSScreen? {
         guard index >= 0 && index < screens.count else { return nil }
         return screens[index]

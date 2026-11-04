@@ -101,7 +101,7 @@ final class ActionDispatcher {
     var screenUnderCursor: () -> NSScreen = { NSScreen.main! }
     // closures used by applyChanges
     var applyForgottenIDCleanup: (CGWindowID) -> Void = { _ in }
-    var animatedRetile: ([HyprWindow]) -> [TilingEngine.AdmissionResult] = { _ in [] }
+    var retile: ([HyprWindow]) -> [TilingEngine.AdmissionResult] = { _ in [] }
     var refocusUnderCursor: () -> Void = {}
     var isMenuTracking: () -> Bool = { false }
     // members a tile pass held: their app did not answer the walk, or the
@@ -178,7 +178,7 @@ final class ActionDispatcher {
     /// - Parameter changes: discovery delta.
     /// - Parameter allWindows: the same window snapshot
     ///   `WindowDiscoveryService` consumed; passed through so
-    ///   `animatedRetile` and workspace assignment do not re-query AX.
+    ///   `retile` and workspace assignment do not re-query AX.
     func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow])
         -> [TilingEngine.AdmissionResult] {
         // CGWindowIDs get recycled. an id discovery calls new is a different
@@ -243,7 +243,7 @@ final class ActionDispatcher {
             ].compactMap { $0 }.joined(separator: " ")
             hyprLog(.notice, .discovery, "discovery retile: \(causes)")
             // let surrounding windows fill gaps / make room.
-            retileResults = animatedRetile(allWindows)
+            retileResults = retile(allWindows)
         }
 
         // if the FFM-tracked window disappeared, refocus to whatever tiled window

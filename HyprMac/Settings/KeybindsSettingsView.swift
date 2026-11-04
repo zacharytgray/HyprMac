@@ -54,7 +54,7 @@ struct KeybindsSettingsView: View {
 
             if search.trimmingCharacters(in: .whitespaces).isEmpty
                 || "Swap tiles by dragging hypr mouse".localizedCaseInsensitiveContains(search.trimmingCharacters(in: .whitespaces)) {
-                HyprPanel("Mouse", footer: "Hold hypr and drag a tiled window by its title bar onto another tile in the same workspace.") {
+                HyprPanel("Mouse", footer: "Hold hypr and drag a tiled window by its title bar onto another tile to swap them. The tile can be on another monitor.") {
                     HStack(spacing: HyprSpacing.md) {
                         Image(systemName: "hand.draw")
                             .font(.system(size: 12, weight: .medium))
@@ -483,10 +483,7 @@ private struct KeybindRow: View {
     }
 
     private var rowTitle: String {
-        if case .launchApp(let bundleID) = bind.action {
-            return "Launch / focus \(appDisplayName(for: bundleID))"
-        }
-        return bind.actionDescription
+        bind.actionDescription
     }
 }
 

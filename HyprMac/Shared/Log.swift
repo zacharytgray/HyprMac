@@ -30,7 +30,7 @@ enum LogLevel: Int, Comparable {
 enum LogCategory: String, CaseIterable {
     case orchestration, state, focus, tiling, workspace, discovery
     case input, mouse, drag, hotkey, floating
-    case ui, animator, border, dimming, overlay
+    case ui, border, dimming, overlay
     case config, persistence, migration, sync
     case lifecycle, accessibility, space, display
 }

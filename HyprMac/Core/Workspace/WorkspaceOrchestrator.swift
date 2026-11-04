@@ -51,7 +51,7 @@ final class WorkspaceOrchestrator {
     /// revalidation attempt needs the destination's tenants, a switch picks
     /// the window to focus from it, and a test has no desktop to read them off.
     var allWindows: () -> [HyprWindow] = { [] }
-    var animatedRetile: (_ prepare: (() -> Void)?, _ completion: (() -> Void)?) -> Void = { _, _ in }
+    var retile: (_ prepare: (() -> Void)?, _ completion: (() -> Void)?) -> Void = { _, _ in }
     /// Fired as soon as the destination workspace and its screen are known,
     /// before any AX read or write. The switch HUD hangs off this so it can
     /// paint while the main thread is still busy hiding and retiling — off
@@ -575,7 +575,7 @@ final class WorkspaceOrchestrator {
         var carriedFrame: CGRect?
 
         // retile so the remaining windows fill the gap
-        animatedRetile({ [self] in
+        retile({ [self] in
             // remove from current workspace's tiling tree. membership only:
             // the one retile after this block lays the source out once the
             // window has left. a retile here grew the neighbour under the

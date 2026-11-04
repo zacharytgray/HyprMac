@@ -171,25 +171,6 @@ final class WindowDiscoveryService {
         self.isWindowSizeSettable = isWindowSizeSettable
     }
 
-    /// Snapshot AX, capture running pids, and run the diff. The poll calls
-    /// `computeChanges` itself, and nothing calls this today.
-    ///
-    /// - Parameter excludedBundleIDs: Apps that should auto-float on
-    ///   discovery (never enter tiling).
-    /// - Parameter focusedWindowID: Window currently believed to have
-    ///   focus; used to populate `focusedWindowGone`.
-    func detectChanges(excludedBundleIDs: Set<String>, focusedWindowID: CGWindowID) -> WindowChanges {
-        let snapshot = accessibility.getAllWindows()
-        let runningPIDs = Set(NSWorkspace.shared.runningApplications.map { $0.processIdentifier })
-        return computeChanges(
-            snapshot: snapshot,
-            runningPIDs: runningPIDs,
-            excludedBundleIDs: excludedBundleIDs,
-            focusedWindowID: focusedWindowID,
-            unreadableWindowIDs: accessibility.unreadableWindowIDs
-        )
-    }
-
     /// Known windows the last cycle held because AX could not read them.
     /// Kept so the outage is logged at its edges rather than every cycle.
     private var heldUnreadableIDs: Set<CGWindowID> = []

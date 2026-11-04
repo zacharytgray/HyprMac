@@ -22,19 +22,6 @@ extension Keybind {
         Self.modifierLabels(modifiers) + [keyCodeName]
     }
 
-    var overlayChord: String { badgeLabels().joined(separator: " ") }
-
-    var displayString: String {
-        var parts: [String] = []
-        if modifiers.contains(.hypr)    { parts.append("HYPR") }
-        if modifiers.contains(.command) { parts.append("⌘") }
-        if modifiers.contains(.shift)   { parts.append("⇧") }
-        if modifiers.contains(.option)  { parts.append("⌥") }
-        if modifiers.contains(.control) { parts.append("⌃") }
-        parts.append(keyCodeName)
-        return parts.joined(separator: "+")
-    }
-
     var actionIcon: String {
         switch action {
         case .focusDirection(let d):

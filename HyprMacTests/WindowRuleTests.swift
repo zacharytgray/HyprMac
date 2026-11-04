@@ -235,7 +235,7 @@ final class WindowRuleTests: XCTestCase {
             focusBorder: border, dimmingOverlay: DimmingOverlay())
         controller.excludedBundleIDs = { ["com.apple.FaceTime"] }
         var retiles = 0
-        controller.animatedRetile = { body in retiles += 1; body() }
+        controller.retile = { body in retiles += 1; body() }
         var refusals = 0
         controller.rejectFloatToTile = { _, _ in refusals += 1 }
         let workspace = workspaces.workspaceForScreen(screen)

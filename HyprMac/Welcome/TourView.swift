@@ -257,8 +257,8 @@ private struct TourHeroPage: View {
                 .padding(.bottom, 22)
 
             Text(config.hyprKey == .capsLock
-                 ? "Caps Lock is your HYPR Key by Default."
-                 : "\(config.hyprKey.displayName) is your HYPR Key.")
+                 ? "Caps Lock is your HYPR key by default."
+                 : "\(config.hyprKey.displayName) is your HYPR key.")
                 .font(.system(size: 19, weight: .semibold))
                 .foregroundStyle(Color.hyprTextPrimary)
                 .multilineTextAlignment(.center)

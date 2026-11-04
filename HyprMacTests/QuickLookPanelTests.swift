@@ -241,7 +241,7 @@ final class QuickLookPanelTests: XCTestCase {
             cursorManager: CursorManager(), focusController: FocusStateController(focusBorder: border),
             focusBorder: border, dimmingOverlay: DimmingOverlay())
         var retiles = 0
-        controller.animatedRetile = { body in retiles += 1; body() }
+        controller.retile = { body in retiles += 1; body() }
         var refusals = 0
         controller.rejectFloatToTile = { _, _ in refusals += 1 }
         let workspace = workspaces.workspaceForScreen(screen)

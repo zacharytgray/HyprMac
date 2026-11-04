@@ -54,9 +54,9 @@ Each log site picks a category from `LogCategory`:
 ```
 orchestration  state         focus         tiling        workspace
 discovery      input         mouse         drag          hotkey
-floating       ui            animator      border        dimming
-overlay        config        persistence   migration     sync
-lifecycle      accessibility space         display
+floating       ui            border        dimming       overlay
+config         persistence   migration     sync          lifecycle
+accessibility  space         display
 ```
 
 Categories surface as the `category` field in Console, so you can
@@ -64,7 +64,7 @@ filter by subsystem + category to scope logs to one subsystem
 without scrolling through everything.
 
 `LogCategory` has more names than the code uses. These have no log sites today:
-`input`, `drag`, `ui`, `animator`, `dimming`, `overlay`, `migration`, `sync`,
+`input`, `drag`, `ui`, `dimming`, `overlay`, `migration`, `sync`,
 `accessibility`, `space`, `display`.
 
 ## Console.app filter recipes

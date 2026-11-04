@@ -1259,7 +1259,7 @@ final class FloatingFlagConsistencyTests: XCTestCase {
             focusBorder: focusBorder,
             dimmingOverlay: DimmingOverlay()
         )
-        controller.animatedRetile = { body in body() }
+        controller.retile = { body in body() }
         workspace = workspaceManager.workspaceForScreen(screen)
     }
 

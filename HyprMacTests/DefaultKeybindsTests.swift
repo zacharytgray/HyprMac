@@ -15,9 +15,7 @@ final class DefaultKeybindsTests: XCTestCase {
         XCTAssertEqual(bind.keyCode, UInt16(kVK_ANSI_T))
         XCTAssertEqual(bind.modifiers, .hypr)
         XCTAssertFalse(bind.modifiers.contains(.shift))
-        XCTAssertEqual(bind.displayString, "HYPR+T")
         XCTAssertEqual(bind.badgeLabels(), ["HYPR", "T"])
-        XCTAssertEqual(bind.overlayChord, "HYPR T")
         XCTAssertEqual(Keybind.defaults.filter { $0.id == bind.id }, [bind])
     }
 
@@ -47,7 +45,7 @@ final class DefaultKeybindsTests: XCTestCase {
         })
         XCTAssertEqual(empty.keyCode, UInt16(kVK_ANSI_F))
         XCTAssertEqual(empty.modifiers, .hypr)
-        XCTAssertEqual(empty.displayString, "HYPR+F")
+        XCTAssertEqual(empty.badgeLabels(), ["HYPR", "F"])
         XCTAssertEqual(empty.actionDescription, "Move to dedicated workspace")
         XCTAssertEqual(KeybindCategory.from(empty.action), .workspaces)
         XCTAssertFalse(empty.touchesFloatingLayer)
@@ -55,7 +53,7 @@ final class DefaultKeybindsTests: XCTestCase {
         let floating = try XCTUnwrap(Keybind.defaults.first { $0.action == .focusFloating })
         XCTAssertEqual(floating.keyCode, UInt16(kVK_ANSI_T))
         XCTAssertEqual(floating.modifiers, [.hypr, .shift])
-        XCTAssertEqual(floating.displayString, "HYPR+⇧+T")
+        XCTAssertEqual(floating.badgeLabels(), ["HYPR", "⇧", "T"])
     }
 
     func testEmptyWorkspaceAndFloatingFocusDispatchOnDistinctChords() {
@@ -85,7 +83,6 @@ final class DefaultKeybindsTests: XCTestCase {
         let bind = Keybind(keyCode: UInt16(kVK_ANSI_T),
                           modifiers: [.hypr, .control, .option, .shift, .command], action: .toggleFloating)
         XCTAssertEqual(bind.badgeLabels(), ["HYPR", "⌃", "⌥", "⇧", "⌘", "T"])
-        XCTAssertEqual(bind.overlayChord, "HYPR ⌃ ⌥ ⇧ ⌘ T")
     }
 
     func testEveryDefaultRoundTripsThroughCodable() throws {
@@ -154,7 +151,7 @@ final class DefaultKeybindsTests: XCTestCase {
         XCTAssertEqual(followers.count, 10)
 
         let third = try XCTUnwrap(Keybind.defaults.first { $0.action == .moveToWorkspaceAndFollow(3) })
-        XCTAssertEqual(third.overlayChord, "HYPR ⌃ ⇧ 3")
+        XCTAssertEqual(third.badgeLabels(), ["HYPR", "⌃", "⇧", "3"])
         XCTAssertEqual(third.actionDescription, "Move to Workspace 3 and Follow")
         XCTAssertEqual(KeybindCategory.from(third.action), .workspaces)
 

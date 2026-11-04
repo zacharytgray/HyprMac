@@ -254,8 +254,8 @@ class WindowManager {
         self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] windows in
             self?.tileAllVisibleSpaces(windows: windows)
         }
-        self.workspaceOrchestrator.animatedRetile = { [weak self] prepare, completion in
-            self?.animatedRetile(prepare: prepare, completion: completion)
+        self.workspaceOrchestrator.retile = { [weak self] prepare, completion in
+            self?.retile(prepare: prepare, completion: completion)
         }
         // the HUD goes up before the hide/retile/focus pass, not after it
         self.workspaceOrchestrator.onWillSwitch = { [weak self] workspace, screen in
@@ -300,8 +300,8 @@ class WindowManager {
         scratchpad.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         scratchpad.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         scratchpad.isNeverTile = { [weak self] w in self?.floatingController.isNeverTile(w) ?? false }
-        scratchpad.animatedRetile = { [weak self] prepare, completion in
-            self?.animatedRetile(prepare: prepare, completion: completion)
+        scratchpad.retile = { [weak self] prepare, completion in
+            self?.retile(prepare: prepare, completion: completion)
         }
         scratchpad.raiseScrim = { [weak self] in
             guard let self else { return }
@@ -396,8 +396,8 @@ class WindowManager {
         accessibility.cachedWindowLookup = { [weak self] wid in self?.stateCache.cachedWindows[wid] }
 
         // wire up floating controller — closure handles for WM-side helpers.
-        floatingController.animatedRetile = { [weak self] prepare in
-            self?.animatedRetile(prepare: prepare)
+        floatingController.retile = { [weak self] prepare in
+            self?.retile(prepare: prepare)
         }
         floatingController.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
@@ -504,8 +504,8 @@ class WindowManager {
         actionDispatcher.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         actionDispatcher.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() ?? NSScreen.main! }
         actionDispatcher.applyForgottenIDCleanup = { [weak self] id in self?.applyForgottenIDExternalCleanup(id) }
-        actionDispatcher.animatedRetile = { [weak self] windows in
-            self?.animatedRetile(windows: windows) ?? []
+        actionDispatcher.retile = { [weak self] windows in
+            self?.retile(windows: windows) ?? []
         }
         actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
@@ -627,7 +627,7 @@ class WindowManager {
             guard let self else { return }
             self.tilingEngine.gapSize = gap
             self.tilingEngine.outerPadding = padding
-            if self.isRunning { self.animatedRetile() }
+            if self.isRunning { self.retile() }
         }
         coordinator.onMaximumSplits = { [weak self] splits in
             guard let self else { return }
@@ -644,7 +644,7 @@ class WindowManager {
         coordinator.onOuterPaddingOverride = { [weak self] padding in
             guard let self else { return }
             self.tilingEngine.outerPaddingPerMonitor = padding
-            if self.isRunning { self.animatedRetile() }
+            if self.isRunning { self.retile() }
         }
         coordinator.onWorkspaceMonitors = { [weak self] mapping in
             guard let self else { return }
@@ -1797,7 +1797,7 @@ class WindowManager {
 
     /// Run `prepare`, retile every visible workspace, run `completion`.
     @discardableResult
-    private func animatedRetile(
+    private func retile(
         windows: [HyprWindow]? = nil,
         prepare: (() -> Void)? = nil,
         completion: (() -> Void)? = nil
@@ -1939,7 +1939,7 @@ class WindowManager {
         // poll's diff returns no changes and needsRetile is false. apply new
         // frames here so the surrounding tiles expand into the freed slot
         // instead of waiting for the next user action to trigger a retile.
-        animatedRetile()
+        retile()
     }
 
 
@@ -2191,7 +2191,7 @@ class WindowManager {
         let released = tilingEngine.releaseHeldWindows(readable: Set(allWindows.map(\.windowID)))
         if !released.isEmpty, !retiled {
             hyprLog(.notice, .discovery, "held windows readable again: \(released.sorted()) — retiling")
-            animatedRetile(windows: allWindows)
+            retile(windows: allWindows)
             retiled = true
         }
         // a poll is the real event that says a window came back, became

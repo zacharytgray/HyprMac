@@ -71,7 +71,7 @@ final class ScratchpadController {
     /// number). The settle passes use it to tuck the scrim under the
     /// backmost member instead of racing member raises against it.
     var lowerScrimBelow: (CGWindowID) -> Void = { _ in }
-    var animatedRetile: ((() -> Void)?, (() -> Void)?) -> Void = { prepare, completion in
+    var retile: ((() -> Void)?, (() -> Void)?) -> Void = { prepare, completion in
         prepare?(); completion?()
     }
 
@@ -480,7 +480,7 @@ final class ScratchpadController {
         let sourceWs = sourceScreen.flatMap { screen -> Int? in
             workspaceManager.isMonitorDisabled(screen) ? nil : workspaceManager.workspaceForScreen(screen)
         }
-        animatedRetile({ [weak self] in
+        retile({ [weak self] in
             guard let self else { return }
             if !wasFloating, let ws = sourceWs {
                 tilingEngine.removeWindow(focused, fromWorkspace: ws)
@@ -568,7 +568,7 @@ final class ScratchpadController {
         workspaceManager.assignWindow(id, toWorkspace: targetWs)
         hide(reason: .workspaceAction)
 
-        animatedRetile({ [weak self] in
+        retile({ [weak self] in
             guard let self, !staysFloating else { return }
             stateCache.setFloating(false, window: focused)
         }, { [weak self] in

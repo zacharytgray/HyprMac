@@ -250,7 +250,7 @@ final class FloatingWindowController {
     private let dimmingOverlay: DimmingOverlay
 
     // closure handles for WM-side helpers used by toggle/cycle/raise.
-    var animatedRetile: ((@escaping () -> Void) -> Void)?
+    var retile: ((@escaping () -> Void) -> Void)?
     var updateFocusBorder: ((HyprWindow) -> Void)?
     var updatePositionCache: (() -> Void)?
     var isMenuTracking: () -> Bool = { false }
@@ -357,7 +357,7 @@ final class FloatingWindowController {
     ///
     /// A Quick Look preview is refused with the red shake and stays
     /// floating. On disabled monitors the call is a no-op — everything
-    /// floats there by definition. The change runs inside `animatedRetile`,
+    /// floats there by definition. The change runs inside `retile`,
     /// which retiles the surrounding tiles.
     func toggle(_ window: HyprWindow, on screen: NSScreen, in workspace: Int) {
         if workspaceManager.isMonitorDisabled(screen) {
@@ -384,13 +384,13 @@ final class FloatingWindowController {
             }
             return
         }
-        guard let animatedRetile = animatedRetile else { return }
+        guard let retile = retile else { return }
 
         if wasFloating {
             // floating → tiled: retile so the surrounding windows make room.
             // reassign workspace in case the window was dragged to a different monitor while floating.
             workspaceManager.moveWindow(window.windowID, toWorkspace: workspace)
-            animatedRetile { [self] in
+            retile { [self] in
                 stateCache.setFloating(false, window: window)
 
                 switch forceInsert(window, workspace: workspace, screen: screen) {
@@ -407,7 +407,7 @@ final class FloatingWindowController {
             // tiled → floating: retile so the remaining windows fill the gap.
             focusBorder.hide()
             dimmingOverlay.hideAll()
-            animatedRetile { [self] in
+            retile { [self] in
                 stateCache.setFloating(true, window: window)
                 tilingEngine.removeWindow(window, fromWorkspace: workspace)
 

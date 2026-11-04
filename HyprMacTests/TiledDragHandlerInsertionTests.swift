@@ -1,7 +1,7 @@
 import XCTest
 @testable import HyprMac
 
-final class DragSwapHandlerInsertionTests: XCTestCase {
+final class TiledDragHandlerInsertionTests: XCTestCase {
     func testDeferredDegradedFeedbackRequiresFreshCompleteSameKeyRecovery() {
         let key = TiledDragFeedbackKey(workspace: 2, displayID: 7)
         let other = TiledDragFeedbackKey(workspace: 3, displayID: 7)

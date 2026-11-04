@@ -17,6 +17,7 @@ struct KeyRecorderView: View {
 
     @State private var isRecording = false
     @State private var recordingPulse = false
+    @State private var keyMonitor: Any?
 
     var body: some View {
         VStack(alignment: .leading, spacing: HyprSpacing.sm) {
@@ -73,6 +74,7 @@ struct KeyRecorderView: View {
             }
             .buttonStyle(.plain)
             .onAppear { setupKeyMonitor() }
+            .onDisappear { removeKeyMonitor() }
         }
     }
 
@@ -85,7 +87,8 @@ struct KeyRecorderView: View {
     }
 
     private func setupKeyMonitor() {
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             guard isRecording else { return event }
             let code = event.keyCode
             if kModifierKeyCodes.contains(Int(code)) { return nil }
@@ -93,6 +96,12 @@ struct KeyRecorderView: View {
             isRecording = false
             return nil
         }
+    }
+
+    private func removeKeyMonitor() {
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
+        isRecording = false
     }
 }
 
