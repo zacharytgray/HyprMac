@@ -50,6 +50,7 @@ enum ExternalCommand: Equatable {
         "toggleFloating", "toggleSplit", "showKeybinds", "showWorkspaceOverview",
         "focusMenuBar", "focusFloating", "moveToNextEmptyWorkspace", "closeWindow",
         "toggleScratchpad", "moveToScratchpad", "toggleTiling", "restoreLayout", "retileAll",
+        "toggleMaximize",
     ]
 
     private typealias Builder = ([URLQueryItem]) -> Action?
@@ -85,6 +86,7 @@ enum ExternalCommand: Equatable {
             "focusMenuBar": plain(.focusMenuBar),
             "focusFloating": plain(.focusFloating),
             "moveToNextEmptyWorkspace": plain(.moveToNextEmptyWorkspace),
+            "toggleMaximize": plain(.toggleMaximize),
             "closeWindow": plain(.closeWindow),
             "toggleScratchpad": plain(.toggleScratchpad),
             "moveToScratchpad": plain(.moveToScratchpad),

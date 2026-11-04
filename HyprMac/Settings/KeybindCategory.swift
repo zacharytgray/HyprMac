@@ -17,7 +17,7 @@ enum KeybindCategory: String, CaseIterable {
         switch action {
         case .focusDirection, .focusFloating, .focusMenuBar:
             return .focusNav
-        case .swapDirection, .toggleFloating, .toggleSplit, .closeWindow,
+        case .swapDirection, .toggleFloating, .toggleSplit, .toggleMaximize, .closeWindow,
              .toggleScratchpad, .moveToScratchpad, .resizeDirection:
             return .windowManagement
         case .switchWorkspace, .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,

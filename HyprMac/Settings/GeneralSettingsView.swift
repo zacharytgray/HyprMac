@@ -68,13 +68,13 @@ struct GeneralSettingsView: View {
 
     private var mousePanel: some View {
         HyprPanel("Mouse",
-                  footer: "Hover response controls how often focus can react while the pointer moves. Higher rates check for a new focus target more often.") {
+                  footer: "Hover response controls how often focus can react while the pointer moves. Higher rates check for a new focus target more often. With the cursor kept in place, a switch to a workspace on another display still moves it, to the center of that display.") {
             HyprRow("Focus follows mouse", icon: "cursorarrow.motionlines") {
                 Toggle("", isOn: $config.focusFollowsMouse)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             }
-            HyprRow("Hover response", icon: "speedometer", divider: false) {
+            HyprRow("Hover response", icon: "speedometer") {
                 Picker("", selection: $config.mouseHoverPollHz) {
                     if HoverResponseRate(rawValue: config.mouseHoverPollHz) == nil {
                         Text(HoverResponseRate.displayName(for: config.mouseHoverPollHz))
@@ -87,6 +87,11 @@ struct GeneralSettingsView: View {
                 .labelsHidden()
                 .frame(width: 220)
                 .disabled(!config.focusFollowsMouse)
+            }
+            HyprRow("Keep cursor in place when switching workspaces", icon: "cursorarrow", divider: false) {
+                Toggle("", isOn: $config.keepCursorOnWorkspaceSwitch)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
             }
         }
     }

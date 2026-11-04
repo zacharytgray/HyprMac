@@ -532,7 +532,7 @@ private struct TourWorkspacesPage: View {
             copy: attributed,
             bullets: [
                 ("number", workspaceInstruction),
-                ("rectangle.portrait.and.arrow.forward", dedicatedWorkspaceInstruction),
+                ("rectangle.portrait.and.arrow.forward", maximizeInstruction),
                 ("menubar.rectangle", "Check the menu bar to see which workspace each monitor is showing."),
                 ("square.stack", "Your windows stay on their workspace when you switch."),
             ]
@@ -558,12 +558,12 @@ private struct TourWorkspacesPage: View {
         return "\(switchChord) opens workspace 1. \(sendChord) sends the focused window there. Workspace 10 uses \(workspaceTenChord)."
     }
 
-    private var dedicatedWorkspaceInstruction: String {
+    private var maximizeInstruction: String {
         guard let chord = WelcomeContent.chord(in: config.keybinds, hyprKey: config.hyprKey, matching: {
-            if case .moveToNextEmptyWorkspace = $0 { return true }
+            if case .toggleMaximize = $0 { return true }
             return false
-        }) else { return "Add Move to dedicated workspace in Settings → Keys if you want a shortcut." }
-        return "Press \(chord) to move the focused window to the next empty dedicated workspace."
+        }) else { return "Add Maximize window in Settings → Keys if you want a shortcut." }
+        return "Press \(chord) to fill the screen with the focused window. Press it again to put it back."
     }
 
     private var attributed: Text {

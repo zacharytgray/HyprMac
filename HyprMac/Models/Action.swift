@@ -41,6 +41,9 @@ enum Action: Equatable {
     /// Move the focused window to the next empty workspace anchored to
     /// its current display, switch there, and tile it as the sole window.
     case moveToNextEmptyWorkspace
+    /// Fill the display with the focused window, over the others on its
+    /// workspace, or put it back. The layout underneath does not change.
+    case toggleMaximize
     case closeWindow
     /// Cycle through occupied workspaces on the current monitor.
     /// `+1` advances to the next occupied workspace; `-1` rewinds.
@@ -104,6 +107,7 @@ extension Action: Codable {
         case focusMenuBar
         case focusFloating
         case moveToNextEmptyWorkspace
+        case toggleMaximize
         case closeWindow
         case cycleWorkspace
         case toggleScratchpad
@@ -175,6 +179,7 @@ extension Action: Codable {
         case .focusMenuBar:   self = .focusMenuBar
         case .focusFloating:  self = .focusFloating
         case .moveToNextEmptyWorkspace: self = .moveToNextEmptyWorkspace
+        case .toggleMaximize: self = .toggleMaximize
         case .closeWindow:    self = .closeWindow
         case .toggleScratchpad: self = .toggleScratchpad
         case .moveToScratchpad: self = .moveToScratchpad
@@ -246,6 +251,8 @@ extension Action: Codable {
             _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .focusFloating)
         case .moveToNextEmptyWorkspace:
             _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .moveToNextEmptyWorkspace)
+        case .toggleMaximize:
+            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .toggleMaximize)
         case .closeWindow:
             _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .closeWindow)
         case .toggleScratchpad:

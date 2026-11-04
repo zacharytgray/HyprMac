@@ -42,7 +42,8 @@ enum ActionPolicy {
     static func isDroppedMidDisplayTransition(_ action: Action) -> Bool {
         switch action {
         case .switchWorkspace, .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,
-             .cycleWorkspace, .moveToNextEmptyWorkspace, .saveLayout, .restoreLayout, .retileAll:
+             .cycleWorkspace, .moveToNextEmptyWorkspace, .toggleMaximize, .saveLayout,
+             .restoreLayout, .retileAll:
             return true
         default:
             return false
@@ -66,9 +67,24 @@ enum ActionPolicy {
         switch action {
         case .switchWorkspace, .cycleWorkspace, .focusDirection, .focusFloating,
              .focusMenuBar, .showKeybinds, .showWorkspaceOverview, .launchApp,
-             .runCommand, .saveLayout, .resizeDirection, .swapDirection, .toggleSplit:
+             .runCommand, .saveLayout, .resizeDirection, .swapDirection, .toggleSplit,
+             .toggleMaximize:
             return false
         default: return true
+        }
+    }
+
+    /// Actions that rework the window's place in the tree or take it out,
+    /// so they need the layout back on screen first. A maximized window
+    /// goes back to its tile, then the action runs on that.
+    static func endsMaximize(_ action: Action) -> Bool {
+        switch action {
+        case .swapDirection, .resizeDirection, .toggleSplit, .toggleFloating,
+             .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,
+             .moveToNextEmptyWorkspace, .moveToScratchpad, .restoreLayout, .retileAll:
+            return true
+        default:
+            return false
         }
     }
 }
@@ -98,7 +114,7 @@ enum ScratchpadActionRoute: Equatable {
             return .ejectThenDispatch
         case .switchWorkspace, .cycleWorkspace:
             return .hideThenDispatch
-        case .moveToNextEmptyWorkspace:
+        case .moveToNextEmptyWorkspace, .toggleMaximize:
             return .refuse
         case .toggleFloating:
             return .toggleMember

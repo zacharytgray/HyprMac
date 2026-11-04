@@ -570,6 +570,7 @@ struct SavedConfig: Codable {
     var workspaceNames: [String: String]? = nil
     // nil = the brand cyan and magenta pair
     var overlayAccentHex: String? = nil
+    var keepCursorOnWorkspaceSwitch: Bool? = nil
 }
 
 // MARK: - per-keybind decode tolerance
@@ -600,6 +601,7 @@ extension SavedConfig {
         case windowRules
         case workspaceNames
         case overlayAccentHex
+        case keepCursorOnWorkspaceSwitch
     }
 
     init(from decoder: Decoder) throws {
@@ -670,6 +672,7 @@ extension SavedConfig {
         self.windowRules = Self.tolerantWindowRules(c)
         self.workspaceNames = Self.tolerantWorkspaceNames(c)
         self.overlayAccentHex = Self.tolerant(c, .overlayAccentHex)
+        self.keepCursorOnWorkspaceSwitch = Self.tolerant(c, .keepCursorOnWorkspaceSwitch)
     }
 
     // keys "1"…"10" with a non-empty name; anything else is dropped, so a

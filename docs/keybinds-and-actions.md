@@ -23,6 +23,7 @@ enum Action: Equatable {
     case focusMenuBar
     case focusFloating
     case moveToNextEmptyWorkspace
+    case toggleMaximize
     case closeWindow
     case cycleWorkspace(Int)
     case resizeDirection(Direction)
@@ -50,10 +51,17 @@ Nothing that way beeps and flashes. Defaults are Hypr+Ctrl+arrow. The
 case was repurposed from the old workspace-to-monitor move, which static
 anchoring made a permanent no-op; its wire key is unchanged (see below).
 
-## Dedicated workspace and workspace 10
+## Maximize, dedicated workspace and workspace 10
 
-`moveToNextEmptyWorkspace` defaults to Hypr+F and encodes as
-`{"moveToNextEmptyWorkspace":{}}`. `focusFloating` defaults to
+`toggleMaximize` defaults to Hypr+F and encodes as `{"toggleMaximize":{}}`. It
+is unavailable while paused or while the scratchpad is up, and ignores keyboard
+autorepeat. See "Maximize" in `docs/tiling-algorithm.md`.
+
+`moveToNextEmptyWorkspace` encodes as `{"moveToNextEmptyWorkspace":{}}`. It has
+had no default chord since config v2, when `ConfigMigration` moved Hypr+F to
+`toggleMaximize` for anyone still on the old default. It stays bindable, and
+its link still works. A chord on it set after v2 is left alone, which is why
+that migration is gated on the saved `version`. `focusFloating` defaults to
 Hypr+Shift+T. `moveToNextEmptyWorkspace` is unavailable while paused and
 ignores keyboard autorepeat. It selects the actual AX-focused managed window,
 not the cursor's monitor, and moves it to the next empty workspace anchored to

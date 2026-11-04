@@ -40,6 +40,8 @@ final class WorkspaceOrchestrator {
     var focusTransferredWindow: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
     var warpToWindow: (HyprWindow) -> Void = { _ in }
     var warpCursor: (CGPoint) -> Void = { _ in }
+    /// Settings: leave the cursor alone on a workspace switch.
+    var keepsCursorOnSwitch: () -> Bool = { false }
     var transferRejected: ((HyprWindow, String) -> Void)?
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var updatePositionCache: () -> Void = { }
@@ -126,7 +128,7 @@ final class WorkspaceOrchestrator {
 
         let sourceIDs = workspaceManager.windowIDs(onWorkspace: sourceWorkspace)
         // A dedicated workspace already containing only the focused window is
-        // the desired end state. Repeated Hypr+F is therefore a no-op, even if
+        // the desired end state. Repeating this action is therefore a no-op, even if
         // that sole window is currently floating.
         guard sourceIDs.count > 1 else { return }
         if let reason = FloatingAdmissionPolicy.reason(
@@ -344,21 +346,24 @@ final class WorkspaceOrchestrator {
 
         let allWindows = self.allWindows()
         let result = workspaceManager.switchWorkspace(number, cursorScreen: currentScreen)
+        // focusing another tile would raise it over the maximized one and end it
+        let maximizedHere = tilingEngine.maximizedWindowID(onWorkspace: number)
 
         if result.alreadyVisible {
             // workspace is showing on result.screen — just focus it
             let visibleWindows = allWindows.filter { result.toShow.contains($0.windowID) }
             if let best = visibleWindows.first(where: { $0.windowID == preferredWindowID })
+                ?? visibleWindows.first(where: { $0.windowID == maximizedHere })
                 ?? visibleWindows.first(where: { !stateCache.floatingWindowIDs.contains($0.windowID) })
                 ?? visibleWindows.first {
                 best.focus()
                 warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
-                     placedFrame: preferredFrame, workspace: number, screen: result.screen)
+                     placedFrame: preferredFrame, workspace: number, screen: result.screen,
+                     cursorScreen: currentScreen)
                 focusController.recordFocus(best.windowID, reason: "switchWorkspace-already-visible")
                 updateFocusBorder(best)
             } else {
-                let rect = displayManager.cgRect(for: result.screen)
-                CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
+                warpToEmptyScreen(result.screen, cursorScreen: currentScreen)
                 focusBorder.hide(); dimmingOverlay.hideAll()
             }
             NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
@@ -388,16 +393,17 @@ final class WorkspaceOrchestrator {
         // any floating window before giving up. only warp+hide if truly empty.
         let newWorkspaceWindows = allWindows.filter { result.toShow.contains($0.windowID) }
         let preferred = newWorkspaceWindows.first { $0.windowID == preferredWindowID }
+        let maximized = newWorkspaceWindows.first { $0.windowID == maximizedHere }
         let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }
-        if let best = preferred ?? tiled ?? newWorkspaceWindows.first {
+        if let best = preferred ?? maximized ?? tiled ?? newWorkspaceWindows.first {
             best.focus()
             warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
-                 placedFrame: preferredFrame, workspace: number, screen: result.screen)
+                 placedFrame: preferredFrame, workspace: number, screen: result.screen,
+                 cursorScreen: currentScreen)
             focusController.recordFocus(best.windowID, reason: "switchWorkspace-after-show")
             updateFocusBorder(best)
         } else {
-            let rect = displayManager.cgRect(for: result.screen)
-            CGWarpMouseCursorPosition(CGPoint(x: rect.midX, y: rect.midY))
+            warpToEmptyScreen(result.screen, cursorScreen: currentScreen)
             focusBorder.hide(); dimmingOverlay.hideAll()
         }
 
@@ -408,14 +414,38 @@ final class WorkspaceOrchestrator {
     /// The window a caller asked the switch to focus (a move that follows
     /// its window, a pick in the overview) is warped to where it is going.
     /// Any other pick keeps the plain warp to its live center.
+    ///
+    /// With the keep-cursor setting on, a plain pick leaves the cursor where
+    /// it is, unless the workspace is on another display. A picked window
+    /// still gets the cursor: that is a move following its window, or a pick
+    /// in the overview, not a plain switch.
     private func warp(toSwitchPick window: HyprWindow, preferredWindowID: CGWindowID?,
-                      placedFrame: CGRect?, workspace: Int, screen: NSScreen) {
+                      placedFrame: CGRect?, workspace: Int, screen: NSScreen,
+                      cursorScreen: NSScreen) {
         if window.windowID == preferredWindowID {
             warpCursor(followPoint(for: window, workspace: workspace, screen: screen,
                                    placedFrame: placedFrame))
+        } else if keepsCursorOnSwitch() {
+            warpToScreenCenterIfElsewhere(screen, cursorScreen: cursorScreen)
         } else {
             cursorManager.warpToCenter(of: window)
         }
+    }
+
+    /// An empty workspace has no window to go to.
+    private func warpToEmptyScreen(_ screen: NSScreen, cursorScreen: NSScreen) {
+        if keepsCursorOnSwitch() {
+            warpToScreenCenterIfElsewhere(screen, cursorScreen: cursorScreen)
+        } else {
+            let rect = displayManager.cgRect(for: screen)
+            warpCursor(CGPoint(x: rect.midX, y: rect.midY))
+        }
+    }
+
+    private func warpToScreenCenterIfElsewhere(_ screen: NSScreen, cursorScreen: NSScreen) {
+        guard workspaceManager.screenID(for: screen) != workspaceManager.screenID(for: cursorScreen) else { return }
+        let rect = displayManager.cgRect(for: screen)
+        warpCursor(CGPoint(x: rect.midX, y: rect.midY))
     }
 
     // MARK: - move focused window to workspace

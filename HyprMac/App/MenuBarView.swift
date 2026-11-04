@@ -231,6 +231,8 @@ private struct MenuBarRow<Trailing: View>: View {
 class MenuBarState: ObservableObject {
     static let shared = MenuBarState()
     @Published var labelText = ""
+    /// A window fills a display showing now. The label swaps the glyphs for one icon.
+    @Published var isFullscreen = false
     @Published var monitors: [MenuBarMonitorSnapshot] = []
     @Published var hasData = false
     /// Number of windows in the scratchpad (0 = hide the tray glyph).
@@ -314,7 +316,9 @@ struct WorkspaceIndicatorLabel: View {
             labelText: state.labelText,
             scratchpadCount: state.scratchpadCount) {
             HStack(spacing: 5) {
-                if !state.labelText.isEmpty {
+                if state.isFullscreen {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                } else if !state.labelText.isEmpty {
                     Text(state.labelText)
                         .font(.system(size: 12, weight: .regular))
                 }

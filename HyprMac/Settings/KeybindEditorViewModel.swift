@@ -38,6 +38,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case focusMenuBar           = "Focus Menu Bar"
         case focusFloating          = "Focus Floating"
         case moveToNextEmptyWorkspace = "Move to dedicated workspace"
+        case toggleMaximize         = "Maximize Window"
         case closeWindow            = "Close Window"
         case cycleWorkspace         = "Cycle Workspace"
         case toggleScratchpad       = "Toggle Scratchpad"
@@ -89,6 +90,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .focusMenuBar:                  selectedAction = .focusMenuBar
         case .focusFloating:                 selectedAction = .focusFloating
         case .moveToNextEmptyWorkspace:      selectedAction = .moveToNextEmptyWorkspace
+        case .toggleMaximize:                selectedAction = .toggleMaximize
         case .closeWindow:                   selectedAction = .closeWindow
         case .cycleWorkspace(let d):         selectedAction = .cycleWorkspace;         workspaceParam = d
         case .toggleScratchpad:              selectedAction = .toggleScratchpad
@@ -126,6 +128,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .focusMenuBar:           action = .focusMenuBar
         case .focusFloating:          action = .focusFloating
         case .moveToNextEmptyWorkspace: action = .moveToNextEmptyWorkspace
+        case .toggleMaximize:         action = .toggleMaximize
         case .closeWindow:            action = .closeWindow
         case .cycleWorkspace:         action = .cycleWorkspace(workspaceParam)
         case .toggleScratchpad:       action = .toggleScratchpad

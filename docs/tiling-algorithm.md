@@ -925,7 +925,7 @@ reads as structural on both and buys no retry.
 
 ### Parking the source in a sole-window transfer
 
-`moveToNextEmptyWorkspace` (Hypr+F) hides the source workspace's other
+`moveToNextEmptyWorkspace` hides the source workspace's other
 windows with `ParkAttempt`, after the moved window's destination layout has
 verified and before ownership changes. `ParkAttempt` writes position only,
 with no resize, and each write goes through the same begin and end frame
@@ -1177,6 +1177,46 @@ changes. A Hypr press asks again at the last point. The
 highlight hides at mouse-up, on a stop, and when there is nowhere to land.
 Nothing keeps running after the drag: one held update at most, and it does
 nothing once the drag has ended.
+
+## Maximize
+
+`toggleMaximize` (Hypr+F) fills the display with one window over its workspace.
+It is not native fullscreen, which would open a new Space. The window gets the
+frame it would have alone in the tree: the tiling rect inset by the outer
+padding, with the menu bar still showing.
+
+`TilingEngine` keeps one maximized window per key. The tree does not change, so
+ending the maximize puts every window back in its slot with its ratios intact.
+
+- **Passes.** `applyTrackedLayout` runs the tree's pass without the maximized
+  window (`unwrittenWindowIDs`), then writes its full frame with a verified pass on a
+  private one-window tree. A refusal there can't touch the real tree's ratios. It
+  ends the maximize and writes the tree again.
+- **Staying maximized.** A workspace switch keeps it. Coming back, the switch
+  focuses that window before any other tile, and the pass restores both frames.
+  A tile closing under it keeps it too.
+- **Ending it.** Pressing the chord again. Focus reaching a tile under it
+  (`endMaximizeIfFocusLeft`). A drag or resize of it, checked on mouse up with the
+  drift tolerances. A newcomer in the tree, the window leaving the tree, or the
+  window being left alone in it. Any action in `ActionPolicy.endsMaximize`, which
+  ends it first and then runs on the restored layout. A pause, a stop or a display change.
+- **Other readers.** Tiles under it leave `tiledPositions`, so hover and click
+  hit-tests only find the maximized window. Their intended rects stay, and
+  directional focus uses them, so an arrow key reaches a neighbor and ends the
+  maximize. `TiledDriftMonitor` skips the maximized window, and a press on the
+  key takes no tiled drag capture.
+
+A floating window has no tree, so `FloatingWindowController` keeps its frame and
+puts it back on the second press. Moved to another display in between, it fills
+that display instead. The state is not saved: a restart re-tiles.
+
+While a display showing now has a maximized window, the menu bar label shows one
+icon in place of the workspace glyphs. Every start and end shows the switch HUD
+with `FULLSCREEN` and On or Off, whatever caused it (`TilingEngine.onMaximizeChanged`).
+Workspaces that aren't showing stay quiet.
+
+A window alone in its tree already fills the display, so the action does nothing.
+A window whose size can't be set, or that won't take the frame, gets the error flash.
 
 ## Known limitations
 

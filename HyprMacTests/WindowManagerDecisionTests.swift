@@ -42,6 +42,7 @@ final class ActionPolicyTests: XCTestCase {
             (.switchWorkspace(2), .hideThenDispatch),
             (.cycleWorkspace(1), .hideThenDispatch),
             (.moveToNextEmptyWorkspace, .refuse),
+            (.toggleMaximize, .refuse),
             (.toggleFloating, .toggleMember),
             (.focusFloating, .cycleSummoned),
             (.launchApp(bundleID: "com.example.app"), .focusMemberElseDispatch(bundleID: "com.example.app")),

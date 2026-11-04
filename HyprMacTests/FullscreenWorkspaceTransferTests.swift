@@ -631,6 +631,54 @@ final class FullscreenWorkspaceOrchestratorTests: XCTestCase {
     }
 }
 
+final class KeepCursorOnSwitchTests: XCTestCase {
+    private let left = TransferScreen(x: 0)
+    private let right = TransferScreen(x: 1600)
+
+    /// switch to an empty workspace with the cursor on `cursorScreen`. the
+    /// empty workspace is where a switch has no window to warp to.
+    private func warps(keeping: Bool, cursorScreen: NSScreen, workspace: Int) -> [CGPoint] {
+        let screens = [left, right]
+        let display = DisplayManager(screenSource: { screens })
+        let manager = WorkspaceManager(displayManager: display)
+        manager.initializeMonitors()
+        let border = FocusBorder()
+        let orchestrator = WorkspaceOrchestrator(
+            workspaceManager: manager, tilingEngine: TilingEngine(displayManager: display),
+            accessibility: AccessibilityManager(), displayManager: display,
+            cursorManager: CursorManager(), stateCache: WindowStateCache(),
+            focusController: FocusStateController(focusBorder: border), focusBorder: border,
+            dimmingOverlay: DimmingOverlay(), suppressions: SuppressionRegistry(),
+            revalidation: MinimaRevalidation())
+        var warped: [CGPoint] = []
+        orchestrator.allWindows = { [] }
+        orchestrator.warpCursor = { warped.append($0) }
+        orchestrator.screenUnderCursor = { cursorScreen }
+        orchestrator.keepsCursorOnSwitch = { keeping }
+        orchestrator.switchWorkspace(workspace)
+        return warped
+    }
+
+    // left owns the odd workspaces, right the even ones
+    func testKeptCursorStaysOnTheSameDisplay() {
+        XCTAssertTrue(warps(keeping: true, cursorScreen: left, workspace: 3).isEmpty)
+    }
+
+    func testKeptCursorStaysOnAWorkspaceAlreadyVisibleHere() {
+        XCTAssertTrue(warps(keeping: true, cursorScreen: left, workspace: 1).isEmpty)
+    }
+
+    func testKeptCursorGoesToTheCenterOfAnotherDisplay() {
+        XCTAssertEqual(warps(keeping: true, cursorScreen: left, workspace: 4),
+                       [CGPoint(x: 2400, y: 500)])
+    }
+
+    func testDefaultStillCentersOnTheSameDisplay() {
+        XCTAssertEqual(warps(keeping: false, cursorScreen: left, workspace: 3),
+                       [CGPoint(x: 800, y: 500)])
+    }
+}
+
 private final class TransferScreen: SyntheticScreen {
     private let bounds: CGRect
     init(x: CGFloat, y: CGFloat = 0, width: CGFloat = 1600, height: CGFloat = 1000) {

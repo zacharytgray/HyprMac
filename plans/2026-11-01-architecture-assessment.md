@@ -5,7 +5,7 @@ is still owed before a release is under "Before a release".
 
 Assessed at `670626a` (v0.20.1). Line numbers refer to that commit, and files have
 since moved, so search by symbol. Baseline at that commit: 1716 tests, 28 skipped,
-0 failures. The suite is now at 1877 tests, 28 skipped.
+0 failures. The suite is now at 1914 tests, 28 skipped.
 
 Tests do not prove window behavior. Live results are recorded under each phase.
 "Read" means the code was read at the cited line. "Inferred" means the reasoning
@@ -501,8 +501,10 @@ only when the target fits the screen the window is leaving. #65 still polls with
 
 Not checked live: a Hypr swap across displays, unplugging a real monitor, menu open plus
 Hypr, pause inside a settle, the scratchpad up during each scenario, a corrupt `config.json`
-(B1) and a real app timeout. The release's What's New must mention that Option no longer
-swaps on a drag.
+(B1) and a real app timeout. What's New mentions that Option no longer swaps on a drag.
+
+Also not checked live: Hypr+F maximize (#60), the keep-cursor setting (#67), and the
+fixed-size hints surviving a restart.
 
 ## Live checklist
 

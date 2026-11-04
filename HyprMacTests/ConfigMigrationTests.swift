@@ -334,7 +334,7 @@ final class ConfigMigrationTests: XCTestCase {
         XCTAssertEqual(merged.filter { $0.action == .focusFloating }, [newFloatingFocus])
         XCTAssertTrue(merged.contains {
             $0.keyCode == 3 && $0.modifiers == .hypr
-                && $0.action == .moveToNextEmptyWorkspace
+                && $0.action == .toggleMaximize
         })
         XCTAssertEqual(merged.first, unrelated)
         XCTAssertEqual(UserConfig.mergeNewDefaults(saved: merged), merged)
@@ -345,7 +345,7 @@ final class ConfigMigrationTests: XCTestCase {
 
         XCTAssertEqual(merged.filter { $0.action == .toggleFloating }, [newFloat])
         XCTAssertEqual(merged.filter { $0.action == .focusFloating }, [newFloatingFocus])
-        XCTAssertTrue(merged.contains { $0.action == .moveToNextEmptyWorkspace })
+        XCTAssertTrue(merged.contains { $0.action == .toggleMaximize })
         XCTAssertEqual(merged.count, Set(merged.map(\.id)).count)
     }
 
@@ -374,6 +374,46 @@ final class ConfigMigrationTests: XCTestCase {
         let merged = UserConfig.mergeNewDefaults(saved: saved)
         XCTAssertEqual(merged.filter { $0.keyCode == 3 && $0.modifiers == .hypr },
                        [oldFloatingFocus])
+        XCTAssertFalse(merged.contains { $0.action == .toggleMaximize })
+    }
+
+    // MARK: - Hypr+F became maximize (v2)
+
+    private let oldHyprF = Keybind(keyCode: 3, modifiers: .hypr, action: .moveToNextEmptyWorkspace)
+    private let newHyprF = Keybind(keyCode: 3, modifiers: .hypr, action: .toggleMaximize)
+
+    func testHyprFMigratesOnceFromAnOlderConfig() {
+        let unrelated = Keybind(keyCode: 16, modifiers: .command, action: .toggleSplit)
+        XCTAssertEqual(ConfigMigration.migrateHyprFToMaximize(saved: [unrelated, oldHyprF], fromVersion: 1),
+                       [unrelated, newHyprF])
+    }
+
+    func testHyprFOnTheOldActionIsAChoiceAtV2() {
+        XCTAssertEqual(ConfigMigration.migrateHyprFToMaximize(saved: [oldHyprF], fromVersion: 2), [oldHyprF])
+    }
+
+    func testHyprFMigrationLeavesCustomBindingsAlone() {
+        let moved = Keybind(keyCode: 5, modifiers: .command, action: .moveToNextEmptyWorkspace)
+        let other = Keybind(keyCode: 3, modifiers: .hypr, action: .showKeybinds)
+        let existing = Keybind(keyCode: 6, modifiers: .command, action: .toggleMaximize)
+        for saved in [[moved], [other], [oldHyprF, existing]] {
+            XCTAssertEqual(ConfigMigration.migrateHyprFToMaximize(saved: saved, fromVersion: 1), saved)
+        }
+    }
+
+    func testOldActionOnAnotherChordKeepsItAndStillGainsMaximize() {
+        let moved = Keybind(keyCode: 5, modifiers: .command, action: .moveToNextEmptyWorkspace)
+        let merged = UserConfig.mergeNewDefaults(saved: [moved], fromVersion: 1)
+        XCTAssertEqual(merged.filter { $0.action == .moveToNextEmptyWorkspace }, [moved])
+        XCTAssertEqual(merged.filter { $0.action == .toggleMaximize }, [newHyprF])
+    }
+
+    func testOlderConfigFileLoadsWithMaximizeOnHyprF() throws {
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(
+            #"{"keybinds":[{"keyCode":3,"modifiers":1,"action":{"moveToNextEmptyWorkspace":{}}}],"gapSize":8,"outerPadding":8,"enabled":true}"#.utf8))
+        let merged = UserConfig.mergeNewDefaults(saved: saved.keybinds,
+                                                 fromVersion: ConfigMigration.schemaVersion(of: saved))
+        XCTAssertEqual(merged.filter { $0.keyCode == 3 && $0.modifiers == .hypr }, [newHyprF])
         XCTAssertFalse(merged.contains { $0.action == .moveToNextEmptyWorkspace })
     }
 

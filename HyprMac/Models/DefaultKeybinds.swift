@@ -110,9 +110,9 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_P), modifiers: .hypr,
                              action: .toggleTiling))
 
-        // hypr + f: move focused window to the next empty workspace
+        // hypr + f: fill the display with the focused window, or put it back
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_F), modifiers: .hypr,
-                             action: .moveToNextEmptyWorkspace))
+                             action: .toggleMaximize))
 
         // hypr + shift + t: focus/raise floating windows
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_T), modifiers: [.hypr, .shift],

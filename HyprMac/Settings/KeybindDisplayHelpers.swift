@@ -57,6 +57,8 @@ extension Keybind {
             return "macwindow.on.rectangle"
         case .moveToNextEmptyWorkspace:
             return "rectangle.stack.badge.plus"
+        case .toggleMaximize:
+            return "arrow.up.left.and.arrow.down.right"
         case .closeWindow:
             return "xmark.circle"
         case .cycleWorkspace:
@@ -112,6 +114,7 @@ extension Keybind {
         case .focusMenuBar:                 return "Focus Menu Bar"
         case .focusFloating:                return "Cycle Floating Windows"
         case .moveToNextEmptyWorkspace:     return "Move to dedicated workspace"
+        case .toggleMaximize:               return "Maximize window"
         case .closeWindow:                  return "Close Window"
         case .cycleWorkspace(let d):        return d > 0 ? "Next Workspace" : "Previous Workspace"
         case .toggleScratchpad:             return "Toggle Scratchpad"

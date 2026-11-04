@@ -44,6 +44,7 @@ final class ExternalCommandTests: XCTestCase {
             ("focusMenuBar", .focusMenuBar),
             ("focusFloating", .focusFloating),
             ("moveToNextEmptyWorkspace", .moveToNextEmptyWorkspace),
+            ("toggleMaximize", .toggleMaximize),
             ("closeWindow", .closeWindow),
             ("toggleScratchpad", .toggleScratchpad),
             ("moveToScratchpad", .moveToScratchpad),
@@ -69,6 +70,7 @@ final class ExternalCommandTests: XCTestCase {
             "toggleFloating", "toggleSplit", "showKeybinds", "showWorkspaceOverview",
             "focusMenuBar", "focusFloating", "moveToNextEmptyWorkspace", "closeWindow",
             "toggleScratchpad", "moveToScratchpad", "toggleTiling", "restoreLayout", "retileAll",
+            "toggleMaximize",
         ])
     }
 

@@ -105,6 +105,9 @@ final class ActionDispatcher {
     var currentFocusedWindow: () -> HyprWindow? = { nil }
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var updatePositionCache: () -> Void = {}
+    /// A floater started or stopped filling the display. A tile's change
+    /// comes from the engine.
+    var onFloaterMaximizeChanged: (_ screen: NSScreen, _ isOn: Bool) -> Void = { _, _ in }
     var screenUnderCursor: () -> NSScreen = { NSScreen.main! }
     // closures used by applyChanges
     var applyForgottenIDCleanup: (CGWindowID) -> Void = { _ in }
@@ -292,6 +295,7 @@ final class ActionDispatcher {
     /// Route a single `Action` to the service that handles it. Called
     /// from `WindowManager.handleAction` on every hotkey trigger.
     func dispatch(_ action: Action) {
+        if ActionPolicy.endsMaximize(action) { endMaximize(before: action) }
         switch action {
         case .focusDirection(let dir):
             focusInDirection(dir)
@@ -321,6 +325,8 @@ final class ActionDispatcher {
             floatingController.cycleFocus()
         case .moveToNextEmptyWorkspace:
             workspaceOrchestrator.moveToNextEmptyWorkspace()
+        case .toggleMaximize:
+            toggleMaximize()
         case .closeWindow:
             closeWindow()
         case .cycleWorkspace(let delta):
@@ -369,6 +375,7 @@ final class ActionDispatcher {
         case .focusMenuBar:        return "focusMenuBar"
         case .focusFloating:       return "focusFloating"
         case .moveToNextEmptyWorkspace: return "moveToNextEmptyWorkspace"
+        case .toggleMaximize: return "toggleMaximize"
         case .closeWindow:         return "closeWindow"
         case .cycleWorkspace:      return "cycleWorkspace"
         case .toggleScratchpad:    return "toggleScratchpad"
@@ -724,6 +731,80 @@ final class ActionDispatcher {
         let err = AXUIElementCopyAttributeValue(target.element, kAXCloseButtonAttribute as CFString, &closeButton)
         if err == .success, let button = closeButton, CFGetTypeID(button) == AXUIElementGetTypeID() {
             AXUIElementPerformAction(button as! AXUIElement, kAXPressAction as CFString)
+        }
+    }
+
+    // MARK: - maximize
+
+    /// Fill the display with the focused window, or put it back. A tile
+    /// keeps its slot and the tiles under it stay put. A floater goes back
+    /// to the frame it had.
+    private func toggleMaximize() {
+        guard let focused = currentFocusedWindow(),
+              let (workspace, screen) = tilingContext(for: focused) else {
+            NSSound.beep()
+            return
+        }
+        if tilingEngine.maximizedWindowID(onWorkspace: workspace, screen: screen) == focused.windowID {
+            tilingEngine.endMaximize(onWorkspace: workspace, screen: screen)
+            // the tile is smaller now. hover would pick whatever is under the cursor
+            cursorManager.warpToCenter(of: focused)
+            finishMaximizeToggle(focused)
+            return
+        }
+        if stateCache.floatingWindowIDs.contains(focused.windowID) {
+            guard floatingController.isMaximized(focused.windowID) || canFill(focused, on: screen) else {
+                rejectMaximize(focused)
+                return
+            }
+            let isOn = floatingController.toggleMaximized(
+                focused, fullFrame: tilingEngine.fullFrame(onWorkspace: workspace, screen: screen), on: screen)
+            if let isOn { onFloaterMaximizeChanged(screen, isOn) }
+            finishMaximizeToggle(focused)
+            return
+        }
+        guard canFill(focused, on: screen) else {
+            rejectMaximize(focused)
+            return
+        }
+        switch tilingEngine.maximize(focused, onWorkspace: workspace, screen: screen) {
+        case .maximized: finishMaximizeToggle(focused)
+        case .alreadyFills: break
+        case .refused: rejectMaximize(focused)
+        }
+    }
+
+    private func canFill(_ window: HyprWindow, on screen: NSScreen) -> Bool {
+        window.isSizeSettable != false && !window.isFullscreen
+            && !workspaceManager.isMonitorDisabled(screen)
+    }
+
+    private func finishMaximizeToggle(_ window: HyprWindow) {
+        updatePositionCache()
+        updateFocusBorder(window)
+    }
+
+    private func rejectMaximize(_ window: HyprWindow) {
+        NSSound.beep()
+        if let frame = window.frame {
+            focusBorder.flashError(around: frame, windowID: window.windowID,
+                                   message: "This window can't fill the screen")
+        }
+    }
+
+    private func endMaximize(before action: Action) {
+        if action == .restoreLayout || action == .retileAll {
+            tilingEngine.endAllMaximized()
+            return
+        }
+        guard let focused = currentFocusedWindow() else { return }
+        if floatingController.isMaximized(focused.windowID) {
+            floatingController.forgetMaximized(focused.windowID)
+            if let screen = displayManager.screen(for: focused) { onFloaterMaximizeChanged(screen, false) }
+        }
+        if let location = tilingEngine.maximizeLocation(involving: focused.windowID) {
+            tilingEngine.endMaximize(onWorkspace: location.workspace, screen: location.screen)
+            updatePositionCache()
         }
     }
 

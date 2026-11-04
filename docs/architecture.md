@@ -249,7 +249,7 @@ These types decompose what would otherwise be a monolithic
   mutations on the discovery path; surfaces the rest in a
   `WindowChanges` value the dispatcher applies.
 - **`WorkspaceOrchestrator`** sequences the workspace switch, the moves to a
-  workspace or a monitor, the Hypr+F transfer and a layout restore's batched
+  workspace or a monitor, the dedicated workspace transfer and a layout restore's batched
   moves, on top of `WorkspaceManager` and `TilingEngine`. It also makes the
   checks those moves need first, such as the count limit on a hidden
   destination.
@@ -523,7 +523,7 @@ The user can put workspaces on monitors by name (`workspaceMonitors` in
 `monitor-config.json`, Settings → Layout → Workspaces). One pure function,
 `WorkspaceHomeResolver.resolve`, decides every home from the enabled
 screens and that mapping, and `WorkspaceManager.homeScreenForWorkspace` and
-`workspacesAnchoredTo` are its only callers; every other consumer (Hypr+F,
+`workspacesAnchoredTo` are its only callers; every other consumer (the dedicated workspace move,
 cycling, `initializeMonitors`, the overview, the menu bar, the switch HUD,
 moves, window rules, layout restore, Retile All) goes through those two. A
 workspace mapped to a connected, enabled monitor lives there. Every other
@@ -549,7 +549,7 @@ the window focused. Both go through `WorkspaceOrchestrator.moveToWorkspace`,
 and a follow warps the cursor to where the window is going rather than to
 its live frame. See "Move and follow" in `docs/keybinds-and-actions.md`.
 
-`WorkspaceOrchestrator.moveToNextEmptyWorkspace` implements Hypr+F. It resolves
+`WorkspaceOrchestrator.moveToNextEmptyWorkspace` implements the dedicated workspace move. It resolves
 the actual AX-focused standard window and its physical display, then asks
 `WorkspaceManager.nextEmptyWorkspace` for the next empty anchored workspace,
 wrapping numerically. A floating window reserves a workspace. A hidden one

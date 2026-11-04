@@ -56,7 +56,6 @@ final class KeybindOverlayContentTests: XCTestCase {
             "Switch to workspace N",
             "Move window to workspace N",
             "Move window to workspace N and follow",
-            "Move to dedicated workspace",
             "Next Workspace",
             "Previous Workspace",
         ])

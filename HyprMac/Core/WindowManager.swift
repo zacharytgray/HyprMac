@@ -249,6 +249,9 @@ class WindowManager {
             revalidation: minimaRevalidation
         )
         self.workspaceOrchestrator.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() ?? NSScreen.main! }
+        self.workspaceOrchestrator.keepsCursorOnSwitch = { [weak self] in
+            self?.config.keepCursorOnWorkspaceSwitch ?? false
+        }
         self.workspaceOrchestrator.currentFocusedWindow = { [weak self] in self?.focusResolver.currentFocusedWindow() }
         self.workspaceOrchestrator.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         self.workspaceOrchestrator.updatePositionCache = { [weak self] in self?.updatePositionCache() }
@@ -603,7 +606,21 @@ class WindowManager {
         }
         statusExporter.hookCommand = { [weak self] in self?.config.statusHookCommand }
         statusExporter.snapshot = { [weak self] in self?.statusPresenter.statusSnapshot() }
-        focusController.onChange = { [weak self] in self?.statusExporter.noteChange() }
+        focusController.onChange = { [weak self] in
+            self?.statusExporter.noteChange()
+            self?.endMaximizeIfFocusLeft()
+        }
+        tilingEngine.onMaximizeChanged = { [weak self] workspace, screen, isOn in
+            guard let self, self.isRunning, !self.displayTransitionPending else { return }
+            self.statusPresenter.updateMenuBarState()
+            guard let screen, self.workspaceManager.isWorkspaceVisible(workspace) else { return }
+            self.workspaceOverview.showFullscreenHUD(isOn: isOn, screen: screen)
+        }
+        statusPresenter.maximizedFloaterIDs = { [weak self] in self?.floatingController.maximizedIDs ?? [] }
+        actionDispatcher.onFloaterMaximizeChanged = { [weak self] screen, isOn in
+            self?.workspaceOverview.showFullscreenHUD(isOn: isOn, screen: screen)
+            self?.statusPresenter.updateMenuBarState()
+        }
         // workspace names, the toggle itself. objectWillChange fires before
         // the write, so the note waits a turn to see the new value
         statusConfigObservation = config.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in
@@ -937,6 +954,8 @@ class WindowManager {
         tiledDrag.cancel()
         tiledDrag.endTiledDropPreview()
         tiledDragFeedback.reset()
+        tilingEngine.endAllMaximized()
+        floatingController.forgetAllMaximized()
         _ = tilingEngine.beginLayoutGeneration()
         restoreAllWindows()
         axNotifications.detachAll()
@@ -1093,6 +1112,7 @@ class WindowManager {
             var floaterDragged = false
             // the drop decides now; the preview has said all it can
             self?.tiledDrag.endTiledDropPreview()
+            if shouldDetectDrag { self?.endMaximizeIfMoved() }
             if let self {
                 let primaryHeight = self.displayManager.primaryScreenHeight
                 let releasePoint = TiledDragEvent.point(event: event, primaryHeight: primaryHeight)
@@ -1920,6 +1940,7 @@ class WindowManager {
         admissionRecovery.forget(id)
         minimaRevalidation.forget(id)
         driftMonitor.forget(id)
+        floatingController.forgetMaximized(id)
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
         scratchpad.forget(id)
@@ -1988,7 +2009,8 @@ class WindowManager {
             guard workspaceManager.isWindowVisible(w.windowID) else { continue }
             stateCache.cachedWindows[w.windowID] = w
             guard let frame = w.cachedFrame ?? w.frame else { continue }
-            if stateCache.floatingWindowIDs.contains(w.windowID) {
+            if stateCache.floatingWindowIDs.contains(w.windowID)
+                || tilingEngine.isCoveredByMaximized(w.windowID) {
                 continue
             } else {
                 stateCache.tiledPositions[w.windowID] = frame
@@ -2100,6 +2122,43 @@ class WindowManager {
         // status bar hears of every change the overview would show
         statusExporter.noteChange()
         workspaceOverview.refreshIfOpen { statusPresenter.workspaceOverviewSnapshots(windows: windows) }
+    }
+
+    /// Focus reached a tile under a maximized window: another app was
+    /// activated, a directional move, or a pick in the overview. That tile
+    /// is on top now, so the layout comes back. Off the focus path, since
+    /// this writes frames.
+    private func endMaximizeIfFocusLeft() {
+        let id = focusController.lastFocusedID
+        guard id != 0, !tilingEngine.isMaximized(id),
+              tilingEngine.maximizeLocation(involving: id) != nil else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.focusController.lastFocusedID == id,
+                  !self.tilingEngine.isMaximized(id),
+                  let location = self.tilingEngine.maximizeLocation(involving: id) else { return }
+            self.tilingEngine.endMaximize(onWorkspace: location.workspace, screen: location.screen)
+            self.updatePositionCache()
+        }
+    }
+
+    /// A maximized window the user just dragged or resized goes back to its
+    /// tile. Only visible ones: a hidden one is parked in the corner.
+    private func endMaximizeIfMoved() {
+        let moved = tilingEngine.maximizedOffTarget(liveFrame: { WindowStacking.bounds(of: $0) })
+            .filter { workspaceManager.isWorkspaceVisible($0.workspace) }
+        for location in moved {
+            tilingEngine.endMaximize(onWorkspace: location.workspace, screen: location.screen)
+        }
+        // a floater has no tile to go back to. it stays where it was dropped
+        let movedFloaters = floatingController.forgetMaximizedIfMoved(liveFrame: { id in
+            self.workspaceManager.isWindowVisible(id) ? WindowStacking.bounds(of: id) : nil
+        })
+        if let id = movedFloaters.first, let frame = WindowStacking.bounds(of: id),
+           let screen = displayManager.screen(containingMostOf: frame) {
+            workspaceOverview.showFullscreenHUD(isOn: false, screen: screen)
+        }
+        guard !moved.isEmpty || !movedFloaters.isEmpty else { return }
+        updatePositionCache()
     }
 
     /// A keybind press or an action link. Pause and resume always work; the
@@ -2266,6 +2325,7 @@ class WindowManager {
                   workspace != ScratchpadController.workspace,
                   workspaceManager.isWorkspaceVisible(workspace),
                   !isFloating(window.windowID),
+                  !tilingEngine.isMaximized(window.windowID),
                   let rect = intended[window.windowID],
                   let screen = workspaceManager.homeScreenForWorkspace(workspace),
                   let actual = window.cachedFrame ?? window.frame

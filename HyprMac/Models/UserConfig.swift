@@ -38,6 +38,9 @@ class UserConfig: ObservableObject {
     @Published var focusFollowsMouse: Bool {
         didSet { persistRuntimeChange() }
     }
+    @Published var keepCursorOnWorkspaceSwitch: Bool {
+        didSet { persistRuntimeChange() }
+    }
     @Published var mouseHoverPollHz: Int {
         didSet { persistRuntimeChange() }
     }
@@ -217,11 +220,13 @@ class UserConfig: ObservableObject {
         self.externalControlEnabled = monitorConfig?.externalControlEnabled ?? false
 
         if let saved = savedConfig {
-            self.keybinds = Self.mergeNewDefaults(saved: saved.keybinds)
+            self.keybinds = Self.mergeNewDefaults(saved: saved.keybinds,
+                                                 fromVersion: ConfigMigration.schemaVersion(of: saved))
             self.gapSize = saved.gapSize
             self.outerPadding = saved.outerPadding
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
+            self.keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
             self.mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
@@ -253,6 +258,7 @@ class UserConfig: ObservableObject {
             self.outerPadding = UserConfigDefaults.outerPadding
             self.enabled = UserConfigDefaults.enabled
             self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
+            self.keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
             self.mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
@@ -312,9 +318,11 @@ class UserConfig: ObservableObject {
     // never inject onto a chord the user already bound — the injected bind
     // would silently shadow (or be shadowed by) the user's, and neither is
     // discoverable. the user can bind the new action manually in Settings.
-    static func mergeNewDefaults(saved: [Keybind]) -> [Keybind] {
+    static func mergeNewDefaults(saved: [Keybind],
+                                 fromVersion version: Int = ConfigMigration.currentVersion) -> [Keybind] {
         let toggleMigrated = ConfigMigration.migrateToggleFloating(saved: saved)
-        let saved = ConfigMigration.migrateFocusFloating(saved: toggleMigrated)
+        let floatingMigrated = ConfigMigration.migrateFocusFloating(saved: toggleMigrated)
+        let saved = ConfigMigration.migrateHyprFToMaximize(saved: floatingMigrated, fromVersion: version)
         let savedActions = Set(saved.map { "\($0.action)" })
         let takenChords = Set(saved.map { "\($0.modifiers.rawValue)-\($0.keyCode)" })
         var merged = saved
@@ -374,7 +382,7 @@ class UserConfig: ObservableObject {
     // local-only monitor file via ConfigStore.writeSavedMonitorConfig.
     private func makeSavedConfig() -> SavedConfig {
         SavedConfig(
-            version: nil,
+            version: ConfigMigration.currentVersion,
             keybinds: keybinds, gapSize: gapSize,
             outerPadding: outerPadding, enabled: enabled,
             focusFollowsMouse: focusFollowsMouse,
@@ -402,7 +410,8 @@ class UserConfig: ObservableObject {
             restoreLayoutOnLaunch: restoreLayoutOnLaunch,
             windowRules: windowRules.isEmpty ? nil : windowRules,
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
-            overlayAccentHex: overlayAccentHex)
+            overlayAccentHex: overlayAccentHex,
+            keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch)
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
@@ -415,6 +424,7 @@ class UserConfig: ObservableObject {
         outerPadding = UserConfigDefaults.outerPadding
         enabled = UserConfigDefaults.enabled
         focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
+        keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
         mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
         hyprKey = UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
@@ -518,11 +528,13 @@ class UserConfig: ObservableObject {
         guard let saved = store.loadSavedConfig() else { return }
 
         isReloading = true
-        keybinds = Self.mergeNewDefaults(saved: saved.keybinds)
+        keybinds = Self.mergeNewDefaults(saved: saved.keybinds,
+                                                 fromVersion: ConfigMigration.schemaVersion(of: saved))
         gapSize = saved.gapSize
         outerPadding = saved.outerPadding
         enabled = saved.enabled
         focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
+        keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
         mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
         hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)

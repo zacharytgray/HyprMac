@@ -302,6 +302,7 @@ class TilingEngine {
     /// A key's marks describe its tree, so they go when the tree does.
     private func dropTree(_ key: TilingKey) {
         trees.removeValue(forKey: key)
+        maximized.removeValue(forKey: key)
         clearLayoutMarks(key)
     }
 
@@ -380,6 +381,7 @@ class TilingEngine {
     /// No-op when no tree contains `windowID`.
     func removeWindowID(_ windowID: CGWindowID) {
         forgetHeld(windowID)
+        maximized = maximized.filter { $0.value != windowID }
         for (key, t) in trees {
             guard let w = t.allWindows.first(where: { $0.windowID == windowID }) else { continue }
             beginLayoutGeneration()
@@ -656,7 +658,7 @@ class TilingEngine {
     func captureTiledDrag(draggedID: CGWindowID, workspace: Int, screen: NSScreen,
                           floatingIDs: Set<CGWindowID>) -> TiledDragCaptureResult {
         let key = TilingKey(workspace: workspace, screen: screen)
-        guard let sourceTree = trees[key] else { return .ineligible(.notTiled) }
+        guard maximized[key] == nil, let sourceTree = trees[key] else { return .ineligible(.notTiled) }
         let generation = beginLayoutGeneration()
         guard let context = tiledDragContext(workspace: workspace, screen: screen,
                                              floatingIDs: floatingIDs,
@@ -686,7 +688,9 @@ class TilingEngine {
     ) -> TiledDragCaptureResult {
         guard let initialLocation = currentLocation() else { return .unknown(.superseded) }
         let key = TilingKey(workspace: initialLocation.workspace, screen: initialLocation.screen)
-        guard let sourceTree = trees[key] else {
+        // no tile drag from a maximized layout: the slots are all under one
+        // window. moving that window ends the maximize on mouse up instead
+        guard maximized[key] == nil, let sourceTree = trees[key] else {
             return captureTiledDragOccluders(
                 occludingWindows, initialLocation: initialLocation,
                 currentLocation: currentLocation, onCapturedFrames: onCapturedFrames)
@@ -1131,6 +1135,8 @@ class TilingEngine {
         beginLayoutGeneration()
         // the reconcile retiles every visible key; a hold from before it is moot
         heldByKey.removeAll()
+        // the keys are about to change. the settle retile puts every tile back
+        maximized.removeAll()
         var migrations: [(old: TilingKey, dest: NSScreen)] = []
         var orphans: [TilingKey] = []
 
@@ -1276,12 +1282,26 @@ class TilingEngine {
         let newcomers = Set(inserted)
             .subtracting(admittedWindowIDs[key.workspace] ?? [])
             .subtracting(trees[key]?.allWindows.map(\.windowID) ?? [])
+        let maximizedID = maximizedIDForPass(key: key, tree: tree, newcomers: newcomers)
+        passMaximizedID = maximizedID
         let outcome = applyVerifiedLayout(tree, in: rect, generation: generation,
                                           restorationUsableFrame: restorationUsableFrame
                                               ?? scratchpadRestorationFrame(for: key),
                                           topologyRecoveryMaxDepth: topologyRecoveryMaxDepth,
                                           newcomerIDs: newcomers)
+        passMaximizedID = nil
         noteGeometry(outcome, for: key, generation: generation, inserted: inserted)
+        if let maximizedID, layoutGeneration == generation, !heldWindowIDs.contains(maximizedID),
+           let window = tree.allWindows.first(where: { $0.windowID == maximizedID }),
+           !fillsRect(window, rect: rect, generation: generation) {
+            // it can no longer fill the display, so it goes back to its tile
+            hyprLog(.notice, .tiling, "maximize ended: \(maximizedID) refused the full frame on ws\(key.workspace)")
+            maximized.removeValue(forKey: key)
+            let restored = applyVerifiedLayout(tree, in: rect, generation: generation,
+                                               newcomerIDs: newcomers)
+            noteGeometry(restored, for: key, generation: generation, inserted: inserted)
+            return restored
+        }
         return outcome
     }
 
@@ -1493,7 +1513,7 @@ class TilingEngine {
                                             newcomerIDs: Set<CGWindowID>) -> LayoutApplicationOutcome {
         // a held member is in the tree but not in this pass: nothing is read
         // from it or written to it
-        let windows = tree.allWindows.filter { !heldWindowIDs.contains($0.windowID) }
+        let windows = tree.allWindows.filter { !unwrittenWindowIDs.contains($0.windowID) }
         let restorationFrame = suppliedRestorationFrame ?? restorationRect(for: rect)
         let originalFrames: [CGWindowID: CGRect]
         switch attemptOriginals(windows, supplied: suppliedOriginalFrames, generation: generation) {
@@ -1550,7 +1570,7 @@ class TilingEngine {
     private func attemptOriginals(_ windows: [HyprWindow], supplied: [CGWindowID: CGRect]?,
                                   generation: UInt64) -> AttemptStep<[CGWindowID: CGRect]> {
         // a prepared pass may have captured a member held since
-        if let suppliedOriginalFrames = supplied?.filter({ !heldWindowIDs.contains($0.key) }) {
+        if let suppliedOriginalFrames = supplied?.filter({ !unwrittenWindowIDs.contains($0.key) }) {
             guard suppliedOriginalFrames.count == windows.count,
                   windows.allSatisfy({ suppliedOriginalFrames[$0.windowID] != nil }) else {
                 let missing = windows.first { suppliedOriginalFrames[$0.windowID] == nil }
@@ -2669,6 +2689,153 @@ class TilingEngine {
         }
     }
 
+    // MARK: - maximize
+
+    enum MaximizeResult: Equatable {
+        case maximized
+        /// the window is alone in its tree, so it already fills the display
+        case alreadyFills
+        case refused
+    }
+
+    /// Fill the display with `window`, over the rest of its tree. The tree
+    /// keeps its shape and the other tiles keep their frames, so ending this
+    /// puts everything back as it was. Every pass on the key keeps writing
+    /// the tiles and this window's full frame until then.
+    func maximize(_ window: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) -> MaximizeResult {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        guard let t = trees[key], t.contains(window) else { return .refused }
+        guard t.allWindows.count > 1 else { return .alreadyFills }
+        if maximized[key] != nil { endMaximize(onWorkspace: workspace, screen: screen) }
+        let generation = beginLayoutGeneration()
+        guard fillsRect(window, rect: layoutRect(for: key, screen: screen), generation: generation) else {
+            hyprLog(.notice, .tiling, "maximize refused: \(window.windowID) ws\(workspace)")
+            return .refused
+        }
+        maximized[key] = window.windowID
+        hyprLog(.notice, .tiling, "maximized: \(window.windowID) ws\(workspace)")
+        return .maximized
+    }
+
+    /// Put the key's tiles back. False when nothing was maximized there.
+    @discardableResult
+    func endMaximize(onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+        let key = TilingKey(workspace: workspace, screen: screen)
+        guard let id = maximized.removeValue(forKey: key) else { return false }
+        hyprLog(.notice, .tiling, "maximize ended: \(id) ws\(workspace)")
+        if let t = trees[key] {
+            _ = applyTrackedLayout(t, in: layoutRect(for: key, screen: screen),
+                                   generation: beginLayoutGeneration(), key: key)
+        }
+        return true
+    }
+
+    /// End every maximize on a screen that is still connected.
+    func endAllMaximized() {
+        for key in Array(maximized.keys) {
+            guard let screen = displayManager.screens.first(where: {
+                TilingKey(workspace: key.workspace, screen: $0) == key
+            }) else {
+                maximized.removeValue(forKey: key)
+                continue
+            }
+            endMaximize(onWorkspace: key.workspace, screen: screen)
+        }
+    }
+
+    /// The key whose maximize `id` belongs to, as the window or as one of
+    /// the tiles under it.
+    func maximizeLocation(involving id: CGWindowID) -> (workspace: Int, screen: NSScreen)? {
+        for (key, maximizedID) in maximized {
+            guard maximizedID == id || trees[key]?.allWindows.contains(where: { $0.windowID == id }) == true,
+                  let screen = displayManager.screens.first(where: {
+                      TilingKey(workspace: key.workspace, screen: $0) == key
+                  }) else { continue }
+            return (key.workspace, screen)
+        }
+        return nil
+    }
+
+    private func noteMaximizeChange(_ key: TilingKey, isOn: Bool) {
+        let screen = displayManager.screens.first { TilingKey(workspace: key.workspace, screen: $0) == key }
+        onMaximizeChanged(key.workspace, screen, isOn)
+    }
+
+    var maximizedWorkspaces: Set<Int> { Set(maximized.keys.map(\.workspace)) }
+
+    func maximizedWindowID(onWorkspace workspace: Int) -> CGWindowID? {
+        maximized.first { $0.key.workspace == workspace }?.value
+    }
+
+    func maximizedWindowID(onWorkspace workspace: Int, screen: NSScreen) -> CGWindowID? {
+        maximized[TilingKey(workspace: workspace, screen: screen)]
+    }
+
+    func isMaximized(_ id: CGWindowID) -> Bool {
+        maximized.values.contains(id)
+    }
+
+    /// True for a tile under a maximized window. It can't be hovered or
+    /// clicked, so the hit tests leave it out.
+    func isCoveredByMaximized(_ id: CGWindowID) -> Bool {
+        guard !maximized.isEmpty else { return false }
+        return maximized.contains { key, maximizedID in
+            maximizedID != id && trees[key]?.allWindows.contains { $0.windowID == id } == true
+        }
+    }
+
+    /// What a window alone in the key's tree would get, gaps and padding
+    /// included.
+    func fullFrame(onWorkspace workspace: Int, screen: NSScreen) -> CGRect {
+        let rect = layoutRect(for: TilingKey(workspace: workspace, screen: screen), screen: screen)
+        return rect.insetBy(dx: outerPadding, dy: outerPadding)
+    }
+
+    /// Each maximized window whose live frame `liveFrame` puts away from
+    /// its full frame, by the drift monitor's tolerances.
+    func maximizedOffTarget(liveFrame: (CGWindowID) -> CGRect?) -> [(workspace: Int, screen: NSScreen)] {
+        var out: [(workspace: Int, screen: NSScreen)] = []
+        for (key, id) in maximized {
+            guard let screen = displayManager.screens.first(where: {
+                TilingKey(workspace: key.workspace, screen: $0) == key
+            }), let live = liveFrame(id) else { continue }
+            let target = fullFrame(onWorkspace: key.workspace, screen: screen)
+            if abs(live.minX - target.minX) > TiledDriftMonitor.positionTolerance
+                || abs(live.minY - target.minY) > TiledDriftMonitor.positionTolerance
+                || abs(live.width - target.width) > TiledDriftMonitor.sizeTolerance
+                || abs(live.height - target.height) > TiledDriftMonitor.sizeTolerance {
+                out.append((key.workspace, screen))
+            }
+        }
+        return out
+    }
+
+    /// The maximized window for a pass on `key`, or nil after dropping a
+    /// state the tree has moved past: the window left, it is alone now, or
+    /// a newcomer arrived and the user should see it.
+    private func maximizedIDForPass(key: TilingKey, tree: BSPTree,
+                                    newcomers: Set<CGWindowID>) -> CGWindowID? {
+        guard let id = maximized[key] else { return nil }
+        let members = tree.allWindows.map(\.windowID)
+        guard members.contains(id), members.count > 1, newcomers.isEmpty else {
+            hyprLog(.notice, .tiling, "maximize ended: \(id) ws\(key.workspace) — tree changed")
+            maximized.removeValue(forKey: key)
+            return nil
+        }
+        return id
+    }
+
+    /// One verified write of the full frame, on a private tree so a refusal
+    /// can't touch the real tree's ratios.
+    private func fillsRect(_ window: HyprWindow, rect: CGRect, generation: UInt64) -> Bool {
+        let solo = BSPTree()
+        guard solo.insert(window) else { return false }
+        if case .accepted = applyVerifiedLayout(solo, in: rect, generation: generation) {
+            return true
+        }
+        return false
+    }
+
     private func retile(key: TilingKey, screen: NSScreen,
                         generation suppliedGeneration: UInt64? = nil) -> LayoutApplicationOutcome {
         let t = tree(for: key)
@@ -2987,6 +3154,18 @@ class TilingEngine {
     /// list holds what the source names in its tree (`applyTrackedLayout`).
     /// nil outside a pass.
     private var passHeldIDs: Set<CGWindowID>?
+    /// One maximized window per key. Not saved: a restart re-tiles.
+    private var maximized: [TilingKey: CGWindowID] = [:] {
+        didSet {
+            for key in oldValue.keys where maximized[key] == nil { noteMaximizeChange(key, isOn: false) }
+            for key in maximized.keys where oldValue[key] == nil { noteMaximizeChange(key, isOn: true) }
+        }
+    }
+    /// Every start and end of a maximize, whatever caused it. The screen is
+    /// nil when its display is gone.
+    var onMaximizeChanged: (_ workspace: Int, _ screen: NSScreen?, _ isOn: Bool) -> Void = { _, _, _ in }
+    /// The maximized window while `applyTrackedLayout` runs the tree's pass.
+    private var passMaximizedID: CGWindowID?
     private var heldWindowIDs: Set<CGWindowID> { passHeldIDs ?? [] }
 
     private func passHold(for windows: [HyprWindow]) -> Set<CGWindowID> {
@@ -3021,8 +3200,15 @@ class TilingEngine {
 
     /// The targets of a pass without its held members: their leaves stay
     /// reserved, their frames are not written.
+    /// Windows a pass neither reads nor writes: the held ones, and the
+    /// maximized one, which `applyTrackedLayout` writes on its own.
+    private var unwrittenWindowIDs: Set<CGWindowID> {
+        guard let passMaximizedID else { return heldWindowIDs }
+        return heldWindowIDs.union([passMaximizedID])
+    }
+
     private func writable(_ layouts: [(HyprWindow, CGRect)]) -> [(HyprWindow, CGRect)] {
-        heldWindowIDs.isEmpty ? layouts : layouts.filter { !heldWindowIDs.contains($0.0.windowID) }
+        unwrittenWindowIDs.isEmpty ? layouts : layouts.filter { !unwrittenWindowIDs.contains($0.0.windowID) }
     }
 
     /// Where a member sat when discovery took it out of its tree: the

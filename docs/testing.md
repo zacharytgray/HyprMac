@@ -20,7 +20,7 @@ otherwise inherit the release app's real preference.
 ## Supported environments
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
-through `./scripts/test-isolated.sh --debug-variant`. That run gives 1877
+through `./scripts/test-isolated.sh --debug-variant`. That run gives 1914
 tests, 28 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 
@@ -114,7 +114,19 @@ Retile All (Hypr+R):
 5. Repeat with vertically stacked monitors, one disabled monitor, a native
    fullscreen Space, and a monitor unplug and replug.
 
-Hypr+F (next empty workspace):
+Hypr+F (maximize):
+
+- Maximize a tile and press again. It goes back to its slot and the other tiles
+  did not move. Repeat with a floater.
+- Switch away and back: still maximized and focused. Arrow key to a neighbor,
+  Cmd-Tab to another window on the workspace, or a drag of the window: each puts
+  the layout back. Open a new window or close the maximized one: same.
+- Hover and click stay on the maximized window. Dim and the focus border follow it.
+- Each start and end shows the FULLSCREEN HUD. The menu bar shows the icon while a
+  showing workspace has a maximized window, and the glyphs again otherwise.
+- Try Screen Sharing or another fixed-size window: red flash, nothing moves.
+
+Move to dedicated workspace (no default chord; bind it in Settings → Keys):
 
 6. Move tiled and floating windows. Only the focused window moves. It fills the
    padded usable area, keeps focus, and the destination HUD shows. If the app

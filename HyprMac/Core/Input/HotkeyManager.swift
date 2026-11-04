@@ -89,7 +89,7 @@ class HotkeyManager {
     /// repeated command spawns a process per autorepeat tick.
     static func ignoresAutorepeat(_ action: Action) -> Bool {
         switch action {
-        case .toggleTiling, .moveToNextEmptyWorkspace, .runCommand, .retileAll:
+        case .toggleTiling, .moveToNextEmptyWorkspace, .toggleMaximize, .runCommand, .retileAll:
             return true
         default:
             return false

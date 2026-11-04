@@ -12,7 +12,8 @@ enum ConfigMigration {
 
     /// Current on-disk schema version. Bump in lockstep with the
     /// migration code that handles the new shape.
-    static let currentVersion: Int = 1
+    /// v2: Hypr+F became maximize.
+    static let currentVersion: Int = 2
 
     /// Schema version of a loaded `SavedConfig`. `nil` maps to v1 —
     /// the version when the field was introduced; every pre-existing
@@ -55,9 +56,25 @@ enum ConfigMigration {
               saved.filter({ $0.id == old.id }).count == 1,
               !saved.contains(where: { $0.id == replacement.id }),
               !saved.contains(where: { $0.action == .moveToNextEmptyWorkspace }),
+              !saved.contains(where: { $0.action == .toggleMaximize }),
               let index = saved.firstIndex(of: old) else { return saved }
         var migrated = saved
         migrated[index] = replacement
+        return migrated
+    }
+
+    // runs once, from a config older than v2. after that Hypr+F on the old
+    // action is somebody's choice, and the old action stays bindable.
+    static func migrateHyprFToMaximize(saved: [Keybind], fromVersion version: Int) -> [Keybind] {
+        guard version < 2 else { return saved }
+        let old = Keybind(keyCode: UInt16(kVK_ANSI_F), modifiers: .hypr,
+                          action: .moveToNextEmptyWorkspace)
+        guard saved.filter({ $0.id == old.id }).count == 1,
+              !saved.contains(where: { $0.action == .toggleMaximize }),
+              let index = saved.firstIndex(of: old) else { return saved }
+        var migrated = saved
+        migrated[index] = Keybind(keyCode: old.keyCode, modifiers: old.modifiers,
+                                  action: .toggleMaximize)
         return migrated
     }
 

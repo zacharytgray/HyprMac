@@ -245,6 +245,8 @@ final class FloatingWindowController {
     private let displayManager: DisplayManager
     private let accessibility: AccessibilityManager
     private let cursorManager: CursorManager
+    /// What a maximized floater goes back to, and the frame it was given.
+    private var maximizedFrames: [CGWindowID: (restore: CGRect, full: CGRect)] = [:]
     private let focusController: FocusStateController
     private let focusBorder: FocusBorder
     private let dimmingOverlay: DimmingOverlay
@@ -435,6 +437,56 @@ final class FloatingWindowController {
                 }
             }
         }
+    }
+
+    // MARK: - maximize
+
+    func isMaximized(_ id: CGWindowID) -> Bool { maximizedFrames[id] != nil }
+
+    var maximizedIDs: Set<CGWindowID> { Set(maximizedFrames.keys) }
+
+    /// Fill the display with a floater, or put it back where it was. Moved
+    /// to another display since, it fills that one instead: the saved frame
+    /// belongs to the display it left. Returns whether it's maximized now,
+    /// nil when nothing changed.
+    func toggleMaximized(_ window: HyprWindow, fullFrame: CGRect, on screen: NSScreen) -> Bool? {
+        let current = window.frame
+        if let saved = maximizedFrames.removeValue(forKey: window.windowID),
+           displayManager.screen(containingMostOf: saved.restore) == screen {
+            window.placeFloating(saved.restore, reason: "maximize ended", on: screen, from: current,
+                                 displayManager: displayManager)
+            return false
+        }
+        guard let current else { return nil }
+        maximizedFrames[window.windowID] = (restore: current, full: fullFrame)
+        window.placeFloating(fullFrame, reason: "maximized", on: screen, from: current,
+                             displayManager: displayManager)
+        return true
+    }
+
+    /// Stop treating a floater the user dragged or resized as maximized. It
+    /// stays where they put it. Returns the ids that were dropped.
+    func forgetMaximizedIfMoved(liveFrame: (CGWindowID) -> CGRect?) -> [CGWindowID] {
+        var moved: [CGWindowID] = []
+        for (id, frames) in maximizedFrames {
+            guard let live = liveFrame(id) else { continue }
+            if abs(live.minX - frames.full.minX) > TiledDriftMonitor.positionTolerance
+                || abs(live.minY - frames.full.minY) > TiledDriftMonitor.positionTolerance
+                || abs(live.width - frames.full.width) > TiledDriftMonitor.sizeTolerance
+                || abs(live.height - frames.full.height) > TiledDriftMonitor.sizeTolerance {
+                moved.append(id)
+            }
+        }
+        moved.forEach { maximizedFrames.removeValue(forKey: $0) }
+        return moved
+    }
+
+    func forgetMaximized(_ id: CGWindowID) {
+        maximizedFrames.removeValue(forKey: id)
+    }
+
+    func forgetAllMaximized() {
+        maximizedFrames.removeAll()
     }
 
     /// The float→tile insertion, with one explicit revalidation behind it.

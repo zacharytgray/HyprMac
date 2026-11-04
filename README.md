@@ -80,7 +80,8 @@ You'll feel at home. The differences are mostly macOS being macOS:
   **Hypr + O**. macOS has no public API for this, so HyprMac keeps its own virtual workspaces and
   hides the other workspaces' windows when you switch.
 - **Hypr + F:** native macOS fullscreen spawns its own Space and wrecks the layout, so HyprMac
-  gives the window a dedicated empty workspace on its display instead.
+  fills the display with the window over its workspace instead. Press it again and the window
+  goes back to its tile.
 - **Focus follows mouse:** on by default, with an adjustable hover rate.
 - **Hypr key:** Caps Lock by default. Settings → Keys also offers backslash, F13–F20, and
   Option or Command on either side. If you pick the left Option or Command key, that key plus
@@ -111,7 +112,7 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 | `Hypr + Shift + 1–9` / `Hypr + Shift + 0` | Move window to workspace 1–9 / workspace 10 |
 | `Hypr + Ctrl + Shift + 1–9` / `Hypr + Ctrl + Shift + 0` | Move window to workspace 1–9 / 10 and switch there with it |
 | `Hypr + Tab` / `Hypr + Shift + Tab` | Cycle occupied workspaces on this monitor |
-| `Hypr + F` | Move window to a dedicated workspace on its display |
+| `Hypr + F` | Maximize the window, or put it back |
 | `Hypr + T` | Toggle floating and tiled |
 | `Hypr + Shift + T` | Cycle focus through floating windows |
 | `Hypr + J` | Toggle split direction |

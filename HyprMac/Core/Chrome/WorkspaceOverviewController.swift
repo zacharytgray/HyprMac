@@ -109,6 +109,10 @@ enum WorkspaceOverviewPresentation {
     /// Everything the workspace-switch HUD says. Caption and number (or the
     /// custom name) only — the monitor name belongs to the overview, not to
     /// the switch flash.
+    static func fullscreenHUDText(isOn: Bool) -> (caption: String, number: String) {
+        ("FULLSCREEN", isOn ? "On" : "Off")
+    }
+
     static func switchHUDText(workspace: Int, names: [String: String]) -> (caption: String, number: String) {
         ("WORKSPACE", UserConfig.workspaceDisplayName(workspace, names: names, fallback: "\(workspace)"))
     }
@@ -181,7 +185,15 @@ final class WorkspaceOverviewController {
     }
 
     func showSwitchHUD(workspace: Int, screen: NSScreen) {
-        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(workspace: workspace)), on: screen, for: 0.9)
+        let text = WorkspaceOverviewPresentation.switchHUDText(workspace: workspace,
+                                                               names: UserConfig.shared.workspaceNames)
+        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text)), on: screen, for: 0.9)
+    }
+
+    /// The switch HUD, saying a window started or stopped filling the display.
+    func showFullscreenHUD(isOn: Bool, screen: NSScreen) {
+        let text = WorkspaceOverviewPresentation.fullscreenHUDText(isOn: isOn)
+        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text)), on: screen, for: 0.9)
     }
 
     /// The switch HUD's look for a short status, e.g. a layout save.
@@ -334,11 +346,7 @@ private struct StatusHUD: View {
 private struct WorkspaceSwitchHUD: View {
     @Environment(\.colorScheme) private var colorScheme
     private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
-    let workspace: Int
-    private var text: (caption: String, number: String) {
-        WorkspaceOverviewPresentation.switchHUDText(workspace: workspace,
-                                                    names: UserConfig.shared.workspaceNames)
-    }
+    let text: (caption: String, number: String)
     var body: some View {
         VStack(spacing: 5) {
             Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))

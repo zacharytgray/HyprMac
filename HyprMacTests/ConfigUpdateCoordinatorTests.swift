@@ -718,17 +718,17 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         let config = UserConfig()
         let relocated = Keybind(keyCode: 17, modifiers: [.hypr, .shift], action: .focusFloating)
         XCTAssertEqual(config.keybinds.filter { $0.action == .focusFloating }, [relocated])
-        XCTAssertTrue(config.keybinds.contains { $0.action == .moveToNextEmptyWorkspace })
+        XCTAssertTrue(config.keybinds.contains { $0.action == .toggleMaximize })
         XCTAssertEqual(try Data(contentsOf: ConfigStore.configPath), legacy)
 
         config.reloadFromDisk()
         XCTAssertEqual(config.keybinds.filter { $0.action == .focusFloating }, [relocated])
-        XCTAssertTrue(config.keybinds.contains { $0.action == .moveToNextEmptyWorkspace })
+        XCTAssertTrue(config.keybinds.contains { $0.action == .toggleMaximize })
         config.save()
         let saved = try JSONDecoder().decode(
             SavedConfig.self, from: Data(contentsOf: ConfigStore.configPath))
         XCTAssertEqual(saved.keybinds.filter { $0.action == .focusFloating }, [relocated])
-        XCTAssertTrue(saved.keybinds.contains { $0.action == .moveToNextEmptyWorkspace })
+        XCTAssertTrue(saved.keybinds.contains { $0.action == .toggleMaximize })
         config.reloadFromDisk()
         XCTAssertEqual(config.keybinds, saved.keybinds)
     }
