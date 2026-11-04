@@ -58,6 +58,49 @@ final class AXNotificationServiceTests: XCTestCase {
         XCTAssertFalse(AXNotificationService.subscriptionRecorded(destroyed: .failure))
     }
 
+    func testNewWindowNeedsAddOnceItTookHold() {
+        var ledger = WindowSubscriptionLedger()
+        XCTAssertTrue(ledger.needsAdd(17396))
+
+        ledger.noteAdd(17396, tookHold: true)
+        ledger.finishPass(present: [17396])
+        XCTAssertFalse(ledger.needsAdd(17396))
+    }
+
+    // teams, 2026-11-03: one close fired the destroy, every later close of the
+    // same id was only found by the reconcile timer
+    func testWindowThatLeftAndCameBackUnderTheSameIDIsAddedAgain() {
+        var ledger = WindowSubscriptionLedger()
+        ledger.noteAdd(17396, tookHold: true)
+        ledger.finishPass(present: [17396])
+
+        ledger.finishPass(present: [])
+        XCTAssertTrue(ledger.needsAdd(17396))
+
+        ledger.noteAdd(17396, tookHold: true)
+        ledger.finishPass(present: [17396])
+        XCTAssertFalse(ledger.needsAdd(17396))
+    }
+
+    func testDestroyEventRechecksAWindowThatReturnedBeforeAnyPollSawItGone() {
+        var ledger = WindowSubscriptionLedger()
+        ledger.noteAdd(17396, tookHold: true)
+        ledger.finishPass(present: [17396])
+
+        ledger.noteDestroyEvent()
+        XCTAssertTrue(ledger.needsAdd(17396))
+    }
+
+    func testFailedReAddIsRetriedOnTheNextPass() {
+        var ledger = WindowSubscriptionLedger()
+        ledger.noteAdd(17396, tookHold: true)
+        ledger.finishPass(present: [])
+
+        ledger.noteAdd(17396, tookHold: false)
+        ledger.finishPass(present: [17396])
+        XCTAssertTrue(ledger.needsAdd(17396))
+    }
+
     func testStartupAttachesAppsBeforeSubscribingInitialWindows() {
         var calls: [String] = []
         var subscribed: [CGWindowID] = []

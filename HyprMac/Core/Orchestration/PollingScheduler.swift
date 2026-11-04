@@ -40,7 +40,7 @@ final class PollingScheduler {
     private let onPoll: () -> Void
 
     /// Optional suppression check. When the closure returns `true`, timer
-    /// ticks are dropped and scheduled fires defer.
+    /// ticks and scheduled fires defer until it lifts.
     var isSuppressed: () -> Bool = { false }
 
     /// `periodicInterval` defaults to the 10s reconcile net; tests inject a
@@ -58,7 +58,13 @@ final class PollingScheduler {
         guard !isStarted else { return }
         isStarted = true
         timer = Timer.scheduledTimer(withTimeInterval: periodicInterval, repeats: true) { [weak self] _ in
-            guard let self = self, !self.isSuppressed() else { return }
+            guard let self = self else { return }
+            // a held button can swallow tick after tick, so the missed one
+            // runs when suppression lifts instead of waiting for the next
+            guard !self.isSuppressed() else {
+                self.schedule(after: 0)
+                return
+            }
             self.onPoll()
         }
         if pendingPoll, let delay = pendingDelay {

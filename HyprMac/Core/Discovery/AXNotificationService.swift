@@ -5,6 +5,40 @@
 
 import Cocoa
 
+/// which of one app's windows need their window-level AX notifications added.
+///
+/// a window id alone can't say a subscription is alive: Teams closes a window
+/// by hiding it and shows it again under the same CGWindowID, and the
+/// destroy notification only fires for the first close. so a window that was
+/// away gets added again. adding one that is still registered is a no-op.
+struct WindowSubscriptionLedger {
+    private(set) var subscribed: Set<CGWindowID> = []
+    private var presentLastPass: Set<CGWindowID> = []
+
+    func needsAdd(_ id: CGWindowID) -> Bool {
+        !subscribed.contains(id) || !presentLastPass.contains(id)
+    }
+
+    /// a failed add stays unrecorded, so the next poll tries it again
+    mutating func noteAdd(_ id: CGWindowID, tookHold: Bool) {
+        if tookHold {
+            subscribed.insert(id)
+        } else {
+            subscribed.remove(id)
+        }
+    }
+
+    mutating func finishPass(present: Set<CGWindowID>) {
+        presentLastPass = present
+    }
+
+    /// the event doesn't say which window. the app can reopen it before the
+    /// next poll sees it gone, so every window of the app is checked again.
+    mutating func noteDestroyEvent() {
+        presentLastPass.removeAll()
+    }
+}
+
 /// Owns one `AXObserver` per regular running app and routes their AX
 /// notifications into a single `onEvent` sink.
 ///
@@ -21,7 +55,8 @@ import Cocoa
 /// subscriptions (`kAXUIElementDestroyed`, `kAXWindowMiniaturized`,
 /// `kAXWindowDeminiaturized`) go on each window element and are attached
 /// lazily via `ensureWindowSubscriptions(for:)` after every discovery pass,
-/// deduped by `CGWindowID`.
+/// deduped by `CGWindowID` until a window leaves the snapshot or its app
+/// reports a destroy (`WindowSubscriptionLedger`).
 ///
 /// Ownership: `AXObserver` and `AXUIElement` are CF types held by ARC in the
 /// per-pid `Entry`, so dropping the entry on `detach` releases them; the run
@@ -69,8 +104,7 @@ final class AXNotificationService {
     private final class Entry {
         let observer: AXObserver
         let appElement: AXUIElement
-        // window ids we've already subscribed at the window level, deduped.
-        var subscribedWindowIDs: Set<CGWindowID> = []
+        var ledger = WindowSubscriptionLedger()
         // retain the window elements we subscribed to — HyprWindow may be
         // released between passes, but the observer needs a live element.
         var windowElements: [CGWindowID: AXUIElement] = [:]
@@ -143,17 +177,17 @@ final class AXNotificationService {
     /// Deduped by `CGWindowID`, but only once the destroy subscription
     /// took hold — a window recorded after a failed add would never report
     /// its close, so a failure is left unrecorded and retried next poll.
-    /// Stale ids (windows since closed) are not pruned here — a minimized
-    /// window legitimately leaves the snapshot but must keep its
-    /// deminiaturize subscription, so snapshot presence can't gate removal.
-    /// `detach` prunes a pid's bookkeeping wholesale on quit.
+    /// A window that left the snapshot is added again when it returns, since
+    /// its id may be back on a new AX element. Nothing is removed — a
+    /// minimized window leaves the snapshot but must keep its deminiaturize
+    /// subscription. `detach` prunes a pid's bookkeeping wholesale on quit.
     func ensureWindowSubscriptions(for snapshot: [HyprWindow]) {
         mainThreadOnly()
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for window in snapshot {
             guard let entry = entries[window.ownerPID] else { continue }
             let wid = window.windowID
-            guard !entry.subscribedWindowIDs.contains(wid) else { continue }
+            guard entry.ledger.needsAdd(wid) else { continue }
 
             let element = window.element
             let destroyedErr = AXObserverAddNotification(entry.observer, element, kAXUIElementDestroyedNotification as CFString, refcon)
@@ -162,13 +196,20 @@ final class AXNotificationService {
 
             // retain the element either way — the miniaturize adds above may
             // have taken hold and need it alive; only a landed destroy add
-            // marks the window done.
-            entry.windowElements[wid] = element
-            guard Self.subscriptionRecorded(destroyed: destroyedErr) else {
-                hyprLog(.debug, .discovery, "destroy subscription failed for window \(wid) (err \(destroyedErr.rawValue)) — retrying next poll")
-                continue
+            // marks the window done. already-registered means the retained
+            // element is the one the observer holds, so it stays.
+            if destroyedErr != .notificationAlreadyRegistered || entry.windowElements[wid] == nil {
+                entry.windowElements[wid] = element
             }
-            entry.subscribedWindowIDs.insert(wid)
+            let tookHold = Self.subscriptionRecorded(destroyed: destroyedErr)
+            entry.ledger.noteAdd(wid, tookHold: tookHold)
+            hyprLog(.debug, .discovery, tookHold
+                ? "destroy subscription for window \(wid): err \(destroyedErr.rawValue)"
+                : "destroy subscription failed for window \(wid) (err \(destroyedErr.rawValue)) — retrying next poll")
+        }
+        let presentByPID = Dictionary(grouping: snapshot, by: \.ownerPID)
+        for (pid, entry) in entries {
+            entry.ledger.finishPass(present: Set((presentByPID[pid] ?? []).map(\.windowID)))
         }
     }
 
@@ -243,6 +284,7 @@ final class AXNotificationService {
         default: return
         }
         guard let pid = elementPID ?? observerPID else { return }
+        if kind == .windowDestroyed { entries[pid]?.ledger.noteDestroyEvent() }
         onEvent?(kind, pid)
     }
 }

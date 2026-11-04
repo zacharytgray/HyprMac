@@ -264,7 +264,7 @@ final class PollingSchedulerTests: XCTestCase {
         scheduler.isSuppressed = { suppressed }
 
         scheduler.start()
-        // wait long enough for ~one tick. while suppressed, ticks must drop.
+        // wait long enough for ~one tick. while suppressed, ticks must wait.
         let exp1 = expectation(description: "first window")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { exp1.fulfill() }
         wait(for: [exp1], timeout: 2.0)
@@ -277,6 +277,31 @@ final class PollingSchedulerTests: XCTestCase {
         wait(for: [exp2], timeout: 2.0)
         scheduler.stop()
         XCTAssertGreaterThanOrEqual(fireCount, 1, "post-suppression timer must resume firing")
+    }
+
+    func testTickMissedWhileSuppressedRunsOnceWhenSuppressionLifts() {
+        var fireCount = 0
+        var suppressed = true
+        let scheduler = PollingScheduler(periodicInterval: 0.1) { fireCount += 1 }
+        scheduler.isSuppressed = { suppressed }
+        scheduler.start()
+
+        let held = expectation(description: "held across several ticks")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { held.fulfill() }
+        wait(for: [held], timeout: 2.0)
+        XCTAssertEqual(fireCount, 0)
+
+        // stop the timer so a later tick can't pass for the deferred poll
+        let timer = Mirror(reflecting: scheduler).children.first { $0.label == "timer" }?.value as? Timer
+        XCTAssertNotNil(timer)
+        timer?.invalidate()
+        suppressed = false
+
+        let lifted = expectation(description: "deferred retry had time to run")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { lifted.fulfill() }
+        wait(for: [lifted], timeout: 2.0)
+        scheduler.stop()
+        XCTAssertEqual(fireCount, 1, "the ticks missed during one suppression collapse into one poll")
     }
 
     func testDoubleStartIsIdempotent() {
