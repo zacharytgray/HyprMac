@@ -80,6 +80,8 @@ class MinSizeMemory {
     private var appHints: [String: CGSize] = [:]
     /// Windows that kept their own length on an axis, see `FixedSize`.
     private var fixedWindows: [CGWindowID: FixedSize] = [:]
+    /// Unproven evidence waiting for the retry to show it again.
+    private var fixedSuspects: [CGWindowID: FixedSize] = [:]
     /// The same evidence per app: a new window of that app opening at that
     /// length floats without a write. Memory only, oldest out past the cap.
     private(set) var fixedAppHints: [FixedSize] = []
@@ -123,12 +125,22 @@ class MinSizeMemory {
     func forget(windowID: CGWindowID) {
         known.removeValue(forKey: windowID)
         fixedWindows.removeValue(forKey: windowID)
+        fixedSuspects.removeValue(forKey: windowID)
     }
 
     func recordFixedSize(_ window: HyprWindow, axis: FixedSize.Axis, length: CGFloat,
-                         target: CGSize) {
+                         target: CGSize, proven: Bool = true) {
         let bundleID = window.bundleID.flatMap { $0.isEmpty ? nil : $0 }
         let fixed = FixedSize(bundleID: bundleID, axis: axis, length: length)
+        if !proven {
+            let earlier = fixedSuspects.updateValue(fixed, forKey: window.windowID)
+            guard let earlier, earlier.axis == axis, abs(earlier.length - length) <= 1 else {
+                hyprLog(.debug, .tiling, "fixed-size suspect: wid=\(window.windowID) "
+                        + "axis=\(axis.rawValue) length=\(String(format: "%g", Double(length)))")
+                return
+            }
+        }
+        fixedSuspects.removeValue(forKey: window.windowID)
         fixedWindows[window.windowID] = fixed
         if bundleID != nil {
             fixedAppHints.removeAll { $0 == fixed }
@@ -152,6 +164,7 @@ class MinSizeMemory {
     /// The user tiled the window by hand, so neither it nor its app's hint
     /// for that length speaks for it any more. A refusal records them again.
     func forgetFixedSize(_ window: HyprWindow) {
+        fixedSuspects.removeValue(forKey: window.windowID)
         guard let fixed = fixedSize(for: window) else { return }
         fixedWindows.removeValue(forKey: window.windowID)
         fixedAppHints.removeAll { $0 == fixed }

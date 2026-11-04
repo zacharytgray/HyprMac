@@ -2000,7 +2000,7 @@ class TilingEngine {
         }
         for fixed in result.fixedSizes {
             minSizes.recordFixedSize(fixed.window, axis: fixed.axis, length: fixed.length,
-                                     target: fixed.target)
+                                     target: fixed.target, proven: fixed.proven)
         }
         for (window, size) in result.accepted {
             // a window whose app hint this pass set aside has now been

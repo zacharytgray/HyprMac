@@ -176,6 +176,48 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(engine.knownFixedSizeApps.isEmpty)
     }
 
+    /// a window already as wide as its slot can't show it took the write. it is
+    /// tried and retried once, then it and the app's next window are left alone
+    func testAKeptHeightIsRecordedOnTheRepeatAndCoversTheNextWindow() {
+        let screen = MembershipHomeScreen()
+        let rect = DisplayManager(screenSource: { [screen] }).cgRect(for: screen)
+        // find the width the second tile gets
+        let sizing = MembershipTrace()
+        let sizingEngine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                        frameSizingIOFactory: { _, generation in sizing.io(generation) })
+        let a = makeWindow(id: 1121), b = makeWindow(id: 1122), c = makeWindow(id: 1123)
+        sizing.frames[a.windowID] = rect.insetBy(dx: 100, dy: 100)
+        sizing.frames[b.windowID] = CGRect(x: rect.minX + 50, y: rect.minY + 50, width: 300, height: 300)
+        _ = sizingEngine.tileWindows([a, b], onWorkspace: 1, screen: screen)
+        let slotWidth = sizing.frames[b.windowID]!.width
+
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        trace.frames[a.windowID] = rect.insetBy(dx: 100, dy: 100)
+        XCTAssertTrue(engine.tileWindows([a], onWorkspace: 1, screen: screen).published)
+        let opened = CGRect(x: rect.minX + 50, y: rect.minY + 50, width: slotWidth, height: 530)
+        for window in [b, c] {
+            window.bundleID = "com.apple.ScreenSharing"
+            trace.frames[window.windowID] = opened
+            trace.fixedHeight[window.windowID] = 530
+        }
+
+        XCTAssertFalse(engine.tileWindows([a, b], onWorkspace: 1, screen: screen).published)
+        XCTAssertNil(engine.fixedSize(for: b), "once could be a slow app")
+
+        trace.frames[b.windowID] = opened
+        XCTAssertFalse(engine.tileWindows([a, b], onWorkspace: 1, screen: screen).published)
+        XCTAssertEqual(engine.fixedSize(for: b),
+                       FixedSize(bundleID: "com.apple.ScreenSharing", axis: .height, length: 530))
+
+        trace.written = []
+        c.cachedFrame = opened
+        let next = engine.tileWindows([a, c], onWorkspace: 1, screen: screen)
+        XCTAssertEqual(next.refusedIDs, [c.windowID])
+        XCTAssertFalse(trace.written.contains(c.windowID), "no resize for the app's next window")
+    }
+
     /// a window opened at its maximum looks fixed in a longer slot, but it can
     /// still fill a shorter one, so the record does not keep it out of that
     func testAKeptLengthDoesNotRefuseASlotAtOrUnderIt() {
@@ -2078,6 +2120,8 @@ private final class MembershipTrace {
     var heightShortfall: [CGWindowID: CGFloat] = [:]
     /// a width a window keeps whatever it is asked, the Raycast Settings case
     var fixedWidth: [CGWindowID: CGFloat] = [:]
+    /// a height a window keeps whatever it is asked, the Screen Sharing case
+    var fixedHeight: [CGWindowID: CGFloat] = [:]
     /// error the EnhancedUI cleanup returns after the setters have all
     /// succeeded, so a clean-looking frame still ends in a failure
     var endError: AXError?
@@ -2106,6 +2150,7 @@ private final class MembershipTrace {
                           frames[id]?.size = CGSize(width: max(size.width, floor.width),
                                                     height: max(size.height - short, floor.height))
                           if let width = fixedWidth[id] { frames[id]?.size.width = width }
+                          if let height = fixedHeight[id] { frames[id]?.size.height = height }
                           return .success
                       },
                       writePosition: { [self] id, position, _ in

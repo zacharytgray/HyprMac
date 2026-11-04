@@ -868,6 +868,29 @@ final class FrameReadbackPollerBudgetTests: XCTestCase {
             actual: CGSize(width: 960, height: 1395), tolerance: 20), .width)
     }
 
+    /// the Screen Sharing case: aspect-locked, and already as wide as its slot
+    func testAKeptHeightWithTheWidthAlreadyOnTargetIsUnproven() {
+        let original = CGRect(x: 1295, y: 227, width: 848, height: 529)
+        let target = CGRect(x: 2582, y: 38, width: 850, height: 1300)
+        let actual = CGRect(x: 2582, y: 38, width: 850, height: 530)
+        XCTAssertNil(FrameReadbackPoller.fixedAxis(original: original.size, target: target.size,
+                                                   actual: actual.size, tolerance: 20))
+        XCTAssertEqual(FrameReadbackPoller.unprovenFixedAxis(original: original, target: target,
+                                                             actual: actual, tolerance: 20), .height)
+    }
+
+    func testUnprovenNeedsAMoveAndAKeptLength() {
+        let original = CGRect(x: 100, y: 100, width: 850, height: 530)
+        let stayed = CGRect(x: 100, y: 100, width: 850, height: 530)
+        XCTAssertNil(FrameReadbackPoller.unprovenFixedAxis(
+            original: original, target: CGRect(x: 100, y: 100, width: 850, height: 1300),
+            actual: stayed, tolerance: 20), "no move, so no sign the app is answering")
+        XCTAssertNil(FrameReadbackPoller.unprovenFixedAxis(
+            original: original, target: CGRect(x: 500, y: 38, width: 850, height: 1300),
+            actual: CGRect(x: 500, y: 38, width: 850, height: 900), tolerance: 20),
+            "it grew, so it is catching up or stopping short, not keeping its length")
+    }
+
     func testShortfallsThatAreNotAKeptLengthAreNotFixed() {
         // the portrait Terminal stops short wherever it is asked, not at its old height
         XCTAssertNil(FrameReadbackPoller.fixedAxis(

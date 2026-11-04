@@ -32,6 +32,9 @@ struct FrameReadbackPoller {
         let axis: FixedSize.Axis
         let length: CGFloat
         let target: CGSize
+        /// false when the other axis was already on target, so it can't show
+        /// the app took the write. only a repeat counts then
+        var proven = true
     }
 
     /// Why a window's apparent oversize teaches nothing. Each case is a
@@ -335,15 +338,20 @@ struct FrameReadbackPoller {
             // the corner screen, so its old length is not its own (issue #43)
             if case .rejected = raw.verdict, let original = originalFrames[window.windowID],
                !configuration.positionSettleWindowIDs.contains(window.windowID),
-               let axis = Self.fixedAxis(original: original.size, target: target.size,
-                                         actual: actual.size,
-                                         tolerance: self.configuration.sizeUndershootTolerance),
                Self.learningRefusal(windowID: window.windowID, target: target, actual: actual,
                                     verdict: raw.verdict, progress: raw.progress,
                                     positionTolerance: configuration.positionTolerance) == nil {
-                fixedSizes.append(FixedSizeObservation(
-                    window: window, axis: axis,
-                    length: axis == .width ? actual.width : actual.height, target: target.size))
+                let tolerance = self.configuration.sizeUndershootTolerance
+                let proven = Self.fixedAxis(original: original.size, target: target.size,
+                                            actual: actual.size, tolerance: tolerance)
+                let axis = proven ?? Self.unprovenFixedAxis(original: original, target: target,
+                                                            actual: actual, tolerance: tolerance)
+                if let axis {
+                    fixedSizes.append(FixedSizeObservation(
+                        window: window, axis: axis,
+                        length: axis == .width ? actual.width : actual.height, target: target.size,
+                        proven: proven != nil))
+                }
             }
         }
         return Result(verdict: raw.verdict, actualFrames: raw.actualFrames,
@@ -358,6 +366,24 @@ struct FrameReadbackPoller {
     /// really moving there. A window still catching up has not taken the
     /// other axis yet, and one that stops short wherever it is asked (the
     /// portrait Terminal) does not stay at its old length, so neither is one.
+    /// A kept length where the other axis was already on target, so it can't
+    /// have moved there: a Screen Sharing window opened 850 wide in an 850 slot,
+    /// locked to its aspect ratio, stays 530 tall in a 1300 tall slot. The move
+    /// to its target origin shows the app is answering. A slow app could still
+    /// catch up, so this only counts when the retry shows it again.
+    static func unprovenFixedAxis(original: CGRect, target: CGRect, actual: CGRect,
+                                  tolerance: CGFloat) -> FixedSize.Axis? {
+        guard hypot(actual.minX - original.minX, actual.minY - original.minY) > tolerance else { return nil }
+        func kept(_ original: CGFloat, _ target: CGFloat, _ actual: CGFloat) -> Bool {
+            actual < target - tolerance && abs(actual - original) <= 1
+        }
+        if kept(original.width, target.width, actual.width),
+           abs(actual.height - target.height) <= tolerance { return .width }
+        if kept(original.height, target.height, actual.height),
+           abs(actual.width - target.width) <= tolerance { return .height }
+        return nil
+    }
+
     static func fixedAxis(original: CGSize, target: CGSize, actual: CGSize,
                           tolerance: CGFloat) -> FixedSize.Axis? {
         func kept(_ original: CGFloat, _ target: CGFloat, _ actual: CGFloat) -> Bool {

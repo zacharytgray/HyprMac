@@ -774,6 +774,13 @@ candidate is rejected and rolled back, the recovery's retry does exactly the
 same, and only then is the window floated: four visible resizes for a window
 no slot could ever hold.
 
+A Screen Sharing window is locked to its aspect ratio. It opened 850x530 in an
+850x1300 slot, so its width was already on target and could not show the app
+took the write. `FrameReadbackPoller.unprovenFixedAxis` covers this case: the
+kept length, the other axis on target, and a real move to the target origin. A
+slow app could still catch up, so `MinSizeMemory` records it only when the retry
+shows the same length again.
+
 `FrameReadbackPoller.fixedAxis` calls a window fixed on an axis when it is
 short of its target there by more than the undershoot tolerance, within a
 point of the length it had before the write, and on target on the other axis
