@@ -42,6 +42,11 @@ struct FrameSizingConfiguration {
     /// most `positionSettleBudget`, before it is sized. Every other window
     /// sizes first.
     var positionSettleWindowIDs: Set<CGWindowID> = []
+    /// Position-first windows whose target size fits the screen they are
+    /// leaving, so that screen cannot clamp the size. A first read on target
+    /// is enough for these. The second read was 41% of a reveal's main-thread
+    /// time, and live it only confirmed the first in 98.7% of settles.
+    var positionSettleFirstReadWindowIDs: Set<CGWindowID> = []
     /// Position-first windows whose old size, put at their target origin,
     /// would hang off the destination screen. Each moves here first, where
     /// that old size stands on the screen, is sized, then moves to its

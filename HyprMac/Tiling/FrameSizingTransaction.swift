@@ -561,6 +561,14 @@ struct FrameSizingAttempt {
                         last = position
                         let onTarget = abs(position.x - firstOrigin.x) <= configuration.positionTolerance
                             && abs(position.y - firstOrigin.y) <= configuration.positionTolerance
+                        if samples == 1, onTarget,
+                           configuration.positionSettleFirstReadWindowIDs.contains(target.windowID) {
+                            hyprLog(.debug, .tiling, "position settle: first read on target "
+                                    + "wid=\(target.windowID) phase=\(phase.rawValue) "
+                                    + "after=\(Self.ms(io.now() - settleStarted))")
+                            settled = true
+                            break
+                        }
                         if onTarget, let prior = anchor,
                            abs(position.x - prior.x) <= configuration.stableTolerance,
                            abs(position.y - prior.y) <= configuration.stableTolerance {

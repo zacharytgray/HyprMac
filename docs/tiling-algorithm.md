@@ -297,8 +297,12 @@ with `attributeUnsupported` (-25205) without resizing. `HyprWindow.writeSize`
 answers that refusal by writing one point narrower and then the target
 (`resendRefusedSize`).
 
-A position-first window waits for two stable on-target position reads
-before its size goes out, but for at most a third of the deadline. After
+A position-first window whose target fits the screen it stands on sizes as
+soon as its first position read is on target, because that screen cannot clamp
+the size (`position settle: first read on target`, a debug line). Any other
+position-first window, or one whose first read is off target, waits for two
+stable on-target position reads before its size goes out, but for at most a
+third of the deadline. After
 that the size goes out anyway and the readback judges.  The cap is per window, and
 the deadline grows by it for every position-first target, so a reveal of
 several parked windows has the time their settles take.  A cut wait ends with the readback's verdict, and a `geometryMismatch` there is a refusal, which can float the window.

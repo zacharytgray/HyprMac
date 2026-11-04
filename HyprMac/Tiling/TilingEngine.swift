@@ -1591,6 +1591,14 @@ class TilingEngine {
         return !positionFirstIDs.isEmpty
             ? reconcile(attempt.poller.applyWorkspaceReveal(attempt.firstLayouts,
                                                             positionFirstWindowIDs: positionFirstIDs,
+                                                            firstReadWindowIDs: Self.firstReadWindowIDs(
+                                                                originals: attempt.originalFrames,
+                                                                targets: attempt.firstLayouts.filter {
+                                                                    positionFirstIDs.contains($0.0.windowID)
+                                                                }.map { ($0.0.windowID, $0.1) },
+                                                                screens: displayManager.screens.map {
+                                                                    displayManager.cgRect(for: $0)
+                                                                }),
                                                             stagingOrigins: Self.stagingOrigins(
                                                                 originals: attempt.originalFrames,
                                                                 targets: attempt.firstLayouts.filter {
@@ -1917,6 +1925,23 @@ class TilingEngine {
                     + String(format: "target=%gx%g", Double(target.width), Double(target.height)))
             if case .sizeFirst = order { continue }
             ids.insert(window.windowID)
+        }
+        return ids
+    }
+
+    /// Position-first windows whose target fits the screen they stand on, even
+    /// a parked sliver. That screen can't clamp the size, so one read on target
+    /// is enough. A target it can't hold still waits: a portrait window sized
+    /// too early was clamped to 1528 of its 1874 by the landscape corner screen.
+    static func firstReadWindowIDs(originals: [CGWindowID: CGRect],
+                                   targets: [(CGWindowID, CGRect)],
+                                   screens: [CGRect]) -> Set<CGWindowID> {
+        var ids = Set<CGWindowID>()
+        for (windowID, target) in targets {
+            guard let original = originals[windowID],
+                  let holder = screens.first(where: { $0.contains(original.origin) }),
+                  target.width <= holder.width, target.height <= holder.height else { continue }
+            ids.insert(windowID)
         }
         return ids
     }

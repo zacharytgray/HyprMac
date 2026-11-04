@@ -2,6 +2,47 @@ import XCTest
 @testable import HyprMac
 
 final class FrameReadbackPollerTests: XCTestCase {
+    func testFirstReadOnlyForATargetTheLeftScreenCanHold() {
+        let landscape = CGRect(x: 0, y: 0, width: 3440, height: 1440)
+        let portrait = CGRect(x: -1080, y: -126, width: 1080, height: 1920)
+        let parked = CGRect(x: 3439, y: 1347, width: 1064, height: 900)
+        let ids = TilingEngine.firstReadWindowIDs(
+            originals: [1: parked, 2: parked, 3: CGRect(x: 9000, y: 9000, width: 500, height: 500)],
+            targets: [(1, CGRect(x: 8, y: 38, width: 1700, height: 1300)),
+                      (2, CGRect(x: -1072, y: -88, width: 1064, height: 1874)),
+                      (3, CGRect(x: 8, y: 38, width: 500, height: 500))],
+            screens: [landscape, portrait])
+        XCTAssertEqual(ids, [1], "2 is taller than the screen it leaves, 3 stands on no screen")
+    }
+
+    func testAFirstReadWindowSizesWithoutTheSecondRead() {
+        let window = makeWindow(id: 36)
+        let target = CGRect(x: 8, y: 38, width: 1700, height: 1300)
+        var frame = CGRect(x: 3439, y: 1347, width: 1064, height: 900)
+        var sleepsBeforeSize = 0
+        var sleeps = 0
+        var time: TimeInterval = 0
+        let io = FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { _, size, _ in
+                if frame.size != size { sleepsBeforeSize = sleeps }
+                frame.size = size
+                return .success
+            },
+            writePosition: { _, position, _ in frame.origin = position; return .success },
+            readPosition: { _, _ in (.success, frame.origin) },
+            readSize: { _, _ in (.success, frame.size) },
+            now: { time }, sleep: { time += $0; sleeps += 1 }, currentGeneration: { 1 })
+
+        let result = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in io })
+            .applyWorkspaceReveal([(window, target)], positionFirstWindowIDs: [36],
+                                  firstReadWindowIDs: [36],
+                                  usableFrame: target, gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(sleepsBeforeSize, 0)
+    }
+
     func testWorkspaceRevealSettlesDestinationPositionBeforeTallResize() {
         let window = makeWindow(id: 31)
         let target = CGRect(x: -1072, y: -88, width: 1064, height: 1874)

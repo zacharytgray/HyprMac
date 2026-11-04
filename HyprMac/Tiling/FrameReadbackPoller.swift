@@ -118,12 +118,14 @@ struct FrameReadbackPoller {
     /// screen too small for their target. See `positionSettleWindowIDs`.
     func applyWorkspaceReveal(_ layouts: [(HyprWindow, CGRect)],
                               positionFirstWindowIDs: Set<CGWindowID>,
+                              firstReadWindowIDs: Set<CGWindowID> = [],
                               stagingOrigins: [CGWindowID: CGPoint] = [:],
                               usableFrame: CGRect, gap: CGFloat,
                               generation requestedGeneration: UInt64,
                               originalFrames: [CGWindowID: CGRect]? = nil) -> Result {
         var revealConfiguration = configuration
         revealConfiguration.positionSettleWindowIDs = positionFirstWindowIDs
+        revealConfiguration.positionSettleFirstReadWindowIDs = firstReadWindowIDs
         revealConfiguration.stagingOrigins = stagingOrigins
         return applyLayout(layouts, usableFrame: usableFrame, gap: gap,
                            generation: requestedGeneration, configuration: revealConfiguration,
