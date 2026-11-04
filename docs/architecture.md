@@ -359,6 +359,8 @@ skips the cycle, and `pollWindowChanges` stops there;
 - **`WorkspaceManager`** owns the workspace↔screen mapping. Nothing
   else writes `monitorWorkspace`. Homes are not stored: they are computed
   through `WorkspaceHomeResolver`.
+- **`FixedSizeHintStore`** owns `fixed-size-hints.json`, the per-app lengths windows
+  kept. Per machine, not synced. Deleting it clears them.
 - **`LayoutSnapshotStore`** owns `layout-snapshots.json`. It never
   sees a tree — `LayoutRestorer.capture` asks `TilingEngine.layoutTree`
   to serialise one and `WindowManager` hands the result across.

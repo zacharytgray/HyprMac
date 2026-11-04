@@ -176,6 +176,55 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(engine.knownFixedSizeApps.isEmpty)
     }
 
+    /// the hint outlives the engine, so a restart doesn't try the app again
+    func testFixedSizeHintsSurviveARestart() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hints-\(UUID().uuidString)/fixed-size-hints.json")
+        defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+        let store = FixedSizeHintStore(fileURL: file)
+        let screen = MembershipHomeScreen()
+        let rect = DisplayManager(screenSource: { [screen] }).cgRect(for: screen)
+        let a = makeWindow(id: 1131), b = makeWindow(id: 1132), c = makeWindow(id: 1133)
+
+        let first = MembershipTrace()
+        let before = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in first.io(generation) })
+        before.keepFixedSizeHints(in: store)
+        first.frames[a.windowID] = rect.insetBy(dx: 100, dy: 100)
+        XCTAssertTrue(before.tileWindows([a], onWorkspace: 1, screen: screen).published)
+        b.bundleID = "com.example.settings"
+        first.frames[b.windowID] = CGRect(x: rect.minX + 300, y: rect.minY + 200, width: 400, height: 400)
+        first.fixedWidth[b.windowID] = 400
+        _ = before.tileWindows([a, b], onWorkspace: 1, screen: screen)
+        XCTAssertEqual(store.load(), [FixedSize(bundleID: "com.example.settings", axis: .width, length: 400)])
+
+        let second = MembershipTrace()
+        let after = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                 frameSizingIOFactory: { _, generation in second.io(generation) })
+        after.keepFixedSizeHints(in: store)
+        second.frames[a.windowID] = rect.insetBy(dx: 100, dy: 100)
+        XCTAssertTrue(after.tileWindows([a], onWorkspace: 1, screen: screen).published)
+        c.bundleID = "com.example.settings"
+        c.cachedFrame = CGRect(x: rect.minX + 300, y: rect.minY + 200, width: 400, height: 400)
+        second.frames[c.windowID] = c.cachedFrame
+        second.written = []
+        let opened = after.tileWindows([a, c], onWorkspace: 1, screen: screen)
+        XCTAssertEqual(opened.refusedIDs, [c.windowID])
+        XCTAssertFalse(second.written.contains(c.windowID))
+
+        // tiling by hand still clears it, on disk too
+        second.fixedWidth[c.windowID] = nil
+        XCTAssertEqual(after.forceInsertWindow(c, toWorkspace: 1, on: screen), .inserted)
+        XCTAssertEqual(store.load(), [])
+    }
+
+    func testAnUnreadableHintFileStartsEmpty() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("hints-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Data("not json".utf8).write(to: file)
+        XCTAssertEqual(FixedSizeHintStore(fileURL: file).load(), [])
+    }
+
     /// a window already as wide as its slot can't show it took the write. it is
     /// tried and retried once, then it and the app's next window are left alone
     func testAKeptHeightIsRecordedOnTheRepeatAndCoversTheNextWindow() {

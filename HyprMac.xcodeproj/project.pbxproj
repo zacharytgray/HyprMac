@@ -184,6 +184,7 @@
 		81AF83F1517A037F29B3CA9F /* FrameSizingTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8F5AAFA837B55AEB2831E8 /* FrameSizingTransaction.swift */; };
 		81B6D88FB529B805CC664324 /* StateDump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F2DB0FB7A2441364DD7616 /* StateDump.swift */; };
 		81E7DE63D9382D0E7680EA0F /* FocusStateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224E549E7B5AB91A44E11544 /* FocusStateController.swift */; };
+		8354BB31C14C19850B513212 /* FixedSizeHintStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1251E3F489A8D9DBD9866FE /* FixedSizeHintStore.swift */; };
 		8362AE4C2D8B788EA32CC107 /* TilingEngineTiledDragTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58A1ECEE0D6160C61FD6636C /* TilingEngineTiledDragTests.swift */; };
 		83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C7530C4625DFB387DEB0CF /* SuppressionRegistry.swift */; };
 		8456B287CD1B9AC9E86336E5 /* TileScratchpadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */; };
@@ -289,6 +290,7 @@
 		D380E4A1BDD2AD4281299E72 /* KeybindDecoderToleranceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3521F94E7B0FCC0E03B50D3 /* KeybindDecoderToleranceTests.swift */; };
 		D42C28555A078D585F2268A2 /* WindowRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D21946C610CB845DEC5502 /* WindowRule.swift */; };
 		D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
+		D5C0537A5B108486E8EA70FB /* FixedSizeHintStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1251E3F489A8D9DBD9866FE /* FixedSizeHintStore.swift */; };
 		D5C667FFA19E52C23C98E59B /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B33190C87FE4067512AEFD0 /* DisplayManager.swift */; };
 		D758B499FD8183F4AC73F042 /* SwitchCoalescer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */; };
 		D79FC29758B8999CB1D4BD05 /* TiledDragTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8049A0C6B0FBEF8B6ED25B /* TiledDragTarget.swift */; };
@@ -596,6 +598,7 @@
 		EE740E91A8A260E9F899EB51 /* RuntimeVariant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeVariant.swift; sourceTree = "<group>"; };
 		EF9248FBC1729E7F502A6186 /* AXFrameWriteBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXFrameWriteBatchTests.swift; sourceTree = "<group>"; };
 		EFD825028CFC92058B0564BC /* WindowPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPlacement.swift; sourceTree = "<group>"; };
+		F1251E3F489A8D9DBD9866FE /* FixedSizeHintStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixedSizeHintStore.swift; sourceTree = "<group>"; };
 		F128E4713D085AE80F3D5B0A /* AXFrameWriteBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXFrameWriteBatch.swift; sourceTree = "<group>"; };
 		F356D39971D5A80B38494D15 /* DwindleLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwindleLayout.swift; sourceTree = "<group>"; };
 		F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRecorderView.swift; sourceTree = "<group>"; };
@@ -775,6 +778,7 @@
 			children = (
 				EDAAA3743D0898468DBA8EBC /* ConfigMigration.swift */,
 				BE062173D513A1A60A3E704D /* ConfigStore.swift */,
+				F1251E3F489A8D9DBD9866FE /* FixedSizeHintStore.swift */,
 				3D8522F7A5DE8D91C7F61FFF /* LayoutSnapshotStore.swift */,
 			);
 			path = Persistence;
@@ -1192,6 +1196,7 @@
 				8EA7D7E44E6BB8896FC32580 /* DockAffordance.swift in Sources */,
 				5C5F0598475E4DEDB6DC82AC /* DwindleLayout.swift in Sources */,
 				EDF7475C7C9C832F709C57CC /* ExternalCommand.swift in Sources */,
+				8354BB31C14C19850B513212 /* FixedSizeHintStore.swift in Sources */,
 				2EDADD7B604F90778103F64C /* FloatingDimDragTracker.swift in Sources */,
 				F39E492F77CC07DAB25E06A4 /* FloatingWindowController.swift in Sources */,
 				86F8E8C8096B4D7A3FBDC22F /* FocusBorder.swift in Sources */,
@@ -1330,6 +1335,7 @@
 				E54883D8B8175BA1E43B6ECD /* DockAffordance.swift in Sources */,
 				65A736B233D4889347FCB202 /* DwindleLayout.swift in Sources */,
 				9423AAACF8F8D43A48B221C4 /* ExternalCommand.swift in Sources */,
+				D5C0537A5B108486E8EA70FB /* FixedSizeHintStore.swift in Sources */,
 				9FCAC926BEA335F376C55022 /* FloatingDimDragTracker.swift in Sources */,
 				947CDBDE678FF44D6209995E /* FloatingWindowController.swift in Sources */,
 				AF1B7453F740F33E141B554A /* FocusBorder.swift in Sources */,

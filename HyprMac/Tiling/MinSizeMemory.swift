@@ -25,8 +25,8 @@ enum MinSizeProvenance: String {
 /// A length a window kept on one axis while it took every other part of its
 /// frame: a fixed or maximum size no larger slot can hold. Raycast's
 /// Settings window stays 960 wide whatever it is asked.
-struct FixedSize: Equatable {
-    enum Axis: String { case width, height }
+struct FixedSize: Equatable, Codable {
+    enum Axis: String, Codable { case width, height }
     let bundleID: String?
     let axis: Axis
     let length: CGFloat
@@ -83,9 +83,19 @@ class MinSizeMemory {
     /// Unproven evidence waiting for the retry to show it again.
     private var fixedSuspects: [CGWindowID: FixedSize] = [:]
     /// The same evidence per app: a new window of that app opening at that
-    /// length floats without a write. Memory only, oldest out past the cap.
-    private(set) var fixedAppHints: [FixedSize] = []
+    /// length floats without a write. Kept across restarts when the engine
+    /// is given a store, oldest out past the cap.
+    private(set) var fixedAppHints: [FixedSize] = [] {
+        didSet {
+            if fixedAppHints != oldValue { onFixedAppHintsChanged?(fixedAppHints) }
+        }
+    }
+    var onFixedAppHintsChanged: (([FixedSize]) -> Void)?
     static let fixedAppHintCap = 64
+
+    func restoreFixedAppHints(_ hints: [FixedSize]) {
+        fixedAppHints = Array(hints.filter { $0.bundleID != nil }.suffix(Self.fixedAppHintCap))
+    }
 
     /// Everything currently remembered, for the state dump.
     var snapshot: [CGWindowID: Entry] { known }
@@ -143,9 +153,8 @@ class MinSizeMemory {
         fixedSuspects.removeValue(forKey: window.windowID)
         fixedWindows[window.windowID] = fixed
         if bundleID != nil {
-            fixedAppHints.removeAll { $0 == fixed }
-            fixedAppHints.append(fixed)
-            if fixedAppHints.count > Self.fixedAppHintCap { fixedAppHints.removeFirst() }
+            fixedAppHints = Array((fixedAppHints.filter { $0 != fixed } + [fixed])
+                .suffix(Self.fixedAppHintCap))
         }
         hyprLog(.notice, .tiling, "fixed-size record: wid=\(window.windowID) "
                 + "bundle=\(bundleID ?? "none") axis=\(axis.rawValue) "

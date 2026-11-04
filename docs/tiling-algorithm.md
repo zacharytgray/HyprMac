@@ -795,7 +795,7 @@ slot is not caught.
 
 `MinSizeMemory` keeps the record per window, dropped with the window, and as
 a per-app hint of bundle id, axis and length, capped at 64 with the oldest
-out and gone on restart. A newcomer with its own record, or of a hinted app
+out. The hints stay on this Mac in `fixed-size-hints.json` and survive a restart. A newcomer with its own record, or of a hinted app
 standing at the hinted length, is refused in the tree membership step when its
 slot would be longer than that length, before
 any frame is written (`no fitting tile slot: … keeps its width at 960`), so

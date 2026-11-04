@@ -330,6 +330,11 @@ class TilingEngine {
     var knownMinimumSizes: [CGWindowID: MinSizeMemory.Entry] { minSizes.snapshot }
     var knownFixedSizeApps: [FixedSize] { minSizes.fixedAppHints }
     func fixedSize(for window: HyprWindow) -> FixedSize? { minSizes.fixedSize(for: window) }
+    /// Load the per-app hints from `store` and save them there when they change.
+    func keepFixedSizeHints(in store: FixedSizeHintStore) {
+        minSizes.restoreFixedAppHints(store.load())
+        minSizes.onFixedAppHintsChanged = { store.save($0) }
+    }
 
     /// Drop any stored min-size memory for `windowID`. Called when a
     /// window is forgotten by the discovery layer.

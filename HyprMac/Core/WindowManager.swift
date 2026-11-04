@@ -216,6 +216,7 @@ class WindowManager {
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
         self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
         self.tilingEngine = TilingEngine(displayManager: displayManager)
+        self.tilingEngine.keepFixedSizeHints(in: .shared)
         self.discovery = WindowDiscoveryService(
             stateCache: stateCache,
             accessibility: accessibility,
