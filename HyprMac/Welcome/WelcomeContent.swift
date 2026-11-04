@@ -72,6 +72,11 @@ enum WhatsNewFeatures {
             description: "Closing a window now fills the gap right away, including in apps like Teams that reuse their windows."
         ),
         WhatsNewFeature(
+            icon: "camera.viewfinder",
+            title: "Screenshots of Inactive Windows",
+            description: "Picking an inactive window with Cmd+Shift+4 then Space no longer gives an empty gray shot. Hover focus also keeps working when an app leaves an invisible window over the screen."
+        ),
+        WhatsNewFeature(
             icon: "arrow.left.arrow.right",
             title: "Hypr Is the Drag Swap",
             description: "Holding Option during a tiled drag no longer swaps windows. Hold Hypr instead."

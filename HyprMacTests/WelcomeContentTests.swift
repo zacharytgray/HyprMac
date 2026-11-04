@@ -15,6 +15,7 @@ final class WelcomeContentTests: XCTestCase {
             "Quicker Workspace Switching",
             "Floating Windows Stack the Same in Every App",
             "Faster Gap Filling",
+            "Screenshots of Inactive Windows",
             "Hypr Is the Drag Swap",
             "Safer Settings",
         ])
