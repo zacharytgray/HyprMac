@@ -491,19 +491,11 @@ fire. Other tests with fixed delays may still fail on the hub. Why the hub's sle
 | A protocol or context object replacing closures | It trades explicit seams for one large interface and breaks 11 test files |
 | A central timer service | Delays belong to their owners. Name and record them instead |
 
-## Open PRs
+## Contributor PRs
 
-#58, #62, #63, #64, #65 and #66 are open. GitHub shows all six as conflicting since the
-merge. Test merges against `ff910c8` on 2026-11-03:
-
-| PR | Conflict | Suite on the merge |
-|---|---|---|
-| #58 | None | Pass |
-| #62 | Project file only | Pass |
-| #63 | `StateDump.swift` and `WindowManager.swift`, because `dumpState` moved | Not run |
-| #64 | `docs/tiling-algorithm.md` only | Pass, but it rewrites the guard tests |
-| #65 | Project file only | Pass |
-| #66 | None | Pass |
+Landed on `main` on 2026-11-03, after this refactor: #62, #63, #64, #65, #66 and the accent from #58.
+#63 also covers aspect-locked windows and keeps its hints across restarts. #64 skips the second read
+only when the target fits the screen the window is leaving. #65 still polls with the scratchpad up.
 
 ## Before a release
 
