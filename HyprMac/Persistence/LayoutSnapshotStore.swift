@@ -6,9 +6,9 @@
 // display configuration returns, or at launch when
 // `restoreLayoutOnLaunch` is on.
 //
-// The store never touches a tree. `TilingEngine.layoutTree` serialises,
-// `WindowManager` hands the result to the store, and `LayoutRestorer`
-// matches, moves and rebuilds on the way back.
+// The store never touches a tree. `LayoutRestorer.capture` gathers what
+// `TilingEngine.layoutTree` serialises, `WindowManager` hands the result to
+// the store, and `LayoutRestorer` matches, moves and rebuilds on the way back.
 
 import Cocoa
 

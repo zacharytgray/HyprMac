@@ -52,7 +52,7 @@ struct TiledDragFeedbackReconciler {
     /// A second failure from the same source adds to what the first is still
     /// waiting for rather than replacing it, so a cross drop's release screen
     /// is not forgotten. A failure from another source reports the pending
-    /// one first, as before, since its feedback cannot cancel under this key.
+    /// one first, since its feedback cannot cancel under this key.
     mutating func beginDegraded(key: TiledDragFeedbackKey, generation: UInt64,
                                 affectedIDs: Set<CGWindowID>,
                                 alsoAwaiting: [TiledDragFeedbackKey: Set<CGWindowID>] = [:])

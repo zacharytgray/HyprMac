@@ -1,12 +1,12 @@
-// Pure-ish geometric helpers for the tiling subsystem. No AX, no
-// animation, no persistent engine state — every input arrives as a
+// Pure-ish geometric helpers for the tiling subsystem. No AX and no
+// persistent engine state — every input arrives as a
 // parameter and every result is returned, so the math is unit-testable.
 
 import Cocoa
 
 /// Geometric helpers for the tiling subsystem.
 ///
-/// Pure with respect to AX and animation. The only impure surface is
+/// Pure with respect to AX. The only impure surface is
 /// `fittingLeaf` / `smartInsertFitting`, which need to look up
 /// min-sizes for windows already in the tree; callers pass that lookup
 /// in as a closure so this type does not depend on `MinSizeMemory`.

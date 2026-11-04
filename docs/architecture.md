@@ -84,6 +84,8 @@ flowchart TD
         TE --> TDT["TiledDragTransaction"]
         FRP --> FSA["FrameSizingAttempt"]
         TDT --> FSA
+        TDT --> FST["FrameSizingTransaction"]
+        FST --> FSA
     end
 
     subgraph Discovery["Window discovery and accessibility"]
@@ -133,11 +135,11 @@ Three paths to follow:
   `WindowManager.pollWindowChanges` walks the windows, `WindowDiscoveryService`
   computes the diff, and `ActionDispatcher.applyChanges` applies it.
 - **Tiled drag:** `TiledDragHandler` runs the gesture through
-  `TiledDragController` closures. `TiledDragTransaction` builds candidate trees and writes frames, and
-  `TilingEngine` publishes one only when it verifies. Nothing else changes a tree.
+  `TiledDragController` closures. `TiledDragTransaction` builds candidate trees and writes frames through
+  `FrameSizingTransaction`, and `TilingEngine` publishes one only when it verifies. Nothing else changes a tree.
 
 Update this map when wiring changes. Its edges were checked against the code at
-`670626a`.
+`ff910c8`.
 
 ## Long-lived services
 
@@ -162,14 +164,14 @@ live for the entire app lifetime. The process-wide singletons are
 | `WorkspaceStatusPresenter` | Read-only views of workspace state: menu bar, overview, status export, state dump. |
 | `TiledDragController` | Capture and drop wiring for `TiledDragHandler`, the live drop preview, and what a finished drop owes. |
 | `TiledDragFeedbackCoordinator` | Holds a degraded drop's error until a later layout settles it. |
-| `FloatingDimDragTracker` | Keeps the dim's carve on a floater while it is dragged. |
+| `FloatingDimDragTracker` | Keeps the dim's carve on a floater while it is dragged. Reads the floater's frame from the window list (`WindowStacking.bounds(of:)`), not from AX. |
 | `DockAffordance` | What an outside app activation does when none of that app's windows are on screen. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
 | `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate. |
 | `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
 | `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown and the focus invariant. Puts floaters an old tile covers back on top, then focuses and lifts the target. |
-| `WindowStacking` | Pure rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, and the tiles covering each floater. |
+| `WindowStacking` | Rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, the tiles covering each floater, and the rect-strip `subtract` that `FocusBorder` shares. Pure apart from `onScreen()` and `bounds(of:)`, which read the list. `bounds(of:)` returns one window's current frame. |
 | `TiledDragHandler` | Owns captured press/release state, cancellation, and verified cache updates. |
 | `LayoutTreeCodec` | A tree's shape to and from its saved form. Builds fresh nodes only. |
 | `PassBudget` | The time one verified attempt's forward passes share. Rollbacks stay outside it. |
@@ -179,10 +181,13 @@ live for the entire app lifetime. The process-wide singletons are
 | `GeometryLedger` | The unverified and vacated marks on each tree's key. |
 | `ParkAttempt` | Parks windows by position and checks they stay hidden. |
 | `TiledDragTransaction` | Builds isolated insertion, swap, or resize candidates, within one tree or across two monitors' trees, and verifies frames before commit. |
+| `TiledDragTargetResolver` | Finds the tile under a pointer, or the nearest tile for a release on another monitor, and the edge of it. `TiledDropPlanner` calls it. |
 | `TiledDropPlanner` | Picks a tiled drop's target tile and edge. The drop and its live preview both call it, so they cannot disagree. |
 | `TiledDragPreviewSession` | Throttles the live drop preview: at most 60 updates a second, the last move held, a redraw only when the landing rect changes. |
 | `TiledDropPreviewPanel` | The click-through, floating-tier panel that draws the drop preview in the user's focus color. |
 | `FrameSizingAttempt` | Bounded AX writes and complete frame readback through an injected clock and IO surface. |
+| `FrameSizingTransaction` | A candidate attempt, then a rollback to the original frames when it fails, with one retry after an AX timeout when the caller asks. `TiledDragTransaction` uses it. |
+| `AXFrameWriteBatch` | Brackets a window's frame writes: sets the app's AX messaging timeout and turns `AXEnhancedUserInterface` off for the writes, then restores it. |
 | `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. |
 | `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. |
 | `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. A floater's cutout covers only the part of it that is in front. |
@@ -194,6 +199,8 @@ live for the entire app lifetime. The process-wide singletons are
 | `WorkspaceOverviewController` | The overview panel (`Hypr+O`), the workspace-switch HUD and the status HUD. |
 | `WindowCornerRadius` | The one global window corner radius for borders and dim cutouts. |
 | `StatusExporter` | Off by default. Writes `state.json` and runs the optional hook (`docs/status-bar.md`). |
+| `WindowAdmissionFilter` | Decides which AX windows discovery keeps (see "Quick Look previews"). |
+| `DestroyRecheck` | Bounded re-poll after a destroy notification whose poll saw nothing gone: up to 2 more polls, 0.35 s apart. |
 | `ExternalCommand` | Parses `hyprmac://` links (`docs/external-control.md`). `WindowManager.handleExternalURL` runs them. |
 | `LoginItemController` | Launch at login through `SMAppService.mainApp`. |
 | `FrameReadbackPoller` | Runs candidate, adjusted and restoration passes over `FrameSizingAttempt` and classifies the readback into conflicts and min-size evidence. |
@@ -823,9 +830,11 @@ and HyprMac does not read or change them.
 
 HyprMac runs without disabling SIP, but is not App Store compatible —
 it uses private SkyLight APIs (`_SLPSSetFrontProcessWithOptions`,
-`SLPSPostEventRecordTo`), private AX and CGS APIs (`_AXUIElementGetWindow`,
-`CGSCopyManagedDisplaySpaces`), and runs `hidutil` as a process. The
-public API replacements do not exist.
+`SLPSPostEventRecordTo`), a private AX API (`_AXUIElementGetWindow`), and
+runs `hidutil` as a process. The public API replacements do not exist.
+`PrivateAPI/CGSPrivate.h` also declares CGS Space functions, such as
+`CGSCopyManagedDisplaySpaces`, but the app does not call them. Only the
+standalone `tools/space-test.swift` probe does.
 
 ## Known limitations
 

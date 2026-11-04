@@ -1,6 +1,6 @@
 // Single Tour shell that renders both the first-run walkthrough and
 // the post-update "What's New" page. Styled on-system with Hypr tokens
-// (mockups 1k / 1l): solid dark chassis, cyan accents, brand lockup.
+// (mockups 1k / 1l): system chassis colors, cyan accents, brand lockup.
 
 import SwiftUI
 

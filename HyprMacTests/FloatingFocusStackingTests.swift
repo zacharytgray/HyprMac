@@ -506,7 +506,7 @@ final class MouseTrackingPopupTests: XCTestCase {
     }
 }
 
-/// Zach's desk: the built-in panel at 2x, the S34C65xT ultrawide and the
+/// A real desk: the built-in panel at 2x, the S34C65xT ultrawide and the
 /// BL450 portrait at 1x, left to right.
 private final class DeskScreen: SyntheticScreen {
     private let bounds: NSRect
@@ -550,7 +550,7 @@ final class FloatingFramePlacementTests: XCTestCase {
 
     func testAFrameThreeTimesTheUltrawideIsShrunkIntoItsUsableFrame() {
         let usable = ultrawideUsable
-        // the portrait's width scaled by 3440/1080, the shape Zach saw
+        // the portrait's width scaled by 3440/1080, the shape seen live
         let huge = CGRect(x: usable.minX + 200, y: usable.minY + 40,
                           width: usable.width * 3.19, height: usable.height + 600)
 

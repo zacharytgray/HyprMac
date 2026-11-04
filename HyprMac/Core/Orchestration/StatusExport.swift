@@ -40,7 +40,7 @@ struct StatusSnapshot: Codable, Equatable {
     let scratchpad: [Window]
     let scratchpadVisible: Bool
 
-    /// The model a snapshot is built from, read off `WindowManager` on main.
+    /// The model a snapshot is built from, read by `WorkspaceStatusPresenter` on main.
     struct Input {
         struct Screen { let name: String; let visibleWorkspace: Int }
         struct App { let name: String; let bundleID: String? }

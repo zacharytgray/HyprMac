@@ -1,5 +1,5 @@
 // Launch permissions gate: the non-modal floating window shown when
-// Accessibility is missing at startup. Replaces the old blocking NSAlert.
+// Accessibility is missing at startup.
 //
 // Accessibility is required — the app can't function without it, so the
 // only exits are granting it (auto-close + live start) or Quit.
@@ -254,8 +254,8 @@ struct PermissionsGateView: View {
                     .padding(.top, 10)
             }
 
-            // rebuilds/updates invalidate the grant; the stale-toggle dance
-            // from the old alert lives on as a caption.
+            // rebuilds/updates invalidate the grant; the stale-toggle caveat
+            // is shown as a caption.
             Text("Toggle already on? Turn it off and back on — macOS invalidates the grant when the app is updated. Remove stale HyprMac entries with the − button.")
                 .font(.system(size: 10.5))
                 .lineSpacing(3)

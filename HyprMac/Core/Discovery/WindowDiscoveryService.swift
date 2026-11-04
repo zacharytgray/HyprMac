@@ -171,8 +171,8 @@ final class WindowDiscoveryService {
         self.isWindowSizeSettable = isWindowSizeSettable
     }
 
-    /// Production entry point: snapshot AX, capture running pids, and
-    /// run the diff.
+    /// Snapshot AX, capture running pids, and run the diff. The poll calls
+    /// `computeChanges` itself, and nothing calls this today.
     ///
     /// - Parameter excludedBundleIDs: Apps that should auto-float on
     ///   discovery (never enter tiling).
@@ -253,7 +253,7 @@ final class WindowDiscoveryService {
     /// was stale. Those come back on their own within seconds, and a window
     /// taken out of its tree meanwhile expands its neighbour over the slot
     /// and comes back somewhere else. Held for `listedHoldSpan`; one still
-    /// missing after that is hidden as before, with its reservation.
+    /// missing after that is hidden like any other gone window, with its reservation.
     private func listedButOffScreen(_ candidates: Set<CGWindowID>, runningPIDs: Set<pid_t>,
                                     state: (CGWindowID, pid_t) -> AccessibilityManager.HiddenWindowState?)
         -> Set<CGWindowID> {
@@ -571,7 +571,7 @@ final class WindowDiscoveryService {
     /// would otherwise hold its workspace slot until the app quits.
     ///
     /// Ids back in this cycle's snapshot are left alone: the returned pass
-    /// below owns them, and AX would answer "not minimized" for a window
+    /// in `computeChanges` owns them, and AX would answer "not minimized" for a window
     /// that is plainly on screen — stripping the reservation and misfiling
     /// the return as a recycled-id reopen.
     private func reverifyUnresolvedReservations(currentIDs: Set<CGWindowID>, runningPIDs: Set<pid_t>) {
@@ -672,7 +672,7 @@ final class WindowDiscoveryService {
             // window inflated across a monitor edge keeps a majority on its
             // own screen, and park slivers / stale off-screen frames fail
             // the substantial check entirely (the guard the doc above
-            // promises — previously dead code).
+            // promises).
             guard hasSubstantialOnScreenFrame(w),
                   let physicalScreen = majorityOverlapScreen(w) else { continue }
             // skip if the window sits on a disabled monitor — handled elsewhere

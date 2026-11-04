@@ -5,9 +5,9 @@
 `scripts/test-isolated.sh` is the test gate for contributors and for
 `scripts/release.sh`. It generates a separate project that builds HyprMac as a
 testable library. It never starts the window manager or reads live settings.
-Home, cache, and tmp are redirected under `build/sizing/isolated-tests/`. A run
-takes about five minutes, mostly the build. Each run deletes the isolated
-config first and passes `-iCloudSyncEnabled '<false/>'`, because a debug build would
+Home, cache, and tmp are redirected under `build/sizing/isolated-tests/`. The
+test run itself takes about 35 seconds. The build comes on top of that. Each
+run deletes the isolated config first and passes `-iCloudSyncEnabled '<false/>'`, because a debug build would
 otherwise inherit the release app's real preference.
 
 ```bash
@@ -20,20 +20,18 @@ otherwise inherit the release app's real preference.
 ## Supported environments
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
-through `./scripts/test-isolated.sh --debug-variant`. That run gives 1751
+through `./scripts/test-isolated.sh --debug-variant`. That run gives 1833
 tests, 28 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 
 The harness loads the test library through rpaths. It runs `xctest` directly
-and no longer depends on `DYLD_*` variables passing through `xcrun`.
+and needs no `DYLD_*` variables.
 
 ## Traps
 
 - The second argument goes straight to `xctest -XCTest`. It must start with
   a bare class name. A `HyprMacTests/` prefix runs 0 tests and still exits 0.
   Always check that `Executed N tests` shows a nonzero N and `0 failures`.
-- `PollingSchedulerTests.testScheduleAfterPollFiresAgain` is a known
-  wall-clock flake. If it is the only failure, rerun that test alone.
 - After config schema or `Action` changes, also run
   `KeybindDecoderToleranceTests` and `ConfigMigrationTests` by name.
 

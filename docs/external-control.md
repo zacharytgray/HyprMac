@@ -24,8 +24,8 @@ Macs. Off writes no key.
 
 A link runs exactly like the keybind for the same action. While tiling is
 paused, only `toggleTiling`, `showKeybinds` and `showWorkspaceOverview` run.
-While displays settle after a wake, a workspace action is dropped with a
-beep. A workspace action closes the scratchpad first, except
+While a display transition is pending, a workspace action, `restoreLayout` and
+`retileAll` are dropped with a beep. A workspace action closes the scratchpad first, except
 `moveToNextEmptyWorkspace`, which beeps and does nothing while it is up.
 
 | Link | Does |

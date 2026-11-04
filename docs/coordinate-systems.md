@@ -96,7 +96,7 @@ schemes intentionally:
 The `WorkspaceManager.screenID(for:)` integer is its own thing —
 derived from `screen.frame.origin` so two screens at the same
 position would collide. macOS prevents that in practice. The
-`TilingEngine.TilingKey` derives the same way so trees follow the
+`TilingKey` (private to `TilingEngine.swift`) derives the same way so trees follow the
 position when two monitors swap places. This is documented as
 fragile in `docs/tiling-algorithm.md` "Known limitations".
 
@@ -113,7 +113,7 @@ introducing an unfamiliar identifier into the settings UI.
 `DisplayManager.flippedY` converts a point in either direction.
 `CoordinateSpace.nsRect(fromCG:primaryHeight:)` converts a rect, for the
 overlays that keep their own copy of the primary height. `MouseTrackingManager`,
-`FocusBorder` and `FocusBrackets` still write the conversion inline.
+`FocusBorder`, `FocusBrackets`, `TiledDragEvent` and `ActionDispatcher` still write the conversion inline.
 `Shared/CoordinateSpace.swift` also holds the shared `CGRect` helpers
 (`isSubstantiallyVisible`, `clamped(into:)`).
 

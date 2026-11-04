@@ -1,6 +1,6 @@
 // Per-app AXObserver fan-out: one observer per regular app, delivering
 // window create / destroy / miniaturize / focus notifications on the main
-// run loop. These are the primary discovery triggers now — the polling
+// run loop. These are the primary discovery triggers — the polling
 // scheduler's timer is a slow reconcile safety net (see PollingScheduler).
 
 import Cocoa
@@ -8,8 +8,8 @@ import Cocoa
 /// Owns one `AXObserver` per regular running app and routes their AX
 /// notifications into a single `onEvent` sink.
 ///
-/// This is the event-driven front end for discovery. Instead of a 1 Hz
-/// full-desktop AX walk, each app tells us when its windows appear,
+/// This is the event-driven front end for discovery. Rather than walking
+/// the whole desktop on a fast timer, each app tells us when its windows appear,
 /// vanish, minimize, or take focus; `WindowManager` funnels every event
 /// into the existing coalescing `PollingScheduler.schedule(after:)` so the
 /// real discovery diff (`getAllWindows` → `computeChanges` → `applyChanges`)

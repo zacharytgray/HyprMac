@@ -10,8 +10,9 @@ import Carbon
 /// Installs a session-level `CGEventTap` that observes keyDown, keyUp,
 /// and flagsChanged events. The Hypr key is the modifier substrate —
 /// when held, chord keys produce `Action` values via the `keybindMap`.
-/// Bare press-and-release of the Hypr key fires `onHyprKeyDown` and
-/// `onHyprKeyUp` so the focus border can be re-asserted.
+/// The Hypr key going down or up fires `onHyprKeyDown` and
+/// `onHyprKeyUp`, so the owner can show the focus brackets and
+/// re-assert the focus border.
 ///
 /// Threading: the tap is an ACTIVE tap — macOS holds every keystroke
 /// system-wide until the callback returns AND the hosting run loop
@@ -54,14 +55,13 @@ class HotkeyManager {
         UInt32(keyCode) << 16 | UInt32(modifiers.rawValue & 0xFFFF)
     }
 
-    /// Replace the active keybind set. Last-wins on duplicate chords —
-    /// matches the prior linear-scan behavior. Builds the O(1) lookup
-    /// map keyed by packed keyCode + modifiers.
+    /// Replace the active keybind set. Last-wins on duplicate chords.
+    /// Builds the O(1) lookup map keyed by packed keyCode + modifiers.
     func updateKeybinds(_ binds: [Keybind]) {
         stateLock.lock()
         defer { stateLock.unlock() }
         keybinds = binds
-        // last-wins for duplicate key combos (matches old linear scan behavior)
+        // last-wins for duplicate key combos
         keybindMap = [:]
         for bind in binds {
             keybindMap[Self.packKey(bind.keyCode, bind.modifiers)] = bind
@@ -114,8 +114,8 @@ class HotkeyManager {
 
     /// Install the event tap on a dedicated thread's run loop.
     /// No-op if the tap fails to create — typically means AX
-    /// permission is missing; the failure is logged and `isInstalled`
-    /// remains `false`.
+    /// permission is missing; the failure is logged and `eventTap`
+    /// stays nil.
     func start() {
         stateLock.lock()
         let alreadyStarted = eventTap != nil

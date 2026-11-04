@@ -1,4 +1,4 @@
-// Pure rect math driving the Settings → Tiling dwindle preview.
+// Pure rect math driving the Settings → Layout dwindle preview.
 // Parallel to the real BSP layout but specifically a visualization
 // path — kept in Models/ so it is testable without SwiftUI.
 

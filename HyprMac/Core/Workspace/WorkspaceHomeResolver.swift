@@ -1,6 +1,6 @@
 // Which monitor each workspace lives on. Pure: the enabled monitor names,
 // left to right, and the user's workspaceMonitors mapping in, one home per
-// workspace out. With no mapping the answer is the old formula,
+// workspace out. With no mapping the answer is the formula
 // enabledScreens[(N - 1) % enabledScreens.count].
 
 import Foundation

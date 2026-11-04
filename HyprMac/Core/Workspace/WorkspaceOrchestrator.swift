@@ -338,8 +338,8 @@ final class WorkspaceOrchestrator {
         // enabled screens at all).
         //
         // this fires on the already-visible path too. pressing Hypr+3 while 3
-        // is up is a no-op for windows but still flashes the HUD, the way it
-        // always has — the flash is the answer to "which workspace am I on".
+        // is up is a no-op for windows but still flashes the HUD — the flash is the answer to
+        // "which workspace am I on".
         onWillSwitch(number, workspaceManager.homeScreenForWorkspace(number) ?? currentScreen)
 
         let allWindows = self.allWindows()
@@ -427,7 +427,7 @@ final class WorkspaceOrchestrator {
     /// bounds refuse it, or the refusal is one no attempt can change. A
     /// hidden destination then also gets the raw tile-count vs.
     /// dwindle-depth check. Rejections beep and flash a red border;
-    /// successful moves animate the surrounding tile and post a
+    /// successful moves retile the surrounding tiles and post a
     /// workspace-changed notification. A refusal that only learned bounds
     /// produced buys one revalidation — run here for a visible destination,
     /// left as a marker for the reveal when the destination is hidden.
@@ -574,7 +574,7 @@ final class WorkspaceOrchestrator {
         // where a carried floater was put, for the follow's warp
         var carriedFrame: CGRect?
 
-        // animate remaining windows filling the gap
+        // retile so the remaining windows fill the gap
         animatedRetile({ [self] in
             // remove from current workspace's tiling tree. membership only:
             // the one retile after this block lays the source out once the
@@ -1151,9 +1151,6 @@ final class WorkspaceOrchestrator {
     /// stacked ones. Beeps and flashes when nothing lies that way.
     /// Delegates to `moveToWorkspace` so capacity checks, floater
     /// handling, and focus follow all behave identically to `Hypr+Shift+N`.
-    ///
-    /// Replaces the old workspace-to-monitor move, which static
-    /// anchoring turned into a permanent no-op.
     func moveWindowToMonitor(_ direction: Direction) {
         guard let focused = currentFocusedWindow(),
               let screen = displayManager.screen(for: focused) ?? displayManager.screens.first else {

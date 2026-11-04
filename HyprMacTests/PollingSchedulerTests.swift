@@ -206,7 +206,7 @@ final class PollingSchedulerTests: XCTestCase {
         scheduler.stop()
     }
 
-    // MARK: - suppression (Phase 4 step 5)
+    // MARK: - suppression
 
     func testSuppressedScheduleDefersUntilSuppressionLifts() {
         var fireCount = 0

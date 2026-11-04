@@ -1,7 +1,7 @@
 import XCTest
 @testable import HyprMac
 
-// Pin the dwindle preview math used by Settings → Tiling. Pure
+// Pin the dwindle preview math used by Settings → Layout. Pure
 // CGRect computation; no SwiftUI involved.
 
 final class DwindleLayoutTests: XCTestCase {

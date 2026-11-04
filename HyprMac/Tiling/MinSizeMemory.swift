@@ -50,8 +50,8 @@ enum MinSizeProvenance: String {
 ///   accepts cannot ratchet the floor down.
 ///
 /// The memory is mirrored back onto each `HyprWindow.observedMinSize` and
-/// `HyprWindow.minSizeProvenance` so other subsystems (drag-swap fit
-/// checks) see consistent values.
+/// `HyprWindow.minSizeProvenance`. Only this class reads the mirror: `prime`
+/// seeds from it for a window with no entry, and `minimumSize` falls back to it.
 class MinSizeMemory {
     /// One remembered minimum and what kind of evidence produced it.
     struct Entry: Equatable {

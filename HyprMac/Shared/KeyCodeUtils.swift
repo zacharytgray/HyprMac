@@ -9,7 +9,7 @@ import Carbon
 let kModifierKeyCodes: Set<Int> = [55, 54, 56, 58, 59, 61, 62, 60]
 
 /// Human-readable label for a Carbon key code. Falls back to a
-/// `K\(code)` placeholder for unknown codes.
+/// `Key(\(code))` placeholder for unknown codes.
 func keyCodeToName(_ code: UInt16) -> String {
     switch Int(code) {
     case kVK_LeftArrow: return "←"; case kVK_RightArrow: return "→"

@@ -1,6 +1,5 @@
 // Which window the user means right now, and the repair a bare Hypr press runs
-// when focus has gone stale. A swap makes the router report "superseded", so
-// `recordFocus` stays before `tiledFocusRouter.focus`.
+// when focus has gone stale.
 
 import Cocoa
 

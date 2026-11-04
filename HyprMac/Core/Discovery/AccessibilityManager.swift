@@ -326,7 +326,7 @@ class AccessibilityManager {
         for app in apps {
             let pid = app.processIdentifier
             let bundle = app.bundleIdentifier ?? "pid \(pid)"
-            // layer-0 entries feed ordinary matching exactly as before. the
+            // layer-0 entries feed ordinary matching. the
             // floating layer is only ever matched to a quick look panel, by
             // that panel's own id.
             let cgEntries = cgWindows[pid] ?? []
@@ -390,7 +390,7 @@ class AccessibilityManager {
                 if let min = minimized as? Bool, min { continue }
 
                 // subrole and modal only matter for a window, so a role drop
-                // costs one read, as before
+                // costs one read
                 let role = stringAttribute(axWin, kAXRoleAttribute)
                 let isWindowRole = role == kAXWindowRole as String
                 let subrole = isWindowRole ? stringAttribute(axWin, kAXSubroleAttribute) : nil

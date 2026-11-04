@@ -8,8 +8,8 @@ import Foundation
 /// Owns two scheduling primitives:
 /// - A slow (10s) repeating timer that acts as a reconcile safety net —
 ///   it catches apps that refuse AX observers, notifications the observer
-///   layer missed, and external moves nothing else reports. It is no
-///   longer the primary discovery trigger.
+///   layer missed, and external moves nothing else reports. It is not the
+///   primary discovery trigger.
 /// - A `pendingPoll` flag that coalesces multiple event-driven
 ///   `schedule(after:)` requests in the same debounce window down to a
 ///   single fire. These come from `AXNotificationService` (window create /
@@ -26,9 +26,8 @@ import Foundation
 /// loop and `schedule(after:)` resolves on main via `asyncAfter`.
 final class PollingScheduler {
 
-    /// Reconcile-timer interval. Slow safety net now that per-app
-    /// AXObserver notifications drive discovery; was 1 Hz before the move
-    /// to event-driven triggers.
+    /// Reconcile-timer interval. A slow safety net: per-app AXObserver
+    /// notifications drive discovery.
     static let defaultReconcileInterval: TimeInterval = 10.0
 
     private let periodicInterval: TimeInterval

@@ -91,7 +91,8 @@ You'll feel at home. The differences are mostly macOS being macOS:
   says why it is no longer recommended.
 - **Config:** everything, including the Hypr key itself, lives in Settings and is saved as JSON
   at `~/Library/Application Support/HyprMac/config.json`. The schema is in
-  [Keybinds and actions](docs/keybinds-and-actions.md).
+  [Keybinds and actions](docs/keybinds-and-actions.md). A config file HyprMac can't decode is
+  copied to `config.json.unreadable` before a save overwrites it.
 - **Your own tools:** Settings → Keys → Add → Command… binds a chord to any program or script.
   It runs directly, not through a shell, so keep pipes and redirects inside a script.
 

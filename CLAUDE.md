@@ -1,7 +1,7 @@
 # HyprMac
 
 Tiling window manager for macOS, inspired by Hyprland. It is an unsandboxed Swift/SwiftUI menu
-bar app built on Accessibility plus private CGS/SkyLight APIs, so SIP stays on. The Hypr key is
+bar app built on Accessibility plus private SkyLight APIs, so SIP stays on. The Hypr key is
 Caps Lock by default (remapped to F18 through `hidutil`). It has BSP dwindle tiling, 10
 workspaces with home monitors, a floating scratchpad layer, and multi-monitor support.
 
@@ -39,7 +39,7 @@ git diff --check
 plutil -lint HyprMac.xcodeproj/project.pbxproj
 for s in scripts/*.sh; do bash -n "$s"; done
 bash scripts/test-release-pipeline.sh
-./scripts/test-isolated.sh --debug-variant                # full suite, ~5 min
+./scripts/test-isolated.sh --debug-variant                # full suite, ~2 min
 ./scripts/test-isolated.sh --debug-variant BSPTreeTests   # one class
 ```
 

@@ -192,6 +192,8 @@ logs no trace line; it appears only in typed results. The line shapes:
   `complete=true` means all three setters returned success; it is
   evidence that the writes were issued, not proof the app applied them.
   A window that never got past the EnhancedUI bracket logs `steps=none`.
+  With `HyprMacFrameWriteTrace` on (see below), the line ends with
+  `frames=<step>→<frame>,…`.
 - `frame readback: wid=<id> phase=<…> sample=<n> actual=(x,y,w,h)
   delta=(dw,dh) dx=<>,dy=<> onTarget=<bool> at=<n>ms` — one per
   settle-loop sample that did not land exactly on target. `delta` is
@@ -333,7 +335,8 @@ The admission recovery's timeout lines, all `[notice] [tiling]`:
 - `admission retry timed out: ids=[…] ws<N> cause=<failure> — not a refusal,
   retrying in <ms>ms` — another retry is armed (500 ms, then 1000 ms).
 - `admission retry attempt: ws<N> bypassMinimaBefore=[…] keepOnTimeout=true`
-  — the last retry the bound allows.
+  — the last retry the bound allows. Any attempt that follows a narrowing
+  round also ends with `narrowed=<n>`.
 - `verified layout kept unverified: reason=<failure> phase=<…> ids=[…] — a
   timeout, not a refusal; no rollback`, then `admission kept unverified:
   ws<N> ids=[…] reason=<failure> — tiled, key marked unverified`, then
@@ -455,8 +458,8 @@ A degraded drop adds `written=[...]`, the ids either the candidate or the
 rollback issued a setter for. Those, plus the dragged id, are the entries
 every drag cache drops; the members not listed keep their cached frames.
 
-`AXFrameWriteBatch` logs its AXEnhancedUserInterface toggle at the same
-tier, and only when it fails: `enhanced ui: pid=<pid> begin disable
+`AXFrameWriteBatch` logs its AXEnhancedUserInterface toggle at `.debug`,
+under `category: tiling`, and only when it fails: `enhanced ui: pid=<pid> begin disable
 err=<raw>`, plus the `begin timeout`, `begin toggle timeout`, `begin
 read`, `begin read gave a non-boolean` and `end` variants. A healthy run
 logs none of them.
@@ -562,6 +565,14 @@ vacated layout retry gave up: ws2 after 3 passes cause=writeFailed(33023, -25204
 vacated layout retry settled: ws2 — another pass filled it
 vacated layout retry dropped: ws2 — workspace hidden
 ```
+
+A pass can also end with `vacated layout retry <n>: ws<N> ended: <failure>`
+when it fails with something other than an AX error, or strands a newcomer.
+A retry is dropped, instead of run, when the workspace is hidden, the screen
+changed, a display transition is pending, the session is interrupted or the
+layout stayed suspended.
+`vacated layout retry cancelled: ws[…] reason=<…>` appears when a stop, a
+display change or a later key press clears the retries.
 
 Same-screen drift has two lines of its own, both `[notice] [tiling]`:
 
@@ -801,6 +812,8 @@ Log lines, all at notice level:
 | `raise before focus: wids=[…] under=[…] focus=<id>` | floating | floaters raised from under the old tile before the new one lifts |
 | `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised by the backstop, and the tiles that covered them |
 | `raise behind deferred: popup wid=<id> pid=<pid> layer=<n>` | floating | raise held until the menu closes |
+| `raise before focus failed: wid=<id> rc=<AXError>` | floating | the pre-focus raise of a floater failed |
+| `raise behind cooldown: pair=<…> reason=<…> for <n>s` | floating | a plain raise for that pair is paused |
 | `raise behind ineffective: wid=<id> still under <id> — cooldown <n>s` | floating | the raise didn't land |
 | `raise behind kept focus: wid=<id> front=<pid>` | floating | no backstop restore needed |
 | `raise behind restore: wid=<id> (front moved <pid> → <pid>)` | floating | the floater's app still had the front, so it went back |
@@ -834,9 +847,9 @@ floating frame write: wid=<id> reason=<why> from=(x, y, w, h) on '<screen>' @<n>
 
 The reasons are `workspace reveal, saved frame`, `carry to another screen`,
 `float toggle, original frame`, `float toggle, centered (no usable
-original)`, `focus cycle, off-screen floater`, `scratchpad show`,
+original)`, `float toggle, centered, position only (frame unreadable)`, `focus cycle, off-screen floater`, `scratchpad show`,
 `scratchpad untile`, `all workspaces full, original frame`, `stop, original
-frame` and `stop, cascade onto the main screen`. Parking in the hide corner
+frame` and `stop, cascade onto the main screen`. The `position only` reason logs `wid` and `reason` with no frames. Parking in the hide corner
 is position-only and does not log here.
 
 A floater drag also logs, 0.18 s after the release:
@@ -871,17 +884,18 @@ pass through the usual readback and restoration checks.
 
 Every tiled release logs its decision under `category: tiling`, in this
 order. Points and frames are global CG coordinates (top-left origin). A plain
-click is a release that never moved, so its lines are trace tier (`.debug`):
-the `release` line always, and the `mode` and `settle read` lines when the
-mode is `none` or the gesture is `unmoved`. Turn on `HyprMacVerboseLogging`
-(see Log tiers) to see them in a Release build. Everything else is `.notice`.
+click is a release that never moved, so its lines are trace tier (`.debug`).
+The `release` line is always `.debug`. The `mode` line is `.debug` when the
+mode is `none`. The `settle read` line is `.debug` when the gesture is
+`unmoved`. Turn on `HyprMacVerboseLogging` (see Log tiers) to see them in a
+Release build. Everything else is `.notice`.
 
 - `tiled drag release: dragged=<id> point=cg(<x>,<y>) source=ws<N> on
   '<name>' display=<n> full=<rect> sourceTiles=<rect> onSourceTiles=<bool>
   release='<name>' display=<n> full=<rect> sameTree=<id edge|none>`. When
   the point is on the source tiles it adds `tiles=[…]`, one entry per source
   tile.
-- `tiled drag mode: dragged=<id> swap=<bool> mode=<insert(<id> <edge>)|swap(<id>)|crossMonitor|none …>`.
+- `tiled drag mode: dragged=<id> swap=<bool> mode=<insert(<id> <edge>)|swap(<id>)|resize|crossMonitor|none …>`.
 - For `crossMonitor`, `TiledDragController` may log `tiled drag across monitors
   refused on <name>: <reason>` (a disabled monitor, the scratchpad). The
   engine then logs either `tiled drag across monitors declined: …
@@ -906,6 +920,12 @@ mode is `none` or the gesture is `unmoved`. Turn on `HyprMacVerboseLogging`
     going left, right, top, bottom.
   - Then `tiled drag across monitors: … placement=<edge> of <id>|swap with
     <id>|root`.
+- Other `.notice` lines of the same family: `tiled drag across monitors
+  scale change: <from>→<to> deadline=<ms>ms`, `… committed: ws<N>=[…]
+  ws<M>=[…] moves=[…]`, `… no room for <id> min=<…> slot=<…>`, `… ws<N> →
+  ws<M> refused: <rejection>`, `… accepted but not fully written: <failure> —
+  restoring both trees` and `… release screen read failed reason=<…> —
+  restoring the source`.
 
 Failure reasons print raw AX codes, for example `writeFailed(77705, -25204)`
 (`-25204` is `kAXErrorCannotComplete`, what an AX messaging timeout
@@ -1112,7 +1132,7 @@ Symptom: two tiled windows, one keeps snapping full-screen and back
 every ~1 s while the other stays put; dimming redraws with each snap.
 Mechanism: a window marked gone→hidden promotes its sibling's node, which
 retiles to the full rect; the next healthy cycle returns it and retiles
-back. An app whose main thread stalls should no longer cause this: windows
+back. An app whose main thread stalls does not cause this: windows
 the window server still shows are held in place (`holding N unreadable
 window(s)`, see "A window vanished for a poll"). Notice-tier evidence chain (all `category: discovery`):
 
@@ -1126,7 +1146,7 @@ window(s)`, see "A window vanished for a poll"). Notice-tier evidence chain (all
 - `FLAP: '<title>' (<id>) returned <ms>ms after vanishing` — a return within
   5 s of vanishing, i.e. almost certainly not a real minimize.
 - `discovery retile: new=[...] gone=[...] returned=[...] drift=[...]` — one line per
-  discovery-driven re-layout naming its cause.
+  discovery-driven re-layout naming its cause. Only the causes that apply are printed.
 
 Pull with:
 

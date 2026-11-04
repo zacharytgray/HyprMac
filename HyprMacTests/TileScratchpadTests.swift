@@ -2,11 +2,11 @@ import XCTest
 import Cocoa
 @testable import HyprMac
 
-// pins TilingEngine.tileScratchpad (Task 3 — within-layer tiling). covers:
-// rects confined to the caller-supplied rect, membership add/remove diff,
-// reject-on-full returns the window WITHOUT firing onAutoFloat (a reject must
-// never route into the task-4 adopt path), and cleanup of stale (0, *) trees
-// when the layer migrates monitors.
+// pins TilingEngine.tileScratchpad. covers: rects confined to the
+// caller-supplied rect, membership add/remove diff, reject-on-full returns the
+// window and keeps it out of the tree (a reject must never route into the
+// overflow-adopt path), and cleanup of stale (0, *) trees when the layer
+// migrates monitors.
 
 final class TileScratchpadTests: XCTestCase {
 
@@ -65,7 +65,7 @@ final class TileScratchpadTests: XCTestCase {
         XCTAssertTrue(ws0Tree()?.allWindows.isEmpty ?? true)
     }
 
-    // MARK: - reject on full does NOT fire onAutoFloat
+    // MARK: - reject on full returns the window
 
     func testRejectOnFullReturnsWindowAndDoesNotAutoFloat() {
         // maxDepth 1 fills the tree at 2 leaves; a 3rd can't smart-insert.

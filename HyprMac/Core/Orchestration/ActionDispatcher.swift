@@ -1,7 +1,7 @@
 // Action → service routing and the apply-loop reactions that follow a
 // discovery diff. Holds the per-Action implementations that resolve a
 // focused window, drive the right service entry point, and wire up
-// animation glue and rejection feedback.
+// retile glue and rejection feedback.
 
 import Cocoa
 
@@ -11,15 +11,15 @@ import Cocoa
 /// Sits on top of `WorkspaceOrchestrator` and `FloatingWindowController`
 /// — those services own their workflows; the dispatcher picks the right
 /// entry point per `Action` case and supplies the glue specific to the
-/// action path: focused-window resolution, swap-rejection flash, animated
-/// swap transitions, etc. `applyChanges` runs the post-discovery
+/// action path: focused-window resolution, swap-rejection flash, etc.
+/// `applyChanges` runs the post-discovery
 /// reactions: workspace assignment, forgotten-id cleanup, drift moves,
 /// retile, refocus, and the focus-invariant safety net.
 ///
 /// What does not live here: workspace switch/move/cycle (in
 /// `WorkspaceOrchestrator`), float/cycle/raise (in
 /// `FloatingWindowController`), and tiled drag transactions (in
-/// `TiledDragHandler`).
+/// `TiledDragController` and `TiledDragHandler`).
 ///
 /// Closure handles plumb in `WindowManager` helpers without a service home.
 ///
@@ -91,8 +91,7 @@ final class ActionDispatcher {
     private let workspaceOrchestrator: WorkspaceOrchestrator
     private let floatingController: FloatingWindowController
     private let config: UserConfig
-    // owned outright: stateless, and keeping it off the init keeps every
-    // existing construction site untouched.
+    // owned outright: stateless, so it needs no init parameter.
     private let commandRunner = CommandRunner()
 
     // closure handles for WM-side helpers
@@ -172,7 +171,7 @@ final class ActionDispatcher {
     /// `WindowDiscoveryService.computeChanges` produces the delta and
     /// already updates its cache half. This method handles everything
     /// downstream: workspace assignment for new windows, cleanup for
-    /// forgotten ids, cross-screen drift reassignment, animated retile,
+    /// forgotten ids, cross-screen drift reassignment, retile,
     /// refocus when the FFM-tracked window vanished, the focus-invariant
     /// safety net, and a floater raise pass.
     ///
@@ -215,8 +214,8 @@ final class ActionDispatcher {
         }
 
         // proactively drop every gone window from its BSP tree. tileAllVisibleSpaces
-        // only diffs trees for currently-visible workspaces and bails when an
-        // animation is in flight; either case can leave a closed window's node
+        // only diffs trees for currently-visible workspaces and bails mid-display-
+        // transition; either case can leave a closed window's node
         // lingering, so the surrounding tiles never expand to fill the gap. doing
         // it here is independent of which workspace was visible at close time and
         // independent of whether the follow-up retile actually runs.

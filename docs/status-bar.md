@@ -26,7 +26,7 @@ Quit HyprMac before the edit and open it again afterwards. HyprMac reads
 so an edit to this file while HyprMac runs is not picked up. The next
 change HyprMac saves (any Settings change) writes its in-memory copy over the
 file and drops the edit. To turn the export off, set `statusExportEnabled` to
-`false` or remove it, the same way. Reset to Defaults in Settings also turns
+`false` or remove it, the same way. "Reset all settings…" in Settings → General also turns
 it off and clears the command.
 
 With `statusExportEnabled` off or missing, nothing below happens: no file, no

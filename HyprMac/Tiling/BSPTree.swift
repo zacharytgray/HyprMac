@@ -370,7 +370,7 @@ class BSPTree {
 
     /// Rebuild the tree from scratch in left-to-right window order.
     ///
-    /// No longer called on removal — sibling promotion in `BSPNode.remove`
+    /// Not called on removal — sibling promotion in `BSPNode.remove`
     /// preserves the surviving arrangement, and rebuilding here reshuffled
     /// unrelated windows on every close/hide. Tests only. All split overrides and
     /// user-set ratios are dropped — a structural rebuild voids both.

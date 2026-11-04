@@ -7,8 +7,7 @@ import SwiftUI
 
 // MARK: - HyprPanel
 
-/// Rounded section container. Replaces `Form { Section { ... } }`
-/// for the settings overhaul. Pass an optional `title` (rendered in
+/// Rounded section container. Pass an optional `title` (rendered in
 /// `.hyprSection`) and `footer` (rendered in `.hyprCaption`).
 struct HyprPanel<Content: View>: View {
     let title: String?
@@ -163,10 +162,7 @@ struct HyprChip: View {
 
 // MARK: - HyprAccentBadge
 
-/// Cyan-accent pill. Reserved for the "Hypr key" indicator, the
-/// active sidebar item marker, and similar signature moments. This is
-/// the only widget that paints with `.hyprCyan` by default — every
-/// other surface stays monochrome.
+/// Cyan-accent pill for status badges such as ACTIVE and ENABLED.
 struct HyprAccentBadge: View {
     let text: String
     let icon: String?

@@ -1706,7 +1706,7 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         var probed: Bool?
         f.trace.onWrite = {
             guard probed == nil else { return }
-            // the shape routeUnfittedWindow asks in: the destination's tenants
+            // the shape projectedAdmissionOutlook asks in: the destination's tenants
             // plus the window, on a workspace with no tree of its own
             probed = f.engine.canFitWindows([incumbent, newcomer], onWorkspace: 9, screen: f.screen)
         }

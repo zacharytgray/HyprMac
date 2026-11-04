@@ -2,8 +2,7 @@ import XCTest
 @testable import HyprMac
 
 // BSPNodeTests pin current behavior of BSPNode primitives.
-// Phase 0: no red baseline — every assertion below reflects what BSPNode does today.
-// invariants/clamping that the plan introduces in Phase 1 are NOT tested here yet.
+// every assertion below reflects what BSPNode does today.
 
 final class BSPNodeTests: XCTestCase {
 
@@ -105,7 +104,7 @@ final class BSPNodeTests: XCTestCase {
         XCTAssertEqual(root.right?.right?.depth, 2)
     }
 
-    // MARK: - ratio bounds (Phase 1: clamped on assignment)
+    // MARK: - ratio bounds (clamped on assignment)
 
     func testSplitRatioClampsAboveMax() {
         let node = BSPNode()

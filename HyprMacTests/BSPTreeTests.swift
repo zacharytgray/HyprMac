@@ -2,7 +2,7 @@ import XCTest
 @testable import HyprMac
 
 // BSPTreeTests pin current behavior of BSPTree operations against the existing
-// dwindle algorithm. all tests are expected green at Phase 0 baseline.
+// dwindle algorithm.
 
 final class BSPTreeTests: XCTestCase {
 

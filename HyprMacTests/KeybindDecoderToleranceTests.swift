@@ -6,7 +6,7 @@ import XCTest
 // the JSON shapes here are byte-identical to what shipped in v0.4.2 user
 // configs. any decoder change that breaks them breaks every existing user.
 //
-// these tests also pin phase 6's decoder-hardening behaviors:
+// these tests also pin the decoder-hardening behaviors:
 //   - malformed direction strings log + fall back to .right (was: crash)
 //   - mixed action shapes (with/without payload) coexist in one keybinds array
 //   - encoder output stays on the v0.4.2 case keys (switchDesktop/moveToDesktop)

@@ -613,7 +613,7 @@ final class ScaleChangeArrivalTests: XCTestCase {
     }
 }
 
-/// Frame i/o for Zach's three-screen desk. Every write is recorded with the
+/// Frame i/o for a real three-screen desk. Every write is recorded with the
 /// frame it left the window in. A window lying over more than one screen
 /// never reads back the same position twice, the way the live readback
 /// never settled for a 3424-wide ultrawide window set down on the panel.

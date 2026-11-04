@@ -3,7 +3,7 @@ import XCTest
 import AppKit
 import SwiftUI
 
-// ConfigMigrationTests pin Phase 6's persistence-layer contracts:
+// ConfigMigrationTests pin the persistence-layer contracts:
 //
 // - SavedConfig decodes pre-version-field configs (version = nil → v1)
 // - SavedConfig with the version field set round-trips

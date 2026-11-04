@@ -2,10 +2,8 @@ import XCTest
 @testable import HyprMac
 
 // LayoutEngineTests cover the pure-ish geometric helpers extracted from
-// TilingEngine into Tiling/LayoutEngine.swift. these don't touch AX, animation,
+// TilingEngine into Tiling/LayoutEngine.swift. these don't touch AX
 // or NSScreen — they're testable directly on fixture trees and rects.
-//
-// see plan §4.2 + §8.2.
 
 final class LayoutEngineTests: XCTestCase {
 

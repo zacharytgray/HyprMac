@@ -293,7 +293,7 @@ final class ScratchpadController {
         // ordering is load-bearing: within the normal level, stacking is
         // recency, so the scrim must be above the tiles before the members
         // are raised above the scrim. fine that summonedIDs isn't populated
-        // yet — the scrim no longer needs member rects.
+        // yet — the scrim needs no member rects.
         raiseScrim()
 
         var windowsByID: [CGWindowID: HyprWindow] = [:]

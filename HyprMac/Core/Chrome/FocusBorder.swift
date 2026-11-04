@@ -426,9 +426,11 @@ class FocusBorder {
     /// would violate min-size constraints, move to a full workspace).
     /// The border auto-hides after the shake completes.
     ///
-    /// - Parameter window: unused. Error feedback never moves the actual
-    ///   window because verified geometry must remain unchanged after a
-    ///   rejection or restoration.
+    /// Error feedback never moves the actual window, because verified
+    /// geometry must remain unchanged after a rejection or restoration.
+    ///
+    /// - Parameter windowID: the flashed window; its corner radius shapes
+    ///   the border.
     /// - Parameter message: short reason shown as a pill centered in the
     ///   flashed window — e.g. "Not enough room to swap".
     @discardableResult

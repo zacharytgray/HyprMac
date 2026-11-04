@@ -357,9 +357,8 @@ final class FloatingWindowController {
     ///
     /// A Quick Look preview is refused with the red shake and stays
     /// floating. On disabled monitors the call is a no-op — everything
-    /// floats there by definition. The actual retile is wrapped in
-    /// `animatedRetile` so the surrounding tiles slide instead of
-    /// snapping.
+    /// floats there by definition. The change runs inside `animatedRetile`,
+    /// which retiles the surrounding tiles.
     func toggle(_ window: HyprWindow, on screen: NSScreen, in workspace: Int) {
         if workspaceManager.isMonitorDisabled(screen) {
             hyprLog(.debug, .floating, "toggle: monitor disabled, no tiling available")
@@ -388,7 +387,7 @@ final class FloatingWindowController {
         guard let animatedRetile = animatedRetile else { return }
 
         if wasFloating {
-            // floating → tiled: animate surrounding windows making room.
+            // floating → tiled: retile so the surrounding windows make room.
             // reassign workspace in case the window was dragged to a different monitor while floating.
             workspaceManager.moveWindow(window.windowID, toWorkspace: workspace)
             animatedRetile { [self] in
@@ -405,7 +404,7 @@ final class FloatingWindowController {
                 }
             }
         } else {
-            // tiled → floating: animate remaining windows filling the gap.
+            // tiled → floating: retile so the remaining windows fill the gap.
             focusBorder.hide()
             dimmingOverlay.hideAll()
             animatedRetile { [self] in
@@ -426,7 +425,7 @@ final class FloatingWindowController {
                                          reason: "float toggle, centered (no usable original)",
                                          on: screen, from: current, displayManager: displayManager)
                 } else {
-                    // unreadable frame: move only, as before. there is no
+                    // unreadable frame: move only. there is no
                     // real size to write or clamp
                     let size = window.size ?? CGSize(width: 800, height: 600)
                     window.position = CGPoint(x: screenRect.midX - size.width / 2,

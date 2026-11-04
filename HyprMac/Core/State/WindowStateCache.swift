@@ -9,7 +9,8 @@ import Cocoa
 /// Owns the dicts that classify a window's lifecycle (known? hidden?
 /// gone?), behavior (floating?), and last-known geometry. Other subsystems
 /// hold a reference to this cache and read and write its stores directly,
-/// on the main thread. `forget` is the only method.
+/// on the main thread. Its only methods are `setFloating`,
+/// `stampFloating` and `forget`.
 ///
 /// What lives here:
 /// - `knownWindowIDs` — windows present in the last full cycle
@@ -18,7 +19,7 @@ import Cocoa
 /// - `windowOwners` — `wid → pid`, used to distinguish closed-vs-hidden
 /// - `hiddenWindowIDs` — windows whose AX element is gone but pid is alive
 /// - `reservedHiddenWindowIDs` — hidden windows that still hold a tile slot
-/// - `tiledPositions` — expected tiled frames (drag detection, FFM)
+/// - `tiledPositions` — last read tiled frames (FFM, focus resolving)
 /// - `cachedWindows` — last poll's `HyprWindow` snapshots
 ///
 /// What does not live here: workspace assignment (in `WorkspaceManager`),
@@ -37,9 +38,9 @@ final class WindowStateCache {
 
     /// Last read frames of visible non-floating windows, keyed by window ID.
     /// Not the layout's intent, and it can include newcomers not yet in a
-    /// tree. Drag detection compares
-    /// the mouseDown frame against these to classify drag-vs-resize; FFM
-    /// uses them as hit rects to match windows without an AX poll.
+    /// tree. FFM and focus resolving
+    /// use them as hit rects to match windows without an AX poll; a
+    /// finished tiled drag rewrites them.
     var tiledPositions: [CGWindowID: CGRect] = [:]
 
     /// Windows whose owning app is alive but whose `AXUIElement` is gone

@@ -1847,7 +1847,7 @@ class TilingEngine {
     }
 
     // delegate to FrameReadbackPoller and reconcile its result against our
-    // min-size memory. returns the conflicts the engine should pass into
+    // min-size memory. the result carries the conflicts the engine passes into
     // BSPTree.adjustForMinSizes.
     private func applyLayout(_ layouts: [(HyprWindow, CGRect)], usableFrame: CGRect,
                              generation: UInt64,
@@ -2035,10 +2035,6 @@ class TilingEngine {
         var refusedWindows: [HyprWindow] = []
     }
 
-    // updateTreeMembership: the shared tree-update path. primes min-sizes, removes
-    // gone windows (sibling promotion keeps the tree shape), smart-inserts new
-    // windows in a stable order, and resets split ratios. windows that don't fit
-    // come back in its result. pure with respect to AX.
     /// The order a batch is inserted in: incumbents first, then left to
     /// right by current frame, then by id. The retry's fit check and its
     /// choice of the newcomer to give up on use the same order, so they
@@ -2055,6 +2051,10 @@ class TilingEngine {
         return a.windowID < b.windowID
     }
 
+    // updateTreeMembership: the shared tree-update path. primes min-sizes, removes
+    // gone windows (sibling promotion keeps the tree shape), smart-inserts new
+    // windows in a stable order, and resets split ratios. windows that don't fit
+    // come back in its result. pure with respect to AX.
     private func updateTreeMembership(_ windows: [HyprWindow],
                                       onWorkspace workspace: Int,
                                       screen: NSScreen, candidate: BSPTree? = nil) -> TileMembershipResult {
@@ -2623,15 +2623,6 @@ class TilingEngine {
         return applyTrackedLayout(t, in: rect, generation: generation, key: key)
     }
 
-    /// `true` when `a` and `b` can be swapped without violating any
-    /// recorded min-size constraint.
-    ///
-    /// Snapshots the tree, performs a trial swap with cleared
-    /// user-resize ratios, and asks `LayoutEngine` whether the result
-    /// fits every window's currently-known minimum. Restores the
-    /// original tree before returning regardless of outcome. Primes
-    /// `MinSizeMemory` for every window in the tree first — siblings'
-    /// min sizes still influence the post-swap fit decision.
     private enum SwapFit {
         case fits
         case revalidatable([CGWindowID: UInt64])
@@ -2671,6 +2662,15 @@ class TilingEngine {
         return withMinimaBypass(bypass, trial) ? .revalidatable(bypass) : .refused
     }
 
+    /// `true` when `a` and `b` can be swapped without violating any
+    /// recorded min-size constraint.
+    ///
+    /// Snapshots the tree, performs a trial swap with cleared
+    /// user-resize ratios, and asks `LayoutEngine` whether the result
+    /// fits every window's currently-known minimum. Restores the
+    /// original tree before returning regardless of outcome. Primes
+    /// `MinSizeMemory` for every window in the tree first — siblings'
+    /// min sizes still influence the post-swap fit decision.
     func canSwapWindows(_ a: HyprWindow, _ b: HyprWindow,
                         onWorkspace workspace: Int, screen: NSScreen) -> Bool {
         if case .refused = swapFit(a, b, onWorkspace: workspace, screen: screen) {
@@ -2679,7 +2679,7 @@ class TilingEngine {
         return true
     }
 
-    /// Synchronous swap path (no animation).
+    /// Swaps two tiled windows and verifies the layout.
     ///
     /// Snapshots the tree before swapping so a post-readback overflow
     /// — which `canSwapWindows`' seeded mins can miss when an app's
@@ -2807,8 +2807,7 @@ class TilingEngine {
     /// ones that survived the bypass.
     ///
     /// No AX write and no layout happen here, and the bypass lasts exactly as
-    /// long as the second check. Two things are not read-only, both inherited
-    /// from the fit check this replaces: priming can pick up a window's
+    /// long as the second check. Two things are not read-only: priming can pick up a window's
     /// `AXMinimumSize` as a new `seeded` entry, and asking about a workspace
     /// that has no tree yet creates an empty one. Neither touches an
     /// `observed` bound, which is what a revalidation is about.

@@ -138,7 +138,7 @@ enum WindowStacking {
     /// Front-to-back hit test at `point` (CG coordinates).
     ///
     /// Our own windows and invisible windows are skipped. Other apps'
-    /// raised windows are skipped too, as before, so a click-through
+    /// raised windows are skipped too, so a click-through
     /// overlay cannot kill focus-follows-mouse. A managed floater raised
     /// to the floating level is a hit on that floater, whichever app is in
     /// front; any other raised window of the frontmost app blocks.
@@ -201,7 +201,7 @@ enum WindowStacking {
     ///
     /// The dim cuts a floater's hole only where the floater is in front, so
     /// these come back out of the hole. A floater the list does not show
-    /// gets no entry and keeps its whole hole, as before, and so does a
+    /// gets no entry and keeps its whole hole, and so does a
     /// floater at the floating level, which is above every layer-0 window.
     /// Covers count only on layer 0.
     static func occluders(ofFloaters floaterFrames: [CGWindowID: CGRect],

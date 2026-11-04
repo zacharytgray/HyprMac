@@ -201,7 +201,7 @@ class WindowManager {
     ///
     /// Construction is in three layers:
     /// 1. Build sub-managers that take only static dependencies.
-    /// 2. Build the orchestration layer (`floatingController`,
+    /// 2. Build the orchestration layer (including `floatingController`,
     ///    `workspaceOrchestrator`, `pollingScheduler`, `tiledDrag`,
     ///    `actionDispatcher`) and attach the closure handles each one
     ///    needs from `WindowManager`-local helpers.
@@ -483,7 +483,7 @@ class WindowManager {
                 || self.suppressions.isSuppressed(.workspaceTransition)
         }
 
-        // action dispatcher — owns the per-Action routing previously in handleAction.
+        // action dispatcher — owns the per-Action routing.
         self.actionDispatcher = ActionDispatcher(
             stateCache: stateCache,
             accessibility: accessibility,
@@ -808,7 +808,7 @@ class WindowManager {
             )
             // start the reconcile timer only after the initial tile so
             // pollWindowChanges can't race against snapshotAndTile, claim all
-            // windows as new, and trigger an animation that blocks the correct
+            // windows as new, and trigger a retile that blocks the correct
             // initial distribution. the timer is now a slow (10s) safety net;
             // AX notifications above are the primary trigger.
             self.pollingScheduler.start()
@@ -1233,13 +1233,6 @@ class WindowManager {
         updateFocusBorder(for: window)
     }
 
-    /// Reposition the focus border around `window`, refresh the floating
-    /// outlines, and rebuild the dim mask for the new focused window.
-    ///
-    /// The border and dim paths are independent: each respects its own
-    /// config toggle. Disabling the border doesn't disable dim (and vice
-    /// versa) — `refreshDimming` always runs and reads
-    /// `config.dimInactiveWindows` itself.
     /// `true` when a fullscreen window is currently driving the active Space.
     /// Checks `window` first (commonly the new focus target), falls back to
     /// the active app's focused-window AX query. Results are not cached:
@@ -1265,6 +1258,13 @@ class WindowManager {
         return false
     }
 
+    /// Reposition the focus border around `window`, refresh the floating
+    /// outlines, and rebuild the dim mask for the new focused window.
+    ///
+    /// The border and dim paths are independent: each respects its own
+    /// config toggle. Disabling the border doesn't disable dim (and vice
+    /// versa) — `refreshDimming` always runs and reads
+    /// `config.dimInactiveWindows` itself.
     private func updateFocusBorder(for window: HyprWindow) {
         // suppress all chrome when a fullscreen window is in play — green
         // button, Cmd-Ctrl-F, browser HTML5 fullscreen, fullscreen video.
@@ -1796,7 +1796,6 @@ class WindowManager {
     }
 
     /// Run `prepare`, retile every visible workspace, run `completion`.
-    /// There is no animation; the name is historical.
     @discardableResult
     private func animatedRetile(
         windows: [HyprWindow]? = nil,
@@ -2266,10 +2265,6 @@ class WindowManager {
             || (stateCache.cachedWindows[id]?.isFloating ?? false)
     }
 
-    /// One ordinary verified layout pass for a key whose windows drifted.
-    /// Nothing special: the same path a retile takes, down to the
-    /// bookkeeping, so a refusal rolls back, marks the key, and hands
-    /// whatever it stranded to the recovery exactly as it always would.
     /// What every pass needs first: walk (unless the caller already did),
     /// prime minima, stamp floaters. A pass that skips one drops tiles.
     private func freshWalk(_ windows: [HyprWindow]? = nil) -> [HyprWindow] {
@@ -2279,6 +2274,10 @@ class WindowManager {
         return allWindows
     }
 
+    /// One ordinary verified layout pass for a key whose windows drifted.
+    /// Nothing special: the same path a retile takes, down to the
+    /// bookkeeping, so a refusal rolls back, marks the key, and hands
+    /// whatever it stranded to the recovery exactly as it always would.
     @discardableResult
     private func reapplyLayout(onWorkspace workspace: Int, screen: NSScreen) -> TilingEngine.AdmissionResult {
         let allWindows = freshWalk()

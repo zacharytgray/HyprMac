@@ -109,9 +109,8 @@ class MouseTrackingManager {
         guard isFFMEligible() else { return }
 
         // throttle: cap the resolve rate. note this records lastHandleTime
-        // even when we end up bailing on the dead-zone check below — that
-        // matches the prior behavior, where any pass through the eligibility
-        // gate consumes the throttle window.
+        // even when we end up bailing on the dead-zone check below, so any
+        // pass through the eligibility gate consumes the throttle window.
         let currentTime = now()
         if currentTime - lastHandleTime < hoverThrottleInterval() { return }
         lastHandleTime = currentTime
@@ -168,7 +167,7 @@ class MouseTrackingManager {
     /// height — the bug from the multi-monitor FFM investigation.
     private func isInMenuBarDeadZone(_ cgPoint: CGPoint) -> Bool {
         guard let screen = screenAt(cgPoint) else {
-            // fall back to the old primary-anchored check
+            // fall back to the primary-anchored check
             return cgPoint.y < Tuning.menuBarDeadZonePx
         }
         // screen.frame is in NS (bottom-left). its top edge in CG (top-left) is

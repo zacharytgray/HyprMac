@@ -1,4 +1,5 @@
-// Persistent line-oriented log file for debug builds. macOS never
+// Persistent line-oriented log file. On in debug builds, and in Release
+// when verbose logging is on. macOS never
 // persists os_log `.debug` lines, so after a bug the only thing left in
 // `log show` is `.notice` and above — the interesting trace evidence is
 // already gone. This file takes every `hyprLog` call at every level and

@@ -2,10 +2,9 @@ import XCTest
 import Cocoa
 @testable import HyprMac
 
-// pins the WindowManager.toggleSplit single-mutation behavior. with animation
-// stripped, the dispatcher just calls tilingEngine.toggleSplit directly — but
-// the regression test stays as a guard against future reintroduction of a
-// double-toggle path.
+// pins the ActionDispatcher.toggleSplit single-mutation behavior. the
+// dispatcher just calls tilingEngine.toggleSplit directly. the regression test
+// stays as a guard against a double-toggle path coming back.
 
 final class ToggleSplitFallthroughRegressionTests: XCTestCase {
 

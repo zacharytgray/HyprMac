@@ -125,7 +125,7 @@ struct LayoutRestoreOutcome {
     }
 }
 
-/// Restore orchestration, pulled out of `WindowManager` so it runs headless.
+/// Restore orchestration, kept out of `WindowManager` so it runs headless.
 ///
 /// Moves go through `WorkspaceOrchestrator.moveWindows` (the same
 /// suppression, tree removal and park/place sequence as `Hypr+Shift+N`),

@@ -7,7 +7,7 @@
 
 import Foundation
 
-/// tokenizes a command line and runs it directly, never via a shell
+/// tokenizes a command line without a shell
 enum CommandLineParser {
     enum ParseError: Error, Equatable {
         case empty

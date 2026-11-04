@@ -1,10 +1,13 @@
 # Architecture assessment and refactor path
 
-Assessed at `670626a` (v0.20.1). Line numbers refer to that commit. Comment
-fixes on this branch move some lines slightly, so search by symbol if a line
-looks off. Baseline at that commit: 1716 tests, 28 skipped, 0 failures.
+Phases 0 to 7 merged to `main` as `ff910c8` on 2026-11-03. Not released yet. What
+is still owed before a release is under "Before a release".
 
-Tests do not prove window behavior. Nothing in this file was checked live.
+Assessed at `670626a` (v0.20.1). Line numbers refer to that commit, and files have
+since moved, so search by symbol. Baseline at that commit: 1716 tests, 28 skipped,
+0 failures. The suite is now at 1833 tests, 28 skipped.
+
+Tests do not prove window behavior. Live results are recorded under each phase.
 "Read" means the code was read at the cited line. "Inferred" means the reasoning
 follows from the code, but nobody has seen it happen.
 
@@ -32,7 +35,7 @@ What actually costs time:
 4. **Two parallel sizing flows that have drifted** (tile pass and tiled drag).
 5. **About 800 lines of dead or test-only code,** which readers cannot tell from
    live code.
-6. **Stale docs and comments.** Fixed on this branch.
+6. **Stale docs and comments.** Fixed in phase 0.
 
 ## What is wrong, ranked
 
@@ -149,7 +152,7 @@ copies, and every walk builds new instances, so a window usually has several.
 Fresh objects say `isFloating == false` until stamped.
 
 Do not convert it to a struct. Centralize the flag writes (step 3.3) and keep the
-doc comment honest (done on this branch).
+doc comment honest (done in phase 0).
 
 ### 7. Time is coordinated by convention
 
@@ -204,6 +207,10 @@ intermittent ones get a `.notice` log first, then a fix once the cause is seen.
 | B13 | A degraded restoration after a refused move leaves the window on the destination. The next poll reads drift and completes the move the user saw refused. No recovery owns it | `WorkspaceOrchestrator.swift:674-681`, `ActionDispatcher.swift:232-233` | Inferred | `.notice` when drift follows a degraded restoration |
 | B14 | Holding Option during a tiled drag: the window is resized during the drag (`settle read` shows `dw=343`), and a swap ended `degraded` with the red shake | Live, 2026-11-02, same on `aa883ee` and `c61925f`. Suspect macOS's own Option-drag tiling, not confirmed | Swap trigger removed: Option was an undocumented leftover from `93bfedf`, and only Hypr swaps now. Live at `c40f478`, a plain drag with Option held still ends `degraded` with the shake, the window at half the screen off its slot | Confirm the cause by hand before any fix |
 
+B15 (found 2026-11-03, not fixed): `keepUnreadableCopy` returns true when `Data(contentsOf:)` fails, so a save
+overwrites a file it could not open, with no copy. This is the part of B1's fix that remains. `ConfigStore.swift:259-263`.
+The log line at `:149` promises a copy in that case too.
+
 ## Decisions
 
 Decided on 2026-11-02: D1, D3, D4 (resume only), D5. The rest are still open.
@@ -252,7 +259,7 @@ bash scripts/test-release-pipeline.sh
 Run `xcodegen generate` after adding or removing files. **Live** means the Debug
 app on the MacBook, using the checklist below.
 
-### Phase 0: docs and comments (this branch)
+### Phase 0: docs and comments
 
 Done. Comment-only in Swift. See "Documentation changes" below.
 
@@ -487,11 +494,24 @@ fire. Other tests with fixed delays may still fail on the hub. Why the hub's sle
 
 ## Open PRs
 
-#58, #62, #63, #64, #65 and #66 are open. `perf/reveal-relayout` and
-`perf/fixed-size-window` touch `Tiling/`, `fix/same-app-window-retile` also does.
-Phases 1 to 4 are small enough to merge around them. Decide those PRs before
-phases 5 to 7. Docs deleted on this branch may also conflict with those branches,
-trivially.
+#58, #62, #63, #64, #65 and #66 are open. GitHub shows all six as conflicting since the
+merge. Test merges against `ff910c8` on 2026-11-03:
+
+| PR | Conflict | Suite on the merge |
+|---|---|---|
+| #58 | None | Pass |
+| #62 | Project file only | Pass |
+| #63 | `StateDump.swift` and `WindowManager.swift`, because `dumpState` moved | Not run |
+| #64 | `docs/tiling-algorithm.md` only | Pass, but it rewrites the guard tests |
+| #65 | Project file only | Pass |
+| #66 | None | Pass |
+
+## Before a release
+
+Not checked live: a Hypr swap across displays, unplugging a real monitor, menu open plus
+Hypr, pause inside a settle, the scratchpad up during each scenario, a corrupt `config.json`
+(B1) and a real app timeout. The release's What's New must mention that Option no longer
+swaps on a drag.
 
 ## Live checklist
 
@@ -505,7 +525,7 @@ Run on the MacBook Debug build for any step marked **Live**. It extends
 - Monitor unplug and replug. Lock and unlock. Sleep and wake. Pause inside a settle.
 - Scratchpad up during each of the above.
 
-## Documentation changes on this branch
+## Documentation changes in phase 0
 
 - Corrected wrong claims in the README, `docs/architecture.md`,
   `docs/tiling-algorithm.md`, `docs/coordinate-systems.md`, `docs/debugging.md`,

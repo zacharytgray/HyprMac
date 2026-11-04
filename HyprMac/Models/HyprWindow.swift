@@ -1,8 +1,8 @@
 // One window's identity and AX-driven controls. Wraps an
 // `AXUIElement` and its stable `CGWindowID`; everything else
 // (`frame`, `position`, `size`, `focus`, `setFrame`) is built on AX
-// gets/sets. Also holds the SkyLight private-API hooks used for
-// focus-without-raise.
+// gets/sets. Also calls the SkyLight private APIs (declared in
+// PrivateAPI/SkyLightFunctions.swift) for focus-without-raise.
 
 import Cocoa
 
