@@ -267,6 +267,21 @@ struct TilingSettingsView: View {
                 }
             }
 
+            HyprRow("Overlay accent", icon: "paintpalette",
+                    subtitle: "Workspace HUD, overview, keybind sheet and menu bar.",
+                    divider: true) {
+                ColorPickerRow(
+                    label: "",
+                    isCustom: config.overlayAccentHex != nil,
+                    onReset: { config.overlayAccentHex = nil },
+                    color: Binding(
+                        get: { Color.overlayPrimary },
+                        set: { config.overlayAccentHex = NSColor($0).hexString }
+                    ),
+                    defaultLabel: "cyan · default"
+                )
+            }
+
             HyprRow("Fade duration", icon: "timer",
                     subtitle: "Shared by borders, dimming, and the scratchpad scrim.",
                     divider: true) {

@@ -315,7 +315,7 @@ private struct StatusHUD: View {
     var body: some View {
         VStack(spacing: 5) {
             Text(caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(failed ? Color.red : Color.hyprMagenta)
+                .tracking(2).foregroundStyle(failed ? Color.red : Color.overlaySecondary)
             Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
             if let detail {
@@ -325,7 +325,7 @@ private struct StatusHUD: View {
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
         .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.hyprCyan.opacity(0.32)))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
     }
@@ -342,7 +342,7 @@ private struct WorkspaceSwitchHUD: View {
     var body: some View {
         VStack(spacing: 5) {
             Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(Color.hyprMagenta)
+                .tracking(2).foregroundStyle(Color.overlaySecondary)
             // a custom name has no length limit; keep the panel on screen
             Text(text.number).font(.system(size: 40, weight: .bold, design: .rounded))
                 .lineLimit(1).frame(maxWidth: 480)
@@ -350,7 +350,7 @@ private struct WorkspaceSwitchHUD: View {
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
         .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.hyprCyan.opacity(0.32)))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
     }
@@ -401,7 +401,7 @@ struct WorkspaceOverviewView: View {
         }
         .padding(22)
         .background(RoundedRectangle(cornerRadius: 18).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.hyprCyan.opacity(0.28)))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.overlayPrimary.opacity(0.28)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(24)
         .coordinateSpace(name: "workspaceOverview")
@@ -431,7 +431,7 @@ struct WorkspaceOverviewView: View {
             Text("SCRATCHPAD")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
-                .foregroundStyle(Color.hyprMagenta)
+                .foregroundStyle(Color.overlaySecondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)],
                       alignment: .leading, spacing: 7) {
                 ForEach(filteredScratchpad) { window in
@@ -480,7 +480,7 @@ private struct WorkspaceCard: View {
                     Text(workspace.monitorName).font(.system(size: 11, design: .monospaced)).lineLimit(1)
                         .foregroundStyle(name == nil ? HierarchicalShapeStyle.primary : .secondary)
                     Spacer()
-                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.hyprCyan) }
+                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.overlayPrimary) }
                 }
             }.buttonStyle(.plain)
             GeometryReader { proxy in
@@ -490,7 +490,7 @@ private struct WorkspaceCard: View {
                         let frame = window.normalizedFrame
                         Button { selectWindow(workspace.id, window.id) } label: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(0.45) : Color.hyprCyan.opacity(0.22))
+                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(0.45) : Color.overlayPrimary.opacity(0.22))
                                 WorkspaceAppIcon(bundleID: window.bundleID).frame(width: 20, height: 20)
                             }
                         }
@@ -524,7 +524,7 @@ private struct WorkspaceCard: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(workspace.isActive ? palette.activeSurface : palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(workspace.isActive ? Color.hyprCyan.opacity(0.7) : palette.separator))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(workspace.isActive ? Color.overlayPrimary.opacity(0.7) : palette.separator))
     }
 
 }

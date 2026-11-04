@@ -522,8 +522,8 @@ Control for older configs.
 
 ## Hex color storage
 
-`UserConfig.focusBorderColorHex` and `floatingBorderColorHex` are
-`String?` — `nil` means "use the system default", a hex string like
+`UserConfig.focusBorderColorHex`, `floatingBorderColorHex` and
+`overlayAccentHex` are `String?` — `nil` means "use the system default", a hex string like
 `"007AFF"` means "use this exact color".
 
 `NSColor.fromHex` returns `nil` on malformed input and logs a

@@ -25,6 +25,15 @@ extension Color {
     // signature accents — used sparingly
     static let hyprCyan = Color(nsColor: .hyprCyan)
     static let hyprMagenta = Color(nsColor: .hyprMagenta)
+
+    // overlay accents: the user's one accent when set, else the brand pair.
+    // read per draw, so views observing UserConfig pick up a change at once
+    static var overlayPrimary: Color {
+        UserConfig.shared.overlayAccentHex.flatMap(NSColor.fromHex).map { Color(nsColor: $0) } ?? .hyprCyan
+    }
+    static var overlaySecondary: Color {
+        UserConfig.shared.overlayAccentHex.flatMap(NSColor.fromHex).map { Color(nsColor: $0) } ?? .hyprMagenta
+    }
 }
 
 extension UserConfig {

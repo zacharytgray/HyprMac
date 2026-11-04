@@ -568,6 +568,8 @@ struct SavedConfig: Codable {
     var restoreLayoutOnLaunch: Bool? = nil
     var windowRules: [WindowRule]? = nil
     var workspaceNames: [String: String]? = nil
+    // nil = the brand cyan and magenta pair
+    var overlayAccentHex: String? = nil
 }
 
 // MARK: - per-keybind decode tolerance
@@ -597,6 +599,7 @@ extension SavedConfig {
         case restoreLayoutOnLaunch
         case windowRules
         case workspaceNames
+        case overlayAccentHex
     }
 
     init(from decoder: Decoder) throws {
@@ -666,6 +669,7 @@ extension SavedConfig {
         self.restoreLayoutOnLaunch = Self.tolerant(c, .restoreLayoutOnLaunch)
         self.windowRules = Self.tolerantWindowRules(c)
         self.workspaceNames = Self.tolerantWorkspaceNames(c)
+        self.overlayAccentHex = Self.tolerant(c, .overlayAccentHex)
     }
 
     // keys "1"…"10" with a non-empty name; anything else is dropped, so a

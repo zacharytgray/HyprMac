@@ -150,6 +150,10 @@ class UserConfig: ObservableObject {
 
     // custom names for workspaces 1–10, keyed "1"…"10". display only:
     // every reader looks it up through `workspaceDisplayName`
+    // one accent for the overlays. nil keeps the brand cyan and magenta pair
+    @Published var overlayAccentHex: String? {
+        didSet { persistRuntimeChange() }
+    }
     @Published var workspaceNames: [String: String] {
         didSet { guard !isReloading else { return }; save() }
     }
@@ -241,6 +245,7 @@ class UserConfig: ObservableObject {
             self.scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
             self.restoreLayoutOnLaunch = saved.restoreLayoutOnLaunch ?? UserConfigDefaults.restoreLayoutOnLaunch
             self.windowRules = saved.windowRules ?? []
+            self.overlayAccentHex = saved.overlayAccentHex
             self.workspaceNames = saved.workspaceNames ?? [:]
         } else {
             self.keybinds = Keybind.defaults
@@ -269,6 +274,7 @@ class UserConfig: ObservableObject {
             self.scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
             self.restoreLayoutOnLaunch = UserConfigDefaults.restoreLayoutOnLaunch
             self.windowRules = []
+            self.overlayAccentHex = nil
             self.workspaceNames = [:]
         }
 
@@ -395,7 +401,8 @@ class UserConfig: ObservableObject {
             scratchpadRegionInset: scratchpadRegionInset,
             restoreLayoutOnLaunch: restoreLayoutOnLaunch,
             windowRules: windowRules.isEmpty ? nil : windowRules,
-            workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames)
+            workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
+            overlayAccentHex: overlayAccentHex)
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
@@ -420,6 +427,7 @@ class UserConfig: ObservableObject {
         showFocusBorder = UserConfigDefaults.showFocusBorder
         focusBorderColorHex = nil
         floatingBorderColorHex = nil
+        overlayAccentHex = nil
         focusBracketStyle = UserConfigDefaults.focusBracketStyle
         focusBracketColorHex = nil
         focusBracketRadiusOverride = nil
@@ -457,6 +465,7 @@ class UserConfig: ObservableObject {
         showFocusBorder = UserConfigDefaults.showFocusBorder
         focusBorderColorHex = nil
         floatingBorderColorHex = nil
+        overlayAccentHex = nil
         chromeFadeDurationSec = UserConfigDefaults.chromeFadeDurationSec
         isReloading = false
         save()
@@ -535,6 +544,7 @@ class UserConfig: ObservableObject {
         scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
         restoreLayoutOnLaunch = saved.restoreLayoutOnLaunch ?? UserConfigDefaults.restoreLayoutOnLaunch
         windowRules = saved.windowRules ?? []
+        overlayAccentHex = saved.overlayAccentHex
         workspaceNames = saved.workspaceNames ?? [:]
 
         // monitor settings come from the local file, not the synced config

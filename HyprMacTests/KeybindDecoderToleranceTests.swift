@@ -18,6 +18,20 @@ final class KeybindDecoderToleranceTests: XCTestCase {
 
     // MARK: - real-config wire-format round-trips
 
+    func testOverlayAccentRoundTrips() throws {
+        let json = #"{"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true,"overlayAccentHex":"30D158"}"#
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        let reloaded = try JSONDecoder().decode(SavedConfig.self, from: try JSONEncoder().encode(saved))
+        XCTAssertEqual(reloaded.overlayAccentHex, "30D158")
+    }
+
+    func testABadOverlayAccentCostsOnlyThatField() throws {
+        let json = #"{"keybinds":[],"gapSize":12,"outerPadding":8,"enabled":true,"overlayAccentHex":42}"#
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(saved.gapSize, 12)
+        XCTAssertNil(saved.overlayAccentHex)
+    }
+
     func testFocusDirectionWireFormatDecodes() throws {
         let json = #"{"action":{"focusDirection":{"_0":"left"}},"keyCode":123,"modifiers":1}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))
