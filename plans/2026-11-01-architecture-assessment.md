@@ -5,7 +5,7 @@ is still owed before a release is under "Before a release".
 
 Assessed at `670626a` (v0.20.1). Line numbers refer to that commit, and files have
 since moved, so search by symbol. Baseline at that commit: 1716 tests, 28 skipped,
-0 failures. The suite is now at 1872 tests, 28 skipped.
+0 failures. The suite is now at 1877 tests, 28 skipped.
 
 Tests do not prove window behavior. Live results are recorded under each phase.
 "Read" means the code was read at the cited line. "Inferred" means the reasoning

@@ -20,7 +20,7 @@ otherwise inherit the release app's real preference.
 ## Supported environments
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
-through `./scripts/test-isolated.sh --debug-variant`. That run gives 1872
+through `./scripts/test-isolated.sh --debug-variant`. That run gives 1877
 tests, 28 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 

@@ -533,6 +533,10 @@ class WindowManager {
             self?.scratchpad.refocusMember(reason: "ensureInvariant-scratchpad")
         }
         actionDispatcher.admitToScratchpad = { [weak self] w in self?.scratchpad.admitNewWindow(w) ?? false }
+        actionDispatcher.adoptPinnedToScratchpad = { [weak self] w in
+            guard let self else { return }
+            self.scratchpad.adoptPinned(w, summon: !self.displayTransitionPending)
+        }
         actionDispatcher.scratchpadDiscovery = { [weak self] gone, returned in
             self?.scratchpad.noteDiscovery(goneIDs: gone, returned: returned)
         }

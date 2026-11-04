@@ -153,6 +153,41 @@ final class ScratchpadController {
     func admitNewWindow(_ window: HyprWindow) -> Bool {
         guard isVisible, !window.isQuickLookPanel, memberPIDs.contains(window.ownerPID),
               !contains(window.windowID) else { return false }
+        joinVisibleLayer(window)
+        return true
+    }
+
+    /// A window whose app is pinned to the scratchpad. A new one brings the
+    /// layer up with it, the way a workspace pin switches there. An open one,
+    /// at launch or on Retile All, parks with the layer down. Taking it out of
+    /// the workspace's tree is enough: the caller's retile closes the gap.
+    func adoptPinned(_ window: HyprWindow, summon: Bool) {
+        let id = window.windowID
+        guard !window.isQuickLookPanel, !contains(id) else { return }
+        if let workspace = workspaceManager.workspaceFor(id), !stateCache.floatingWindowIDs.contains(id) {
+            tilingEngine.removeWindow(window, fromWorkspace: workspace)
+        }
+        hyprLog(.notice, .lifecycle, "window rule: \(window.bundleID ?? "?") (\(id)) pinned to the scratchpad")
+        if isVisible {
+            joinVisibleLayer(window)
+            return
+        }
+        let frame = window.frame
+        workspaceManager.assignWindow(id, toWorkspace: Self.workspace)
+        let tiled = tileNewMembers && !isNeverTile(window) && !stateCache.floatingWindowIDs.contains(id)
+        saveFreeFormFrame(window, fallback: frame)
+        stateCache.setFloating(!tiled, window: window)
+        noteFocus(id)
+        if summon {
+            show(focusing: id)
+        } else if let screen = displayManager.screens.first {
+            workspaceManager.hideInCorner(window, on: screen)
+        }
+    }
+
+    /// Same entry rule as a send: tiled when tile-by-default is on and it
+    /// fits, else floating.
+    private func joinVisibleLayer(_ window: HyprWindow) {
         let id = window.windowID
         workspaceManager.assignWindow(id, toWorkspace: Self.workspace)
         summonedIDs.insert(id)
@@ -176,7 +211,6 @@ final class ScratchpadController {
         updateFocusBorder(window)
         restackLayer()
         hyprLog(.notice, .lifecycle, "scratchpad: new window '\(window.title ?? "?")' (\(id)) joined the layer")
-        return true
     }
 
     /// Discovery saw members close, minimize or come back. A gone member

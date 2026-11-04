@@ -127,8 +127,9 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 
 ## Pinning apps to workspaces
 
-Settings → General → "Pin apps to workspaces" sends an app to a workspace of your choice. Every
-new window of a pinned app opens there, and HyprMac switches to that workspace with it. If the
+Settings → General → "Pin apps" sends an app to a workspace of your choice, or to the scratchpad.
+Every new window of a pinned app opens there, and HyprMac shows it. An app pinned to the scratchpad
+also goes back there at launch and on **Hypr + R**, with the scratchpad left closed. If a pinned
 workspace is full, the window goes to the next one with room. **Hypr + R** (Retile all
 spaces) also moves a pinned app's open windows back to its workspace. An app in "Never tile"
 can be pinned too: it goes to its workspace and stays floating.

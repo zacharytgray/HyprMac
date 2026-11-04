@@ -163,8 +163,9 @@ dropped, with a beep, while a display transition is settling.
 
 ## Window rules
 
-`windowRules` in `config.json` pins an app to a workspace. Settings →
-General → "Pin apps to workspaces" edits it, one rule per app:
+`windowRules` in `config.json` pins an app to a workspace, or to the scratchpad
+with `"workspace": 0`. Settings → General → "Pin apps" edits it, one rule per
+app:
 
 ```
 "windowRules": [
@@ -172,6 +173,10 @@ General → "Pin apps to workspaces" edits it, one rule per app:
 ]
 ```
 
+- **Scratchpad pins.** A new window joins the scratchpad and brings it up
+  (`ScratchpadController.adoptPinned`). At launch and on Retile All, the app's
+  open windows park in it with the layer down, so it fills again after a
+  restart. A build without this option reads `0` as a pin to nothing.
 - **New windows.** `ActionDispatcher.assignNewWindows` uses the pin as the
   preferred workspace instead of the one visible where the window opened.
   A full pinned workspace spills onward, like any admission. If the pin

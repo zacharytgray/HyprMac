@@ -97,6 +97,9 @@ final class WindowPlacement {
 
         let allWids = Set(allWindows.map { $0.windowID })
 
+        // before anything below counts them on a workspace
+        placeScratchpadPins(allWindows)
+
         // full redistribution: un-float everything except excluded apps and
         // non-standard windows (dialogs, sheets, floating panels).
         let excluded = Set(config.excludedBundleIDs)
@@ -163,6 +166,18 @@ final class WindowPlacement {
         }
 
         hyprLog(.debug, .lifecycle, "distributed \(tilingWids.count) windows across \(plan.assignments.count) slot(s), \(screens.count) monitor(s)")
+    }
+
+    /// Windows of apps pinned to the scratchpad wait there from launch and
+    /// go back on Retile All. Hidden windows keep their workspace, and a
+    /// window on a disabled monitor stays there.
+    private func placeScratchpadPins(_ allWindows: [HyprWindow]) {
+        guard !config.windowRules.isEmpty else { return }
+        for window in allWindows where actionDispatcher.isPinnedToScratchpad(window) {
+            guard !stateCache.hiddenWindowIDs.contains(window.windowID),
+                  displayManager.screen(for: window).map(workspaceManager.isMonitorDisabled) != true else { continue }
+            scratchpad.adoptPinned(window, summon: false)
+        }
     }
 
     /// Retile All's half of window rules for floaters: a pinned app's

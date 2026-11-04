@@ -52,6 +52,13 @@ final class ActionDispatcher {
         return WindowRule.pinnedWorkspace(forBundleID: bundleID, in: rules)
     }
 
+    /// Whether a window rule pins this window's app to the scratchpad. A Quick
+    /// Look preview never is, for the same reason as above.
+    static func isPinnedToScratchpad(bundleID: String?, isQuickLookPanel: Bool,
+                                     rules: [WindowRule]) -> Bool {
+        !isQuickLookPanel && WindowRule.isPinnedToScratchpad(bundleID: bundleID, in: rules)
+    }
+
     /// A pinned new window and where it went.
     struct PinnedLanding: Equatable {
         let windowID: CGWindowID
@@ -125,6 +132,8 @@ final class ActionDispatcher {
     var refocusScratchpad: () -> Void = {}
     // a new window the scratchpad takes (a member app's Cmd-N)
     var admitToScratchpad: (HyprWindow) -> Bool = { _ in false }
+    // a new window of an app pinned to the scratchpad
+    var adoptPinnedToScratchpad: (HyprWindow) -> Void = { _ in }
     // members closed, minimized or came back
     var scratchpadDiscovery: (Set<CGWindowID>, [HyprWindow]) -> Void = { _, _ in }
     // keystrokes stay on a member while the scratchpad is up
@@ -192,7 +201,11 @@ final class ActionDispatcher {
         // a member app's new window joins the scratchpad while it's up. the
         // admission below skips ws-0 windows
         for w in changes.newWindows where !changes.newOnDisabledMonitor.contains(w.windowID) {
-            _ = admitToScratchpad(w)
+            if isPinnedToScratchpad(w) {
+                adoptPinnedToScratchpad(w)
+            } else {
+                _ = admitToScratchpad(w)
+            }
         }
 
         // workspace assignment for new windows that didn't auto-float onto a
@@ -377,6 +390,13 @@ final class ActionDispatcher {
             ?? NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier
         return Self.pinnedWorkspace(bundleID: bundleID, isQuickLookPanel: window.isQuickLookPanel,
                                     rules: config.windowRules)
+    }
+
+    func isPinnedToScratchpad(_ window: HyprWindow) -> Bool {
+        let bundleID = window.bundleID
+            ?? NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier
+        return Self.isPinnedToScratchpad(bundleID: bundleID, isQuickLookPanel: window.isQuickLookPanel,
+                                         rules: config.windowRules)
     }
 
     /// Assign a newly-discovered window to a workspace: its app's window

@@ -27,6 +27,24 @@ final class WindowRuleTests: XCTestCase {
     }
 
     // a hand-edited config can name a workspace that doesn't exist
+    func testAScratchpadPinIsNotAWorkspacePin() {
+        let pins = rules(("com.apple.Music", WindowRule.scratchpad))
+        XCTAssertTrue(WindowRule.isPinnedToScratchpad(bundleID: "com.apple.Music", in: pins))
+        XCTAssertFalse(WindowRule.isPinnedToScratchpad(bundleID: "com.apple.Terminal", in: pins))
+        XCTAssertFalse(WindowRule.isPinnedToScratchpad(bundleID: nil, in: pins))
+        XCTAssertNil(WindowRule.pinnedWorkspace(forBundleID: "com.apple.Music", in: pins))
+        XCTAssertFalse(WindowRule.isPinnedToScratchpad(
+            bundleID: "com.apple.Terminal", in: rules(("com.apple.Terminal", 2))))
+    }
+
+    func testAQuickLookPreviewIsNeverPinnedToTheScratchpad() {
+        let pins = rules(("com.apple.finder", WindowRule.scratchpad))
+        XCTAssertTrue(ActionDispatcher.isPinnedToScratchpad(bundleID: "com.apple.finder",
+                                                            isQuickLookPanel: false, rules: pins))
+        XCTAssertFalse(ActionDispatcher.isPinnedToScratchpad(bundleID: "com.apple.finder",
+                                                             isQuickLookPanel: true, rules: pins))
+    }
+
     func testWorkspaceOutsideOneToTenPinsNothing() {
         for workspace in [0, -1, 11] {
             XCTAssertNil(WindowRule.pinnedWorkspace(forBundleID: "com.apple.Terminal",
