@@ -222,6 +222,21 @@ class AccessibilityManager {
         return err == .success && wid != 0 ? wid : nil
     }
 
+    /// `CGWindowID` of `pid`'s AX-focused window, or nil when AX cannot
+    /// say. Two round-trips to that one app, no walk.
+    func focusedWindowID(ofPID pid: pid_t) -> CGWindowID? {
+        // a stalled app would time out here on every hover; nil polls, and
+        // the walk skips it
+        if stallBackoff.isBackingOff(pid, now: Date()) { return nil }
+        let appRef = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(appRef, kAXFocusedWindowAttribute as CFString, &value) == .success,
+              let val = value,
+              CFGetTypeID(val) == AXUIElementGetTypeID() else { return nil }
+        return windowID(for: val as! AXUIElement)
+    }
+
     /// Resolve one `CGWindowID` to its AX element and owner pid.
     ///
     /// Same pairing path as `getAllWindows` — owner from the CG window
