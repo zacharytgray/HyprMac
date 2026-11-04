@@ -2233,6 +2233,7 @@ class WindowManager {
         let focused = accessibility.focusedWindowID(ofPID: pid)
         let needed = FocusPollGate.needsPoll(
             focusedID: focused,
+            scratchpadUp: scratchpad.isVisible,
             known: stateCache.knownWindowIDs,
             hidden: stateCache.hiddenWindowIDs,
             onVisibleWorkspace: { workspaceManager.workspaceFor($0).map(workspaceManager.isWorkspaceVisible) ?? false })

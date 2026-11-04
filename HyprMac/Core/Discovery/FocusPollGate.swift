@@ -12,10 +12,12 @@ import CoreGraphics
 /// focus keeps it too, so park repair still sees a window pulled on screen.
 enum FocusPollGate {
     static func needsPoll(focusedID: CGWindowID?,
+                          scratchpadUp: Bool,
                           known: Set<CGWindowID>,
                           hidden: Set<CGWindowID>,
                           onVisibleWorkspace: (CGWindowID) -> Bool) -> Bool {
-        guard let id = focusedID else { return true }
+        // the poll is what pulls focus back when an app takes it behind the scrim
+        guard !scratchpadUp, let id = focusedID else { return true }
         return !known.contains(id) || hidden.contains(id) || !onVisibleWorkspace(id)
     }
 }

@@ -7,13 +7,18 @@ import XCTest
 final class FocusPollGateTests: XCTestCase {
 
     private func needsPoll(_ id: CGWindowID?, known: Set<CGWindowID> = [1, 2, 3],
-                           hidden: Set<CGWindowID> = [2], visible: Set<CGWindowID> = [1, 2]) -> Bool {
-        FocusPollGate.needsPoll(focusedID: id, known: known, hidden: hidden,
+                           hidden: Set<CGWindowID> = [2], visible: Set<CGWindowID> = [1, 2],
+                           scratchpadUp: Bool = false) -> Bool {
+        FocusPollGate.needsPoll(focusedID: id, scratchpadUp: scratchpadUp, known: known, hidden: hidden,
                                 onVisibleWorkspace: { visible.contains($0) })
     }
 
     func testKnownVisibleWindowSkipsThePoll() {
         XCTAssertFalse(needsPoll(1))
+    }
+
+    func testScratchpadUpAlwaysPolls() {
+        XCTAssertTrue(needsPoll(1, scratchpadUp: true), "focus behind the scrim has to come back")
     }
 
     func testUnreadFocusPolls() {
