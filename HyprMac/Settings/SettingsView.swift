@@ -8,6 +8,7 @@ import SwiftUI
 struct SettingsView: View {
     let showTutorial: () -> Void
     @State private var selectedTab: SettingsTab = .general
+    @ObservedObject private var config = UserConfig.shared
 
     enum SettingsTab: String, CaseIterable, Hashable {
         case general, keys, layout
@@ -37,7 +38,10 @@ struct SettingsView: View {
             detail
         }
         .frame(minWidth: 720, minHeight: 560)
-        .background(WindowLevelSetter())
+        .background(WindowLevelSetter(translucent: config.liquidGlassEnabled))
+        .background {
+            if config.liquidGlassEnabled { Rectangle().fill(.ultraThinMaterial).ignoresSafeArea() }
+        }
     }
 
     private var sidebar: some View {
@@ -179,13 +183,29 @@ private struct SidebarItem: View {
 
 // keeps settings above passive overlays once its window is available
 private struct WindowLevelSetter: NSViewRepresentable {
-    func makeNSView(context: Context) -> WLView { WLView() }
-    func updateNSView(_ nsView: WLView, context: Context) {}
+    let translucent: Bool
+
+    func makeNSView(context: Context) -> WLView {
+        let view = WLView()
+        view.translucent = translucent
+        return view
+    }
+    func updateNSView(_ nsView: WLView, context: Context) {
+        nsView.translucent = translucent
+        nsView.applyTranslucency()
+    }
 
     class WLView: NSView {
+        var translucent = false
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             window?.level = Constants.interfaceWindowLevel
+            applyTranslucency()
+        }
+        func applyTranslucency() {
+            guard let window else { return }
+            window.isOpaque = !translucent
+            window.backgroundColor = translucent ? .clear : .windowBackgroundColor
         }
     }
 }

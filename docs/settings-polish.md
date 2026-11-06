@@ -76,3 +76,12 @@ Mark roundness, length, thickness, and corner color form one group without inter
 The tutorial ends with an optional launch-at-login prompt. Skip goes directly to this prompt; Not now closes setup without changing login items. Yes registers the current app through Apple's `SMAppService.mainApp`. An enabled service is confirmed from macOS status. If approval is required or registration fails, HyprMac opens Login Items and displays the remaining steps. General settings provides the same enable/status controls and a way to manage Login Items later. Returning from System Settings refreshes the status. The choice is local to this Mac and is not synced through UserConfig.
 
 Registration is tested with injected service actions so the suite does not modify real login items. Actual first-login launching and approval UI need a manual macOS check. References: [Apple SMAppService](https://developer.apple.com/documentation/servicemanagement/smappservice) and [Login Items instructions](https://support.apple.com/en-ca/guide/mac-help/-mh15189/mac).
+
+## Liquid Glass theme
+
+`liquidGlassEnabled` (General > System) swaps card fills for glass. `HyprCardBackground` in
+`Shared/DesignSystem.swift` is the one switch: real `glassEffect` on macOS 26+ (behind
+`#if compiler(>=6.2)`), `.ultraThinMaterial` before that. It covers settings panels, the keybind
+overlay and the workspace overview/HUD cards. Focus border, brackets and dim stay opaque for
+legibility. The settings window turns non-opaque while it is on (`WindowLevelSetter`). Live-check
+this in light and dark; tests do not cover rendering.

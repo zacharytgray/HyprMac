@@ -56,6 +56,23 @@ class UserConfig: ObservableObject {
     @Published var overlayAppearance: OverlayAppearance {
         didSet { persistRuntimeChange() }
     }
+    @Published var liquidGlassEnabled: Bool {
+        didSet { persistRuntimeChange() }
+    }
+    static func clampedAnimationDuration(_ ms: Int?) -> Int {
+        let range = UserConfigDefaults.windowAnimationDurationRange
+        return min(max(ms ?? UserConfigDefaults.windowAnimationDurationMs, range.lowerBound), range.upperBound)
+    }
+
+    @Published var animateWindowMoves: Bool {
+        didSet { persistRuntimeChange() }
+    }
+    @Published var windowAnimationStyle: WindowAnimationStyle {
+        didSet { persistRuntimeChange() }
+    }
+    @Published var windowAnimationDurationMs: Int {
+        didSet { persistRuntimeChange() }
+    }
     @Published var maxSplitsPerMonitor: [String: Int] {
         didSet { persistRuntimeChange() }
     }
@@ -232,6 +249,10 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
+            self.liquidGlassEnabled = saved.liquidGlassEnabled ?? UserConfigDefaults.liquidGlassEnabled
+            self.animateWindowMoves = saved.animateWindowMoves ?? UserConfigDefaults.animateWindowMoves
+            self.windowAnimationStyle = saved.windowAnimationStyle ?? UserConfigDefaults.windowAnimationStyle
+            self.windowAnimationDurationMs = Self.clampedAnimationDuration(saved.windowAnimationDurationMs)
             self.showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = saved.focusBorderColorHex
             self.floatingBorderColorHex = saved.floatingBorderColorHex
@@ -264,6 +285,10 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = UserConfigDefaults.overlayAppearance
+            self.liquidGlassEnabled = UserConfigDefaults.liquidGlassEnabled
+            self.animateWindowMoves = UserConfigDefaults.animateWindowMoves
+            self.windowAnimationStyle = UserConfigDefaults.windowAnimationStyle
+            self.windowAnimationDurationMs = UserConfigDefaults.windowAnimationDurationMs
             self.showFocusBorder = UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = nil
             self.floatingBorderColorHex = nil
@@ -390,6 +415,10 @@ class UserConfig: ObservableObject {
             excludedBundleIDs: Array(excludedBundleIDs),
             showMenuBarIndicator: showMenuBarIndicator,
             overlayAppearance: overlayAppearance,
+            liquidGlassEnabled: liquidGlassEnabled,
+            animateWindowMoves: animateWindowMoves,
+            windowAnimationStyle: windowAnimationStyle,
+            windowAnimationDurationMs: windowAnimationDurationMs,
             maxSplitsPerMonitor: nil,
             disabledMonitors: nil,
             showFocusBorder: showFocusBorder,
@@ -430,6 +459,10 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
         overlayAppearance = UserConfigDefaults.overlayAppearance
+        liquidGlassEnabled = UserConfigDefaults.liquidGlassEnabled
+        animateWindowMoves = UserConfigDefaults.animateWindowMoves
+        windowAnimationStyle = UserConfigDefaults.windowAnimationStyle
+        windowAnimationDurationMs = UserConfigDefaults.windowAnimationDurationMs
         maxSplitsPerMonitor = [:]
         disabledMonitors = []
         outerPaddingPerMonitor = [:]
@@ -540,6 +573,10 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
         overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
+        liquidGlassEnabled = saved.liquidGlassEnabled ?? UserConfigDefaults.liquidGlassEnabled
+        animateWindowMoves = saved.animateWindowMoves ?? UserConfigDefaults.animateWindowMoves
+        windowAnimationStyle = saved.windowAnimationStyle ?? UserConfigDefaults.windowAnimationStyle
+        windowAnimationDurationMs = Self.clampedAnimationDuration(saved.windowAnimationDurationMs)
         showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
         focusBorderColorHex = saved.focusBorderColorHex
         floatingBorderColorHex = saved.floatingBorderColorHex
@@ -592,6 +629,10 @@ extension SavedConfig {
             excludedBundleIDs: nil,
             showMenuBarIndicator: UserConfigDefaults.showMenuBarIndicator,
             overlayAppearance: UserConfigDefaults.overlayAppearance,
+            liquidGlassEnabled: UserConfigDefaults.liquidGlassEnabled,
+            animateWindowMoves: UserConfigDefaults.animateWindowMoves,
+            windowAnimationStyle: UserConfigDefaults.windowAnimationStyle,
+            windowAnimationDurationMs: UserConfigDefaults.windowAnimationDurationMs,
             maxSplitsPerMonitor: nil, disabledMonitors: nil,
             showFocusBorder: UserConfigDefaults.showFocusBorder,
             focusBorderColorHex: nil, floatingBorderColorHex: nil,

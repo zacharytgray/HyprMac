@@ -252,6 +252,11 @@ class HyprWindow: Equatable, Hashable {
         }
     }
 
+    func animationStep(to rect: CGRect) {
+        _ = setSize(rect.size)
+        _ = writePosition(rect.origin)
+    }
+
     /// Move (without resizing) under the same EnhancedUI guard as
     /// `setFrame`. Used by the hide path so macOS doesn't animate or
     /// reposition the parked window — animations cause apps to snap
@@ -272,7 +277,7 @@ class HyprWindow: Equatable, Hashable {
     /// On Sequoia+ and especially Tahoe, leaving EnhancedUI on causes
     /// macOS to animate / clamp / reposition AX writes, making them
     /// arrive as something other than what we asked for.
-    private func withEnhancedUIDisabled(_ block: () -> Void) {
+    func withEnhancedUIDisabled(_ block: () -> Void) {
         let appElement = AXUIElementCreateApplication(ownerPID)
         var prevValue: CFTypeRef?
         let prevRC = AXUIElementCopyAttributeValue(appElement, "AXEnhancedUserInterface" as CFString, &prevValue)

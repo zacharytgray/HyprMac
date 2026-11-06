@@ -136,6 +136,39 @@ final class ClickThroughPanel: NSPanel {
     }
 }
 
+struct HyprCardBackground: View {
+    let cornerRadius: CGFloat
+    let fill: Color
+    @ObservedObject private var config = UserConfig.shared
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if config.liquidGlassEnabled {
+            glass(shape)
+        } else {
+            shape.fill(fill)
+        }
+    }
+
+    @ViewBuilder
+    private func glass(_ shape: RoundedRectangle) -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            Color.clear.glassEffect(.regular, in: shape)
+        } else {
+            materialGlass(shape)
+        }
+        #else
+        materialGlass(shape)
+        #endif
+    }
+
+    private func materialGlass(_ shape: RoundedRectangle) -> some View {
+        shape.fill(.ultraThinMaterial)
+            .overlay(shape.strokeBorder(Color.white.opacity(0.25), lineWidth: 0.5))
+    }
+}
+
 struct OverlayPalette {
     let scheme: ColorScheme
     var isDark: Bool { scheme == .dark }

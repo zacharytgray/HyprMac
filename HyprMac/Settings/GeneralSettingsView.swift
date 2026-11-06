@@ -284,6 +284,47 @@ struct GeneralSettingsView: View {
                 .frame(width: 120)
             }
 
+            HyprRow("Liquid Glass theme", icon: "sparkles",
+                    subtitle: "Translucent glass look for the settings window and overlays.") {
+                Toggle("", isOn: $config.liquidGlassEnabled.animation(HyprMotion.glide))
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+
+            HyprRow("Animate window swaps", icon: "arrow.left.arrow.right",
+                    subtitle: "Slides windows into place when swapped by keyboard. Some apps may look choppy.") {
+                Toggle("", isOn: $config.animateWindowMoves)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+
+            if config.animateWindowMoves {
+                HyprRow("Animation style", icon: "wand.and.rays") {
+                    Picker("", selection: $config.windowAnimationStyle) {
+                        ForEach(WindowAnimationStyle.allCases) { style in
+                            Text(style.displayName).tag(style)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 120)
+                }
+
+                HyprRow("Animation duration", icon: "timer") {
+                    HStack(spacing: HyprSpacing.sm) {
+                        Slider(value: Binding(
+                            get: { Double(config.windowAnimationDurationMs) },
+                            set: { config.windowAnimationDurationMs = UserConfig.clampedAnimationDuration(Int($0)) }),
+                               in: Double(UserConfigDefaults.windowAnimationDurationRange.lowerBound)...Double(UserConfigDefaults.windowAnimationDurationRange.upperBound),
+                               step: 20)
+                            .frame(width: 140)
+                        Text("\(config.windowAnimationDurationMs) ms")
+                            .font(.hyprMonoSm)
+                            .foregroundStyle(Color.hyprTextSecondary)
+                            .frame(width: 56, alignment: .trailing)
+                    }
+                }
+            }
+
             if config.isICloudDriveAvailable {
                 HyprRow("Sync settings via iCloud", icon: "icloud") {
                     Toggle("", isOn: $config.iCloudSyncEnabled)

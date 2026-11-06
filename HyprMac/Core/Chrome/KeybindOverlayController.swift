@@ -519,11 +519,8 @@ struct KeybindOverlayView: View {
         }
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 16, trailing: 20))
         .frame(width: cardWidth, alignment: .topLeading)
-        .background(
-            // opaque, so the pinned section headers match it exactly
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(palette.opaqueBackground)
-        )
+        // opaque, so the pinned section headers match it exactly
+        .background(HyprCardBackground(cornerRadius: 14, fill: palette.opaqueBackground))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(palette.separator, lineWidth: 1)
@@ -662,7 +659,7 @@ private struct OverlayList: View {
         }
         .overlay(alignment: .bottom) {
             // more below
-            if scroller.hasMoreBelow {
+            if scroller.hasMoreBelow, !config.liquidGlassEnabled {
                 LinearGradient(colors: [palette.opaqueBackground.opacity(0), palette.opaqueBackground],
                                startPoint: .top, endPoint: .bottom)
                     .frame(height: 32)
@@ -681,7 +678,13 @@ private struct OverlayList: View {
             .padding(.top, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: OverlayListLayout.headerHeight)
-            .background(palette.opaqueBackground)
+            .background {
+                if config.liquidGlassEnabled {
+                    Rectangle().fill(.ultraThinMaterial)
+                } else {
+                    palette.opaqueBackground
+                }
+            }
     }
 
     private func rowView(_ row: OverlayRow) -> some View {

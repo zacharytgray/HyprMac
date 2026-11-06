@@ -2912,14 +2912,26 @@ class TilingEngine {
     /// `true` on success, `false` when the swap was rejected up front
     /// or reverted after readback.
     @discardableResult
-    func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+    func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen,
+                     animation: WindowMoveAnimation? = nil) -> Bool {
         let fit = swapFit(a, b, onWorkspace: workspace, screen: screen)
         if case .refused = fit { return false }
-        return performSwap(a, b, fit: fit, onWorkspace: workspace, screen: screen)
+        return performSwap(a, b, fit: fit, onWorkspace: workspace, screen: screen, animation: animation)
+    }
+
+    private func swapMoves(_ tree: BSPTree, rect: CGRect, a: HyprWindow, b: HyprWindow) -> [WindowMove] {
+        let targets = tree.layout(in: rect, gap: gapSize, padding: outerPadding)
+        return [a, b].compactMap { window in
+            guard let from = window.frame,
+                  let to = targets.first(where: { $0.0.windowID == window.windowID })?.1,
+                  from != to else { return nil }
+            return WindowMove(window: window, from: from, to: to)
+        }
     }
 
     private func performSwap(_ a: HyprWindow, _ b: HyprWindow, fit: SwapFit,
-                             onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+                             onWorkspace workspace: Int, screen: NSScreen,
+                             animation: WindowMoveAnimation?) -> Bool {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
 
@@ -2936,6 +2948,11 @@ class TilingEngine {
         t.root.clearUserSetRatios()
         let rect = layoutRect(for: key, screen: screen)
         let generation = beginLayoutGeneration()
+        var moves: [WindowMove] = []
+        if let animation, case .fits = fit {
+            moves = swapMoves(t, rect: rect, a: a, b: b)
+            WindowMoveAnimator.run(moves, animation: animation)
+        }
         let apply = { self.applyTrackedLayout(t, in: rect, generation: generation, key: key) }
         let outcome: LayoutApplicationOutcome
         switch fit {
@@ -2953,6 +2970,7 @@ class TilingEngine {
             guard layoutGeneration == generation else { return false }
             hyprLog(.debug, .lifecycle, "swap frame application failed — restoring tree")
             t.restore(snapshot)
+            for move in moves { move.window.setFrame(move.from, crossMonitor: false) }
             return false
         }
     }

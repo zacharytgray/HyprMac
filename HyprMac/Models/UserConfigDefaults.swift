@@ -26,6 +26,24 @@ enum OverlayAppearance: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum WindowAnimationStyle: String, Codable, CaseIterable, Identifiable {
+    case smooth
+    case snappy
+    case gentle
+    case linear
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .smooth: return "Smooth"
+        case .snappy: return "Snappy"
+        case .gentle: return "Gentle"
+        case .linear: return "Linear"
+        }
+    }
+}
+
 /// Scalar defaults for `UserConfig`.
 ///
 /// Keybinds and excluded bundle ids live in their type-specific
@@ -42,6 +60,11 @@ enum UserConfigDefaults {
     static let hyprKey: HyprKey = .capsLock
     static let showMenuBarIndicator: Bool = true
     static let overlayAppearance: OverlayAppearance = .system
+    static let liquidGlassEnabled: Bool = false
+    static let animateWindowMoves: Bool = false
+    static let windowAnimationStyle: WindowAnimationStyle = .smooth
+    static let windowAnimationDurationMs: Int = 160
+    static let windowAnimationDurationRange: ClosedRange<Int> = 80...400
     static let showFocusBorder: Bool = false
     static let focusBracketStyle: FocusBracketStyle = .rounded
     static let focusBracketColor: NSColor = .black

@@ -36,10 +36,7 @@ struct HyprPanel<Content: View>: View {
             VStack(spacing: 0) {
                 content()
             }
-            .background(
-                RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
-                    .fill(Color.hyprSurface)
-            )
+            .background(HyprCardBackground(cornerRadius: HyprRadius.lg, fill: .hyprSurface))
             .overlay(
                 RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
                     .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)

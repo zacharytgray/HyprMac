@@ -683,7 +683,9 @@ final class ActionDispatcher {
         }
 
         // swapWindows handles its own snapshot/revert. flashError on false.
-        let ok = tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
+        let ok = tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen,
+                                          animation: UserConfig.shared.animateWindowMoves
+                                            ? WindowMoveAnimation(config: UserConfig.shared) : nil)
         if !ok {
             rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
             // the revert retiled — sync the cache, but don't warp the

@@ -22,6 +22,24 @@ import SwiftUI
 
 final class ConfigMigrationTests: XCTestCase {
 
+    func testLiquidGlassFlagRoundTripsAndDefaultsOff() throws {
+        let base = #"{"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true"#
+        let missing = try JSONDecoder().decode(SavedConfig.self, from: Data((base + "}").utf8))
+        XCTAssertNil(missing.liquidGlassEnabled)
+        XCTAssertFalse(UserConfigDefaults.liquidGlassEnabled)
+
+        let on = try JSONDecoder().decode(SavedConfig.self,
+            from: Data((base + #","liquidGlassEnabled":true}"#).utf8))
+        XCTAssertEqual(on.liquidGlassEnabled, true)
+
+        let bad = try JSONDecoder().decode(SavedConfig.self,
+            from: Data((base + #","liquidGlassEnabled":"yes"}"#).utf8))
+        XCTAssertNil(bad.liquidGlassEnabled)
+
+        let again = try JSONDecoder().decode(SavedConfig.self, from: JSONEncoder().encode(on))
+        XCTAssertEqual(again.liquidGlassEnabled, true)
+    }
+
     func testFocusChromeDefaultsUseDimAndBlackCorners() {
         XCTAssertFalse(UserConfigDefaults.showFocusBorder)
         XCTAssertTrue(UserConfigDefaults.dimInactiveWindows)

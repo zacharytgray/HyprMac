@@ -546,6 +546,10 @@ struct SavedConfig: Codable {
     let excludedBundleIDs: [String]?
     let showMenuBarIndicator: Bool?
     var overlayAppearance: OverlayAppearance? = nil
+    var liquidGlassEnabled: Bool? = nil
+    var animateWindowMoves: Bool? = nil
+    var windowAnimationStyle: WindowAnimationStyle? = nil
+    var windowAnimationDurationMs: Int? = nil
     let maxSplitsPerMonitor: [String: Int]?
     let disabledMonitors: [String]?
     let showFocusBorder: Bool?
@@ -590,6 +594,7 @@ extension SavedConfig {
     enum CodingKeys: String, CodingKey {
         case version, keybinds, gapSize, outerPadding, enabled
         case focusFollowsMouse, hyprKey, excludedBundleIDs, showMenuBarIndicator, overlayAppearance
+        case liquidGlassEnabled, animateWindowMoves, windowAnimationStyle, windowAnimationDurationMs
         case maxSplitsPerMonitor, disabledMonitors
         case showFocusBorder, focusBorderColorHex, floatingBorderColorHex
         case focusBracketStyle, focusBracketColorHex, focusBracketRadius, focusBracketThickness
@@ -642,6 +647,10 @@ extension SavedConfig {
             ? ((try? c.decode(OverlayAppearance.self, forKey: .overlayAppearance))
                 ?? UserConfigDefaults.overlayAppearance)
             : nil
+        self.liquidGlassEnabled = Self.tolerant(c, .liquidGlassEnabled)
+        self.animateWindowMoves = Self.tolerant(c, .animateWindowMoves)
+        self.windowAnimationStyle = Self.tolerant(c, .windowAnimationStyle)
+        self.windowAnimationDurationMs = Self.tolerant(c, .windowAnimationDurationMs)
         self.maxSplitsPerMonitor = Self.tolerant(c, .maxSplitsPerMonitor)
         self.disabledMonitors = Self.tolerant(c, .disabledMonitors)
         self.showFocusBorder = Self.tolerant(c, .showFocusBorder)

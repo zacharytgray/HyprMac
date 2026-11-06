@@ -187,7 +187,8 @@ final class WorkspaceOverviewController {
     func showSwitchHUD(workspace: Int, screen: NSScreen) {
         let text = WorkspaceOverviewPresentation.switchHUDText(workspace: workspace,
                                                                names: UserConfig.shared.workspaceNames)
-        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text)), on: screen, for: 0.9)
+        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text, showsCaption: false)),
+                   on: screen, for: 0.9)
     }
 
     /// The switch HUD, saying a window started or stopped filling the display.
@@ -336,7 +337,7 @@ private struct StatusHUD: View {
             }
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
+        .background(HyprCardBackground(cornerRadius: 15, fill: palette.background))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
@@ -346,19 +347,27 @@ private struct StatusHUD: View {
 private struct WorkspaceSwitchHUD: View {
     @Environment(\.colorScheme) private var colorScheme
     private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
+    @ObservedObject private var config = UserConfig.shared
     let text: (caption: String, number: String)
+    var showsCaption = true
     var body: some View {
         VStack(spacing: 5) {
-            Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(Color.overlaySecondary)
+            if showsCaption {
+                Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .tracking(2).foregroundStyle(Color.overlaySecondary)
+            }
             // a custom name has no length limit; keep the panel on screen
             Text(text.number).font(.system(size: 40, weight: .bold, design: .rounded))
                 .lineLimit(1).frame(maxWidth: 480)
                 .foregroundStyle(.primary)
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
+        .background(HyprCardBackground(cornerRadius: 15, fill: palette.background))
+        .overlay {
+            if !config.liquidGlassEnabled {
+                RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32))
+            }
+        }
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
     }
@@ -408,7 +417,7 @@ struct WorkspaceOverviewView: View {
             if !filteredScratchpad.isEmpty { scratchpadFooter }
         }
         .padding(22)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.background))
+        .background(HyprCardBackground(cornerRadius: 18, fill: palette.background))
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.overlayPrimary.opacity(0.28)))
         .compositingGroup()
         .shadow(color: palette.shadow, radius: 18, y: 8).padding(24)
