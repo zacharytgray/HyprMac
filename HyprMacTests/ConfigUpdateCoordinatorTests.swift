@@ -512,6 +512,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.excludedBundleIDs = ["com.example.app"]
         config.showMenuBarIndicator = false
         config.overlayAppearance = .dark
+        config.overlayStyle = .classic
         config.maxSplitsPerMonitor = ["Screen": 2]
         config.disabledMonitors = ["Screen"]
         config.outerPaddingPerMonitor = ["Screen": EdgePadding(top: 1, left: 2, bottom: 3, right: 4)]
@@ -549,6 +550,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(config.excludedBundleIDs, Set(UserConfig.defaultExcludedBundleIDs))
         XCTAssertEqual(config.showMenuBarIndicator, UserConfigDefaults.showMenuBarIndicator)
         XCTAssertEqual(config.overlayAppearance, UserConfigDefaults.overlayAppearance)
+        XCTAssertEqual(config.overlayStyle, UserConfigDefaults.overlayStyle)
         XCTAssertEqual(config.maxSplitsPerMonitor, [:])
         XCTAssertEqual(config.disabledMonitors, [])
         XCTAssertEqual(config.outerPaddingPerMonitor, [:])
@@ -676,6 +678,60 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.overlayAppearance = .light
         config.reloadFromDisk()
         XCTAssertEqual(config.overlayAppearance, .light)
+    }
+
+    func testOverlayStylePersistsAndReloads() throws {
+        try requireIsolatedHome()
+        let configBefore = try? Data(contentsOf: ConfigStore.configPath)
+        let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
+        defer {
+            restore(configBefore, to: ConfigStore.configPath)
+            restore(monitorBefore, to: ConfigStore.monitorConfigPath)
+        }
+
+        let config = UserConfig()
+        config.overlayStyle = .classic
+        let saved = try JSONDecoder().decode(
+            SavedConfig.self, from: Data(contentsOf: ConfigStore.configPath))
+        XCTAssertEqual(saved.overlayStyle, .classic)
+
+        // reload reads the file, not the object
+        let other = UserConfig()
+        XCTAssertEqual(other.overlayStyle, .classic)
+        config.overlayStyle = .glass
+        other.reloadFromDisk()
+        XCTAssertEqual(other.overlayStyle, .glass)
+    }
+
+    // the overlays redraw on their own; nothing may retile, rebind or touch chrome
+    func testOverlayStyleChangeHasNoRuntimeEffects() throws {
+        try requireIsolatedHome()
+        let configBefore = try? Data(contentsOf: ConfigStore.configPath)
+        let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
+        defer {
+            restore(configBefore, to: ConfigStore.configPath)
+            restore(monitorBefore, to: ConfigStore.monitorConfigPath)
+        }
+        let config = UserConfig()
+        let coordinator = ConfigUpdateCoordinator(initial: RuntimeConfigState(config))
+        var effects = 0
+        coordinator.onEnabled = { _ in effects += 1 }
+        coordinator.onKeybinds = { _ in effects += 1 }
+        coordinator.onHyprKey = { _ in effects += 1 }
+        coordinator.onLayoutGeometry = { _, _ in effects += 1 }
+        coordinator.onMaximumSplits = { _ in effects += 1 }
+        coordinator.onDisabledMonitors = { _ in effects += 1 }
+        coordinator.onOuterPaddingOverride = { _ in effects += 1 }
+        coordinator.onWorkspaceMonitors = { _ in effects += 1 }
+        coordinator.onChrome = { _, _ in effects += 1 }
+        coordinator.onScratchpadRegion = { _ in effects += 1 }
+        coordinator.onScratchpadEntryMode = { _ in effects += 1 }
+        coordinator.observe(config)
+
+        config.overlayStyle = config.overlayStyle == .glass ? .classic : .glass
+        config.overlayStyle = config.overlayStyle == .glass ? .classic : .glass
+
+        XCTAssertEqual(effects, 0)
     }
 
     func testFloatMigrationOnStartupReloadAndSave() throws {

@@ -571,6 +571,8 @@ struct SavedConfig: Codable {
     // nil = the brand cyan and magenta pair
     var overlayAccentHex: String? = nil
     var keepCursorOnWorkspaceSwitch: Bool? = nil
+    // nil = UserConfigDefaults.overlayStyle
+    var overlayStyle: OverlayStyle? = nil
 }
 
 // MARK: - per-keybind decode tolerance
@@ -602,6 +604,7 @@ extension SavedConfig {
         case workspaceNames
         case overlayAccentHex
         case keepCursorOnWorkspaceSwitch
+        case overlayStyle
     }
 
     init(from decoder: Decoder) throws {
@@ -673,6 +676,8 @@ extension SavedConfig {
         self.workspaceNames = Self.tolerantWorkspaceNames(c)
         self.overlayAccentHex = Self.tolerant(c, .overlayAccentHex)
         self.keepCursorOnWorkspaceSwitch = Self.tolerant(c, .keepCursorOnWorkspaceSwitch)
+        // a style a newer build added reads as missing, so the default
+        self.overlayStyle = Self.tolerant(c, .overlayStyle)
     }
 
     // keys "1"…"10" with a non-empty name; anything else is dropped, so a

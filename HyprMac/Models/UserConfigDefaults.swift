@@ -26,6 +26,22 @@ enum OverlayAppearance: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+// how the transient overlays (Hypr+K, HUDs, overview) draw their cards.
+// classic is the opaque navy card; glass is neutral and see-through
+enum OverlayStyle: String, Codable, CaseIterable, Identifiable {
+    case glass
+    case classic
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .glass: return "Glass"
+        case .classic: return "Classic"
+        }
+    }
+}
+
 /// Scalar defaults for `UserConfig`.
 ///
 /// Keybinds and excluded bundle ids live in their type-specific
@@ -42,6 +58,8 @@ enum UserConfigDefaults {
     static let hyprKey: HyprKey = .capsLock
     static let showMenuBarIndicator: Bool = true
     static let overlayAppearance: OverlayAppearance = .system
+    // glass on this branch so testing shows it; the shipped default is open
+    static let overlayStyle: OverlayStyle = .glass
     static let showFocusBorder: Bool = false
     static let focusBracketStyle: FocusBracketStyle = .rounded
     static let focusBracketColor: NSColor = .black
