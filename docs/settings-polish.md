@@ -57,6 +57,17 @@ No numeric Golden Gate radius was verified. Apple's linked macOS 27 Figma kit re
 
 The MacBook's read-only OS inventory reports macOS 27.0, build 26A428. Its explicit 15-point HyprMac override remains untouched. A global manual correction remains useful, although one radius cannot perfectly match differently shaped windows simultaneously. There is no per-app override interface in this pass.
 
+## Overlay style
+
+**Overlay style** (General, System, next to Overlay appearance) picks Glass or Classic for the transient overlays: the Hypr+K keybind list, the workspace switch, fullscreen and status HUDs, and the workspace overview. Settings, focus chrome, the menu bar and onboarding are not affected. It is stored as the optional `overlayStyle` key. A missing or unreadable value means the default. On this branch the default is Glass, so an existing config with no key opens in Glass too.
+
+- **Classic** is the opaque navy card with brand-colored borders, captions and section headers. It is unchanged.
+- **Glass** is color-neutral on every macOS version. macOS 26 and later get SwiftUI `glassEffect(.regular)`. Older systems get a behind-window `NSVisualEffectView` (`.hudWindow`, always active) with a hairline edge and an outside-only shadow. It never falls back to navy. Text uses system label colors. The overlay accent appears only in small marks: the search caret, the matched text, the Tutorial label, ACTIVE in the overview and the HUD caption. The WORKSPACE caption stays.
+- **Pinned headers on glass.** A second material behind the pinned section headers would show as bands, so the headers get no fill. Each row is masked by one gradient laid over the list viewport. It is clear under the header text and solid 10 pt below the header, where a resting row's text starts. Arrow-key stops never dim a row. While more rows are below, the same gradient fades rows and headers over the last 32 pt, so the scroll cue survives without a colored fade.
+- **Live apply.** Each overlay root watches only `overlayStyle` and passes it down as an environment value. Other settings don't redraw the overlay. The card keeps one view identity across styles, so an open list keeps its scroll position and the overview keeps its search text. The change has no layout, focus or chrome-route effect.
+
+Offscreen snapshots (`HYPRMAC_RENDER_UI`) show the glass content over a stand-in wallpaper but cannot render the blur or Liquid Glass. Judge those live.
+
 ## Live-update boundary
 
 Live updates now compare complete configuration snapshots with the initial state already recorded. Only changed layout fields invoke layout effects. Appearance changes use a dedicated visual path, without rebuilding window caches, setting application frames, assigning workspaces, or changing focus. The subscription is installed once, and file reloads are observed after their complete state has been applied.
