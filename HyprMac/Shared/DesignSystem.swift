@@ -138,80 +138,20 @@ final class ClickThroughPanel: NSPanel {
 
 struct OverlayPalette {
     let scheme: ColorScheme
-    var style: OverlayStyle = .classic
     var isDark: Bool { scheme == .dark }
-    var isGlass: Bool { style == .glass }
-    var background: Color { opaqueBackground.opacity(0.98) }
-    /// `background` with no transparency, for chrome that covers scrolling rows
-    var opaqueBackground: Color {
-        isDark ? Color(red: 0.025, green: 0.032, blue: 0.075)
-            : Color(red: 0.94, green: 0.95, blue: 0.97)
-    }
+    // neutral fills over the glass. labels use system label styles, which get
+    // the glass's vibrancy; the accent is only for the caret, a search match
+    // and the Tutorial button
     var surface: Color { isDark ? .white.opacity(0.055) : .black.opacity(0.045) }
     var activeSurface: Color { isDark ? .white.opacity(0.10) : .black.opacity(0.08) }
-    var preview: Color {
-        if isGlass { return isDark ? .black.opacity(0.22) : .white.opacity(0.4) }
-        return isDark ? .black.opacity(0.35) : .white.opacity(0.65)
-    }
+    var preview: Color { isDark ? .black.opacity(0.22) : .white.opacity(0.4) }
     var separator: Color { isDark ? .white.opacity(0.14) : .black.opacity(0.12) }
-    var shadow: Color { .black.opacity(isDark ? 0.42 : 0.22) }
-
-    // where the accent goes. classic spreads the brand pair over captions,
-    // headers and borders. glass keeps every label a system label, which
-    // gets the glass's vibrancy, and saves the accent for the caret, a
-    // search match and the Tutorial button
-    var accentLabels: Bool { !isGlass }
-    var hudCaption: AnyShapeStyle { label(accent: .overlaySecondary) }
-    var sectionCaption: AnyShapeStyle { label(accent: .overlaySecondary) }
-    var listSectionHeader: AnyShapeStyle { label(accent: .overlayPrimary) }
-    var activeLabel: AnyShapeStyle { label(accent: .overlayPrimary) }
-    private func label(accent: Color) -> AnyShapeStyle {
-        accentLabels ? AnyShapeStyle(accent) : AnyShapeStyle(.secondary)
-    }
-    /// nil lets the rows behind show through; see `OverlayListLayout.edgeFade`
-    var listSectionHeaderFill: Color? { isGlass ? nil : opaqueBackground }
-    var fieldBorder: Color { isGlass ? separator : .overlayPrimary.opacity(0.45) }
-    var buttonFill: Color { isGlass ? surface : .overlayPrimary.opacity(0.12) }
-    var tiledWindowFill: Color { isGlass ? Color.primary.opacity(0.12) : .overlayPrimary.opacity(0.22) }
-    var floatingWindowOpacity: Double { isGlass ? 0.3 : 0.45 }
-    func workspaceCardBorder(isActive: Bool) -> Color {
-        isActive && !isGlass ? .overlayPrimary.opacity(0.7) : separator
-    }
 }
 
-// MARK: - overlay style
+// MARK: - overlay glass
 
-private struct OverlayStyleKey: EnvironmentKey {
-    // classic outside an overlay, so Settings never picks up glass chips
-    static let defaultValue: OverlayStyle = .classic
-}
-
-extension EnvironmentValues {
-    var overlayStyle: OverlayStyle {
-        get { self[OverlayStyleKey.self] }
-        set { self[OverlayStyleKey.self] = newValue }
-    }
-}
-
-extension View {
-    /// Put the saved overlay style in the environment and keep it live.
-    /// Goes on an overlay's root view.
-    func overlayStyleFromConfig() -> some View { modifier(OverlayStyleProvider()) }
-
-    /// The one switch point for an overlay card's chrome. Classic draws the
-    /// given fill and border with the usual shadow. Glass puts Liquid Glass
-    /// on the content itself on macOS 26+, and a neutral blur behind it before.
-    func overlayCard<Fill: View, Border: View>(cornerRadius: CGFloat,
-                                              glassTint: Double,
-                                              classicFill: Fill,
-                                              classicBorder: Border) -> some View {
-        modifier(OverlayCard(cornerRadius: cornerRadius, glassTint: glassTint,
-                             classicFill: classicFill, classicBorder: classicBorder))
-    }
-}
-
-/// How much window background tints the macOS 26+ glass. Light in light
-/// mode, dark in dark mode, so it only adds body, never color.
+/// How much window background tints the overlay glass. Light in light mode,
+/// dark in dark mode, so it only adds body, never color.
 enum OverlayGlassTint {
     // the switch, fullscreen and status HUDs: small, mostly one number
     static let hud: Double = 0.18
@@ -219,78 +159,49 @@ enum OverlayGlassTint {
     static let card: Double = 0.28
 }
 
-// watches only overlayStyle, not all of UserConfig, so other settings
-// don't redraw the overlay
-private struct OverlayStyleProvider: ViewModifier {
-    @State private var style = UserConfig.shared.overlayStyle
-
-    func body(content: Content) -> some View {
-        content
-            .environment(\.overlayStyle, style)
-            .onReceive(UserConfig.shared.$overlayStyle.removeDuplicates()) { style = $0 }
+extension View {
+    /// The overlay card: Liquid Glass on the content itself on macOS 26+,
+    /// a neutral behind-window blur behind it before that.
+    func overlayCard(cornerRadius: CGFloat, glassTint: Double) -> some View {
+        modifier(OverlayCard(cornerRadius: cornerRadius, glassTint: glassTint))
     }
 }
 
-private struct OverlayCard<Fill: View, Border: View>: ViewModifier {
-    @Environment(\.overlayStyle) private var style
-    @Environment(\.colorScheme) private var colorScheme
+private struct OverlayCard: ViewModifier {
     let cornerRadius: CGFloat
     let glassTint: Double
-    let classicFill: Fill
-    let classicBorder: Border
 
-    // the content keeps one identity in both styles, so switching keeps the
-    // list's scroll position and the overview's search text. the os branch
-    // never changes while running, so it doesn't count
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
         if #available(macOS 26.0, *) {
             // real liquid glass only draws on the content itself, and only
             // when nothing above it flattens it: no compositing group, shadow
-            // or mask from here up. classic gets .identity, which draws nothing
-            chrome(content.glassEffect(
-                style == .glass
-                    ? .regular.tint(Color(nsColor: .windowBackgroundColor).opacity(glassTint)).interactive()
-                    : .identity,
-                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)),
-                blurBehind: false)
+            // or mask from here up
+            content.glassEffect(
+                .regular.tint(Color(nsColor: .windowBackgroundColor).opacity(glassTint)).interactive(),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
         } else {
-            chrome(content, blurBehind: true)
+            content.background(OverlayGlassBackground(cornerRadius: cornerRadius, tint: glassTint))
         }
         #else
-        chrome(content, blurBehind: true)
+        content.background(OverlayGlassBackground(cornerRadius: cornerRadius, tint: glassTint))
         #endif
-    }
-
-    // classic's shadow hangs off its fill, not a compositing group over the
-    // card, so the same chain can carry glass. the fill covers the card, so
-    // the shadow comes out the same
-    private func chrome<V: View>(_ view: V, blurBehind: Bool) -> some View {
-        let classic = style == .classic
-        return view
-            .background {
-                if classic {
-                    classicFill.shadow(color: OverlayPalette(scheme: colorScheme).shadow,
-                                       radius: 18, x: 0, y: 8)
-                } else if blurBehind {
-                    OverlayGlassBackground(cornerRadius: cornerRadius)
-                }
-            }
-            .overlay { if classic { classicBorder } }
     }
 }
 
-/// The pre-26 glass: a neutral behind-window blur with a hairline edge.
-/// Never the navy card.
+/// The pre-26 glass: a neutral behind-window blur with the same tint as the
+/// 26+ glass, a hairline edge and an outside shadow.
 struct OverlayGlassBackground: View {
     let cornerRadius: CGFloat
+    let tint: Double
     @Environment(\.colorScheme) private var colorScheme
 
-    // the blur's mask has circular corners, so the stroke and shadow do too
+    // the blur's mask has circular corners, so the tint, stroke and shadow do too
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
         let isDark = colorScheme == .dark
         return BehindWindowBlur(cornerRadius: cornerRadius)
+            .overlay(shape.fill(Color(nsColor: .windowBackgroundColor).opacity(tint)))
             .overlay(shape.strokeBorder(Color.white.opacity(isDark ? 0.16 : 0.55), lineWidth: 0.5))
             .background(OuterShadow(shape: shape, color: .black.opacity(isDark ? 0.32 : 0.14)))
     }
@@ -323,7 +234,9 @@ private struct BehindWindowBlur: NSViewRepresentable {
 
     func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = .hudWindow
+        // the lightest appearance-following material, nearest the 26+ glass;
+        // the tint on top adds the rest
+        view.material = .popover
         view.blendingMode = .behindWindow
         // the overlays never activate the app, so never let it go inactive
         view.state = .active

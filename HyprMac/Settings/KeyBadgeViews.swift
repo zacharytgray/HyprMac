@@ -31,11 +31,12 @@ struct KeybadgeView: View {
 struct KeyChip: View {
     let label: String
     var fontSize: CGFloat = 13
-    // an opaque chip reads as a hole in glass
-    @Environment(\.overlayStyle) private var overlayStyle
-    init(_ label: String, fontSize: CGFloat = 13) {
+    // an opaque chip reads as a hole in the overlay glass
+    let onGlass: Bool
+    init(_ label: String, fontSize: CGFloat = 13, onGlass: Bool = false) {
         self.label = label
         self.fontSize = fontSize
+        self.onGlass = onGlass
     }
 
     var body: some View {
@@ -48,7 +49,7 @@ struct KeyChip: View {
             .frame(minWidth: 28)
             .background(
                 RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                    .fill(overlayStyle == .glass ? Color.primary.opacity(0.07) : Color.hyprSurfaceElevated)
+                    .fill(onGlass ? Color.primary.opacity(0.07) : Color.hyprSurfaceElevated)
             )
             .overlay(
                 // key-cap depth: separator on the sides/top, a touch brighter

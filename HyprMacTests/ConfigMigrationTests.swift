@@ -67,28 +67,6 @@ final class ConfigMigrationTests: XCTestCase {
         XCTAssertEqual(UserConfigDefaults.focusBracketLength, 15)
     }
 
-    // no key means the default style; this branch defaults to glass, so an
-    // existing config with no key opens in glass too
-    func testOverlayStyleIsOptionalAndDefaultsToGlass() throws {
-        let legacy = Data(#"{"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true}"#.utf8)
-        let decoded = try JSONDecoder().decode(SavedConfig.self, from: legacy)
-        XCTAssertNil(decoded.overlayStyle)
-        XCTAssertEqual(UserConfigDefaults.overlayStyle, .glass)
-        XCTAssertEqual(SavedConfig.empty.overlayStyle, UserConfigDefaults.overlayStyle)
-        XCTAssertEqual(OverlayStyle.allCases, [.glass, .classic])
-    }
-
-    func testOverlayStyleRoundTripsEachCase() throws {
-        for style in OverlayStyle.allCases {
-            var object = try jsonObject(fullConfig)
-            object["overlayStyle"] = style.rawValue
-            let decoded = try decode(object)
-            XCTAssertEqual(decoded.overlayStyle, style)
-            let again = try JSONDecoder().decode(SavedConfig.self, from: JSONEncoder().encode(decoded))
-            XCTAssertEqual(again.overlayStyle, style)
-        }
-    }
-
     func testBracketColorMigrationPreservesExplicitLegacyFocusColor() {
         let saved = SavedConfig(
             version: nil, keybinds: [], gapSize: 8, outerPadding: 8, enabled: true,
@@ -182,8 +160,7 @@ final class ConfigMigrationTests: XCTestCase {
         scratchpadTileByDefault: false, scratchpadRegionInset: 0.03,
         restoreLayoutOnLaunch: true,
         windowRules: [WindowRule(bundleID: "com.apple.Terminal", workspace: 2)],
-        workspaceNames: ["4": "term"],
-        overlayStyle: .classic)
+        workspaceNames: ["4": "term"])
 
     private let tolerantFields = [
         "focusFollowsMouse", "hyprKey", "excludedBundleIDs", "showMenuBarIndicator",
@@ -192,7 +169,7 @@ final class ConfigMigrationTests: XCTestCase {
         "focusBracketRadius", "focusBracketThickness", "focusBracketLength",
         "dimInactiveWindows", "dimIntensity", "mouseHoverPollHz", "chromeFadeDurationSec",
         "windowCornerRadius", "scratchpadTileByDefault", "scratchpadRegionInset",
-        "restoreLayoutOnLaunch", "windowRules", "workspaceNames", "overlayStyle",
+        "restoreLayoutOnLaunch", "windowRules", "workspaceNames",
     ]
 
     private func jsonObject(_ saved: SavedConfig) throws -> [String: Any] {
@@ -241,7 +218,6 @@ final class ConfigMigrationTests: XCTestCase {
             ("focusBorderColorHex", 0x007AFF),
             ("workspaceNames", ["4": 4]),
             ("workspaceNames", ["11": "x", "4": ""]),
-            ("overlayStyle", "frosted"),
         ]
         for (key, bad) in cases {
             var object = original
@@ -279,6 +255,19 @@ final class ConfigMigrationTests: XCTestCase {
             let again = try JSONDecoder().decode(SavedConfig.self, from: first)
             XCTAssertEqual(again.hyprKey, key)
             XCTAssertEqual(try encoder.encode(again), first, key.rawValue)
+        }
+    }
+
+    // a branch build wrote overlayStyle before the setting was dropped. it
+    // never shipped, so no migration: the key is ignored and the next save
+    // leaves it out
+    func testLeftoverOverlayStyleKeyIsIgnored() throws {
+        let expected = try jsonObject(fullConfig) as NSDictionary
+        for value in ["classic", "glass"] {
+            var object = try jsonObject(fullConfig)
+            object["overlayStyle"] = value
+            let saved = try decode(object)
+            XCTAssertEqual(try jsonObject(saved) as NSDictionary, expected, value)
         }
     }
 

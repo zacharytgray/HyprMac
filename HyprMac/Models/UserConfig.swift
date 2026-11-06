@@ -56,10 +56,6 @@ class UserConfig: ObservableObject {
     @Published var overlayAppearance: OverlayAppearance {
         didSet { persistRuntimeChange() }
     }
-    // overlays watch this one property, so a change redraws them in place
-    @Published var overlayStyle: OverlayStyle {
-        didSet { persistRuntimeChange() }
-    }
     @Published var maxSplitsPerMonitor: [String: Int] {
         didSet { persistRuntimeChange() }
     }
@@ -236,7 +232,6 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
-            self.overlayStyle = saved.overlayStyle ?? UserConfigDefaults.overlayStyle
             self.showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = saved.focusBorderColorHex
             self.floatingBorderColorHex = saved.floatingBorderColorHex
@@ -269,7 +264,6 @@ class UserConfig: ObservableObject {
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = UserConfigDefaults.overlayAppearance
-            self.overlayStyle = UserConfigDefaults.overlayStyle
             self.showFocusBorder = UserConfigDefaults.showFocusBorder
             self.focusBorderColorHex = nil
             self.floatingBorderColorHex = nil
@@ -417,8 +411,7 @@ class UserConfig: ObservableObject {
             windowRules: windowRules.isEmpty ? nil : windowRules,
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
             overlayAccentHex: overlayAccentHex,
-            keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch,
-            overlayStyle: overlayStyle)
+            keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch)
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
@@ -437,7 +430,6 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
         overlayAppearance = UserConfigDefaults.overlayAppearance
-        overlayStyle = UserConfigDefaults.overlayStyle
         maxSplitsPerMonitor = [:]
         disabledMonitors = []
         outerPaddingPerMonitor = [:]
@@ -548,7 +540,6 @@ class UserConfig: ObservableObject {
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
         overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
-        overlayStyle = saved.overlayStyle ?? UserConfigDefaults.overlayStyle
         showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
         focusBorderColorHex = saved.focusBorderColorHex
         floatingBorderColorHex = saved.floatingBorderColorHex
@@ -616,8 +607,7 @@ extension SavedConfig {
             windowCornerRadius: nil,
             scratchpadTileByDefault: UserConfigDefaults.scratchpadTileByDefault,
             scratchpadRegionInset: UserConfigDefaults.scratchpadRegionInset,
-            restoreLayoutOnLaunch: UserConfigDefaults.restoreLayoutOnLaunch,
-            overlayStyle: UserConfigDefaults.overlayStyle)
+            restoreLayoutOnLaunch: UserConfigDefaults.restoreLayoutOnLaunch)
     }
 }
 

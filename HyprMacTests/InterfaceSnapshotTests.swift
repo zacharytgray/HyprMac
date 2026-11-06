@@ -110,39 +110,34 @@ final class InterfaceSnapshotTests: XCTestCase {
     func testRenderKeybindOverlay() throws {
         UserConfig.shared.hyprKey = .capsLock
         let width = KeybindOverlayView.preferredWidth
+        // glass over a stand-in wallpaper. an offscreen render can't show the
+        // blur itself, only the content: labels, chips and the header fade
         func overlay(_ text: String) -> some View {
             let input = OverlayInput()
             input.text = text
             return KeybindOverlayView(keybinds: Keybind.defaults, cardWidth: width,
                                       listHeight: OverlayListLayout.preferredHeight) {}
                 .environmentObject(input)
+                .background(wallpaper)
         }
         try render("keybind-overlay-dark", overlay(""), width: width + 128)
         try render("keybind-overlay-light", overlay(""), width: width + 128, dark: false)
         try render("keybind-overlay-filter-dark", overlay("work"), width: width + 128)
         try render("keybind-overlay-nomatch-dark", overlay("zzz"), width: width + 128)
 
-        // glass over a stand-in wallpaper. an offscreen render can't show the
-        // blur itself, only the content: labels, chips and the header fade.
-        // scrolled to the longest section's third row plus half a row, so a
-        // row sits half under its pinned header
+        // the longest section's third row plus half a row, so a row sits half
+        // under its pinned header
         let sections = KeybindOverlayContent.sections(for: Keybind.defaults, filter: "")
         let longest = try XCTUnwrap(sections.indices.max { sections[$0].rows.count < sections[$1].rows.count })
         let firstRow = sections[..<longest].reduce(0) { $0 + $1.rows.count }
         let midRow = OverlayListLayout.scrollStops(for: sections)[firstRow + 2] + 17
         for dark in [true, false] {
-            let name = "keybind-overlay-glass-\(dark ? "dark" : "light")"
-            let glass = overlay("").environment(\.overlayStyle, .glass).background(wallpaper)
-            try render(name, glass, width: width + 128, dark: dark)
-            // mid-row, so a row sits half under the pinned header
-            try render(name + "-scrolled", glass, size: CGSize(width: width + 128, height: 0),
-                       dark: dark, scrollTo: midRow)
+            try render("keybind-overlay-scrolled-\(dark ? "dark" : "light")", overlay(""),
+                       size: CGSize(width: width + 128, height: 0), dark: dark, scrollTo: midRow)
         }
-        try render("keybind-overlay-classic-scrolled-dark", overlay(""),
-                   size: CGSize(width: width + 128, height: 0), scrollTo: midRow)
     }
 
-    func testRenderWorkspaceOverviewStyles() throws {
+    func testRenderWorkspaceOverview() throws {
         func window(_ id: Int, _ name: String, _ frame: CGRect, floating: Bool) -> WorkspaceWindowSnapshot {
             WorkspaceWindowSnapshot(id: CGWindowID(id), title: name, bundleID: nil, appName: name,
                                     normalizedFrame: frame, isFloating: floating)
@@ -155,13 +150,10 @@ final class InterfaceSnapshotTests: XCTestCase {
             return WorkspaceSnapshot(id: id, monitorID: 1, monitorName: "Built-in", isActive: id == 2,
                                      windows: windows)
         }
-        for style in OverlayStyle.allCases {
-            let view = WorkspaceOverviewView(model: WorkspaceOverviewModel(snapshots: snapshots),
-                                             selectWorkspace: { _ in }, selectWindow: { _, _ in })
-                .environment(\.overlayStyle, style)
-                .background(style == .glass ? AnyView(wallpaper) : AnyView(Color.clear))
-            try render("overview-\(style.rawValue)-dark", view, size: CGSize(width: 1100, height: 620))
-        }
+        let view = WorkspaceOverviewView(model: WorkspaceOverviewModel(snapshots: snapshots),
+                                         selectWorkspace: { _ in }, selectWindow: { _, _ in })
+            .background(wallpaper)
+        try render("overview-dark", view, size: CGSize(width: 1100, height: 620))
     }
 
     // something busy behind the glass renders, in place of a desktop
