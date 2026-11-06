@@ -157,11 +157,17 @@ struct OverlayPalette {
     var shadow: Color { .black.opacity(isDark ? 0.42 : 0.22) }
 
     // where the accent goes. classic spreads the brand pair over captions,
-    // headers and borders; glass keeps labels neutral and saves the one
-    // accent for small marks: the caret, a match, ACTIVE, the HUD caption
-    var hudCaption: Color { isGlass ? .overlayPrimary : .overlaySecondary }
-    var sectionCaption: Color { isGlass ? .secondary : .overlaySecondary }
-    var listSectionHeader: Color { isGlass ? .secondary : .overlayPrimary }
+    // headers and borders. glass keeps every label a system label, which
+    // gets the glass's vibrancy, and saves the accent for the caret, a
+    // search match and the Tutorial button
+    var accentLabels: Bool { !isGlass }
+    var hudCaption: AnyShapeStyle { label(accent: .overlaySecondary) }
+    var sectionCaption: AnyShapeStyle { label(accent: .overlaySecondary) }
+    var listSectionHeader: AnyShapeStyle { label(accent: .overlayPrimary) }
+    var activeLabel: AnyShapeStyle { label(accent: .overlayPrimary) }
+    private func label(accent: Color) -> AnyShapeStyle {
+        accentLabels ? AnyShapeStyle(accent) : AnyShapeStyle(.secondary)
+    }
     /// nil lets the rows behind show through; see `OverlayListLayout.edgeFade`
     var listSectionHeaderFill: Color? { isGlass ? nil : opaqueBackground }
     var fieldBorder: Color { isGlass ? separator : .overlayPrimary.opacity(0.45) }
@@ -196,11 +202,21 @@ extension View {
     /// given fill and border with the usual shadow. Glass puts Liquid Glass
     /// on the content itself on macOS 26+, and a neutral blur behind it before.
     func overlayCard<Fill: View, Border: View>(cornerRadius: CGFloat,
+                                              glassTint: Double,
                                               classicFill: Fill,
                                               classicBorder: Border) -> some View {
-        modifier(OverlayCard(cornerRadius: cornerRadius, classicFill: classicFill,
-                             classicBorder: classicBorder))
+        modifier(OverlayCard(cornerRadius: cornerRadius, glassTint: glassTint,
+                             classicFill: classicFill, classicBorder: classicBorder))
     }
+}
+
+/// How much window background tints the macOS 26+ glass. Light in light
+/// mode, dark in dark mode, so it only adds body, never color.
+enum OverlayGlassTint {
+    // the switch, fullscreen and status HUDs: small, mostly one number
+    static let hud: Double = 0.18
+    // Hypr+K and the overview: lots of small text over whatever is behind
+    static let card: Double = 0.28
 }
 
 // watches only overlayStyle, not all of UserConfig, so other settings
@@ -219,6 +235,7 @@ private struct OverlayCard<Fill: View, Border: View>: ViewModifier {
     @Environment(\.overlayStyle) private var style
     @Environment(\.colorScheme) private var colorScheme
     let cornerRadius: CGFloat
+    let glassTint: Double
     let classicFill: Fill
     let classicBorder: Border
 
@@ -232,7 +249,9 @@ private struct OverlayCard<Fill: View, Border: View>: ViewModifier {
             // when nothing above it flattens it: no compositing group, shadow
             // or mask from here up. classic gets .identity, which draws nothing
             chrome(content.glassEffect(
-                style == .glass ? .regular.interactive() : .identity,
+                style == .glass
+                    ? .regular.tint(Color(nsColor: .windowBackgroundColor).opacity(glassTint)).interactive()
+                    : .identity,
                 in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)),
                 blurBehind: false)
         } else {

@@ -13,9 +13,7 @@ final class OverlayStyleTests: XCTestCase {
             let palette = OverlayPalette(scheme: scheme)
             XCTAssertEqual(palette.style, .classic)
             XCTAssertEqual(palette.listSectionHeaderFill, palette.opaqueBackground)
-            XCTAssertEqual(palette.listSectionHeader, Color.overlayPrimary)
-            XCTAssertEqual(palette.hudCaption, Color.overlaySecondary)
-            XCTAssertEqual(palette.sectionCaption, Color.overlaySecondary)
+            XCTAssertTrue(palette.accentLabels)
             XCTAssertEqual(palette.fieldBorder, Color.overlayPrimary.opacity(0.45))
             XCTAssertEqual(palette.buttonFill, Color.overlayPrimary.opacity(0.12))
             XCTAssertEqual(palette.tiledWindowFill, Color.overlayPrimary.opacity(0.22))
@@ -33,17 +31,21 @@ final class OverlayStyleTests: XCTestCase {
             XCTAssertTrue(palette.isGlass)
             // no second material behind pinned headers
             XCTAssertNil(palette.listSectionHeaderFill)
-            XCTAssertEqual(palette.listSectionHeader, Color.secondary)
-            XCTAssertEqual(palette.sectionCaption, Color.secondary)
+            // captions, section headers and ACTIVE are system labels, for vibrancy
+            XCTAssertFalse(palette.accentLabels)
             // no colored borders or fills
             XCTAssertEqual(palette.fieldBorder, palette.separator)
             XCTAssertEqual(palette.buttonFill, palette.surface)
             XCTAssertEqual(palette.tiledWindowFill, Color.primary.opacity(0.12))
             XCTAssertEqual(palette.workspaceCardBorder(isActive: true), palette.separator)
             XCTAssertEqual(palette.workspaceCardBorder(isActive: false), palette.separator)
-            // the one accent: the HUD caption
-            XCTAssertEqual(palette.hudCaption, Color.overlayPrimary)
         }
+    }
+
+    func testGlassTintsStayNeutralAndSubtle() {
+        XCTAssertGreaterThan(OverlayGlassTint.hud, 0)
+        XCTAssertLessThan(OverlayGlassTint.hud, OverlayGlassTint.card)
+        XCTAssertLessThanOrEqual(OverlayGlassTint.card, 0.4)
     }
 
     func testOverlayStyleEnvironmentDefaultsToClassicOutsideAnOverlay() {

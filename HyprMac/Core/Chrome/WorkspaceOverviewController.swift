@@ -331,7 +331,7 @@ private struct StatusHUD: View {
     var body: some View {
         VStack(spacing: 5) {
             Text(caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(failed ? Color.red : palette.hudCaption)
+                .tracking(2).foregroundStyle(failed ? AnyShapeStyle(Color.red) : palette.hudCaption)
             Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
             if let detail {
@@ -340,7 +340,7 @@ private struct StatusHUD: View {
             }
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .overlayCard(cornerRadius: 15,
+        .overlayCard(cornerRadius: 15, glassTint: OverlayGlassTint.hud,
                      classicFill: RoundedRectangle(cornerRadius: 15).fill(palette.background),
                      classicBorder: RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
         .padding(64)
@@ -362,7 +362,7 @@ private struct WorkspaceSwitchHUD: View {
                 .foregroundStyle(.primary)
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .overlayCard(cornerRadius: 15,
+        .overlayCard(cornerRadius: 15, glassTint: OverlayGlassTint.hud,
                      classicFill: RoundedRectangle(cornerRadius: 15).fill(palette.background),
                      classicBorder: RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
         .padding(64)
@@ -414,7 +414,7 @@ struct WorkspaceOverviewView: View {
             if !filteredScratchpad.isEmpty { scratchpadFooter }
         }
         .padding(22)
-        .overlayCard(cornerRadius: 18,
+        .overlayCard(cornerRadius: 18, glassTint: OverlayGlassTint.card,
                      classicFill: RoundedRectangle(cornerRadius: 18).fill(palette.background),
                      classicBorder: RoundedRectangle(cornerRadius: 18).stroke(Color.overlayPrimary.opacity(0.28)))
         .padding(24)
@@ -495,7 +495,7 @@ private struct WorkspaceCard: View {
                     Text(workspace.monitorName).font(.system(size: 11, design: .monospaced)).lineLimit(1)
                         .foregroundStyle(name == nil ? HierarchicalShapeStyle.primary : .secondary)
                     Spacer()
-                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.overlayPrimary) }
+                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(palette.activeLabel) }
                 }
             }.buttonStyle(.plain)
             GeometryReader { proxy in

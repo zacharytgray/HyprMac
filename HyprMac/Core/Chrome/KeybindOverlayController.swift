@@ -552,6 +552,7 @@ struct KeybindOverlayView: View {
         .frame(width: cardWidth, alignment: .topLeading)
         .overlayCard(
             cornerRadius: 14,
+            glassTint: OverlayGlassTint.card,
             // opaque, so the pinned section headers match it exactly
             classicFill: RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(palette.opaqueBackground),
