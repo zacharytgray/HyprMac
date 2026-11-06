@@ -27,6 +27,7 @@
 		079C12731EED180CFC977D26 /* TiledDropPreviewPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84CBD2B2BF9D3574771BFEA3 /* TiledDropPreviewPanel.swift */; };
 		0889F29E8566B49617B50DD1 /* CommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E97BACDC13D46810E508B8 /* CommandRunner.swift */; };
 		09BB89D34D8ECB6D50C7AA2A /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
+		0A72A984DC1426E0D57F9C7B /* OverlayPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314479E8E141C0265258525E /* OverlayPreview.swift */; };
 		0A95C40458C159F8851E03E4 /* BSPTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */; };
 		0B621FA3924502E4300929E5 /* UserConfigDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A04F6036754CB1510546DFC /* UserConfigDefaults.swift */; };
 		0CFEDE16FAF291E190636DE2 /* ParkAttempt.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7BA6748D31B78A95CE18B0E /* ParkAttempt.swift */; };
@@ -82,6 +83,7 @@
 		2EDADD7B604F90778103F64C /* FloatingDimDragTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7494EE86AE0F7C9129ADB20C /* FloatingDimDragTracker.swift */; };
 		2F47E5364AA07C17F22F6067 /* MenuBarPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7D9E5B48B44818B3F7D68A7 /* MenuBarPresentationTests.swift */; };
 		2F7C20004633B3B6A8CCF6D6 /* Action.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B20DF87F29CD5B1164F1E80 /* Action.swift */; };
+		30437070AFBA3C86851B7644 /* OverlayGlassTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3824A8886FAAD2F04890108A /* OverlayGlassTests.swift */; };
 		3106D31CBD97C1E1940BD4AE /* BundleIDPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */; };
 		321ED983E085852543CE66E5 /* TilingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */; };
 		32F6911C6656248A6458CBC2 /* WorkspaceBatchMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162A7BC992F18583B4289589 /* WorkspaceBatchMoveTests.swift */; };
@@ -172,6 +174,7 @@
 		75A6492EE898E858F5764C4D /* AppLauncherEditorSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6D1C99A7D03B871E0141DF0 /* AppLauncherEditorSheet.swift */; };
 		75E78E043A1A84C4342F6D2D /* DestroyRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */; };
 		7786D1CCB8F91E102903C66B /* HyprMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16BDB1D1140B2A75DE224930 /* HyprMark.swift */; };
+		7793CE22F8C896C0ABE2C306 /* OverlayPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314479E8E141C0265258525E /* OverlayPreview.swift */; };
 		78F04ED8784D47C00CF40356 /* StateDumpFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB8DE37F0110F3E975EE8BB9 /* StateDumpFormatterTests.swift */; };
 		7A3D3C9A4903361B3B292C7F /* BSPTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF9449D559067A61BBA8394 /* BSPTree.swift */; };
 		7A55BA1F7EFA4F7177CE7F1E /* StateDump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F2DB0FB7A2441364DD7616 /* StateDump.swift */; };
@@ -322,6 +325,7 @@
 		E4A0AFD62836F641BB74FE9B /* KeybindOverlayController.swift in Sources */ = {isa = PBXBuildFile; fileRef = B966E5108DBE5904C67C5042 /* KeybindOverlayController.swift */; };
 		E54883D8B8175BA1E43B6ECD /* DockAffordance.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2E56F4F9D0F2FF63B8FF81F /* DockAffordance.swift */; };
 		E5F10E452CCBF25881BFBF54 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */; };
+		E6260C2FFFD1E33423A2DA8C /* OverlayPreviewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6798490199795350E25873F /* OverlayPreviewTests.swift */; };
 		E65C3CF253082AC6E46E772F /* Action.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B20DF87F29CD5B1164F1E80 /* Action.swift */; };
 		E6B34B59205F9ED0E806F291 /* CoordinateSpace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C0116BE6F796AC619B0BD6B /* CoordinateSpace.swift */; };
 		E6D5E0F45C7A868767711DB2 /* TiledDragFeedbackReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED60042FE9D6F1A775F97858 /* TiledDragFeedbackReconciler.swift */; };
@@ -442,9 +446,11 @@
 		301C7EDAAD234FC3DDCBAADC /* DirectionPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DirectionPicker.swift; sourceTree = "<group>"; };
 		306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuppressionRegistryTests.swift; sourceTree = "<group>"; };
 		30AEC105EA3C66B4DE85EB14 /* TiledDragPreviewSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragPreviewSession.swift; sourceTree = "<group>"; };
+		314479E8E141C0265258525E /* OverlayPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPreview.swift; sourceTree = "<group>"; };
 		31EF3D85D0E0F9BCD33F6455 /* HyprWindowAXReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprWindowAXReadTests.swift; sourceTree = "<group>"; };
 		3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileScratchpadTests.swift; sourceTree = "<group>"; };
 		355FCEA79CD98B91944BFA23 /* SwitchCoalescerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchCoalescerTests.swift; sourceTree = "<group>"; };
+		3824A8886FAAD2F04890108A /* OverlayGlassTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayGlassTests.swift; sourceTree = "<group>"; };
 		3BDDE11FF2974FDBE834E58B /* FrameSizingConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSizingConfiguration.swift; sourceTree = "<group>"; };
 		3C70FBFE18821270521C4A4A /* FocusBrackets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusBrackets.swift; sourceTree = "<group>"; };
 		3D8522F7A5DE8D91C7F61FFF /* LayoutSnapshotStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSnapshotStore.swift; sourceTree = "<group>"; };
@@ -596,6 +602,7 @@
 		E49CB059612127CA6F3E7766 /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsComponents.swift; sourceTree = "<group>"; };
 		E5557F0D5040AE48CF5031E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E63DDE5C9FB47A25D46EA669 /* WindowCornerRadius.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCornerRadius.swift; sourceTree = "<group>"; };
+		E6798490199795350E25873F /* OverlayPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPreviewTests.swift; sourceTree = "<group>"; };
 		E7C20D0B0CD37E6DE7C8A1FE /* ScratchpadController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScratchpadController.swift; sourceTree = "<group>"; };
 		E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleIDPicker.swift; sourceTree = "<group>"; };
 		E8F0266F4B35C59914C66A1E /* FocusPollGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusPollGate.swift; sourceTree = "<group>"; };
@@ -704,6 +711,7 @@
 				A034E555A586C182E187021F /* HyprMacApp.swift */,
 				A202B01AD893174E99223B4E /* LoginItemController.swift */,
 				23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */,
+				314479E8E141C0265258525E /* OverlayPreview.swift */,
 				4EE53329CB188DC5E31735E1 /* PermissionsGate.swift */,
 				4DE4B38D2D91458BAC30BCFB /* ProbeFrame.swift */,
 				EE740E91A8A260E9F899EB51 /* RuntimeVariant.swift */,
@@ -894,6 +902,8 @@
 				3EEE26248F15BB9A567CA60E /* MinSizeMemoryTests.swift */,
 				078A1208AA569E70DD703182 /* MonitorDirectionTests.swift */,
 				96C6802CD77F6E1EFDFB3A9C /* OuterPaddingOverrideTests.swift */,
+				3824A8886FAAD2F04890108A /* OverlayGlassTests.swift */,
+				E6798490199795350E25873F /* OverlayPreviewTests.swift */,
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				5867C8BC4A0B38BC15E47DE2 /* ProbeFrameArgumentsTests.swift */,
 				83433C5EF00BCFF0E217D037 /* QuickLookPanelTests.swift */,
@@ -1256,6 +1266,7 @@
 				8840D90CB5E41A31F8D27B3C /* MouseTrackingManager.swift in Sources */,
 				168E8536EF9F93533C18DFBE /* NewcomerRefusal.swift in Sources */,
 				A9ECD1E0F463C484A59A501A /* Notifications.swift in Sources */,
+				0A72A984DC1426E0D57F9C7B /* OverlayPreview.swift in Sources */,
 				0CFEDE16FAF291E190636DE2 /* ParkAttempt.swift in Sources */,
 				F796DE8B56511CF5325B6F7D /* PassBudget.swift in Sources */,
 				59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */,
@@ -1396,6 +1407,7 @@
 				C1621C4239A1CD9F9E3A969D /* MouseTrackingManager.swift in Sources */,
 				BACD47346AB8972892D8DA10 /* NewcomerRefusal.swift in Sources */,
 				5068FB57709B16331D3D08BC /* Notifications.swift in Sources */,
+				7793CE22F8C896C0ABE2C306 /* OverlayPreview.swift in Sources */,
 				E746F728FF8F6E5A9EC338ED /* ParkAttempt.swift in Sources */,
 				8DBC52E0F9E7B680EDD2F573 /* PassBudget.swift in Sources */,
 				35764B87C3B878BA57801CA5 /* PermissionsGate.swift in Sources */,
@@ -1510,6 +1522,8 @@
 				F0CFEA06EED537EFEBB7D3B4 /* MinimaRevalidationTests.swift in Sources */,
 				5DC0653308BC85F658CCDC29 /* MonitorDirectionTests.swift in Sources */,
 				462A219B116F901D7F783789 /* OuterPaddingOverrideTests.swift in Sources */,
+				30437070AFBA3C86851B7644 /* OverlayGlassTests.swift in Sources */,
+				E6260C2FFFD1E33423A2DA8C /* OverlayPreviewTests.swift in Sources */,
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				557A617F0E258A3267E39BEC /* ProbeFrameArgumentsTests.swift in Sources */,
 				EDAF3848CD62189549EA91F6 /* QuickLookPanelTests.swift in Sources */,

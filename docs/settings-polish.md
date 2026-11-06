@@ -57,6 +57,21 @@ No numeric Golden Gate radius was verified. Apple's linked macOS 27 Figma kit re
 
 The MacBook's read-only OS inventory reports macOS 27.0, build 26A428. Its explicit 15-point HyprMac override remains untouched. A global manual correction remains useful, although one radius cannot perfectly match differently shaped windows simultaneously. There is no per-app override interface in this pass.
 
+## Overlay glass
+
+The transient overlays have one look: neutral glass, with no setting. These are the Hypr+K keybind list, the workspace switch, fullscreen and status HUDs, and the workspace overview. Settings, focus chrome, the menu bar and onboarding are not affected. Overlay appearance (System, Light, Dark) still applies.
+
+- **macOS 26 and later.** `glassEffect(.regular.tint(...).interactive())` goes on the card content itself. A live probe on macOS 27 showed that this gives true Liquid Glass in a borderless panel; a `.regular` glass layer drawn behind the content did not. Nothing above the glassed card may flatten it: no compositing group, shadow or mask.
+- **Before macOS 26.** The fallback is a behind-window `NSVisualEffectView` (`.popover`, always active), the lightest material that follows light and dark. It has the same tint drawn under the content, a hairline edge and an outside-only shadow.
+- **Tint.** Window background color, so light in light mode and dark in dark mode. It is 0.18 on the HUDs and 0.28 on Hypr+K and the overview (`OverlayGlassTint` in `DesignSystem.swift`).
+- **Labels.** Text uses system label styles, so it picks up the glass vibrancy. That includes the WORKSPACE caption, the section headers and ACTIVE. The overlay accent appears only on the search caret, the matched text and the Tutorial label. Failed status captions stay red. Key chips in the overlays use a translucent fill; Settings keeps its opaque chips.
+- **System settings.** HyprMac does not read or override the system Liquid Glass or Reduce Transparency settings. The SDK does not document whether `glassEffect` follows them.
+- **Pinned headers.** A second material behind the pinned section headers would show as bands, so the headers get no fill. Each row is masked by one gradient laid over the list viewport. It is clear under the header text and solid 10 pt below the header, where a resting row's text starts. Arrow-key stops never dim a row. While more rows are below, the same gradient fades rows and headers over the last 32 pt, so the scroll cue survives.
+
+A branch build briefly wrote an `overlayStyle` key. It never shipped, so there is no migration; the key is ignored and the next save drops it.
+
+Offscreen snapshots (`HYPRMAC_RENDER_UI`) show the content over a stand-in wallpaper but cannot render the blur or Liquid Glass. Judge those live.
+
 ## Live-update boundary
 
 Live updates now compare complete configuration snapshots with the initial state already recorded. Only changed layout fields invoke layout effects. Appearance changes use a dedicated visual path, without rebuilding window caches, setting application frames, assigning workspaces, or changing focus. The subscription is installed once, and file reloads are observed after their complete state has been applied.

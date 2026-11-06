@@ -301,6 +301,66 @@ final class WorkspaceOverviewController {
     }
 }
 
+#if DEBUG
+// the real views in the real panels with sample data, for --preview-overlays
+extension WorkspaceOverviewController {
+    func previewHUDPanels() -> [NSPanel] {
+        let names = ["4": "Research"]
+        let views: [NSView] = [
+            OverviewHostingView(rootView: WorkspaceSwitchHUD(
+                text: WorkspaceOverviewPresentation.switchHUDText(workspace: 3, names: names))),
+            OverviewHostingView(rootView: WorkspaceSwitchHUD(
+                text: WorkspaceOverviewPresentation.switchHUDText(workspace: 4, names: names))),
+            OverviewHostingView(rootView: WorkspaceSwitchHUD(
+                text: WorkspaceOverviewPresentation.fullscreenHUDText(isOn: true))),
+            OverviewHostingView(rootView: StatusHUD(caption: "LAYOUT", title: "Saved", detail: "7 windows",
+                                                    failed: false)),
+            OverviewHostingView(rootView: StatusHUD(caption: "LAYOUT", title: "Couldn't save",
+                                                    detail: "The snapshot file couldn't be written",
+                                                    failed: true)),
+        ]
+        return views.map { hosting in
+            let size = hosting.fittingSize
+            let panel = makePanel(frame: NSRect(origin: .zero, size: size), canKey: false)
+            hosting.frame = NSRect(origin: .zero, size: size)
+            panel.contentView = hosting
+            return panel
+        }
+    }
+
+    func previewOverviewPanel(size: CGSize) -> NSPanel {
+        func window(_ id: CGWindowID, _ app: String, _ bundleID: String, _ frame: CGRect,
+                    floating: Bool = false) -> WorkspaceWindowSnapshot {
+            WorkspaceWindowSnapshot(id: id, title: app, bundleID: bundleID, appName: app,
+                                    normalizedFrame: frame, isFloating: floating)
+        }
+        let left = CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        let right = CGRect(x: 0.5, y: 0, width: 0.5, height: 1)
+        let windows: [Int: [WorkspaceWindowSnapshot]] = [
+            1: [window(11, "Safari", "com.apple.Safari", left), window(12, "Notes", "com.apple.Notes", right)],
+            2: [window(21, "Terminal", "com.apple.Terminal", CGRect(x: 0, y: 0, width: 1, height: 1)),
+                window(22, "Finder", "com.apple.finder", CGRect(x: 0.55, y: 0.15, width: 0.35, height: 0.5),
+                       floating: true)],
+            3: [window(31, "Mail", "com.apple.mail", left), window(32, "Calendar", "com.apple.iCal", right)],
+        ]
+        let snapshots = Constants.workspaceRange.map { id in
+            WorkspaceSnapshot(id: id, monitorID: 1, monitorName: "Built-in Display", isActive: id == 2,
+                              windows: windows[id] ?? [])
+        }
+        let model = WorkspaceOverviewModel(
+            snapshots: snapshots,
+            scratchpad: [window(91, "Music", "com.apple.Music", CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8))])
+        let hosting = OverviewHostingView(rootView: WorkspaceOverviewView(
+            model: model, selectWorkspace: { _ in }, selectWindow: { _, _ in }))
+        let panel = makePanel(frame: NSRect(origin: .zero, size: size), canKey: false)
+        hosting.frame = NSRect(origin: .zero, size: size)
+        hosting.autoresizingMask = [.width, .height]
+        panel.contentView = hosting
+        return panel
+    }
+}
+#endif
+
 private final class OverviewPanel: NSPanel {
     var acceptsKeyboard = false
     override var canBecomeKey: Bool { acceptsKeyboard }
@@ -318,8 +378,6 @@ private final class OverviewHostingView<Content: View>: OverlayHostingView<Conte
 }
 
 private struct StatusHUD: View {
-    @Environment(\.colorScheme) private var colorScheme
-    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
     let caption: String
     let title: String
     let detail: String?
@@ -327,7 +385,7 @@ private struct StatusHUD: View {
     var body: some View {
         VStack(spacing: 5) {
             Text(caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(failed ? Color.red : Color.overlaySecondary)
+                .tracking(2).foregroundStyle(failed ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
             Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
             if let detail {
@@ -336,31 +394,25 @@ private struct StatusHUD: View {
             }
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
-        .compositingGroup()
-        .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
+        .overlayCard(cornerRadius: 15, glassTint: OverlayGlassTint.hud)
+        .padding(64)
     }
 }
 
 private struct WorkspaceSwitchHUD: View {
-    @Environment(\.colorScheme) private var colorScheme
-    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
     let text: (caption: String, number: String)
     var body: some View {
         VStack(spacing: 5) {
             Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(Color.overlaySecondary)
+                .tracking(2).foregroundStyle(.secondary)
             // a custom name has no length limit; keep the panel on screen
             Text(text.number).font(.system(size: 40, weight: .bold, design: .rounded))
                 .lineLimit(1).frame(maxWidth: 480)
                 .foregroundStyle(.primary)
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
-        .compositingGroup()
-        .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
+        .overlayCard(cornerRadius: 15, glassTint: OverlayGlassTint.hud)
+        .padding(64)
     }
 }
 
@@ -408,10 +460,8 @@ struct WorkspaceOverviewView: View {
             if !filteredScratchpad.isEmpty { scratchpadFooter }
         }
         .padding(22)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.overlayPrimary.opacity(0.28)))
-        .compositingGroup()
-        .shadow(color: palette.shadow, radius: 18, y: 8).padding(24)
+        .overlayCard(cornerRadius: 18, glassTint: OverlayGlassTint.card)
+        .padding(24)
         .coordinateSpace(name: "workspaceOverview")
         .onPreferenceChange(WorkspaceOverviewCardFramesKey.self) { frames in
             onCardFramesChange?(frames)
@@ -439,7 +489,7 @@ struct WorkspaceOverviewView: View {
             Text("SCRATCHPAD")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
-                .foregroundStyle(Color.overlaySecondary)
+                .foregroundStyle(.secondary)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)],
                       alignment: .leading, spacing: 7) {
                 ForEach(filteredScratchpad) { window in
@@ -488,7 +538,7 @@ private struct WorkspaceCard: View {
                     Text(workspace.monitorName).font(.system(size: 11, design: .monospaced)).lineLimit(1)
                         .foregroundStyle(name == nil ? HierarchicalShapeStyle.primary : .secondary)
                     Spacer()
-                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(Color.overlayPrimary) }
+                    if workspace.isActive { Text("ACTIVE").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundStyle(.secondary) }
                 }
             }.buttonStyle(.plain)
             GeometryReader { proxy in
@@ -498,7 +548,7 @@ private struct WorkspaceCard: View {
                         let frame = window.normalizedFrame
                         Button { selectWindow(workspace.id, window.id) } label: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(0.45) : Color.overlayPrimary.opacity(0.22))
+                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(0.3) : Color.primary.opacity(0.12))
                                 WorkspaceAppIcon(bundleID: window.bundleID).frame(width: 20, height: 20)
                             }
                         }
@@ -532,7 +582,7 @@ private struct WorkspaceCard: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(workspace.isActive ? palette.activeSurface : palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(workspace.isActive ? Color.overlayPrimary.opacity(0.7) : palette.separator))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.separator))
     }
 
 }

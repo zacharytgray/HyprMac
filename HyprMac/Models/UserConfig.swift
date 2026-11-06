@@ -20,7 +20,13 @@ import Combine
 class UserConfig: ObservableObject {
     /// Process-wide singleton bound by SwiftUI views and the
     /// orchestration layer.
-    static let shared = UserConfig()
+    static let shared: UserConfig = {
+        #if DEBUG
+        // the overlay preview only reads the config
+        if OverlayPreview.isRequested { return UserConfig(repairsOnLaunch: false) }
+        #endif
+        return UserConfig()
+    }()
     let didApplyRuntimeChange = PassthroughSubject<Void, Never>()
 
     @Published var keybinds: [Keybind] {
@@ -205,8 +211,11 @@ class UserConfig: ObservableObject {
 
     var isICloudDriveAvailable: Bool { store.isICloudDriveAvailable }
 
+    /// `repairsOnLaunch: false` skips the iCloud relink and the monitor-file
+    /// migration, the only writes a launch makes before anything changes.
     init(store: ConfigStore = ConfigStore(),
-         iCloudSyncEnabled: Bool = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled")) {
+         iCloudSyncEnabled: Bool = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled"),
+         repairsOnLaunch: Bool = true) {
         self.store = store
         self.iCloudSyncEnabled = iCloudSyncEnabled
 
@@ -294,12 +303,12 @@ class UserConfig: ObservableObject {
         self.workspaceMonitors = monitorConfig?.workspaceMonitors ?? [:]
 
         var relinked = false
-        if iCloudSyncEnabled {
+        if iCloudSyncEnabled, repairsOnLaunch {
             relinked = store.ensureICloudSymlinkIntegrity(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
         }
         store.holdWritesIfLinkUnusable()
 
-        if resolved.needsLocalWrite {
+        if resolved.needsLocalWrite, repairsOnLaunch {
             store.writeSavedMonitorConfig(makeSavedMonitorConfig())
         }
 

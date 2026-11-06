@@ -268,7 +268,7 @@ struct TilingSettingsView: View {
             }
 
             HyprRow("Overlay accent", icon: "paintpalette",
-                    subtitle: "Workspace HUD, overview, keybind sheet and menu bar.",
+                    subtitle: "Keybind sheet and menu bar.",
                     divider: true) {
                 ColorPickerRow(
                     label: "",

@@ -63,3 +63,18 @@ Launch Services so the result is about the app and not the SSH session:
   '/Applications/HyprMac Debug.app' --args --check-accessibility
 cat /tmp/hyprmac-ax.log
 ```
+
+## Previewing the overlays
+
+`--preview-overlays` shows every transient overlay with sample data in its
+real panel: the switch HUD (a number and a custom name), the fullscreen HUD, a
+saved and a failed status HUD, Hypr+K scrolled under a header, and the
+workspace overview. It quits after 90 seconds. It starts no window manager,
+event tap, AX or tiling, and it only reads the config. Quit the running
+HyprMac first, or both menu bar items show. `--glass-fallback` forces the
+pre-macOS 26 blur on macOS 26 and later, with or without the preview. Both
+flags exist only in builds that define `DEBUG`.
+
+```sh
+/usr/bin/open -n '/Applications/HyprMac Debug.app' --args --preview-overlays --glass-fallback
+```

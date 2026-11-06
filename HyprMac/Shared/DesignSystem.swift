@@ -139,15 +139,122 @@ final class ClickThroughPanel: NSPanel {
 struct OverlayPalette {
     let scheme: ColorScheme
     var isDark: Bool { scheme == .dark }
-    var background: Color { opaqueBackground.opacity(0.98) }
-    /// `background` with no transparency, for chrome that covers scrolling rows
-    var opaqueBackground: Color {
-        isDark ? Color(red: 0.025, green: 0.032, blue: 0.075)
-            : Color(red: 0.94, green: 0.95, blue: 0.97)
-    }
+    // neutral fills over the glass. labels use system label styles, which get
+    // the glass's vibrancy; the accent is only for the caret, a search match
+    // and the Tutorial button
     var surface: Color { isDark ? .white.opacity(0.055) : .black.opacity(0.045) }
     var activeSurface: Color { isDark ? .white.opacity(0.10) : .black.opacity(0.08) }
-    var preview: Color { isDark ? .black.opacity(0.35) : .white.opacity(0.65) }
+    var preview: Color { isDark ? .black.opacity(0.22) : .white.opacity(0.4) }
     var separator: Color { isDark ? .white.opacity(0.14) : .black.opacity(0.12) }
-    var shadow: Color { .black.opacity(isDark ? 0.42 : 0.22) }
+}
+
+// MARK: - overlay glass
+
+/// How much window background tints the overlay glass. Light in light mode,
+/// dark in dark mode, so it only adds body, never color.
+enum OverlayGlassTint {
+    // the switch, fullscreen and status HUDs: small, mostly one number
+    static let hud: Double = 0.18
+    // Hypr+K and the overview: lots of small text over whatever is behind
+    static let card: Double = 0.28
+}
+
+extension View {
+    /// The overlay card: Liquid Glass on the content itself on macOS 26+,
+    /// a neutral behind-window blur behind it before that.
+    func overlayCard(cornerRadius: CGFloat, glassTint: Double) -> some View {
+        modifier(OverlayCard(cornerRadius: cornerRadius, glassTint: glassTint))
+    }
+}
+
+private struct OverlayCard: ViewModifier {
+    let cornerRadius: CGFloat
+    let glassTint: Double
+
+    func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *), !OverlayPreview.forcesGlassFallback {
+            // real liquid glass only draws on the content itself, and only
+            // when nothing above it flattens it: no compositing group, shadow
+            // or mask from here up
+            content.glassEffect(
+                .regular.tint(Color(nsColor: .windowBackgroundColor).opacity(glassTint)).interactive(),
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+        } else {
+            content.background(OverlayGlassBackground(cornerRadius: cornerRadius, tint: glassTint))
+        }
+        #else
+        content.background(OverlayGlassBackground(cornerRadius: cornerRadius, tint: glassTint))
+        #endif
+    }
+}
+
+/// The pre-26 glass: a neutral behind-window blur with the same tint as the
+/// 26+ glass, a hairline edge and an outside shadow.
+struct OverlayGlassBackground: View {
+    let cornerRadius: CGFloat
+    let tint: Double
+    @Environment(\.colorScheme) private var colorScheme
+
+    // the blur's mask has circular corners, so the tint, stroke and shadow do too
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
+        let isDark = colorScheme == .dark
+        return BehindWindowBlur(cornerRadius: cornerRadius)
+            .overlay(shape.fill(Color(nsColor: .windowBackgroundColor).opacity(tint)))
+            .overlay(shape.strokeBorder(Color.white.opacity(isDark ? 0.16 : 0.55), lineWidth: 0.5))
+            .background(OuterShadow(shape: shape, color: .black.opacity(isDark ? 0.32 : 0.14)))
+    }
+}
+
+// a drop shadow that stays outside the shape, so it can't darken the
+// see-through middle
+private struct OuterShadow<S: Shape>: View {
+    let shape: S
+    let color: Color
+
+    var body: some View {
+        shape.fill(Color.black)
+            .shadow(color: color, radius: 18, x: 0, y: 8)
+            .mask {
+                ZStack {
+                    // negative padding draws past the frame, where the shadow lands
+                    Rectangle().padding(-64)
+                    shape.blendMode(.destinationOut)
+                }
+                .compositingGroup()
+            }
+    }
+}
+
+// NSVisualEffectView ignores layer corner radius for behind-window blur;
+// the window server only honors maskImage
+private struct BehindWindowBlur: NSViewRepresentable {
+    let cornerRadius: CGFloat
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        // the lightest appearance-following material, nearest the 26+ glass;
+        // the tint on top adds the rest
+        view.material = .popover
+        view.blendingMode = .behindWindow
+        // the overlays never activate the app, so never let it go inactive
+        view.state = .active
+        view.maskImage = Self.mask(cornerRadius)
+        return view
+    }
+
+    func updateNSView(_ view: NSVisualEffectView, context: Context) {}
+
+    static func mask(_ radius: CGFloat) -> NSImage {
+        let edge = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: edge, height: edge), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }
 }

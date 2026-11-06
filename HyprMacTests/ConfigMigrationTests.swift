@@ -258,6 +258,19 @@ final class ConfigMigrationTests: XCTestCase {
         }
     }
 
+    // a branch build wrote overlayStyle before the setting was dropped. it
+    // never shipped, so no migration: the key is ignored and the next save
+    // leaves it out
+    func testLeftoverOverlayStyleKeyIsIgnored() throws {
+        let expected = try jsonObject(fullConfig) as NSDictionary
+        for value in ["classic", "glass"] {
+            var object = try jsonObject(fullConfig)
+            object["overlayStyle"] = value
+            let saved = try decode(object)
+            XCTAssertEqual(try jsonObject(saved) as NSDictionary, expected, value)
+        }
+    }
+
     func testCoreFieldsStayStrict() throws {
         let cases: [(String, Any)] = [
             ("gapSize", "8"), ("outerPadding", "8"), ("enabled", "yes"), ("version", "2"),

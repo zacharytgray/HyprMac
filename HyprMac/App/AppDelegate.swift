@@ -67,6 +67,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
+        #if DEBUG
+        if OverlayPreview.isRequested {
+            diagnosticOnly = true
+            OverlayPreview.run()
+            return
+        }
+        #endif
+
         // one-shot frame diagnostic. runs before anything starts, so no
         // window manager and no key remap touch the machine.
         #if DEBUG
