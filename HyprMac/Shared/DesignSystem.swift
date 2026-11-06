@@ -193,8 +193,8 @@ extension View {
     func overlayStyleFromConfig() -> some View { modifier(OverlayStyleProvider()) }
 
     /// The one switch point for an overlay card's chrome. Classic draws the
-    /// given fill and border with the usual shadow. Glass draws a neutral
-    /// glass shape behind the content instead.
+    /// given fill and border with the usual shadow. Glass puts Liquid Glass
+    /// on the content itself on macOS 26+, and a neutral blur behind it before.
     func overlayCard<Fill: View, Border: View>(cornerRadius: CGFloat,
                                               classicFill: Fill,
                                               classicBorder: Border) -> some View {
@@ -223,41 +223,52 @@ private struct OverlayCard<Fill: View, Border: View>: ViewModifier {
     let classicBorder: Border
 
     // the content keeps one identity in both styles, so switching keeps the
-    // list's scroll position and the overview's search text
+    // list's scroll position and the overview's search text. the os branch
+    // never changes while running, so it doesn't count
     func body(content: Content) -> some View {
+        #if compiler(>=6.2)
+        if #available(macOS 26.0, *) {
+            // real liquid glass only draws on the content itself, and only
+            // when nothing above it flattens it: no compositing group, shadow
+            // or mask from here up. classic gets .identity, which draws nothing
+            chrome(content.glassEffect(
+                style == .glass ? .regular.interactive() : .identity,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)),
+                blurBehind: false)
+        } else {
+            chrome(content, blurBehind: true)
+        }
+        #else
+        chrome(content, blurBehind: true)
+        #endif
+    }
+
+    // classic's shadow hangs off its fill, not a compositing group over the
+    // card, so the same chain can carry glass. the fill covers the card, so
+    // the shadow comes out the same
+    private func chrome<V: View>(_ view: V, blurBehind: Bool) -> some View {
         let classic = style == .classic
-        content
-            .background { if classic { classicFill } }
+        return view
+            .background {
+                if classic {
+                    classicFill.shadow(color: OverlayPalette(scheme: colorScheme).shadow,
+                                       radius: 18, x: 0, y: 8)
+                } else if blurBehind {
+                    OverlayGlassBackground(cornerRadius: cornerRadius)
+                }
+            }
             .overlay { if classic { classicBorder } }
-            .compositingGroup()
-            .shadow(color: classic ? OverlayPalette(scheme: colorScheme).shadow : .clear,
-                    radius: 18, x: 0, y: 8)
-            // outside the compositing group: glass has to see what is behind it
-            .background { if !classic { OverlayGlassBackground(cornerRadius: cornerRadius) } }
     }
 }
 
-/// Neutral glass for an overlay card. Liquid Glass on macOS 26 and later,
-/// a behind-window blur before that. Never the navy card.
+/// The pre-26 glass: a neutral behind-window blur with a hairline edge.
+/// Never the navy card.
 struct OverlayGlassBackground: View {
     let cornerRadius: CGFloat
     @Environment(\.colorScheme) private var colorScheme
 
-    var body: some View {
-        #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
-            Color.clear.glassEffect(.regular,
-                                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-        } else {
-            blurFallback
-        }
-        #else
-        blurFallback
-        #endif
-    }
-
     // the blur's mask has circular corners, so the stroke and shadow do too
-    private var blurFallback: some View {
+    var body: some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
         let isDark = colorScheme == .dark
         return BehindWindowBlur(cornerRadius: cornerRadius)
