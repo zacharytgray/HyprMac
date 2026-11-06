@@ -121,6 +121,52 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("keybind-overlay-light", overlay(""), width: width + 128, dark: false)
         try render("keybind-overlay-filter-dark", overlay("work"), width: width + 128)
         try render("keybind-overlay-nomatch-dark", overlay("zzz"), width: width + 128)
+
+        // glass over a stand-in wallpaper. an offscreen render can't show the
+        // blur itself, only the content: labels, chips and the header fade.
+        // scrolled to the longest section's third row plus half a row, so a
+        // row sits half under its pinned header
+        let sections = KeybindOverlayContent.sections(for: Keybind.defaults, filter: "")
+        let longest = try XCTUnwrap(sections.indices.max { sections[$0].rows.count < sections[$1].rows.count })
+        let firstRow = sections[..<longest].reduce(0) { $0 + $1.rows.count }
+        let midRow = OverlayListLayout.scrollStops(for: sections)[firstRow + 2] + 17
+        for dark in [true, false] {
+            let name = "keybind-overlay-glass-\(dark ? "dark" : "light")"
+            let glass = overlay("").environment(\.overlayStyle, .glass).background(wallpaper)
+            try render(name, glass, width: width + 128, dark: dark)
+            // mid-row, so a row sits half under the pinned header
+            try render(name + "-scrolled", glass, size: CGSize(width: width + 128, height: 0),
+                       dark: dark, scrollTo: midRow)
+        }
+        try render("keybind-overlay-classic-scrolled-dark", overlay(""),
+                   size: CGSize(width: width + 128, height: 0), scrollTo: midRow)
+    }
+
+    func testRenderWorkspaceOverviewStyles() throws {
+        func window(_ id: Int, _ name: String, _ frame: CGRect, floating: Bool) -> WorkspaceWindowSnapshot {
+            WorkspaceWindowSnapshot(id: CGWindowID(id), title: name, bundleID: nil, appName: name,
+                                    normalizedFrame: frame, isFloating: floating)
+        }
+        let snapshots: [WorkspaceSnapshot] = (1...10).map { id in
+            let windows: [WorkspaceWindowSnapshot] = id > 3 ? [] : [
+                window(id * 10, "Notes", CGRect(x: 0, y: 0, width: 0.5, height: 1), floating: false),
+                window(id * 10 + 1, "Terminal", CGRect(x: 0.5, y: 0.2, width: 0.4, height: 0.6), floating: id == 2),
+            ]
+            return WorkspaceSnapshot(id: id, monitorID: 1, monitorName: "Built-in", isActive: id == 2,
+                                     windows: windows)
+        }
+        for style in OverlayStyle.allCases {
+            let view = WorkspaceOverviewView(model: WorkspaceOverviewModel(snapshots: snapshots),
+                                             selectWorkspace: { _ in }, selectWindow: { _, _ in })
+                .environment(\.overlayStyle, style)
+                .background(style == .glass ? AnyView(wallpaper) : AnyView(Color.clear))
+            try render("overview-\(style.rawValue)-dark", view, size: CGSize(width: 1100, height: 620))
+        }
+    }
+
+    // something busy behind the glass renders, in place of a desktop
+    private var wallpaper: some View {
+        LinearGradient(colors: [.orange, .pink, .teal, .indigo], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     // MARK: helpers
@@ -138,7 +184,8 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render(name, view, size: CGSize(width: width, height: 0), dark: dark)
     }
 
-    private func render<V: View>(_ name: String, _ view: V, size: CGSize, dark: Bool = true) throws {
+    private func render<V: View>(_ name: String, _ view: V, size: CGSize, dark: Bool = true,
+                                 scrollTo: CGFloat? = nil) throws {
         let fixedHeight = size.height > 0
         let root = AnyView(fixedHeight
             ? AnyView(view.frame(width: size.width, height: size.height))
@@ -161,6 +208,10 @@ final class InterfaceSnapshotTests: XCTestCase {
             host.frame = NSRect(x: 0, y: 0, width: size.width, height: height)
         }
         host.layoutSubtreeIfNeeded()
+        if let scrollTo, let scrollView = firstScrollView(in: host) {
+            scrollView.contentView.scroll(to: NSPoint(x: 0, y: scrollTo))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+        }
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
         host.display()
 
@@ -173,5 +224,13 @@ final class InterfaceSnapshotTests: XCTestCase {
         host.cacheDisplay(in: bounds, to: rep)
         let png = try XCTUnwrap(rep.representation(using: .png, properties: [:]))
         try png.write(to: outputDir.appendingPathComponent("\(name).png"))
+    }
+
+    private func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scrollView = view as? NSScrollView { return scrollView }
+        for subview in view.subviews {
+            if let found = firstScrollView(in: subview) { return found }
+        }
+        return nil
     }
 }
