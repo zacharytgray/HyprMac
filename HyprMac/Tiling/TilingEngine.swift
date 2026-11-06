@@ -2951,7 +2951,15 @@ class TilingEngine {
         var moves: [WindowMove] = []
         if let animation, case .fits = fit {
             moves = swapMoves(t, rect: rect, a: a, b: b)
+            hyprLog(.notice, .tiling, "swap animation: style=\(animation.style.rawValue) duration=\(animation.duration)s moves="
+                    + moves.map { "\($0.window.windowID) \($0.from)->\($0.to)" }.joined(separator: " "))
+            let started = CFAbsoluteTimeGetCurrent()
             WindowMoveAnimator.run(moves, animation: animation)
+            hyprLog(.notice, .tiling, "swap animation: ran \(CFAbsoluteTimeGetCurrent() - started)s")
+        } else if animation != nil {
+            hyprLog(.notice, .tiling, "swap animation: skipped, fit is not .fits")
+        } else {
+            hyprLog(.debug, .tiling, "swap animation: off")
         }
         let apply = { self.applyTrackedLayout(t, in: rect, generation: generation, key: key) }
         let outcome: LayoutApplicationOutcome
