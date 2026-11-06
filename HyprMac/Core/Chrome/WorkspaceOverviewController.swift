@@ -187,20 +187,23 @@ final class WorkspaceOverviewController {
     func showSwitchHUD(workspace: Int, screen: NSScreen) {
         let text = WorkspaceOverviewPresentation.switchHUDText(workspace: workspace,
                                                                names: UserConfig.shared.workspaceNames)
-        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text)), on: screen, for: 0.9)
+        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text).overlayStyleFromConfig()),
+                   on: screen, for: 0.9)
     }
 
     /// The switch HUD, saying a window started or stopped filling the display.
     func showFullscreenHUD(isOn: Bool, screen: NSScreen) {
         let text = WorkspaceOverviewPresentation.fullscreenHUDText(isOn: isOn)
-        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text)), on: screen, for: 0.9)
+        presentHUD(OverviewHostingView(rootView: WorkspaceSwitchHUD(text: text).overlayStyleFromConfig()),
+                   on: screen, for: 0.9)
     }
 
     /// The switch HUD's look for a short status, e.g. a layout save.
     func showStatusHUD(caption: String, title: String, detail: String?, failed: Bool, screen: NSScreen) {
         let view = StatusHUD(caption: caption, title: title, detail: detail, failed: failed)
         // a sentence takes longer to read than a number
-        presentHUD(OverviewHostingView(rootView: view), on: screen, for: detail == nil ? 1.1 : 1.8)
+        presentHUD(OverviewHostingView(rootView: view.overlayStyleFromConfig()),
+                   on: screen, for: detail == nil ? 1.1 : 1.8)
     }
 
     private func presentHUD(_ hosting: NSView, on screen: NSScreen, for seconds: TimeInterval) {
@@ -251,7 +254,7 @@ final class WorkspaceOverviewController {
             selectWindow: { [weak self] workspace, window in
                 self?.close(); self?.onSelectWindow(workspace, window)
             })
-        let hosting = OverviewHostingView(rootView: view)
+        let hosting = OverviewHostingView(rootView: view.overlayStyleFromConfig())
         let contentHeight = WorkspaceOverviewPresentation.overviewHeight(
             snapshots: snapshots, scratchpadCount: scratchpad.count, maximum: maxHeight)
         let frame = NSRect(x: screen.visibleFrame.midX - maxWidth / 2,
@@ -319,7 +322,8 @@ private final class OverviewHostingView<Content: View>: OverlayHostingView<Conte
 
 private struct StatusHUD: View {
     @Environment(\.colorScheme) private var colorScheme
-    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
+    @Environment(\.overlayStyle) private var style
+    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme, style: style) }
     let caption: String
     let title: String
     let detail: String?
@@ -327,7 +331,7 @@ private struct StatusHUD: View {
     var body: some View {
         VStack(spacing: 5) {
             Text(caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(failed ? Color.red : Color.overlaySecondary)
+                .tracking(2).foregroundStyle(failed ? Color.red : palette.hudCaption)
             Text(title).font(.system(size: 26, weight: .bold, design: .rounded))
                 .foregroundStyle(.primary)
             if let detail {
@@ -336,38 +340,40 @@ private struct StatusHUD: View {
             }
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
-        .compositingGroup()
-        .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
+        .overlayCard(cornerRadius: 15,
+                     classicFill: RoundedRectangle(cornerRadius: 15).fill(palette.background),
+                     classicBorder: RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
+        .padding(64)
     }
 }
 
 private struct WorkspaceSwitchHUD: View {
     @Environment(\.colorScheme) private var colorScheme
-    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
+    @Environment(\.overlayStyle) private var style
+    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme, style: style) }
     let text: (caption: String, number: String)
     var body: some View {
         VStack(spacing: 5) {
             Text(text.caption).font(.system(size: 10, weight: .semibold, design: .monospaced))
-                .tracking(2).foregroundStyle(Color.overlaySecondary)
+                .tracking(2).foregroundStyle(palette.hudCaption)
             // a custom name has no length limit; keep the panel on screen
             Text(text.number).font(.system(size: 40, weight: .bold, design: .rounded))
                 .lineLimit(1).frame(maxWidth: 480)
                 .foregroundStyle(.primary)
         }
         .padding(.horizontal, 26).padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: 15).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
-        .compositingGroup()
-        .shadow(color: palette.shadow, radius: 18, y: 8).padding(64)
+        .overlayCard(cornerRadius: 15,
+                     classicFill: RoundedRectangle(cornerRadius: 15).fill(palette.background),
+                     classicBorder: RoundedRectangle(cornerRadius: 16).stroke(Color.overlayPrimary.opacity(0.32)))
+        .padding(64)
     }
 }
 
 struct WorkspaceOverviewView: View {
     @ObservedObject private var config = UserConfig.shared
     @Environment(\.colorScheme) private var colorScheme
-    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
+    @Environment(\.overlayStyle) private var style
+    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme, style: style) }
     @ObservedObject var model: WorkspaceOverviewModel
     let selectWorkspace: (Int) -> Void
     let selectWindow: (Int, CGWindowID) -> Void
@@ -408,10 +414,10 @@ struct WorkspaceOverviewView: View {
             if !filteredScratchpad.isEmpty { scratchpadFooter }
         }
         .padding(22)
-        .background(RoundedRectangle(cornerRadius: 18).fill(palette.background))
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.overlayPrimary.opacity(0.28)))
-        .compositingGroup()
-        .shadow(color: palette.shadow, radius: 18, y: 8).padding(24)
+        .overlayCard(cornerRadius: 18,
+                     classicFill: RoundedRectangle(cornerRadius: 18).fill(palette.background),
+                     classicBorder: RoundedRectangle(cornerRadius: 18).stroke(Color.overlayPrimary.opacity(0.28)))
+        .padding(24)
         .coordinateSpace(name: "workspaceOverview")
         .onPreferenceChange(WorkspaceOverviewCardFramesKey.self) { frames in
             onCardFramesChange?(frames)
@@ -439,7 +445,7 @@ struct WorkspaceOverviewView: View {
             Text("SCRATCHPAD")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(1.4)
-                .foregroundStyle(Color.overlaySecondary)
+                .foregroundStyle(palette.sectionCaption)
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)],
                       alignment: .leading, spacing: 7) {
                 ForEach(filteredScratchpad) { window in
@@ -470,7 +476,8 @@ private struct WorkspaceOverviewCardFramesKey: PreferenceKey {
 private struct WorkspaceCard: View {
     @ObservedObject private var config = UserConfig.shared
     @Environment(\.colorScheme) private var colorScheme
-    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
+    @Environment(\.overlayStyle) private var style
+    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme, style: style) }
     let workspace: WorkspaceSnapshot
     let selectWorkspace: (Int) -> Void
     let selectWindow: (Int, CGWindowID) -> Void
@@ -498,7 +505,7 @@ private struct WorkspaceCard: View {
                         let frame = window.normalizedFrame
                         Button { selectWindow(workspace.id, window.id) } label: {
                             ZStack {
-                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(0.45) : Color.overlayPrimary.opacity(0.22))
+                                RoundedRectangle(cornerRadius: 4).fill(window.isFloating ? config.resolvedFloatingColor.opacity(palette.floatingWindowOpacity) : palette.tiledWindowFill)
                                 WorkspaceAppIcon(bundleID: window.bundleID).frame(width: 20, height: 20)
                             }
                         }
@@ -532,7 +539,7 @@ private struct WorkspaceCard: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 12).fill(workspace.isActive ? palette.activeSurface : palette.surface))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(workspace.isActive ? Color.overlayPrimary.opacity(0.7) : palette.separator))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(palette.workspaceCardBorder(isActive: workspace.isActive)))
     }
 
 }

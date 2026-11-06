@@ -112,6 +112,7 @@ class KeybindOverlayController {
             self?.openTutorial()
         }
         .environmentObject(input)
+        .overlayStyleFromConfig()
     }
 
     // MARK: - key monitor
@@ -484,6 +485,35 @@ enum OverlayListLayout {
         return stop - maxOffset
     }
 
+    /// Glass has no fill behind the pinned headers, so each row is masked
+    /// by one gradient laid over the whole viewport: clear under the header
+    /// text, solid by the time a row's text would show, and fading out at
+    /// the bottom while more is below. Headers pass `underHeader: false` and
+    /// get only the bottom fade. Locations are fractions of `viewport`.
+    static func edgeFadeStops(viewport: CGFloat, moreBelow: Bool,
+                              underHeader: Bool = true) -> [Gradient.Stop] {
+        guard viewport > 0 else { return [] }
+        // a resting row starts at the header's bottom with its text 10 pt
+        // lower, so a ramp ending there never dims a row at a stop
+        let clearUntil = (headerHeight - 4) / viewport
+        let solidFrom = underHeader ? (headerHeight + 10) / viewport : 0
+        var stops: [Gradient.Stop] = underHeader
+            ? [.init(color: .clear, location: 0),
+               .init(color: .clear, location: clearUntil),
+               .init(color: .black, location: solidFrom)]
+            : [.init(color: .black, location: 0)]
+        if moreBelow {
+            stops.append(.init(color: .black, location: max(solidFrom, 1 - bottomFadeHeight / viewport)))
+            stops.append(.init(color: .clear, location: 1))
+        } else {
+            stops.append(.init(color: .black, location: 1))
+        }
+        return stops
+    }
+
+    /// Height of the "more below" fade, in both styles.
+    static let bottomFadeHeight: CGFloat = 32
+
     /// Index of the stop `step` rows away from `offset`, or nil at either end.
     static func stopIndex(from offset: CGFloat, step: Int, in stops: [CGFloat]) -> Int? {
         guard step != 0, !stops.isEmpty else { return nil }
@@ -502,7 +532,8 @@ struct KeybindOverlayView: View {
     static let preferredWidth: CGFloat = 620
 
     @Environment(\.colorScheme) private var colorScheme
-    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
+    @Environment(\.overlayStyle) private var style
+    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme, style: style) }
     let keybinds: [Keybind]
     let cardWidth: CGFloat
     let listHeight: CGFloat
@@ -519,17 +550,13 @@ struct KeybindOverlayView: View {
         }
         .padding(EdgeInsets(top: 18, leading: 20, bottom: 16, trailing: 20))
         .frame(width: cardWidth, alignment: .topLeading)
-        .background(
+        .overlayCard(
+            cornerRadius: 14,
             // opaque, so the pinned section headers match it exactly
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(palette.opaqueBackground)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(palette.separator, lineWidth: 1)
-        )
-        .compositingGroup()
-        .shadow(color: palette.shadow, radius: 18, x: 0, y: 8)
+            classicFill: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(palette.opaqueBackground),
+            classicBorder: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(palette.separator, lineWidth: 1))
         .padding(64)
     }
 
@@ -552,7 +579,7 @@ struct KeybindOverlayView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .contentShape(Rectangle())
-                    .background(Color.overlayPrimary.opacity(0.12), in: RoundedRectangle(cornerRadius: 5))
+                    .background(palette.buttonFill, in: RoundedRectangle(cornerRadius: 5))
             }
             .buttonStyle(.plain)
         }
@@ -591,7 +618,7 @@ struct KeybindOverlayView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(Color.overlayPrimary.opacity(0.45), lineWidth: 1)
+                .strokeBorder(palette.fieldBorder, lineWidth: 1)
         )
     }
 
@@ -638,6 +665,7 @@ private struct OverlayList: View {
 
     @StateObject private var scroller = OverlayScroller()
     @ObservedObject private var config = UserConfig.shared
+    private static let space = "overlayList"
 
     var body: some View {
         ScrollView(.vertical) {
@@ -645,10 +673,20 @@ private struct OverlayList: View {
                 ForEach(sections) { section in
                     Section {
                         ForEach(section.rows) { row in
-                            rowView(row)
+                            if palette.isGlass {
+                                edgeFaded(height: OverlayListLayout.rowHeight, underHeader: true) { rowView(row) }
+                            } else {
+                                rowView(row)
+                            }
                         }
                     } header: {
-                        sectionHeader(section.title)
+                        if palette.isGlass {
+                            edgeFaded(height: OverlayListLayout.headerHeight, underHeader: false) {
+                                sectionHeader(section.title)
+                            }
+                        } else {
+                            sectionHeader(section.title)
+                        }
                     }
                 }
             }
@@ -656,16 +694,17 @@ private struct OverlayList: View {
             .background(ScrollViewFinder(scroller: scroller))
         }
         .frame(height: height)
+        .coordinateSpace(name: Self.space)
         .onReceive(scrollSteps) { step in
             scroller.step(step, through: OverlayListLayout.scrollStops(for: sections),
                           animated: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
         }
         .overlay(alignment: .bottom) {
-            // more below
-            if scroller.hasMoreBelow {
+            // more below. glass fades the rows themselves instead
+            if scroller.hasMoreBelow, !palette.isGlass {
                 LinearGradient(colors: [palette.opaqueBackground.opacity(0), palette.opaqueBackground],
                                startPoint: .top, endPoint: .bottom)
-                    .frame(height: 32)
+                    .frame(height: OverlayListLayout.bottomFadeHeight)
                     .allowsHitTesting(false)
             }
         }
@@ -676,12 +715,29 @@ private struct OverlayList: View {
             .font(.system(size: 12, weight: .semibold))
             .tracking(0.8)
             .textCase(.uppercase)
-            .foregroundStyle(Color.overlayPrimary)
+            .foregroundStyle(palette.listSectionHeader)
             .padding(.horizontal, 12)
             .padding(.top, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: OverlayListLayout.headerHeight)
-            .background(palette.opaqueBackground)
+            .background(palette.listSectionHeaderFill ?? .clear)
+    }
+
+    // no second material behind the pinned header on glass, so rows fade
+    // out as they slide under it. the mask is the viewport's gradient
+    // shifted to this view, so neighboring rows fade as one surface
+    private func edgeFaded<Content: View>(height viewHeight: CGFloat, underHeader: Bool,
+                                          @ViewBuilder _ content: @escaping () -> Content) -> some View {
+        GeometryReader { proxy in
+            let top = proxy.frame(in: .named(Self.space)).minY
+            content().mask(
+                LinearGradient(
+                    stops: OverlayListLayout.edgeFadeStops(viewport: height, moreBelow: scroller.hasMoreBelow,
+                                                           underHeader: underHeader),
+                    startPoint: UnitPoint(x: 0.5, y: -top / viewHeight),
+                    endPoint: UnitPoint(x: 0.5, y: (height - top) / viewHeight)))
+        }
+        .frame(height: viewHeight)
     }
 
     private func rowView(_ row: OverlayRow) -> some View {

@@ -292,6 +292,7 @@
 		D0F7E9093162AFE0D4B5AE56 /* BSPNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14B540996EBFC8839339556 /* BSPNode.swift */; };
 		D1DF9408D40B20ADFE58C85D /* HoverResponseRateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 075CB706E42649E175CB784A /* HoverResponseRateTests.swift */; };
 		D2364C0428C5CEDC5AF46D76 /* KeybindDisplayHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7681B5C6FAEC2BFB53A30743 /* KeybindDisplayHelpers.swift */; };
+		D3463FEB080AECFF8921893E /* OverlayStyleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE376A851AA4F6697B148A97 /* OverlayStyleTests.swift */; };
 		D380E4A1BDD2AD4281299E72 /* KeybindDecoderToleranceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3521F94E7B0FCC0E03B50D3 /* KeybindDecoderToleranceTests.swift */; };
 		D42C28555A078D585F2268A2 /* WindowRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D21946C610CB845DEC5502 /* WindowRule.swift */; };
 		D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
@@ -540,6 +541,7 @@
 		A202B01AD893174E99223B4E /* LoginItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginItemController.swift; sourceTree = "<group>"; };
 		A4C7BF0EA50E0C6EF557B719 /* ExternalCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExternalCommand.swift; sourceTree = "<group>"; };
 		ACE3FC5B95249CF81BC8F117 /* LayoutTreeRebuildTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutTreeRebuildTests.swift; sourceTree = "<group>"; };
+		AE376A851AA4F6697B148A97 /* OverlayStyleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayStyleTests.swift; sourceTree = "<group>"; };
 		AED07E043DB371F93D3FB07D /* DisplaySettle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplaySettle.swift; sourceTree = "<group>"; };
 		AF93D6331BC4826814BB7007 /* Constants.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Constants.swift; sourceTree = "<group>"; };
 		AFAD1F70A0E024E16719373F /* ConfigUpdateCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigUpdateCoordinator.swift; sourceTree = "<group>"; };
@@ -894,6 +896,7 @@
 				3EEE26248F15BB9A567CA60E /* MinSizeMemoryTests.swift */,
 				078A1208AA569E70DD703182 /* MonitorDirectionTests.swift */,
 				96C6802CD77F6E1EFDFB3A9C /* OuterPaddingOverrideTests.swift */,
+				AE376A851AA4F6697B148A97 /* OverlayStyleTests.swift */,
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
 				5867C8BC4A0B38BC15E47DE2 /* ProbeFrameArgumentsTests.swift */,
 				83433C5EF00BCFF0E217D037 /* QuickLookPanelTests.swift */,
@@ -1510,6 +1513,7 @@
 				F0CFEA06EED537EFEBB7D3B4 /* MinimaRevalidationTests.swift in Sources */,
 				5DC0653308BC85F658CCDC29 /* MonitorDirectionTests.swift in Sources */,
 				462A219B116F901D7F783789 /* OuterPaddingOverrideTests.swift in Sources */,
+				D3463FEB080AECFF8921893E /* OverlayStyleTests.swift in Sources */,
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
 				557A617F0E258A3267E39BEC /* ProbeFrameArgumentsTests.swift in Sources */,
 				EDAF3848CD62189549EA91F6 /* QuickLookPanelTests.swift in Sources */,

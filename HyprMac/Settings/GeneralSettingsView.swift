@@ -284,6 +284,17 @@ struct GeneralSettingsView: View {
                 .frame(width: 120)
             }
 
+            HyprRow("Overlay style", icon: "drop",
+                    subtitle: "Keybind list, workspace HUD and overview.") {
+                Picker("", selection: $config.overlayStyle) {
+                    ForEach(OverlayStyle.allCases) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
+            }
+
             if config.isICloudDriveAvailable {
                 HyprRow("Sync settings via iCloud", icon: "icloud") {
                     Toggle("", isOn: $config.iCloudSyncEnabled)
