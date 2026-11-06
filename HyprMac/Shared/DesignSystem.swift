@@ -173,7 +173,7 @@ private struct OverlayCard: ViewModifier {
 
     func body(content: Content) -> some View {
         #if compiler(>=6.2)
-        if #available(macOS 26.0, *) {
+        if #available(macOS 26.0, *), !OverlayPreview.forcesGlassFallback {
             // real liquid glass only draws on the content itself, and only
             // when nothing above it flattens it: no compositing group, shadow
             // or mask from here up

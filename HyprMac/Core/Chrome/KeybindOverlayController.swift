@@ -77,21 +77,8 @@ class KeybindOverlayController {
         let panelHeight = max(fitted.height, 1)
         let panelX = screen.frame.midX - panelWidth / 2
         let panelY = screen.frame.midY - panelHeight / 2
-
-        let p = KeybindOverlayPanel(
-            contentRect: NSRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered, defer: false)
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = false  // shadow drawn in SwiftUI
-        p.isFloatingPanel = true
-        p.level = Constants.interfaceWindowLevel
-        p.hidesOnDeactivate = false
-
-        hosting.frame = NSRect(x: 0, y: 0, width: panelWidth, height: panelHeight)
-        hosting.autoresizingMask = [.width, .height]
-        p.contentView = hosting
+        let p = Self.makePanel(
+            NSRect(x: panelX, y: panelY, width: panelWidth, height: panelHeight), hosting: hosting)
 
         let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         p.alphaValue = animate ? 0 : 1
@@ -106,6 +93,31 @@ class KeybindOverlayController {
 
         installMonitor()
     }
+
+    private static func makePanel(_ frame: NSRect, hosting: NSView) -> NSPanel {
+        let p = KeybindOverlayPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
+                                    backing: .buffered, defer: false)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = false
+        p.isFloatingPanel = true
+        p.level = Constants.interfaceWindowLevel
+        p.hidesOnDeactivate = false
+        hosting.frame = NSRect(origin: .zero, size: frame.size)
+        hosting.autoresizingMask = [.width, .height]
+        p.contentView = hosting
+        return p
+    }
+
+    #if DEBUG
+    /// The real view in the real panel with the default keybinds, for
+    /// `--preview-overlays`. No key monitor, never key.
+    func previewPanel() -> NSPanel {
+        let hosting = KeybindOverlayHostingView(rootView: content(
+            Keybind.defaults, KeybindOverlayView.preferredWidth, OverlayListLayout.preferredHeight))
+        return Self.makePanel(NSRect(origin: .zero, size: hosting.fittingSize), hosting: hosting)
+    }
+    #endif
 
     private func content(_ keybinds: [Keybind], _ cardWidth: CGFloat, _ listHeight: CGFloat) -> some View {
         KeybindOverlayView(keybinds: keybinds, cardWidth: cardWidth, listHeight: listHeight) { [weak self] in

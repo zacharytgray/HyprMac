@@ -301,6 +301,66 @@ final class WorkspaceOverviewController {
     }
 }
 
+#if DEBUG
+// the real views in the real panels with sample data, for --preview-overlays
+extension WorkspaceOverviewController {
+    func previewHUDPanels() -> [NSPanel] {
+        let names = ["4": "Research"]
+        let views: [NSView] = [
+            OverviewHostingView(rootView: WorkspaceSwitchHUD(
+                text: WorkspaceOverviewPresentation.switchHUDText(workspace: 3, names: names))),
+            OverviewHostingView(rootView: WorkspaceSwitchHUD(
+                text: WorkspaceOverviewPresentation.switchHUDText(workspace: 4, names: names))),
+            OverviewHostingView(rootView: WorkspaceSwitchHUD(
+                text: WorkspaceOverviewPresentation.fullscreenHUDText(isOn: true))),
+            OverviewHostingView(rootView: StatusHUD(caption: "LAYOUT", title: "Saved", detail: "7 windows",
+                                                    failed: false)),
+            OverviewHostingView(rootView: StatusHUD(caption: "LAYOUT", title: "Couldn't save",
+                                                    detail: "The snapshot file couldn't be written",
+                                                    failed: true)),
+        ]
+        return views.map { hosting in
+            let size = hosting.fittingSize
+            let panel = makePanel(frame: NSRect(origin: .zero, size: size), canKey: false)
+            hosting.frame = NSRect(origin: .zero, size: size)
+            panel.contentView = hosting
+            return panel
+        }
+    }
+
+    func previewOverviewPanel(size: CGSize) -> NSPanel {
+        func window(_ id: CGWindowID, _ app: String, _ bundleID: String, _ frame: CGRect,
+                    floating: Bool = false) -> WorkspaceWindowSnapshot {
+            WorkspaceWindowSnapshot(id: id, title: app, bundleID: bundleID, appName: app,
+                                    normalizedFrame: frame, isFloating: floating)
+        }
+        let left = CGRect(x: 0, y: 0, width: 0.5, height: 1)
+        let right = CGRect(x: 0.5, y: 0, width: 0.5, height: 1)
+        let windows: [Int: [WorkspaceWindowSnapshot]] = [
+            1: [window(11, "Safari", "com.apple.Safari", left), window(12, "Notes", "com.apple.Notes", right)],
+            2: [window(21, "Terminal", "com.apple.Terminal", CGRect(x: 0, y: 0, width: 1, height: 1)),
+                window(22, "Finder", "com.apple.finder", CGRect(x: 0.55, y: 0.15, width: 0.35, height: 0.5),
+                       floating: true)],
+            3: [window(31, "Mail", "com.apple.mail", left), window(32, "Calendar", "com.apple.iCal", right)],
+        ]
+        let snapshots = Constants.workspaceRange.map { id in
+            WorkspaceSnapshot(id: id, monitorID: 1, monitorName: "Built-in Display", isActive: id == 2,
+                              windows: windows[id] ?? [])
+        }
+        let model = WorkspaceOverviewModel(
+            snapshots: snapshots,
+            scratchpad: [window(91, "Music", "com.apple.Music", CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8))])
+        let hosting = OverviewHostingView(rootView: WorkspaceOverviewView(
+            model: model, selectWorkspace: { _ in }, selectWindow: { _, _ in }))
+        let panel = makePanel(frame: NSRect(origin: .zero, size: size), canKey: false)
+        hosting.frame = NSRect(origin: .zero, size: size)
+        hosting.autoresizingMask = [.width, .height]
+        panel.contentView = hosting
+        return panel
+    }
+}
+#endif
+
 private final class OverviewPanel: NSPanel {
     var acceptsKeyboard = false
     override var canBecomeKey: Bool { acceptsKeyboard }
