@@ -28,12 +28,14 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "sparkles",
             title: "Liquid Glass Overlays",
-            description: "The keybind list, workspace HUDs and overview now use Liquid Glass on macOS 26, with a matching blur on earlier versions."
+            description: "The keybind list, workspace HUDs and overview now use Liquid Glass on macOS 26, with a matching blur on earlier versions.",
+            credit: "tanishenigma"
         ),
         WhatsNewFeature(
             icon: "viewfinder",
             title: "The Focus Indicator Glides",
-            description: "The corners and border slide to the window you focus, swap or split from the keyboard. Turn it off in Settings → Layout."
+            description: "The corners and border slide to the window you focus, swap or split from the keyboard. Turn it off in Settings → Layout.",
+            credit: "tanishenigma"
         ),
     ]
 }

@@ -10,7 +10,7 @@ final class WelcomeContentTests: XCTestCase {
             "Liquid Glass Overlays",
             "The Focus Indicator Glides",
         ])
-        XCTAssertEqual(features.compactMap(\.credit), [])
+        XCTAssertEqual(features.compactMap(\.credit), ["tanishenigma", "tanishenigma"])
         XCTAssertEqual(WelcomeContent.productURL.absoluteString, "https://hyprmac.app/")
     }
 
