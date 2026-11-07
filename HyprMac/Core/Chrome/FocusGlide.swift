@@ -61,12 +61,17 @@ enum TeleportPlanner {
 /// ```
 /// arm(action) --willWrite(moves)--> marks travel with the moved window (swap, split, ...)
 ///             --traversal(from:to:)-> a duration for a focus move, or nil
+///             --startTraversal()----> hands that glide to the render server
 /// disarm()
 /// ```
 ///
 /// Threading: main-thread only.
 final class FocusGlide {
-    static let duration: TimeInterval = 0.14
+    // a swap's window has already jumped by the time the marks arrive, so
+    // the marks trail it. a focus move has nothing else moving and starts
+    // later, after two window scans, so it gets a shorter trip
+    static let swapDuration: TimeInterval = 0.14
+    static let traversalDuration: TimeInterval = 0.10
 
     /// cached primary height for the CG → NS flip. set by the owner
     var primaryScreenHeight: CGFloat = 0
@@ -75,12 +80,20 @@ final class FocusGlide {
 
     private(set) var isArmed = false
     private var isTraversal = false
+    private var traversalHandedOut = false
+    private var armedAt: CFTimeInterval = 0
+    private var loggedStart = false
+    private var action = ""
 
     func arm(for action: Action, enabled: Bool) -> Bool {
         mainThreadOnly()
         guard enabled, TeleportPlanner.animates(action),
               !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return false }
         isArmed = true
+        armedAt = CACurrentMediaTime()
+        self.action = ActionDispatcher.discriminator(for: action)
+        traversalHandedOut = false
+        loggedStart = false
         if case .focusDirection = action { isTraversal = true } else { isTraversal = false }
         return true
     }
@@ -96,7 +109,25 @@ final class FocusGlide {
     /// shown yet, or a different screen.
     func traversal(from: CGRect?, to: CGRect) -> TimeInterval? {
         guard isArmed, isTraversal, let from, sameScreen(from, to) else { return nil }
-        return Self.duration
+        traversalHandedOut = true
+        return Self.traversalDuration
+    }
+
+    /// After the marks were told to glide for a focus move: start the
+    /// animation now rather than when the press finishes its other work.
+    func startTraversal() {
+        mainThreadOnly()
+        guard traversalHandedOut else { return }
+        traversalHandedOut = false
+        CATransaction.flush()
+        logStart()
+    }
+
+    // once per press: the brackets and the border each start one
+    private func logStart() {
+        guard !loggedStart else { return }
+        loggedStart = true
+        hyprLog(.notice, .overlay, "glide: \(action) started +\(Int((CACurrentMediaTime() - armedAt) * 1000))ms after press")
     }
 
     /// Called by the engine with a pass's moves right before its first write.
@@ -107,16 +138,19 @@ final class FocusGlide {
         if let brackets, brackets.isVisible,
            let move = moves.first(where: { $0.windowID == brackets.trackedWindowID }),
            sameScreen(move.from, move.to) {
-            glided = brackets.glide(from: move.from, to: move.to, duration: Self.duration) || glided
+            glided = brackets.glide(from: move.from, to: move.to, duration: Self.swapDuration) || glided
         }
         if let border, let id = border.trackedWindowID,
            let move = moves.first(where: { $0.windowID == id }),
            sameScreen(move.from, move.to) {
-            glided = border.glide(from: move.from, to: move.to, duration: Self.duration) || glided
+            glided = border.glide(from: move.from, to: move.to, duration: Self.swapDuration) || glided
         }
         // hand the layers to the render server now. the main thread is about
         // to block in AX writes and readback, and nothing would draw till then
-        if glided { CATransaction.flush() }
+        if glided {
+            CATransaction.flush()
+            logStart()
+        }
     }
 
     private func sameScreen(_ a: CGRect, _ b: CGRect) -> Bool {

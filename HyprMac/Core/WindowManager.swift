@@ -1353,6 +1353,7 @@ class WindowManager {
                 length: config.resolvedFocusBracketLength)
             focusBrackets.show(around: frame, windowID: window.windowID,
                                glide: focusGlide.traversal(from: focusBrackets.frame, to: frame))
+            focusGlide.startTraversal()
         }
         if config.showFocusBorder, let frame = window.frame {
             focusBorder.accentCGColor = stateCache.floatingWindowIDs.contains(window.windowID)
@@ -1360,6 +1361,7 @@ class WindowManager {
                 : config.resolvedFocusBorderColor.cgColor
             focusBorder.show(around: frame, windowID: window.windowID,
                              glide: focusGlide.traversal(from: focusBorder.frame, to: frame))
+            focusGlide.startTraversal()
             // cache-based on both paths — this runs on every FFM focus
             // change, and the floating branch used to re-enumerate the
             // whole desktop. floatingFrames reads live AX frames from the

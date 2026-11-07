@@ -639,9 +639,12 @@ final class ActionDispatcher {
         if let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor) {
             hyprLog(.debug, .orchestration, "focus \(direction): -> '\(target.title ?? "?")' (\(target.windowID)) frameFor=\(frameFor(target).map { "\($0)" } ?? "nil") live=\(target.frame.map { "\($0)" } ?? "nil") screen=\(displayManager.screen(for: target)?.localizedName ?? "?")")
             focusController.recordFocus(target.windowID, reason: "focusInDirection")
+            // the indicator first: after focusWindow the app is busy
+            // activating, and reading its frame then waited ~140 ms, so the
+            // glide started well after a swap's
+            updateFocusBorder(target)
             focusWindow(target, "focusInDirection")
             cursorManager.warpToCenter(of: target)
-            updateFocusBorder(target)
         }
     }
 
