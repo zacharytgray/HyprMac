@@ -26,16 +26,9 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "sparkles",
-            title: "Liquid Glass Overlays",
-            description: "The keybind list, workspace HUDs and overview now use Liquid Glass on macOS 26, with a matching blur on earlier versions.",
-            credit: "tanishenigma"
-        ),
-        WhatsNewFeature(
-            icon: "viewfinder",
-            title: "The Focus Indicator Glides",
-            description: "The corners and border slide to the window you focus, swap or split from the keyboard. Turn it off in Settings → Layout.",
-            credit: "tanishenigma"
+            icon: "bolt",
+            title: "Snappier Focus Moves",
+            description: "Moving focus with Hypr+arrow now starts the glide as quickly as a swap does, about 150 ms sooner than in 0.22.0."
         ),
     ]
 }
