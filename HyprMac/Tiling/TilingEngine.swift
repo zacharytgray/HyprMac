@@ -1548,6 +1548,12 @@ class TilingEngine {
                     }.joined(separator: ", ")
                     + "] deadline=\(Int((poller.deadline * 1000).rounded()))ms")
         }
+        // set only while a press that may glide is in flight, so a pass
+        // with no listener computes nothing
+        if let onTeleportWillWrite {
+            onTeleportWillWrite(TeleportPlanner.moves(originals: originalFrames,
+                                                      targets: firstLayouts.map { ($0.0.windowID, $0.1) }))
+        }
         let attempt = VerifiedAttempt(tree: tree, candidate: candidate, rect: rect, generation: generation,
                                       windows: windows, originalFrames: originalFrames,
                                       restorationFrame: restorationFrame, newcomerIDs: newcomerIDs,
@@ -3164,6 +3170,10 @@ class TilingEngine {
     /// Every start and end of a maximize, whatever caused it. The screen is
     /// nil when its display is gone.
     var onMaximizeChanged: (_ workspace: Int, _ screen: NSScreen?, _ isOn: Bool) -> Void = { _, _, _ in }
+    /// The focus glide listens here during one press. A pass's moves go
+    /// out right before its first write. Watching only: nothing set here
+    /// touches a tree or a frame.
+    var onTeleportWillWrite: (([TeleportMove]) -> Void)?
     /// The maximized window while `applyTrackedLayout` runs the tree's pass.
     private var passMaximizedID: CGWindowID?
     private var heldWindowIDs: Set<CGWindowID> { passHeldIDs ?? [] }

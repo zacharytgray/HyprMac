@@ -38,6 +38,7 @@ enum UserConfigDefaults {
     static let enabled: Bool = true
     static let focusFollowsMouse: Bool = true
     static let keepCursorOnWorkspaceSwitch: Bool = false
+    static let animateFocusIndicator: Bool = true
     static let mouseHoverPollHz: Int = 120
     static let hyprKey: HyprKey = .capsLock
     static let showMenuBarIndicator: Bool = true

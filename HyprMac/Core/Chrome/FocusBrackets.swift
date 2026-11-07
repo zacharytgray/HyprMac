@@ -30,6 +30,8 @@ class FocusBrackets {
     // accent, black outline behind light accent).
     private var outlineLayers: [CAShapeLayer] = []
     private var trackedFrame: CGRect?
+    // set while the marks travel to a teleported window's new frame
+    private var glideTarget: CGRect?
     private(set) var style: FocusBracketStyle = .rounded
     private(set) var markRadius: CGFloat = UserConfigDefaults.focusBracketRadius
     private(set) var markThickness: CGFloat = UserConfigDefaults.focusBracketThickness
@@ -60,12 +62,18 @@ class FocusBrackets {
 
     // MARK: - public API
 
+    /// Where the marks sit now, CG coordinates. nil while hidden.
+    var frame: CGRect? { isVisible ? trackedFrame : nil }
+
     /// Show brackets around `rect`. Scale-in animation on first appear,
     /// re-stamps in place when already visible on a different window or
-    /// frame.
-    func show(around rect: CGRect, windowID: CGWindowID) {
+    /// frame. With `glide`, a window switch travels from the old window
+    /// instead of scaling in.
+    func show(around rect: CGRect, windowID: CGWindowID, glide: TimeInterval? = nil) {
         mainThreadOnly()
         guard style != .off else { hide(); return }
+        if isGliding(to: rect, windowID: windowID) { return }
+        cancelGlide()
 
         let p: NSPanel
         if let existing = panel {
@@ -77,23 +85,21 @@ class FocusBrackets {
 
         let isFirstAppear = !isVisible
         let isWindowSwitch = trackedWindowID != nil && trackedWindowID != windowID
+        let glideFrom = glide != nil && !isFirstAppear && isWindowSwitch ? trackedFrame : nil
 
         // stampCornerPaths needs a tracked id, so set it before the first stamp
         // (and after every hide, which clears it).
         trackedWindowID = windowID
+        if let glideFrom, let glide, self.glide(from: glideFrom, to: rect, duration: glide) {
+            applyStrokeColors()
+            return
+        }
         trackedFrame = rect
         p.setFrame(panelRect(for: rect), display: false)
         layoutHostView(in: p)
         stampCornerPaths()
 
-        // accent color may have changed since last show — update both
-        // the colored stroke and the contrast outline behind it.
-        let outline = Self.contrastOutlineColor(for: accentCGColor)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for layer in cornerLayers { layer.strokeColor = accentCGColor }
-        for layer in outlineLayers { layer.strokeColor = outline }
-        CATransaction.commit()
+        applyStrokeColors()
 
         p.alphaValue = 1.0
         p.orderFront(nil)
@@ -103,11 +109,24 @@ class FocusBrackets {
         }
     }
 
+    // accent color may have changed since last show — update both
+    // the colored stroke and the contrast outline behind it.
+    private func applyStrokeColors() {
+        let outline = Self.contrastOutlineColor(for: accentCGColor)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for layer in cornerLayers { layer.strokeColor = accentCGColor }
+        for layer in outlineLayers { layer.strokeColor = outline }
+        CATransaction.commit()
+    }
+
     /// Re-position brackets to `rect` without animation. Called when the
     /// focused window changes mid-press (e.g. via Hypr+arrow).
     func updatePosition(_ rect: CGRect) {
         mainThreadOnly()
         guard let p = panel, isVisible else { return }
+        if isGliding(to: rect, windowID: trackedWindowID) { return }
+        cancelGlide()
         p.setFrame(panelRect(for: rect), display: false)
         layoutHostView(in: p)
         stampCornerPaths()
@@ -170,6 +189,7 @@ class FocusBrackets {
         isVisible = false
         trackedWindowID = nil
         trackedFrame = nil
+        glideTarget = nil
 
         let captured = p
         let duration = Tuning.fadeOutDurationSec
@@ -187,23 +207,27 @@ class FocusBrackets {
 
     // MARK: - drawing
 
-    private func stampCornerPaths() {
+    /// `target` is the window's rect in host coordinates. nil is the
+    /// whole host, which is the window except mid-glide.
+    private func stampCornerPaths(in target: CGRect? = nil) {
         guard let host = hostView, trackedWindowID != nil else { return }
         let bounds = host.bounds
+        let frame = target ?? bounds
         let inset = Tuning.inset
         let leg = markLength
         // stylistic curvature is independent from the app window edge.
         let r = markRadius
-        let W = bounds.width
-        let H = bounds.height
+        let x0 = frame.minX, y0 = frame.minY
+        let W = frame.maxX
+        let H = frame.maxY
 
         // arc centers chosen so the arc is tangent to the inset edges:
         // top edge at y = H - inset, left edge at x = inset, etc.
         let centers = [
-            CGPoint(x: inset + r, y: H - inset - r),       // TL
+            CGPoint(x: x0 + inset + r, y: H - inset - r),  // TL
             CGPoint(x: W - inset - r, y: H - inset - r),   // TR
-            CGPoint(x: inset + r, y: inset + r),           // BL
-            CGPoint(x: W - inset - r, y: inset + r),       // BR
+            CGPoint(x: x0 + inset + r, y: y0 + inset + r), // BL
+            CGPoint(x: W - inset - r, y: y0 + inset + r),  // BR
         ]
         let arcs: [(CGFloat, CGFloat)] = [
             (.pi / 2, .pi),         // TL: top tangent → left tangent
@@ -309,6 +333,71 @@ class FocusBrackets {
     }
 
     // MARK: - animation
+
+    /// Travel the marks from `old` to `new`, CG coordinates, while the
+    /// window itself snaps. The panel covers both frames for the trip and
+    /// shrinks back to the window when it lands. Same screen only.
+    @discardableResult
+    func glide(from old: CGRect, to new: CGRect, duration: TimeInterval) -> Bool {
+        mainThreadOnly()
+        guard let p = panel, isVisible, cornerLayers.count == 4 else { return false }
+        let union = old.union(new)
+        p.setFrame(panelRect(for: union), display: false)
+        layoutHostView(in: p)
+        // the new frame inside the union panel, NS (y up) host coordinates
+        let target = CGRect(x: new.minX - union.minX, y: union.maxY - new.maxY,
+                            width: new.width, height: new.height)
+        stampCornerPaths(in: target)
+        trackedFrame = new
+        glideTarget = new
+
+        // where each corner starts, relative to where it lands. CG y grows
+        // down, so the NS offset flips sign. ordered TL, TR, BL, BR
+        let top = -(old.minY - new.minY), bottom = -(old.maxY - new.maxY)
+        let left = old.minX - new.minX, right = old.maxX - new.maxX
+        let offsets = [CGSize(width: left, height: top), CGSize(width: right, height: top),
+                       CGSize(width: left, height: bottom), CGSize(width: right, height: bottom)]
+
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in self?.finishGlide(at: new) }
+        for i in 0..<4 {
+            for layer in [outlineLayers[i], cornerLayers[i]] {
+                layer.removeAnimation(forKey: "scaleIn")
+                layer.removeAnimation(forKey: "fadeIn")
+                let move = CABasicAnimation(keyPath: "transform")
+                move.fromValue = NSValue(caTransform3D: CATransform3DMakeTranslation(offsets[i].width, offsets[i].height, 0))
+                move.toValue = NSValue(caTransform3D: CATransform3DIdentity)
+                move.duration = duration
+                move.timingFunction = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+                layer.transform = CATransform3DIdentity
+                layer.opacity = 1
+                layer.add(move, forKey: "glide")
+            }
+        }
+        CATransaction.commit()
+        return true
+    }
+
+    private func isGliding(to rect: CGRect, windowID: CGWindowID?) -> Bool {
+        guard let glideTarget, isVisible, windowID == trackedWindowID else { return false }
+        return TeleportPlanner.travel(glideTarget, rect) < TeleportPlanner.minimumTravel
+    }
+
+    private func cancelGlide() {
+        guard glideTarget != nil else { return }
+        glideTarget = nil
+        for layer in outlineLayers + cornerLayers { layer.removeAnimation(forKey: "glide") }
+    }
+
+    // back to a panel the size of the window, so the rest of the class
+    // can keep assuming panel rect == window rect
+    private func finishGlide(at rect: CGRect) {
+        guard let glideTarget, glideTarget.equalTo(rect), isVisible, let p = panel else { return }
+        self.glideTarget = nil
+        p.setFrame(panelRect(for: rect), display: false)
+        layoutHostView(in: p)
+        stampCornerPaths()
+    }
 
     private func animateScaleIn() {
         guard cornerLayers.count == 4 else { return }

@@ -86,6 +86,12 @@ class FocusBorder {
     // remembered CG frames — used by applyOcclusion to translate occluder
     // CG rects into glow-local NS coords. kept in sync with panel positions.
     private var trackedWindowFrame: CGRect?
+    /// Where the focused border sits now, CG coordinates. nil while hidden.
+    var frame: CGRect? { state == .hidden ? nil : trackedWindowFrame }
+    // set while the outline travels to a teleported window's new frame.
+    // occluders that arrive meanwhile wait for the landing
+    private var glideTarget: CGRect?
+    private var glideOccluders: [CGRect] = []
     private var floaterFrames: [CGWindowID: CGRect] = [:]
 
     private enum State { case active, settled, hidden }
@@ -170,13 +176,17 @@ class FocusBorder {
     /// transition to the settled (outline-only) state after
     /// `settleDelaySec`. Cancels any in-flight settle before re-asserting.
     /// An active error flash keeps ownership until its bounded interval ends.
-    func show(around rect: CGRect, windowID: CGWindowID) {
+    /// With `glide`, a window switch travels from the old window instead
+    /// of fading in.
+    func show(around rect: CGRect, windowID: CGWindowID, glide: TimeInterval? = nil) {
         mainThreadOnly()
         guard isEnabled else { return }
         // Focus can change while a rejected drag is still reporting its
         // result. Keep the one-shot red panel intact; the owner re-resolves
         // current focus when the bounded feedback interval finishes.
         guard errorFeedback.permitsPersistentShow else { return }
+        if isGliding(to: rect, windowID: windowID) { return }
+        cancelGlide()
         // idempotent re-show: already painted on this window at this frame
         // and the state machine has progressed past .hidden — nothing to do.
         // without this, every redundant updateFocusBorder call (post-click
@@ -204,6 +214,7 @@ class FocusBorder {
         let isFreshAppearance = (panel == nil) || (state == .hidden)
         let isWindowSwitch = (renderedWindowID != nil) && (renderedWindowID != windowID)
         let shouldFadeIn = isFreshAppearance || isWindowSwitch
+        let glideFrom = glide != nil && !isFreshAppearance && isWindowSwitch ? trackedWindowFrame : nil
 
         let expansion = Tuning.activeBorderWidth / 2
         focusedCornerRadiusExpansion = expansion
@@ -213,8 +224,10 @@ class FocusBorder {
         let p: NSPanel
         if let existing = panel {
             p = existing
-            p.setFrame(nsRect, display: false)
-            positionGlowView(in: p)
+            if glideFrom == nil {
+                p.setFrame(nsRect, display: false)
+                positionGlowView(in: p)
+            }
         } else {
             p = makePanel(frame: nsRect)
             panel = p
@@ -234,15 +247,21 @@ class FocusBorder {
         p.alphaValue = 1.0
         p.orderFront(nil)
         if let glow = glowView {
-            if shouldFadeIn {
+            if shouldFadeIn, glideFrom == nil {
                 fadeViewAlpha(glow, from: 0, to: 1, duration: fadeDurationSec)
             } else {
+                glow.layer?.removeAnimation(forKey: "fade")
+                glow.layer?.opacity = 1
                 glow.alphaValue = 1.0
             }
         }
         state = .active
         renderedWindowID = windowID
         trackedWindowFrame = rect
+        if let glideFrom, let glide, !self.glide(from: glideFrom, to: rect, duration: glide) {
+            p.setFrame(nsRect, display: false)
+            positionGlowView(in: p)
+        }
 
         // schedule transition to settled (outline only)
         let work = DispatchWorkItem { [weak self] in self?.settle() }
@@ -256,6 +275,8 @@ class FocusBorder {
     func updatePosition(_ rect: CGRect) {
         mainThreadOnly()
         guard let p = panel, state != .hidden, trackedWindowID != nil else { return }
+        if isGliding(to: rect, windowID: renderedWindowID) { return }
+        cancelGlide()
         let expansion = Tuning.activeBorderWidth / 2
         let nsRect = panelRect(for: rect, expansion: expansion)
         p.setFrame(nsRect, display: false)
@@ -387,6 +408,7 @@ class FocusBorder {
         }
         settleWork?.cancel()
         cancelActiveShake()
+        cancelGlide()
         errorFeedback.cancel()
         errorFeedbackWindowID = nil
         renderedWindowID = nil
@@ -552,7 +574,9 @@ class FocusBorder {
     ///   floating borders.
     func applyOcclusion(focusedOccluders: [CGRect], floaterOccluders: [CGWindowID: [CGRect]]) {
         mainThreadOnly()
-        if let frame = trackedWindowFrame, let glow = glowView {
+        if glideTarget != nil {
+            glideOccluders = focusedOccluders
+        } else if let frame = trackedWindowFrame, let glow = glowView {
             applyMask(to: glow, windowCGRect: frame,
                       expansion: Tuning.activeBorderWidth / 2,
                       occluders: focusedOccluders)
@@ -604,6 +628,89 @@ class FocusBorder {
     }
 
     // returns up to 4 strips representing `rect` minus `hole`.
+    // MARK: - teleport glide
+
+    /// Travel the outline from `old` to `new`, CG coordinates, while the
+    /// window itself snaps. The panel covers both frames for the trip and
+    /// shrinks back to the window when it lands. Same screen only.
+    @discardableResult
+    func glide(from old: CGRect, to new: CGRect, duration: TimeInterval) -> Bool {
+        mainThreadOnly()
+        guard let p = panel, let glow = glowView, let layer = glow.layer, state != .hidden,
+              renderedWindowID != nil, !errorFeedback.isActive else { return false }
+        let e = Tuning.activeBorderWidth / 2
+        let union = old.union(new)
+        p.setFrame(panelRect(for: union, expansion: e), display: false)
+        // a window's border rect inside the union panel, NS (y up)
+        func local(_ r: CGRect) -> CGRect {
+            CGRect(x: r.minX - union.minX, y: union.maxY - r.maxY,
+                   width: r.width + 2 * e, height: r.height + 2 * e)
+        }
+        let from = local(old), to = local(new)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.mask = nil
+        glow.frame = to
+        CATransaction.commit()
+        trackedWindowFrame = new
+        glideTarget = new
+        glideOccluders = []
+
+        let anchor = layer.anchorPoint
+        func position(_ r: CGRect) -> CGPoint {
+            CGPoint(x: r.minX + anchor.x * r.width, y: r.minY + anchor.y * r.height)
+        }
+        let timing = CAMediaTimingFunction(controlPoints: 0.2, 0.9, 0.3, 1)
+        let move = CABasicAnimation(keyPath: "position")
+        move.fromValue = NSValue(point: position(from))
+        move.toValue = NSValue(point: position(to))
+        let size = CABasicAnimation(keyPath: "bounds.size")
+        size.fromValue = NSValue(size: from.size)
+        size.toValue = NSValue(size: to.size)
+        let group = CAAnimationGroup()
+        group.animations = [move, size]
+        group.duration = duration
+        group.timingFunction = timing
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in self?.finishGlide(at: new) }
+        layer.add(group, forKey: "glide")
+        CATransaction.commit()
+        return true
+    }
+
+    private func isGliding(to rect: CGRect, windowID: CGWindowID?) -> Bool {
+        guard let glideTarget, state != .hidden, windowID == renderedWindowID else { return false }
+        return TeleportPlanner.travel(glideTarget, rect) < TeleportPlanner.minimumTravel
+    }
+
+    private func cancelGlide() {
+        guard glideTarget != nil else { return }
+        glideTarget = nil
+        glowView?.layer?.removeAnimation(forKey: "glide")
+        if let p = panel, let rect = trackedWindowFrame {
+            p.setFrame(panelRect(for: rect, expansion: Tuning.activeBorderWidth / 2), display: false)
+            positionGlowView(in: p)
+        }
+    }
+
+    // back to a panel the size of the window, so the rest of the class
+    // can keep assuming the glow fills the panel
+    private func finishGlide(at rect: CGRect) {
+        guard let glideTarget, glideTarget.equalTo(rect), state != .hidden,
+              let p = panel, let glow = glowView else { return }
+        self.glideTarget = nil
+        let e = Tuning.activeBorderWidth / 2
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        p.setFrame(panelRect(for: rect, expansion: e), display: false)
+        positionGlowView(in: p)
+        CATransaction.commit()
+        if !glideOccluders.isEmpty {
+            applyMask(to: glow, windowCGRect: rect, expansion: e, occluders: glideOccluders)
+            glideOccluders = []
+        }
+    }
+
     // MARK: - panel setup
 
     private func makePanel(frame: NSRect) -> NSPanel {

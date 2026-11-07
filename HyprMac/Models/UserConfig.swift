@@ -47,6 +47,9 @@ class UserConfig: ObservableObject {
     @Published var keepCursorOnWorkspaceSwitch: Bool {
         didSet { persistRuntimeChange() }
     }
+    @Published var animateFocusIndicator: Bool {
+        didSet { persistRuntimeChange() }
+    }
     @Published var mouseHoverPollHz: Int {
         didSet { persistRuntimeChange() }
     }
@@ -236,6 +239,7 @@ class UserConfig: ObservableObject {
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
+            self.animateFocusIndicator = saved.animateFocusIndicator ?? UserConfigDefaults.animateFocusIndicator
             self.mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
@@ -268,6 +272,7 @@ class UserConfig: ObservableObject {
             self.enabled = UserConfigDefaults.enabled
             self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
+            self.animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
             self.mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
@@ -420,7 +425,8 @@ class UserConfig: ObservableObject {
             windowRules: windowRules.isEmpty ? nil : windowRules,
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
             overlayAccentHex: overlayAccentHex,
-            keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch)
+            keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch,
+            animateFocusIndicator: animateFocusIndicator)
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
@@ -434,6 +440,7 @@ class UserConfig: ObservableObject {
         enabled = UserConfigDefaults.enabled
         focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
         keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
+        animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
         mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
         hyprKey = UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
@@ -544,6 +551,7 @@ class UserConfig: ObservableObject {
         enabled = saved.enabled
         focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
         keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
+        animateFocusIndicator = saved.animateFocusIndicator ?? UserConfigDefaults.animateFocusIndicator
         mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
         hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
