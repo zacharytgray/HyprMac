@@ -26,9 +26,9 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "arrow.up.forward.app",
-            title: "Minimized Windows Come Back",
-            description: "Bringing back a minimized window from the Dock now takes you to its workspace instead of hiding it again."
+            icon: "pin",
+            title: "Pin Several Apps at Once",
+            description: "Choose several apps in Settings → General → Pin apps to pin them all in one step."
         ),
     ]
 }
