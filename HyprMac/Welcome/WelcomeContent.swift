@@ -26,9 +26,9 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "bolt",
-            title: "Snappier Focus Moves",
-            description: "Moving focus with Hypr+arrow now starts the glide as quickly as a swap does, about 150 ms sooner than in 0.22.0."
+            icon: "arrow.up.forward.app",
+            title: "Minimized Windows Come Back",
+            description: "Bringing back a minimized window from the Dock now takes you to its workspace instead of hiding it again."
         ),
     ]
 }
