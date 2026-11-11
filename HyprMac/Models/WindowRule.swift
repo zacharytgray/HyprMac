@@ -31,4 +31,12 @@ extension WindowRule {
               Constants.workspaceRange.contains(rule.workspace) else { return nil }
         return rule.workspace
     }
+
+    /// New workspace-1 rules for the apps picked in Settings. Apps that already
+    /// have a rule, or appear twice in the pick, get one rule at most.
+    static func newRules(forBundleIDs bundleIDs: [String], existing rules: [WindowRule]) -> [WindowRule] {
+        var seen = Set(rules.map(\.bundleID))
+        return bundleIDs.filter { seen.insert($0).inserted }
+            .map { WindowRule(bundleID: $0, workspace: 1) }
+    }
 }

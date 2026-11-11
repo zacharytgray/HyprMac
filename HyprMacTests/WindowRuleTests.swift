@@ -61,6 +61,28 @@ final class WindowRuleTests: XCTestCase {
             in: rules(("com.apple.Terminal", 2), ("com.apple.Terminal", 7))), 2)
     }
 
+    // the Pin apps picker takes several apps at once
+    func testPickingSeveralAppsAddsAWorkspaceOneRuleForEach() {
+        let added = WindowRule.newRules(
+            forBundleIDs: ["com.apple.Safari", "com.apple.Notes"],
+            existing: rules(("com.apple.Terminal", 3)))
+        XCTAssertEqual(added, rules(("com.apple.Safari", 1), ("com.apple.Notes", 1)))
+    }
+
+    func testPickingAnAppThatHasARuleLeavesItAlone() {
+        let added = WindowRule.newRules(
+            forBundleIDs: ["com.apple.Terminal", "com.apple.Safari"],
+            existing: rules(("com.apple.Terminal", 3)))
+        XCTAssertEqual(added, rules(("com.apple.Safari", 1)))
+    }
+
+    func testAnAppPickedTwiceGetsOneRule() {
+        let added = WindowRule.newRules(
+            forBundleIDs: ["com.apple.Safari", "com.apple.Notes", "com.apple.Safari"],
+            existing: [])
+        XCTAssertEqual(added, rules(("com.apple.Safari", 1), ("com.apple.Notes", 1)))
+    }
+
     // a preview belongs to whichever app opened it; a pinned Finder must
     // not drag every Quick Look panel along
     func testQuickLookPreviewIsNeverPinned() {

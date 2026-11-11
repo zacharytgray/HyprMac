@@ -383,16 +383,15 @@ struct GeneralSettingsView: View {
     // one rule per app: picking an app that already has one leaves it as is
     private func pickPinnedApp() {
         let panel = NSOpenPanel()
-        panel.title = "Select Application to Pin"
+        panel.title = "Select Applications to Pin"
         panel.allowedContentTypes = [.application]
-        panel.allowsMultipleSelection = false
+        panel.allowsMultipleSelection = true
         panel.directoryURL = URL(fileURLWithPath: "/Applications")
         panel.canChooseDirectories = false
 
-        if panel.runModal() == .OK, let url = panel.url,
-           let bundle = Bundle(url: url), let id = bundle.bundleIdentifier,
-           !config.windowRules.contains(where: { $0.bundleID == id }) {
-            config.windowRules.append(WindowRule(bundleID: id, workspace: 1))
-        }
+        guard panel.runModal() == .OK else { return }
+        let ids = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
+        let added = WindowRule.newRules(forBundleIDs: ids, existing: config.windowRules)
+        if !added.isEmpty { config.windowRules.append(contentsOf: added) }
     }
 }
