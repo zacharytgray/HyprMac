@@ -253,4 +253,34 @@ final class DockAffordanceTests: XCTestCase {
     func testAnAppWithNoTrackedWindowsDoesNothing() {
         XCTAssertEqual(decide([]), .none)
     }
+
+    // issue #73: the minimized window's return, not the activation, decides
+    private func returnTarget(_ returned: [Int], app: [Int], visible: Set<Int> = [1],
+                              scratchpadVisible: Bool = false) -> Int? {
+        DockAffordance.returnTarget(returnedWorkspaces: returned, appWorkspaces: app,
+                                    visibleWorkspaces: visible, scratchpadWorkspace: 0,
+                                    scratchpadVisible: scratchpadVisible)
+    }
+
+    func testAMinimizedWindowReturningOnAHiddenWorkspaceGoesThere() {
+        XCTAssertEqual(returnTarget([9], app: [9]), 9)
+    }
+
+    func testAReturnWhileTheAppShowsAWindowStaysParked() {
+        XCTAssertNil(returnTarget([9], app: [1, 9]))
+        XCTAssertNil(returnTarget([9], app: [0, 9], scratchpadVisible: true))
+    }
+
+    func testAReturnOnAVisibleWorkspaceNeedsNoSwitch() {
+        XCTAssertNil(returnTarget([1], app: [1]))
+    }
+
+    func testAReturnGoesToItsOwnWorkspaceNotTheAppsLowest() {
+        XCTAssertEqual(returnTarget([9], app: [3, 9]), 9)
+        XCTAssertEqual(returnTarget([9, 5], app: [5, 9]), 5)
+    }
+
+    func testAScratchpadReturnIsLeftToTheLayer() {
+        XCTAssertNil(returnTarget([0], app: [0]))
+    }
 }

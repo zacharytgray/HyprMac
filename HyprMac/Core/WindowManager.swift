@@ -2316,7 +2316,12 @@ class WindowManager {
         if let wait = discovery.secondsUntilAHoldEnds {
             pollingScheduler.schedule(after: wait + 0.05)
         }
+        // read before the apply: its focus fallback can front another app
+        let returnTarget = userHiddenReturnTarget(changes)
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
+        // the switch walks AX again, so this snapshot's frames are stale for
+        // the park repair below
+        if let returnTarget { followUserHiddenReturn(returnTarget) }
         // a member a tile pass held out because its app did not answer gets
         // its frame once the app does. a retile this poll already wrote it
         var retiled = changes.needsRetile
@@ -2334,7 +2339,7 @@ class WindowManager {
         // frames in this snapshot are what it replaced. drift is the
         // question for a poll that changed nothing.
         if !retiled { applyTiledDrift(allWindows) }
-        placement.repairParkedWindows(allWindows)
+        if returnTarget == nil { placement.repairParkedWindows(allWindows) }
         tiledDragFeedback.reconcile(with: retileResults, allWindows: allWindows)
         refreshWorkspaceOverview(windows: allWindows)
         // a guarded cycle diffed nothing, so it can't have seen the close —
@@ -2493,9 +2498,7 @@ class WindowManager {
                 let pid = app.processIdentifier
                 let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
 
-                // only consider windows still tracked (not hidden/closed)
-                let appWindows = stateCache.windowOwners
-                    .filter { $0.value == pid && stateCache.knownWindowIDs.contains($0.key) && !stateCache.hiddenWindowIDs.contains($0.key) }
+                let appWindows = trackedWindows(ofApp: pid)
 
                 let appWorkspaces = appWindows.compactMap { (wid, _) in workspaceManager.workspaceFor(wid) }
                 switch DockAffordance.decide(appWorkspaces: appWorkspaces,
@@ -2542,6 +2545,41 @@ class WindowManager {
         }
     }
 
+
+    /// The app's windows still tracked: not hidden, minimized or closed.
+    private func trackedWindows(ofApp pid: pid_t) -> [CGWindowID: pid_t] {
+        stateCache.windowOwners.filter {
+            $0.value == pid && stateCache.knownWindowIDs.contains($0.key)
+                && !stateCache.hiddenWindowIDs.contains($0.key)
+        }
+    }
+
+    /// A minimized window of the frontmost app came back on a hidden
+    /// workspace while the app shows nothing (issue #73). Its activation ran
+    /// before the return and found no window, so without this the park
+    /// repair hides the window again and the user stays where they were.
+    private func userHiddenReturnTarget(_ changes: WindowChanges) -> (windowID: CGWindowID, workspace: Int)? {
+        // mid-transition the switch would be dropped; the park repair runs
+        guard !changes.returnedFromUserHide.isEmpty, !displayTransitionPending,
+              let front = NSWorkspace.shared.frontmostApplication?.processIdentifier else { return nil }
+        let returned = changes.returnedFromUserHide.filter { stateCache.windowOwners[$0] == front }
+        guard !returned.isEmpty else { return nil }
+        let wsOf = { (id: CGWindowID) in self.workspaceManager.workspaceFor(id) }
+        guard let target = DockAffordance.returnTarget(
+            returnedWorkspaces: returned.compactMap(wsOf),
+            appWorkspaces: trackedWindows(ofApp: front).keys.compactMap(wsOf),
+            visibleWorkspaces: Set(workspaceManager.monitorWorkspace.values),
+            scratchpadWorkspace: ScratchpadController.workspace,
+            scratchpadVisible: scratchpad.isVisible
+        ), let id = returned.filter({ wsOf($0) == target }).min() else { return nil }
+        return (id, target)
+    }
+
+    private func followUserHiddenReturn(_ target: (windowID: CGWindowID, workspace: Int)) {
+        hyprLog(.notice, .lifecycle, "minimized return: \(target.windowID) came back on hidden ws\(target.workspace) with its app in front — switching there")
+        scratchpad.hide(reason: .workspaceAction)
+        workspaceOrchestrator.switchWorkspace(target.workspace, preferredWindowID: target.windowID)
+    }
 
     /// Clear `dockIsActive` if the deactivating app is the dock. macOS
     /// doesn't always fire `didActivate` for the next app (e.g. user

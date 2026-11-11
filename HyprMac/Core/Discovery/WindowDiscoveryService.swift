@@ -60,6 +60,9 @@ struct WindowChanges {
     /// the displays are asleep. The snapshot is not the desktop, so the
     /// caller does nothing else with it either.
     var heldForInterruption = false
+    /// Subset of `returned` that came back from a minimize or Cmd-H (or
+    /// an AX-unreadable hide), not a verified close.
+    var returnedFromUserHide: Set<CGWindowID> = []
 
     /// `true` when at least one observed change warrants a retile.
     /// Stale-state sweeps do not bump this — they are silent state
@@ -505,6 +508,7 @@ final class WindowDiscoveryService {
         // reopen (Teams, Mail) comes back "returned" with a stale assignment
         // to a hidden workspace. user-hidden returns keep their workspace.
         let reopened = Set(returned.map { $0.windowID }).subtracting(userHiddenIDs)
+        let fromUserHide = Set(returned.map { $0.windowID }).intersection(userHiddenIDs)
         userHiddenIDs.subtract(returned.map { $0.windowID })
         userHiddenIDs.formIntersection(stateCache.hiddenWindowIDs)
         stateCache.reservedHiddenWindowIDs.subtract(returned.map { $0.windowID })
@@ -524,7 +528,8 @@ final class WindowDiscoveryService {
             fullyForgottenIDs: fullyForgotten,
             screenDrift: drift,
             focusedWindowGone: focusedGone,
-            requestsRecheck: false
+            requestsRecheck: false,
+            returnedFromUserHide: fromUserHide
         )
     }
 

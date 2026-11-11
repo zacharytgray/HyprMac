@@ -559,6 +559,36 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(cache.hiddenWindowIDs.contains(12))
     }
 
+    // issue #73: the poll follows a minimized window's return, never a
+    // closed id's reuse
+    func testAMinimizedReturnIsMarkedAsAUserHideReturn() {
+        let access = StubAccessibility()
+        access.stateAnswer = .minimized
+        let (svc, cache, _) = makeService(accessibility: access)
+        cache.knownWindowIDs = [12]
+        cache.windowOwners = [12: 8200]
+        _ = compute(svc, snapshot: [], runningPIDs: [8200])
+
+        let changes = compute(svc, snapshot: [makeWindow(id: 12, pid: 8200)], runningPIDs: [8200])
+
+        XCTAssertEqual(changes.returned.map(\.windowID), [12])
+        XCTAssertEqual(changes.returnedFromUserHide, [12])
+    }
+
+    func testAClosedIdComingBackIsNotAUserHideReturn() {
+        let access = StubAccessibility()
+        access.stateAnswer = .absent
+        let (svc, cache, _) = makeService(accessibility: access)
+        cache.knownWindowIDs = [12]
+        cache.windowOwners = [12: 8200]
+        _ = compute(svc, snapshot: [], runningPIDs: [8200])
+
+        let changes = compute(svc, snapshot: [makeWindow(id: 12, pid: 8200)], runningPIDs: [8200])
+
+        XCTAssertEqual(changes.returned.map(\.windowID), [12])
+        XCTAssertTrue(changes.returnedFromUserHide.isEmpty)
+    }
+
     func testAClosedWindowIsNeverHeld() {
         let access = StubAccessibility()
         access.stateAnswer = .absent
