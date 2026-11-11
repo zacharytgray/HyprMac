@@ -23,11 +23,11 @@ Free, open source, and the first real job your Caps Lock key has ever had.
 **[<kbd> <br> Docs <br> </kbd>](#docs)**&nbsp;
 **[<kbd> <br> hyprmac.app <br> </kbd>][site]**
 
-<a href="https://hyprmac.app/hyprmac-demo-github.mp4">
-  <img src="docs/readme/hero.webp" width="100%" alt="HyprMac tiling a messy desktop, then moving, swapping, resizing and floating windows from the keyboard">
+<a href="https://hyprmac.app/hyprmac-showreel.mp4">
+  <img src="docs/readme/hero.webp" width="100%" alt="A messy desktop tiled with Hypr + P, then focus moving between windows, a switch to workspace 2 and back, and windows swapping">
 </a>
 
-**[▶ Watch the one-minute demo][demo]** &nbsp;·&nbsp; **[Try it in your browser][try]** &nbsp;·&nbsp; **[Download for macOS][dmg]**
+**[▶ Watch the showreel][demo]** &nbsp;·&nbsp; **[Try it in your browser][try]** &nbsp;·&nbsp; **[Download for macOS][dmg]**
 
 </div>
 
@@ -40,12 +40,12 @@ does what you asked.
 <table>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/readme/tiling.webp" alt="Safari and Terminal open and slot into a tiled layout">
+      <img src="docs/readme/tiling.webp" alt="Windows snap into a half, a quarter and two eighths, then focus moves between them">
       <h3>Windows arrange themselves</h3>
       <p>Open an app and it slots into a tidy tiled layout. No dragging, no resizing, no digging.</p>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/readme/keys.webp" alt="Focus moves between windows, then windows swap places">
+      <img src="docs/readme/keys.webp" alt="Windows swap places with Hypr + Shift + arrows">
       <h3>Your keyboard drives</h3>
       <p><kbd>Hypr</kbd> + an arrow moves between windows. Add <kbd>Shift</kbd> to swap them.
       <kbd>Hypr</kbd> + <kbd>J</kbd> flips a split.</p>
@@ -53,13 +53,13 @@ does what you asked.
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <img src="docs/readme/workspaces.webp" alt="Switching between workspaces 1, 2, 3 and 10">
+      <img src="docs/readme/workspaces.webp" alt="Swiping to workspace 2 and back">
       <h3>Ten workspaces</h3>
       <p><kbd>Hypr</kbd> + a number jumps to a workspace. Add <kbd>Shift</kbd> to send the
       focused window there.</p>
     </td>
     <td width="50%" valign="top">
-      <img src="docs/readme/scratchpad.webp" alt="Spotify drops in from the scratchpad and hides again">
+      <img src="docs/readme/scratchpad.webp" alt="The scratchpad layer opens over the desktop">
       <h3>A scratchpad one key away</h3>
       <p>Keep music or notes on a floating layer. <kbd>Hypr</kbd> + <kbd>S</kbd> brings it up
       and puts it away.</p>
@@ -373,7 +373,7 @@ test gate:
 [MIT](LICENSE)
 
 [site]: https://hyprmac.app
-[demo]: https://hyprmac.app/hyprmac-demo-github.mp4
+[demo]: https://hyprmac.app/hyprmac-showreel.mp4
 [try]: https://hyprmac.app/#try
 [dmg]: https://github.com/zacharytgray/HyprMac/releases/latest/download/HyprMac.dmg
 [releases]: https://github.com/zacharytgray/HyprMac/releases
