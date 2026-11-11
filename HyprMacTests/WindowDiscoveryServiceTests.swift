@@ -575,6 +575,38 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertEqual(changes.returnedFromUserHide, [12])
     }
 
+    // a slow app's window that dropped out of one walk must not pull the
+    // user to its workspace
+    func testAnUnreadableThenReturnedWindowIsNotAUserHideReturn() {
+        let access = StubAccessibility()
+        access.stateAnswer = nil
+        let (svc, cache, _) = makeService(accessibility: access)
+        cache.knownWindowIDs = [12]
+        cache.windowOwners = [12: 8200]
+        _ = compute(svc, snapshot: [], runningPIDs: [8200])
+        XCTAssertTrue(cache.reservedHiddenWindowIDs.contains(12), "still reserved, the safe side")
+
+        let changes = compute(svc, snapshot: [makeWindow(id: 12, pid: 8200)], runningPIDs: [8200])
+
+        XCTAssertEqual(changes.returned.map(\.windowID), [12])
+        XCTAssertTrue(changes.returnedFromUserHide.isEmpty)
+    }
+
+    func testAnUnreadableHideLaterVerifiedMinimizedIsAUserHideReturn() {
+        let access = StubAccessibility()
+        access.stateAnswer = nil
+        let (svc, cache, _) = makeService(accessibility: access)
+        cache.knownWindowIDs = [12]
+        cache.windowOwners = [12: 8200]
+        _ = compute(svc, snapshot: [], runningPIDs: [8200])
+        access.stateAnswer = .minimized
+        _ = compute(svc, snapshot: [], runningPIDs: [8200])
+
+        let changes = compute(svc, snapshot: [makeWindow(id: 12, pid: 8200)], runningPIDs: [8200])
+
+        XCTAssertEqual(changes.returnedFromUserHide, [12])
+    }
+
     func testAClosedIdComingBackIsNotAUserHideReturn() {
         let access = StubAccessibility()
         access.stateAnswer = .absent

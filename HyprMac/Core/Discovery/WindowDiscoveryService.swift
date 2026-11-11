@@ -60,8 +60,8 @@ struct WindowChanges {
     /// the displays are asleep. The snapshot is not the desktop, so the
     /// caller does nothing else with it either.
     var heldForInterruption = false
-    /// Subset of `returned` that came back from a minimize or Cmd-H (or
-    /// an AX-unreadable hide), not a verified close.
+    /// Subset of `returned` that AX confirmed as minimized or Cmd-H'd
+    /// while hidden. Not an unreadable hide, and not a verified close.
     var returnedFromUserHide: Set<CGWindowID> = []
 
     /// `true` when at least one observed change warrants a retile.
@@ -110,6 +110,12 @@ final class WindowDiscoveryService {
     /// reassignment, otherwise un-minimizing a hidden-ws window would
     /// teleport it to the foreground workspace.
     private var userHiddenIDs: Set<CGWindowID> = []
+
+    /// Hidden ids AX confirmed as minimized or Cmd-H'd, without the
+    /// unreadable guesses `userHiddenIDs` takes. Only these mark a return
+    /// as the user's: a slow app's window that drops out of one walk must
+    /// not pull the user to its workspace.
+    private var minimizedOrAppHiddenIDs: Set<CGWindowID> = []
 
     /// Reserved hidden ids where AX could not answer when they vanished,
     /// so the reservation is a guess, with the cycles spent asking. Re-checked
@@ -484,6 +490,9 @@ final class WindowDiscoveryService {
                 if state == nil || state == .minimized || state == .appHidden {
                     userHiddenIDs.insert(id)
                 }
+                if state == .minimized || state == .appHidden {
+                    minimizedOrAppHiddenIDs.insert(id)
+                }
                 let bundle = bundleIDForPID(pid) ?? "pid \(pid)"
                 if workspaceManager.isWindowVisible(id) {
                     hyprLog(.notice, .discovery, "window hidden: \(id) (\(bundle))")
@@ -508,9 +517,11 @@ final class WindowDiscoveryService {
         // reopen (Teams, Mail) comes back "returned" with a stale assignment
         // to a hidden workspace. user-hidden returns keep their workspace.
         let reopened = Set(returned.map { $0.windowID }).subtracting(userHiddenIDs)
-        let fromUserHide = Set(returned.map { $0.windowID }).intersection(userHiddenIDs)
+        let fromUserHide = Set(returned.map { $0.windowID }).intersection(minimizedOrAppHiddenIDs)
         userHiddenIDs.subtract(returned.map { $0.windowID })
         userHiddenIDs.formIntersection(stateCache.hiddenWindowIDs)
+        minimizedOrAppHiddenIDs.subtract(returned.map { $0.windowID })
+        minimizedOrAppHiddenIDs.formIntersection(stateCache.hiddenWindowIDs)
         stateCache.reservedHiddenWindowIDs.subtract(returned.map { $0.windowID })
         stateCache.reservedHiddenWindowIDs.formIntersection(stateCache.hiddenWindowIDs)
         unverifiedReservedIDs = unverifiedReservedIDs.filter { stateCache.hiddenWindowIDs.contains($0.key) }
@@ -576,8 +587,12 @@ final class WindowDiscoveryService {
                 stateCache.reservedHiddenWindowIDs.remove(id)
                 unverifiedReservedIDs[id] = nil
                 userHiddenIDs.remove(id)
+                minimizedOrAppHiddenIDs.remove(id)
                 hyprLog(.debug, .discovery, "hidden window \(id) verified closed — releasing its workspace reservation")
-            case .minimized, .appHidden, .present:
+            case .minimized, .appHidden:
+                unverifiedReservedIDs[id] = nil
+                minimizedOrAppHiddenIDs.insert(id)
+            case .present:
                 unverifiedReservedIDs[id] = nil
             case nil:
                 // one AX round trip per cycle; stop asking after a few
