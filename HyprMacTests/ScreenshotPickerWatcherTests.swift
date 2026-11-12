@@ -76,6 +76,43 @@ final class ScreenshotPickerWatcherTests: XCTestCase {
         XCTAssertEqual(changes, [true, false, true])
     }
 
+    func testCaptureAppForkOpensBeforeTheOverlayShows() {
+        let watcher = makeWatcher()
+        watcher.captureAppForked()
+        XCTAssertTrue(watcher.isOpen, "the picker hit-tests once, so the dim must be down first")
+        overlay = true
+        time += 0.1
+        watcher.evaluate()
+        overlay = false
+        time += 2
+        watcher.evaluate()
+        XCTAssertFalse(watcher.isOpen)
+        XCTAssertEqual(changes, [true, false])
+    }
+
+    func testCaptureAppForkWithoutAPickerClosesAfterTheGrace() {
+        let watcher = makeWatcher()
+        watcher.captureAppForked()
+        time += ScreenshotPickerWatcher.overlayGrace + 0.1
+        watcher.evaluate()
+        XCTAssertFalse(watcher.isOpen, "a fork that was not screencapture must not leave the dim off")
+        overlay = true
+        watcher.evaluate()
+        XCTAssertFalse(watcher.isOpen, "with no signal the window list is not read")
+    }
+
+    func testSecondCaptureAfterTheFirstReopens() {
+        let watcher = makeWatcher()
+        watcher.captureAppForked()
+        overlay = true
+        watcher.evaluate()
+        overlay = false
+        watcher.evaluate()
+        watcher.captureAppForked()
+        XCTAssertTrue(watcher.isOpen)
+        XCTAssertEqual(changes, [true, false, true])
+    }
+
     func testRepeatedEvaluationsReportEachChangeOnce() {
         let watcher = makeWatcher()
         uiRunning = true
