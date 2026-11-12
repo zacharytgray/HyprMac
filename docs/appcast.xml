@@ -3,12 +3,27 @@
     <channel>
         <title>HyprMac</title>
         <item>
+            <title>0.22.4</title>
+            <pubDate>Wed, 11 Nov 2026 18:38:55 -0600</pubDate>
+            <sparkle:version>102</sparkle:version>
+            <sparkle:shortVersionString>0.22.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac-0.22.4.dmg" length="7826456" type="application/octet-stream" sparkle:edSignature="/7kqjxqOjoSOdp5jMaU+RTF9Yov9HZ+pCbS4sjam2ilDG/P18Au6pfyuVtGZMCtlOIByufFDxa5JZwNvMZLXBg=="/>
+            <sparkle:deltas>
+                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac102-101.delta" sparkle:deltaFrom="101" length="786230" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="QNehbhDalE5T1AWf+uNpcg+Up5YvUX/vL8x3FzCyHjFRtMLUTa1ulNJNHbEqsyjZwN0NJYh7oB/LLj5keItBCQ=="/>
+                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac102-100.delta" sparkle:deltaFrom="100" length="780814" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="nTa9aADgxM/Y2Ftw778Kk94CJXZjtX0R8zfjw/V52L14o/N6vkEMFduWAgE2nR/80MVL5fAj6bgog7l2ayjyCw=="/>
+                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac102-99.delta" sparkle:deltaFrom="99" length="830946" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="80SuslhDFejmsG/tp2fzDTpQwMDAbnuWwdOS3oW13bb4bn4WO4XHE3fckshmp1/mbkYtmlqxIEsta1rNi/qAAg=="/>
+                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac102-98.delta" sparkle:deltaFrom="98" length="872418" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="FB0uJfOgxQKMgHx2cr1ZdcKaH+n2rGJHSqGDc/VoOF8nBxmcIlcY9PpQnICoE7grKJXotQxohGKldZcNj0r8Cg=="/>
+                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac102-97.delta" sparkle:deltaFrom="97" length="1106326" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="bcQUvbKCJabBK8RHpy0FevOGEYa77vlccNVuew6fPWEJpKzSg6H16KN6zQ8ebUsIHJyHtNZPSZas/6lWFHK8Dw=="/>
+            </sparkle:deltas>
+        </item>
+        <item>
             <title>0.22.3</title>
             <pubDate>Wed, 11 Nov 2026 14:13:25 -0600</pubDate>
             <sparkle:version>101</sparkle:version>
             <sparkle:shortVersionString>0.22.3</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.3/HyprMac-0.22.3.dmg" length="7823875" type="application/octet-stream" sparkle:edSignature="n1lyoXrNg94X+ruOxllKrUZE3nznTrroPJrhBbMb4cUhHuTq9Xr7DHG8ihJJgXudIdhhNlhzEE42/rcXXfjJBw=="/>
+            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac-0.22.3.dmg" length="7823875" type="application/octet-stream" sparkle:edSignature="n1lyoXrNg94X+ruOxllKrUZE3nznTrroPJrhBbMb4cUhHuTq9Xr7DHG8ihJJgXudIdhhNlhzEE42/rcXXfjJBw=="/>
             <sparkle:deltas>
                 <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.3/HyprMac101-100.delta" sparkle:deltaFrom="100" length="553626" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="UrBxYOAegcTJB2v3KrGm3PZaCvQDaC9x3weZEbu6bvUx9ErtVqwmsN8TWIiTGtmtzK3qCvW611C1EOrtlucGAw=="/>
                 <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.3/HyprMac101-99.delta" sparkle:deltaFrom="99" length="693466" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="p1s2+yjiAfU8/3k8bpb9FZQMx19E3+jdiYW+8ura4pegj2AZJSR7nv/rVP5ytQjEjyHqNeZLyICQwrE55RJJCA=="/>
@@ -23,28 +38,13 @@
             <sparkle:version>100</sparkle:version>
             <sparkle:shortVersionString>0.22.2</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.3/HyprMac-0.22.2.dmg" length="7818241" type="application/octet-stream" sparkle:edSignature="mW3haZ9BcgN0mdTCWWth1sMNd7ju2RUr/EKBkRrw8oeq1T99hM8HRlecre/Y79W65k1THVgVRBc1XMBZO5uhBA=="/>
+            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.4/HyprMac-0.22.2.dmg" length="7818241" type="application/octet-stream" sparkle:edSignature="mW3haZ9BcgN0mdTCWWth1sMNd7ju2RUr/EKBkRrw8oeq1T99hM8HRlecre/Y79W65k1THVgVRBc1XMBZO5uhBA=="/>
             <sparkle:deltas>
                 <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.2/HyprMac100-99.delta" sparkle:deltaFrom="99" length="671142" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="PuVxSUorkxSA3e3rARGs9V73rdm4rDi285Z2X7QI5+m71yD+1c7NuIoOiZCkivBW9iedCgRMR1zsCyfFSZrCAw=="/>
                 <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.2/HyprMac100-98.delta" sparkle:deltaFrom="98" length="773754" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="wGrN9yvlRcI3vX2fd6eFg2o+KHT5UGCQx+6V2Esa876vBBVbmI7cdwtuwK1TLL2tc4ci0ve9/cncLVb8KMIJDQ=="/>
                 <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.2/HyprMac100-97.delta" sparkle:deltaFrom="97" length="1046926" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="E57z9ZHtcQF6oA8K77n1CMWXQh2TfMUMYcbAzOZj8MHxJNxbtG2jGtDjJEctXQJY7HNuczMdOeGxYoqBiuauAg=="/>
                 <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.2/HyprMac100-96.delta" sparkle:deltaFrom="96" length="1884882" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Z1YFMDGDDsaKwADzFE3DfKtEF7tETnKXXSisBNmH1xV3AANbIh+cFLKJDVybLTljXNRFW6CrPNInI6mpUI1ECA=="/>
                 <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.2/HyprMac100-95.delta" sparkle:deltaFrom="95" length="1929726" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="m9GAwcy/MDiQ0kLEd4JKGLBQx1U0ekuDwzTnuamKMPm8UuG+SkVu7SMQvhElSfuIAn8MFXMRQBF5CPvBaLADCA=="/>
-            </sparkle:deltas>
-        </item>
-        <item>
-            <title>0.22.1</title>
-            <pubDate>Fri, 06 Nov 2026 20:14:05 -0600</pubDate>
-            <sparkle:version>99</sparkle:version>
-            <sparkle:shortVersionString>0.22.1</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.3/HyprMac-0.22.1.dmg" length="7809749" type="application/octet-stream" sparkle:edSignature="C1HMwdw1ptG6vdgJ4FQMqLWRRjxZqvdnT+kdt+shePxGtFlwqTRGWvQu8KlFxtWFETxUkOC0xM7azHCMTyZeCA=="/>
-            <sparkle:deltas>
-                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.1/HyprMac99-98.delta" sparkle:deltaFrom="98" length="675974" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="vWSEQfn+esLE7T0k0K132VX/Er1dDz9s/s3rAAVw9IWG68eaJfCzQo0tdQ+0Fov0ds/P+t8OnF4DbLHbp1yMDA=="/>
-                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.1/HyprMac99-97.delta" sparkle:deltaFrom="97" length="1025138" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="G1GW+A4FK6bENZYdH1f7erPmj1XXmaq7upzpgZKCaknSTsF5JGykWDJO8Jr3FNYaIi7v40b1epWMlieGINoWBw=="/>
-                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.1/HyprMac99-96.delta" sparkle:deltaFrom="96" length="1877486" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="w+LPVAKFoRP59D8S5uHTSETANaRzMgQRtw44WdIx7psU16snVTqXOpoEk/XESkg3ip1cmjI1dGdlA4vU9PaWBw=="/>
-                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.1/HyprMac99-95.delta" sparkle:deltaFrom="95" length="1908970" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="Q/3ay2OA1tnXnMMgvoxnk4ngsq+Hwf+y4DzJp7ELlazSAx1Ln+mWWapAZ1ybt4jyfYDnnyiV54w6eFoeWkCpDA=="/>
-                <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.22.1/HyprMac99-94.delta" sparkle:deltaFrom="94" length="1942586" type="application/octet-stream" sparkle:deltaFromSparkleExecutableSize="980432" sparkle:deltaFromSparkleLocales="de,he,ar,el,ja,fa,uk" sparkle:edSignature="XByYBL8H2adFy6rfYTTeLW8DOps3/XaCYYgEuLNAlpVRLyiwkN+hP2wMJFF+6ZcfXjDnNMOC3VbSFzCu+udcCQ=="/>
             </sparkle:deltas>
         </item>
     </channel>
