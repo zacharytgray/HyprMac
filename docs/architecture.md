@@ -197,7 +197,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `KeybindOverlayController` | HUD panel listing every active keybind (`Hypr+K`). |
 | `ScratchpadController` | The scratchpad layer: windows on pseudo-workspace 0, parked until summoned. Separate `members` and `summonedIDs` sets. |
 | `WorkspaceOverviewController` | The overview panel (`Hypr+O`), the workspace-switch HUD and the status HUD. |
-| `ScreenshotPickerWatcher` | Says when macOS's screenshot picker is open, from the `screencaptureui` launch and the picker's overlay in the window list. The dim stays down until it closes. |
+| `ScreenshotPickerWatcher` | Says when macOS's screenshot picker is open, from the `screencaptureui` launch, or a fork of an app that runs `screencapture` itself (CleanShot), and the picker's overlay in the window list. The dim stays down until it closes. |
 | `WindowCornerRadius` | The one global window corner radius for borders and dim cutouts. |
 | `StatusExporter` | Off by default. Writes `state.json` and runs the optional hook (`docs/status-bar.md`). |
 | `WindowAdmissionFilter` | Decides which AX windows discovery keeps (see "Quick Look previews"). |
