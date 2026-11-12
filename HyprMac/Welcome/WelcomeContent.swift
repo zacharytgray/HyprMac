@@ -26,9 +26,10 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "arrow.triangle.2.circlepath",
-            title: "Retile All Keeps Focus Moves Straight",
-            description: "Hypr+R no longer leaves a window behind on a hidden workspace, which sent focus moves to the wrong window after a display change."
+            icon: "camera.viewfinder",
+            title: "CleanShot Window Capture Works",
+            description: "The inactive-window dim now steps aside before CleanShot's window picker opens, so window captures pick the right window.",
+            credit: "zalewskigrzegorz"
         ),
     ]
 }
