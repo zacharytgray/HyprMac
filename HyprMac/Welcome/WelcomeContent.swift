@@ -26,9 +26,9 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "pin",
-            title: "Pin Several Apps at Once",
-            description: "Choose several apps in Settings → General → Pin apps to pin them all in one step."
+            icon: "arrow.triangle.2.circlepath",
+            title: "Retile All Keeps Focus Moves Straight",
+            description: "Hypr+R no longer leaves a window behind on a hidden workspace, which sent focus moves to the wrong window after a display change."
         ),
     ]
 }

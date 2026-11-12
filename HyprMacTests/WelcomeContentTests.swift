@@ -3,10 +3,10 @@ import XCTest
 import Carbon
 
 final class WelcomeContentTests: XCTestCase {
-    func testWhatsNewDescribesOnlyThe0223Changes() {
+    func testWhatsNewDescribesOnlyThe0224Changes() {
         let features = WhatsNewFeatures.current
 
-        XCTAssertEqual(features.map(\.title), ["Pin Several Apps at Once"])
+        XCTAssertEqual(features.map(\.title), ["Retile All Keeps Focus Moves Straight"])
         XCTAssertEqual(features.compactMap(\.credit), [])
         XCTAssertEqual(WelcomeContent.productURL.absoluteString, "https://hyprmac.app/")
     }
