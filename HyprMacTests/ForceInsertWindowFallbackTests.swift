@@ -19,7 +19,8 @@ final class ForceInsertWindowFallbackTests: XCTestCase {
         displayManager = DisplayManager()
         engine = TilingEngine(displayManager: displayManager,
                               frameSizingIOFactory: acceptingFrameSizingIOFactory())
-        screen = NSScreen.main ?? NSScreen.screens.first ?? ForceInsertTestScreen()
+        // fixed shape. on an ultrawide main screen the third window splits side by side and the refusals never happen
+        screen = ForceInsertTestScreen()
     }
 
     private func tree() -> BSPTree? {
