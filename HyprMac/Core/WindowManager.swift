@@ -1718,6 +1718,9 @@ class WindowManager {
         let allWindows = accessibility.getAllWindows()
         placement.classifyAndAssign(allWindows)
         placement.distributeWindowsAcrossWorkspaces(allWindows)
+        // the redistribute moved windows off hidden workspaces whose trees
+        // never get re-diffed. also clears a dup left by any older path
+        tilingEngine.dropMisassignedMembers(workspaceFor: workspaceManager.workspaceFor)
         tileAllVisibleSpaces()
         return allWindows
     }

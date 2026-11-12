@@ -2695,6 +2695,42 @@ class TilingEngine {
         }
     }
 
+    /// Drop every tree member whose workspace assignment now names a
+    /// different workspace. Retile All rewrites assignments without touching
+    /// trees, and only visible trees are re-diffed afterwards, so a window
+    /// reassigned off a hidden workspace stayed in that hidden tree too.
+    /// `intendedTileRects` then had two slots for it and the stale one could
+    /// win, which sent directional focus and the drift check to the wrong
+    /// place. No retile here: a hidden tree is laid out when it is shown, and
+    /// the caller retiles the visible ones.
+    ///
+    /// - Returns: the dropped window ids, in no particular order.
+    @discardableResult
+    func dropMisassignedMembers(workspaceFor: (CGWindowID) -> Int?) -> [CGWindowID] {
+        var dropped: [CGWindowID] = []
+        for (key, t) in trees where key.workspace != Self.scratchpadWorkspace {
+            let stale = t.allWindows.filter {
+                guard let assigned = workspaceFor($0.windowID) else { return false }
+                return assigned != key.workspace
+            }
+            guard !stale.isEmpty else { continue }
+            beginLayoutGeneration()
+            for w in stale {
+                hyprLog(.notice, .tiling, "dropped stale tree member: wid=\(w.windowID) from ws\(key.workspace) sid=\(key.screenID), assigned to ws\(workspaceFor(w.windowID).map(String.init) ?? "?")")
+                t.remove(w)
+                admittedWindowIDs[key.workspace]?.remove(w.windowID)
+                forgetHeld(w.windowID)
+                slotMemory.removeValue(forKey: w.windowID)
+                if maximized[key] == w.windowID { maximized.removeValue(forKey: key) }
+                dropped.append(w.windowID)
+            }
+            t.root.pruneEmptyNodes()
+            t.root.resetSplitRatios()
+            ledger.noteVacated(key)
+        }
+        return dropped
+    }
+
     // MARK: - maximize
 
     enum MaximizeResult: Equatable {

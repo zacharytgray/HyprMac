@@ -2053,6 +2053,33 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         }
         return (engine, tree, windows, screen, trace)
     }
+
+    /// the live state after a TV unplug and Retile All: the redistribute moved
+    /// two windows from hidden ws4 to ws1, ws4's tree kept them, and the stale
+    /// slots won in intendedTileRects. retile all drops them from ws4 only
+    func testRetileAllDropsMembersReassignedOffAHiddenTree() {
+        let screen = MembershipTestScreen()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }))
+        let messages = makeWindow(id: 85636)
+        let dia = makeWindow(id: 97553)
+        let orca = makeWindow(id: 97727)
+        let unassigned = makeWindow(id: 97800)
+        let pinned = makeWindow(id: 97900)
+        _ = engine.seedTree([dia, orca, unassigned], onWorkspace: 4, screen: screen)
+        _ = engine.seedTree([messages, dia, orca], onWorkspace: 1, screen: screen)
+        _ = engine.seedTree([pinned], onWorkspace: TilingEngine.scratchpadWorkspace, screen: screen)
+        let assigned: [CGWindowID: Int] = [85636: 1, 97553: 1, 97727: 1, 97900: 5]
+
+        let dropped = engine.dropMisassignedMembers(workspaceFor: { assigned[$0] })
+
+        XCTAssertEqual(Set(dropped), [97553, 97727])
+        XCTAssertEqual(engine.windowIDs(inTreeForWorkspace: 4, screen: screen), [97800],
+                       "a member with no assignment is not this pass's call")
+        XCTAssertEqual(Set(engine.windowIDs(inTreeForWorkspace: 1, screen: screen)), [85636, 97553, 97727])
+        XCTAssertEqual(engine.windowIDs(inTreeForWorkspace: TilingEngine.scratchpadWorkspace, screen: screen),
+                       [97900], "the scratchpad layer keeps its own members")
+        XCTAssertTrue(engine.dropMisassignedMembers(workspaceFor: { assigned[$0] }).isEmpty)
+    }
 }
 
 final class TilingEngineSwapRevalidationTests: XCTestCase {
