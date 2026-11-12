@@ -35,6 +35,18 @@ If supplied, the release-notes file must exist and be nonempty. Set
 `KEYCHAIN_PASSWORD` when the login keychain needs unlocking. Otherwise the
 script requires the keychain to be unlocked already; it never prompts for a
 secret. A locked keychain makes `codesign` fail with `errSecInternalComponent`.
+
+The keychain password lives in 1Password, readable only with the app's
+approval (Touch ID) on the machine you sit at. Start the release from there
+with [yonder](https://github.com/zacharytgray/yonder). It reads the password
+after one approval and hands it to the script's environment on the hub, never
+its command line or log. `--detach` keeps the run going if your machine sleeps:
+
+```sh
+yonder run <hub> --detach --secret KEYCHAIN_PASSWORD -- \
+  'cd ~/GitHub/HyprMac && export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH" DEVELOPMENT_TEAM=WYY8494SWG && ./scripts/release.sh <version>'
+yonder jobs <hub> <id>    # the run's output so far
+```
 Pick a `<version>` above the current `MARKETING_VERSION` in `project.yml`.
 
 ## Prerequisites
