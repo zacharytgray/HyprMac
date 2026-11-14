@@ -405,7 +405,7 @@ final class WorkspaceOrchestrator {
         for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
                 workspaceManager.restoreFloatingFrame(w)
-            } else if workspaceManager.savedFloatingFrame(for: wid) != nil {
+            } else if workspaceManager.savedFloatingFrame(for: wid) != nil, !isGhost(wid) {
                 // its app failed the walk (busy, AX timeout) and the cache
                 // holds only visible windows, so there is no handle to move
                 // it out of the hide corner with
@@ -454,6 +454,13 @@ final class WorkspaceOrchestrator {
     }
 
     static let slowSwitchMS = 250
+
+    /// Closed while its app keeps running. It keeps its workspace (and a
+    /// floater parked when it closed keeps its saved frame), but its app
+    /// will never list it again, so a reveal retry would only spin.
+    private func isGhost(_ id: CGWindowID) -> Bool {
+        stateCache.hiddenWindowIDs.contains(id) && !stateCache.reservedHiddenWindowIDs.contains(id)
+    }
 
     /// Ask the apps of floaters a switch could not reveal for just those
     /// windows, every 100 ms for a bounded number of tries, and reveal each

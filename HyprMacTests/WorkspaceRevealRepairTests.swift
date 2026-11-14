@@ -141,6 +141,32 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), saved)
     }
 
+    // closed while parked, app still running: it keeps its workspace and
+    // saved frame, but its app will never list it again
+    func testAGhostFloaterStartsNoRetry() {
+        let floater = parkedFloater(id: 7315, on: hidden)
+        stateCache.hiddenWindowIDs.insert(floater.windowID)
+        orchestrator.allWindows = { [] }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(revealMissed, 0)
+        XCTAssertTrue(retries.isEmpty)
+    }
+
+    // minimized or Cmd-H'd while parked can come back, so it still retries
+    func testAReservedHiddenFloaterStillRetries() {
+        let floater = parkedFloater(id: 7316, on: hidden)
+        stateCache.hiddenWindowIDs.insert(floater.windowID)
+        stateCache.reservedHiddenWindowIDs.insert(floater.windowID)
+        orchestrator.allWindows = { [] }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(revealMissed, 1)
+        XCTAssertEqual(retries.count, 1)
+    }
+
     func testAFloaterTheSwitchCannotReadIsRevealedByTheNextPoll() {
         appAnswers = false
         let floater = parkedFloater(id: 7301, on: hidden)
