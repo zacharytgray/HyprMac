@@ -378,6 +378,19 @@ class WindowManager {
             self?.focusBrackets.hide()
             self?.reassertFocusBorderAfterHyprRelease()
         }
+        // secure input keeps every key from the tap, so say so in the menu
+        // bar instead of letting the chords fail silently
+        hotkeyManager.onSecureInputChange = { transition in
+            let state = MenuBarState.shared
+            switch transition {
+            case .enabled(let holder):
+                state.secureInputActive = true
+                state.secureInputHolderName = holder?.displayName
+            case .disabled:
+                state.secureInputActive = false
+                state.secureInputHolderName = nil
+            }
+        }
 
         // wire up mouse tracker dependencies
         mouseTracker.isFocusFollowsMouseEnabled = { [weak self] in self?.config.focusFollowsMouse ?? false }

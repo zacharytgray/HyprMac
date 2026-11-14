@@ -23,6 +23,7 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: HyprSpacing.md) {
             header
+            secureInputNotice
             workspacePanel
             actions
         }
@@ -47,6 +48,25 @@ struct MenuBarView: View {
                 .labelsHidden()
         }
         .padding(.horizontal, HyprSpacing.xs)
+    }
+
+    // MARK: secure input
+
+    @ViewBuilder
+    private var secureInputNotice: some View {
+        if menuBarState.secureInputActive {
+            HStack(alignment: .top, spacing: HyprSpacing.sm) {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.overlaySecondary)
+                Text(MenuBarPresentation.secureInputNotice(holderName: menuBarState.secureInputHolderName))
+                    .font(.hyprMonoXs)
+                    .foregroundStyle(Color.hyprTextSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, HyprSpacing.xs)
+        }
     }
 
     // MARK: workspace panel
@@ -239,6 +259,10 @@ class MenuBarState: ObservableObject {
     @Published var scratchpadCount = 0
     /// Whether the scratchpad layer is currently summoned (filled tray).
     @Published var scratchpadVisible = false
+    /// Secure input is on, so macOS keeps key events from the Hypr tap.
+    @Published var secureInputActive = false
+    /// App macOS names as the secure input holder, when it names one.
+    @Published var secureInputHolderName: String?
 }
 
 struct MenuBarMonitorSnapshot: Equatable, Identifiable {
@@ -298,6 +322,12 @@ enum MenuBarPresentation {
             && (!monitors.isEmpty || scratchpadCount > 0)
     }
 
+    static func secureInputNotice(holderName: String?) -> String {
+        let base = "Hypr shortcuts are paused while secure input is on"
+        guard let holderName, !holderName.isEmpty else { return base + "." }
+        return base + " (macOS reports \(holderName))."
+    }
+
     static func showsIndicator(indicatorEnabled: Bool, hasData: Bool,
                                labelText: String, scratchpadCount: Int) -> Bool {
         indicatorEnabled && hasData && (!labelText.isEmpty || scratchpadCount > 0)
@@ -316,6 +346,9 @@ struct WorkspaceIndicatorLabel: View {
             labelText: state.labelText,
             scratchpadCount: state.scratchpadCount) {
             HStack(spacing: 5) {
+                if state.secureInputActive {
+                    Image(systemName: "lock.fill")
+                }
                 if state.isFullscreen {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                 } else if !state.labelText.isEmpty {
@@ -330,7 +363,12 @@ struct WorkspaceIndicatorLabel: View {
                     }
                 }
             }
-            .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
+            .help(state.secureInputActive
+                  ? MenuBarPresentation.secureInputNotice(holderName: state.secureInputHolderName)
+                  : MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
+        } else if state.secureInputActive {
+            Image(systemName: "lock.fill")
+                .help(MenuBarPresentation.secureInputNotice(holderName: state.secureInputHolderName))
         } else {
             Image(systemName: "rectangle.split.2x2")
         }

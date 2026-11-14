@@ -335,6 +335,10 @@ Mac is working against that. Some apps push back, and now and then a window will
 its own thing. HyprMac is in active development and very usable day to day. When something
 misbehaves, [open an issue](https://github.com/zacharytgray/HyprMac/issues) and tell me about it.
 
+### Hypr shortcuts stop in a password field
+
+While a password field has focus, macOS turns on Secure Event Input and keeps every keystroke away from other apps, HyprMac included, so no Hypr chord fires. HyprMac shows a lock in the menu bar while that is the case, and the shortcuts come back once secure input is off. If the lock stays after you leave the field, some app is still holding secure input: password managers, a terminal's Secure Keyboard Entry, or an app that forgot to release it. `ioreg -l -w 0 | grep -i SecureInput` shows the PID macOS reports, then `ps -p <pid>` names it. That PID is sometimes the frontmost app rather than the real holder, so if quitting it does not help, try the other suspects.
+
 ## Why I built it
 
 I use Hyprland on Linux and wanted the same workflow on my Mac. Reaching for the mouse to find a

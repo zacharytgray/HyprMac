@@ -13,6 +13,7 @@
 		017A249199B7F80BF9F3D051 /* MinimaRevalidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52AE2F150AC11707C98A4D91 /* MinimaRevalidation.swift */; };
 		019CB7B4D9189E735D2D6106 /* KeyRemapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40D33713C81721E9590DB1A5 /* KeyRemapper.swift */; };
 		01AFBE17703E60B3CB1D8F50 /* RollbackPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D241E41E02E376AC3FE573BA /* RollbackPlan.swift */; };
+		022CABD6BD801301BE87AE24 /* SecureInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C713E166BC130F88F8215D3 /* SecureInput.swift */; };
 		02EE6C2183BF202395DDC3C7 /* ConfigStoreSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4661C01D50479A0D4762289 /* ConfigStoreSafetyTests.swift */; };
 		036927870393CBF7073D2622 /* TiledDragFeedbackReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED60042FE9D6F1A775F97858 /* TiledDragFeedbackReconciler.swift */; };
 		03AFF96F6D3A915C68251C5D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
@@ -25,6 +26,7 @@
 		062251E8D508ABD464EE9849 /* FrameSizingIO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D5671D4F28D37D4703CD46F /* FrameSizingIO.swift */; };
 		063A3945FE871497B23AEB36 /* SwitchCoalescerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 355FCEA79CD98B91944BFA23 /* SwitchCoalescerTests.swift */; };
 		079C12731EED180CFC977D26 /* TiledDropPreviewPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84CBD2B2BF9D3574771BFEA3 /* TiledDropPreviewPanel.swift */; };
+		07C13EF13971717A60212AB0 /* SecureInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C713E166BC130F88F8215D3 /* SecureInput.swift */; };
 		0889F29E8566B49617B50DD1 /* CommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E97BACDC13D46810E508B8 /* CommandRunner.swift */; };
 		09BB89D34D8ECB6D50C7AA2A /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
 		0A72A984DC1426E0D57F9C7B /* OverlayPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314479E8E141C0265258525E /* OverlayPreview.swift */; };
@@ -153,6 +155,7 @@
 		6279D0B4D84FFB3FBAE7C9ED /* LogFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E037AF7C84E48727003EE0D0 /* LogFile.swift */; };
 		62E1AE9E9DA9CCE74C22F796 /* ActionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91072F9102167BFF8BA3561 /* ActionPolicy.swift */; };
 		63156863AFDB39FBF469DFFE /* WindowStateCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AA39AE261654BF110E66771 /* WindowStateCache.swift */; };
+		63B24D24F189B8E73C49595E /* SecureInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C58CB34F3246B1BBD0B11BA1 /* SecureInputTests.swift */; };
 		64B6C68A61E2447E016463DD /* WorkspacePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4754A615E4871D79F5D066 /* WorkspacePicker.swift */; };
 		65A736B233D4889347FCB202 /* DwindleLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = F356D39971D5A80B38494D15 /* DwindleLayout.swift */; };
 		65DC08FD7290B05718FCBB19 /* AXFrameWriteBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = F128E4713D085AE80F3D5B0A /* AXFrameWriteBatch.swift */; };
@@ -541,6 +544,7 @@
 		9812349B328396A07257C085 /* TiledDragTransactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragTransactionTests.swift; sourceTree = "<group>"; };
 		9847CD6EC3473BF6D106B2A3 /* TiledDragFeedbackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragFeedbackCoordinator.swift; sourceTree = "<group>"; };
 		9C217B7DF054756B5AFD7D9F /* HyprMac Debug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HyprMac Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9C713E166BC130F88F8215D3 /* SecureInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureInput.swift; sourceTree = "<group>"; };
 		9EBC04818743A6F6231119AB /* WelcomeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeContent.swift; sourceTree = "<group>"; };
 		9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameReadbackPoller.swift; sourceTree = "<group>"; };
 		9F54AABB9F5D654E82FF741A /* AXNotificationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXNotificationServiceTests.swift; sourceTree = "<group>"; };
@@ -572,6 +576,7 @@
 		C37534AED88541088ACD12A3 /* TilingEngineTypesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineTypesTests.swift; sourceTree = "<group>"; };
 		C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PollingScheduler.swift; sourceTree = "<group>"; };
 		C52D4D8F0D171A4757C5951A /* TilingEngineMembershipTransactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineMembershipTransactionTests.swift; sourceTree = "<group>"; };
+		C58CB34F3246B1BBD0B11BA1 /* SecureInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureInputTests.swift; sourceTree = "<group>"; };
 		C5A885FA2020A2EFF24C41A7 /* LayoutMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutMatcherTests.swift; sourceTree = "<group>"; };
 		C5ECA897D9C7F4DF25FFE758 /* DefaultKeybinds.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultKeybinds.swift; sourceTree = "<group>"; };
 		C6D1C99A7D03B871E0141DF0 /* AppLauncherEditorSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLauncherEditorSheet.swift; sourceTree = "<group>"; };
@@ -922,6 +927,7 @@
 				DBFE122D665A22CF5243E376 /* ScratchpadLayerLayoutTests.swift */,
 				7C20135BFA68C42326DDE511 /* ScratchpadPinTests.swift */,
 				C0394B5CB3AE82CEB9CC79BD /* ScreenshotPickerWatcherTests.swift */,
+				C58CB34F3246B1BBD0B11BA1 /* SecureInputTests.swift */,
 				BB8DE37F0110F3E975EE8BB9 /* StateDumpFormatterTests.swift */,
 				6FF11879906CFAC20DB1166F /* StatusExportTests.swift */,
 				306A7B2B7B3F09F08F953F35 /* SuppressionRegistryTests.swift */,
@@ -1051,6 +1057,7 @@
 				53410A7A5185F2585DFFFB0A /* HotkeyManager.swift */,
 				40D33713C81721E9590DB1A5 /* KeyRemapper.swift */,
 				10694681DB82FF2083F59195 /* MouseTrackingManager.swift */,
+				9C713E166BC130F88F8215D3 /* SecureInput.swift */,
 				A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */,
 				1CE7C605576D58BB77A314D0 /* TiledDragController.swift */,
 				8665ECFAEE8AA274A2CD6635 /* TiledDragEvent.swift */,
@@ -1285,6 +1292,7 @@
 				1AB9B2043A23A0FB662ECB30 /* RuntimeVariant.swift in Sources */,
 				AD5DE8DE9EEC373B5C493C02 /* ScratchpadController.swift in Sources */,
 				7C145BCAF42E94BE71BE76F2 /* ScreenshotPickerWatcher.swift in Sources */,
+				07C13EF13971717A60212AB0 /* SecureInput.swift in Sources */,
 				8C3306FE7A9CD13A28CA5C87 /* SettingsComponents.swift in Sources */,
 				B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */,
 				AFDFFD00A9BBCC444E730DEB /* SkyLightFunctions.swift in Sources */,
@@ -1427,6 +1435,7 @@
 				AEF86DF37CEB73E37D222EBA /* RuntimeVariant.swift in Sources */,
 				6C3DB70ECC254AE235F2CCC5 /* ScratchpadController.swift in Sources */,
 				741D2164F2BBFC88D543EBE9 /* ScreenshotPickerWatcher.swift in Sources */,
+				022CABD6BD801301BE87AE24 /* SecureInput.swift in Sources */,
 				DFA806AC7404D54A992E432F /* SettingsComponents.swift in Sources */,
 				EF60D6F6EC01ADB59E9FDEB6 /* SettingsView.swift in Sources */,
 				44D934B1E2A8BF1D2B4FE0DB /* SkyLightFunctions.swift in Sources */,
@@ -1546,6 +1555,7 @@
 				2055E558E349E0668D85DF94 /* ScratchpadLayerLayoutTests.swift in Sources */,
 				6F8CEB6AE18B352502189A31 /* ScratchpadPinTests.swift in Sources */,
 				4CEDE06BF8322750204A2B36 /* ScreenshotPickerWatcherTests.swift in Sources */,
+				63B24D24F189B8E73C49595E /* SecureInputTests.swift in Sources */,
 				78F04ED8784D47C00CF40356 /* StateDumpFormatterTests.swift in Sources */,
 				F10860BD19A5F31447601D3C /* StatusExportTests.swift in Sources */,
 				EDC0EDCDC01F4A5310E4A07E /* SuppressionRegistryTests.swift in Sources */,

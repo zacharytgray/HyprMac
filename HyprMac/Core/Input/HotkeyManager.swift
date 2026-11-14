@@ -30,7 +30,13 @@ class HotkeyManager {
     private var tapThread: Thread?
     private var tapRunLoop: CFRunLoop?
     private var healthCheckTimer: Timer?
+    private var secureInputTimer: Timer?
+    private let secureInput: SecureInputMonitor
     fileprivate let stateLock = NSLock()
+
+    init(secureInput: SecureInputMonitor = SecureInputMonitor()) {
+        self.secureInput = secureInput
+    }
 
     /// Fires for every recognized chord (Hypr + bound key).
     var onAction: ((Action) -> Void)?
@@ -45,6 +51,20 @@ class HotkeyManager {
 
     /// Fires when the Hypr key transitions from down to up.
     var onHyprKeyUp: (() -> Void)?
+
+    /// Main thread: secure input turned on or off. While it is on, macOS
+    /// keeps key events from the tap, so no Hypr chord can fire.
+    var onSecureInputChange: ((SecureInputMonitor.Transition) -> Void)?
+
+    /// Whether secure input was on at the last check.
+    var isSecureInputActive: Bool { secureInput.isActive }
+
+    /// Lock-guarded read of the logical Hypr modifier state.
+    var isHyprKeyDown: Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return hyprKeyDown
+    }
 
     // physical key currently acting as the logical Hypr modifier
     fileprivate var hyprKeyDown = false
@@ -170,6 +190,7 @@ class HotkeyManager {
         ready.wait()
 
         startTapHealthCheck()
+        startSecureInputCheck()
         hyprLog(.debug, .lifecycle, "event tap started on dedicated thread, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
     }
 
@@ -178,6 +199,12 @@ class HotkeyManager {
     func stop() {
         healthCheckTimer?.invalidate()
         healthCheckTimer = nil
+        secureInputTimer?.invalidate()
+        secureInputTimer = nil
+        if secureInput.isActive {
+            secureInput.reset()
+            onSecureInputChange?(.disabled)
+        }
         if let tap = eventTap {
             CGEvent.tapEnable(tap: tap, enable: false)
         }
@@ -222,6 +249,38 @@ class HotkeyManager {
         timer.tolerance = 1.0
         RunLoop.main.add(timer, forMode: .common)
         healthCheckTimer = timer
+    }
+
+    /// Watch for secure input. One cheap flag read per tick, so a 1 s
+    /// period keeps the menu bar hint close to what the user sees.
+    private func startSecureInputCheck() {
+        secureInputTimer?.invalidate()
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.checkSecureInput()
+        }
+        timer.tolerance = 0.25
+        RunLoop.main.add(timer, forMode: .common)
+        secureInputTimer = timer
+        checkSecureInput()
+    }
+
+    /// Main thread. On a secure input transition, drop the tracked Hypr
+    /// state and tell the owner. Turning on: an F18 keyUp that lands while
+    /// secure input is on never reaches the tap, and the Caps Lock remap
+    /// skips the stale check, so `hyprKeyDown` would stay stuck and pack
+    /// the next plain keystroke as a chord. Turning off: same reason, the
+    /// state from before is no longer trustworthy.
+    func checkSecureInput() {
+        guard let transition = secureInput.poll() else { return }
+        switch transition {
+        case .enabled(let holder):
+            let who = holder.map { "macOS reports \($0.displayName) (pid \($0.pid))" } ?? "holder unknown"
+            hyprLog(.notice, .hotkey, "secure input on, \(who); Hypr shortcuts paused until it is released")
+        case .disabled:
+            hyprLog(.notice, .hotkey, "secure input off, Hypr shortcuts work again")
+        }
+        resetTrackingAfterTapInterruption()
+        onSecureInputChange?(transition)
     }
 
     /// Drop tracked modifier state after a tap interruption.
