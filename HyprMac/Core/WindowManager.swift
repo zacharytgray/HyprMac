@@ -267,6 +267,7 @@ class WindowManager {
         self.workspaceOrchestrator.onWillSwitch = { [weak self] workspace, screen in
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
+        self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
         self.workspaceOrchestrator.onDidSwitch = { [weak self] _, _ in
             self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()

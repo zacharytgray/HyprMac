@@ -63,6 +63,10 @@ final class WorkspaceOrchestrator {
     /// Fired once the switch has landed, with the windows moved and focus
     /// settled. State that has to reflect the finished switch lives here.
     var onDidSwitch: (_ workspace: Int, _ screen: NSScreen) -> Void = { _, _ in }
+    /// Fired when a switch could not reveal a floater because no handle for
+    /// it was readable (its app did not answer the walk). The next poll's
+    /// reveal repair restores it once the app answers.
+    var onRevealMissed: () -> Void = { }
     var excludedBundleIDs: () -> Set<String> = { [] }
     var isScratchpadWindow: (CGWindowID) -> Bool = { _ in false }
 
@@ -378,10 +382,20 @@ final class WorkspaceOrchestrator {
                 workspaceManager.hideInCorner(w, on: result.screen)
             }
         }
+        var unrevealed: [CGWindowID] = []
         for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
                 workspaceManager.restoreFloatingFrame(w)
+            } else if workspaceManager.savedFloatingFrame(for: wid) != nil {
+                // its app failed the walk (busy, AX timeout) and the cache
+                // holds only visible windows, so there is no handle to move
+                // it out of the hide corner with
+                unrevealed.append(wid)
             }
+        }
+        if !unrevealed.isEmpty {
+            hyprLog(.notice, .lifecycle, "switch: \(unrevealed.count) floater(s) to reveal not readable: \(unrevealed.sorted()), repair poll requested")
+            onRevealMissed()
         }
 
         // retile immediately — no delay between hide and show. every write
@@ -409,6 +423,27 @@ final class WorkspaceOrchestrator {
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         onDidSwitch(number, result.screen)
+    }
+
+    /// Reveal self-repair, the inverse of the park repair: a floater on a
+    /// visible workspace that still holds its saved frame was never revealed,
+    /// because its app did not answer the switch's walk and nothing else
+    /// moves a floater out of the hide corner. Restores it from a later
+    /// walk. A floater that reads on-screen is left alone, so a stale saved
+    /// frame cannot yank a window the user has since moved.
+    func repairUnrevealedFloaters(_ allWindows: [HyprWindow]) {
+        for w in allWindows where stateCache.floatingWindowIDs.contains(w.windowID) {
+            guard let ws = workspaceManager.workspaceFor(w.windowID),
+                  ws != ScratchpadController.workspace,
+                  workspaceManager.isWorkspaceVisible(ws),
+                  workspaceManager.savedFloatingFrame(for: w.windowID) != nil
+            else { continue }
+            if let frame = w.frame, displayManager.screens.contains(where: { screen in
+                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
+            }) { continue }
+            hyprLog(.notice, .lifecycle, "reveal repair: '\(w.title ?? "?")' (\(w.windowID)) on visible ws\(ws) still parked, restoring its saved frame")
+            workspaceManager.restoreFloatingFrame(w)
+        }
     }
 
     /// The window a caller asked the switch to focus (a move that follows

@@ -310,6 +310,7 @@
 		DA506BA26A104FA2BA45FF3C /* KeybindCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4BE620A1670E1D89160707 /* KeybindCategory.swift */; };
 		DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */; };
 		DC4C934E44DA35557737D99F /* TiledDragHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C35BE3ADE2DF9C15856DAC /* TiledDragHandler.swift */; };
+		DC96C52C1A40C7842A944CCC /* WorkspaceRevealRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39FE774062F6A10A6720B58 /* WorkspaceRevealRepairTests.swift */; };
 		DD38C6D3A18D2B209CDDB9BC /* ThreadAssertions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE7C6CB56D09DB0F05AE6EDC /* ThreadAssertions.swift */; };
 		DDF87D62ED61F50A5F0681B9 /* PollingScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4BF3E3B39107A11D98F0575 /* PollingScheduler.swift */; };
 		DE18F2DAE4D0C80F9135D9A1 /* ConfigStoreWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4B8A362BCC405405997D733 /* ConfigStoreWatcherTests.swift */; };
@@ -602,6 +603,7 @@
 		E219E876B1BDF912185B8C69 /* HyprMac-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "HyprMac-Bridging-Header.h"; sourceTree = "<group>"; };
 		E2CF1D9358724AFE225566EE /* WindowStacking.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStacking.swift; sourceTree = "<group>"; };
 		E33C1B4E40A4FC68DD601FA8 /* HyprMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HyprMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E39FE774062F6A10A6720B58 /* WorkspaceRevealRepairTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceRevealRepairTests.swift; sourceTree = "<group>"; };
 		E402467C270ED2039D610DC0 /* HyprMacTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HyprMacTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E49CB059612127CA6F3E7766 /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsComponents.swift; sourceTree = "<group>"; };
 		E5557F0D5040AE48CF5031E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -951,6 +953,7 @@
 				1435DD496602492940D332E8 /* WorkspaceNameTests.swift */,
 				10CDCBC69C5DFDC3E907A02B /* WorkspaceOrchestratorMoveTests.swift */,
 				6E6472ACE23C8EB1DC35E7F2 /* WorkspaceOverviewPresentationTests.swift */,
+				E39FE774062F6A10A6720B58 /* WorkspaceRevealRepairTests.swift */,
 				F3DB9C9425DBA2D12D58CAF7 /* WorkspaceSwitchAnnouncementTests.swift */,
 			);
 			path = HyprMacTests;
@@ -1575,6 +1578,7 @@
 				136E9824DF5C06DA270FF635 /* WorkspaceNameTests.swift in Sources */,
 				7FB5DB945BA887353289ACB1 /* WorkspaceOrchestratorMoveTests.swift in Sources */,
 				A1945FBB6F6C5307CC809EA4 /* WorkspaceOverviewPresentationTests.swift in Sources */,
+				DC96C52C1A40C7842A944CCC /* WorkspaceRevealRepairTests.swift in Sources */,
 				1C09D1112018B2B6DDA753F3 /* WorkspaceSwitchAnnouncementTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
