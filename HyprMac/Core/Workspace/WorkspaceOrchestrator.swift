@@ -77,6 +77,8 @@ final class WorkspaceOrchestrator {
     /// Floaters a switch could not reveal that the retry is still asking for.
     private var revealRetryPending: Set<CGWindowID> = []
     private var revealRetryAttempt = 0
+    /// When the pending retry is due, to log how late the main thread let it run.
+    private var revealRetryDue: Date?
     static let revealRetryInterval: TimeInterval = 0.1
     static let revealRetryAttempts = 15
     var excludedBundleIDs: () -> Set<String> = { [] }
@@ -363,7 +365,9 @@ final class WorkspaceOrchestrator {
         // "which workspace am I on".
         onWillSwitch(number, workspaceManager.homeScreenForWorkspace(number) ?? currentScreen)
 
+        let switchStart = Date()
         let allWindows = self.allWindows()
+        let walkMS = Self.ms(since: switchStart)
         let result = workspaceManager.switchWorkspace(number, cursorScreen: currentScreen)
         // focusing another tile would raise it over the maximized one and end it
         let maximizedHere = tilingEngine.maximizedWindowID(onWorkspace: number)
@@ -417,7 +421,9 @@ final class WorkspaceOrchestrator {
         // retile immediately — no delay between hide and show. every write
         // above dropped the cached frame it changed, and the pass captures
         // live frames, so the walk from before the parks is valid input
+        let tileStart = Date()
         tileAllVisibleSpaces(allWindows)
+        let tileMS = Self.ms(since: tileStart)
 
         // focus best tiled window on the new workspace; if none, fall back to
         // any floating window before giving up. only warp+hide if truly empty.
@@ -439,7 +445,15 @@ final class WorkspaceOrchestrator {
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         onDidSwitch(number, result.screen)
+        // a slow switch holds the main thread, and with it a reveal retry
+        // it scheduled; say where the time went
+        let totalMS = Self.ms(since: switchStart)
+        if totalMS > Self.slowSwitchMS {
+            hyprLog(.notice, .lifecycle, "switch: ws\(number) took \(totalMS)ms (walk \(walkMS)ms, retile \(tileMS)ms, focus and rest \(totalMS - walkMS - tileMS)ms)")
+        }
     }
+
+    static let slowSwitchMS = 250
 
     /// Ask the apps of floaters a switch could not reveal for just those
     /// windows, every 100 ms for a bounded number of tries, and reveal each
@@ -453,9 +467,16 @@ final class WorkspaceOrchestrator {
         revealRetryAttempt = 0
         // the walk that failed just now; asking again at once would only
         // spend the switch's time on the same busy app
-        if starting {
-            scheduleRevealRetry(Self.revealRetryInterval) { [weak self] in self?.attemptReveal() }
-        }
+        if starting { scheduleNextRevealRetry() }
+    }
+
+    private func scheduleNextRevealRetry() {
+        revealRetryDue = Date().addingTimeInterval(Self.revealRetryInterval)
+        scheduleRevealRetry(Self.revealRetryInterval) { [weak self] in self?.attemptReveal() }
+    }
+
+    private static func ms(since start: Date) -> Int {
+        Int((Date().timeIntervalSince(start) * 1000).rounded())
     }
 
     private func attemptReveal() {
@@ -468,13 +489,27 @@ final class WorkspaceOrchestrator {
         }
         guard !revealRetryPending.isEmpty else { return }
         revealRetryAttempt += 1
+        // how late this attempt runs says whether something else held the
+        // main thread after the switch; the read and restore times say
+        // whether the app's own replies did
+        let late = revealRetryDue.map(Self.ms(since:)) ?? 0
         let byApp = Dictionary(grouping: revealRetryPending) { stateCache.windowOwners[$0] }
         for (pid, ids) in byApp {
-            guard let pid, let windows = revealRetryWindows(Set(ids), pid) else { continue }
+            guard let pid else { continue }
+            let readStart = Date()
+            guard let windows = revealRetryWindows(Set(ids), pid) else {
+                hyprLog(.notice, .lifecycle, "reveal retry: attempt \(revealRetryAttempt) ran \(late)ms late, pid \(pid) list read failed in \(Self.ms(since: readStart))ms")
+                continue
+            }
+            let readMS = Self.ms(since: readStart)
             for w in windows {
-                hyprLog(.notice, .lifecycle, "reveal retry: '\(w.title ?? "?")' (\(w.windowID)) readable on attempt \(revealRetryAttempt), restoring its saved frame")
+                // no title in the line: it is one more read of a window whose
+                // app was busy a moment ago, at the process-wide 1 s timeout
+                let restoreStart = Date()
                 workspaceManager.restoreFloatingFrame(w)
                 revealRetryPending.remove(w.windowID)
+                hyprLog(.notice, .lifecycle, "reveal retry: \(w.windowID) readable on attempt \(revealRetryAttempt), restored its saved frame"
+                        + " (ran \(late)ms late, list read \(readMS)ms, restore \(Self.ms(since: restoreStart))ms)")
             }
         }
         guard !revealRetryPending.isEmpty else { return }
@@ -483,7 +518,7 @@ final class WorkspaceOrchestrator {
             revealRetryPending.removeAll()
             return
         }
-        scheduleRevealRetry(Self.revealRetryInterval) { [weak self] in self?.attemptReveal() }
+        scheduleNextRevealRetry()
     }
 
     /// Reveal self-repair, the inverse of the park repair: a floater on a

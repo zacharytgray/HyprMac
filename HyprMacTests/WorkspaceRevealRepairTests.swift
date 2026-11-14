@@ -97,6 +97,21 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertTrue(retries.isEmpty, "nothing left to retry")
     }
 
+    // the app answered its window list a moment ago and may be busy again:
+    // every further read of the window costs up to the process-wide 1 s
+    // timeout on the main thread, so the retry reads nothing it doesn't need
+    func testTheRetryDoesNotReadTheTitleOfTheWindowItReveals() {
+        let floater = parkedFloater(id: 7314, on: hidden)
+        orchestrator.allWindows = { [] }
+        orchestrator.switchWorkspace(hidden)
+
+        appAnswers = true
+        stepRetry()
+
+        XCTAssertNil(workspaceManager.savedFloatingFrame(for: floater.windowID))
+        XCTAssertEqual(floater.titleReads, 0)
+    }
+
     func testTheRetryIsBoundedAndLeavesTheRestToTheRepairPoll() {
         let floater = parkedFloater(id: 7312, on: hidden)
         orchestrator.allWindows = { [] }
@@ -183,9 +198,14 @@ private final class RevealScreen: SyntheticScreen {
 
 private final class RevealWindow: HyprWindow {
     var storedFrame: CGRect
+    var titleReads = 0
     init(id: CGWindowID, frame: CGRect) {
         storedFrame = frame
         super.init(element: AXUIElementCreateApplication(9877), windowID: id, ownerPID: 9877)
+    }
+    override var title: String? {
+        titleReads += 1
+        return "reveal"
     }
     override func readPosition() -> (AXError, CGPoint?) { (.success, storedFrame.origin) }
     override func readSize() -> (AXError, CGSize?) { (.success, storedFrame.size) }
