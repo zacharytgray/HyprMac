@@ -26,10 +26,11 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "camera.viewfinder",
-            title: "CleanShot Window Capture Works",
-            description: "The inactive-window dim now steps aside before CleanShot's window picker opens, so window captures pick the right window.",
-            credit: "zalewskigrzegorz"
+            icon: "macwindow.on.rectangle",
+            title: "Floating Windows Come Back After a Switch",
+            description: "A floating window no longer stays hidden when its app is busy as you switch to its workspace, such as a browser returning from picture in picture.",
+            tint: .magenta,
+            credit: "cipas"
         ),
     ]
 }
