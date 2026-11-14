@@ -67,6 +67,18 @@ final class WorkspaceOrchestrator {
     /// it was readable (its app did not answer the walk). The next poll's
     /// reveal repair restores it once the app answers.
     var onRevealMissed: () -> Void = { }
+    /// The floaters among `ids` that `pid` lists right now, or nil when its
+    /// window list does not answer. A seam for the reveal retry.
+    var revealRetryWindows: (_ ids: Set<CGWindowID>, _ pid: pid_t) -> [HyprWindow]?
+    /// Runs the next reveal retry after a delay. A seam so a test can step it.
+    var scheduleRevealRetry: (_ delay: TimeInterval, _ retry: @escaping () -> Void) -> Void = { delay, retry in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: retry)
+    }
+    /// Floaters a switch could not reveal that the retry is still asking for.
+    private var revealRetryPending: Set<CGWindowID> = []
+    private var revealRetryAttempt = 0
+    static let revealRetryInterval: TimeInterval = 0.1
+    static let revealRetryAttempts = 15
     var excludedBundleIDs: () -> Set<String> = { [] }
     var isScratchpadWindow: (CGWindowID) -> Bool = { _ in false }
 
@@ -93,6 +105,9 @@ final class WorkspaceOrchestrator {
         self.dimmingOverlay = dimmingOverlay
         self.suppressions = suppressions
         self.allWindows = { [weak accessibility] in accessibility?.getAllWindows() ?? [] }
+        self.revealRetryWindows = { [weak accessibility] ids, pid in
+            accessibility?.revealRetryWindows(ids, ofPID: pid)
+        }
         self.actualFocusedWindow = { [weak accessibility] in
             accessibility?.getActualFocusedStandardWindow()
         }
@@ -394,8 +409,9 @@ final class WorkspaceOrchestrator {
             }
         }
         if !unrevealed.isEmpty {
-            hyprLog(.notice, .lifecycle, "switch: \(unrevealed.count) floater(s) to reveal not readable: \(unrevealed.sorted()), repair poll requested")
+            hyprLog(.notice, .lifecycle, "switch: \(unrevealed.count) floater(s) to reveal not readable: \(unrevealed.sorted()), retrying their app, repair poll requested")
             onRevealMissed()
+            retryReveal(unrevealed)
         }
 
         // retile immediately — no delay between hide and show. every write
@@ -423,6 +439,51 @@ final class WorkspaceOrchestrator {
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         onDidSwitch(number, result.screen)
+    }
+
+    /// Ask the apps of floaters a switch could not reveal for just those
+    /// windows, every 100 ms for a bounded number of tries, and reveal each
+    /// as soon as its app answers. A busy app (a browser handling "back to
+    /// tab" from picture in picture) frees up well before the next poll can
+    /// run: that one waits out the transition suppression and the walk's
+    /// stall backoff. The repair poll stays the safety net.
+    func retryReveal(_ ids: [CGWindowID]) {
+        let starting = revealRetryPending.isEmpty
+        revealRetryPending.formUnion(ids)
+        revealRetryAttempt = 0
+        // the walk that failed just now; asking again at once would only
+        // spend the switch's time on the same busy app
+        if starting {
+            scheduleRevealRetry(Self.revealRetryInterval) { [weak self] in self?.attemptReveal() }
+        }
+    }
+
+    private func attemptReveal() {
+        // a floater revealed meanwhile, moved, closed or hidden again by
+        // another switch is no longer the retry's
+        revealRetryPending = revealRetryPending.filter { id in
+            stateCache.floatingWindowIDs.contains(id)
+                && workspaceManager.workspaceFor(id).map(workspaceManager.isWorkspaceVisible) == true
+                && workspaceManager.savedFloatingFrame(for: id) != nil
+        }
+        guard !revealRetryPending.isEmpty else { return }
+        revealRetryAttempt += 1
+        let byApp = Dictionary(grouping: revealRetryPending) { stateCache.windowOwners[$0] }
+        for (pid, ids) in byApp {
+            guard let pid, let windows = revealRetryWindows(Set(ids), pid) else { continue }
+            for w in windows {
+                hyprLog(.notice, .lifecycle, "reveal retry: '\(w.title ?? "?")' (\(w.windowID)) readable on attempt \(revealRetryAttempt), restoring its saved frame")
+                workspaceManager.restoreFloatingFrame(w)
+                revealRetryPending.remove(w.windowID)
+            }
+        }
+        guard !revealRetryPending.isEmpty else { return }
+        guard revealRetryAttempt < Self.revealRetryAttempts else {
+            hyprLog(.notice, .lifecycle, "reveal retry: \(revealRetryPending.sorted()) still not readable after \(revealRetryAttempt) attempts, left to the repair poll")
+            revealRetryPending.removeAll()
+            return
+        }
+        scheduleRevealRetry(Self.revealRetryInterval) { [weak self] in self?.attemptReveal() }
     }
 
     /// Reveal self-repair, the inverse of the park repair: a floater on a
