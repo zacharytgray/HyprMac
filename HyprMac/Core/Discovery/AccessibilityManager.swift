@@ -256,6 +256,28 @@ class AccessibilityManager {
         return (element, pid)
     }
 
+    /// Messaging timeout for a reveal retry. Short, because the retry asks
+    /// again every 100 ms while the app is busy: a longer one would park the
+    /// main thread most of that time for an answer the next ask gets anyway.
+    static let revealRetryMessagingTimeout: Float = 0.05
+
+    /// `ids` among `pid`'s AX windows, read with the reveal retry's short
+    /// timeout. Ignores the walk's stall backoff and leaves it untouched: a
+    /// switch that could not reveal a floater asks its app again sooner than
+    /// the walk would, and the walk keeps its own record of the app.
+    /// - Returns: the windows found, or nil when the window list did not answer.
+    func revealRetryWindows(_ ids: Set<CGWindowID>, ofPID pid: pid_t) -> [HyprWindow]? {
+        let appRef = AXUIElementCreateApplication(pid)
+        AXUIElementSetMessagingTimeout(appRef, Self.revealRetryMessagingTimeout)
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &value) == .success,
+              let axWindows = value as? [AXUIElement] else { return nil }
+        return axWindows.compactMap { element in
+            guard let id = windowID(for: element), ids.contains(id) else { return nil }
+            return HyprWindow(element: element, windowID: id, ownerPID: pid)
+        }
+    }
+
     /// Where a window that left the on-screen snapshot actually is.
     /// `present` means the app still lists it and it is not minimized —
     /// another Space or native full-screen — so it can come back on its

@@ -236,7 +236,8 @@ final class WindowPlacement {
     /// windows. Runs after applyChanges so a just-reassigned returned
     /// window (recycled-id reopen) is already on its visible workspace and
     /// exempt. Re-parking is idempotent, so a stale AX read of a window
-    /// that is really parked just re-asserts the park.
+    /// that is really parked just re-asserts the park. The inverse, a
+    /// floater a switch could not reveal, is repaired here too.
     func repairParkedWindows(_ allWindows: [HyprWindow]) {
         for w in allWindows {
             guard let ws = workspaceManager.workspaceFor(w.windowID),
@@ -252,6 +253,7 @@ final class WindowPlacement {
             hyprLog(.notice, .lifecycle, "park repair: '\(w.title ?? "?")' (\(w.windowID)) on hidden ws\(ws) reads visible — re-parking")
             workspaceManager.hideInCorner(w, on: screen)
         }
+        workspaceOrchestrator.repairUnrevealedFloaters(allWindows)
     }
 
     private func startupPlacement(windowIDs: [CGWindowID], windows: [HyprWindow], screens: [NSScreen]) -> RetileAllPlan {

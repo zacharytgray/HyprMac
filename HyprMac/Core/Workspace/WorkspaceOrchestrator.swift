@@ -63,6 +63,24 @@ final class WorkspaceOrchestrator {
     /// Fired once the switch has landed, with the windows moved and focus
     /// settled. State that has to reflect the finished switch lives here.
     var onDidSwitch: (_ workspace: Int, _ screen: NSScreen) -> Void = { _, _ in }
+    /// Fired when a switch could not reveal a floater because no handle for
+    /// it was readable (its app did not answer the walk). The next poll's
+    /// reveal repair restores it once the app answers.
+    var onRevealMissed: () -> Void = { }
+    /// The floaters among `ids` that `pid` lists right now, or nil when its
+    /// window list does not answer. A seam for the reveal retry.
+    var revealRetryWindows: (_ ids: Set<CGWindowID>, _ pid: pid_t) -> [HyprWindow]?
+    /// Runs the next reveal retry after a delay. A seam so a test can step it.
+    var scheduleRevealRetry: (_ delay: TimeInterval, _ retry: @escaping () -> Void) -> Void = { delay, retry in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: retry)
+    }
+    /// Floaters a switch could not reveal that the retry is still asking for.
+    private var revealRetryPending: Set<CGWindowID> = []
+    private var revealRetryAttempt = 0
+    /// When the pending retry is due, to log how late the main thread let it run.
+    private var revealRetryDue: Date?
+    static let revealRetryInterval: TimeInterval = 0.1
+    static let revealRetryAttempts = 15
     var excludedBundleIDs: () -> Set<String> = { [] }
     var isScratchpadWindow: (CGWindowID) -> Bool = { _ in false }
 
@@ -89,6 +107,9 @@ final class WorkspaceOrchestrator {
         self.dimmingOverlay = dimmingOverlay
         self.suppressions = suppressions
         self.allWindows = { [weak accessibility] in accessibility?.getAllWindows() ?? [] }
+        self.revealRetryWindows = { [weak accessibility] ids, pid in
+            accessibility?.revealRetryWindows(ids, ofPID: pid)
+        }
         self.actualFocusedWindow = { [weak accessibility] in
             accessibility?.getActualFocusedStandardWindow()
         }
@@ -344,7 +365,9 @@ final class WorkspaceOrchestrator {
         // "which workspace am I on".
         onWillSwitch(number, workspaceManager.homeScreenForWorkspace(number) ?? currentScreen)
 
+        let switchStart = Date()
         let allWindows = self.allWindows()
+        let walkMS = Self.ms(since: switchStart)
         let result = workspaceManager.switchWorkspace(number, cursorScreen: currentScreen)
         // focusing another tile would raise it over the maximized one and end it
         let maximizedHere = tilingEngine.maximizedWindowID(onWorkspace: number)
@@ -378,16 +401,29 @@ final class WorkspaceOrchestrator {
                 workspaceManager.hideInCorner(w, on: result.screen)
             }
         }
+        var unrevealed: [CGWindowID] = []
         for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
                 workspaceManager.restoreFloatingFrame(w)
+            } else if workspaceManager.savedFloatingFrame(for: wid) != nil, !isGhost(wid) {
+                // its app failed the walk (busy, AX timeout) and the cache
+                // holds only visible windows, so there is no handle to move
+                // it out of the hide corner with
+                unrevealed.append(wid)
             }
+        }
+        if !unrevealed.isEmpty {
+            hyprLog(.notice, .lifecycle, "switch: \(unrevealed.count) floater(s) to reveal not readable: \(unrevealed.sorted()), retrying their app, repair poll requested")
+            onRevealMissed()
+            retryReveal(unrevealed)
         }
 
         // retile immediately — no delay between hide and show. every write
         // above dropped the cached frame it changed, and the pass captures
         // live frames, so the walk from before the parks is valid input
+        let tileStart = Date()
         tileAllVisibleSpaces(allWindows)
+        let tileMS = Self.ms(since: tileStart)
 
         // focus best tiled window on the new workspace; if none, fall back to
         // any floating window before giving up. only warp+hide if truly empty.
@@ -409,6 +445,108 @@ final class WorkspaceOrchestrator {
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         onDidSwitch(number, result.screen)
+        // a slow switch holds the main thread, and with it a reveal retry
+        // it scheduled; say where the time went
+        let totalMS = Self.ms(since: switchStart)
+        if totalMS > Self.slowSwitchMS {
+            hyprLog(.notice, .lifecycle, "switch: ws\(number) took \(totalMS)ms (walk \(walkMS)ms, retile \(tileMS)ms, focus and rest \(totalMS - walkMS - tileMS)ms)")
+        }
+    }
+
+    static let slowSwitchMS = 250
+
+    /// Closed while its app keeps running. It keeps its workspace (and a
+    /// floater parked when it closed keeps its saved frame), but its app
+    /// will never list it again, so a reveal retry would only spin.
+    private func isGhost(_ id: CGWindowID) -> Bool {
+        stateCache.hiddenWindowIDs.contains(id) && !stateCache.reservedHiddenWindowIDs.contains(id)
+    }
+
+    /// Ask the apps of floaters a switch could not reveal for just those
+    /// windows, every 100 ms for a bounded number of tries, and reveal each
+    /// as soon as its app answers. A busy app (a browser handling "back to
+    /// tab" from picture in picture) frees up well before the next poll can
+    /// run: that one waits out the transition suppression and the walk's
+    /// stall backoff. The repair poll stays the safety net.
+    func retryReveal(_ ids: [CGWindowID]) {
+        let starting = revealRetryPending.isEmpty
+        revealRetryPending.formUnion(ids)
+        revealRetryAttempt = 0
+        // the walk that failed just now; asking again at once would only
+        // spend the switch's time on the same busy app
+        if starting { scheduleNextRevealRetry() }
+    }
+
+    private func scheduleNextRevealRetry() {
+        revealRetryDue = Date().addingTimeInterval(Self.revealRetryInterval)
+        scheduleRevealRetry(Self.revealRetryInterval) { [weak self] in self?.attemptReveal() }
+    }
+
+    private static func ms(since start: Date) -> Int {
+        Int((Date().timeIntervalSince(start) * 1000).rounded())
+    }
+
+    private func attemptReveal() {
+        // a floater revealed meanwhile, moved, closed or hidden again by
+        // another switch is no longer the retry's
+        revealRetryPending = revealRetryPending.filter { id in
+            stateCache.floatingWindowIDs.contains(id)
+                && workspaceManager.workspaceFor(id).map(workspaceManager.isWorkspaceVisible) == true
+                && workspaceManager.savedFloatingFrame(for: id) != nil
+        }
+        guard !revealRetryPending.isEmpty else { return }
+        revealRetryAttempt += 1
+        // how late this attempt runs says whether something else held the
+        // main thread after the switch; the read and restore times say
+        // whether the app's own replies did
+        let late = revealRetryDue.map(Self.ms(since:)) ?? 0
+        let byApp = Dictionary(grouping: revealRetryPending) { stateCache.windowOwners[$0] }
+        for (pid, ids) in byApp {
+            guard let pid else { continue }
+            let readStart = Date()
+            guard let windows = revealRetryWindows(Set(ids), pid) else {
+                hyprLog(.notice, .lifecycle, "reveal retry: attempt \(revealRetryAttempt) ran \(late)ms late, pid \(pid) list read failed in \(Self.ms(since: readStart))ms")
+                continue
+            }
+            let readMS = Self.ms(since: readStart)
+            for w in windows {
+                // no title in the line: it is one more read of a window whose
+                // app was busy a moment ago, at the process-wide 1 s timeout
+                let restoreStart = Date()
+                workspaceManager.restoreFloatingFrame(w)
+                revealRetryPending.remove(w.windowID)
+                hyprLog(.notice, .lifecycle, "reveal retry: \(w.windowID) readable on attempt \(revealRetryAttempt), restored its saved frame"
+                        + " (ran \(late)ms late, list read \(readMS)ms, restore \(Self.ms(since: restoreStart))ms)")
+            }
+        }
+        guard !revealRetryPending.isEmpty else { return }
+        guard revealRetryAttempt < Self.revealRetryAttempts else {
+            hyprLog(.notice, .lifecycle, "reveal retry: \(revealRetryPending.sorted()) still not readable after \(revealRetryAttempt) attempts, left to the repair poll")
+            revealRetryPending.removeAll()
+            return
+        }
+        scheduleNextRevealRetry()
+    }
+
+    /// Reveal self-repair, the inverse of the park repair: a floater on a
+    /// visible workspace that still holds its saved frame was never revealed,
+    /// because its app did not answer the switch's walk and nothing else
+    /// moves a floater out of the hide corner. Restores it from a later
+    /// walk. A floater that reads on-screen is left alone, so a stale saved
+    /// frame cannot yank a window the user has since moved.
+    func repairUnrevealedFloaters(_ allWindows: [HyprWindow]) {
+        for w in allWindows where stateCache.floatingWindowIDs.contains(w.windowID) {
+            guard let ws = workspaceManager.workspaceFor(w.windowID),
+                  ws != ScratchpadController.workspace,
+                  workspaceManager.isWorkspaceVisible(ws),
+                  workspaceManager.savedFloatingFrame(for: w.windowID) != nil
+            else { continue }
+            if let frame = w.frame, displayManager.screens.contains(where: { screen in
+                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
+            }) { continue }
+            hyprLog(.notice, .lifecycle, "reveal repair: '\(w.title ?? "?")' (\(w.windowID)) on visible ws\(ws) still parked, restoring its saved frame")
+            workspaceManager.restoreFloatingFrame(w)
+        }
     }
 
     /// The window a caller asked the switch to focus (a move that follows
