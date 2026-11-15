@@ -267,6 +267,13 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
             }
 
+            HyprRow("Show in Dock", icon: "dock.rectangle",
+                    subtitle: "Off keeps HyprMac in the menu bar only, out of the Dock and ⌘-Tab.") {
+                Toggle("", isOn: $config.showDockIcon)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+
             HyprRow("Allow other apps to control HyprMac", icon: "link",
                     subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.") {
                 Toggle("", isOn: $config.externalControlEnabled)

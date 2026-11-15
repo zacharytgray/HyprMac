@@ -198,6 +198,17 @@ class UserConfig: ObservableObject {
         }
     }
 
+    static let showDockIconKey = "showDockIcon"
+
+    // per Mac like iCloud sync: stored in UserDefaults, not config.json.
+    // off (the default) keeps HyprMac out of the Dock; AppDelegate applies it
+    @Published var showDockIcon: Bool {
+        didSet {
+            UserDefaults.standard.set(showDockIcon, forKey: Self.showDockIconKey)
+            NotificationCenter.default.post(name: .hyprMacDockIconChanged, object: nil)
+        }
+    }
+
     /// Gates `didSet` save handlers during a programmatic reload.
     ///
     /// Every `@Published` property writes to disk in its `didSet`
@@ -218,9 +229,11 @@ class UserConfig: ObservableObject {
     /// migration, the only writes a launch makes before anything changes.
     init(store: ConfigStore = ConfigStore(),
          iCloudSyncEnabled: Bool = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled"),
+         showDockIcon: Bool = RuntimeVariant.inheritedBool(forKey: UserConfig.showDockIconKey),
          repairsOnLaunch: Bool = true) {
         self.store = store
         self.iCloudSyncEnabled = iCloudSyncEnabled
+        self.showDockIcon = showDockIcon
 
         let monitorConfig = store.loadSavedMonitorConfig()
         let savedConfig = store.loadSavedConfig()

@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
+    private var dockIconObservers: [NSObjectProtocol] = []
 
     /// `hyprmac://` links from a status bar or another app. A raw Apple
     /// Event handler, so SwiftUI never sees the URL and opens no window for it.
@@ -23,6 +24,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handleGetURL(_:withReplyEvent:)),
             forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    // MARK: Dock icon
+
+    /// Activation policy for the Show in Dock setting. `.accessory` keeps
+    /// HyprMac out of the Dock and ⌘-Tab; the menu bar item stays either way.
+    static func activationPolicy(showDockIcon: Bool) -> NSApplication.ActivationPolicy {
+        showDockIcon ? .regular : .accessory
+    }
+
+    /// Apply the setting and keep applying it. The setting is read from
+    /// UserDefaults so this runs before `UserConfig.shared` exists.
+    private func installDockIconPolicy() {
+        applyDockIconPolicy(expected: true)
+        let center = NotificationCenter.default
+        dockIconObservers.append(center.addObserver(
+            forName: .hyprMacDockIconChanged, object: nil, queue: .main) { [weak self] _ in
+                self?.applyDockIconPolicy(expected: true)
+            })
+        // the installed release has been seen running as a regular app with
+        // a Dock icon although nothing here asks for one. cause unconfirmed
+        // (Sparkle's update UI reads the policy), so correct it at the next
+        // activation or window change and log it as a notice to find out
+        let drift: [Notification.Name] = [
+            NSApplication.didBecomeActiveNotification,
+            NSApplication.didResignActiveNotification,
+            NSWindow.didBecomeKeyNotification,
+            NSWindow.willCloseNotification,
+        ]
+        for name in drift {
+            dockIconObservers.append(center.addObserver(
+                forName: name, object: nil, queue: .main) { [weak self] note in
+                    self?.applyDockIconPolicy(expected: false, trigger: note.name.rawValue)
+                })
+        }
+    }
+
+    private func applyDockIconPolicy(expected: Bool, trigger: String = "") {
+        let showDockIcon = RuntimeVariant.inheritedBool(forKey: UserConfig.showDockIconKey)
+        let wanted = Self.activationPolicy(showDockIcon: showDockIcon)
+        let current = NSApp.activationPolicy()
+        guard current != wanted else { return }
+        if expected {
+            hyprLog(.debug, .lifecycle, "activation policy \(current.rawValue) → \(wanted.rawValue) showDockIcon=\(showDockIcon)")
+        } else {
+            hyprLog(.notice, .lifecycle, "activation policy drifted to \(current.rawValue), restoring \(wanted.rawValue) showDockIcon=\(showDockIcon) at \(trigger)")
+        }
+        NSApp.setActivationPolicy(wanted)
     }
 
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
@@ -41,7 +90,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// grant lands, then starts automatically. No relaunch needed:
     /// TCC flips `AXIsProcessTrusted` live for a running process.
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        installDockIconPolicy()
 
         hyprLog(.debug, .lifecycle, "bundle: \(Bundle.main.bundleIdentifier ?? "?")")
         hyprLog(.debug, .lifecycle, "AXIsProcessTrusted=\(AXIsProcessTrusted())")
