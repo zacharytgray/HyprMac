@@ -26,11 +26,15 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "macwindow.on.rectangle",
-            title: "Floating Windows Come Back After a Switch",
-            description: "A floating window no longer stays hidden when its app is busy as you switch to its workspace, such as a browser returning from picture in picture.",
-            tint: .magenta,
-            credit: "cipas"
+            icon: "dock.rectangle",
+            title: "Show HyprMac in the Dock",
+            description: "A new Show in Dock setting in General gives HyprMac a Dock icon. Left off, HyprMac now stays out of the Dock even when you open it again.",
+            credit: "jessegray"
+        ),
+        WhatsNewFeature(
+            icon: "menubar.rectangle",
+            title: "Hide the Menu Bar Icon",
+            description: "Show in menu bar sits next to it. Opening HyprMac again from Spotlight or Finder brings up Settings, so it stays reachable with both icons hidden."
         ),
     ]
 }
