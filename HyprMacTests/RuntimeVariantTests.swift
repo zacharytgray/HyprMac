@@ -63,6 +63,29 @@ final class RuntimeVariantTests: XCTestCase {
             releaseDomain: ["iCloudSyncEnabled": true], debugApp: true))
     }
 
+    // Show in Dock is off until the user turns it on, and maps to the policy
+    // that keeps the app out of the Dock and command-tab
+    func testDockIconDefaultsOffAndMapsToActivationPolicy() throws {
+        let suite = "RuntimeVariantTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertFalse(RuntimeVariant.inheritedBool(
+            forKey: UserConfig.showDockIconKey, standard: defaults,
+            releaseDomain: [:], debugApp: false))
+        XCTAssertEqual(AppDelegate.activationPolicy(showDockIcon: false), .accessory)
+        XCTAssertEqual(AppDelegate.activationPolicy(showDockIcon: true), .regular)
+    }
+
+    // LSUIElement keeps a second `open` of the running app from making it
+    // a Dock app again, which undid Show in Dock = off
+    func testAppBundleStartsOutOfTheDock() throws {
+        let plist = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("HyprMac/Info.plist")
+        let info = try XCTUnwrap(NSDictionary(contentsOf: plist))
+        XCTAssertEqual(info["LSUIElement"] as? Bool, true)
+    }
+
     func testDebugSkipsUpdateWelcomeForExistingReleaseUser() {
         XCTAssertNil(RuntimeVariant.shouldShowWelcome(
             hasSeenOnboarding: true, lastVersion: nil,

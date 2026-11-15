@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
+    private var dockIconObserver: NSObjectProtocol?
 
     /// `hyprmac://` links from a status bar or another app. A raw Apple
     /// Event handler, so SwiftUI never sees the URL and opens no window for it.
@@ -23,6 +24,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSAppleEventManager.shared().setEventHandler(
             self, andSelector: #selector(handleGetURL(_:withReplyEvent:)),
             forEventClass: AEEventClass(kInternetEventClass), andEventID: AEEventID(kAEGetURL))
+    }
+
+    // MARK: Dock and menu bar icons
+
+    /// Activation policy for the Show in Dock setting. `.accessory` keeps
+    /// HyprMac out of the Dock and ⌘-Tab. Info.plist sets `LSUIElement`, so
+    /// launch and every later `open` of the running app start from
+    /// `.accessory`. Without it, LaunchServices made the app `.regular`
+    /// again each time it was opened.
+    static func activationPolicy(showDockIcon: Bool) -> NSApplication.ActivationPolicy {
+        showDockIcon ? .regular : .accessory
+    }
+
+    /// Apply the setting at launch and whenever it changes. The setting is
+    /// read from UserDefaults so this runs before `UserConfig.shared` exists.
+    private func installDockIconPolicy() {
+        applyDockIconPolicy()
+        dockIconObserver = NotificationCenter.default.addObserver(
+            forName: .hyprMacDockIconChanged, object: nil, queue: .main) { [weak self] _ in
+                self?.applyDockIconPolicy()
+                // a policy switch can drop focus; keep Settings in front
+                NSApp.activate(ignoringOtherApps: true)
+            }
+    }
+
+    private func applyDockIconPolicy() {
+        let showDockIcon = RuntimeVariant.inheritedBool(forKey: UserConfig.showDockIconKey)
+        let wanted = Self.activationPolicy(showDockIcon: showDockIcon)
+        let current = NSApp.activationPolicy()
+        guard current != wanted else { return }
+        hyprLog(.debug, .lifecycle, "activation policy \(current.rawValue) → \(wanted.rawValue) showDockIcon=\(showDockIcon)")
+        NSApp.setActivationPolicy(wanted)
+    }
+
+    /// Opening HyprMac again (Spotlight, Finder, a Dock click) shows
+    /// Settings. With both icons hidden, this is the way back in.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !SettingsWindow.show() {
+            hyprLog(.notice, .lifecycle, "reopen: no settings opener captured yet")
+        }
+        return false
     }
 
     @objc private func handleGetURL(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
@@ -41,7 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// grant lands, then starts automatically. No relaunch needed:
     /// TCC flips `AXIsProcessTrusted` live for a running process.
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        installDockIconPolicy()
 
         hyprLog(.debug, .lifecycle, "bundle: \(Bundle.main.bundleIdentifier ?? "?")")
         hyprLog(.debug, .lifecycle, "AXIsProcessTrusted=\(AXIsProcessTrusted())")

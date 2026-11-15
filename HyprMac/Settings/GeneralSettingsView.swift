@@ -9,6 +9,7 @@ import SwiftUI
 struct GeneralSettingsView: View {
     let showTutorial: () -> Void
     @ObservedObject var config = UserConfig.shared
+    @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
     @StateObject private var loginItem = LoginItemController()
     @State private var showingWorkspaceNames = false
@@ -261,11 +262,26 @@ struct GeneralSettingsView: View {
     private var systemPanel: some View {
         HyprPanel("System",
                   footer: loginItemFooter) {
+            HyprRow("Show in Dock", icon: "dock.rectangle",
+                    subtitle: "Off keeps HyprMac out of the Dock and ⌘-Tab.") {
+                Toggle("", isOn: $config.showDockIcon)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+
+            HyprRow("Show in menu bar", icon: "menubar.rectangle",
+                    subtitle: "Off hides the menu bar icon. Open HyprMac again from Spotlight or Finder to get back to Settings.") {
+                Toggle("", isOn: $showMenuBarIcon)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+
             HyprRow("Menu bar workspace indicator", icon: "rectangle.fill.on.rectangle.fill") {
                 Toggle("", isOn: $config.showMenuBarIndicator)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             }
+            .disabled(!showMenuBarIcon)
 
             HyprRow("Allow other apps to control HyprMac", icon: "link",
                     subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.") {

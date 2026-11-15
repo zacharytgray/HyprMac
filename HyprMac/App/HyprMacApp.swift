@@ -13,9 +13,11 @@ struct HyprMacApp: App {
     #if !HYPRMAC_DEBUG_VARIANT
     private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
     #endif
+    // per Mac, off removes the menu bar item. reopening the app shows Settings
+    @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
 
     var body: some Scene {
-        MenuBarExtra {
+        MenuBarExtra(isInserted: $showMenuBarIcon) {
             #if HYPRMAC_DEBUG_VARIANT
             MenuBarView(appDelegate: appDelegate)
             #else
