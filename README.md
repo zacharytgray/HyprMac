@@ -301,6 +301,10 @@ Everything, including the Hypr key itself, lives in Settings and is saved as JSO
 `~/Library/Application Support/HyprMac/config.json`. A config file HyprMac can't decode is
 copied to `config.json.unreadable` before a save overwrites it.
 
+HyprMac lives in the menu bar and stays out of the Dock. Settings → General → System can add a
+Dock icon or hide the menu bar icon. Opening HyprMac again from Spotlight or Finder, or clicking
+its Dock icon, opens Settings.
+
 HyprMac checks for updates on its own through Sparkle and offers to install them, or use the
 menu bar icon → "Check for updates…". Homebrew installs can run `brew upgrade --cask hyprmac`.
 After any update, macOS may ask you to re-grant Accessibility permission, because the signature

@@ -223,6 +223,22 @@ private struct MenuBarRow<Trailing: View>: View {
     }
 }
 
+/// Opens the Settings window from AppKit code, such as a reopen of the app.
+/// SwiftUI only hands out `openWindow` inside views, so the menu bar label
+/// stores it when it first appears. The label is built even while the menu
+/// bar item is hidden.
+enum SettingsWindow {
+    static var openWindow: OpenWindowAction?
+
+    @discardableResult
+    static func show() -> Bool {
+        guard let openWindow else { return false }
+        openWindow(id: "settings")
+        NSApp.activate(ignoringOtherApps: true)
+        return true
+    }
+}
+
 // Bridge for the menu bar label between WindowManager (which knows the
 // workspace state but is not available at app init) and the SwiftUI
 // MenuBarExtra label (which is built before WindowManager exists).
@@ -308,8 +324,13 @@ enum MenuBarPresentation {
 struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        content.onAppear { SettingsWindow.openWindow = openWindow }
+    }
+
+    @ViewBuilder private var content: some View {
         if MenuBarPresentation.showsIndicator(
             indicatorEnabled: config.showMenuBarIndicator,
             hasData: state.hasData,

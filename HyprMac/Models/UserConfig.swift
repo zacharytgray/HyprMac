@@ -199,6 +199,9 @@ class UserConfig: ObservableObject {
     }
 
     static let showDockIconKey = "showDockIcon"
+    // per Mac too. read through @AppStorage by the menu bar scene and the
+    // Settings toggle; a direct UserDefaults write can miss the first update
+    static let showMenuBarIconKey = "showMenuBarIcon"
 
     // per Mac like iCloud sync: stored in UserDefaults, not config.json.
     // off (the default) keeps HyprMac out of the Dock; AppDelegate applies it

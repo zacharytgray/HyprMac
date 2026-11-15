@@ -76,6 +76,16 @@ final class RuntimeVariantTests: XCTestCase {
         XCTAssertEqual(AppDelegate.activationPolicy(showDockIcon: true), .regular)
     }
 
+    // LSUIElement keeps a second `open` of the running app from making it
+    // a Dock app again, which undid Show in Dock = off
+    func testAppBundleStartsOutOfTheDock() throws {
+        let plist = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("HyprMac/Info.plist")
+        let info = try XCTUnwrap(NSDictionary(contentsOf: plist))
+        XCTAssertEqual(info["LSUIElement"] as? Bool, true)
+    }
+
     func testDebugSkipsUpdateWelcomeForExistingReleaseUser() {
         XCTAssertNil(RuntimeVariant.shouldShowWelcome(
             hasSeenOnboarding: true, lastVersion: nil,
