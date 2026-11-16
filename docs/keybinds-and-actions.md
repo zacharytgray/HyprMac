@@ -191,6 +191,17 @@ app:
   sent the window somewhere else, HyprMac switches to that workspace and
   focuses the window afterwards, the Hyprland default. With several such
   windows in one pass it follows the focused one.
+- **Reopened windows.** Some apps (Mail, Teams, Mimestream, Slack) reuse a
+  closed window's id, so discovery reports the reopen as a return of the
+  ghost. When a verified close comes back on screen while its recorded
+  workspace is hidden, discovery drifts it onto the visible workspace and
+  marks it (`WindowChanges.reopenedOntoHiddenWorkspace`). For a pinned app
+  that drift is dropped and the window goes through `assignNewWindows` like
+  a new window: its pin, the same spill and the same follow. A scratchpad
+  pin adopts it. The log reads `window rule: <bundle> (<id>) reopened,
+  pinned to ws<N>`. Any other return keeps its workspace, including a
+  reopen or flap on its own visible workspace. An unpinned app's reopen
+  still drifts to the visible workspace.
 - **Never tile apps.** They stay floating and still go to their pin.
   `WorkspaceOrchestrator.placePinnedFloater` carries the floater to the
   workspace's display, and parks it with that frame saved when the
@@ -202,7 +213,8 @@ app:
   the same pass.
 - **Skipped:** Quick Look previews (they belong to whichever app opened
   them), windows on a disabled monitor, a rule naming a workspace outside
-  1–10, and windows that come back from hidden. A new pinned window that
+  1–10, and windows that come back from a minimize, Cmd-H or an unreadable
+  hold (they keep their workspace). A new pinned window that
   finds every workspace full stays on the one where it opened.
 
 Between those moments a pin is not a tether: a window moved elsewhere

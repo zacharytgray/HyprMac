@@ -193,7 +193,8 @@ final class ActionDispatcher {
     ///   `retile` and workspace assignment do not re-query AX.
     func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow])
         -> [TilingEngine.AdmissionResult] {
-        let pinFollow = admitNewWindows(changes)
+        let pinnedReopens = pinnedReopenedWindows(changes)
+        let pinFollow = admitNewWindows(changes, pinnedReopens: pinnedReopens)
 
         // engine/workspace/focus cleanup for ids the service forgot. out of
         // its tree first: the removal remembers the window's slot and the
@@ -218,8 +219,10 @@ final class ActionDispatcher {
         // re-lays its own members here
         scratchpadDiscovery(changes.goneIDs, changes.returned)
 
-        // apply cross-screen drift reassignments.
-        for drift in changes.screenDrift {
+        // apply cross-screen drift reassignments. a pinned reopen went to
+        // its pin above instead
+        let pinPlaced = Set(pinnedReopens.map(\.windowID))
+        for drift in changes.screenDrift where !pinPlaced.contains(drift.windowID) {
             workspaceManager.moveWindow(drift.windowID, toWorkspace: drift.toWorkspace)
         }
 
@@ -273,11 +276,23 @@ final class ActionDispatcher {
         return results
     }
 
+    /// Pinned windows discovery drifted as reopened onto a hidden workspace:
+    /// a verified close whose app gave the id back. Each is placed like a new
+    /// window of its app, so it goes to its pin instead of the visible
+    /// workspace. Any other return keeps its workspace; a pin is no tether.
+    private func pinnedReopenedWindows(_ changes: WindowChanges) -> [HyprWindow] {
+        changes.returned.filter { window in
+            changes.reopenedOntoHiddenWorkspace.contains(window.windowID)
+                && (pinnedWorkspace(for: window) != nil || isPinnedToScratchpad(window))
+        }
+    }
+
     /// Recycled-id cleanup, scratchpad adoption and workspace assignment
-    /// for this diff's new windows.
+    /// for this diff's new windows, and for reopened windows a rule pins.
     ///
     /// - Returns: the pinned window to follow onto its workspace, if any.
-    private func admitNewWindows(_ changes: WindowChanges) -> PinnedLanding? {
+    private func admitNewWindows(_ changes: WindowChanges,
+                                 pinnedReopens: [HyprWindow] = []) -> PinnedLanding? {
         // CGWindowIDs get recycled. an id discovery calls new is a different
         // window from the one that held it, so it must not inherit that
         // window's verified admission — an inherited incumbency costs it its
@@ -295,12 +310,19 @@ final class ActionDispatcher {
                 _ = admitToScratchpad(w)
             }
         }
+        for w in pinnedReopens where isPinnedToScratchpad(w) {
+            hyprLog(.notice, .orchestration, "window rule: \(w.bundleID ?? "?") (\(w.windowID)) reopened, pinned to the scratchpad")
+            adoptPinnedToScratchpad(w)
+        }
 
         // workspace assignment for new windows that didn't auto-float onto a
         // disabled monitor. assigning by physical screen — cursor-based was
         // unreliable under multi-monitor + display-reconfig churn.
+        let reopenedIDs = Set(pinnedReopens.map(\.windowID))
         return assignNewWindows(
-            changes.newWindows.filter { !changes.newOnDisabledMonitor.contains($0.windowID) },
+            changes.newWindows.filter { !changes.newOnDisabledMonitor.contains($0.windowID) }
+                + pinnedReopens.filter { !isPinnedToScratchpad($0) },
+            reopenedIDs: reopenedIDs,
             fullyForgottenIDs: changes.fullyForgottenIDs
         )
     }
@@ -452,8 +474,12 @@ final class ActionDispatcher {
     /// assignment: a recycled `CGWindowID` could carry a leftover entry
     /// pointing at a workspace the user has not touched in days.
     ///
+    /// A pinned reopen (`reopenedIDs`) takes the same path: it carries a
+    /// stale assignment of its own, which this overwrites the same way.
+    ///
     /// - Returns: the pinned window to follow onto its workspace, if any.
-    private func assignNewWindows(_ windows: [HyprWindow], fullyForgottenIDs: Set<CGWindowID>) -> PinnedLanding? {
+    private func assignNewWindows(_ windows: [HyprWindow], reopenedIDs: Set<CGWindowID> = [],
+                                  fullyForgottenIDs: Set<CGWindowID>) -> PinnedLanding? {
         let admittedIDs = Set(Self.newWindowIDsForAdmission(
             windows.map(\.windowID), workspaceFor: workspaceManager.workspaceFor
         ))
@@ -467,8 +493,9 @@ final class ActionDispatcher {
             let screenWorkspace = workspaceManager.workspaceForScreen(screen)
             var workspace = screenWorkspace
             if let pinned = pinnedWorkspace(for: window) {
+                let reopened = reopenedIDs.contains(window.windowID) ? " reopened," : ""
                 hyprLog(.notice, .orchestration,
-                        "window rule: \(window.bundleID ?? "?") (\(window.windowID)) pinned to ws\(pinned)")
+                        "window rule: \(window.bundleID ?? "?") (\(window.windowID))\(reopened) pinned to ws\(pinned)")
                 workspace = pinned
                 openedOn[window.windowID] = screenWorkspace
             }

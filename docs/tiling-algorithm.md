@@ -696,7 +696,10 @@ monitor homes, wrapping after workspace 10.
 A window rule changes only the starting workspace. A new window of a pinned
 app starts at its pinned workspace instead of the active one and spills the
 same way; if every workspace is full it stays on the active one, as it would
-unpinned. Startup and Retile All place pinned windows in their own batches
+unpinned. A pinned app's reopened window (a verified close whose id the app
+reused) that discovery would drift off its hidden workspace takes the same
+path instead of drifting onto the active one.
+Startup and Retile All place pinned windows in their own batches
 ahead of the per-monitor ones, so a pin claims its workspace first. See
 "Window rules" in `docs/keybinds-and-actions.md`. This count limit does not guarantee
 that every application's dimensions will fit.
