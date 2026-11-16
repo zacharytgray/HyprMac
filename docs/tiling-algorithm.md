@@ -740,6 +740,41 @@ Retile All first fill each monitor's visible workspace in stable screen,
 focus, and frame order. Only the excess probes later workspace numbers across
 monitor homes, wrapping after workspace 10.
 
+The starting workspace is the visible workspace of the monitor the window
+opened on, with one exception: an app's first window opens on the monitor
+under the pointer. A window that opened on another monitor goes to the
+visible workspace of the pointer's monitor when all of these hold
+(`ActionDispatcher.cursorPlacement`):
+
+- it is new, or back after a verified close (`reopenedAfterClose`), and not
+  adopted by the scratchpad or opened on a disabled monitor;
+- it is not floating and is not a Quick Look panel;
+- its app has no workspace pin and no scratchpad pin;
+- its app has no other window on screen: none on a visible workspace or in the
+  scratchpad layer while it is up. Floaters count. Quick Look panels do not.
+  Windows of the same app found in the same poll do not count, so an app that
+  restores three windows at launch brings all three;
+- the poll is not the reconcile tick, and no display change is in progress;
+- the pointer's monitor is enabled and has room by the admission count above.
+
+Otherwise the window stays on the monitor it opened on, as before. Startup,
+Retile All and the display reconcile do not use this rule. Nor does a second
+window of an app that already has one on screen.
+
+A moved window is placed by the normal tile pass on the pointer's monitor, so
+it splits the focused tile there. Discovery leaves it out of drift while it is
+on its way (`WindowDiscoveryService.exemptFromDrift`): the exemption ends once
+the window stands mostly on its workspace's screen, after two seconds, or when
+the window is forgotten. Other windows and other polls are not held.
+
+If the pointer's monitor refuses it, the window goes back. The pass rolls a
+failed layout back to where the window opened (`TilingEngine.newcomerOriginSource`
+adds that screen to the restoration reach). When the result names the window
+as refused or stranded, `ActionDispatcher` cancels its admission retry,
+assigns it to the visible workspace of the monitor it opened on, and runs one
+more retile, which places it there by the normal rules. A timeout is not a
+refusal: its retry keeps the window on the pointer's monitor.
+
 A window rule changes only the starting workspace. A new window of a pinned
 app starts at its pinned workspace instead of the active one and spills the
 same way; if every workspace is full it stays on the active one, as it would

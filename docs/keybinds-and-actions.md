@@ -187,6 +187,9 @@ app:
   restart. A build without this option reads `0` as a pin to nothing.
 - **New windows.** `ActionDispatcher.assignNewWindows` uses the pin as the
   preferred workspace instead of the one visible where the window opened.
+  A pin also wins over opening an app's first window on the monitor under
+  the pointer (see the initial assignment paragraphs under "Forced
+  insertion" in `docs/tiling-algorithm.md`).
   A full pinned workspace spills onward, like any admission. If the pin
   sent the window somewhere else, HyprMac switches to that workspace and
   focuses the window afterwards, the Hyprland default. With several such

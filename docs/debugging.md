@@ -442,6 +442,16 @@ the request gets one attempt with them set aside. Look for what follows:
   floor and the focused one did not. Neither line appears when the
   pass had no focused tile in its tree (see "Smart insert" in
   `docs/tiling-algorithm.md`).
+- `open on cursor monitor: '<title>' (<id>) opened on <screen> → ws<N> on
+  <cursor screen>` (notice, orchestration) — an app's first window sent to the
+  monitor under the pointer. `open on cursor monitor skipped: '<title>' (<id>)
+  on <screen>, cursor on <cursor screen>: <reason>` (`.debug`) is a new or
+  reopened window on another monitor left where it opened. The reason is one
+  of `pinned`, `floating`, `quick look panel`, `app has a window on screen`,
+  `workspace full`, `reconcile poll`, `display transition` or `cursor monitor
+  disabled`. `open on cursor monitor refused: (<id>) ws<N> would not take it,
+  back to ws<M> on <screen>` (notice) is the pointer's monitor refusing it;
+  an `admission retry cancelled` line for the same id follows.
 - `window returned: '<title>' (<id>) — reopened after a close` (notice,
   discovery) — a window back after a verified close. The app reused the id
   (Teams does). `slot forgotten: <id> reopened after a close` (`.debug`,
