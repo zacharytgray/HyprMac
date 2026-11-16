@@ -435,6 +435,13 @@ the request gets one attempt with them set aside. Look for what follows:
   before its reveal.
 - `float→tile revalidation: <id> ws<N>` — the toggle's one bypassed
   `forceInsertWindow`.
+- `split focused tile: wid=<id> beside <focused>` (`.debug`, tiling) — a
+  newcomer split the focused tile. `focused tile <focused> passed over:
+  wid=<id> split <tile>` is the same pass sending it elsewhere: the pair did
+  not fit beside the focused tile, or another tile had room above the slot
+  floor and the focused one did not. Neither line appears when the
+  pass had no focused tile in its tree (see "Smart insert" in
+  `docs/tiling-algorithm.md`).
 - `no fitting tile slot: wid=<id> ws<N> — staying in place` — the pass could
   not smart-insert that window into the BSP tree for that workspace. Any
   tiling pass can log it, not just a bypassed one. Nothing routes the window
@@ -765,6 +772,8 @@ transition at `.debug`, so read it in the file log or a live stream. It
 carries a short reason tag (`ensureFocus-tiled`,
 `syncTracker-floating`, `cycleFocus`, etc.). Walk the log
 backwards from the unexpected focus state to find the trigger.
+`new-window` is a tiled newcomer that macOS gave the keyboard taking the
+record after its discovery pass, so the next new window splits it.
 `syncTracker-recovery` is the click hit-test landing on a newcomer in
 admission recovery: it is drawn over the tiles like a floater but it is
 not floating, so it gets its own tag rather than borrowing

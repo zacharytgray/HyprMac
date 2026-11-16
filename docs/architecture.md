@@ -397,7 +397,10 @@ skips the cycle, and `pollWindowChanges` stops there;
   tokens (e.g. `PollingScheduler.pendingPoll`) deliberately do not
   live here.
 - **`TilingEngine`** owns the BSP trees. Nothing else mutates
-  `tree.root`.
+  `tree.root`. Outside state reaches it through closures `WindowManager`
+  wires: `heldWindowIDsSource` (the hold), `pendingRecoverySource` (the
+  recovery's pending set) and `splitTargetSource` (the focus record, the
+  tile a new window splits).
 - **`WorkspaceManager`** owns the workspace↔screen mapping. Nothing
   else writes `monitorWorkspace`. Homes are not stored: they are computed
   through `WorkspaceHomeResolver`.
