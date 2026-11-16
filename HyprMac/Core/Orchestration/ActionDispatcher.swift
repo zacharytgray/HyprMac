@@ -276,19 +276,14 @@ final class ActionDispatcher {
         return results
     }
 
-    /// Reopened windows a rule pins: a verified close whose app gave the id
-    /// back. Each is placed like a new window of its app, so it goes to its
-    /// pin instead of drifting onto the visible workspace. Scratchpad
-    /// members and windows on a disabled monitor are left as they are.
+    /// Pinned windows discovery drifted as reopened onto a hidden workspace:
+    /// a verified close whose app gave the id back. Each is placed like a new
+    /// window of its app, so it goes to its pin instead of the visible
+    /// workspace. Any other return keeps its workspace; a pin is no tether.
     private func pinnedReopenedWindows(_ changes: WindowChanges) -> [HyprWindow] {
         changes.returned.filter { window in
-            guard changes.reopened.contains(window.windowID),
-                  workspaceManager.workspaceFor(window.windowID) != ScratchpadController.workspace
-            else { return false }
-            if let screen = displayManager.screen(for: window), workspaceManager.isMonitorDisabled(screen) {
-                return false
-            }
-            return pinnedWorkspace(for: window) != nil || isPinnedToScratchpad(window)
+            changes.reopenedOntoHiddenWorkspace.contains(window.windowID)
+                && (pinnedWorkspace(for: window) != nil || isPinnedToScratchpad(window))
         }
     }
 

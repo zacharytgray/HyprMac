@@ -63,10 +63,10 @@ struct WindowChanges {
     /// Subset of `returned` that AX confirmed as minimized or Cmd-H'd
     /// while hidden. Not an unreadable hide, and not a verified close.
     var returnedFromUserHide: Set<CGWindowID> = []
-    /// Subset of `returned` that was a verified close: the app reused the
-    /// window's id (Mail, Teams). Not minimized, Cmd-H'd or unreadable. A
-    /// pinned app's reopen goes to its pin instead of drifting.
-    var reopened: Set<CGWindowID> = []
+    /// Subset of `screenDrift`: a verified close whose app reused the id
+    /// (Mail, Teams), back on screen while its recorded workspace is hidden.
+    /// A pinned app's one goes to its pin instead of drifting.
+    var reopenedOntoHiddenWorkspace: Set<CGWindowID> = []
     /// Windows auto-floated as not resizable that a re-check found
     /// resizable. The service cleared their floating flag; the retile
     /// tiles them like any other member of their workspace.
@@ -566,7 +566,7 @@ final class WindowDiscoveryService {
         stateCache.reservedHiddenWindowIDs.subtract(returned.map { $0.windowID })
         stateCache.reservedHiddenWindowIDs.formIntersection(stateCache.hiddenWindowIDs)
         unverifiedReservedIDs = unverifiedReservedIDs.filter { stateCache.hiddenWindowIDs.contains($0.key) }
-        let drift = detectScreenDrift(snapshot, justReturned: reopened)
+        let (drift, reopenedOntoHidden) = detectScreenDrift(snapshot, justReturned: reopened)
 
         quickLookPanelIDs = Set(snapshot.lazy.filter(\.isQuickLookPanel).map(\.windowID))
 
@@ -582,7 +582,7 @@ final class WindowDiscoveryService {
             focusedWindowGone: focusedGone,
             requestsRecheck: false,
             returnedFromUserHide: fromUserHide,
-            reopened: reopened,
+            reopenedOntoHiddenWorkspace: reopenedOntoHidden,
             unfloated: unfloated
         )
     }
@@ -835,9 +835,12 @@ final class WindowDiscoveryService {
     /// covers hide-corner park slivers and stale/transient AX reads, so
     /// drift only ever acts on a window the user can actually see.
     private func detectScreenDrift(_ allWindows: [HyprWindow],
-                                   justReturned: Set<CGWindowID> = []) -> [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)] {
+                                   justReturned: Set<CGWindowID> = [])
+        -> (drifts: [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)],
+            reopenedOntoHidden: Set<CGWindowID>) {
         let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
         var drifts: [(CGWindowID, Int, Int)] = []
+        var reopenedOntoHidden: Set<CGWindowID> = []
         for w in allWindows {
             guard let recordedWs = workspaceManager.workspaceFor(w.windowID) else { continue }
             // scratchpad members (ws 0) never drift — a tiled member is
@@ -880,9 +883,10 @@ final class WindowDiscoveryService {
                 if !visibleWorkspaces.contains(recordedWs) { continue }
             }
             drifts.append((w.windowID, recordedWs, physicalWs))
+            if reopenedOntoHiddenWs { reopenedOntoHidden.insert(w.windowID) }
             hyprLog(.notice, .discovery, "drift: '\(w.title ?? "?")' (\(w.windowID)) ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))\(reopenedOntoHiddenWs ? " [reopened onto hidden ws]" : "")")
         }
-        return drifts
+        return (drifts, reopenedOntoHidden)
     }
 
     /// Screen with the largest overlap area with `w`'s frame, or nil when

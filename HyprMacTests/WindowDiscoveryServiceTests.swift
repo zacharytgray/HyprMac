@@ -804,25 +804,41 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertFalse(cache.reservedHiddenWindowIDs.contains(13))
     }
 
-    // only a verified close is a reopen: a pin may move it, a user hide never
-    func testOnlyAVerifiedCloseReturnsAsAReopen() {
+    // the reopen drift is the one a pin may redirect: a verified close back
+    // on screen while its recorded workspace is hidden. a minimize keeps its
+    // workspace, and a reopen on its own visible workspace does not drift
+    func testOnlyAReopenOntoAHiddenWorkspaceIsMarked() {
+        let screen = DiscoveryDriftScreen()
+        let display = DisplayManager(screenSource: { [screen] })
+        let workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        _ = workspaces.switchWorkspace(4, cursorScreen: screen)
         let access = StubAccessibility()
-        let (svc, cache, _) = makeService(accessibility: access)
-        cache.knownWindowIDs = [15, 16]
-        cache.windowOwners[15] = 8500
-        cache.windowOwners[16] = 8500
+        let cache = WindowStateCache()
+        let svc = WindowDiscoveryService(stateCache: cache, accessibility: access,
+                                         displayManager: display, workspaceManager: workspaces,
+                                         bundleIDForPID: { _ in nil }, isWindowSizeSettable: { _ in true })
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let closedOnHidden = DiscoveryFramedWindow(id: 15, frame: frame)
+        let minimized = DiscoveryFramedWindow(id: 16, frame: frame)
+        let closedOnVisible = DiscoveryFramedWindow(id: 17, frame: frame)
+        cache.knownWindowIDs = [15, 16, 17]
+        for id: CGWindowID in [15, 16, 17] { cache.windowOwners[id] = 8500 }
+        workspaces.assignWindow(15, toWorkspace: 1)
+        workspaces.assignWindow(16, toWorkspace: 1)
+        workspaces.assignWindow(17, toWorkspace: 4)
 
         access.stateAnswer = .absent
-        _ = compute(svc, snapshot: [makeWindow(id: 16, pid: 8500)], runningPIDs: [8500])
+        _ = compute(svc, snapshot: [minimized], runningPIDs: [8500])
         access.stateAnswer = .minimized
         _ = compute(svc, snapshot: [], runningPIDs: [8500])
 
-        let back = compute(svc, snapshot: [makeWindow(id: 15, pid: 8500), makeWindow(id: 16, pid: 8500)],
-                           runningPIDs: [8500])
+        let back = compute(svc, snapshot: [closedOnHidden, minimized, closedOnVisible], runningPIDs: [8500])
 
-        XCTAssertEqual(Set(back.returned.map(\.windowID)), [15, 16])
-        XCTAssertEqual(back.reopened, [15])
-        XCTAssertEqual(back.returnedFromUserHide, [16])
+        XCTAssertEqual(Set(back.returned.map(\.windowID)), [15, 16, 17])
+        XCTAssertEqual(back.screenDrift.map(\.windowID), [15])
+        XCTAssertEqual(back.screenDrift.first?.toWorkspace, 4)
+        XCTAssertEqual(back.reopenedOntoHiddenWorkspace, [15])
     }
 
     // MARK: - gone (dead pid → fully forgotten)
@@ -1451,4 +1467,19 @@ final class AXWindowMatcherTests: XCTestCase {
         XCTAssertEqual(result.bound, [.init(index: 0, windowID: 2, fallbackDistance: 30),
                                       .init(index: 1, windowID: 1, fallbackDistance: 2)])
     }
+}
+
+private final class DiscoveryDriftScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 0, y: 0, width: 1600, height: 1000) }
+    override var visibleFrame: NSRect { frame }
+}
+
+private final class DiscoveryFramedWindow: HyprWindow {
+    let storedFrame: CGRect
+    init(id: CGWindowID, frame: CGRect) {
+        storedFrame = frame
+        super.init(element: AXUIElementCreateApplication(8500), windowID: id, ownerPID: 8500)
+    }
+    override func readPosition() -> (AXError, CGPoint?) { (.success, storedFrame.origin) }
+    override func readSize() -> (AXError, CGSize?) { (.success, storedFrame.size) }
 }

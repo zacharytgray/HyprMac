@@ -193,12 +193,15 @@ app:
   windows in one pass it follows the focused one.
 - **Reopened windows.** Some apps (Mail, Teams, Mimestream, Slack) reuse a
   closed window's id, so discovery reports the reopen as a return of the
-  ghost (`WindowChanges.reopened`: a verified close, not a minimize, Cmd-H
-  or unreadable hold). A pinned app's reopen skips the ghost's drift onto
-  the visible workspace and goes through `assignNewWindows` like a new
-  window: its pin, the same spill and the same follow. A scratchpad pin
-  adopts it. The log reads `window rule: <bundle> (<id>) reopened, pinned
-  to ws<N>`. An unpinned app's reopen still lands on the visible workspace.
+  ghost. When a verified close comes back on screen while its recorded
+  workspace is hidden, discovery drifts it onto the visible workspace and
+  marks it (`WindowChanges.reopenedOntoHiddenWorkspace`). For a pinned app
+  that drift is dropped and the window goes through `assignNewWindows` like
+  a new window: its pin, the same spill and the same follow. A scratchpad
+  pin adopts it. The log reads `window rule: <bundle> (<id>) reopened,
+  pinned to ws<N>`. Any other return keeps its workspace, including a
+  reopen or flap on its own visible workspace. An unpinned app's reopen
+  still drifts to the visible workspace.
 - **Never tile apps.** They stay floating and still go to their pin.
   `WorkspaceOrchestrator.placePinnedFloater` carries the floater to the
   workspace's display, and parks it with that frame saved when the
