@@ -1725,7 +1725,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.23.0;
+				MARKETING_VERSION = 0.24.0;
 				OTHER_LDFLAGS = (
 					"-F/System/Library/PrivateFrameworks",
 					"-framework",
@@ -1832,7 +1832,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 107;
+				CURRENT_PROJECT_VERSION = 108;
 				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = HyprMac/Info.plist;
@@ -1840,7 +1840,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.23.0;
+				MARKETING_VERSION = 0.24.0;
 				OTHER_LDFLAGS = (
 					"-F/System/Library/PrivateFrameworks",
 					"-framework",
@@ -1868,7 +1868,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.23.0;
+				MARKETING_VERSION = 0.24.0;
 				OTHER_LDFLAGS = (
 					"-F/System/Library/PrivateFrameworks",
 					"-framework",
@@ -1890,7 +1890,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 107;
+				CURRENT_PROJECT_VERSION = 108;
 				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
 				ENABLE_HARDENED_RUNTIME = NO;
 				INFOPLIST_FILE = HyprMac/Info.plist;
@@ -1898,7 +1898,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.23.0;
+				MARKETING_VERSION = 0.24.0;
 				OTHER_LDFLAGS = (
 					"-F/System/Library/PrivateFrameworks",
 					"-framework",
