@@ -256,6 +256,7 @@ final class ActionDispatcher {
                 changes.goneIDs.isEmpty ? nil : "gone=\(changes.goneIDs.sorted())",
                 changes.returned.isEmpty ? nil : "returned=\(changes.returned.map(\.windowID).sorted())",
                 changes.screenDrift.isEmpty ? nil : "drift=\(changes.screenDrift.map(\.windowID).sorted())",
+                changes.unfloated.isEmpty ? nil : "unfloated=\(changes.unfloated.sorted())",
             ].compactMap { $0 }.joined(separator: " ")
             hyprLog(.notice, .discovery, "discovery retile: \(causes)")
             // let surrounding windows fill gaps / make room.

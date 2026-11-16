@@ -1222,7 +1222,7 @@ AX walk within its budget again
 A new window whose size is not settable floats, and is asked again 0.5, 1.5
 and 3.5 s later. If it became resizable and is still floating, not on the
 scratchpad, and not on a disabled monitor, it goes back to tiling through
-the next retile. Its `discovery retile:` line names no cause for it.
+the next retile. Its `discovery retile:` line names it as `unfloated=[…]`.
 
 ```
 auto-float window is not resizable: 'Untitled' (4630) com.example.App — re-checked 3 times over 3.5s
@@ -1306,7 +1306,7 @@ window(s)`, see "A window vanished for a poll"). Notice-tier evidence chain (all
   discovery transitions.
 - `FLAP: '<title>' (<id>) returned <ms>ms after vanishing` — a return within
   5 s of vanishing, i.e. almost certainly not a real minimize.
-- `discovery retile: new=[...] gone=[...] returned=[...] drift=[...]` — one line per
+- `discovery retile: new=[...] gone=[...] returned=[...] drift=[...] unfloated=[...]` — one line per
   discovery-driven re-layout naming its cause. Only the causes that apply are printed.
 
 Pull with:
