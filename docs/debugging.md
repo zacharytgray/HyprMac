@@ -1018,9 +1018,76 @@ looked", which only the file log keeps:
 
 - `ax event: windowDestroyed pid=1304` — one per AX notification, kind
   and pid only.
-- `poll: 14 windows, 213ms since last` — at the top of every
-  `pollWindowChanges`, with the snapshot size and the elapsed wall
-  clock since the previous poll.
+- `poll: 14 windows, 213ms since last, trigger create+focus, waited 200ms`
+  — at the top of every `pollWindowChanges`, with the snapshot size, the
+  elapsed wall clock since the previous poll, and what asked for this one
+  (`PollTrigger`; `reconcile` is the 10 s timer, `direct` a call outside
+  the scheduler).
+
+### A new window took seconds to tile
+
+```
+subsystem:com.zachgray.HyprMac category:discovery
+```
+
+The create-to-admission chain logs at `[notice] [discovery]`, so a Release
+log shows where the time went. A normal window open is two lines:
+
+```
+ax windowCreated pid=1159: poll due in 200ms
+new-window watch pid=1159 (windowCreated): admitted [4628] 210ms after the event, retries 0, poll (create, waited 200ms)
+```
+
+The first line also reads `rides the pending poll (due in 40ms)`,
+`pending poll (due in 10ms) kept, trailing poll due in 200ms` (a poll
+already due runs first and a second one 0.2 s after the create), or
+`pending poll moved up`. `, polls held: workspace transition (900ms left)`
+(or `mouse button down`, `tiled drag finishing`) means a suppression holds
+polls at that moment. The `poll (…)` part of the second line names the poll's
+triggers, its wait, and `deferred 900ms by workspace transition (…)` when a
+suppression held it.
+
+A poll that ran but did not admit the window, and the retries after it:
+
+```
+poll deferred: workspace transition (1200ms left) (trigger create)
+new-window watch pid=1159 (windowCreated): poll (create, waited 210ms) admitted nothing — AX 1, CG 2, unknown on screen [4628], unreadable 0; retry 1/3 in 300ms
+new-window watch pid=1159 (windowCreated): nothing admitted after 3 retries, 2310ms — AX 1, CG 2, unknown on screen [4628], unreadable 0; left to the reconcile
+```
+
+`AX` counts the app's windows the walk kept, `CG` its on-screen layer-0
+windows, `unknown on screen` the ones discovery does not know (40 pt or
+larger), and `unreadable` those the walk could not read. `CG` above `AX`
+with the window in `unknown` means AX did not list or answer for it. A
+window that stays in `unknown` after the retries and also has an `AX filter
+dropped` line was rejected on purpose. A create whose window a focus poll
+already admitted ends with a `.debug` `nothing unknown on screen` line
+after one extra look.
+
+A focus or main-window change that names a known window still polls when
+the app has an unknown window on screen that no poll has seen yet:
+
+```
+ax axMain pid=1159: window(s) [4628] on screen that no poll has seen — poll due in 150ms
+```
+
+If the 10 s reconcile timer is what found a window, one line says whether
+the app sent anything:
+
+```
+reconcile poll found new window(s) [4628] of pid=1159: on screen at least 4650ms; last ax event from it: windowCreated 4600ms ago; last windowCreated 4600ms ago
+reconcile poll found new window(s) [4630] of pid=812: no earlier poll or focus check saw it on screen; no ax event from it since launch; no windowCreated
+```
+
+The first shape is the event path failing after the event arrived; the
+retry lines above it say why. The second is a missed or never-sent event.
+A press whose mouse-up never arrived used to defer every poll until the
+pointer moved; a deferral now clears it after two checks with no button
+held, `[notice] [mouse]`:
+
+```
+press state stuck with no button held — clearing so the deferred poll runs
+```
 
 ### Windows rearranged after a lock or sleep
 

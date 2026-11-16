@@ -4,6 +4,32 @@
 
 import Cocoa
 
+/// A press the drag state still holds with no button physically down: the
+/// mouse-up never reached HyprMac. The release can also just be queued
+/// behind the check, so a press counts as stale only when two checks at
+/// least `confirmAfter` apart both find the button up.
+struct StalePressCheck {
+    static let confirmAfter: CFTimeInterval = 0.25
+    private var upSince: CFAbsoluteTime?
+
+    /// A new press starts the count over.
+    mutating func reset() { upSince = nil }
+
+    mutating func isStale(pressHeld: Bool, physicalDown: Bool, now: CFAbsoluteTime) -> Bool {
+        guard pressHeld, !physicalDown else {
+            upSince = nil
+            return false
+        }
+        guard let since = upSince else {
+            upSince = now
+            return false
+        }
+        guard now - since >= Self.confirmAfter else { return false }
+        upSince = nil
+        return true
+    }
+}
+
 /// Mouse-driven focus controller for focus-follows-mouse (FFM).
 ///
 /// `handleMouseMove` fires on every `NSMouseMoved` event, so the hot

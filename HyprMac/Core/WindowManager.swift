@@ -122,6 +122,11 @@ class WindowManager {
     // between a destroy notification and the poll that acted on it.
     private var lastPollAt: Date?
 
+    // re-polls an app's announced window until a poll admits it
+    private var discoveryFollowUp = DiscoveryFollowUp()
+    // a press whose mouse-up never came, checked when it defers a poll
+    private var stalePress = StalePressCheck()
+
     // mouse tracking
     private var mouseMoveMonitor: Any?
     private var mouseDownMonitor: Any?
@@ -216,7 +221,7 @@ class WindowManager {
         self.config = config
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
-        self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
+        self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .park) }
         self.tilingEngine = TilingEngine(displayManager: displayManager)
         self.tilingEngine.keepFixedSizeHints(in: .shared)
         self.discovery = WindowDiscoveryService(
@@ -267,7 +272,7 @@ class WindowManager {
         self.workspaceOrchestrator.onWillSwitch = { [weak self] workspace, screen in
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
-        self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
+        self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
         self.workspaceOrchestrator.onDidSwitch = { [weak self] _, _ in
             self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()
@@ -328,9 +333,30 @@ class WindowManager {
         // mouseUp instead of being lost until the 10s reconcile.
         pollingScheduler.isSuppressed = { [weak self] in
             guard let self else { return false }
+            // hover clears a press whose mouse-up never came, but only on a
+            // move. typing with the pointer still kept every poll deferred
+            if self.stalePress.isStale(pressHeld: self.mouseButtonDown,
+                                       physicalDown: self.mouseTracker.isPhysicalButtonDown(),
+                                       now: CFAbsoluteTimeGetCurrent()) {
+                hyprLog(.notice, .mouse, "press state stuck with no button held — clearing so the deferred poll runs")
+                self.clearStalePress()
+            }
             return self.mouseButtonDown
                 || self.tiledDrag.isFinishingDrag
                 || self.suppressions.isSuppressed(.workspaceTransition)
+        }
+        pollingScheduler.suppressionReason = { [weak self] in
+            guard let self else { return "stopped" }
+            if self.mouseButtonDown { return "mouse button down" }
+            if self.tiledDrag.isFinishingDrag { return "tiled drag finishing" }
+            let left = self.suppressions.remaining(.workspaceTransition).map { " (\(Int(($0 * 1000).rounded()))ms left)" } ?? ""
+            return "workspace transition" + left
+        }
+        // a transition's end is known, so a deferred poll runs right then
+        // rather than up to one 0.3 s step later
+        pollingScheduler.suppressionEndsIn = { [weak self] in
+            guard let self, !self.mouseButtonDown, !self.tiledDrag.isFinishingDrag else { return nil }
+            return self.suppressions.remaining(.workspaceTransition)
         }
 
         hotkeyManager.onAction = { [weak self] action in
@@ -486,7 +512,7 @@ class WindowManager {
         tiledDrag.acceptTiledDragCapture = { [weak self] frames in self?.acceptTiledDragCapture(frames) }
         tiledDrag.isFullscreenSuppressed = { [weak self] w in self?.isFullscreenSuppressed(focused: w) ?? false }
         tiledDrag.refreshDimming = { [weak self] rects in self?.refreshDimming(tiledRectsOverride: rects) }
-        tiledDrag.schedulePoll = { [weak self] in self?.pollingScheduler.schedule() }
+        tiledDrag.schedulePoll = { [weak self] in self?.pollingScheduler.schedule(trigger: .drag) }
         focusBorder.onErrorFeedbackFinishedToken = { [weak self] token in
             self?.tiledDragFeedback.errorFinished(token: token)
         }
@@ -785,17 +811,29 @@ class WindowManager {
         axNotifications.onEvent = { [weak self] kind, pid in
             guard let self else { return }
             hyprLog(.debug, .discovery, "ax event: \(kind) pid=\(pid)")
+            self.discoveryFollowUp.noteEvent("\(kind)", pid: pid, now: CFAbsoluteTimeGetCurrent())
             switch kind {
             case .windowDestroyed:
                 self.destroyRecheck.noteDestroy(pid: pid)
-                self.pollingScheduler.schedule()
-            case .windowCreated, .windowMiniaturized, .windowDeminiaturized:
+                self.pollingScheduler.schedule(trigger: .destroy)
+            case .windowCreated, .windowDeminiaturized:
+                // trailing: a poll already pending can run ms after this,
+                // before AX lists the window. the watch re-polls if this one
+                // misses it too
+                self.discoveryFollowUp.watch(pid: pid, reason: "\(kind)", blindRetry: true,
+                                             now: CFAbsoluteTimeGetCurrent())
+                let outcome = self.pollingScheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+                hyprLog(.notice, .discovery, "ax \(kind) pid=\(pid): \(outcome.description)"
+                        + (self.pollHoldReason.map { ", polls held: \($0)" } ?? ""))
+            case .windowMiniaturized:
                 self.pollingScheduler.schedule(after: 0.2)
             case .focusedWindowChanged:
                 self.scheduleFocusPoll(pid: pid, via: "axFocus", after: 0.15)
                 self.scheduleRestackRefresh(after: 0.05)
             case .mainWindowChanged:
-                // a new main window usually came forward; nothing to discover
+                // a new main window usually came forward. it needs a poll
+                // only if the app has a window on screen no poll has seen
+                self.pollIfUnseenWindow(pid: pid, via: "axMain", after: 0.15)
                 self.scheduleRestackRefresh(after: 0.05)
             }
         }
@@ -979,6 +1017,7 @@ class WindowManager {
         restoreAllWindows()
         axNotifications.detachAll()
         pollingScheduler.stop()
+        discoveryFollowUp = DiscoveryFollowUp()
         screenshotPicker.stop()
         stopMouseTracking()
         if !keepPauseShortcut { hotkeyManager.stop() }
@@ -1057,6 +1096,7 @@ class WindowManager {
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self else { return }
             self.mouseDragLifecycle.beginPress(hyprHeld: self.hyprHeld)
+            self.stalePress.reset()
             self.mouseDownFloatingWindowID = 0
             self.mouseDownFloatingFrame = nil
             // the event carries the exact click location. sampling
@@ -2290,11 +2330,12 @@ class WindowManager {
         // a hypothetical direct call landing mid-drag.
         guard !mouseButtonDown else { return }
 
+        let fire = pollingScheduler.currentFire
         let allWindows = accessibility.getAllWindows()
         let now = Date()
         let gap = lastPollAt.map { "\(Int(now.timeIntervalSince($0) * 1000))ms since last" } ?? "first poll"
         lastPollAt = now
-        hyprLog(.debug, .discovery, "poll: \(allWindows.count) windows, \(gap)")
+        hyprLog(.debug, .discovery, "poll: \(allWindows.count) windows, \(gap), trigger \(fire?.summary ?? "direct")")
         // add window-level AX subscriptions (destroy / miniaturize) for any
         // new windows in this snapshot — deduped by CGWindowID inside.
         axNotifications.ensureWindowSubscriptions(for: allWindows)
@@ -2354,11 +2395,68 @@ class WindowManager {
             // a real mass close is delayed by this, a partial snapshot gets
             // the time it needs to fill in. at 0.1 s the three skips the
             // guard allows were over in a third of a second
-            pollingScheduler.schedule(after: 0.5)
+            pollingScheduler.schedule(after: 0.5, trigger: .recheck)
         } else if destroyRecheck.resolve(goneIDs: changes.goneIDs, ownersBefore: ownersBefore,
                                          runningPIDs: runningPIDs) {
             hyprLog(.debug, .discovery, "destroy recheck: closed window not yet gone from the snapshot — re-polling")
-            pollingScheduler.schedule(after: DestroyRecheck.delay)
+            pollingScheduler.schedule(after: DestroyRecheck.delay, trigger: .recheck)
+        }
+        settleDiscoveryFollowUps(changes, allWindows: allWindows, fire: fire)
+    }
+
+    /// After a poll: say how a reconcile tick came to be the one that found
+    /// a window, and re-poll an app whose announced window this poll missed.
+    private func settleDiscoveryFollowUps(_ changes: WindowChanges, allWindows: [HyprWindow],
+                                          fire: PollingScheduler.Fire?) {
+        let now = CFAbsoluteTimeGetCurrent()
+        let stack = WindowStacking.onScreen() ?? []
+        let unknown = DiscoveryFollowUp.unknownOnScreen(
+            stack, known: stateCache.knownWindowIDs, hidden: stateCache.hiddenWindowIDs, ownPID: getpid())
+        var admitted: [pid_t: [CGWindowID]] = [:]
+        for w in changes.newWindows + changes.returned { admitted[w.ownerPID, default: []].append(w.windowID) }
+
+        // the event path should have found these. the line says whether an
+        // event came and how long the window sat there
+        if fire?.isReconcileOnly == true {
+            var found: [pid_t: [CGWindowID]] = [:]
+            for w in changes.newWindows { found[w.ownerPID, default: []].append(w.windowID) }
+            for (pid, ids) in found.sorted(by: { $0.key < $1.key }) {
+                let seen = ids.compactMap { discoveryFollowUp.onScreenMS($0, now: now) }.max()
+                let event = discoveryFollowUp.lastEvent[pid].map {
+                    "last ax event from it: \($0.kind) \(Int(((now - $0.at) * 1000).rounded()))ms ago"
+                } ?? "no ax event from it since launch"
+                let create = discoveryFollowUp.lastCreate[pid].map {
+                    "last windowCreated \(Int(((now - $0) * 1000).rounded()))ms ago"
+                } ?? "no windowCreated"
+                hyprLog(.notice, .discovery, "reconcile poll found new window(s) \(ids.sorted()) of pid=\(pid): "
+                        + (seen.map { "on screen at least \($0)ms" } ?? "no earlier poll or focus check saw it on screen")
+                        + "; \(event); \(create)")
+            }
+        }
+
+        let trigger = "(" + (fire?.summary ?? "direct") + ")"
+        func walk(_ pid: pid_t) -> String {
+            let cg = stack.filter { $0.ownerPID == pid && $0.layer == 0 }
+            let unreadable = cg.filter { accessibility.unreadableWindowIDs.contains($0.windowID) }.count
+            return "AX \(allWindows.filter { $0.ownerPID == pid }.count), CG \(cg.count), "
+                + "unknown on screen \((unknown[pid] ?? []).sorted()), unreadable \(unreadable)"
+        }
+        for outcome in discoveryFollowUp.afterPoll(admitted: admitted, unknown: unknown, now: now) {
+            switch outcome {
+            case let .admitted(pid, ids, afterMS, retries, reason):
+                hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): admitted \(ids) "
+                        + "\(afterMS)ms after the event, retries \(retries), poll \(trigger)")
+            case let .retry(pid, delay, attempt, _, reason):
+                hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): poll \(trigger) admitted nothing — "
+                        + "\(walk(pid)); retry \(attempt)/\(DiscoveryFollowUp.backoff.count) in \(Int(delay * 1000))ms")
+                pollingScheduler.schedule(after: delay, trigger: .followUp)
+            case let .gaveUp(pid, retries, _, afterMS, reason):
+                hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): nothing admitted after "
+                        + "\(retries) retries, \(afterMS)ms — \(walk(pid)); left to the reconcile")
+            case let .settled(pid, retries, reason):
+                hyprLog(.debug, .discovery, "new-window watch pid=\(pid) (\(reason)): nothing unknown on screen "
+                        + "after \(retries) retries — done")
+            }
         }
     }
 
@@ -2373,10 +2471,38 @@ class WindowManager {
             hidden: stateCache.hiddenWindowIDs,
             onVisibleWorkspace: { workspaceManager.workspaceFor($0).map(workspaceManager.isWorkspaceVisible) ?? false })
         if needed {
-            pollingScheduler.schedule(after: delay)
-        } else {
+            pollingScheduler.schedule(after: delay, trigger: .focus)
+        } else if !pollIfUnseenWindow(pid: pid, via: via, after: delay) {
             hyprLog(.debug, .discovery, "focus poll skipped: wid=\(focused ?? 0) via=\(via)")
         }
+    }
+
+    /// Poll when `pid` has a window on screen that discovery does not know
+    /// and no poll has walked past yet. An app that sends no create still
+    /// sends focus and main-window changes when a window opens, and the
+    /// focused one can be a window discovery already knows. One window list
+    /// read per event; the walk only when such a window is there.
+    @discardableResult
+    private func pollIfUnseenWindow(pid: pid_t, via: String, after delay: TimeInterval) -> Bool {
+        guard let stack = WindowStacking.onScreen() else { return false }
+        let now = CFAbsoluteTimeGetCurrent()
+        let unknown = DiscoveryFollowUp.unknownOnScreen(
+            stack.filter { $0.ownerPID == pid }, known: stateCache.knownWindowIDs,
+            hidden: stateCache.hiddenWindowIDs, ownPID: getpid())[pid] ?? []
+        let unseen = discoveryFollowUp.unpolled(unknown, now: now)
+        guard !unseen.isEmpty else { return false }
+        discoveryFollowUp.watch(pid: pid, reason: via, blindRetry: false, now: now)
+        let outcome = pollingScheduler.schedule(after: delay, trigger: .newWindow, trailing: true)
+        hyprLog(.notice, .discovery, "ax \(via) pid=\(pid): window(s) \(unseen.sorted()) on screen that no poll has seen — "
+                + outcome.description + (pollHoldReason.map { ", polls held: \($0)" } ?? ""))
+        return true
+    }
+
+    /// What holds polls off right now, nil when nothing does.
+    private var pollHoldReason: String? {
+        guard mouseButtonDown || tiledDrag.isFinishingDrag
+                || suppressions.isSuppressed(.workspaceTransition) else { return nil }
+        return pollingScheduler.suppressionReason()
     }
 
     /// Same-screen drift: hand this poll's tiled frames to the monitor and
@@ -2533,7 +2659,7 @@ class WindowManager {
         if causedByHyprMac, let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
             scheduleFocusPoll(pid: app.processIdentifier, via: "activation", after: 0.2)
         } else {
-            pollingScheduler.schedule()
+            pollingScheduler.schedule(trigger: .activation)
         }
         // activation brings windows forward; floater cutouts follow the new stack
         scheduleRestackRefresh(after: 0.1)
@@ -2676,7 +2802,7 @@ class WindowManager {
             // idempotent and retries once if the app isn't AX-ready yet.
             axNotifications.attach(pid: app.processIdentifier)
         }
-        pollingScheduler.schedule(after: 0.5)
+        pollingScheduler.schedule(after: 0.5, trigger: .launch)
     }
 
     /// React to an app terminating. Prunes every window owned by the dead
@@ -2687,14 +2813,15 @@ class WindowManager {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
             axNotifications.detach(pid: app.processIdentifier)
             forgetApp(app.processIdentifier)
+            discoveryFollowUp.forget(pid: app.processIdentifier)
         }
-        pollingScheduler.schedule()
+        pollingScheduler.schedule(trigger: .terminate)
     }
 
     /// React to an app being hidden or unhidden (Cmd-H, Hide Others, etc.).
     /// Short delay lets AX settle before discovery picks up the change.
     @objc private func appVisibilityChanged(_ notification: Notification) {
-        pollingScheduler.schedule(after: 0.3)
+        pollingScheduler.schedule(after: 0.3, trigger: .visibility)
     }
 
     /// React to a screen configuration change (monitor connect/disconnect,

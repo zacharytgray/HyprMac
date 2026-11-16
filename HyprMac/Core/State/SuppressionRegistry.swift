@@ -70,6 +70,12 @@ final class SuppressionRegistry {
         return true
     }
 
+    /// Seconds until `key` lifts, nil when it is not active.
+    func remaining(_ key: SuppressionKey) -> TimeInterval? {
+        guard isSuppressed(key), let expiry = until[key] else { return nil }
+        return expiry.timeIntervalSinceNow
+    }
+
     /// Drop `key` immediately, regardless of its expiry.
     func clear(_ key: SuppressionKey) {
         until.removeValue(forKey: key)

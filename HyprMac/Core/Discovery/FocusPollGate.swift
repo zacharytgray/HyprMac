@@ -10,6 +10,10 @@ import CoreGraphics
 /// unread or unknown focus keeps the
 /// poll: some windows announce themselves only through focus. a hidden-ws
 /// focus keeps it too, so park repair still sees a window pulled on screen.
+/// a skipped focus can still poll: when the app has a window on screen
+/// that discovery does not know and no poll has walked past
+/// (`DiscoveryFollowUp`), the focus named an older window while a new one
+/// opened without a create.
 enum FocusPollGate {
     static func needsPoll(focusedID: CGWindowID?,
                           scratchpadUp: Bool,
