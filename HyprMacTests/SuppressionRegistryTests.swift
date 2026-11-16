@@ -128,4 +128,17 @@ final class ExpectedActivationTests: XCTestCase {
         r.clearAll()
         XCTAssertFalse(r.consumeExpectedActivation(of: 4242))
     }
+
+    func testRemainingReportsTheTimeLeftOnlyWhileActive() {
+        let r = SuppressionRegistry()
+        XCTAssertNil(r.remaining(.workspaceTransition))
+        r.suppress(.workspaceTransition, for: 1.5)
+        let left = r.remaining(.workspaceTransition)
+        XCTAssertNotNil(left)
+        XCTAssertLessThanOrEqual(left ?? 0, 1.5)
+        XCTAssertGreaterThan(left ?? 0, 1.0)
+        r.suppress(.workspaceTransition, for: -1)
+        r.clear(.workspaceTransition)
+        XCTAssertNil(r.remaining(.workspaceTransition))
+    }
 }

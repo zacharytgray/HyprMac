@@ -235,7 +235,23 @@ These types decompose what would otherwise be a monolithic
   are the primary trigger. WindowManager suppresses polling while the mouse
   is down, a tiled release is finishing, or a workspace transition is active.
   The drag finishing flag lasts through the deferred settle and verified
-  transaction rather than expiring after a fixed timeout.
+  transaction rather than expiring after a fixed timeout. A suppressed fire
+  is deferred, not dropped: it asks again every 0.3 s, or at the end of the
+  workspace transition when that comes sooner. A deferral that finds the
+  press flag set with no button physically down twice, 0.25 s apart, clears
+  the stale press (a missed mouse-up) so the poll can run.
+  A window create asks for a *trailing* poll: when a poll is already due
+  sooner, that one still runs and a second runs 0.2 s after the create,
+  since the earlier one can land before AX lists the window. Each poll
+  carries its triggers (`PollTrigger`) for the log lines.
+- **`DiscoveryFollowUp`** watches an app after a window create (or a focus
+  or main-window event that showed an unseen window) until a poll admits a
+  window of that app. A poll that misses asks for another at 0.3, 0.6 and
+  1.2 s. The first retry after a create is blind; later ones need an
+  on-screen layer-0 window of the app that discovery does not know. A
+  focus or main-window event on an already known window polls only when the
+  app has such a window that no poll has walked past yet, so a window
+  discovery rejects costs one poll, not one per focus change.
 - **`AXNotificationService`** owns one `AXObserver` per regular app and
   translates their AX notifications (window created / destroyed /
   miniaturized / deminiaturized, focused-window changed, main-window
@@ -306,6 +322,7 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
     → ActionDispatcher.applyChanges
     → TiledDriftMonitor (only when the poll did not retile)
     → WindowPlacement.repairParkedWindows
+    → DiscoveryFollowUp.afterPoll  (re-poll an announced window still missing)
 ```
 
 Per-app AXObserver notifications are the primary discovery trigger; the
@@ -464,6 +481,13 @@ while HyprMac is quit clears every snapshot.
 | `workspaceTransition` | 4 s | Sleep, wake, lock, unlock |
 | `workspaceTransition` | 3 or 6 s | A display timer that waits again: the stability window plus 1 s |
 | `workspaceTransition` | 6 s | A change within 20 s of a wake: `DisplaySettle.wakeSettleWindow` plus 1 s |
+
+`workspaceTransition` holds every discovery poll, new windows included: a
+poll mid-transition reads windows at frames the switch or macOS has not
+settled yet, and screen drift would move them to the wrong workspace. A
+poll deferred by it runs 10 ms after it ends, not on the next 0.3 s step.
+Admitting only new windows during a transition would need an admit-only
+diff in `WindowDiscoveryService`; it does not exist.
 
 ## Threading
 
