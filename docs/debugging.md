@@ -444,6 +444,10 @@ the request gets one attempt with them set aside. Look for what follows:
   without another sizing attempt.
 - `adjusted layout cannot resolve observed constraints — restoring` — an
   impossible adjusted layout. There is no adjusted write.
+- `adjusted layout skipped: wid=<id> floor=<w>x<h> slot=<w>x<h> — a known
+  minimum rules it out` — the adjusted layout would put `wid` in `slot`,
+  below a floor an earlier pass already learned, even after one more
+  adjustment. It comes just before the line above or the topology recovery.
 - An incompatible returning incumbent produces `noFittingSlot(id)` and keeps
   the whole key unverified without writing. It is excluded from recovery
   fallback IDs.
@@ -471,6 +475,36 @@ read`, `begin read gave a non-boolean` and `end` variants. A healthy run
 logs none of them.
 
 Window ids only; no titles.
+
+### Declared size limits from WindowServer
+
+AppKit tells WindowServer each window's min, max and preferred frame size.
+`DeclaredSizeLimits.read` (`PrivateAPI/SkyLightFunctions.swift`) reads it
+with `SLSWindowQueryWindows`, `SLSWindowQueryResultCopyWindows`,
+`SLSWindowIteratorAdvance` and `SLSWindowIteratorGetConstraints`, all looked
+up with `dlsym` at first use. It is logged only, to measure how far the
+declared floor can be trusted. No fit check, layout or `MinSizeMemory`
+reads it. Three `[notice] [tiling]` lines:
+
+```
+declared limits: wid=<id> bundle=<id> min=<w>x<h> max=<w>x<h> pref=<w>x<h>
+declared vs enforced: wid=<id> bundle=<id> declared=<w>x<h> enforced=<w>x<h> verdict=<…>
+declared floor not enforced: wid=<id> bundle=<id> declared=<w>x<h> actual=<w>x<h>
+```
+
+The first comes once, when a new window is assigned a workspace. It reads
+`none` when the read failed. The second comes each time a refusal records
+an observed minimum. `verdict` compares the declared minimum with the
+refused size on the refused axes: `match` within 1 pt, `declaredLow`,
+`declaredHigh`, `undeclared` (a declared min of 1 or less) or `unreadable`.
+`declaredHigh` wins when two axes disagree. The third comes when an
+accepted layout leaves a window more than 1 pt below its declared minimum,
+once per window and declared value. That is the direction that would make
+the declared value refuse slots the app takes: Fantastical declared 838 pt
+wide and took 541.
+
+Sizes include the title bar. No limit reads as 0x0 or 1x1 for min and
+100000 or `inf` for max. A window that cannot resize reads all zeros.
 
 ## On-demand state dump
 

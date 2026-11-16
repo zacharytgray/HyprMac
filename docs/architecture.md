@@ -908,8 +908,9 @@ and HyprMac does not read or change them.
 
 HyprMac runs without disabling SIP, but is not App Store compatible —
 it uses private SkyLight APIs (`_SLPSSetFrontProcessWithOptions`,
-`SLPSPostEventRecordTo`), a private AX API (`_AXUIElementGetWindow`), and
-runs `hidutil` as a process. The public API replacements do not exist.
+`SLPSPostEventRecordTo`, and the `SLSWindowQuery…` calls behind
+`DeclaredSizeLimits`, which only feed logs), a private AX API
+(`_AXUIElementGetWindow`), and runs `hidutil` as a process. The public API replacements do not exist.
 Only the standalone `tools/space-test.swift` probe calls the CGS Space functions.
 
 ## Known limitations
