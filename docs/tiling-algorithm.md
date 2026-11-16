@@ -253,8 +253,17 @@ window's own padding and passes.
 Each attempt has a 0.36-second monotonic deadline and a 12-sample limit.
 Time inside AX calls counts toward that deadline. Individual AX calls use
 a 0.1-second messaging timeout; synchronous calls cannot be interrupted by
-the Swift deadline. Stable off-target frames wait at least 0.24 seconds
-before becoming a geometry rejection. Failed reads and superseded work
+the Swift deadline. A window stable off its target waits at least 0.24
+seconds before it is judged, counted from when its own last setter
+returned. Slow writes to the windows before it do not spend that wait, so
+a stale size read right after its write (Dia reports its old size for a
+while) is never judged a refusal or learned as a minimum. The one thing
+that may run past the deadline is that wait: when every window is stable
+and only an off-target window's settle is still running, the readback
+goes on until the last window's settle and two samples past it, within the
+pass's cap. Without that room, writes that ran long left a real refusal no
+time to be judged. A slow read or a window still moving gets no extra
+time. Failed reads and superseded work
 never become accepted geometry.
 
 A call that AX gives up on after using nearly all of its messaging timeout
@@ -312,7 +321,10 @@ several parked windows has the time their settles take.  A cut wait ends with th
 
 The deadline grows by 80 ms for every target past three and by the
 position settle budget for every position-first target, and the sample
-limit with it.
+limit with it. The capture before the first pass grows the same way, 80 ms
+for every window past three, up to `PassBudget.total`: it reads every
+window's position and size in turn, and eight windows at 25 ms a read ran
+out of the base 0.36 seconds before a single write.
 
 The forward passes of one attempt share one cap (`PassBudget.total`,
 two seconds): the candidate, its adjusted pass, the topology recovery and
@@ -322,7 +334,7 @@ second left does not start.  The rollbacks sit outside the cap.
 A rollback is the safety net, and one cut short stops mid-write with some
 windows still on candidate frames, so each keeps its own deadline of 0.75
 seconds plus 80 ms per target past three. The worst case for one attempt
-of eight windows is about 3.5 seconds: the capture, two seconds of passes,
+of eight windows is about 3.9 seconds: the capture, two seconds of passes,
 and one last rollback. Admission recovery's narrowing rounds for a key
 share one such cap between them, and stop narrowing once it is spent.
 
@@ -332,7 +344,10 @@ written, and its ratios are kept while the membership stays the same. The
 hint counts because it is what another window of the app just refused:
 without it the second Dia window was asked for the 413.5 pt its sibling had
 refused, and refused it too. A `seeded` guess does not shape the pass, and an
-explicit request's bypass reads a hint as zero here as everywhere.
+explicit request's bypass reads a hint as zero here as everywhere. Every path
+that accepts or keeps those first layouts publishes the ratios they were
+laid out from: the first pass, the AX timeout recovery's retry, and a
+timed-out pass the admission recovery keeps.
 
 A window that rounds its size up by less than the size tolerance passes
 its own match and can still fail the pair or the screen: a terminal a

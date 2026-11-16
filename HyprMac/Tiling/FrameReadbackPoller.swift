@@ -248,6 +248,23 @@ struct FrameReadbackPoller {
         return first.allSatisfy { again.actualFrames[$0.key] == $0.value }
     }
 
+    /// The most a capture's deadline grows to, however many windows it
+    /// reads: the whole budget of the forward passes it comes before.
+    static let captureDeadlineCap: TimeInterval = PassBudget.total
+
+    /// `configuration` for a capture of `count` windows. A capture reads
+    /// every window's position and size one after another, so its deadline
+    /// grows per window the way a pass's does. On the base 0.36 s, eight
+    /// windows at 25 ms a read ran out before a single write, and every
+    /// retry ran out the same way.
+    static func captureConfiguration(_ configuration: FrameSizingConfiguration,
+                                     for count: Int) -> FrameSizingConfiguration {
+        var bounded = configuration
+        let cap = max(configuration.deadline, captureDeadlineCap)
+        bounded.deadlineCap = configuration.deadlineCap.map { min($0, cap) } ?? cap
+        return scaled(bounded, for: count)
+    }
+
     func captureFrames(_ windows: [HyprWindow], generation requestedGeneration: UInt64) -> FrameSizingAttempt.Result {
         var seen = Set<CGWindowID>()
         for window in windows where !seen.insert(window.windowID).inserted {
@@ -255,7 +272,8 @@ struct FrameReadbackPoller {
                                              actualFrames: [:])
         }
         let windowMap = Dictionary(uniqueKeysWithValues: windows.map { ($0.windowID, $0) })
-        return FrameSizingAttempt(io: ioFactory(windowMap, generation), configuration: configuration)
+        return FrameSizingAttempt(io: ioFactory(windowMap, generation),
+                                  configuration: Self.captureConfiguration(configuration, for: windows.count))
             .captureFrames(windowIDs: windows.map(\.windowID), generation: requestedGeneration)
     }
 
