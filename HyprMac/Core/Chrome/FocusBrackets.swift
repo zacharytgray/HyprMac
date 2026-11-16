@@ -428,8 +428,7 @@ class FocusBrackets {
     }
 }
 
-/// The four rounded corner marks, shared by the Hypr-key focus marks and
-/// the quiet floater marks `FocusBorder` draws in Corners mode.
+/// The four rounded corner marks of the Hypr-key focus marks.
 enum CornerMarkGeometry {
     /// how far the marks sit inside the window edge
     static let focusMarkInset: CGFloat = 14
@@ -462,16 +461,6 @@ enum CornerMarkGeometry {
             cornerPath(center: centers[$0], arcRadius: r,
                        startAngle: arcs[$0].0, endAngle: arcs[$0].1, legLength: leg)
         }
-    }
-
-    /// All four corners in one path, for a single shape layer.
-    static func combinedPath(in frame: CGRect, inset: CGFloat, radius: CGFloat,
-                             legLength: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        for corner in paths(in: frame, inset: inset, radius: radius, legLength: legLength) {
-            path.addPath(corner)
-        }
-        return path
     }
 
     /// Build a single corner bracket: a straight leg, a 90° arc, another

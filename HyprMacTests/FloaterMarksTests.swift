@@ -2,19 +2,19 @@ import XCTest
 import Cocoa
 @testable import HyprMac
 
-// floater marks in Corners mode: which mark each focus indicator choice
-// draws, the focus-mark color on a floater, and the shared corner geometry.
+// floater outlines: which focus indicator choices draw one, the focus-mark
+// color on a floater, and the shared corner geometry.
 
 final class FloaterMarkStyleTests: XCTestCase {
-    func testCornersAloneDrawsQuietCorners() {
-        XCTAssertEqual(FloaterMarkStyle.resolve(showFocusBorder: false, bracketStyle: .rounded), .corners)
+    func testCornersAloneOutlinesFloaters() {
+        XCTAssertEqual(FloaterMarkStyle.resolve(showFocusBorder: false, bracketStyle: .rounded), .outline)
     }
 
-    func testWindowBordersKeepTheOutline() {
+    func testWindowBordersOutlineFloaters() {
         XCTAssertEqual(FloaterMarkStyle.resolve(showFocusBorder: true, bracketStyle: .off), .outline)
     }
 
-    func testBothKeepsTheOutlineWithoutCornersOnTop() {
+    func testBothOutlineFloaters() {
         XCTAssertEqual(FloaterMarkStyle.resolve(showFocusBorder: true, bracketStyle: .rounded), .outline)
     }
 
@@ -70,11 +70,6 @@ final class CornerMarkGeometryTests: XCTestCase {
         assertRect(tl.boundingBoxOfPath, CGRect(x: 14, y: 276, width: 10, height: 10))
     }
 
-    func testCombinedPathCoversAllFourCorners() {
-        let path = CornerMarkGeometry.combinedPath(in: frame, inset: 14, radius: 20, legLength: 10)
-        assertRect(path.boundingBoxOfPath, CGRect(x: 14, y: 14, width: 372, height: 272))
-    }
-
     func testOffsetFrameMovesTheMarks() {
         let moved = frame.offsetBy(dx: 0.75, dy: 0.75)
         let tl = CornerMarkGeometry.paths(in: moved, inset: 14, radius: 20, legLength: 10)[0]
@@ -109,42 +104,34 @@ final class CornerMarkGeometryTests: XCTestCase {
     }
 }
 
-final class FloaterCornerPanelTests: XCTestCase {
+final class FloaterOutlinePanelTests: XCTestCase {
     override func setUpWithError() throws {
         if ProcessInfo.processInfo.environment["HYPRMAC_HEADLESS_TESTS"] == "1" {
             throw XCTSkip("hostless run excludes tests that create AppKit panels")
         }
     }
 
-    func testCornersModeMarksFloatersWithTheBorderOff() throws {
+    func testCornersModeOutlinesFloatersWithTheBorderOff() {
         let border = FocusBorder()
         border.primaryScreenHeight = 1080
         border.isEnabled = false
-        border.setFloaterMarks(.corners, cornerRadius: 20)
+        border.setFloaterMarks(.outline)
         border.updateFloatingBorders([42: CGRect(x: 100, y: 100, width: 400, height: 300)],
                                      color: NSColor.systemPink.cgColor)
 
-        let mark = try XCTUnwrap(border.currentFloaterMark(for: 42))
-        XCTAssertEqual(mark.outlineWidth, 0)
-        XCTAssertNotNil(mark.cornerPath)
-        XCTAssertNil(border.trackedWindowID, "floater marks are not focus")
+        XCTAssertEqual(border.currentFloaterOutlineWidth(for: 42), 1.5)
+        XCTAssertNil(border.trackedWindowID, "floater outlines are not focus")
 
-        border.setFloaterMarks(.none, cornerRadius: 20)
-        XCTAssertNil(border.currentFloaterMark(for: 42))
+        border.setFloaterMarks(.none)
+        XCTAssertNil(border.currentFloaterOutlineWidth(for: 42))
     }
 
-    func testOutlineModeRestylesCornerPanelsInPlace() throws {
+    func testNoneDrawsNoFloaterOutline() {
         let border = FocusBorder()
         border.primaryScreenHeight = 1080
-        let frames: [CGWindowID: CGRect] = [42: CGRect(x: 100, y: 100, width: 400, height: 300)]
-        border.setFloaterMarks(.corners, cornerRadius: 20)
-        border.updateFloatingBorders(frames, color: NSColor.systemPink.cgColor)
-        border.setFloaterMarks(.outline, cornerRadius: 20)
-        border.updateFloatingBorders(frames, color: NSColor.systemPink.cgColor)
-
-        let mark = try XCTUnwrap(border.currentFloaterMark(for: 42))
-        XCTAssertEqual(mark.outlineWidth, 1.5)
-        XCTAssertNil(mark.cornerPath)
-        border.isEnabled = false
+        border.setFloaterMarks(.none)
+        border.updateFloatingBorders([42: CGRect(x: 100, y: 100, width: 400, height: 300)],
+                                     color: NSColor.systemPink.cgColor)
+        XCTAssertNil(border.currentFloaterOutlineWidth(for: 42))
     }
 }

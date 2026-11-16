@@ -39,18 +39,16 @@ Explicit saved dimming, border, color, radius, and fade preferences remain autho
 
 ### Floater marks
 
-Every visible floating window carries a mark in the **Floating window color** (brand magenta by default, light and dark aware), so a floater sitting flush in a tile slot does not pass for tiled.
+Every visible floating window carries a solid outline in the **Floating window color** (brand magenta by default, light and dark aware), so a floater sitting flush in a tile slot does not pass for tiled. The outline is the same in every mode: 1.5 points, with the same panels, occlusion masking, scratchpad filter, fullscreen hiding, drag hiding and fade.
 
 | Focus indicator | Floater mark | Focus marks on a floating window |
 | --- | --- | --- |
-| Corners | Four quiet corner marks | Floating color |
-| Window borders | Outline (unchanged) | n/a |
-| Both | Outline only, no corners on top | Floating color |
+| Corners | Outline | Floating color |
+| Window borders | Outline | n/a |
+| Both | Outline | Floating color |
 | None | Nothing | n/a |
 
-The quiet marks are 2-point strokes with 10-point legs at 85% opacity, with no contrast stroke. They use the focus marks' shape: the same 14-point inset and the saved mark roundness. When Hypr is held on a focused floater, its focus marks cover the quiet ones exactly. Focus marks on a floater keep their configured length, thickness and contrast stroke; only the color changes. The Floating window color row shows in Corners mode too, inside the corner group. There is no separate toggle.
-
-The quiet marks reuse the outline machinery: the same floater set, occlusion masking, scratchpad filter, fullscreen hiding, drag hiding and fade. Changing the indicator, roundness or color repaints them without retiling, moving windows or changing focus.
+In Corners mode the outline draws even though the focused-window border stays off. The window-border toggle only controls the focused-window border. Focus marks on a floater keep their configured length, thickness and contrast stroke; only the color changes. The Floating window color row shows in Corners mode too, inside the corner group. There is no separate toggle. Changing the indicator or color repaints the outlines without retiling, moving windows or changing focus.
 
 ### Corner compatibility
 
