@@ -330,4 +330,97 @@ final class LayoutEngineTests: XCTestCase {
 
         XCTAssertTrue(quiet === loud)
     }
+
+    // MARK: - the focused tile first
+
+    // a small slot floor, so the right-to-left walk takes the deepest leaf
+    private let roomy = LayoutEngine(gapSize: 8, outerPadding: 8, minSlotDimension: 100)
+
+    /// w1 left, w2 top right, w3 bottom right
+    private func threeTiles(_ engine: LayoutEngine, maxDepth: Int = 3) -> BSPTree {
+        let tree = BSPTree()
+        for i in 1...3 {
+            XCTAssertTrue(engine.smartInsertFitting(makeWindow(id: CGWindowID(i)), into: tree,
+                                                    maxDepth: maxDepth, rect: bigRect, minimumSize: zeroMins))
+        }
+        return tree
+    }
+
+    private func sibling(of id: CGWindowID, in tree: BSPTree) -> CGWindowID? {
+        guard let node = tree.root.allLeavesRightToLeft().first(where: { $0.window?.windowID == id }),
+              let parent = node.parent else { return nil }
+        return (parent.left === node ? parent.right : parent.left)?.window?.windowID
+    }
+
+    func testThePreferredLeafIsSplitBeforeTheRightToLeftFirstFit() {
+        let walked = threeTiles(roomy)
+        XCTAssertTrue(roomy.smartInsertFitting(makeWindow(id: 4), into: walked, maxDepth: 3,
+                                               rect: bigRect, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 4, in: walked), 3, "the walk alone splits the deepest right leaf")
+
+        let tree = threeTiles(roomy)
+        XCTAssertTrue(roomy.smartInsertFitting(makeWindow(id: 4), into: tree, maxDepth: 3,
+                                               rect: bigRect, preferringTenant: 1, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 4, in: tree), 1)
+    }
+
+    func testAPreferredLeafThePairDoesNotFitFallsBackToTheWalk() {
+        let tree = threeTiles(roomy)
+        // w1 refuses every split of its slot on the per-child cap
+        let mins: (HyprWindow?) -> CGSize = { window in
+            window?.windowID == 1 ? CGSize(width: 900, height: 1000) : .zero
+        }
+        XCTAssertTrue(roomy.smartInsertFitting(makeWindow(id: 4), into: tree, maxDepth: 3,
+                                               rect: bigRect, preferringTenant: 1, minimumSize: mins))
+        XCTAssertEqual(sibling(of: 4, in: tree), 3)
+    }
+
+    func testAPreferredLeafAtTheDepthLimitFallsBackToTheWalk() {
+        let tree = threeTiles(roomy, maxDepth: 2)
+        XCTAssertTrue(roomy.smartInsertFitting(makeWindow(id: 4), into: tree, maxDepth: 2,
+                                               rect: bigRect, preferringTenant: 2, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 4, in: tree), 1, "w2 is at the limit; w1 is the only leaf above it")
+    }
+
+    func testAPreferredLeafUnderTheSlotFloorLosesToARoomierLeafInPassZero() {
+        // 500 floor: w2's 948x528 slot splits below it either way, w1's does not
+        let tree = threeTiles(layout)
+        XCTAssertTrue(layout.smartInsertFitting(makeWindow(id: 4), into: tree, maxDepth: 3,
+                                                rect: bigRect, preferringTenant: 2, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 4, in: tree), 1)
+    }
+
+    func testAPreferredLeafUnderTheSlotFloorWinsPassOneWhenNoLeafPassesPassZero() {
+        // four 948x528 slots: none splits above the 500 floor
+        let tree = threeTiles(layout)
+        XCTAssertTrue(layout.smartInsertFitting(makeWindow(id: 4), into: tree, maxDepth: 3,
+                                                rect: bigRect, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 4, in: tree), 1)
+        let walked = tree.deepClone()
+
+        XCTAssertTrue(layout.smartInsertFitting(makeWindow(id: 5), into: walked, maxDepth: 3,
+                                                rect: bigRect, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 5, in: walked), 3)
+        XCTAssertTrue(layout.smartInsertFitting(makeWindow(id: 5), into: tree, maxDepth: 3,
+                                                rect: bigRect, preferringTenant: 2, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 5, in: tree), 2)
+    }
+
+    func testAnUnknownPreferredIDChangesNothing() {
+        let walked = threeTiles(roomy)
+        let tree = threeTiles(roomy)
+        XCTAssertTrue(roomy.smartInsertFitting(makeWindow(id: 4), into: walked, maxDepth: 3,
+                                               rect: bigRect, minimumSize: zeroMins))
+        XCTAssertTrue(roomy.smartInsertFitting(makeWindow(id: 4), into: tree, maxDepth: 3,
+                                               rect: bigRect, preferringTenant: 999, minimumSize: zeroMins))
+        XCTAssertEqual(tree.structuralFingerprint(), walked.structuralFingerprint())
+    }
+
+    func testSkippingTenantsStillSkipsThePreferredLeaf() {
+        let tree = threeTiles(roomy)
+        XCTAssertTrue(roomy.smartInsertFitting(makeWindow(id: 4), into: tree, maxDepth: 3,
+                                               rect: bigRect, skippingTenants: [1],
+                                               preferringTenant: 1, minimumSize: zeroMins))
+        XCTAssertEqual(sibling(of: 4, in: tree), 3)
+    }
 }

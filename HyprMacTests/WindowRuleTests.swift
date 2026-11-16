@@ -257,6 +257,143 @@ final class WindowRuleTests: XCTestCase {
         XCTAssertEqual(saved.gapSize, 14)
     }
 
+    // MARK: - reopened windows
+
+    // a closed window whose app gave its id back (Mail, Mimestream) comes
+    // back as a return, not a new window. a pin places it like a new one
+
+    // recorded ws hidden and the pin: it keeps that workspace, parks, and
+    // the user is taken there
+    func testAReopenOntoItsHiddenPinParksThereAndIsFollowed() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 1)), visibleWorkspace: 4)
+        let w = h.window(67, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(67), 1, "its pin, not the visible ws4")
+        XCTAssertEqual(h.parks, 1, "parked on its hidden workspace before the follow")
+        XCTAssertEqual(h.follows.map(\.windowID), [67])
+        XCTAssertEqual(h.follows.map(\.workspace), [1])
+    }
+
+    // recorded ws hidden, pin a third hidden workspace
+    func testAReopenGoesToAThirdHiddenPinAndIsFollowed() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 2)), visibleWorkspace: 4)
+        let w = h.window(68, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 7, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(68), 2)
+        XCTAssertEqual(h.parks, 1)
+        XCTAssertEqual(h.follows.map(\.workspace), [2])
+    }
+
+    // recorded ws hidden, pin the visible workspace
+    func testAReopenOntoTheVisiblePinStaysWithNoFollow() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 4)), visibleWorkspace: 4)
+        let w = h.window(69, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(69), 4)
+        XCTAssertEqual(h.parks, 0)
+        XCTAssertTrue(h.follows.isEmpty)
+    }
+
+    // a reopen or a flap on its own visible workspace drifts nowhere, so a
+    // pin elsewhere leaves it alone: a pin is not a tether
+    func testAReopenOnItsOwnVisibleWorkspaceIgnoresThePin() {
+        let h = ReopenHarness(rules: rules(("com.apple.Safari", 2)), visibleWorkspace: 4)
+        let w = h.window(75, bundleID: "com.apple.Safari")
+
+        h.returnWindow(w, recordedOn: 4, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(75), 4)
+        XCTAssertEqual(h.parks, 0)
+        XCTAssertTrue(h.follows.isEmpty)
+    }
+
+    func testAnUnpinnedReopenStillDriftsToTheVisibleWorkspace() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 1)), visibleWorkspace: 4)
+        let w = h.window(70, bundleID: "com.apple.mail")
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(70), 4)
+        XCTAssertTrue(h.follows.isEmpty)
+    }
+
+    func testAMinimizedReturnOfAPinnedAppKeepsItsWorkspace() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 1)), visibleWorkspace: 4)
+        let w = h.window(71, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 6, reopened: false)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(71), 6, "a user hide is not a reopen")
+        XCTAssertTrue(h.follows.isEmpty)
+    }
+
+    // the same spill as a new window: the next workspace with room
+    func testAPinnedReopenOntoAFullPinSpillsLikeANewWindow() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 1)), visibleWorkspace: 4)
+        h.engine.maxSplitsPerMonitor[h.screen.localizedName] = 1  // two slots a workspace
+        for id: CGWindowID in [80, 81] {
+            h.workspaces.assignWindow(id, toWorkspace: 1)
+            h.cache.knownWindowIDs.insert(id)
+        }
+        let w = h.window(72, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(72), 2)
+        XCTAssertEqual(h.follows.map(\.workspace), [2])
+    }
+
+    // the reopen's own stale assignment on the pin is not an occupant: one
+    // other tile plus itself fits a two-slot pin with no spill
+    func testAReopenDoesNotCountItselfOnItsOldWorkspace() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 1)), visibleWorkspace: 4)
+        h.engine.maxSplitsPerMonitor[h.screen.localizedName] = 1  // two slots a workspace
+        h.workspaces.assignWindow(80, toWorkspace: 1)
+        h.cache.knownWindowIDs.insert(80)
+        let w = h.window(76, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(76), 1)
+        XCTAssertEqual(h.follows.map(\.workspace), [1])
+    }
+
+    // a closed-but-alive ghost holds no slot; a minimized window does
+    func testAGhostOnThePinIsNoOccupant() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", 1)), visibleWorkspace: 4)
+        h.engine.maxSplitsPerMonitor[h.screen.localizedName] = 1
+        for id: CGWindowID in [80, 81] {
+            h.workspaces.assignWindow(id, toWorkspace: 1)
+            h.cache.hiddenWindowIDs.insert(id)
+        }
+        h.cache.reservedHiddenWindowIDs = [80]
+        let w = h.window(73, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(73), 1)
+    }
+
+    func testAReopenPinnedToTheScratchpadIsAdopted() {
+        let h = ReopenHarness(rules: rules(("com.mimestream.Mimestream", WindowRule.scratchpad)),
+                              visibleWorkspace: 4)
+        var adopted: [CGWindowID] = []
+        h.dispatcher.adoptPinnedToScratchpad = { adopted.append($0.windowID) }
+        let w = h.window(74, bundleID: "com.mimestream.Mimestream")
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+
+        XCTAssertEqual(adopted, [74])
+        XCTAssertEqual(h.workspaces.workspaceFor(74), 1, "not drifted; adoption assigns it")
+        XCTAssertTrue(h.follows.isEmpty)
+    }
+
     // MARK: - Never tile refusal
 
     func testHyprTOnANeverTileWindowLeavesItFloatingAndOutOfEveryTree() {
@@ -311,6 +448,99 @@ final class WindowRuleTests: XCTestCase {
         let window = makeWindow(id: 52, pid: 907)
         window.bundleID = "com.apple.Terminal"
         XCTAssertFalse(controller.isNeverTile(window))
+    }
+}
+
+/// a dispatcher on one fake screen, a scratch config, and a ghost that comes
+/// back the way discovery reports it
+private final class ReopenHarness {
+    let screen = WindowRuleTestScreen()
+    let workspaces: WorkspaceManager
+    let engine: TilingEngine
+    let cache = WindowStateCache()
+    let dispatcher: ActionDispatcher
+    var follows: [(windowID: CGWindowID, workspace: Int)] = []
+    /// park writes; a fake window's write fails, which reports each one
+    var parks = 0
+    private let configDir: URL
+
+    init(rules: [WindowRule], visibleWorkspace: Int) {
+        let screen = self.screen
+        let display = DisplayManager(screenSource: { [screen] })
+        workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        _ = workspaces.switchWorkspace(visibleWorkspace, cursorScreen: screen)
+        engine = TilingEngine(displayManager: display, frameSizingIOFactory: acceptingFrameSizingIOFactory())
+        configDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReopenHarness-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+        let config = UserConfig(store: ConfigStore(
+            localConfigURL: configDir.appendingPathComponent("config.json"),
+            monitorConfigURL: configDir.appendingPathComponent("monitor-config.json"),
+            iCloudRootURL: configDir.appendingPathComponent("cloud", isDirectory: true)))
+        config.windowRules = rules
+
+        let suppressions = SuppressionRegistry()
+        let border = FocusBorder()
+        let focus = FocusStateController(focusBorder: border)
+        let dimming = DimmingOverlay()
+        let accessibility = AccessibilityManager()
+        let cursor = CursorManager()
+        let orchestrator = WorkspaceOrchestrator(
+            workspaceManager: workspaces, tilingEngine: engine,
+            accessibility: accessibility, displayManager: display,
+            cursorManager: cursor, stateCache: cache,
+            focusController: focus, focusBorder: border,
+            dimmingOverlay: dimming, suppressions: suppressions,
+            revalidation: MinimaRevalidation())
+        let floating = FloatingWindowController(
+            stateCache: cache, suppressions: suppressions,
+            workspaceManager: workspaces, tilingEngine: engine,
+            displayManager: display, accessibility: accessibility,
+            cursorManager: cursor, focusController: focus,
+            focusBorder: border, dimmingOverlay: dimming)
+        dispatcher = ActionDispatcher(
+            stateCache: cache, accessibility: accessibility,
+            displayManager: display, cursorManager: cursor,
+            workspaceManager: workspaces, tilingEngine: engine,
+            focusController: focus, focusBorder: border,
+            keybindOverlay: KeybindOverlayController(), appLauncher: AppLauncherManager(),
+            workspaceOrchestrator: orchestrator, floatingController: floating,
+            config: config)
+        dispatcher.screenUnderCursor = { screen }
+        dispatcher.isMenuTracking = { true }
+        dispatcher.followPinnedWindow = { [unowned self] id, workspace in
+            follows.append((id, workspace))
+        }
+        workspaces.onParkFailed = { [unowned self] in parks += 1 }
+    }
+
+    deinit { try? FileManager.default.removeItem(at: configDir) }
+
+    func window(_ id: CGWindowID, bundleID: String) -> HyprWindow {
+        let w = makeWindow(id: id, pid: 0)
+        w.bundleID = bundleID
+        return w
+    }
+
+    /// `window`, a ghost recorded on `workspace`, is back. a reopen is a
+    /// verified close; discovery drifts it onto the visible workspace and
+    /// marks it only when its own is hidden, as `detectScreenDrift` does
+    func returnWindow(_ window: HyprWindow, recordedOn workspace: Int, reopened: Bool) {
+        let id = window.windowID
+        workspaces.assignWindow(id, toWorkspace: workspace)
+        cache.knownWindowIDs.insert(id)
+        cache.windowOwners[id] = window.ownerPID
+        let visible = workspaces.workspaceForScreen(screen)
+        let drift = reopened && !workspaces.isWorkspaceVisible(workspace)
+            ? [(windowID: id, fromWorkspace: workspace, toWorkspace: visible)] : []
+        _ = dispatcher.applyChanges(
+            WindowChanges(newWindows: [], newOnDisabledMonitor: [], returned: [window],
+                          goneIDs: [], fullyForgottenIDs: [], screenDrift: drift,
+                          focusedWindowGone: false, requestsRecheck: false,
+                          returnedFromUserHide: reopened ? [] : [id],
+                          reopenedOntoHiddenWorkspace: Set(drift.map(\.windowID))),
+            allWindows: [window])
     }
 }
 

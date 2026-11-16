@@ -17,10 +17,10 @@ enum BSPTargetEdge: CaseIterable, Equatable {
 ///
 /// Default insert places the new window at the deepest-right leaf,
 /// matching the dwindle convention. `LayoutEngine.smartInsertFitting`
-/// refines this by backtracking to shallower leaves when a child would fall below
-/// `TilingConfig.minSlotDimension` on a constrained monitor (typical
-/// vertical displays). Long-form algorithm walkthroughs live in
-/// `docs/tiling-algorithm.md`.
+/// tries the focused tile first, then backtracks to shallower leaves when a
+/// child would fall below `TilingConfig.minSlotDimension` on a constrained
+/// monitor (typical vertical displays). Long-form algorithm walkthroughs
+/// live in `docs/tiling-algorithm.md`.
 class BSPTree {
     struct StructuralFingerprint: Equatable {
         struct Node: Equatable {

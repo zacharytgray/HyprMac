@@ -57,6 +57,38 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertEqual(engine.releaseHeldWindows(readable: [951, 952, 953]), [])
     }
 
+    /// a switch asks which members of the workspace it showed are held,
+    /// to retry their apps. another workspace's holds are not its
+    func testHeldMembersAreReportedPerWorkspaceUntilReleased() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let one = [makeWindow(id: 971), makeWindow(id: 972)]
+        let two = [makeWindow(id: 973), makeWindow(id: 974)]
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in one + two { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows(one, onWorkspace: 1, screen: screen).published)
+        XCTAssertTrue(engine.tileWindows(two, onWorkspace: 2, screen: screen).published)
+        XCTAssertTrue(engine.heldMembers(onWorkspace: 1).isEmpty)
+
+        engine.heldWindowIDsSource = { [972, 974] }
+        engine.tileWindows([one[0]], onWorkspace: 1, screen: screen)
+        engine.tileWindows([two[0]], onWorkspace: 2, screen: screen)
+
+        XCTAssertEqual(engine.heldMembers(onWorkspace: 1), [972])
+        XCTAssertEqual(engine.heldMembers(onWorkspace: 2), [974])
+        XCTAssertTrue(engine.heldMembers(onWorkspace: 3).isEmpty)
+
+        // a pass whose list carries it writes it; the caller releases the record
+        engine.heldWindowIDsSource = { [] }
+        trace.written = []
+        engine.tileWindows(one, onWorkspace: 1, screen: screen)
+        XCTAssertEqual(engine.releaseHeldWindows(readable: [971, 972]), [972])
+        XCTAssertTrue(engine.heldMembers(onWorkspace: 1).isEmpty)
+        XCTAssertEqual(engine.heldMembers(onWorkspace: 2), [974])
+    }
+
     /// a send to the scratchpad takes a window out and retiles the rest.
     /// that pass is given no list, so it asks the source too: a hung app's
     /// window keeps its leaf and is not read, and the retile is accepted.

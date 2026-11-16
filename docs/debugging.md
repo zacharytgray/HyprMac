@@ -435,6 +435,28 @@ the request gets one attempt with them set aside. Look for what follows:
   before its reveal.
 - `float→tile revalidation: <id> ws<N>` — the toggle's one bypassed
   `forceInsertWindow`.
+- `split focused tile: wid=<id> beside <focused>` (`.debug`, tiling) — a
+  newcomer split the focused tile. `focused tile <focused> passed over:
+  wid=<id> split <tile>` is the same pass sending it elsewhere: the pair did
+  not fit beside the focused tile, or another tile had room above the slot
+  floor and the focused one did not. Neither line appears when the
+  pass had no focused tile in its tree (see "Smart insert" in
+  `docs/tiling-algorithm.md`).
+- `open on cursor monitor: '<title>' (<id>) opened on <screen> → ws<N> on
+  <cursor screen>` (notice, orchestration) — an app's first window sent to the
+  monitor under the pointer. `open on cursor monitor skipped: '<title>' (<id>)
+  on <screen>, cursor on <cursor screen>: <reason>` (`.debug`) is a new or
+  reopened window on another monitor left where it opened. The reason is one
+  of `pinned`, `floating`, `quick look panel`, `app has a window on screen`,
+  `workspace full`, `reconcile poll`, `display transition` or `cursor monitor
+  disabled`. `open on cursor monitor refused: (<id>) ws<N> would not take it,
+  back to ws<M> on <screen>` (notice) is the pointer's monitor refusing it;
+  an `admission retry cancelled` line for the same id follows.
+- `window returned: '<title>' (<id>) — reopened after a close` (notice,
+  discovery) — a window back after a verified close. The app reused the id
+  (Teams does). `slot forgotten: <id> reopened after a close` (`.debug`,
+  tiling) follows when the window had a remembered slot, and the retile
+  places it like a new window instead of logging `slot restored:`.
 - `no fitting tile slot: wid=<id> ws<N> — staying in place` — the pass could
   not smart-insert that window into the BSP tree for that workspace. Any
   tiling pass can log it, not just a bypassed one. Nothing routes the window
@@ -765,6 +787,8 @@ transition at `.debug`, so read it in the file log or a live stream. It
 carries a short reason tag (`ensureFocus-tiled`,
 `syncTracker-floating`, `cycleFocus`, etc.). Walk the log
 backwards from the unexpected focus state to find the trigger.
+`new-window` is a tiled newcomer that macOS gave the keyboard taking the
+record after its discovery pass, so the next new window splits it.
 `syncTracker-recovery` is the click hit-test landing on a newcomer in
 admission recovery: it is drawn over the tiles like a floater but it is
 not floating, so it gets its own tag rather than borrowing
@@ -1096,7 +1120,7 @@ poll deferred: workspace transition (1200ms left) (trigger create)
 The full poll still runs when the hold ends. No `admitted … during
 workspace transition` line under a switch hold means the gate stayed shut:
 the hold was also a move's, the scratchpad's, a display change's or a
-wake's, a floater reveal retry was still running, or a button was held.
+wake's, a reveal retry was still running, or a button was held.
 `admit-only pass skipped: tiled [ids] missing from the walk` means a tiled
 window of a visible workspace did not answer the walk, so the pass left
 everything to the poll after the hold.
@@ -1215,6 +1239,36 @@ for a window that was not held and came back within five seconds; with
 both holds in place it should be rare. Every tile pass logs
 `retile: ws<N> holds […] — leaves kept, no frame written` for the members
 it kept out of the pass.
+
+### A window stayed parked after a workspace switch
+
+The switch's walk found its app busy, so the switch could not reveal it.
+The reveal retry asks that app every 100 ms, 15 times. All
+`[notice] [lifecycle]`:
+
+```
+switch: 1 tile(s) held on ws1, their app did not answer: [16020], retrying their app, repair poll requested
+reveal retry: attempt 1 ran 4ms late, pid 812 list read failed in 51ms for [16020]
+reveal retry: tile 16020 readable on attempt 2, retiled 230ms after the switch (ran 3ms late, list read 12ms, walk 80ms, retile 40ms)
+```
+
+A floater logs `switch: N floater(s) to reveal not readable` and
+`reveal retry: <id> readable on attempt N, restored its saved frame`
+instead. Other lines:
+
+- `reveal retry: tile <id> listed on attempt N but the walk did not read
+  it` — the app answered the retry's read, then failed the walk. It is
+  asked again.
+- `reveal retry: [ids] still not readable after 15 attempts (… after the
+  switch), left to the repair poll, poll requested` — the retry gave up.
+  The poll after the transition hold releases a tile
+  (`held windows readable again: […] — retiling`) or restores a floater
+  (`reveal repair:`) once the app answers.
+
+`ran Nms late` large means something else held the main thread after the
+switch. `list read` and `walk` large mean the app's own replies were slow.
+A switch over 250 ms also logs `switch: ws<N> took …ms (walk, retile,
+focus and rest)`.
 
 ### A new window was found late, or got the wrong id
 

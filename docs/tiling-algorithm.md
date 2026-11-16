@@ -43,6 +43,15 @@ it belongs to another key, by the membership pass's smart insert, or by
 `removeWindowMembershipOnly`, which ordinary moves use, keeps it. A pin the user
 set with `togglesplit` comes back as the user's pin.
 
+A window that comes back after a verified close does not use its slot. Its app
+no longer listed it when it went, so discovery never reserved it, and some apps
+(Teams) reuse the id when the window reopens. Discovery reports it in
+`WindowChanges.reopenedAfterClose`. `ActionDispatcher.applyChanges` drops the
+memory with `TilingEngine.forgetRememberedSlot` before the retile, and the
+window is placed like a new window: the focused tile first, then the walk. A
+window back from a minimize, a Cmd-H, another Space, a background tab or an
+app that did not answer still goes back to its slot.
+
 A tiling pass resets ratios only when the membership changes. A split toggle,
 a keyboard resize and every scratchpad pass also reset ratios the user did not
 set. A pass over the same
@@ -78,12 +87,14 @@ ratios would put the layout math into states it is not designed for.
 
 ## Dwindle layout
 
-Each split picks the longer axis of the parent rect. By default the
-new window goes on the right (horizontal split) or bottom (vertical
-split); the one exception is a slot restoring a remembered boundary,
+A new window splits the focused tile when the pair fits there. Otherwise
+it splits the deepest-right tile that fits (see **Smart insert**). Each
+split picks the longer axis of the parent rect. The new window goes on
+the right (horizontal split) or bottom (vertical split) of the tile it
+splits. The one exception is a slot restoring a remembered boundary,
 where the new window takes the side the old one vacated (see
-**Ratio memory**). The pattern produces the characteristic dwindle
-spiral on wide monitors:
+**Ratio memory**). Windows opened one after another, each taking focus,
+produce the characteristic dwindle spiral on wide monitors:
 
 ```
    +---------+
@@ -136,20 +147,55 @@ drop clears the memory instead), which is the intended trade: the slot is rememb
 
 ## Smart insert
 
-Plain dwindle always splits the deepest-right leaf. On constrained
-monitors — typically tall vertical displays — the deepest-right
-slot can fall below `TilingConfig.minSlotDimension` (500 px),
-producing unusable windows.
+A membership pass places each newcomer in this order:
 
-`LayoutEngine.smartInsertFitting` walks every leaf right-to-left
-(`allLeavesRightToLeft`), twice. The first pass skips any leaf where the
-resulting children would fall below `minSlotDimension` on either axis. The
-second pass drops that preference. In both, the two windows' known minimums
-must fit the split (`pairFit`), and a leaf with no axis pin or saved boundary
-may use the other axis when the longer one does not fit. The first leaf that
-fits accepts the insert. On a vertical 1440 px-wide display, this typically
-backtracks past the deepest-right leaves and produces a 2×2 grid layout
-instead of a degenerate dwindle spiral.
+1. **Remembered slot.** A window that left for a poll or two goes back
+   where it was (see **Ratio memory**). A window back after a verified close
+   has no remembered slot and is placed like a new window.
+2. **The focused tile.** The window HyprMac last focused
+   (`TilingEngine.splitTargetSource`, wired to the focus border's window
+   or else `FocusStateController.lastFocusedID`), when the pair fits there.
+3. **The walk.** The other leaves, deepest-right first.
+
+`LayoutEngine.smartInsertFitting` walks the leaves right to left
+(`allLeavesRightToLeft`), twice. The focused tile goes to the front of the
+list, so the order is the focused tile then the rest in the first pass, and
+the same again in the second. The first pass skips any leaf where the
+resulting children would fall below `TilingConfig.minSlotDimension` (500 px)
+on either axis. The second pass drops that preference. In both, the leaf
+must be above the depth limit, the two windows' known minimums must fit the
+split (`pairFit`), and a leaf with no axis pin or saved boundary may use the
+other axis when the longer one does not fit. The first leaf that fits accepts
+the insert. So a focused tile too small for the first pass loses to a roomier
+tile, and wins the second pass only when no tile passed the first. On a
+vertical 1440 px-wide display, the walk typically backtracks past the
+deepest-right leaves and produces a 2×2 grid layout instead of a degenerate
+dwindle spiral.
+
+The focused tile counts only when the pass's tree already holds it once the
+leavers are gone. A pass that fills an empty tree (startup, Retile All, a
+layout restore) and a pass for another workspace or screen than the focused
+window's insert by the walk alone. Within one pass, each newcomer smart insert
+places becomes the focused tile for the next, as if it had opened and taken
+focus. Several windows arriving together spiral out from the focused tile.
+The fit checks that predict a pass (`canFitWindows`, the admission retry's
+check, and the kept-length probe) use the same focused tile and hand-over.
+
+Other inserts use the walk alone: a float-to-tile toggle and a move to
+another workspace (the window being inserted is the focused one), the
+scratchpad's tree, a rebuild, and a display change.
+
+Two `.debug` tiling lines say which happened: `split focused tile: wid=<new>
+beside <focused>` and `focused tile <focused> passed over: wid=<new> split
+<tile>`. The `.debug` lifecycle line `smart insert fit at depth <n>` gives
+the depth and slot size of every insert, probes included.
+
+A newcomer macOS gives the keyboard takes HyprMac's focus record once it is
+tiled (`ActionDispatcher.adoptFocusedNewcomer`, reason `new-window`). Without
+that, a second window opened from the keyboard split the old tile again,
+because the record only followed a hover or a click. It does not apply while
+the scratchpad is up, while a menu is tracking, when a pin takes the user to
+another workspace, or to a newcomer the pass refused.
 
 If no leaf fits — every leaf is at the depth limit, or known minimums rule
 out each pair — the pass logs `no fitting tile slot: wid=<id> ws<N> — staying
@@ -662,8 +708,9 @@ a display reconfiguration, or a workspace transition.
 
 `forceInsertWindow` is the float→tile entry point. It works on a private
 candidate and returns `.alreadyPresent`, `.inserted` or `.failed(reason)`.
-It never evicts anyone. It looks for a free slot the same way an ordinary
-insert does, and the only thing it adds is that the user asked explicitly,
+It never evicts anyone. It looks for a free slot with the same walk an
+ordinary insert uses, without the focused tile first, since the window being
+inserted is the focused one. The only thing it adds is that the user asked explicitly,
 so a capacity refusal from smart insert is worth one attempt anyway.
 
 Two things can refuse it. `.failed(.noFittingSlot)` means no leaf took the
@@ -693,10 +740,48 @@ Retile All first fill each monitor's visible workspace in stable screen,
 focus, and frame order. Only the excess probes later workspace numbers across
 monitor homes, wrapping after workspace 10.
 
+The starting workspace is the visible workspace of the monitor the window
+opened on, with one exception: an app's first window opens on the monitor
+under the pointer. A window that opened on another monitor goes to the
+visible workspace of the pointer's monitor when all of these hold
+(`ActionDispatcher.cursorPlacement`):
+
+- it is new, or back after a verified close (`reopenedAfterClose`), and not
+  adopted by the scratchpad or opened on a disabled monitor;
+- it is not floating and is not a Quick Look panel;
+- its app has no workspace pin and no scratchpad pin;
+- its app has no other window on screen: none on a visible workspace or in the
+  scratchpad layer while it is up. Floaters count. Quick Look panels do not.
+  Windows of the same app found in the same poll do not count, so an app that
+  restores three windows at launch brings all three;
+- the poll is not the reconcile tick, and no display change is in progress;
+- the pointer's monitor is enabled and has room by the admission count above.
+
+Otherwise the window stays on the monitor it opened on, as before. Startup,
+Retile All and the display reconcile do not use this rule. Nor does a second
+window of an app that already has one on screen.
+
+A moved window is placed by the normal tile pass on the pointer's monitor, so
+it splits the focused tile there. Discovery leaves it out of drift while it is
+on its way (`WindowDiscoveryService.exemptFromDrift`): the exemption ends once
+the window stands mostly on its workspace's screen, after two seconds, or when
+the window is forgotten. Other windows and other polls are not held.
+
+If the pointer's monitor refuses it, the window goes back. The pass rolls a
+failed layout back to where the window opened (`TilingEngine.newcomerOriginSource`
+adds that screen to the restoration reach). When the result names the window
+as refused or stranded, `ActionDispatcher` cancels its admission retry,
+assigns it to the visible workspace of the monitor it opened on, and runs one
+more retile, which places it there by the normal rules. A timeout is not a
+refusal: its retry keeps the window on the pointer's monitor.
+
 A window rule changes only the starting workspace. A new window of a pinned
 app starts at its pinned workspace instead of the active one and spills the
 same way; if every workspace is full it stays on the active one, as it would
-unpinned. Startup and Retile All place pinned windows in their own batches
+unpinned. A pinned app's reopened window (a verified close whose id the app
+reused) that discovery would drift off its hidden workspace takes the same
+path instead of drifting onto the active one.
+Startup and Retile All place pinned windows in their own batches
 ahead of the per-monitor ones, so a pin claims its workspace first. See
 "Window rules" in `docs/keybinds-and-actions.md`. This count limit does not guarantee
 that every application's dimensions will fit.

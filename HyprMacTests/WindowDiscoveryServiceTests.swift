@@ -533,6 +533,60 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(cache.reservedHiddenWindowIDs.contains(12))
     }
 
+    // MARK: - reopened after a close
+
+    /// hide window 20 with the stub answering `state`, then bring it back.
+    /// window 10 stays on screen throughout
+    private func hideAndReturn(_ state: AccessibilityManager.HiddenWindowState?) -> WindowChanges {
+        let access = StubAccessibility()
+        access.stateAnswer = state
+        let (svc, cache, _) = makeService(accessibility: access)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        cache.knownWindowIDs = [10, 20]
+        cache.windowOwners = [10: 8300, 20: 8300]
+        let windows = [makeWindow(id: 10, pid: 8300), makeWindow(id: 20, pid: 8300)]
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        // a window its app still lists is held first; past the span it is hidden
+        clock += WindowDiscoveryService.listedHoldSpan + 1
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        XCTAssertTrue(cache.hiddenWindowIDs.contains(20))
+        return compute(svc, snapshot: windows, runningPIDs: [8300])
+    }
+
+    func testAWindowBackAfterAVerifiedCloseIsReopenedAfterClose() {
+        let changes = hideAndReturn(.absent)
+        XCTAssertEqual(changes.returned.map(\.windowID), [20])
+        XCTAssertEqual(changes.reopenedAfterClose, [20])
+    }
+
+    func testAWindowBackFromAHideIsNotReopenedAfterClose() {
+        for state: AccessibilityManager.HiddenWindowState? in [.minimized, .appHidden, .present, nil] {
+            let changes = hideAndReturn(state)
+            XCTAssertEqual(changes.returned.map(\.windowID), [20], "\(String(describing: state))")
+            XCTAssertEqual(changes.reopenedAfterClose, [], "\(String(describing: state))")
+        }
+    }
+
+    /// unreadable when it went, then read as closed while still missing
+    func testAnUnreadableHideLaterVerifiedClosedIsReopenedAfterClose() {
+        let access = StubAccessibility()
+        access.stateAnswer = nil
+        let (svc, cache, _) = makeService(accessibility: access)
+        cache.knownWindowIDs = [10, 20]
+        cache.windowOwners = [10: 8300, 20: 8300]
+        let windows = [makeWindow(id: 10, pid: 8300), makeWindow(id: 20, pid: 8300)]
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        XCTAssertTrue(cache.reservedHiddenWindowIDs.contains(20))
+
+        access.stateAnswer = .absent
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        XCTAssertFalse(cache.reservedHiddenWindowIDs.contains(20))
+
+        let changes = compute(svc, snapshot: windows, runningPIDs: [8300])
+        XCTAssertEqual(changes.reopenedAfterClose, [20])
+    }
+
     // MARK: - windows off the screen their app still lists
 
     /// a native full-screen app on the display, or a Space switched away:
@@ -802,6 +856,43 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertEqual(back.returned.map { $0.windowID }, [13])
         XCTAssertFalse(cache.hiddenWindowIDs.contains(13))
         XCTAssertFalse(cache.reservedHiddenWindowIDs.contains(13))
+    }
+
+    // the reopen drift is the one a pin may redirect: a verified close back
+    // on screen while its recorded workspace is hidden. a minimize keeps its
+    // workspace, and a reopen on its own visible workspace does not drift
+    func testOnlyAReopenOntoAHiddenWorkspaceIsMarked() {
+        let screen = DiscoveryDriftScreen()
+        let display = DisplayManager(screenSource: { [screen] })
+        let workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        _ = workspaces.switchWorkspace(4, cursorScreen: screen)
+        let access = StubAccessibility()
+        let cache = WindowStateCache()
+        let svc = WindowDiscoveryService(stateCache: cache, accessibility: access,
+                                         displayManager: display, workspaceManager: workspaces,
+                                         bundleIDForPID: { _ in nil }, isWindowSizeSettable: { _ in true })
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let closedOnHidden = DiscoveryFramedWindow(id: 15, frame: frame)
+        let minimized = DiscoveryFramedWindow(id: 16, frame: frame)
+        let closedOnVisible = DiscoveryFramedWindow(id: 17, frame: frame)
+        cache.knownWindowIDs = [15, 16, 17]
+        for id: CGWindowID in [15, 16, 17] { cache.windowOwners[id] = 8500 }
+        workspaces.assignWindow(15, toWorkspace: 1)
+        workspaces.assignWindow(16, toWorkspace: 1)
+        workspaces.assignWindow(17, toWorkspace: 4)
+
+        access.stateAnswer = .absent
+        _ = compute(svc, snapshot: [minimized], runningPIDs: [8500])
+        access.stateAnswer = .minimized
+        _ = compute(svc, snapshot: [], runningPIDs: [8500])
+
+        let back = compute(svc, snapshot: [closedOnHidden, minimized, closedOnVisible], runningPIDs: [8500])
+
+        XCTAssertEqual(Set(back.returned.map(\.windowID)), [15, 16, 17])
+        XCTAssertEqual(back.screenDrift.map(\.windowID), [15])
+        XCTAssertEqual(back.screenDrift.first?.toWorkspace, 4)
+        XCTAssertEqual(back.reopenedOntoHiddenWorkspace, [15])
     }
 
     // MARK: - gone (dead pid → fully forgotten)
@@ -1289,6 +1380,21 @@ extension StallBackoffTests {
         XCTAssertNil(backoff.probeTarget(among: [4], now: later))
     }
 
+    /// a reveal retry's read answered: the walk that retiles the held tile
+    /// right after asks the app instead of skipping it as stalled
+    func testAnAppThatAnsweredOutsideTheWalkIsNoLongerStalled() {
+        let ax = AccessibilityManager()
+        ax.now = { [t0] in t0 }
+        ax.stallBackoff.noteFailure(7, now: t0)
+        XCTAssertTrue(ax.isBackingOff(pid: 7))
+
+        ax.noteWindowListAnswered(7)
+
+        XCTAssertFalse(ax.isBackingOff(pid: 7))
+        XCTAssertFalse(ax.stallBackoff.isDue(7, now: t0.addingTimeInterval(1)), "no probe pending either")
+        XCTAssertTrue(ax.stallBackoff.stalledPIDs.isEmpty)
+    }
+
     /// fable A: nothing polled when a backoff ended, so an app that
     /// stalled once waited for the next unrelated event or the reconcile
     func testTheWakeUpIsWhenTheNextBackoffEnds() {
@@ -1430,4 +1536,19 @@ final class AXWindowMatcherTests: XCTestCase {
         XCTAssertEqual(result.bound, [.init(index: 0, windowID: 2, fallbackDistance: 30),
                                       .init(index: 1, windowID: 1, fallbackDistance: 2)])
     }
+}
+
+private final class DiscoveryDriftScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 0, y: 0, width: 1600, height: 1000) }
+    override var visibleFrame: NSRect { frame }
+}
+
+private final class DiscoveryFramedWindow: HyprWindow {
+    let storedFrame: CGRect
+    init(id: CGWindowID, frame: CGRect) {
+        storedFrame = frame
+        super.init(element: AXUIElementCreateApplication(8500), windowID: id, ownerPID: 8500)
+    }
+    override func readPosition() -> (AXError, CGPoint?) { (.success, storedFrame.origin) }
+    override func readSize() -> (AXError, CGSize?) { (.success, storedFrame.size) }
 }

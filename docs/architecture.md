@@ -344,7 +344,10 @@ or its frame read failed — is reported on
 `AccessibilityManager.unreadableWindowIDs` while the window server still
 shows it. Discovery holds such a window in every store: not gone, not
 hidden, not returned. The tile pass keeps its leaf and writes no frame to
-it, and the poll that reads it again retiles its key once. The walk sets
+it, and the poll that reads it again retiles its key once. A later walk
+that reads the window ends discovery's hold on it too, without waiting for
+that poll (`AccessibilityManager.readWindowIDs`). A switch does not wait
+for the poll at all, see "Reveal retry" below. The walk sets
 a 0.25 s messaging timeout on the elements it reads, so a stalled app
 costs a quarter second and is held rather than judged. An app whose
 window list timed out is not asked again until a backoff is up, half a
@@ -384,6 +387,34 @@ switched out, `computeChanges` treats a missing window as no evidence and
 skips the cycle, and `pollWindowChanges` stops there;
 `WindowManager.systemInterruption` opens and closes that span.
 
+### Reveal retry
+
+A switch reveals the incoming workspace from the walk it took first. An
+app busy at that moment (a browser handling "back to tab" from picture in
+picture, Messages activating from a Dock click) fails that walk, and its
+windows stay in the hide corner: a floater has no handle to restore, and a
+tile is held by the switch's tile pass. The poll that would repair them
+waits out the 1.5 s transition hold and the app's stall backoff, which
+left a tile parked for up to eight seconds.
+
+`WorkspaceOrchestrator.retryReveal` asks just those apps again, every
+100 ms for 15 tries, with a 50 ms timeout
+(`AccessibilityManager.revealRetryWindows`). A tile joins when the engine
+holds it on the incoming workspace (`TilingEngine.heldMembers`) and the
+switch's walk could not read it, so a tile held as off on another Space
+does not. When the app answers, its stall backoff ends
+(`noteWindowListAnswered`). A floater gets its saved frame back. A tile
+gets its frame from the engine: the retry walks again, and if the walk
+reads the tile, releases the engine's hold record and retiles the visible
+workspaces from that walk. The retry runs no drift detection and no park
+repair, since frames read inside the transition hold are not settled. A
+window moved, closed, hidden again or on a workspace another switch hid
+leaves the retry, and a ghost never joins it. The switch asks for a repair
+poll when it starts a retry (`onRevealMissed`), and again when the retry
+gives up. `isSwitchSettled` stays false while a retry is pending. The
+switch's focus pick is unchanged: a held tile does not take focus when it
+comes back.
+
 ## Ownership rules
 
 - **`WindowStateCache`** is the only owner of window-keyed
@@ -397,7 +428,10 @@ skips the cycle, and `pollWindowChanges` stops there;
   tokens (e.g. `PollingScheduler.pendingPoll`) deliberately do not
   live here.
 - **`TilingEngine`** owns the BSP trees. Nothing else mutates
-  `tree.root`.
+  `tree.root`. Outside state reaches it through closures `WindowManager`
+  wires: `heldWindowIDsSource` (the hold), `pendingRecoverySource` (the
+  recovery's pending set) and `splitTargetSource` (the focus record, the
+  tile a new window splits).
 - **`WorkspaceManager`** owns the workspace↔screen mapping. Nothing
   else writes `monitorWorkspace`. Homes are not stored: they are computed
   through `WorkspaceHomeResolver`.
@@ -516,8 +550,8 @@ tags its suppression `source: .workspaceSwitch`; every other caller is
 `.other`, and `SuppressionRegistry.isHeldOnlyByWorkspaceSwitch` is true
 only while no `.other` hold is live. `SwitchHoldAdmission.allows` then also
 needs `WorkspaceOrchestrator.isSwitchSettled` (no `switchWorkspace` call
-under way, so its walk, retile and focus steps are done, and no floater
-reveal retry still pending), no held button or finishing drag, no pending
+under way, so its walk, retile and focus steps are done, and no reveal
+retry still pending), no held button or finishing drag, no pending
 display change and no session interruption. While all of that holds, a
 new-window request runs `admitNewWindowsDuringHold` at its deadline instead
 of waiting:

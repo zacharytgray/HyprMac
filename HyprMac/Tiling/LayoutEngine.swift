@@ -142,15 +142,23 @@ struct LayoutEngine {
     /// A leaf with an explicit override keeps that direction. Otherwise the
     /// aspect-ratio direction is preferred, with the other axis as a bounded
     /// fallback when window constraints reject the preferred split.
+    /// `preferringTenant` moves the leaf holding that window to the front of
+    /// both passes. An unknown id changes nothing.
     private func fittingPlacement(for window: HyprWindow?,
                                   in tree: BSPTree,
                                   maxDepth: Int,
                                   rect: CGRect,
                                   minimumSize: (HyprWindow?) -> CGSize,
                                   skippingTenants: Set<CGWindowID> = [],
+                                  preferringTenant preferred: CGWindowID? = nil,
                                   noting: ((SlotRefusal) -> Void)? = nil)
         -> (leaf: BSPNode, direction: SplitDirection)? {
-        let leaves = tree.root.allLeavesRightToLeft()
+        var leaves = tree.root.allLeavesRightToLeft()
+        // the focused tile goes first in each pass. it still has to pass
+        // every check below; when it does not, the walk carries on as before
+        if let preferred, let index = leaves.firstIndex(where: { $0.window?.windowID == preferred }) {
+            leaves.insert(leaves.remove(at: index), at: 0)
+        }
         for pass in 0...1 {
             for leaf in leaves {
                 if let tenant = leaf.window?.windowID, skippingTenants.contains(tenant) { continue }
@@ -206,14 +214,16 @@ struct LayoutEngine {
         return nil
     }
 
-    /// Smart-insert via `fittingLeaf`. Returns false if no leaf accepts the
-    /// pair; the pass then reports a refusal (see `AdmissionRecovery`).
+    /// Smart-insert via `fittingPlacement`. Returns false if no leaf accepts
+    /// the pair; the pass then reports a refusal (see `AdmissionRecovery`).
+    /// `preferringTenant` is the focused tile, tried first in each pass.
     @discardableResult
     func smartInsertFitting(_ window: HyprWindow,
                             into tree: BSPTree,
                             maxDepth: Int,
                             rect: CGRect,
                             skippingTenants: Set<CGWindowID> = [],
+                            preferringTenant: CGWindowID? = nil,
                             minimumSize: (HyprWindow?) -> CGSize) -> Bool {
         if tree.root.isEmpty {
             tree.root.window = window
@@ -222,7 +232,8 @@ struct LayoutEngine {
 
         guard let placement = fittingPlacement(for: window, in: tree, maxDepth: maxDepth,
                                                rect: rect, minimumSize: minimumSize,
-                                               skippingTenants: skippingTenants) else {
+                                               skippingTenants: skippingTenants,
+                                               preferringTenant: preferringTenant) else {
             return false
         }
 
