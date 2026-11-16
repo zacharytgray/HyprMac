@@ -2488,11 +2488,6 @@ class WindowManager {
         settleDiscoveryFollowUps(changes, allWindows: allWindows, fire: fire)
     }
 
-    /// The admit-only pass a finished workspace switch's hold allows
-    /// (`SwitchHoldAdmission`). Walks the windows and admits only the ones
-    /// discovery has never known, through the ordinary assignment and
-    /// verified tile pass. Everything else this walk shows (gone, hidden,
-    /// returned, drift) is left to the full poll the hold still defers.
     /// Whether this poll may send an app's first window to the cursor's
     /// monitor: not a reconcile tick, and not while the displays change.
     private func cursorPlacementGate(_ fire: PollingScheduler.Fire?) -> ActionDispatcher.CursorPlacementGate {
@@ -2501,6 +2496,11 @@ class WindowManager {
         return .open
     }
 
+    /// The admit-only pass a finished workspace switch's hold allows
+    /// (`SwitchHoldAdmission`). Walks the windows and admits only the ones
+    /// discovery has never known, through the ordinary assignment and
+    /// verified tile pass. Everything else this walk shows (gone, hidden,
+    /// returned, drift) is left to the full poll the hold still defers.
     private func admitNewWindowsDuringHold() {
         guard !mouseButtonDown else { return }
         let fire = pollingScheduler.currentFire
@@ -3146,11 +3146,11 @@ private extension WindowManager {
                 .subtracting(self.stateCache.floatingWindowIDs)
                 .subtracting(self.stateCache.hiddenWindowIDs)
         }
-        // the tile a new window splits: the one HyprMac last focused
         // a window sent to the cursor's monitor rolls back to where it opened
         tilingEngine.newcomerOriginSource = { [weak self] id in
             self?.actionDispatcher.cursorMoveOrigin(id)
         }
+        // the tile a new window splits: the one HyprMac last focused
         tilingEngine.splitTargetSource = { [weak self] in
             guard let self else { return nil }
             let id = self.focusBorder.trackedWindowID ?? self.focusController.lastFocusedID
