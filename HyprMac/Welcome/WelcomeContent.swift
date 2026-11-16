@@ -26,6 +26,11 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "checkmark.circle",
+            title: "The Menu Bar Panel Stays Put",
+            description: "Closing the menu bar panel no longer quits HyprMac, a bug in v0.22.7."
+        ),
+        WhatsNewFeature(
             icon: "dock.rectangle",
             title: "Show HyprMac in the Dock",
             description: "A new Show in Dock setting in General gives HyprMac a Dock icon. Left off, HyprMac now stays out of the Dock even when you open it again.",
