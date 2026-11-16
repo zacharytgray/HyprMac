@@ -122,7 +122,7 @@ struct TilingSettingsView: View {
     private func floatingColorRow(divider: Bool) -> some View {
         HyprRow("Floating window color", icon: "paintpalette.fill",
                 subtitle: config.focusBracketStyle != .off
-                    ? "Marks floating windows and the focus marks on a floating window."
+                    ? "Outlines floating windows and colors the focus marks on a floating window."
                     : nil,
                 divider: divider, floatingMarker: true) {
             ColorPickerRow(
@@ -244,7 +244,7 @@ struct TilingSettingsView: View {
                         defaultLabel: "black · default"
                     )
                 }
-                // corners alone: the quiet floater marks use it. with
+                // corners alone: the floater outlines use it. with
                 // borders on, the row sits in the border group below
                 if !config.showFocusBorder {
                     floatingColorRow(divider: true)

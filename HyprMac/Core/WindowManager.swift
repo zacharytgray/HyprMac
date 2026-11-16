@@ -792,8 +792,7 @@ class WindowManager {
         if changes.contains(.visibility) || changes.contains(.bracketAppearance) {
             focusBorder.setFloaterMarks(
                 FloaterMarkStyle.resolve(showFocusBorder: state.showFocusBorder,
-                                         bracketStyle: state.focusBracketStyle),
-                cornerRadius: state.focusBracketRadius)
+                                         bracketStyle: state.focusBracketStyle))
         }
         if changes.contains(.visibility) {
             if state.showFocusBorder, isRunning {
@@ -804,11 +803,11 @@ class WindowManager {
                     refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
                 }
             } else if isRunning {
-                // corners mode marks the floaters without a focus border
+                // corners mode outlines the floaters without a focus border
                 refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
             }
         } else if changes.contains(.bracketAppearance), isRunning {
-            // style on or off, or the roundness the quiet marks share
+            // style on or off decides whether the floaters are outlined
             refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
         }
         if changes.contains(.dimming) || changes.contains(.windowCornerRadius) {
@@ -876,7 +875,7 @@ class WindowManager {
         scratchpad.tiledRegionInset = config.scratchpadRegionInset
         scratchpad.tileNewMembers = config.scratchpadTileByDefault
         focusBorder.isEnabled = config.showFocusBorder
-        focusBorder.setFloaterMarks(floaterMarks, cornerRadius: config.resolvedFocusBracketRadius)
+        focusBorder.setFloaterMarks(floaterMarks)
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
         focusBorder.fadeDurationSec = config.chromeFadeDurationSec
         focusBrackets.primaryScreenHeight = displayManager.primaryScreenHeight
@@ -1478,7 +1477,7 @@ class WindowManager {
         // cache-based: this fires on every Hypr release and previously ran
         // up to three full-desktop enumerations (one here + two delayed
         // reasserts). the border geometry comes from live frame reads of
-        // cached windows either way. corners mode re-masks its floater marks
+        // cached windows either way. corners mode re-masks its floater outlines
         // here too; the focused-border reassert below needs borders.
         guard isRunning, config.enabled, floaterMarks != .none else { return }
         refreshFloatingBorders()
@@ -2175,7 +2174,7 @@ class WindowManager {
         refreshDimming()
     }
 
-    /// What marks the visible floaters: outlines, quiet corners or nothing.
+    /// What marks the visible floaters: outlines or nothing.
     private var floaterMarks: FloaterMarkStyle {
         .resolve(showFocusBorder: config.showFocusBorder, bracketStyle: config.focusBracketStyle)
     }
@@ -2189,9 +2188,9 @@ class WindowManager {
     }
 
     /// Recompute floater frames and push them into the focus border. Each
-    /// floater gets a persistent mark at the floating border color so the
-    /// user can spot a floater: an outline with window borders, four quiet
-    /// corners in Corners mode. One set, one occlusion pass, either way.
+    /// floater gets a persistent outline at the floating border color so
+    /// the user can spot a floater that ended up behind a tile. It draws in
+    /// Corners mode too, with no focus border.
     private func refreshFloatingBorders(windows: [HyprWindow]? = nil) {
         if floaterMarks != .none {
             let source = windows ?? Array(stateCache.cachedWindows.values)
