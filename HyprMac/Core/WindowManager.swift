@@ -3123,6 +3123,12 @@ private extension WindowManager {
                 .subtracting(self.stateCache.floatingWindowIDs)
                 .subtracting(self.stateCache.hiddenWindowIDs)
         }
+        // the tile a new window splits: the one HyprMac last focused
+        tilingEngine.splitTargetSource = { [weak self] in
+            guard let self else { return nil }
+            let id = self.focusBorder.trackedWindowID ?? self.focusController.lastFocusedID
+            return id == 0 ? nil : id
+        }
         tilingEngine.pendingRecoverySource = { [weak self] in
             self?.admissionRecovery.pendingWindowIDs ?? []
         }

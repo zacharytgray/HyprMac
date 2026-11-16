@@ -2152,18 +2152,32 @@ class TilingEngine {
     @discardableResult
     private func smartInsertFitting(_ window: HyprWindow, into tree: BSPTree,
                                     maxDepth: Int, rect: CGRect,
-                                    skippingTenants: Set<CGWindowID> = []) -> Bool {
+                                    skippingTenants: Set<CGWindowID> = [],
+                                    splitting target: CGWindowID? = nil) -> Bool {
         layoutEngine.smartInsertFitting(window, into: tree, maxDepth: maxDepth,
                                         rect: rect, skippingTenants: skippingTenants,
+                                        preferringTenant: target,
                                         minimumSize: minimumSize(for:))
+    }
+
+    /// The focused tile a membership pass splits first: the source's window,
+    /// only while `tree` already holds it as a leaf. A pass filling an empty
+    /// tree, or one for another workspace or screen, gets nil and inserts as
+    /// it always did.
+    private func splitTarget(in tree: BSPTree) -> CGWindowID? {
+        guard let id = splitTargetSource(),
+              tree.allWindows.contains(where: { $0.windowID == id }) else { return nil }
+        return id
     }
 
     /// A kept length only rules out a slot longer than it. A window opened at
     /// its maximum can still fill a slot at or under that, so it gets the try.
     private func fixedLengthRefuses(_ fixed: FixedSize, _ window: HyprWindow, tree: BSPTree,
-                                    maxDepth: Int, rect: CGRect) -> Bool {
+                                    maxDepth: Int, rect: CGRect,
+                                    splitting target: CGWindowID?) -> Bool {
         let probe = tree.deepClone()
-        guard smartInsertFitting(window, into: probe, maxDepth: maxDepth, rect: rect),
+        guard smartInsertFitting(window, into: probe, maxDepth: maxDepth, rect: rect,
+                                 splitting: target),
               let slot = probe.layout(in: rect, gap: gapSize, padding: outerPadding)
                 .first(where: { $0.0.windowID == window.windowID })?.1 else { return true }
         let length = fixed.axis == .width ? slot.width : slot.height
@@ -2267,6 +2281,10 @@ class TilingEngine {
         var insertedWindows: [HyprWindow] = []
         var refusedWindows: [HyprWindow] = []
         var pending = toInsert
+        // the focused tile, read once the leavers are gone. each newcomer
+        // smart insert places takes it over, as if it had opened and taken
+        // focus, so a batch spirals out from the focused tile
+        var target = splitTarget(in: t)
         while !pending.isEmpty {
             if let index = pending.firstIndex(where: { w in
                 restoreRememberedSlot(for: w, in: t, key: key, rect: rect,
@@ -2281,7 +2299,8 @@ class TilingEngine {
             // a window that keeps its own length fills no slot, and asking
             // again only repeats the resize and rollback the user watched
             if let fixed = minSizes.fixedSize(for: w),
-               fixedLengthRefuses(fixed, w, tree: t, maxDepth: maxDepth(for: screen), rect: rect) {
+               fixedLengthRefuses(fixed, w, tree: t, maxDepth: maxDepth(for: screen), rect: rect,
+                                  splitting: target) {
                 refusedWindows.append(w)
                 hyprLog(.notice, .tiling, "no fitting tile slot: wid=\(w.windowID) ws\(workspace)"
                         + " keeps its \(fixed.axis.rawValue) at \(String(format: "%g", Double(fixed.length)))"
@@ -2289,12 +2308,23 @@ class TilingEngine {
                 continue
             }
             let insert = {
-                self.smartInsertFitting(w, into: t, maxDepth: self.maxDepth(for: screen), rect: rect)
+                self.smartInsertFitting(w, into: t, maxDepth: self.maxDepth(for: screen), rect: rect,
+                                        splitting: target)
             }
             // an unrelated newcomer must not inherit another request's bypass.
             let fits = minimaBypass?[w.windowID] == nil ? withoutMinimaBypass(insert) : insert()
             if fits {
                 insertedWindows.append(w)
+                if let focused = target {
+                    let split = Self.sibling(of: w, in: t)
+                    if split == focused {
+                        hyprLog(.debug, .tiling, "split focused tile: wid=\(w.windowID) beside \(focused)")
+                    } else {
+                        hyprLog(.debug, .tiling, "focused tile \(focused) passed over: wid=\(w.windowID)"
+                                + " split \(split.map(String.init) ?? "another tile")")
+                    }
+                    target = w.windowID
+                }
             } else {
                 refusedWindows.append(w)
                 hyprLog(.notice, .tiling, "no fitting tile slot: wid=\(w.windowID) ws\(workspace) — staying in place")
@@ -3305,6 +3335,11 @@ class TilingEngine {
     /// read again.
     var heldWindowIDsSource: () -> Set<CGWindowID> = { [] }
 
+    /// The window HyprMac last focused, as the tile a new window splits.
+    /// Wired by `WindowManager` to the focus record. nil splits by the
+    /// right-to-left walk alone (see `splitTarget(in:)`).
+    var splitTargetSource: () -> CGWindowID? = { nil }
+
     /// The held members of the pass under way: named by the source and
     /// absent from the list the pass was given. One the list carries is
     /// back, and not held. They keep their leaves, so the other members
@@ -3663,8 +3698,13 @@ class TilingEngine {
         candidate.root.resetSplitRatios()
         primeMinimumSizes(windows)
         let rect = layoutRect(for: key, screen: screen)
+        // the same focused tile and the same hand-over as the pass, so the
+        // answer describes what the pass will do
+        var target = splitTarget(in: candidate)
         for window in windows where !candidate.contains(window) {
-            guard smartInsertFitting(window, into: candidate, maxDepth: maxDepth(for: screen), rect: rect) else { return false }
+            guard smartInsertFitting(window, into: candidate, maxDepth: maxDepth(for: screen), rect: rect,
+                                     splitting: target) else { return false }
+            if target != nil { target = window.windowID }
         }
         return true
     }

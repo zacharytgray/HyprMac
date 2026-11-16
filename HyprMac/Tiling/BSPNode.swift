@@ -306,10 +306,10 @@ class BSPNode {
 
     /// Leaves in deepest-right-first order.
     ///
-    /// Used by smart insert: the dwindle default is to split the
-    /// deepest-right leaf, but on constrained monitors the algorithm
-    /// walks back through this list to find a shallower leaf with
-    /// enough room (see `LayoutEngine.smartInsertFitting`).
+    /// Used by smart insert: after the focused tile, the dwindle default
+    /// is to split the deepest-right leaf, but on constrained monitors the
+    /// algorithm walks back through this list to find a shallower leaf
+    /// with enough room (see `LayoutEngine.smartInsertFitting`).
     func allLeavesRightToLeft() -> [BSPNode] {
         var result: [BSPNode] = []
         collectLeavesRightToLeft(into: &result)
