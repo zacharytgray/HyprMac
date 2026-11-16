@@ -5,7 +5,7 @@ SCRIPT="$(cd "$(dirname "$0")" && pwd)/release.sh"
 
 grep -q '^set -Eeuo pipefail$' "$SCRIPT"
 grep -q 'ERROR: Sparkle generate_appcast missing' "$SCRIPT"
-grep -q 'cp "$PROJECT_DIR/docs/appcast.xml" "$DIST_DIR/appcast.xml"' "$SCRIPT"
+grep -q 'cp "$PROJECT_DIR/docs/appcast.xml" "$APPCAST_DIR/appcast.xml"' "$SCRIPT"
 grep -q 'git -C "$TEMP_TAP" push origin HEAD:main' "$SCRIPT"
 grep -q 'spctl -a -vv -t exec' "$SCRIPT"
 grep -q -- '-resolvePackageDependencies' "$SCRIPT"
@@ -39,6 +39,26 @@ release_line=$(grep -n 'gh release create "v\$NEW_VERSION"' "$SCRIPT" | head -1 
 [[ "$commit_line" -lt "$push_line" && "$push_line" -lt "$tag_line" ]]
 [[ "$tag_line" -lt "$tag_push_line" && "$tag_push_line" -lt "$release_line" ]]
 grep -q -- '--verify-tag' "$SCRIPT"
+# one dmg per release: only the stable name is uploaded, and the appcast and cask point at it
+if grep 'gh release create' "$SCRIPT" | grep -q '"$DMG_PATH"'; then
+    echo "release still uploads the versioned dmg" >&2
+    exit 1
+fi
+[[ "$(grep -c 'gh release create "v\$NEW_VERSION" "\$STABLE_DMG_PATH" --repo' "$SCRIPT")" -eq 2 ]]
+grep -q 'enclosure url=\\"$STABLE_DMG_URL\\"' "$SCRIPT"
+grep -q 'generate_appcast" "$APPCAST_DIR" --maximum-deltas 0' "$SCRIPT"
+grep -q 'STABLE_DMG_PATH="$APPCAST_DIR/$STABLE_DMG_NAME"' "$SCRIPT"
+if grep -q 'generate_appcast" "$DIST_DIR"' "$SCRIPT"; then
+    echo "generate_appcast still runs over dist, which rewrites old entry urls" >&2
+    exit 1
+fi
+APPCAST="$(dirname "$SCRIPT")/../docs/appcast.xml"
+if grep -q '\.delta"' "$APPCAST"; then
+    echo "appcast lists delta updates that are never uploaded" >&2
+    exit 1
+fi
+CASK="$(dirname "$SCRIPT")/../Casks/hyprmac.rb"
+grep -qF 'url "https://github.com/zacharytgray/HyprMac/releases/download/v#{version}/HyprMac.dmg"' "$CASK"
 if grep -Eq 'notarytool .*\|\| true|stapler .*\|\| true|codesign .*\|\| true|spctl .*\|\| true' "$SCRIPT"; then
     echo "release verification failures can still be swallowed" >&2
     exit 1

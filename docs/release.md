@@ -92,16 +92,24 @@ The pipeline re-signs Sparkle's nested code, signs the app last with the Release
 entitlements, and verifies the signature. It then creates the DMG, submits it
 to Apple, staples and validates the ticket, mounts the DMG read-only, and runs
 both `codesign` and Gatekeeper verification against the packaged app. It then
-copies the stapled `HyprMac-<version>.dmg` to `build/HyprMac.dmg` and validates
-that copy's ticket as well. The copy lives outside `dist/` so Sparkle's
-`generate_appcast` never treats it as a second update.
+copies the stapled `HyprMac-<version>.dmg` to
+`build/appcast-staging/HyprMac.dmg` and validates that copy's ticket as well.
+That copy is the only DMG the release uploads. The versioned file in `dist/` is
+a local record only.
 
 ### 5. Generate and validate update metadata
 
-Sparkle generates a signed appcast entry for the DMG. The pipeline verifies
-the short version, build number, download URL, and EdDSA signature. It also
-updates the in-repository Homebrew cask with the DMG SHA-256 and verifies the
-new version and hash.
+Sparkle's `generate_appcast` runs on `build/appcast-staging/`, which holds only
+`HyprMac.dmg` and a copy of `docs/appcast.xml`. It adds a signed entry whose
+download URL is `releases/download/v<version>/HyprMac.dmg`. It leaves older
+entries alone because their archives are not in that folder. Do not point it at
+`dist/`: with older DMGs beside the new one, it rewrites every old entry's URL
+to the new tag, and those files do not exist there. It runs with
+`--maximum-deltas 0` because the release uploads no delta files. The pipeline
+verifies the short version, build number, stable download URL, and EdDSA
+signature, and fails if the appcast lists any `.delta` file. It also updates
+the in-repository Homebrew cask with the DMG SHA-256 and verifies the new
+version, hash, and `v#{version}/HyprMac.dmg` URL.
 
 ### 6. Commit, push `main`, and publish the final tag
 
@@ -113,14 +121,13 @@ therefore contains the final project version, appcast, and cask metadata.
 ### 7. Create the GitHub Release
 
 The script creates the release from the already-pushed tag with `--verify-tag`
-and uses either the supplied notes file or generated notes. It uploads two
-assets, both the same notarized bytes:
-
-- `HyprMac-<version>.dmg`, referenced by the Sparkle appcast and the Homebrew
-  cask.
-- `HyprMac.dmg`, which keeps
-  `https://github.com/zacharytgray/HyprMac/releases/latest/download/HyprMac.dmg`
-  working as a permanent download link.
+and uses either the supplied notes file or generated notes. It uploads one
+asset, `HyprMac.dmg`. The Sparkle appcast and the Homebrew cask point at it
+under `releases/download/v<version>/`, and
+`https://github.com/zacharytgray/HyprMac/releases/latest/download/HyprMac.dmg`
+stays a permanent download link. Releases up to v0.23.0 also carry
+`HyprMac-<version>.dmg`, the same bytes. Leave those assets alone; the
+v0.23.0 appcast entry and older casks still point at them.
 
 ### 8. Update the Homebrew tap
 
@@ -142,8 +149,8 @@ state first.
   do not rebuild different bytes under the same version.
 - **After the tag was pushed but before the GitHub Release:** verify that the
   tag points to the release commit, then create the GitHub Release from that
-  existing tag and upload both assets from the exact notarized DMG, the
-  versioned name and `HyprMac.dmg`.
+  existing tag and upload `build/appcast-staging/HyprMac.dmg`, the stable copy of the exact
+  notarized DMG. Do not upload the versioned file.
 - **After the GitHub Release but before the tap push:** verify the published
   DMG hash, then update the tap with the already-validated cask.
 

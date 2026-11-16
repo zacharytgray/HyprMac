@@ -16,9 +16,13 @@ NEW_VERSION="${1:?Usage: ./scripts/release.sh <version> [release-notes-file]}"
 RELEASE_NOTES_FILE="${2:-}"
 DMG_NAME="$APP_NAME-$NEW_VERSION.dmg"
 DMG_PATH="$DIST_DIR/$DMG_NAME"
-# stable-named copy for the /releases/latest/download link. it lives in
-# BUILD_DIR, not DIST_DIR, so generate_appcast never sees it.
-STABLE_DMG_PATH="$BUILD_DIR/$APP_NAME.dmg"
+# the release uploads only this stable-named copy, so /releases/latest/download
+# keeps working. generate_appcast runs on a folder holding just this file: with
+# older archives beside it, it rewrites every old entry's url to the new tag.
+APPCAST_DIR="$BUILD_DIR/appcast-staging"
+STABLE_DMG_NAME="$APP_NAME.dmg"
+STABLE_DMG_PATH="$APPCAST_DIR/$STABLE_DMG_NAME"
+STABLE_DMG_URL="https://github.com/$REPO/releases/download/v$NEW_VERSION/$STABLE_DMG_NAME"
 SOURCE_COMMIT="$(git rev-parse HEAD)"
 
 if [[ -z "${DEVELOPMENT_TEAM:-}" ]]; then
@@ -165,7 +169,8 @@ hdiutil attach -readonly -nobrowse -mountpoint "$VERIFY_MOUNT" "$DMG_PATH"
 codesign --verify --deep --strict --verbose=2 "$VERIFY_MOUNT/$APP_NAME.app"
 spctl -a -vv -t exec "$VERIFY_MOUNT/$APP_NAME.app"
 hdiutil detach "$VERIFY_MOUNT"
-rm -f "$STABLE_DMG_PATH"
+rm -rf "$APPCAST_DIR"
+mkdir -p "$APPCAST_DIR"
 cp "$DMG_PATH" "$STABLE_DMG_PATH"
 xcrun stapler validate "$STABLE_DMG_PATH"
 echo "       Signed, notarized, and stapled"
@@ -175,14 +180,19 @@ if [[ ! -x "$SPARKLE_BIN/generate_appcast" ]]; then
     echo "ERROR: Sparkle generate_appcast missing at $SPARKLE_BIN" >&2
     exit 1
 fi
-cp "$PROJECT_DIR/docs/appcast.xml" "$DIST_DIR/appcast.xml"
-"$SPARKLE_BIN/generate_appcast" "$DIST_DIR" \
+cp "$PROJECT_DIR/docs/appcast.xml" "$APPCAST_DIR/appcast.xml"
+# no deltas: the release uploads only the dmg
+"$SPARKLE_BIN/generate_appcast" "$APPCAST_DIR" --maximum-deltas 0 \
     --download-url-prefix "https://github.com/$REPO/releases/download/v$NEW_VERSION/"
-test -s "$DIST_DIR/appcast.xml"
-cp "$DIST_DIR/appcast.xml" "$PROJECT_DIR/docs/appcast.xml"
+test -s "$APPCAST_DIR/appcast.xml"
+cp "$APPCAST_DIR/appcast.xml" "$PROJECT_DIR/docs/appcast.xml"
 grep -q "<sparkle:shortVersionString>$NEW_VERSION</sparkle:shortVersionString>" docs/appcast.xml
 grep -q "<sparkle:version>$NEW_BUILD</sparkle:version>" docs/appcast.xml
-grep -q "releases/download/v$NEW_VERSION/$DMG_NAME" docs/appcast.xml
+grep -qF "enclosure url=\"$STABLE_DMG_URL\"" docs/appcast.xml
+if grep -q '\.delta"' docs/appcast.xml; then
+    echo "ERROR: appcast lists delta updates, which are not uploaded." >&2
+    exit 1
+fi
 grep -q 'sparkle:edSignature="[^"]\+"' docs/appcast.xml
 
 DMG_SHA=$(shasum -a 256 "$DMG_PATH" | awk '{print $1}')
@@ -190,6 +200,7 @@ sed -i '' "s/version \".*\"/version \"$NEW_VERSION\"/" Casks/hyprmac.rb
 sed -i '' "s/sha256 \".*\"/sha256 \"$DMG_SHA\"/" Casks/hyprmac.rb
 grep -q "version \"$NEW_VERSION\"" Casks/hyprmac.rb
 grep -q "sha256 \"$DMG_SHA\"" Casks/hyprmac.rb
+grep -qF 'releases/download/v#{version}/HyprMac.dmg"' Casks/hyprmac.rb
 
 echo "[6/8] Committing, pushing main, and publishing final tag"
 git fetch --prune origin
@@ -208,10 +219,10 @@ test "$(git rev-list -n 1 "v$NEW_VERSION")" = "$RELEASE_COMMIT"
 
 echo "[7/8] Creating GitHub Release v$NEW_VERSION"
 if [[ -n "$RELEASE_NOTES_FILE" ]]; then
-    gh release create "v$NEW_VERSION" "$DMG_PATH" "$STABLE_DMG_PATH" --repo "$REPO" \
+    gh release create "v$NEW_VERSION" "$STABLE_DMG_PATH" --repo "$REPO" \
         --title "HyprMac v$NEW_VERSION" --notes-file "$RELEASE_NOTES_FILE" --verify-tag
 else
-    gh release create "v$NEW_VERSION" "$DMG_PATH" "$STABLE_DMG_PATH" --repo "$REPO" \
+    gh release create "v$NEW_VERSION" "$STABLE_DMG_PATH" --repo "$REPO" \
         --title "HyprMac v$NEW_VERSION" --generate-notes --verify-tag
 fi
 
