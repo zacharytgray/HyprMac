@@ -37,6 +37,21 @@ Window shape and key-press marks have separate controls. **Window corner radius*
 
 Explicit saved dimming, border, color, radius, and fade preferences remain authoritative. Missing fields, fresh configurations, and Reset to Defaults use the new baseline. Error feedback still shows a red overlay shake and message after rejection even when persistent borders or corner cues are off. It does not shake application windows.
 
+### Floater marks
+
+Every visible floating window carries a mark in the **Floating window color** (brand magenta by default, light and dark aware), so a floater sitting flush in a tile slot does not pass for tiled.
+
+| Focus indicator | Floater mark | Focus marks on a floating window |
+| --- | --- | --- |
+| Corners | Four quiet corner marks | Floating color |
+| Window borders | Outline (unchanged) | n/a |
+| Both | Outline only, no corners on top | Floating color |
+| None | Nothing | n/a |
+
+The quiet marks are 2-point strokes with 10-point legs at 85% opacity, with no contrast stroke. They use the focus marks' shape: the same 14-point inset and the saved mark roundness. When Hypr is held on a focused floater, its focus marks cover the quiet ones exactly. Focus marks on a floater keep their configured length, thickness and contrast stroke; only the color changes. The Floating window color row shows in Corners mode too, inside the corner group. There is no separate toggle.
+
+The quiet marks reuse the outline machinery: the same floater set, occlusion masking, scratchpad filter, fullscreen hiding, drag hiding and fade. Changing the indicator, roundness or color repaints them without retiling, moving windows or changing focus.
+
 ### Corner compatibility
 
 The optional `focusBracketStyle`, `focusBracketColorHex`, and `focusBracketRadius` fields extend the existing configuration without renaming its keys. For an older file with no style field, an explicit focus-border color becomes the initial bracket color. Once the new style field is saved, an absent bracket color means the black default and never reimports the old border color. Thus the laptop's saved black cue is preserved until changed deliberately. Old builds can ignore the new fields, but may discard them if they rewrite the shared file; cross-version iCloud writes cannot preserve preferences unknown to the old writer.
@@ -84,7 +99,7 @@ Gap/padding, split limits, monitor enablement, and scratchpad region size still 
 
 ## Control groups
 
-Mark roundness, length, thickness, and corner color form one group without internal dividers. With window borders enabled, tiled color, floating color, and fade duration form one group. Fade remains available for dimming even when window borders are disabled. Fresh installs select Corners with persistent window borders off. Explicit saved choices remain intact.
+Mark roundness, length, thickness, corner color and, in Corners mode, floating color form one group without internal dividers. With window borders enabled, tiled color and floating color form one group instead. Fade remains available for dimming even when window borders are disabled. Fresh installs select Corners with persistent window borders off. Explicit saved choices remain intact.
 
 ## Launch at login setup
 

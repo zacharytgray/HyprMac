@@ -747,10 +747,14 @@ class WindowManager {
                 focusColor: trackedColor.cgColor,
                 floatingColor: floatingColor.cgColor)
         }
-        if changes.contains(.bracketAppearance) {
+        if changes.contains(.bracketAppearance) || changes.contains(.colors) {
+            let markedID = focusBrackets.trackedWindowID ?? 0
             focusBrackets.applyAppearance(
                 style: state.focusBracketStyle,
-                color: bracketColor.cgColor,
+                color: FocusMarkColor.resolve(
+                    focusedIsFloating: stateCache.floatingWindowIDs.contains(markedID),
+                    markColor: bracketColor.cgColor,
+                    floatingColor: floatingColor.cgColor),
                 radius: state.focusBracketRadius,
                 thickness: state.focusBracketThickness,
                 length: state.focusBracketLength)
@@ -771,6 +775,14 @@ class WindowManager {
         }
         if changes.contains(.visibility) {
             focusBorder.isEnabled = state.showFocusBorder
+        }
+        if changes.contains(.visibility) || changes.contains(.bracketAppearance) {
+            focusBorder.setFloaterMarks(
+                FloaterMarkStyle.resolve(showFocusBorder: state.showFocusBorder,
+                                         bracketStyle: state.focusBracketStyle),
+                cornerRadius: state.focusBracketRadius)
+        }
+        if changes.contains(.visibility) {
             if state.showFocusBorder, isRunning {
                 let focusedID = focusBorder.trackedWindowID ?? focusController.lastFocusedID
                 if let focused = stateCache.cachedWindows[focusedID] {
@@ -778,7 +790,13 @@ class WindowManager {
                 } else {
                     refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
                 }
+            } else if isRunning {
+                // corners mode marks the floaters without a focus border
+                refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
             }
+        } else if changes.contains(.bracketAppearance), isRunning {
+            // style on or off, or the roundness the quiet marks share
+            refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
         }
         if changes.contains(.dimming) || changes.contains(.windowCornerRadius) {
             if isRunning { refreshDimming() }
@@ -845,6 +863,7 @@ class WindowManager {
         scratchpad.tiledRegionInset = config.scratchpadRegionInset
         scratchpad.tileNewMembers = config.scratchpadTileByDefault
         focusBorder.isEnabled = config.showFocusBorder
+        focusBorder.setFloaterMarks(floaterMarks, cornerRadius: config.resolvedFocusBracketRadius)
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
         focusBorder.fadeDurationSec = config.chromeFadeDurationSec
         focusBrackets.primaryScreenHeight = displayManager.primaryScreenHeight
@@ -1301,7 +1320,7 @@ class WindowManager {
     /// own), one with it off, plus an AX frame read per tile.
     private func scheduleRestackRefresh(after delay: TimeInterval) {
         guard isRunning, !restackRefreshPending,
-              config.dimInactiveWindows || config.showFocusBorder,
+              config.dimInactiveWindows || floaterMarks != .none,
               stateCache.floatingWindowIDs.contains(where: workspaceManager.isWindowVisible) else { return }
         restackRefreshPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -1388,7 +1407,7 @@ class WindowManager {
         if hyprHeld, let frame = window.frame {
             focusBrackets.applyAppearance(
                 style: config.focusBracketStyle,
-                color: config.resolvedFocusBracketColor.cgColor,
+                color: focusMarkColor(for: window.windowID),
                 radius: config.resolvedFocusBracketRadius,
                 thickness: config.resolvedFocusBracketThickness,
                 length: config.resolvedFocusBracketLength)
@@ -1411,7 +1430,8 @@ class WindowManager {
             refreshFloatingBorders()
         } else {
             focusBorder.hidePersistentBorder()
-            focusBorder.hideFloatingBorders()
+            // corners mode still marks the floaters; none hides them
+            refreshFloatingBorders()
         }
         refreshDimming(focusedID: window.windowID)
     }
@@ -1428,7 +1448,7 @@ class WindowManager {
         guard let frame = window.frame else { return }
         focusBrackets.applyAppearance(
             style: config.focusBracketStyle,
-            color: config.resolvedFocusBracketColor.cgColor,
+            color: focusMarkColor(for: fid),
             radius: config.resolvedFocusBracketRadius,
             thickness: config.resolvedFocusBracketThickness,
             length: config.resolvedFocusBracketLength)
@@ -1442,15 +1462,17 @@ class WindowManager {
     /// window. Runs at 0.05s and 0.25s to catch both fast and slow OS
     /// re-raise paths.
     private func reassertFocusBorderAfterHyprRelease() {
+        // cache-based: this fires on every Hypr release and previously ran
+        // up to three full-desktop enumerations (one here + two delayed
+        // reasserts). the border geometry comes from live frame reads of
+        // cached windows either way. corners mode re-masks its floater marks
+        // here too; the focused-border reassert below needs borders.
+        guard isRunning, config.enabled, floaterMarks != .none else { return }
+        refreshFloatingBorders()
         guard Self.permitsHyprReleaseReassert(
             isRunning: isRunning,
             enabled: config.enabled,
             showFocusBorder: config.showFocusBorder) else { return }
-        // cache-based: this fires on every Hypr release and previously ran
-        // up to three full-desktop enumerations (one here + two delayed
-        // reasserts). the border geometry comes from live frame reads of
-        // cached windows either way.
-        refreshFloatingBorders()
 
         guard let tid = focusBorder.trackedWindowID,
               stateCache.floatingWindowIDs.contains(tid) else { return }
@@ -2134,15 +2156,31 @@ class WindowManager {
         if focusBrackets.isVisible, let bid = focusBrackets.trackedWindowID,
            let w = stateCache.cachedWindows[bid], let frame = w.frame {
             focusBrackets.updatePosition(frame)
+            // a float toggle mid-press changes the mark color
+            focusBrackets.recolor(focusMarkColor(for: bid))
         }
         refreshDimming()
     }
 
+    /// What marks the visible floaters: outlines, quiet corners or nothing.
+    private var floaterMarks: FloaterMarkStyle {
+        .resolve(showFocusBorder: config.showFocusBorder, bracketStyle: config.focusBracketStyle)
+    }
+
+    /// The focus marks take the Floating color on a floating window.
+    private func focusMarkColor(for windowID: CGWindowID) -> CGColor {
+        FocusMarkColor.resolve(
+            focusedIsFloating: stateCache.floatingWindowIDs.contains(windowID),
+            markColor: config.resolvedFocusBracketColor.cgColor,
+            floatingColor: config.resolvedFloatingBorderColor.cgColor)
+    }
+
     /// Recompute floater frames and push them into the focus border. Each
-    /// floater gets a persistent outline at the floating border color so
-    /// the user can spot a floater that ended up behind a tile.
+    /// floater gets a persistent mark at the floating border color so the
+    /// user can spot a floater: an outline with window borders, four quiet
+    /// corners in Corners mode. One set, one occlusion pass, either way.
     private func refreshFloatingBorders(windows: [HyprWindow]? = nil) {
-        if config.showFocusBorder {
+        if floaterMarks != .none {
             let source = windows ?? Array(stateCache.cachedWindows.values)
             var frames = floatingFrames(from: source)
             // prime the radius cache for each visible floater so the
@@ -2177,7 +2215,7 @@ class WindowManager {
     /// window. The border layer's mask cuts those occluders out so the
     /// border does not draw over windows that are visually on top of it.
     private func refreshBorderOcclusion(floaterFrames: [CGWindowID: CGRect]) {
-        guard config.showFocusBorder else { return }
+        guard floaterMarks != .none else { return }
         guard let info = CGWindowListCopyWindowInfo(
                 [.optionOnScreenOnly, .excludeDesktopElements],
                 kCGNullWindowID) as? [[String: Any]] else { return }

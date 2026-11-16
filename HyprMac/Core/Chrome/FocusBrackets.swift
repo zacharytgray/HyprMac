@@ -46,8 +46,8 @@ class FocusBrackets {
 
     private enum Tuning {
         // inset from window edge — brackets sit *inside* the window
-        // padded away from its edge.
-        static let inset: CGFloat = 14
+        // padded away from its edge. shared with the floater marks.
+        static let inset: CGFloat = CornerMarkGeometry.focusMarkInset
         // outward translation each corner starts at during scale-in.
         // brackets snap inward from this offset, mimicking a camera
         // autofocus locking on.
@@ -118,6 +118,14 @@ class FocusBrackets {
         for layer in cornerLayers { layer.strokeColor = accentCGColor }
         for layer in outlineLayers { layer.strokeColor = outline }
         CATransaction.commit()
+    }
+
+    /// Repaint the marks in `color` when it changed. No re-stamp, no animation.
+    func recolor(_ color: CGColor) {
+        mainThreadOnly()
+        guard color != accentCGColor else { return }
+        accentCGColor = color
+        applyStrokeColors()
     }
 
     /// Re-position brackets to `rect` without animation. Called when the
@@ -212,84 +220,22 @@ class FocusBrackets {
     private func stampCornerPaths(in target: CGRect? = nil) {
         guard let host = hostView, trackedWindowID != nil else { return }
         let bounds = host.bounds
-        let frame = target ?? bounds
-        let inset = Tuning.inset
-        let leg = markLength
-        // stylistic curvature is independent from the app window edge.
-        let r = markRadius
-        let x0 = frame.minX, y0 = frame.minY
-        let W = frame.maxX
-        let H = frame.maxY
-
-        // arc centers chosen so the arc is tangent to the inset edges:
-        // top edge at y = H - inset, left edge at x = inset, etc.
-        let centers = [
-            CGPoint(x: x0 + inset + r, y: H - inset - r),  // TL
-            CGPoint(x: W - inset - r, y: H - inset - r),   // TR
-            CGPoint(x: x0 + inset + r, y: y0 + inset + r), // BL
-            CGPoint(x: W - inset - r, y: y0 + inset + r),  // BR
-        ]
-        let arcs: [(CGFloat, CGFloat)] = [
-            (.pi / 2, .pi),         // TL: top tangent → left tangent
-            (0, .pi / 2),           // TR: right tangent → top tangent
-            (.pi, 3 * .pi / 2),     // BL: left tangent → bottom tangent
-            (3 * .pi / 2, 2 * .pi), // BR: bottom tangent → right tangent
-        ]
+        let paths = CornerMarkGeometry.paths(
+            in: target ?? bounds, inset: Tuning.inset,
+            radius: markRadius, legLength: markLength)
 
         ensureCornerLayers(host: host)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         for i in 0..<4 {
-            let path = makeCornerPath(
-                center: centers[i],
-                arcRadius: r,
-                startAngle: arcs[i].0,
-                endAngle: arcs[i].1,
-                legLength: leg)
             outlineLayers[i].frame = bounds
-            outlineLayers[i].path = path
+            outlineLayers[i].path = paths[i]
             outlineLayers[i].lineWidth = markThickness + 2
             cornerLayers[i].frame = bounds
-            cornerLayers[i].path = path
+            cornerLayers[i].path = paths[i]
             cornerLayers[i].lineWidth = markThickness
         }
         CATransaction.commit()
-    }
-
-    /// Build a single corner bracket: a straight leg, a 90° arc, another
-    /// straight leg. Legs extend tangent to the configured arc, along
-    /// the window's edges (inset by `Tuning.inset`).
-    private func makeCornerPath(center: CGPoint,
-                                arcRadius: CGFloat,
-                                startAngle: CGFloat,
-                                endAngle: CGFloat,
-                                legLength: CGFloat) -> CGPath {
-        let path = CGMutablePath()
-        let start = CGPoint(x: center.x + arcRadius * cos(startAngle),
-                            y: center.y + arcRadius * sin(startAngle))
-        let end = CGPoint(x: center.x + arcRadius * cos(endAngle),
-                          y: center.y + arcRadius * sin(endAngle))
-        // tangent unit vectors at start (going away from the arc) and
-        // end (going away from the arc). for a CCW arc, the before-arc
-        // direction at `start` is the radius rotated -90°, and the
-        // after-arc direction at `end` is the radius rotated +90°.
-        let startTangent = CGPoint(x: sin(startAngle), y: -cos(startAngle))
-        let endTangent = CGPoint(x: -sin(endAngle), y: cos(endAngle))
-
-        let leg1 = CGPoint(x: start.x + startTangent.x * legLength,
-                           y: start.y + startTangent.y * legLength)
-        let leg2 = CGPoint(x: end.x + endTangent.x * legLength,
-                           y: end.y + endTangent.y * legLength)
-
-        path.move(to: leg1)
-        path.addLine(to: start)
-        if arcRadius > 0 {
-            path.addArc(center: center, radius: arcRadius,
-                        startAngle: startAngle, endAngle: endAngle,
-                        clockwise: false)
-        }
-        path.addLine(to: leg2)
-        return path
     }
 
     private func ensureCornerLayers(host: NSView) {
@@ -479,5 +425,97 @@ class FocusBrackets {
         let nsY = primaryH - cgRect.origin.y - cgRect.height
         return NSRect(x: cgRect.origin.x, y: nsY,
                       width: cgRect.width, height: cgRect.height)
+    }
+}
+
+/// The four rounded corner marks, shared by the Hypr-key focus marks and
+/// the quiet floater marks `FocusBorder` draws in Corners mode.
+enum CornerMarkGeometry {
+    /// how far the marks sit inside the window edge
+    static let focusMarkInset: CGFloat = 14
+
+    /// One path per corner, ordered [topLeft, topRight, bottomLeft,
+    /// bottomRight], in NS (y up) coordinates of `frame`. Each is a
+    /// straight leg, a 90° arc of `radius`, and another leg, tangent to
+    /// the edges inset by `inset`.
+    static func paths(in frame: CGRect, inset: CGFloat, radius r: CGFloat,
+                      legLength leg: CGFloat) -> [CGPath] {
+        let x0 = frame.minX, y0 = frame.minY
+        let W = frame.maxX
+        let H = frame.maxY
+
+        // arc centers chosen so the arc is tangent to the inset edges:
+        // top edge at y = H - inset, left edge at x = inset, etc.
+        let centers = [
+            CGPoint(x: x0 + inset + r, y: H - inset - r),  // TL
+            CGPoint(x: W - inset - r, y: H - inset - r),   // TR
+            CGPoint(x: x0 + inset + r, y: y0 + inset + r), // BL
+            CGPoint(x: W - inset - r, y: y0 + inset + r),  // BR
+        ]
+        let arcs: [(CGFloat, CGFloat)] = [
+            (.pi / 2, .pi),         // TL: top tangent → left tangent
+            (0, .pi / 2),           // TR: right tangent → top tangent
+            (.pi, 3 * .pi / 2),     // BL: left tangent → bottom tangent
+            (3 * .pi / 2, 2 * .pi), // BR: bottom tangent → right tangent
+        ]
+        return (0..<4).map {
+            cornerPath(center: centers[$0], arcRadius: r,
+                       startAngle: arcs[$0].0, endAngle: arcs[$0].1, legLength: leg)
+        }
+    }
+
+    /// All four corners in one path, for a single shape layer.
+    static func combinedPath(in frame: CGRect, inset: CGFloat, radius: CGFloat,
+                             legLength: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        for corner in paths(in: frame, inset: inset, radius: radius, legLength: legLength) {
+            path.addPath(corner)
+        }
+        return path
+    }
+
+    /// Build a single corner bracket: a straight leg, a 90° arc, another
+    /// straight leg. Legs extend tangent to the arc, along the window's
+    /// inset edges.
+    private static func cornerPath(center: CGPoint,
+                                   arcRadius: CGFloat,
+                                   startAngle: CGFloat,
+                                   endAngle: CGFloat,
+                                   legLength: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        let start = CGPoint(x: center.x + arcRadius * cos(startAngle),
+                            y: center.y + arcRadius * sin(startAngle))
+        let end = CGPoint(x: center.x + arcRadius * cos(endAngle),
+                          y: center.y + arcRadius * sin(endAngle))
+        // tangent unit vectors at start (going away from the arc) and
+        // end (going away from the arc). for a CCW arc, the before-arc
+        // direction at `start` is the radius rotated -90°, and the
+        // after-arc direction at `end` is the radius rotated +90°.
+        let startTangent = CGPoint(x: sin(startAngle), y: -cos(startAngle))
+        let endTangent = CGPoint(x: -sin(endAngle), y: cos(endAngle))
+
+        let leg1 = CGPoint(x: start.x + startTangent.x * legLength,
+                           y: start.y + startTangent.y * legLength)
+        let leg2 = CGPoint(x: end.x + endTangent.x * legLength,
+                           y: end.y + endTangent.y * legLength)
+
+        path.move(to: leg1)
+        path.addLine(to: start)
+        if arcRadius > 0 {
+            path.addArc(center: center, radius: arcRadius,
+                        startAngle: startAngle, endAngle: endAngle,
+                        clockwise: false)
+        }
+        path.addLine(to: leg2)
+        return path
+    }
+}
+
+/// Which color the Hypr-key focus marks use: the Floating color on a
+/// floating window, the configured mark color otherwise.
+enum FocusMarkColor {
+    static func resolve(focusedIsFloating: Bool, markColor: CGColor,
+                        floatingColor: CGColor) -> CGColor {
+        focusedIsFloating ? floatingColor : markColor
     }
 }

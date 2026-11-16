@@ -1,8 +1,20 @@
-// Persistent focus indicator around the active window, plus outline-only
-// borders around every visible floating window. Implemented as borderless
+// Persistent focus indicator around the active window, plus an outline or
+// four quiet corner marks around every visible floating window. Borderless
 // `NSPanel`s at `.floating` tier with `CALayer` masking for occlusion.
 
 import Cocoa
+
+/// What marks each visible floating window. Window borders outline it;
+/// Corners alone draws four quiet corner marks; None draws nothing. Both
+/// keeps the outline, which already marks the floater.
+enum FloaterMarkStyle: Equatable {
+    case outline, corners, none
+
+    static func resolve(showFocusBorder: Bool, bracketStyle: FocusBracketStyle) -> Self {
+        if showFocusBorder { return .outline }
+        return bracketStyle != .off ? .corners : .none
+    }
+}
 
 struct FocusBorderFeedbackLifecycle {
     private(set) var isActive = false
@@ -25,7 +37,8 @@ struct FocusBorderFeedbackLifecycle {
 }
 
 /// Visual focus indicator: a tinted outline around the focused window
-/// and a thinner outline around each visible floating window.
+/// and a thinner outline, or four quiet corner marks in Corners mode,
+/// around each visible floating window.
 ///
 /// State machine on the focused-window panel:
 /// ```
@@ -98,7 +111,16 @@ class FocusBorder {
     private struct BorderPanel {
         let panel: NSPanel
         let glowView: NSView
+        // the quiet corner marks, hidden while the panel draws an outline
+        let corners: CAShapeLayer
     }
+
+    /// What the floater panels draw. Pushed from config by `WindowManager`
+    /// next to `isEnabled`. Corners draw even with `isEnabled` off, since
+    /// that flag is the persistent window-border toggle.
+    private(set) var floaterMarks: FloaterMarkStyle = .outline
+    // the focus marks' roundness, so the quiet marks share their shape
+    private(set) var floaterCornerRadius: CGFloat = UserConfigDefaults.focusBracketRadius
 
     /// Tunables. Empirical timings (settle delay, shake step) and
     /// stroke widths. Corner radius comes from `WindowCornerRadius`, one
@@ -118,6 +140,10 @@ class FocusBorder {
         static let activeBorderWidth: CGFloat = 2
         static let settledBorderWidth: CGFloat = 1.5
         static let floatingBorderWidth: CGFloat = 1.5
+        // quiet corner marks on floaters in Corners mode
+        static let floaterCornerWidth: CGFloat = 2
+        static let floaterCornerLength: CGFloat = 10
+        static let floaterCornerOpacity: Float = 0.85
         static let errorBorderWidth: CGFloat = 2.5
         static let activeFillAlpha: CGFloat = 0.08
         static let errorFillAlpha: CGFloat = 0.12
@@ -157,6 +183,7 @@ class FocusBorder {
         }
         for (_, border) in floatingPanels {
             border.glowView.layer?.borderColor = floatingColor
+            border.corners.strokeColor = floatingColor
         }
         CATransaction.commit()
     }
@@ -293,11 +320,31 @@ class FocusBorder {
             layer.cornerRadius = WindowCornerRadius.resolve(for: windowID)
                 + focusedCornerRadiusExpansion
         }
-        for (windowID, border) in floatingPanels {
-            border.glowView.layer?.cornerRadius = WindowCornerRadius.resolve(for: windowID)
-                + Tuning.floatingBorderWidth / 2
+        // quiet corners follow the mark roundness, not the window radius
+        if floaterMarks == .outline {
+            for (windowID, border) in floatingPanels {
+                border.glowView.layer?.cornerRadius = WindowCornerRadius.resolve(for: windowID)
+                    + Tuning.floatingBorderWidth / 2
+            }
         }
         CATransaction.commit()
+    }
+
+    /// Switch what the floater panels draw. Visible panels restyle on the
+    /// next `updateFloatingBorders`; `.none` fades them out now.
+    func setFloaterMarks(_ style: FloaterMarkStyle, cornerRadius: CGFloat) {
+        mainThreadOnly()
+        floaterMarks = style
+        floaterCornerRadius = max(0, min(32, cornerRadius))
+        if style == .none { hideFloatingBorders() }
+    }
+
+    /// Synchronous snapshot for tests: what the floater panel for
+    /// `windowID` draws now, or nil when it has none.
+    func currentFloaterMark(for windowID: CGWindowID) -> (outlineWidth: CGFloat, cornerPath: CGPath?)? {
+        guard let border = floatingPanels[windowID] else { return nil }
+        return (border.glowView.layer?.borderWidth ?? 0,
+                border.corners.isHidden ? nil : border.corners.path)
     }
 
     /// Synchronous style snapshot used by regression tests and diagnostics.
@@ -310,9 +357,16 @@ class FocusBorder {
     /// whose id is not present in the input — so a single call brings
     /// the floating-border set into agreement with the current
     /// floating-window set.
+    ///
+    /// The panel draws an outline or the four quiet corners, per
+    /// `floaterMarks`. Either way the set, frames and occlusion are the same.
     func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
         mainThreadOnly()
-        guard isEnabled else { return }
+        switch floaterMarks {
+        case .outline: guard isEnabled else { return }
+        case .corners: break
+        case .none: return
+        }
         let visibleIDs = Set(frames.keys)
         let staleIDs = floatingPanels.keys.filter { !visibleIDs.contains($0) }
         for windowID in staleIDs { hideFloatingBorder(for: windowID) }
@@ -336,12 +390,26 @@ class FocusBorder {
             }
 
             if let layer = border.glowView.layer {
+                let drawsCorners = floaterMarks == .corners
                 CATransaction.begin()
                 CATransaction.setDisableActions(true)
                 layer.borderColor = color
-                layer.borderWidth = Tuning.floatingBorderWidth
-                layer.cornerRadius = windowRadius + expansion
+                layer.borderWidth = drawsCorners ? 0 : Tuning.floatingBorderWidth
+                // the rounded clip is for the outline. the marks sit inside it
+                layer.cornerRadius = drawsCorners ? 0 : windowRadius + expansion
                 layer.backgroundColor = CGColor.clear
+                border.corners.isHidden = !drawsCorners
+                if drawsCorners {
+                    let bounds = border.glowView.bounds
+                    border.corners.frame = bounds
+                    border.corners.strokeColor = color
+                    // the window's rect inside the glow, which is `expansion` larger
+                    border.corners.path = CornerMarkGeometry.combinedPath(
+                        in: bounds.insetBy(dx: expansion, dy: expansion),
+                        inset: CornerMarkGeometry.focusMarkInset,
+                        radius: floaterCornerRadius,
+                        legLength: Tuning.floaterCornerLength)
+                }
                 CATransaction.commit()
             }
 
@@ -728,7 +796,16 @@ class FocusBorder {
         let glow = makeGlowView()
         p.contentView?.addSubview(glow)
         positionGlowView(glow, in: p)
-        return BorderPanel(panel: p, glowView: glow)
+        // sublayer of the glow, so the fade and the occlusion mask cover it
+        let corners = CAShapeLayer()
+        corners.fillColor = nil
+        corners.lineWidth = Tuning.floaterCornerWidth
+        corners.lineCap = .round
+        corners.lineJoin = .round
+        corners.opacity = Tuning.floaterCornerOpacity
+        corners.isHidden = true
+        glow.layer?.addSublayer(corners)
+        return BorderPanel(panel: p, glowView: glow, corners: corners)
     }
 
     /// Layer-hosting glow view. We assign the CALayer BEFORE `wantsLayer`

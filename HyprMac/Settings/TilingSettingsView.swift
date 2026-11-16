@@ -119,6 +119,25 @@ struct TilingSettingsView: View {
         }
     }
 
+    private func floatingColorRow(divider: Bool) -> some View {
+        HyprRow("Floating window color", icon: "paintpalette.fill",
+                subtitle: config.focusBracketStyle != .off
+                    ? "Marks floating windows and the focus marks on a floating window."
+                    : nil,
+                divider: divider, floatingMarker: true) {
+            ColorPickerRow(
+                label: "",
+                isCustom: config.floatingBorderColorHex != nil,
+                onReset: { config.floatingBorderColorHex = nil },
+                color: Binding(
+                    get: { Color(config.resolvedFloatingBorderColor) },
+                    set: { config.floatingBorderColorHex = NSColor($0).hexString }
+                ),
+                defaultLabel: "magenta · default"
+            )
+        }
+    }
+
     private var focusPanel: some View {
         HyprPanel("Focus appearance",
                   footer: "Dimming is independent from the focus indicator. Corners appear while the Hypr key is held; window borders remain visible.") {
@@ -213,7 +232,7 @@ struct TilingSettingsView: View {
                             .frame(width: 56, alignment: .trailing)
                     }
                 }
-                HyprRow("Corner color", icon: "paintpalette", divider: true) {
+                HyprRow("Corner color", icon: "paintpalette", divider: config.showFocusBorder) {
                     ColorPickerRow(
                         label: "",
                         isCustom: config.focusBracketColorHex != nil,
@@ -224,6 +243,11 @@ struct TilingSettingsView: View {
                         ),
                         defaultLabel: "black · default"
                     )
+                }
+                // corners alone: the quiet floater marks use it. with
+                // borders on, the row sits in the border group below
+                if !config.showFocusBorder {
+                    floatingColorRow(divider: true)
                 }
             }
 
@@ -261,18 +285,7 @@ struct TilingSettingsView: View {
                         defaultLabel: "cyan · default"
                     )
                 }
-                HyprRow("Floating window color", icon: "paintpalette.fill", divider: false, floatingMarker: true) {
-                    ColorPickerRow(
-                        label: "",
-                        isCustom: config.floatingBorderColorHex != nil,
-                        onReset: { config.floatingBorderColorHex = nil },
-                        color: Binding(
-                            get: { Color(config.resolvedFloatingBorderColor) },
-                            set: { config.floatingBorderColorHex = NSColor($0).hexString }
-                        ),
-                        defaultLabel: "magenta · default"
-                    )
-                }
+                floatingColorRow(divider: false)
             }
 
             HyprRow("Overlay accent", icon: "paintpalette",
