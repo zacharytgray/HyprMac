@@ -3,7 +3,7 @@ import XCTest
 import Carbon
 
 final class WelcomeContentTests: XCTestCase {
-    func testWhatsNewDescribesOnlyThe0240Changes() {
+    func testWhatsNewDescribesOnlyThe0241Changes() {
         let features = WhatsNewFeatures.current
 
         XCTAssertEqual(features.map(\.title), ["New Windows Split the Focused Tile", "Apps Open on the Monitor You're On", "Pinned Apps Reopen on Their Workspace", "No More Tiles Stuck in the Corner", "Size-Limited Windows Settle Sooner"])
