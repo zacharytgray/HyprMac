@@ -1,4 +1,5 @@
 import XCTest
+import Cocoa
 @testable import HyprMac
 
 // a new window splits the focused tile (issue #79). the engine reads the
@@ -142,6 +143,163 @@ final class SplitFocusedTileTests: XCTestCase {
         let focused = run(target: 7961)
         XCTAssertFalse(focused.fits)
         XCTAssertEqual(focused.refused, [7964])
+    }
+
+    // MARK: - the focus record follows a tiled newcomer
+
+    private final class FocusStubAccessibility: AccessibilityManager {
+        var focused: HyprWindow?
+        override func getFocusedWindow() -> HyprWindow? { focused }
+    }
+
+    private struct Harness {
+        let dispatcher: ActionDispatcher
+        let engine: TilingEngine
+        let focus: FocusStateController
+        let accessibility: FocusStubAccessibility
+        let screen: NSScreen
+        let config: UserConfig
+    }
+
+    private var configDir: URL?
+    private var store: ConfigStore?
+
+    override func tearDownWithError() throws {
+        store?.stopFileWatcher()
+        store = nil
+        if let configDir { try? FileManager.default.removeItem(at: configDir) }
+    }
+
+    private func makeHarness() throws -> Harness {
+        let screen = SplitTestScreen()
+        let displayManager = DisplayManager(screenSource: { [screen] })
+        let engine = makeEngine(screens: [screen])
+        let stateCache = WindowStateCache()
+        let suppressions = SuppressionRegistry()
+        let focusBorder = FocusBorder()
+        let focusController = FocusStateController(focusBorder: focusBorder)
+        let dimmingOverlay = DimmingOverlay()
+        let accessibility = FocusStubAccessibility()
+        let cursorManager = CursorManager()
+        let workspaceManager = WorkspaceManager(displayManager: displayManager)
+        let orchestrator = WorkspaceOrchestrator(
+            workspaceManager: workspaceManager, tilingEngine: engine,
+            accessibility: accessibility, displayManager: displayManager,
+            cursorManager: cursorManager, stateCache: stateCache,
+            focusController: focusController, focusBorder: focusBorder,
+            dimmingOverlay: dimmingOverlay, suppressions: suppressions,
+            revalidation: MinimaRevalidation())
+        let floating = FloatingWindowController(
+            stateCache: stateCache, suppressions: suppressions,
+            workspaceManager: workspaceManager, tilingEngine: engine,
+            displayManager: displayManager, accessibility: accessibility,
+            cursorManager: cursorManager, focusController: focusController,
+            focusBorder: focusBorder, dimmingOverlay: dimmingOverlay)
+        // a private config file: the border toggle below saves
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SplitFocusedTile-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        configDir = dir
+        let store = ConfigStore(localConfigURL: dir.appendingPathComponent("config.json"),
+                                monitorConfigURL: dir.appendingPathComponent("monitor-config.json"),
+                                iCloudRootURL: dir.appendingPathComponent("cloud", isDirectory: true))
+        self.store = store
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        // the invariant would adopt AX's window on its own with no border
+        // drawn; off, the new step is the only thing that can
+        config.showFocusBorder = false
+        let dispatcher = ActionDispatcher(
+            stateCache: stateCache, accessibility: accessibility,
+            displayManager: displayManager, cursorManager: cursorManager,
+            workspaceManager: workspaceManager, tilingEngine: engine,
+            focusController: focusController, focusBorder: focusBorder,
+            keybindOverlay: KeybindOverlayController(), appLauncher: AppLauncherManager(),
+            workspaceOrchestrator: orchestrator, floatingController: floating,
+            config: config)
+        dispatcher.screenUnderCursor = { screen }
+        // the retile WindowManager wires, cut down to one key
+        dispatcher.retile = { windows in
+            let result = engine.tileWindows(windows, onWorkspace: 1, screen: screen)
+            stateCache.cachedWindows = Dictionary(uniqueKeysWithValues: windows.map { ($0.windowID, $0) })
+            stateCache.tiledPositions = engine.intendedTileRects()
+            return [result]
+        }
+        engine.splitTargetSource = {
+            focusController.lastFocusedID == 0 ? nil : focusController.lastFocusedID
+        }
+        return Harness(dispatcher: dispatcher, engine: engine, focus: focusController,
+                       accessibility: accessibility, screen: screen, config: config)
+    }
+
+    private func newWindows(_ windows: [HyprWindow]) -> WindowChanges {
+        WindowChanges(newWindows: windows, newOnDisabledMonitor: [], returned: [],
+                      goneIDs: [], fullyForgottenIDs: [], screenDrift: [],
+                      focusedWindowGone: false, requestsRecheck: false)
+    }
+
+    /// the reporter's setup: focus follows mouse off, two windows opened
+    /// from the keyboard one after the other
+    func testATiledNewcomerWithTheKeyboardTakesTheRecordSoTheNextOneSplitsIt() throws {
+        let h = try makeHarness()
+        let left = makeWindow(id: 7971), top = makeWindow(id: 7972), bottom = makeWindow(id: 7973)
+        _ = h.dispatcher.retile([left, top, bottom])
+        h.focus.recordFocus(left.windowID, reason: "test")
+
+        let first = makeWindow(id: 7974)
+        h.accessibility.focused = first
+        _ = h.dispatcher.applyChanges(newWindows([first]), allWindows: [left, top, bottom, first])
+        XCTAssertEqual(sibling(of: first.windowID, in: h.engine, screen: h.screen), left.windowID)
+        XCTAssertEqual(h.focus.lastFocusedID, first.windowID)
+
+        let second = makeWindow(id: 7975)
+        h.accessibility.focused = second
+        _ = h.dispatcher.applyChanges(newWindows([second]), allWindows: [left, top, bottom, first, second])
+        XCTAssertEqual(sibling(of: second.windowID, in: h.engine, screen: h.screen), first.windowID)
+        XCTAssertEqual(h.focus.lastFocusedID, second.windowID)
+    }
+
+    func testARefusedNewcomerLeavesTheRecordOnTheOldTile() throws {
+        let h = try makeHarness()
+        let left = makeWindow(id: 7981), right = makeWindow(id: 7982)
+        _ = h.dispatcher.retile([left, right])
+        h.focus.recordFocus(left.windowID, reason: "test")
+
+        let huge = makeWindow(id: 7983)
+        huge.observedMinSize = CGSize(width: 100_000, height: 100_000)
+        h.accessibility.focused = huge
+        _ = h.dispatcher.applyChanges(newWindows([huge]), allWindows: [left, right, huge])
+
+        XCTAssertNil(h.engine.intendedTileRects()[huge.windowID])
+        XCTAssertEqual(h.focus.lastFocusedID, left.windowID)
+    }
+
+    func testANewcomerWithoutTheKeyboardLeavesTheRecord() throws {
+        let h = try makeHarness()
+        let left = makeWindow(id: 7991), right = makeWindow(id: 7992)
+        _ = h.dispatcher.retile([left, right])
+        h.focus.recordFocus(left.windowID, reason: "test")
+
+        let background = makeWindow(id: 7993)
+        h.accessibility.focused = left
+        _ = h.dispatcher.applyChanges(newWindows([background]), allWindows: [left, right, background])
+
+        XCTAssertEqual(sibling(of: background.windowID, in: h.engine, screen: h.screen), left.windowID)
+        XCTAssertEqual(h.focus.lastFocusedID, left.windowID)
+    }
+
+    func testANewcomerLeavesTheRecordWhileAMenuIsTracking() throws {
+        let h = try makeHarness()
+        let left = makeWindow(id: 7996), right = makeWindow(id: 7997)
+        _ = h.dispatcher.retile([left, right])
+        h.focus.recordFocus(left.windowID, reason: "test")
+        h.dispatcher.isMenuTracking = { true }
+
+        let newcomer = makeWindow(id: 7998)
+        h.accessibility.focused = newcomer
+        _ = h.dispatcher.applyChanges(newWindows([newcomer]), allWindows: [left, right, newcomer])
+
+        XCTAssertNotNil(h.engine.intendedTileRects()[newcomer.windowID])
+        XCTAssertEqual(h.focus.lastFocusedID, left.windowID)
     }
 }
 

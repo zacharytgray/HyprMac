@@ -246,7 +246,8 @@ final class ActionDispatcher {
             refocusUnderCursor()
         }
 
-        finishDiscoveryPass(pinFollow: pinFollow)
+        finishDiscoveryPass(pinFollow: pinFollow, newWindowIDs: Set(changes.newWindows.map(\.windowID)),
+                            results: retileResults)
         return retileResults
     }
 
@@ -269,7 +270,8 @@ final class ActionDispatcher {
         hyprLog(.notice, .discovery, "discovery retile: new=\(changes.newWindows.map(\.windowID).sorted())"
                 + " (admitted during the workspace transition hold)")
         let results = retile(tileable)
-        finishDiscoveryPass(pinFollow: pinFollow)
+        finishDiscoveryPass(pinFollow: pinFollow, newWindowIDs: Set(changes.newWindows.map(\.windowID)),
+                            results: results)
         return results
     }
 
@@ -306,7 +308,9 @@ final class ActionDispatcher {
     }
 
     /// The focus and floater steps every discovery pass ends with.
-    private func finishDiscoveryPass(pinFollow: PinnedLanding?) {
+    private func finishDiscoveryPass(pinFollow: PinnedLanding?, newWindowIDs: Set<CGWindowID>,
+                                     results: [TilingEngine.AdmissionResult]) {
+        adoptFocusedNewcomer(newWindowIDs, results: results, pinFollow: pinFollow)
         // catch-all: ensure something on the active workspace has focus + border.
         ensureFocusInvariant()
         // with the scratchpad up, an app that moved focus to its window on the
@@ -560,6 +564,30 @@ final class ActionDispatcher {
             }
         )
         return plan
+    }
+
+    /// A new window macOS gave the keyboard takes HyprMac's focus record
+    /// once it is tiled, so the next new window splits it and not the tile
+    /// focused before it opened. No focus call: the window already has the
+    /// keyboard. Works with the border off; the record and the dim follow.
+    ///
+    /// Skipped while the scratchpad is up or a menu is tracking, and when
+    /// the pass follows a pin to another workspace anyway. A newcomer the
+    /// pass refused stays untiled and leaves the record alone, so the retry
+    /// still splits the tile focused before. A newcomer joining a tree
+    /// already ended any maximize there, so this ends none.
+    private func adoptFocusedNewcomer(_ newWindowIDs: Set<CGWindowID>,
+                                      results: [TilingEngine.AdmissionResult],
+                                      pinFollow: PinnedLanding?) {
+        guard !newWindowIDs.isEmpty, pinFollow == nil,
+              scratchpadLayer() == nil, !isMenuTracking(),
+              let focused = accessibility.getFocusedWindow(),
+              newWindowIDs.contains(focused.windowID),
+              results.contains(where: { $0.publishedIDs.contains(focused.windowID) }),
+              stateCache.tiledPositions[focused.windowID] != nil,
+              let window = stateCache.cachedWindows[focused.windowID] else { return }
+        focusController.recordFocus(window.windowID, reason: "new-window")
+        updateFocusBorder(window)
     }
 
     /// Re-establish keyboard focus when the border has gone dark but the
