@@ -925,6 +925,7 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         access.unboundWindowIDs = [50]
         _ = compute(svc, snapshot: [])
         XCTAssertEqual(svc.secondsUntilARetryIsDue!, 0.25, accuracy: 0.001)
+        XCTAssertEqual(svc.windowsAwaitingALook, [50])
 
         // a poll before the look is due spends nothing
         clock += 0.1
@@ -942,6 +943,7 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         }
         XCTAssertEqual(gaps, [0.5, 1, 2])
         XCTAssertNil(svc.secondsUntilARetryIsDue, "left to events and the reconcile")
+        XCTAssertTrue(svc.windowsAwaitingALook.isEmpty)
     }
 
     func testANewWindowThatTurnsUpEndsItsLooks() {

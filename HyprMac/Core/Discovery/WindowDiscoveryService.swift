@@ -242,6 +242,11 @@ final class WindowDiscoveryService {
     }
     static let overdueRetry: TimeInterval = 0.5
 
+    /// Not-ready windows that still have a quick look to come.
+    var windowsAwaitingALook: Set<CGWindowID> {
+        Set(readinessRetries.filter { $0.value.due != .distantFuture }.keys)
+    }
+
     /// Advance the readiness looks for this cycle's not-ready windows. A
     /// look is spent by a poll at or after its due time; one that resolves
     /// or leaves drops its entry.

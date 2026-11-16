@@ -2458,9 +2458,12 @@ class WindowManager {
                 hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): poll \(trigger) admitted nothing — "
                         + "\(walk(pid)); retry \(attempt)/\(DiscoveryFollowUp.backoff.count) in \(Int(delay * 1000))ms")
                 pollingScheduler.schedule(after: delay, trigger: .followUp)
-            case let .gaveUp(pid, retries, _, afterMS, reason):
+            case let .gaveUp(pid, retries, left, afterMS, reason):
+                // the walk's own quick looks can outlast the watch
+                let looking = left.filter(discovery.windowsAwaitingALook.contains)
                 hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): nothing admitted after "
-                        + "\(retries) retries, \(afterMS)ms — \(walk(pid)); left to the reconcile")
+                        + "\(retries) retries, \(afterMS)ms — \(walk(pid)); "
+                        + (looking.isEmpty ? "left to the reconcile" : "ax retry still due for \(looking)"))
             case let .settled(pid, retries, reason):
                 hyprLog(.debug, .discovery, "new-window watch pid=\(pid) (\(reason)): nothing unknown on screen "
                         + "after \(retries) retries — done")

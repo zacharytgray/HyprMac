@@ -1061,7 +1061,9 @@ windows, `unknown on screen` the ones discovery does not know (40 pt or
 larger), and `unreadable` those the walk could not read. `CG` above `AX`
 with the window in `unknown` means AX did not list or answer for it. A
 window that stays in `unknown` after the retries and also has an `AX filter
-dropped` line was rejected on purpose. A create whose window a focus poll
+dropped` line was rejected on purpose. The last line ends `ax retry still
+due for [4628]` instead of `left to the reconcile` when the walk's own quick
+looks at an unbound or unreadable window are not done yet. A create whose window a focus poll
 already admitted ends with a `.debug` `nothing unknown on screen` line
 after one extra look.
 
