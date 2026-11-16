@@ -214,6 +214,11 @@ final class ActionDispatcher {
         for id in changes.goneIDs {
             tilingEngine.removeWindowID(id)
         }
+        // a window back after a verified close is placed like a new window:
+        // no remembered slot, so smart insert tries the focused tile first
+        for id in changes.reopenedAfterClose {
+            tilingEngine.forgetRememberedSlot(id)
+        }
         // the workspace retile below skips the scratchpad's tree, so the layer
         // re-lays its own members here
         scratchpadDiscovery(changes.goneIDs, changes.returned)
@@ -246,7 +251,8 @@ final class ActionDispatcher {
             refocusUnderCursor()
         }
 
-        finishDiscoveryPass(pinFollow: pinFollow, newWindowIDs: Set(changes.newWindows.map(\.windowID)),
+        finishDiscoveryPass(pinFollow: pinFollow,
+                            newWindowIDs: Set(changes.newWindows.map(\.windowID)).union(changes.reopenedAfterClose),
                             results: retileResults)
         return retileResults
     }

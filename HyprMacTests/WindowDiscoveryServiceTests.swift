@@ -533,6 +533,60 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(cache.reservedHiddenWindowIDs.contains(12))
     }
 
+    // MARK: - reopened after a close
+
+    /// hide window 20 with the stub answering `state`, then bring it back.
+    /// window 10 stays on screen throughout
+    private func hideAndReturn(_ state: AccessibilityManager.HiddenWindowState?) -> WindowChanges {
+        let access = StubAccessibility()
+        access.stateAnswer = state
+        let (svc, cache, _) = makeService(accessibility: access)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        cache.knownWindowIDs = [10, 20]
+        cache.windowOwners = [10: 8300, 20: 8300]
+        let windows = [makeWindow(id: 10, pid: 8300), makeWindow(id: 20, pid: 8300)]
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        // a window its app still lists is held first; past the span it is hidden
+        clock += WindowDiscoveryService.listedHoldSpan + 1
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        XCTAssertTrue(cache.hiddenWindowIDs.contains(20))
+        return compute(svc, snapshot: windows, runningPIDs: [8300])
+    }
+
+    func testAWindowBackAfterAVerifiedCloseIsReopenedAfterClose() {
+        let changes = hideAndReturn(.absent)
+        XCTAssertEqual(changes.returned.map(\.windowID), [20])
+        XCTAssertEqual(changes.reopenedAfterClose, [20])
+    }
+
+    func testAWindowBackFromAHideIsNotReopenedAfterClose() {
+        for state: AccessibilityManager.HiddenWindowState? in [.minimized, .appHidden, .present, nil] {
+            let changes = hideAndReturn(state)
+            XCTAssertEqual(changes.returned.map(\.windowID), [20], "\(String(describing: state))")
+            XCTAssertEqual(changes.reopenedAfterClose, [], "\(String(describing: state))")
+        }
+    }
+
+    /// unreadable when it went, then read as closed while still missing
+    func testAnUnreadableHideLaterVerifiedClosedIsReopenedAfterClose() {
+        let access = StubAccessibility()
+        access.stateAnswer = nil
+        let (svc, cache, _) = makeService(accessibility: access)
+        cache.knownWindowIDs = [10, 20]
+        cache.windowOwners = [10: 8300, 20: 8300]
+        let windows = [makeWindow(id: 10, pid: 8300), makeWindow(id: 20, pid: 8300)]
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        XCTAssertTrue(cache.reservedHiddenWindowIDs.contains(20))
+
+        access.stateAnswer = .absent
+        _ = compute(svc, snapshot: [windows[0]], runningPIDs: [8300])
+        XCTAssertFalse(cache.reservedHiddenWindowIDs.contains(20))
+
+        let changes = compute(svc, snapshot: windows, runningPIDs: [8300])
+        XCTAssertEqual(changes.reopenedAfterClose, [20])
+    }
+
     // MARK: - windows off the screen their app still lists
 
     /// a native full-screen app on the display, or a Space switched away:

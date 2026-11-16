@@ -114,6 +114,23 @@ final class SplitFocusedTileTests: XCTestCase {
         XCTAssertEqual(engine.intendedTileRects(), before)
     }
 
+    /// a window back after a verified close (Teams keeps its id) has no
+    /// remembered slot, so it splits the focused tile like a new window
+    func testAReturnWithItsSlotForgottenSplitsTheFocusedTile() {
+        let screen = SplitTestScreen()
+        let engine = makeEngine(screens: [screen])
+        let a = makeWindow(id: 7955), b = makeWindow(id: 7956), c = makeWindow(id: 7957), d = makeWindow(id: 7958)
+        XCTAssertTrue(engine.tileWindows([a, b, c, d], onWorkspace: 1, screen: screen).published)
+
+        engine.removeWindowID(b.windowID)
+        XCTAssertTrue(engine.tileWindows([a, c, d], onWorkspace: 1, screen: screen).published)
+        engine.splitTargetSource = { a.windowID }
+        engine.forgetRememberedSlot(b.windowID)
+        XCTAssertTrue(engine.tileWindows([a, b, c, d], onWorkspace: 1, screen: screen).published)
+
+        XCTAssertEqual(sibling(of: b.windowID, in: engine, screen: screen), a.windowID)
+    }
+
     /// a and b side by side, two levels deep at most. b cannot share its
     /// slot with the second newcomer. the walk puts the first newcomer
     /// beside b and the second beside a. splitting the focused a first
@@ -256,6 +273,56 @@ final class SplitFocusedTileTests: XCTestCase {
         _ = h.dispatcher.applyChanges(newWindows([second]), allWindows: [left, top, bottom, first, second])
         XCTAssertEqual(sibling(of: second.windowID, in: h.engine, screen: h.screen), first.windowID)
         XCTAssertEqual(h.focus.lastFocusedID, second.windowID)
+    }
+
+    private func returned(_ window: HyprWindow, afterClose: Bool) -> WindowChanges {
+        var changes = WindowChanges(newWindows: [], newOnDisabledMonitor: [], returned: [window],
+                                    goneIDs: [], fullyForgottenIDs: [], screenDrift: [],
+                                    focusedWindowGone: false, requestsRecheck: false)
+        if afterClose { changes.reopenedAfterClose = [window.windowID] }
+        return changes
+    }
+
+    private func gone(_ id: CGWindowID) -> WindowChanges {
+        WindowChanges(newWindows: [], newOnDisabledMonitor: [], returned: [],
+                      goneIDs: [id], fullyForgottenIDs: [], screenDrift: [],
+                      focusedWindowGone: false, requestsRecheck: false)
+    }
+
+    /// Teams: closed and reopened with the same id, the reopen opened
+    /// from the keyboard while the left tile has the record
+    func testAWindowReopenedAfterACloseSplitsTheFocusedTileAndTakesTheRecord() throws {
+        let h = try makeHarness()
+        let a = makeWindow(id: 7976), b = makeWindow(id: 7977), c = makeWindow(id: 7978), d = makeWindow(id: 7979)
+        _ = h.dispatcher.retile([a, b, c, d])
+        h.focus.recordFocus(a.windowID, reason: "test")
+        h.accessibility.focused = a
+        _ = h.dispatcher.applyChanges(gone(d.windowID), allWindows: [a, b, c])
+        XCTAssertNil(h.engine.intendedTileRects()[d.windowID])
+
+        h.accessibility.focused = d
+        _ = h.dispatcher.applyChanges(returned(d, afterClose: true), allWindows: [a, b, c, d])
+
+        XCTAssertEqual(sibling(of: d.windowID, in: h.engine, screen: h.screen), a.windowID)
+        XCTAssertEqual(h.focus.lastFocusedID, d.windowID)
+    }
+
+    /// a minimize or Cmd-H return keeps its slot and leaves the record
+    func testAWindowBackFromAHideGoesBackToItsSlotAndLeavesTheRecord() throws {
+        let h = try makeHarness()
+        let a = makeWindow(id: 7986), b = makeWindow(id: 7987), c = makeWindow(id: 7988), d = makeWindow(id: 7989)
+        _ = h.dispatcher.retile([a, b, c, d])
+        let before = h.engine.intendedTileRects()
+        h.focus.recordFocus(a.windowID, reason: "test")
+        h.accessibility.focused = a
+        _ = h.dispatcher.applyChanges(gone(d.windowID), allWindows: [a, b, c])
+
+        h.accessibility.focused = d
+        _ = h.dispatcher.applyChanges(returned(d, afterClose: false), allWindows: [a, b, c, d])
+
+        XCTAssertEqual(sibling(of: d.windowID, in: h.engine, screen: h.screen), c.windowID)
+        XCTAssertEqual(h.engine.intendedTileRects(), before)
+        XCTAssertEqual(h.focus.lastFocusedID, a.windowID)
     }
 
     func testARefusedNewcomerLeavesTheRecordOnTheOldTile() throws {

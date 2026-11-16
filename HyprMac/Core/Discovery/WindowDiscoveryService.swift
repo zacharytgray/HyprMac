@@ -67,6 +67,10 @@ struct WindowChanges {
     /// resizable. The service cleared their floating flag; the retile
     /// tiles them like any other member of their workspace.
     var unfloated: Set<CGWindowID> = []
+    /// Subset of `returned` that came back after a verified close: hidden
+    /// as absent from its app's list, so never reserved (Teams keeps the id
+    /// across a close and reopen). The caller places it like a new window.
+    var reopenedAfterClose: Set<CGWindowID> = []
 
     /// `true` when at least one observed change warrants a retile.
     /// Stale-state sweeps do not bump this — they are silent state
@@ -464,6 +468,7 @@ final class WindowDiscoveryService {
         var newWindows: [HyprWindow] = []
         var newOnDisabled: Set<CGWindowID> = []
         var returned: [HyprWindow] = []
+        var reopenedAfterClose: Set<CGWindowID> = []
         var goneIDs: Set<CGWindowID> = []
         var fullyForgotten: Set<CGWindowID> = []
 
@@ -478,7 +483,11 @@ final class WindowDiscoveryService {
                 let ms = Int(Date().timeIntervalSince(t) * 1000)
                 hyprLog(.notice, .discovery, "FLAP: '\(w.title ?? "?")' (\(w.windowID)) returned \(ms)ms after vanishing — likely stale AX snapshot (busy app); each flap retiles the sibling full-screen and back")
             }
-            hyprLog(.notice, .discovery, "window returned: '\(w.title ?? "?")' (\(w.windowID))")
+            // not reserved while hidden: a verified close, not a hide
+            let afterClose = !stateCache.reservedHiddenWindowIDs.contains(w.windowID)
+            if afterClose { reopenedAfterClose.insert(w.windowID) }
+            hyprLog(.notice, .discovery, "window returned: '\(w.title ?? "?")' (\(w.windowID))"
+                    + (afterClose ? " — reopened after a close" : ""))
         }
 
         // new
@@ -568,7 +577,7 @@ final class WindowDiscoveryService {
 
         let focusedGone = goneIDs.contains(focusedWindowID)
 
-        return WindowChanges(
+        var changes = WindowChanges(
             newWindows: newWindows,
             newOnDisabledMonitor: newOnDisabled,
             returned: returned,
@@ -580,6 +589,8 @@ final class WindowDiscoveryService {
             returnedFromUserHide: fromUserHide,
             unfloated: unfloated
         )
+        changes.reopenedAfterClose = reopenedAfterClose
+        return changes
     }
 
     /// First sight of `w`: the cache half of admitting it. Known from now

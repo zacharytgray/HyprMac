@@ -3440,6 +3440,14 @@ class TilingEngine {
                                                  ratio: parent.splitRatio, userSet: parent.userSetRatio)
     }
 
+    /// Drop only the remembered slot of `windowID`, so its next insert is a
+    /// smart insert like a new window's. For a window that came back after
+    /// a verified close; its minimums and admission stay.
+    func forgetRememberedSlot(_ windowID: CGWindowID) {
+        guard slotMemory.removeValue(forKey: windowID) != nil else { return }
+        hyprLog(.debug, .tiling, "slot forgotten: \(windowID) reopened after a close")
+    }
+
     /// Put `window` back beside the subtree it left, when those windows
     /// still form one in this tree, with depth and room for the pair. The
     /// memory is spent once its neighbours are in the tree, whatever the
