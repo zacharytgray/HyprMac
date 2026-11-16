@@ -1865,12 +1865,20 @@ class TilingEngine {
         return layoutCanAccommodateKnownMinimums(recovered, rect: rect) ? recovered : nil
     }
 
-    /// The members whose observed minimum does not fit the slot the tree
+    /// The members whose known minimum does not fit the slot the tree
     /// gives them, with that minimum as the size to make room for.
+    ///
+    /// An observed bound and an app hint both count: the hint is what this
+    /// app's other window just refused, and writing the slot anyway only
+    /// repeats that refusal on a window the user is watching. A window
+    /// that took a smaller size has its entry lowered to it, and an explicit
+    /// request's bypass reads the hint as zero, so neither is held to a
+    /// sibling's floor. A seeded guess still goes out as the plain layout.
     private func knownMinimumConflicts(in tree: BSPTree, rect: CGRect) -> [(window: HyprWindow, actual: CGSize)] {
         let slack = TilingConfig.minSizeConflictSlackPx
         return tree.layout(in: rect, gap: gapSize, padding: outerPadding).compactMap { window, frame in
-            guard minSizes.entry(for: window.windowID)?.provenance == .observed else { return nil }
+            guard let provenance = minSizes.entry(for: window.windowID)?.provenance,
+                  provenance != .seeded else { return nil }
             let minimum = minimumSize(for: window)
             guard minimum.width > frame.width + slack || minimum.height > frame.height + slack else { return nil }
             return (window, minimum)
@@ -2389,6 +2397,12 @@ class TilingEngine {
     /// resize the user just watched. An explicit revalidation does not set
     /// it — the user asking by hand is asking for a real attempt.
     ///
+    /// The same retry runs another pass when an attempt is refused but
+    /// learned a floor that leaves the fit check a slot: the slot the
+    /// check found is the placement, and floating the newcomer beside it
+    /// throws that away. Only on new evidence, and at most
+    /// `learnedFitPasses` times.
+    ///
     /// `keepingUnverifiedOnTimeout` is the recovery's last retry after
     /// timeouts. A pass that times out then keeps its writes, publishes its
     /// tree and leaves the key marked unverified: the app never answered,
@@ -2413,23 +2427,33 @@ class TilingEngine {
             admissionTopologyRecovery = previousTopologyRecovery
             keepsTimedOutAdmission = previousKeep
         }
-        if refusingImpossibleArrangements {
-            // only the newcomers this retry is for, against the live tree's
-            // incumbents. a held window or a second stranded newcomer beside
-            // them is not part of the arrangement being judged — the
-            // ordinary pass would simply leave it out.
-            let key = TilingKey(workspace: workspace, screen: screen)
+        // only the newcomers this retry is for, against the live tree's
+        // incumbents. a held window or a second stranded newcomer beside
+        // them is not part of the arrangement being judged — the ordinary
+        // pass would simply leave it out. in the order the pass inserts, so
+        // every check and the choice of the newcomer to give up on judge
+        // what the pass will do, and not the order the window server listed
+        // the windows in. each frame is read once: a rollback between two
+        // checks must not reorder them
+        let key = TilingKey(workspace: workspace, screen: screen)
+        var orderFrames: [CGWindowID: CGRect] = [:]
+        func judged() -> [HyprWindow] {
             let published = Set(trees[key]?.allWindows.map(\.windowID) ?? [])
-            var judged = windows.filter {
+            let members = windows.filter {
                 !$0.isFloating && (published.contains($0.windowID) || bypass[$0.windowID] != nil)
             }
-            // in the order the pass inserts, so the check and the choice of
-            // the newcomer to give up on judge what the pass will do, and
-            // not the order the window server listed the windows in
-            let judgedFrames = Dictionary(uniqueKeysWithValues: judged.map { ($0.windowID, $0.frame ?? .zero) })
-            judged.sort { insertionOrder($0, $1, frames: judgedFrames, workspace: workspace) }
-            if !fitWindows(judged, onWorkspace: workspace, screen: screen) {
-                if let dropped = newcomersToRefuse(judged, newcomers: Set(bypass.keys).subtracting(published),
+            for window in members where orderFrames[window.windowID] == nil {
+                orderFrames[window.windowID] = window.frame ?? .zero
+            }
+            return members.sorted { insertionOrder($0, $1, frames: orderFrames, workspace: workspace) }
+        }
+        func newcomers() -> Set<CGWindowID> {
+            Set(bypass.keys).subtracting(trees[key]?.allWindows.map(\.windowID) ?? [])
+        }
+        if refusingImpossibleArrangements {
+            let members = judged()
+            if !fitWindows(members, onWorkspace: workspace, screen: screen) {
+                if let dropped = newcomersToRefuse(members, newcomers: newcomers(),
                                                    onWorkspace: workspace, screen: screen) {
                     return admitAllBut(dropped, of: windows, onWorkspace: workspace, screen: screen,
                                        alsoRestoringWithin: restorationReach)
@@ -2437,25 +2461,48 @@ class TilingEngine {
                 return structuralRefusal(Set(bypass.keys), workspace: workspace, screen: screen)
             }
         }
-        let result = tileWindows(windows, onWorkspace: workspace, screen: screen,
-                                 alsoRestoringWithin: restorationReach)
-        // the attempt may have just learned floors that rule the whole set
-        // out. at startup every window is a newcomer, and floating them all
-        // because two of them cannot share the screen floats the workspace.
-        guard refusingImpossibleArrangements, let failure = result.failure,
-              !failure.isTimeout, failure != .superseded,
-              !result.failedInsertedIDs.isEmpty else { return result }
-        let key = TilingKey(workspace: workspace, screen: screen)
-        let published = Set(trees[key]?.allWindows.map(\.windowID) ?? [])
-        let judged = windows.filter {
-            !$0.isFloating && (published.contains($0.windowID) || bypass[$0.windowID] != nil)
+        var learnedFitPasses = 0
+        while true {
+            let before = minimumSizes(of: windows)
+            let result = tileWindows(windows, onWorkspace: workspace, screen: screen,
+                                     alsoRestoringWithin: restorationReach)
+            // the attempt may have just learned floors that rule the whole set
+            // out. at startup every window is a newcomer, and floating them all
+            // because two of them cannot share the screen floats the workspace.
+            guard refusingImpossibleArrangements, let failure = result.failure,
+                  !failure.isTimeout, failure != .superseded,
+                  !result.failedInsertedIDs.isEmpty else { return result }
+            let members = judged()
+            guard fitWindows(members, onWorkspace: workspace, screen: screen) else {
+                guard let dropped = newcomersToRefuse(members, newcomers: newcomers(),
+                                                      onWorkspace: workspace, screen: screen)
+                else { return result }
+                return admitAllBut(dropped, of: windows, onWorkspace: workspace, screen: screen,
+                                   alsoRestoringWithin: restorationReach)
+            }
+            // the floors this attempt learned leave a slot the attempt did not
+            // try: the Dia under Dia that refused its height, then its width,
+            // while the leaf beside Messages had room. place it there before
+            // anything floats. another pass only on new evidence, so a refusal
+            // that taught nothing cannot repeat the same slot
+            let learned = members.contains { minimumSize(for: $0) != before[$0.windowID] }
+            guard learned, learnedFitPasses < Self.learnedFitPasses, passBudgetLeft else { return result }
+            learnedFitPasses += 1
+            hyprLog(.notice, .tiling, "admission retry tries the slot the learned minima fit: ws\(workspace)"
+                    + " ids=[" + newcomers().sorted().map(String.init).joined(separator: ", ") + "]"
+                    + " cause=\(failure) pass=\(learnedFitPasses) of \(Self.learnedFitPasses)")
         }
-        guard !fitWindows(judged, onWorkspace: workspace, screen: screen),
-              let dropped = newcomersToRefuse(judged, newcomers: Set(bypass.keys).subtracting(published),
-                                              onWorkspace: workspace, screen: screen)
-        else { return result }
-        return admitAllBut(dropped, of: windows, onWorkspace: workspace, screen: screen,
-                           alsoRestoringWithin: restorationReach)
+    }
+
+    /// Passes a retry may add after a refusal that taught a new minimum and
+    /// left a slot the known floors fit. One per axis of a newcomer that
+    /// learns both on the way.
+    private static let learnedFitPasses = 2
+
+    /// What the fit checks read for each of `windows`, under the current
+    /// bypass. A change between two reads is new evidence.
+    private func minimumSizes(of windows: [HyprWindow]) -> [CGWindowID: CGSize] {
+        Dictionary(windows.map { ($0.windowID, minimumSize(for: $0)) }, uniquingKeysWith: { first, _ in first })
     }
 
     /// See `NewcomerRefusal`.

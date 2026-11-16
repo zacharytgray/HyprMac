@@ -329,6 +329,10 @@ The admission recovery's narrowing lines, all `[notice] [tiling]`:
   retrying […] without them (round <n> of 3)` — the retry was refused on
   some of its newcomers: those float, the rest get the pass again inside
   the same retry. After three rounds the rest float as before.
+- `admission retry tries the slot the learned minima fit: ws<N> ids=[…]
+  cause=<failure> pass=<n> of 2` — the attempt was refused but taught a
+  new minimum, and the fit check with it found a slot. The pass runs again
+  into the unchanged incumbent tree before anything floats.
 
 The admission recovery's timeout lines, all `[notice] [tiling]`:
 
@@ -375,7 +379,9 @@ The admission recovery's timeout lines, all `[notice] [tiling]`:
   new=<w>x<h> target=<w>x<h> actual=<w>x<h> axis=<…> phase=<…>
   source=readback` — guarded refusal evidence. The `old=` field names
   the provenance of the entry being replaced, because observed evidence
-  replaces a seeded hint rather than merging with it. When the new value
+  replaces a seeded hint rather than merging with it. An app hint's axis
+  the readback did not refuse is kept, and the line ends
+  `kept-hint=<width|height>`. When the new value
   fails the sanity check the line ends `refused=unusable` and carries no
   `new=`.
 - `min-size lower: wid=<id> old=<w>x<h> new=<<w>x<h>|none> actual=<w>x<h>

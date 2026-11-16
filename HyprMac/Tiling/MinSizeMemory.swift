@@ -57,8 +57,11 @@ struct FixedSize: Equatable, Codable {
 ///
 /// Hysteresis on both ends:
 /// - Record: only raises, and only on the axis the app refused. A seeded
-///   hint or an app hint is replaced rather than merged, so an axis nothing
-///   refused does not inherit a guess and call it evidence.
+///   hint is replaced rather than merged, so an axis nothing refused does
+///   not inherit a guess and call it evidence. An app hint's other axis is
+///   kept unless this window just took a smaller size there: the hint is
+///   another window's refusal, and dropping it sends the next pass into
+///   the slot that axis already ruled out.
 /// - Lower: requires an accepted size at least
 ///   `lowerMinSizeAcceptedDeltaPx` below the current bound — sub-pixel
 ///   accepts cannot ratchet the floor down.
@@ -78,6 +81,10 @@ class MinSizeMemory {
     /// produced, keyed by bundle id. Memory only: a restart starts over,
     /// because a floor depends on the UI state the window was in.
     private var appHints: [String: CGSize] = [:]
+    /// Axes of an `observed` entry that still hold the app's hint rather
+    /// than the window's own refusal. They count in fit checks like the
+    /// rest of the entry, but they never feed the app's hint back.
+    private var carriedHintAxes: [CGWindowID: Set<FixedSize.Axis>] = [:]
     /// Windows that kept their own length on an axis, see `FixedSize`.
     private var fixedWindows: [CGWindowID: FixedSize] = [:]
     /// Unproven evidence waiting for the retry to show it again.
@@ -134,6 +141,7 @@ class MinSizeMemory {
 
     func forget(windowID: CGWindowID) {
         known.removeValue(forKey: windowID)
+        carriedHintAxes.removeValue(forKey: windowID)
         fixedWindows.removeValue(forKey: windowID)
         fixedSuspects.removeValue(forKey: windowID)
     }
@@ -192,6 +200,12 @@ class MinSizeMemory {
     /// merging with it: the axis this readback did not refuse goes back to
     /// unknown rather than keeping a guess under an `observed` label.
     ///
+    /// An app hint is a floor, only another window's. Its axis this readback
+    /// did not refuse stays, carried, unless the window just took a size
+    /// below it there. Dia's hint said 500x446; its next window refused the
+    /// height, and with the width forgotten the retry split the same leaf
+    /// the other way and watched it refuse 500 as well.
+    ///
     /// - Returns: `true` when an entry was written, so the caller can stamp
     ///   when the evidence arrived.
     @discardableResult
@@ -202,28 +216,53 @@ class MinSizeMemory {
                         heightConflict: Bool,
                         phase: FrameSizingPhase,
                         sharedWithApp: Bool = true) -> Bool {
-        let existing = known[window.windowID]
-        let base = existing?.provenance == .observed ? (existing?.size ?? .zero) : CGSize.zero
-        let updated = CGSize(
-            width: widthConflict ? max(base.width, actual.width) : base.width,
-            height: heightConflict ? max(base.height, actual.height) : base.height
+        let id = window.windowID
+        let existing = known[id]
+        let carried = carriedHintAxes[id] ?? []
+        // the window's own refusals, and the hint it carries beside them
+        var own = CGSize.zero
+        var hint = CGSize.zero
+        switch existing?.provenance {
+        case .observed?:
+            own = existing?.size ?? .zero
+            if carried.contains(.width) { hint.width = own.width; own.width = 0 }
+            if carried.contains(.height) { hint.height = own.height; own.height = 0 }
+        case .appHint?:
+            hint = existing?.size ?? .zero
+        default:
+            break
+        }
+        let evidence = CGSize(
+            width: widthConflict ? max(own.width, actual.width) : own.width,
+            height: heightConflict ? max(own.height, actual.height) : own.height
         )
+        // the hint stands on an axis this window has said nothing about, and
+        // falls where it just took less
+        let delta = TilingConfig.lowerMinSizeAcceptedDeltaPx
+        var keep: Set<FixedSize.Axis> = []
+        if evidence.width == 0, hint.width > 0, actual.width >= hint.width - delta { keep.insert(.width) }
+        if evidence.height == 0, hint.height > 0, actual.height >= hint.height - delta { keep.insert(.height) }
+        let updated = CGSize(width: keep.contains(.width) ? hint.width : evidence.width,
+                             height: keep.contains(.height) ? hint.height : evidence.height)
         let axis = FrameReadbackPoller.axis(width: widthConflict, height: heightConflict)
         let old = existing.map { "\(Self.text($0.size)) source=\($0.provenance.rawValue)" } ?? "none"
         guard isUsable(updated) else {
-            hyprLog(.debug, .lifecycle, "min-size record: wid=\(window.windowID) "
+            hyprLog(.debug, .lifecycle, "min-size record: wid=\(id) "
                     + "old=\(old) target=\(Self.text(target)) actual=\(Self.text(actual)) "
                     + "axis=\(axis) phase=\(phase.rawValue) source=readback refused=unusable")
             return false
         }
         let entry = Entry(size: updated, provenance: .observed)
-        known[window.windowID] = entry
+        known[id] = entry
+        carriedHintAxes[id] = keep.isEmpty ? nil : keep
         mirror(entry, onto: window)
-        if sharedWithApp { rememberAppHint(for: window, entry.size) }
-        hyprLog(.debug, .lifecycle, "min-size record: wid=\(window.windowID) "
+        // a carried axis is the app's own hint; it does not raise itself
+        if sharedWithApp { rememberAppHint(for: window, evidence) }
+        hyprLog(.debug, .lifecycle, "min-size record: wid=\(id) "
                 + "old=\(old) new=\(Self.text(updated)) target=\(Self.text(target)) "
                 + "actual=\(Self.text(actual)) axis=\(axis) phase=\(phase.rawValue) "
-                + "source=readback" + (sharedWithApp ? "" : " shared=false"))
+                + "source=readback" + (sharedWithApp ? "" : " shared=false")
+                + (keep.isEmpty ? "" : " kept-hint=" + keep.map(\.rawValue).sorted().joined(separator: "+")))
         return true
     }
 
@@ -258,6 +297,7 @@ class MinSizeMemory {
                     + "source=accepted was=\(existing.provenance.rawValue)")
         } else {
             known.removeValue(forKey: window.windowID)
+            carriedHintAxes.removeValue(forKey: window.windowID)
             window.observedMinSize = nil
             window.minSizeProvenance = .seeded
             hyprLog(.debug, .lifecycle, "min-size lower: wid=\(window.windowID) "

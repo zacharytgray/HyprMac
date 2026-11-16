@@ -137,6 +137,8 @@ class HyprWindow: Equatable, Hashable {
     private static let heuristicMinimumSizes: [String: CGSize] = [
         "com.apple.Safari": CGSize(width: 420, height: 300),
         "com.google.Chrome": CGSize(width: 500, height: 340),
+        // dia refuses anything under 500x446, on both axes
+        "company.thebrowser.dia": CGSize(width: 500, height: 446),
         "com.apple.finder": CGSize(width: 420, height: 300),
         "com.apple.Terminal": CGSize(width: 400, height: 260),
         "com.anthropic.claudefordesktop": CGSize(width: 600, height: 420),

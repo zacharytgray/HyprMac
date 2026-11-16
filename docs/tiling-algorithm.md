@@ -163,7 +163,10 @@ the slot's geometry, `forceInsertWindow` rolls back and tries the next leaf, up
 to three in all, and logs `force insert slot refused: <id> beside <tenant>`. A
 refusal of 20 pt or less reads as rounding and teaches no minimum, so the fit
 check alone would choose the same slot on every toggle. A window that arrives
-on its own does not get this yet: after its admission retry it still floats.
+on its own gets a narrower version in its admission retry: another pass when a
+refusal taught a new minimum and the fit check then finds a slot (see
+[Admission recovery](#admission-recovery)). A refusal that taught nothing
+still ends in the float.
 
 ## Max depth
 
@@ -323,9 +326,13 @@ of eight windows is about 3.5 seconds: the capture, two seconds of passes,
 and one last rollback. Admission recovery's narrowing rounds for a key
 share one such cap between them, and stop narrowing once it is spent.
 
-A minimum the memory already knows (`observed` provenance) shapes the
-first pass: the candidate is adjusted for it before any frame is written,
-and its ratios are kept while the membership stays the same.
+A minimum the memory already knows (`observed` or `appHint` provenance)
+shapes the first pass: the candidate is adjusted for it before any frame is
+written, and its ratios are kept while the membership stays the same. The
+hint counts because it is what another window of the app just refused:
+without it the second Dia window was asked for the 413.5 pt its sibling had
+refused, and refused it too. A `seeded` guess does not shape the pass, and an
+explicit request's bypass reads a hint as zero here as everywhere.
 
 A window that rounds its size up by less than the size tolerance passes
 its own match and can still fail the pair or the screen: a terminal a
@@ -474,7 +481,21 @@ more when the app does not answer in time (step 3).
    the one whose removal makes the rest fit, else the one with the biggest
    floor, and again — tiles the rest in the same pass, and reports the
    dropped ones as `refusedIDs` (`admission retry tiles what fits`); it does
-   the same after an attempt that learned the floors itself.  Before acting the recovery
+   the same after an attempt that learned the floors itself.
+
+   An attempt that learned a new floor and still fits gets another pass.
+   On 2026-11-15 Messages held the left half and Dia the right, and a second
+   Dia window opened with nothing known about Dia's 500x446 floor. The
+   admission split Dia's leaf top and bottom and learned the height. The
+   retry split the same leaf side by side and learned the width. The fit
+   check after it found the slot beside Messages, and the newcomer floated
+   anyway. Now that check's verdict is run: one more ordinary pass into the
+   unchanged incumbent tree, with the floors just learned
+   (`admission retry tries the slot the learned minima fit`). A pass runs
+   only when the attempt before it changed a judged window's minimum, at most
+   `learnedFitPasses` (two) times, and only while the shared pass budget has
+   room. A refusal that taught nothing would only repeat its slot, so it
+   takes the fallback as before. Before acting the recovery
    re-checks the assignment, the workspace's home screen, whether the
    workspace is visible, whether the app is running, whether the window
    still exists and can be read, and whether the user has floated it.
@@ -500,9 +521,10 @@ more when the app does not answer in time (step 3).
    dropped pre-write floats as `noFittingSlot`, its own reason, not the
    verdict of the pass that tiled the rest. A pending window that the
    fallback retile or a newer layout tiled meanwhile is resolved, never
-   floated off its tile. The pre-write check takes the windows in the order
-   the pass inserts them (incumbents first, then left to right), so its
-   verdict does not change with the window server's z-order. The pass restores
+   floated off its tile. The pre-write check and the check after a failed
+   attempt both take the windows in the order the pass inserts them
+   (incumbents first, then left to right), from frames read once, so neither
+   verdict changes with the window server's z-order. The pass restores
    slot memories first and the check does not model them, so a live slot memory
    can change the order.
 
@@ -686,10 +708,16 @@ Fit checks read all three the same way; the state dump and the logs print
 the source. A bypass keys on `observed`, and an explicit user request — a
 float→tile, a move, the fit diagnostic — sets an `appHint` aside as well,
 because a hint is somebody else's evidence and the window it is refusing has
-never been asked. Real evidence
-*replaces* a hint of either kind rather than merging with it, so the axis a
-readback did not refuse goes back to unknown instead of inheriting a guess
-under an `observed` label.
+never been asked. Real evidence *replaces* a `seeded` guess rather than
+merging with it, so the axis a readback did not refuse goes back to unknown
+instead of inheriting a guess under an `observed` label. An `appHint` is
+another window's refusal, so its axis the readback did not refuse is kept,
+carried, unless the window just took a size at least
+`lowerMinSizeAcceptedDeltaPx` below it there. Dropping it reopened the
+admission trap: Dia's next window refused the height, forgot the hinted 500 width, and
+was split the other way into a width it refused too. A carried axis counts in
+every fit check, and the window's own refusal on that axis replaces it, but it
+never feeds the app's hint, which only real refusals raise.
 
 **Per-app hints.** Every `observed` bound also raises a per-bundle-id hint,
 the per-axis max of what that app's windows have refused. One exception
