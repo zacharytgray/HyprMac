@@ -444,6 +444,10 @@ the request gets one attempt with them set aside. Look for what follows:
   without another sizing attempt.
 - `adjusted layout cannot resolve observed constraints — restoring` — an
   impossible adjusted layout. There is no adjusted write.
+- `adjusted layout skipped: wid=<id> floor=<w>x<h> slot=<w>x<h> — a known
+  minimum rules it out` — the adjusted layout would put `wid` in `slot`,
+  below a floor an earlier pass already learned, even after one more
+  adjustment. It comes just before the line above or the topology recovery.
 - An incompatible returning incumbent produces `noFittingSlot(id)` and keeps
   the whole key unverified without writing. It is excluded from recovery
   fallback IDs.

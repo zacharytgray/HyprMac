@@ -368,7 +368,22 @@ user set by hand is left alone as long as another ancestor on the axis
 can make room. When none can, the verified pass lets it give way by the
 minimum, since the alternative is a layout refused and rolled back on
 every retile. Fit checks never ask for that, so a hand-set ratio still
-refuses a swap or an arrival up front. The second
+refuses a swap or an arrival up front.
+
+The adjusted layout must also clear every minimum the memory already
+knows, by the same rule that shapes the first pass. Adjusting only for the
+pass's own refusals can push another window back under a floor an earlier
+pass taught. Fantastical arriving under Orca had its 480 pt floor from the
+slot under Teams, yet the adjusted pass wrote it at 427 pt to make room for
+Orca's 400 pt. When a known floor is crossed, `answerRefusal` adjusts once
+more for those windows and recomputes. If a known floor is still crossed,
+or the pass's own refusals no longer fit, the adjusted write is skipped
+with an `adjusted layout skipped: wid=… floor=… slot=…` notice, and the
+attempt goes on to the topology recovery or the rollback as before. A
+layout that clears every known floor goes out exactly as it did before
+this check.
+
+The second
 pass runs on the apparent conflict; what the memory is allowed to learn
 from it is a narrower question, decided per window under "Min-size
 memory" below. Membership and

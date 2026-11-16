@@ -1666,10 +1666,25 @@ class TilingEngine {
             let conflicts = first.conflicts.map { (window: $0.window, actual: $0.actual) }
             candidate.adjustForMinSizes(conflicts, in: rect, gap: gapSize, padding: outerPadding,
                                         givingWayOnUserSet: true)
-            let adjusted = writable(candidate.layout(in: rect, gap: gapSize, padding: outerPadding))
+            var adjusted = writable(candidate.layout(in: rect, gap: gapSize, padding: outerPadding))
+            // a floor an earlier pass taught still counts. one more try for
+            // the windows it rules out, then the layout must pass both checks
+            var broken = knownMinimumConflicts(in: adjusted)
+            if !broken.isEmpty {
+                candidate.adjustForMinSizes(broken, in: rect, gap: gapSize, padding: outerPadding,
+                                            givingWayOnUserSet: true)
+                adjusted = writable(candidate.layout(in: rect, gap: gapSize, padding: outerPadding))
+                broken = knownMinimumConflicts(in: adjusted)
+            }
             let frames = Dictionary(uniqueKeysWithValues: adjusted.map { ($0.0.windowID, $0.1) })
+            if let ruling = broken.first {
+                hyprLog(.notice, .tiling, "adjusted layout skipped: wid=\(ruling.window.windowID)"
+                        + " floor=\(Self.sizeText(ruling.actual))"
+                        + " slot=\(Self.sizeText(frames[ruling.window.windowID]?.size ?? .zero))"
+                        + " — a known minimum rules it out")
+            }
             let tolerance = FrameSizingConfiguration().sizeOvershootTolerance
-            let resolves = first.observations.allSatisfy { observation in
+            let resolves = broken.isEmpty && first.observations.allSatisfy { observation in
                 guard let frame = frames[observation.window.windowID] else { return false }
                 return (!observation.widthConflict || observation.actual.width <= frame.width + tolerance)
                     && (!observation.heightConflict || observation.actual.height <= frame.height + tolerance)
@@ -1887,8 +1902,14 @@ class TilingEngine {
     /// request's bypass reads the hint as zero, so neither is held to a
     /// sibling's floor. A seeded guess still goes out as the plain layout.
     private func knownMinimumConflicts(in tree: BSPTree, rect: CGRect) -> [(window: HyprWindow, actual: CGSize)] {
+        knownMinimumConflicts(in: tree.layout(in: rect, gap: gapSize, padding: outerPadding))
+    }
+
+    /// The same rule over layouts already computed: the adjusted pass
+    /// checks its frames with it before writing them.
+    private func knownMinimumConflicts(in layouts: [(HyprWindow, CGRect)]) -> [(window: HyprWindow, actual: CGSize)] {
         let slack = TilingConfig.minSizeConflictSlackPx
-        return tree.layout(in: rect, gap: gapSize, padding: outerPadding).compactMap { window, frame in
+        return layouts.compactMap { window, frame in
             guard let provenance = minSizes.entry(for: window.windowID)?.provenance,
                   provenance != .seeded else { return nil }
             let minimum = minimumSize(for: window)

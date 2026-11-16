@@ -348,6 +348,7 @@
 		E94B82A62C0BFE40FA50BAC8 /* TiledDragTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC27FADCFF305913BD49A6CA /* TiledDragTransaction.swift */; };
 		E956D728AB7333590AB23CA6 /* TiledDragFeedbackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9847CD6EC3473BF6D106B2A3 /* TiledDragFeedbackCoordinator.swift */; };
 		E9B464343591A43FD09B3807 /* KeyRemapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E2AB7E29CE5CACDE9EE308 /* KeyRemapperTests.swift */; };
+		EA0FCBAAE3BAE750A2FB2E5F /* AdjustedPassKnownFloorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7692E57D849E1C7214BA9C /* AdjustedPassKnownFloorTests.swift */; };
 		EA8FC0F77CB146BAD8B35CBE /* WindowStateCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */; };
 		EABEFF5EE2EE6EEABE6956EB /* FrameSizingTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8F5AAFA837B55AEB2831E8 /* FrameSizingTransaction.swift */; };
 		EAD93287EB51947EF49B40DE /* ForceInsertWindowFallbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0C8D3EAFB70C82B163D2DAA /* ForceInsertWindowFallbackTests.swift */; };
@@ -432,6 +433,7 @@
 		1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserConfig.swift; sourceTree = "<group>"; };
 		1A85F3FF392095FDDB36DAB7 /* BSPTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTestSupport.swift; sourceTree = "<group>"; };
 		1AA39AE261654BF110E66771 /* WindowStateCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCache.swift; sourceTree = "<group>"; };
+		1C7692E57D849E1C7214BA9C /* AdjustedPassKnownFloorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdjustedPassKnownFloorTests.swift; sourceTree = "<group>"; };
 		1CE7C605576D58BB77A314D0 /* TiledDragController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragController.swift; sourceTree = "<group>"; };
 		1D76ACDED6175BEEB777D8D4 /* FloaterMarksTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloaterMarksTests.swift; sourceTree = "<group>"; };
 		1F4BE620A1670E1D89160707 /* KeybindCategory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindCategory.swift; sourceTree = "<group>"; };
@@ -868,6 +870,7 @@
 			isa = PBXGroup;
 			children = (
 				BDCCD9FA560F875F6C457770 /* ActionWireKeyTests.swift */,
+				1C7692E57D849E1C7214BA9C /* AdjustedPassKnownFloorTests.swift */,
 				DDD57690AD7669194DF8619B /* AdmissionRecoveryTests.swift */,
 				EF9248FBC1729E7F502A6186 /* AXFrameWriteBatchTests.swift */,
 				9F54AABB9F5D654E82FF741A /* AXNotificationServiceTests.swift */,
@@ -1501,6 +1504,7 @@
 				9D51788040A2380139C79B56 /* AXFrameWriteBatchTests.swift in Sources */,
 				9540D5E1BBF47D714DEE6CD8 /* AXNotificationServiceTests.swift in Sources */,
 				1F64AD127721342AFFDD482D /* ActionWireKeyTests.swift in Sources */,
+				EA0FCBAAE3BAE750A2FB2E5F /* AdjustedPassKnownFloorTests.swift in Sources */,
 				5DF30CD6FFA3E20340A090F5 /* AdmissionRecoveryTests.swift in Sources */,
 				049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */,
 				A103B6FAC1DFA16554F33D49 /* BSPTargetInsertionTests.swift in Sources */,
