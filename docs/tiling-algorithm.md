@@ -325,7 +325,10 @@ share one such cap between them, and stop narrowing once it is spent.
 
 A minimum the memory already knows (`observed` provenance) shapes the
 first pass: the candidate is adjusted for it before any frame is written,
-and its ratios are kept while the membership stays the same.
+and its ratios are kept while the membership stays the same. Every path
+that accepts or keeps those first layouts publishes the ratios they were
+laid out from: the first pass, the AX timeout recovery's retry, and a
+timed-out pass the admission recovery keeps.
 
 A window that rounds its size up by less than the size tolerance passes
 its own match and can still fail the pair or the screen: a terminal a

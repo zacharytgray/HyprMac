@@ -1486,6 +1486,9 @@ class TilingEngine {
         let restorationFrame: CGRect
         let newcomerIDs: Set<CGWindowID>
         let firstLayouts: [(HyprWindow, CGRect)]
+        /// the ratios `firstLayouts` came from, when a known minimum moved
+        /// them off the tree's. nil when they are the tree's own
+        let firstRatios: BSPTree?
         let scaleChanges: [CGWindowID: (from: CGFloat, to: CGFloat)]
         let budget: PassBudget
         let scalePoller: FrameReadbackPoller
@@ -1554,14 +1557,19 @@ class TilingEngine {
             onTeleportWillWrite(TeleportPlanner.moves(originals: originalFrames,
                                                       targets: firstLayouts.map { ($0.0.windowID, $0.1) }))
         }
+        // a snapshot: the adjusted pass may move the candidate's ratios
+        // again, and a pass that writes the first layouts must publish
+        // these, whichever path accepts or keeps it
         let attempt = VerifiedAttempt(tree: tree, candidate: candidate, rect: rect, generation: generation,
                                       windows: windows, originalFrames: originalFrames,
                                       restorationFrame: restorationFrame, newcomerIDs: newcomerIDs,
-                                      firstLayouts: firstLayouts, scaleChanges: scaleChanges,
+                                      firstLayouts: firstLayouts,
+                                      firstRatios: known.isEmpty ? nil : candidate.deepClone(),
+                                      scaleChanges: scaleChanges,
                                       budget: budget, scalePoller: scalePoller, poller: poller)
         let first = runFirstPass(attempt)
         if case .accepted = first.verdict {
-            if !known.isEmpty { copyVerifiedRatios(from: candidate.root, to: tree.root) }
+            adoptFirstRatios(attempt)
             return .accepted(actualFrames: first.actualFrames,
                              progress: FrameSizingProgressReport(candidate: first.progress))
         }
@@ -1650,7 +1658,8 @@ class TilingEngine {
                                topologyRecoveryMaxDepth: Int?) -> AttemptStep<TerminalPass> {
         let candidate = attempt.candidate, tree = attempt.tree
         let rect = attempt.rect, generation = attempt.generation
-        var terminal = TerminalPass(result: first, layouts: attempt.firstLayouts)
+        var terminal = TerminalPass(result: first, layouts: attempt.firstLayouts,
+                                    adopt: { self.adoptFirstRatios(attempt) })
         if case .rejected = first.verdict, !first.conflicts.isEmpty,
            layoutGeneration == generation {
             let conflicts = first.conflicts.map { (window: $0.window, actual: $0.actual) }
@@ -1810,6 +1819,8 @@ class TilingEngine {
         let retry = applyLayout(firstLayouts, usableFrame: rect, generation: generation,
                                 poller: relaxedPoller)
         if case .accepted = retry.verdict {
+            // it wrote the first layouts, so it publishes their ratios
+            adoptFirstRatios(attempt)
             hyprLog(.notice, .tiling, "verified layout AX timeout recovery accepted")
             return .accepted(actualFrames: retry.actualFrames,
                              progress: FrameSizingProgressReport(candidate: retry.progress))
@@ -1875,6 +1886,13 @@ class TilingEngine {
             guard minimum.width > frame.width + slack || minimum.height > frame.height + slack else { return nil }
             return (window, minimum)
         }
+    }
+
+    /// Carry the ratios the first layouts were written from back to the
+    /// tree. Every path that accepts or keeps those layouts calls this.
+    private func adoptFirstRatios(_ attempt: VerifiedAttempt) {
+        guard let ratios = attempt.firstRatios else { return }
+        copyVerifiedRatios(from: ratios.root, to: attempt.tree.root)
     }
 
     private func copyVerifiedRatios(from source: BSPNode, to destination: BSPNode) {

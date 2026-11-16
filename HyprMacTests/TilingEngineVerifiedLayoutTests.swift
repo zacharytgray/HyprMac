@@ -118,6 +118,70 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         XCTAssertNil(fixture.window.observedMinSize)
     }
 
+    /// a known minimum moves the first layouts off the tree's 50/50. the
+    /// timeout recovery's retry writes and verifies those layouts, so the
+    /// tree has to publish their ratios too, or intended rects, drag
+    /// targeting and the next layout go on with the old split
+    func testTimeoutRecoveryPublishesTheRatiosItVerified() {
+        let left = makeWindow(id: 951)
+        let right = makeWindow(id: 952)
+        let tree = BSPTree()
+        XCTAssertTrue(tree.insert(left, maxDepth: 3))
+        XCTAssertTrue(tree.insert(right, maxDepth: 3))
+        XCTAssertEqual(tree.root.splitRatio, 0.5)
+        let usable = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+        let originals: [CGWindowID: CGRect] = [
+            951: CGRect(x: 8, y: 8, width: 700, height: 900),
+            952: CGRect(x: 800, y: 8, width: 700, height: 900)
+        ]
+        var frames = originals
+        var now: TimeInterval = 0
+        var timedOut = false
+        var rightWrites = 0
+        let engine = TilingEngine(displayManager: DisplayManager(), frameSizingIOFactory: { _, generation in
+            FrameSizingIO(
+                setMessagingTimeout: { _, _ in .success },
+                writeSize: { id, size, _ in frames[id]?.size = size; return .success },
+                writePosition: { id, position, timeout in
+                    // the right window's first move to its tile hangs to
+                    // the messaging timeout, once
+                    if id == 952, position != originals[952]!.origin {
+                        rightWrites += 1
+                        if !timedOut {
+                            timedOut = true
+                            now += timeout * 0.95
+                            return .cannotComplete
+                        }
+                    }
+                    frames[id]?.origin = position
+                    return .success
+                },
+                readPosition: { id, _ in (.success, frames[id]?.origin) },
+                readSize: { id, _ in (.success, frames[id]?.size) },
+                now: { now }, sleep: { now += $0 }, currentGeneration: generation)
+        })
+        left.observedMinSize = CGSize(width: 1000, height: 0)
+        left.minSizeProvenance = .observed
+        engine.primeMinimumSizes([left, right])
+        let generation = engine.beginLayoutGeneration()
+
+        let outcome = engine.applyVerifiedLayout(tree, in: usable, generation: generation,
+                                                 originalFrames: originals)
+
+        guard case let .accepted(actual, progress) = outcome else {
+            return XCTFail("expected the relaxed retry to accept, got \(outcome)")
+        }
+        XCTAssertTrue(timedOut)
+        XCTAssertEqual(rightWrites, 2, "the candidate and the relaxed retry")
+        XCTAssertTrue(progress.candidateVerified)
+        XCTAssertGreaterThanOrEqual(actual[951]?.width ?? 0, 1000)
+        let published = Dictionary(uniqueKeysWithValues: tree.layout(
+            in: usable, gap: TilingConfig.defaultGap, padding: TilingConfig.defaultOuterPadding
+        ).map { ($0.0.windowID, $0.1) })
+        XCTAssertEqual(published, actual)
+        XCTAssertGreaterThan(tree.root.splitRatio, 0.5)
+    }
+
     func testImmediateCannotCompleteDoesNotEnterTimeoutRecovery() {
         let fixture = timeoutRecoveryFixture(mode: .immediateReadFailure)
 
