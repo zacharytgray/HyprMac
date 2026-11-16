@@ -64,6 +64,10 @@ class AccessibilityManager {
     /// so their absence from the snapshot says nothing about them, and
     /// discovery holds them instead of marking them gone.
     private(set) var unreadableWindowIDs: Set<CGWindowID> = []
+    /// Windows the last `getAllWindows` walk read. Newer evidence than a
+    /// hold discovery took in an earlier poll: a window in it is readable
+    /// and on screen, whatever that poll said.
+    private(set) var readWindowIDs: Set<CGWindowID> = []
 
     /// Messaging timeout for the discovery walk. The process-wide default is
     /// one second, which is what one stalled app costs the main thread per
@@ -78,7 +82,8 @@ class AccessibilityManager {
     /// with three apps stalled at once each of those paid three quarters of
     /// a second on the main thread, for two days. The windows of a stalled
     /// app stay held meanwhile, so nothing on screen depends on the answer.
-    private var stallBackoff = StallBackoff()
+    /// internal so a test can stall an app
+    var stallBackoff = StallBackoff()
     /// The walk's time budget and what each app cost to read.
     private var pacing = WalkPacing()
     /// how long the last walk took, and what it skipped, for the trace line
@@ -287,9 +292,10 @@ class AccessibilityManager {
     static let revealRetryMessagingTimeout: Float = 0.05
 
     /// `ids` among `pid`'s AX windows, read with the reveal retry's short
-    /// timeout. Ignores the walk's stall backoff and leaves it untouched: a
-    /// switch that could not reveal a floater asks its app again sooner than
-    /// the walk would, and the walk keeps its own record of the app.
+    /// timeout. Ignores the walk's stall backoff: a switch that could not
+    /// reveal a window asks its app again sooner than the walk would. A
+    /// failure leaves the backoff as it is; an answer ends it, so the walk
+    /// that retiles a held tile asks the app instead of skipping it.
     /// - Returns: the windows found, or nil when the window list did not answer.
     func revealRetryWindows(_ ids: Set<CGWindowID>, ofPID pid: pid_t) -> [HyprWindow]? {
         let appRef = AXUIElementCreateApplication(pid)
@@ -297,6 +303,7 @@ class AccessibilityManager {
         var value: AnyObject?
         guard AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &value) == .success,
               let axWindows = value as? [AXUIElement] else { return nil }
+        noteWindowListAnswered(pid)
         return axWindows.compactMap { element in
             guard let id = windowID(for: element), ids.contains(id) else { return nil }
             return HyprWindow(element: element, windowID: id, ownerPID: pid)
@@ -313,6 +320,13 @@ class AccessibilityManager {
         case appHidden
         case present
         case absent
+    }
+
+    /// `pid` answered its window list outside the walk. It is not stalled
+    /// any more: the next walk asks it like any other app. The walk logs
+    /// the recovery when it reads the app itself.
+    func noteWindowListAnswered(_ pid: pid_t) {
+        stallBackoff.noteSuccess(pid)
     }
 
     /// Whether the walk is backing off from `pid`: its window list timed
@@ -623,6 +637,7 @@ class AccessibilityManager {
         }
         pacing.finishWalk(skipped: overBudget, running: runningPIDs)
         unreadableWindowIDs = unreadable
+        readWindowIDs = Set(windows.map(\.windowID))
         unboundWindowIDs = unbound
         lastWalkDuration = now().timeIntervalSince(walkStarted)
         hyprLog(.debug, .discovery, "AX walk: apps=\(apps.count) windows=\(windows.count) unreadable=\(unreadable.count) \(Int((lastWalkDuration * 1000).rounded()))ms"

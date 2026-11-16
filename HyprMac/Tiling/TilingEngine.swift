@@ -3353,6 +3353,12 @@ class TilingEngine {
         return released
     }
 
+    /// The held members of `workspace`'s trees: kept in their leaves, no
+    /// frame written yet. A switch retries their apps until one answers.
+    func heldMembers(onWorkspace workspace: Int) -> Set<CGWindowID> {
+        heldByKey.filter { $0.key.workspace == workspace }.values.reduce(into: []) { $0.formUnion($1) }
+    }
+
     private func forgetHeld(_ windowID: CGWindowID) {
         for (key, held) in heldByKey where held.contains(windowID) {
             let rest = held.subtracting([windowID])

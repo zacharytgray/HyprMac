@@ -585,7 +585,7 @@ class WindowManager {
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         actionDispatcher.heldWindowIDs = { [weak self] in
             guard let self else { return [] }
-            return self.accessibility.unreadableWindowIDs.union(self.discovery.heldWindowIDs)
+            return self.heldWindowIDs
         }
         actionDispatcher.openPopup = { [weak self] in self?.mouseTracker.openPopup(maxAge: 0) }
         actionDispatcher.focusWindow = { [weak self] w, reason in
@@ -3107,6 +3107,14 @@ private extension WindowManager {
 }
 
 private extension WindowManager {
+    /// What the last walk could not read, and what the last poll held. A
+    /// walk since that poll (a switch's, a reveal retry's) that read a
+    /// window ends its hold: discovery's set only changes in a poll.
+    var heldWindowIDs: Set<CGWindowID> {
+        accessibility.unreadableWindowIDs
+            .union(discovery.heldWindowIDs.subtracting(accessibility.readWindowIDs))
+    }
+
     /// Give `admissionRecovery` its probes and its two actions.
     ///
     /// Everything it can do is here: run one more tiling pass with only the
@@ -3119,7 +3127,7 @@ private extension WindowManager {
         // the recovery's passes keep the held leaf like the retile does
         tilingEngine.heldWindowIDsSource = { [weak self] in
             guard let self else { return [] }
-            return self.accessibility.unreadableWindowIDs.union(self.discovery.heldWindowIDs)
+            return self.heldWindowIDs
                 .subtracting(self.stateCache.floatingWindowIDs)
                 .subtracting(self.stateCache.hiddenWindowIDs)
         }

@@ -1289,6 +1289,21 @@ extension StallBackoffTests {
         XCTAssertNil(backoff.probeTarget(among: [4], now: later))
     }
 
+    /// a reveal retry's read answered: the walk that retiles the held tile
+    /// right after asks the app instead of skipping it as stalled
+    func testAnAppThatAnsweredOutsideTheWalkIsNoLongerStalled() {
+        let ax = AccessibilityManager()
+        ax.now = { [t0] in t0 }
+        ax.stallBackoff.noteFailure(7, now: t0)
+        XCTAssertTrue(ax.isBackingOff(pid: 7))
+
+        ax.noteWindowListAnswered(7)
+
+        XCTAssertFalse(ax.isBackingOff(pid: 7))
+        XCTAssertFalse(ax.stallBackoff.isDue(7, now: t0.addingTimeInterval(1)), "no probe pending either")
+        XCTAssertTrue(ax.stallBackoff.stalledPIDs.isEmpty)
+    }
+
     /// fable A: nothing polled when a backoff ended, so an app that
     /// stalled once waited for the next unrelated event or the reconcile
     func testTheWakeUpIsWhenTheNextBackoffEnds() {

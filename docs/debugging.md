@@ -1096,7 +1096,7 @@ poll deferred: workspace transition (1200ms left) (trigger create)
 The full poll still runs when the hold ends. No `admitted … during
 workspace transition` line under a switch hold means the gate stayed shut:
 the hold was also a move's, the scratchpad's, a display change's or a
-wake's, a floater reveal retry was still running, or a button was held.
+wake's, a reveal retry was still running, or a button was held.
 `admit-only pass skipped: tiled [ids] missing from the walk` means a tiled
 window of a visible workspace did not answer the walk, so the pass left
 everything to the poll after the hold.
@@ -1215,6 +1215,36 @@ for a window that was not held and came back within five seconds; with
 both holds in place it should be rare. Every tile pass logs
 `retile: ws<N> holds […] — leaves kept, no frame written` for the members
 it kept out of the pass.
+
+### A window stayed parked after a workspace switch
+
+The switch's walk found its app busy, so the switch could not reveal it.
+The reveal retry asks that app every 100 ms, 15 times. All
+`[notice] [lifecycle]`:
+
+```
+switch: 1 tile(s) held on ws1, their app did not answer: [16020], retrying their app, repair poll requested
+reveal retry: attempt 1 ran 4ms late, pid 812 list read failed in 51ms for [16020]
+reveal retry: tile 16020 readable on attempt 2, retiled 230ms after the switch (ran 3ms late, list read 12ms, walk 80ms, retile 40ms)
+```
+
+A floater logs `switch: N floater(s) to reveal not readable` and
+`reveal retry: <id> readable on attempt N, restored its saved frame`
+instead. Other lines:
+
+- `reveal retry: tile <id> listed on attempt N but the walk did not read
+  it` — the app answered the retry's read, then failed the walk. It is
+  asked again.
+- `reveal retry: [ids] still not readable after 15 attempts (… after the
+  switch), left to the repair poll, poll requested` — the retry gave up.
+  The poll after the transition hold releases a tile
+  (`held windows readable again: […] — retiling`) or restores a floater
+  (`reveal repair:`) once the app answers.
+
+`ran Nms late` large means something else held the main thread after the
+switch. `list read` and `walk` large mean the app's own replies were slow.
+A switch over 250 ms also logs `switch: ws<N> took …ms (walk, retile,
+focus and rest)`.
 
 ### A new window was found late, or got the wrong id
 

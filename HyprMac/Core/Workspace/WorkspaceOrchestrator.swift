@@ -63,23 +63,31 @@ final class WorkspaceOrchestrator {
     /// Fired once the switch has landed, with the windows moved and focus
     /// settled. State that has to reflect the finished switch lives here.
     var onDidSwitch: (_ workspace: Int, _ screen: NSScreen) -> Void = { _, _ in }
-    /// Fired when a switch could not reveal a floater because no handle for
-    /// it was readable (its app did not answer the walk). The next poll's
-    /// reveal repair restores it once the app answers.
+    /// Fired when a switch could not reveal a window because its app did
+    /// not answer the walk: a floater with no readable handle, or a tile the
+    /// pass held. Fired again when the reveal retry gives up. The poll's
+    /// reveal repair restores the floater, and its hold release retiles the
+    /// tile, once the app answers.
     var onRevealMissed: () -> Void = { }
     /// Fired with the floaters a reveal retry or the reveal repair restored
     /// after the switch, so they are marked now and not at the next refresh.
     var onFloatersRevealed: (_ windows: [HyprWindow]) -> Void = { _ in }
-    /// The floaters among `ids` that `pid` lists right now, or nil when its
+    /// The windows among `ids` that `pid` lists right now, or nil when its
     /// window list does not answer. A seam for the reveal retry.
     var revealRetryWindows: (_ ids: Set<CGWindowID>, _ pid: pid_t) -> [HyprWindow]?
+    /// What the last walk could not read. A seam: a switch retries only the
+    /// held tiles whose app did not answer, not ones off on another Space.
+    var unreadableWindowIDs: () -> Set<CGWindowID> = { [] }
     /// Runs the next reveal retry after a delay. A seam so a test can step it.
     var scheduleRevealRetry: (_ delay: TimeInterval, _ retry: @escaping () -> Void) -> Void = { delay, retry in
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: retry)
     }
-    /// Floaters a switch could not reveal that the retry is still asking for.
+    /// Windows a switch could not reveal that the retry is still asking
+    /// for: floaters with no handle, and tiles the pass held.
     private var revealRetryPending: Set<CGWindowID> = []
     private var revealRetryAttempt = 0
+    /// when the last switch started the retry, to log how long after it a window came back
+    private var revealRetryStarted: Date?
     /// When the pending retry is due, to log how late the main thread let it run.
     private var revealRetryDue: Date?
     static let revealRetryInterval: TimeInterval = 0.1
@@ -87,7 +95,7 @@ final class WorkspaceOrchestrator {
     /// `switchWorkspace` calls under way; the walk, retile and focus steps
     /// all run inside the call.
     private var switchesInFlight = 0
-    /// No switch is writing frames: none is under way, and no floater it
+    /// No switch is writing frames: none is under way, and no window it
     /// could not reveal is still being retried. A brand-new window may be
     /// tiled during the switch's transition hold only then.
     var isSwitchSettled: Bool { switchesInFlight == 0 && revealRetryPending.isEmpty }
@@ -120,6 +128,7 @@ final class WorkspaceOrchestrator {
         self.revealRetryWindows = { [weak accessibility] ids, pid in
             accessibility?.revealRetryWindows(ids, ofPID: pid)
         }
+        self.unreadableWindowIDs = { [weak accessibility] in accessibility?.unreadableWindowIDs ?? [] }
         self.actualFocusedWindow = { [weak accessibility] in
             accessibility?.getActualFocusedStandardWindow()
         }
@@ -440,6 +449,18 @@ final class WorkspaceOrchestrator {
         tileAllVisibleSpaces(allWindows)
         let tileMS = Self.ms(since: tileStart)
 
+        // a tile whose app did not answer the walk kept its leaf and got no
+        // frame: still in the hide corner on the workspace now showing
+        let heldTiles = tilingEngine.heldMembers(onWorkspace: number)
+            .intersection(unreadableWindowIDs())
+            .subtracting(stateCache.floatingWindowIDs)
+            .subtracting(stateCache.hiddenWindowIDs)
+        if !heldTiles.isEmpty {
+            hyprLog(.notice, .lifecycle, "switch: \(heldTiles.count) tile(s) held on ws\(number), their app did not answer: \(heldTiles.sorted()), retrying their app, repair poll requested")
+            onRevealMissed()
+            retryReveal(heldTiles.sorted())
+        }
+
         // focus best tiled window on the new workspace; if none, fall back to
         // any floating window before giving up. only warp+hide if truly empty.
         let newWorkspaceWindows = allWindows.filter { result.toShow.contains($0.windowID) }
@@ -477,16 +498,20 @@ final class WorkspaceOrchestrator {
         stateCache.hiddenWindowIDs.contains(id) && !stateCache.reservedHiddenWindowIDs.contains(id)
     }
 
-    /// Ask the apps of floaters a switch could not reveal for just those
+    /// Ask the apps of windows a switch could not reveal for just those
     /// windows, every 100 ms for a bounded number of tries, and reveal each
     /// as soon as its app answers. A busy app (a browser handling "back to
-    /// tab" from picture in picture) frees up well before the next poll can
-    /// run: that one waits out the transition suppression and the walk's
-    /// stall backoff. The repair poll stays the safety net.
+    /// tab" from picture in picture, Messages activating from the Dock)
+    /// frees up well before the next poll can run: that one waits out the
+    /// transition suppression and the walk's stall backoff. A floater gets
+    /// its saved frame back. A held tile gets its frame from the engine: a
+    /// retile from a fresh walk that reads it. The repair poll stays the
+    /// safety net.
     func retryReveal(_ ids: [CGWindowID]) {
         let starting = revealRetryPending.isEmpty
         revealRetryPending.formUnion(ids)
         revealRetryAttempt = 0
+        revealRetryStarted = Date()
         // the walk that failed just now; asking again at once would only
         // spend the switch's time on the same busy app
         if starting { scheduleNextRevealRetry() }
@@ -497,17 +522,23 @@ final class WorkspaceOrchestrator {
         scheduleRevealRetry(Self.revealRetryInterval) { [weak self] in self?.attemptReveal() }
     }
 
+    private var msSinceRetryStarted: Int { revealRetryStarted.map(Self.ms(since:)) ?? 0 }
+
     private static func ms(since start: Date) -> Int {
         Int((Date().timeIntervalSince(start) * 1000).rounded())
     }
 
     private func attemptReveal() {
-        // a floater revealed meanwhile, moved, closed or hidden again by
-        // another switch is no longer the retry's
+        // a window revealed meanwhile, moved, closed or hidden again by
+        // another switch is no longer the retry's. a tile a poll retiled is
+        // no longer held
         revealRetryPending = revealRetryPending.filter { id in
-            stateCache.floatingWindowIDs.contains(id)
-                && workspaceManager.workspaceFor(id).map(workspaceManager.isWorkspaceVisible) == true
-                && workspaceManager.savedFloatingFrame(for: id) != nil
+            guard let ws = workspaceManager.workspaceFor(id), workspaceManager.isWorkspaceVisible(ws) else { return false }
+            if stateCache.floatingWindowIDs.contains(id) {
+                return workspaceManager.savedFloatingFrame(for: id) != nil
+            }
+            return !stateCache.hiddenWindowIDs.contains(id)
+                && tilingEngine.heldMembers(onWorkspace: ws).contains(id)
         }
         guard !revealRetryPending.isEmpty else { return }
         revealRetryAttempt += 1
@@ -518,15 +549,20 @@ final class WorkspaceOrchestrator {
         let byApp = Dictionary(grouping: revealRetryPending) { stateCache.windowOwners[$0] }
         var revealed: [HyprWindow] = []
         defer { if !revealed.isEmpty { onFloatersRevealed(revealed) } }
+        // held tiles whose app listed them, per app's list read time
+        var listedTiles: [CGWindowID: Int] = [:]
         for (pid, ids) in byApp {
             guard let pid else { continue }
             let readStart = Date()
             guard let windows = revealRetryWindows(Set(ids), pid) else {
-                hyprLog(.notice, .lifecycle, "reveal retry: attempt \(revealRetryAttempt) ran \(late)ms late, pid \(pid) list read failed in \(Self.ms(since: readStart))ms")
+                hyprLog(.notice, .lifecycle, "reveal retry: attempt \(revealRetryAttempt) ran \(late)ms late, pid \(pid) list read failed in \(Self.ms(since: readStart))ms for \(ids.sorted())")
                 continue
             }
             let readMS = Self.ms(since: readStart)
-            for w in windows {
+            for w in windows where !stateCache.floatingWindowIDs.contains(w.windowID) {
+                listedTiles[w.windowID] = readMS
+            }
+            for w in windows where stateCache.floatingWindowIDs.contains(w.windowID) {
                 // no title in the line: it is one more read of a window whose
                 // app was busy a moment ago, at the process-wide 1 s timeout
                 let restoreStart = Date()
@@ -537,13 +573,43 @@ final class WorkspaceOrchestrator {
                         + " (ran \(late)ms late, list read \(readMS)ms, restore \(Self.ms(since: restoreStart))ms)")
             }
         }
+        if !listedTiles.isEmpty { revealHeldTiles(listedTiles, late: late) }
         guard !revealRetryPending.isEmpty else { return }
         guard revealRetryAttempt < Self.revealRetryAttempts else {
-            hyprLog(.notice, .lifecycle, "reveal retry: \(revealRetryPending.sorted()) still not readable after \(revealRetryAttempt) attempts, left to the repair poll")
+            hyprLog(.notice, .lifecycle, "reveal retry: \(revealRetryPending.sorted()) still not readable after \(revealRetryAttempt) attempts"
+                    + " (\(msSinceRetryStarted)ms after the switch), left to the repair poll, poll requested")
             revealRetryPending.removeAll()
+            onRevealMissed()
             return
         }
         scheduleNextRevealRetry()
+    }
+
+    /// Held tiles whose app listed them again get their frames from the
+    /// engine. The walk asks that app (its answer ended the stall backoff),
+    /// and a tile the walk reads is no longer held: its record is released
+    /// and the retile writes it, from the same walk. A tile the walk still
+    /// cannot read stays pending; its app may be busy again.
+    private func revealHeldTiles(_ listed: [CGWindowID: Int], late: Int) {
+        let walkStart = Date()
+        let walk = allWindows()
+        let walkMS = Self.ms(since: walkStart)
+        let read = Set(walk.map(\.windowID))
+        let back = Set(listed.keys).intersection(read)
+        for id in Set(listed.keys).subtracting(back).sorted() {
+            hyprLog(.notice, .lifecycle, "reveal retry: tile \(id) listed on attempt \(revealRetryAttempt) but the walk did not read it"
+                    + " (ran \(late)ms late, list read \(listed[id] ?? 0)ms, walk \(walkMS)ms), asking again")
+        }
+        guard !back.isEmpty else { return }
+        _ = tilingEngine.releaseHeldWindows(readable: read)
+        let tileStart = Date()
+        tileAllVisibleSpaces(walk)
+        let tileMS = Self.ms(since: tileStart)
+        revealRetryPending.subtract(back)
+        for id in back.sorted() {
+            hyprLog(.notice, .lifecycle, "reveal retry: tile \(id) readable on attempt \(revealRetryAttempt), retiled \(msSinceRetryStarted)ms after the switch"
+                    + " (ran \(late)ms late, list read \(listed[id] ?? 0)ms, walk \(walkMS)ms, retile \(tileMS)ms)")
+        }
     }
 
     /// Reveal self-repair, the inverse of the park repair: a floater on a
