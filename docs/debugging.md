@@ -1087,6 +1087,82 @@ both holds in place it should be rare. Every tile pass logs
 `retile: ws<N> holds […] — leaves kept, no frame written` for the members
 it kept out of the pass.
 
+### A new window was found late, or got the wrong id
+
+The walk pairs each standard AX window with its CG id
+(`AXWindowMatcher`). The id `_AXUIElementGetWindow` names is used when that
+window is on screen and free. When it names a real window that is off
+screen or already held, the element stays out of the snapshot; it is never
+handed another window's id. Only an element whose SPI failed, or named no
+window the app has, falls back to the nearest unused on-screen window,
+within 64 points of summed origin and size difference. Each of these logs
+once while it lasts, `[notice] [discovery]`:
+
+```
+AX window unbound: bundle=com.example.App pid=812 wid=4630 reason=idOffScreen frame=(100,80,900,700)
+AX window unbound: bundle=com.example.App pid=812 wid=none reason=fallbackTooFar nearest=4611 distance=812 frame=(100,80,900,700)
+AX position fallback bound: bundle=com.example.App pid=812 wid=4611 spi=failed distance=4 frame=(100,80,900,700) cg=(100,80,900,704)
+```
+
+`reason` is one of:
+
+- `noOnScreenWindow`: the app lists the window, but the window server shows
+  nothing of the app. A Cmd-H'd app is skipped and does not log.
+- `frameUnreadable`: the window's position or size read failed. It is held
+  like an unreadable window.
+- `idOffScreen`: the SPI named a real window that is not on screen: not
+  shown yet, alpha 0 while it fades in, or on another Space.
+- `idTaken`: the SPI named an on-screen window another element already holds.
+- `noFallbackCandidate`: the SPI failed and no unused on-screen window is left.
+- `fallbackTooFar`: the SPI failed and the nearest unused on-screen window
+  is past the limit. `nearest` and `distance` name it.
+
+`spi=` on a fallback line is `failed`, or `<id> (not a window)` when the
+SPI named an id the window server does not know for the app.
+
+No event follows when such a window becomes usable. So a new window that
+was unbound, or on screen but unreadable, gets up to four quick polls, at
+0.25, 0.5, 1 and 2 s gaps (`WindowDiscoveryService.readinessDelays`).
+After that it waits for events and the 10 s reconcile.
+
+An app whose window-list read timed out is skipped until its backoff ends.
+A poll is scheduled for then, so its held windows and any window it opened
+are read without waiting for the reconcile. One due app is asked per walk,
+the one asked longest ago. `AX window-list read FAILED for <bundle>` now
+logs for an app with no window on screen too, so an app opening its first
+window shows its failure.
+
+The walk also keeps a 500 ms budget. Past it, only apps whose last read
+took under 100 ms are asked. The rest are held like a stalled app's, asked
+first on the next walk, and a poll follows in a second:
+
+```
+AX walk over its 500ms budget: skipped ["com.example.Slow"] — their windows are held, and they are asked first next walk
+AX walk within its budget again
+```
+
+A new window whose size is not settable floats, and is asked again 0.5, 1.5
+and 3.5 s later. If it became resizable and is still floating, not on the
+scratchpad, and not on a disabled monitor, it goes back to tiling through
+the next retile. Its `discovery retile:` line names no cause for it.
+
+```
+auto-float window is not resizable: 'Untitled' (4630) com.example.App — re-checked 3 times over 3.5s
+auto-float re-check: 'Untitled' (4630) is resizable now — handing it back to tiling
+```
+
+The observer side retries each registration on its own. Every poll asks
+again for an app-level add an app refused, and for an observer that could
+not be created, up to five tries. A window counts as subscribed only once
+its destroy, miniaturize and deminiaturize adds all took; a failure is
+retried on later polls, up to five in a row. Running out logs once:
+
+```
+AX observer for com.example.App pid=812 has no AXWindowCreated subscription after 5 tries (err -25204) — its new windows wait for a focus event or the reconcile poll
+AX observer attach gave up for pid=812 after 5 tries (create err -25211) — reconcile poll covers it
+window 4630 AX subscriptions incomplete after 5 tries (destroy err 0, miniaturized err -25207, deminiaturized err 0) — its close or minimize may wait for the reconcile poll
+```
+
 ### "Why isn't this window managed?" (filtered windows, Quick Look)
 
 Discovery keeps only what `WindowAdmissionFilter` admits: standard windows
