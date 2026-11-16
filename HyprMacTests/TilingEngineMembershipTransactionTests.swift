@@ -1326,6 +1326,95 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertEqual(Set(engine.windowIDs(inTreeForWorkspace: 1, screen: screen)), retry.publishedIDs)
     }
 
+    // MARK: - the Dia incident, 2026-11-15
+
+    /// Messages left, Dia right, and a second Dia window opens. Dia refuses
+    /// anything under 500x446 and nothing knew it yet. The admission split
+    /// Dia's leaf top and bottom and learned the height; the retry split the
+    /// same leaf side by side and learned the width; and the newcomer
+    /// floated, although the leaf beside Messages had room for it.
+    private struct DiaIncident {
+        let engine: TilingEngine
+        let trace: MembershipTrace
+        let screen: NSScreen
+        let messages: HyprWindow
+        let dia: HyprWindow
+        let newcomer: HyprWindow
+        let admission: TilingEngine.AdmissionResult
+    }
+
+    private func diaIncident(bundleID: String? = nil) -> DiaIncident {
+        let screen = DiaIncidentScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        engine.gapSize = 8
+        engine.outerPadding = 8
+        let messages = makeWindow(id: 46_001)
+        let dia = makeWindow(id: 46_002)
+        let newcomer = makeWindow(id: 46_003)
+        dia.bundleID = bundleID
+        newcomer.bundleID = bundleID
+        let rect = engine.displayManager.cgRect(for: screen)
+        trace.frames[messages.windowID] = rect
+        trace.frames[dia.windowID] = rect
+        let floor = CGSize(width: 500, height: 446)
+        trace.minSize[dia.windowID] = floor
+        trace.minSize[newcomer.windowID] = floor
+        XCTAssertTrue(engine.tileWindows([messages, dia], onWorkspace: 1, screen: screen).published)
+        XCTAssertEqual(trace.frames[dia.windowID]?.size, CGSize(width: 744, height: 835))
+        trace.frames[newcomer.windowID] = CGRect(x: rect.minX + 14, y: rect.minY, width: 744, height: 835)
+
+        let admission = engine.tileWindows([messages, dia, newcomer], onWorkspace: 1, screen: screen)
+        return DiaIncident(engine: engine, trace: trace, screen: screen, messages: messages,
+                           dia: dia, newcomer: newcomer, admission: admission)
+    }
+
+    func testARetryTilesTheNewcomerWhereTheMinimaItLearnedFitInsteadOfFloatingIt() throws {
+        let f = diaIncident()
+        XCTAssertFalse(f.admission.published)
+        XCTAssertEqual(f.admission.failedInsertedIDs, [f.newcomer.windowID])
+
+        let retry = f.engine.retryAdmission([f.messages, f.dia, f.newcomer], onWorkspace: 1, screen: f.screen,
+                                            bypassingMinimaBefore: [f.newcomer.windowID: f.admission.generation],
+                                            refusingImpossibleArrangements: true)
+
+        XCTAssertTrue(retry.published, "failure=\(String(describing: retry.failure)) minima=\(f.engine.knownMinimumSizes)")
+        XCTAssertEqual(retry.publishedIDs, [f.messages.windowID, f.dia.windowID, f.newcomer.windowID])
+        XCTAssertTrue(retry.refusedIDs.isEmpty)
+        let tree = try XCTUnwrap(f.engine.existingTree(forWorkspace: 1, screen: f.screen))
+        let parent = try XCTUnwrap(tree.root.find(f.newcomer)?.parent)
+        let siblingIDs = [parent.left?.window?.windowID, parent.right?.window?.windowID].compactMap { $0 }
+        XCTAssertEqual(Set(siblingIDs), [f.messages.windowID, f.newcomer.windowID],
+                       "the newcomer shares Messages' half")
+        XCTAssertEqual(f.trace.frames[f.dia.windowID]?.size, CGSize(width: 744, height: 835))
+        XCTAssertGreaterThanOrEqual(f.trace.frames[f.newcomer.windowID]?.height ?? 0, 446)
+    }
+
+    func testTheFitChecksAfterAFailedRetryJudgeThePassOrderNotTheListedOrder() {
+        // both checks take the pass's order, so the newcomer given up on does
+        // not change with the order the window server lists the windows in
+        func refused(reversed: Bool) -> Set<CGWindowID> {
+            let screen = MembershipHomeScreen()
+            let trace = MembershipTrace()
+            let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                      frameSizingIOFactory: { _, generation in trace.io(generation) })
+            var windows = (1...4).map { makeWindow(id: CGWindowID(88_200 + $0)) }
+            let rect = engine.displayManager.cgRect(for: screen)
+            for window in windows { trace.frames[window.windowID] = rect }
+            trace.minSize[windows[0].windowID] = CGSize(width: 1000, height: 700)
+            trace.minSize[windows[1].windowID] = CGSize(width: 1000, height: 700)
+            if reversed { windows.reverse() }
+            let admission = engine.tileWindows(windows, onWorkspace: 1, screen: screen)
+            let bypass = Dictionary(uniqueKeysWithValues: windows.map { ($0.windowID, admission.generation &+ 1) })
+            return engine.retryAdmission(windows, onWorkspace: 1, screen: screen,
+                                         bypassingMinimaBefore: bypass,
+                                         refusingImpossibleArrangements: true).refusedIDs
+        }
+
+        XCTAssertEqual(refused(reversed: true), refused(reversed: false))
+    }
+
     func testStartupRecoveryFloatsOnlyTheWindowThatDoesNotFit() {
         let screen = MembershipHomeScreen()
         let trace = MembershipTrace()
@@ -2263,6 +2352,13 @@ private final class MembershipTestScreen: SyntheticScreen {
 
 private final class PortraitMembershipTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 4000, y: 0, width: 1080, height: 1890) }
+    override var visibleFrame: NSRect { frame }
+}
+
+/// the MacBook's usable frame in the Dia incident: 1512x851, which with
+/// 8 pt padding leaves two 744x835 halves
+private final class DiaIncidentScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 0, y: 0, width: 1512, height: 851) }
     override var visibleFrame: NSRect { frame }
 }
 

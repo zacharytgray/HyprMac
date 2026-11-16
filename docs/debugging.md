@@ -329,6 +329,10 @@ The admission recovery's narrowing lines, all `[notice] [tiling]`:
   retrying […] without them (round <n> of 3)` — the retry was refused on
   some of its newcomers: those float, the rest get the pass again inside
   the same retry. After three rounds the rest float as before.
+- `admission retry tries the slot the learned minima fit: ws<N> ids=[…]
+  cause=<failure> pass=<n> of 2` — the attempt was refused but taught a
+  new minimum, and the fit check with it found a slot. The pass runs again
+  into the unchanged incumbent tree before anything floats.
 
 The admission recovery's timeout lines, all `[notice] [tiling]`:
 
