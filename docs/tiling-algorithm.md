@@ -43,6 +43,15 @@ it belongs to another key, by the membership pass's smart insert, or by
 `removeWindowMembershipOnly`, which ordinary moves use, keeps it. A pin the user
 set with `togglesplit` comes back as the user's pin.
 
+A window that comes back after a verified close does not use its slot. Its app
+no longer listed it when it went, so discovery never reserved it, and some apps
+(Teams) reuse the id when the window reopens. Discovery reports it in
+`WindowChanges.reopenedAfterClose`. `ActionDispatcher.applyChanges` drops the
+memory with `TilingEngine.forgetRememberedSlot` before the retile, and the
+window is placed like a new window: the focused tile first, then the walk. A
+window back from a minimize, a Cmd-H, another Space, a background tab or an
+app that did not answer still goes back to its slot.
+
 A tiling pass resets ratios only when the membership changes. A split toggle,
 a keyboard resize and every scratchpad pass also reset ratios the user did not
 set. A pass over the same
@@ -141,7 +150,8 @@ drop clears the memory instead), which is the intended trade: the slot is rememb
 A membership pass places each newcomer in this order:
 
 1. **Remembered slot.** A window that left for a poll or two goes back
-   where it was (see **Ratio memory**).
+   where it was (see **Ratio memory**). A window back after a verified close
+   has no remembered slot and is placed like a new window.
 2. **The focused tile.** The window HyprMac last focused
    (`TilingEngine.splitTargetSource`, wired to the focus border's window
    or else `FocusStateController.lastFocusedID`), when the pair fits there.

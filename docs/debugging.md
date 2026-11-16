@@ -442,6 +442,11 @@ the request gets one attempt with them set aside. Look for what follows:
   floor and the focused one did not. Neither line appears when the
   pass had no focused tile in its tree (see "Smart insert" in
   `docs/tiling-algorithm.md`).
+- `window returned: '<title>' (<id>) — reopened after a close` (notice,
+  discovery) — a window back after a verified close. The app reused the id
+  (Teams does). `slot forgotten: <id> reopened after a close` (`.debug`,
+  tiling) follows when the window had a remembered slot, and the retile
+  places it like a new window instead of logging `slot restored:`.
 - `no fitting tile slot: wid=<id> ws<N> — staying in place` — the pass could
   not smart-insert that window into the BSP tree for that workspace. Any
   tiling pass can log it, not just a bypassed one. Nothing routes the window
