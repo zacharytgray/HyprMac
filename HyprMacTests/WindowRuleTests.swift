@@ -394,6 +394,77 @@ final class WindowRuleTests: XCTestCase {
         XCTAssertTrue(h.follows.isEmpty)
     }
 
+    // a never-tile app's floater (Spotify) reopened onto a hidden workspace
+    // drifts to the visible one and keeps the frame its app gave it. the
+    // park repair after the pass leaves it on screen, and a frame its ghost
+    // saved before the close is gone
+    func testAFloaterReopenedOntoAHiddenWorkspaceStaysOnScreen() {
+        let h = ReopenHarness(rules: [], visibleWorkspace: 4)
+        let stale = CGRect(x: 900, y: 500, width: 300, height: 200)
+        let w = h.framedWindow(77, bundleID: "com.spotify.client")
+        h.cache.floatingWindowIDs.insert(77)
+        h.workspaces.setSavedFloatingFrame(stale, for: 77)
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+        h.placement.repairParkedWindows([w])
+
+        XCTAssertEqual(h.workspaces.workspaceFor(77), 4)
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(77), "still floating, no tile")
+        XCTAssertFalse(h.engine.windowIDs(inTreeForWorkspace: 4, screen: h.screen).contains(77))
+        XCTAssertNil(h.workspaces.savedFloatingFrame(for: 77), "the stale frame is cleared")
+        XCTAssertEqual(h.parks, 0, "not parked by the pass or the park repair")
+        XCTAssertTrue(h.follows.isEmpty)
+    }
+
+    // the seam above sees a park: the same floater left on its hidden
+    // workspace, as before the fix, is parked by the repair
+    func testTheParkRepairParksAFloaterLeftOnAHiddenWorkspace() {
+        let h = ReopenHarness(rules: [], visibleWorkspace: 4)
+        let w = h.framedWindow(78, bundleID: "com.spotify.client")
+        h.cache.floatingWindowIDs.insert(78)
+        h.workspaces.assignWindow(78, toWorkspace: 1)
+
+        h.placement.repairParkedWindows([w])
+
+        XCTAssertEqual(h.parks, 1)
+    }
+
+    // a pinned floater reopened onto a hidden workspace goes to its pin, is
+    // parked there with the frame it reopened at saved for the reveal, not
+    // the one its ghost held, and is followed
+    func testAPinnedFloaterReopenedOntoAHiddenWorkspaceGoesToItsPinAndIsFollowed() {
+        let h = ReopenHarness(rules: rules(("com.spotify.client", 2)), visibleWorkspace: 4)
+        let stale = CGRect(x: 900, y: 500, width: 300, height: 200)
+        let w = h.framedWindow(79, bundleID: "com.spotify.client")
+        h.cache.floatingWindowIDs.insert(79)
+        h.workspaces.setSavedFloatingFrame(stale, for: 79)
+
+        h.returnWindow(w, recordedOn: 7, reopened: true)
+
+        XCTAssertEqual(h.workspaces.workspaceFor(79), 2)
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(79))
+        XCTAssertEqual(h.workspaces.savedFloatingFrame(for: 79), w.frame, "its reopened frame, for the reveal")
+        XCTAssertEqual(h.parks, 1, "parked on its hidden pin before the follow")
+        XCTAssertEqual(h.follows.map(\.windowID), [79])
+        XCTAssertEqual(h.follows.map(\.workspace), [2])
+    }
+
+    // pinned to the visible workspace: it stays where it opened, unparked
+    func testAPinnedFloaterReopenedOntoTheVisiblePinStays() {
+        let h = ReopenHarness(rules: rules(("com.spotify.client", 4)), visibleWorkspace: 4)
+        let w = h.framedWindow(83, bundleID: "com.spotify.client")
+        h.cache.floatingWindowIDs.insert(83)
+        h.workspaces.setSavedFloatingFrame(CGRect(x: 900, y: 500, width: 300, height: 200), for: 83)
+
+        h.returnWindow(w, recordedOn: 1, reopened: true)
+        h.placement.repairParkedWindows([w])
+
+        XCTAssertEqual(h.workspaces.workspaceFor(83), 4)
+        XCTAssertNil(h.workspaces.savedFloatingFrame(for: 83))
+        XCTAssertEqual(h.parks, 0)
+        XCTAssertTrue(h.follows.isEmpty)
+    }
+
     // MARK: - Never tile refusal
 
     func testHyprTOnANeverTileWindowLeavesItFloatingAndOutOfEveryTree() {
@@ -459,6 +530,7 @@ private final class ReopenHarness {
     let engine: TilingEngine
     let cache = WindowStateCache()
     let dispatcher: ActionDispatcher
+    let placement: WindowPlacement
     var follows: [(windowID: CGWindowID, workspace: Int)] = []
     /// park writes; a fake window's write fails, which reports each one
     var parks = 0
@@ -507,6 +579,15 @@ private final class ReopenHarness {
             keybindOverlay: KeybindOverlayController(), appLauncher: AppLauncherManager(),
             workspaceOrchestrator: orchestrator, floatingController: floating,
             config: config)
+        placement = WindowPlacement(
+            config: config, accessibility: accessibility, displayManager: display,
+            workspaceManager: workspaces, tilingEngine: engine, stateCache: cache,
+            floatingController: floating,
+            scratchpad: ScratchpadController(
+                workspaceManager: workspaces, stateCache: cache, accessibility: accessibility,
+                displayManager: display, tilingEngine: engine, focusController: focus,
+                focusBorder: border, suppressions: suppressions),
+            actionDispatcher: dispatcher, workspaceOrchestrator: orchestrator)
         dispatcher.screenUnderCursor = { screen }
         dispatcher.isMenuTracking = { true }
         dispatcher.followPinnedWindow = { [unowned self] id, workspace in
@@ -519,6 +600,13 @@ private final class ReopenHarness {
 
     func window(_ id: CGWindowID, bundleID: String) -> HyprWindow {
         let w = makeWindow(id: id, pid: 0)
+        w.bundleID = bundleID
+        return w
+    }
+
+    /// a window that reads a frame on screen, mid-screen
+    func framedWindow(_ id: CGWindowID, bundleID: String) -> HyprWindow {
+        let w = ReopenFramedWindow(id: id, frame: CGRect(x: 200, y: 150, width: 600, height: 400))
         w.bundleID = bundleID
         return w
     }
@@ -542,6 +630,16 @@ private final class ReopenHarness {
                           reopenedOntoHiddenWorkspace: Set(drift.map(\.windowID))),
             allWindows: [window])
     }
+}
+
+private final class ReopenFramedWindow: HyprWindow {
+    let storedFrame: CGRect
+    init(id: CGWindowID, frame: CGRect) {
+        storedFrame = frame
+        super.init(element: AXUIElementCreateApplication(0), windowID: id, ownerPID: 0)
+    }
+    override func readPosition() -> (AXError, CGPoint?) { (.success, storedFrame.origin) }
+    override func readSize() -> (AXError, CGSize?) { (.success, storedFrame.size) }
 }
 
 private final class WindowRuleTestScreen: SyntheticScreen {

@@ -858,7 +858,9 @@ final class WindowDiscoveryService {
     /// — those come back via the `returned` path with a stale workspace
     /// assignment pointing at a now-hidden workspace.
     ///
-    /// Floating windows are skipped (they can be anywhere by design).
+    /// Floating windows are skipped (they can be anywhere by design),
+    /// except a recycled-id reopen onto a hidden workspace, which drifts
+    /// like a tiled one so the park repair does not re-park it.
     /// Windows without a substantially visible frame are skipped — that
     /// covers hide-corner park slivers and stale/transient AX reads, so
     /// drift only ever acts on a window the user can actually see.
@@ -878,8 +880,18 @@ final class WindowDiscoveryService {
             // explicit bail. (it's currently safe only by accident: ws 0 is
             // never in monitorWorkspace.values.)
             guard recordedWs != ScratchpadController.workspace else { continue }
-            // floating windows can be anywhere by design — skip
-            guard !stateCache.floatingWindowIDs.contains(w.windowID) else { continue }
+            // a window that just returned from hidden while its recorded ws
+            // is hidden is a recycled-id reopen — without reassignment it
+            // ghosts untiled over the current workspace (invisible to FFM
+            // and tiling) and teleports cross-monitor when clicked, and a
+            // floater gets parked by the park repair. bypass the placement
+            // guards so it lands where it visibly opened.
+            let reopenedOntoHiddenWs = justReturned.contains(w.windowID)
+                && !visibleWorkspaces.contains(recordedWs)
+            // floating windows can be anywhere by design — skip, unless
+            // reopened onto a hidden ws
+            let floating = stateCache.floatingWindowIDs.contains(w.windowID)
+            guard !floating || reopenedOntoHiddenWs else { continue }
             // majority frame overlap, not center-point: a min-size-crammed
             // window inflated across a monitor edge keeps a majority on its
             // own screen, and park slivers / stale off-screen frames fail
@@ -898,13 +910,6 @@ final class WindowDiscoveryService {
                 driftExemptions.removeValue(forKey: w.windowID)
             }
             guard physicalWs != recordedWs else { continue }
-            // a window that just returned from hidden while its recorded ws
-            // is hidden is a recycled-id reopen — without reassignment it
-            // ghosts untiled over the current workspace (invisible to FFM
-            // and tiling) and teleports cross-monitor when clicked. bypass
-            // the placement guards so it lands where it visibly opened.
-            let reopenedOntoHiddenWs = justReturned.contains(w.windowID)
-                && !visibleWorkspaces.contains(recordedWs)
             if !reopenedOntoHiddenWs {
                 // with static workspace anchoring, a window whose recorded
                 // workspace's home matches its physical screen is correctly
@@ -921,7 +926,7 @@ final class WindowDiscoveryService {
             }
             drifts.append((w.windowID, recordedWs, physicalWs))
             if reopenedOntoHiddenWs { reopenedOntoHidden.insert(w.windowID) }
-            hyprLog(.notice, .discovery, "drift: '\(w.title ?? "?")' (\(w.windowID)) ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))\(reopenedOntoHiddenWs ? " [reopened onto hidden ws]" : "")")
+            hyprLog(.notice, .discovery, "drift: '\(w.title ?? "?")' (\(w.windowID)) ws\(recordedWs) → ws\(physicalWs) (now on \(physicalScreen.localizedName))\(reopenedOntoHiddenWs ? " [reopened onto hidden ws\(floating ? ", floating" : "")]" : "")")
         }
         return (drifts, reopenedOntoHidden)
     }

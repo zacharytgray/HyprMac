@@ -457,6 +457,17 @@ the request gets one attempt with them set aside. Look for what follows:
   (Teams does). `slot forgotten: <id> reopened after a close` (`.debug`,
   tiling) follows when the window had a remembered slot, and the retile
   places it like a new window instead of logging `slot restored:`.
+- `drift: '<title>' (<id>) ws<A> → ws<B> (now on <screen>) [reopened onto
+  hidden ws]` (notice, discovery) — that reopen came back while ws<A> was
+  hidden, so it moves to ws<B>, the workspace visible where it opened. A
+  floater reads `[reopened onto hidden ws, floating]`. A pinned app's goes to
+  its pin instead (`window rule: … reopened, pinned to ws<N>`).
+- `park repair: '<title>' (<id>) on hidden ws<N> reads visible — re-parking`
+  (notice, lifecycle) — a window on a hidden workspace was back on screen and
+  went to the hide corner again. Right after `window returned` for the same
+  id, with no `drift:` line between, it is a reopen that was not moved off
+  its hidden workspace. Through v0.24.0 that was every floater, so a
+  never-tile app (Spotify) opened into the corner.
 - `no fitting tile slot: wid=<id> ws<N> — staying in place` — the pass could
   not smart-insert that window into the BSP tree for that workspace. Any
   tiling pass can log it, not just a bypassed one. Nothing routes the window

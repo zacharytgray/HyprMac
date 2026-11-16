@@ -895,6 +895,117 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertEqual(back.reopenedOntoHiddenWorkspace, [15])
     }
 
+    // a floater gets the same reopen drift (Spotify, never tile): left on its
+    // hidden workspace, the park repair parked it in the corner. any other
+    // floater keeps skipping drift: back on its visible workspace, back from
+    // a minimize, or one that never left
+    func testOnlyAFloaterReopenedOntoAHiddenWorkspaceDrifts() {
+        let screen = DiscoveryDriftScreen()
+        let display = DisplayManager(screenSource: { [screen] })
+        let workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        _ = workspaces.switchWorkspace(4, cursorScreen: screen)
+        let access = StubAccessibility()
+        let cache = WindowStateCache()
+        let svc = WindowDiscoveryService(stateCache: cache, accessibility: access,
+                                         displayManager: display, workspaceManager: workspaces,
+                                         bundleIDForPID: { _ in nil }, isWindowSizeSettable: { _ in true })
+        let frame = CGRect(x: 100, y: 100, width: 800, height: 600)
+        let closedOnHidden = DiscoveryFramedWindow(id: 15, frame: frame)
+        let minimized = DiscoveryFramedWindow(id: 16, frame: frame)
+        let closedOnVisible = DiscoveryFramedWindow(id: 17, frame: frame)
+        let neverLeft = DiscoveryFramedWindow(id: 18, frame: frame)
+        cache.knownWindowIDs = [15, 16, 17, 18]
+        cache.floatingWindowIDs = [15, 16, 17, 18]
+        for id: CGWindowID in [15, 16, 17, 18] { cache.windowOwners[id] = 8500 }
+        workspaces.assignWindow(15, toWorkspace: 1)
+        workspaces.assignWindow(16, toWorkspace: 1)
+        workspaces.assignWindow(17, toWorkspace: 4)
+        workspaces.assignWindow(18, toWorkspace: 1)
+
+        access.stateAnswer = .absent
+        _ = compute(svc, snapshot: [minimized, neverLeft], runningPIDs: [8500])
+        access.stateAnswer = .minimized
+        _ = compute(svc, snapshot: [neverLeft], runningPIDs: [8500])
+
+        let back = compute(svc, snapshot: [closedOnHidden, minimized, closedOnVisible, neverLeft],
+                           runningPIDs: [8500])
+
+        XCTAssertEqual(Set(back.returned.map(\.windowID)), [15, 16, 17])
+        XCTAssertEqual(back.reopenedAfterClose, [15, 17])
+        XCTAssertEqual(back.screenDrift.map(\.windowID), [15])
+        XCTAssertEqual(back.screenDrift.first?.fromWorkspace, 1)
+        XCTAssertEqual(back.screenDrift.first?.toWorkspace, 4)
+        XCTAssertEqual(back.reopenedOntoHiddenWorkspace, [15])
+        XCTAssertTrue(cache.floatingWindowIDs.isSuperset(of: [15, 16, 17, 18]), "still floating")
+
+        // the next poll sees it on ws4's screen like any floater
+        workspaces.moveWindow(15, toWorkspace: 4)
+        let after = compute(svc, snapshot: [closedOnHidden, minimized, closedOnVisible, neverLeft],
+                            runningPIDs: [8500])
+        XCTAssertTrue(after.screenDrift.isEmpty)
+    }
+
+    // ordinary drift skips a floater: one dragged onto the other display
+    // keeps its workspace, where a tiled one moves with it
+    func testAFloaterThatNeverLeftDoesNotDrift() {
+        let left = DiscoveryDriftScreen()
+        let right = DiscoveryRightDriftScreen()
+        let display = DisplayManager(screenSource: { [left, right] })
+        let workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        let leftWs = workspaces.workspaceForScreen(left)
+        let rightWs = workspaces.workspaceForScreen(right)
+        XCTAssertNotEqual(leftWs, rightWs)
+        let cache = WindowStateCache()
+        let svc = WindowDiscoveryService(stateCache: cache, accessibility: StubAccessibility(),
+                                         displayManager: display, workspaceManager: workspaces,
+                                         bundleIDForPID: { _ in nil }, isWindowSizeSettable: { _ in true })
+        let onRight = CGRect(x: 1700, y: 100, width: 800, height: 600)
+        let floater = DiscoveryFramedWindow(id: 21, frame: onRight)
+        let tiled = DiscoveryFramedWindow(id: 22, frame: onRight)
+        cache.knownWindowIDs = [21, 22]
+        cache.floatingWindowIDs = [21]
+        for id: CGWindowID in [21, 22] {
+            cache.windowOwners[id] = 8500
+            workspaces.assignWindow(id, toWorkspace: leftWs)
+        }
+
+        let changes = compute(svc, snapshot: [floater, tiled], runningPIDs: [8500])
+
+        XCTAssertEqual(changes.screenDrift.map(\.windowID), [22])
+        XCTAssertEqual(changes.screenDrift.first?.toWorkspace, rightWs)
+        XCTAssertTrue(changes.reopenedOntoHiddenWorkspace.isEmpty)
+    }
+
+    // a floater back after a close whose frame is still the park sliver is
+    // not seen on screen: no drift, as for a tiled one
+    func testAFloaterReopenedInTheParkCornerDoesNotDrift() {
+        let screen = DiscoveryDriftScreen()
+        let display = DisplayManager(screenSource: { [screen] })
+        let workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        _ = workspaces.switchWorkspace(4, cursorScreen: screen)
+        let access = StubAccessibility()
+        let cache = WindowStateCache()
+        let svc = WindowDiscoveryService(stateCache: cache, accessibility: access,
+                                         displayManager: display, workspaceManager: workspaces,
+                                         bundleIDForPID: { _ in nil }, isWindowSizeSettable: { _ in true })
+        let parked = DiscoveryFramedWindow(id: 19, frame: CGRect(x: 1599, y: 999, width: 800, height: 600))
+        cache.knownWindowIDs = [19]
+        cache.floatingWindowIDs = [19]
+        cache.windowOwners[19] = 8500
+        workspaces.assignWindow(19, toWorkspace: 1)
+
+        access.stateAnswer = .absent
+        _ = compute(svc, snapshot: [], runningPIDs: [8500])
+        let back = compute(svc, snapshot: [parked], runningPIDs: [8500])
+
+        XCTAssertEqual(back.reopenedAfterClose, [19])
+        XCTAssertTrue(back.screenDrift.isEmpty)
+        XCTAssertTrue(back.reopenedOntoHiddenWorkspace.isEmpty)
+    }
+
     // MARK: - gone (dead pid → fully forgotten)
 
     func testGoneWindowWithDeadPIDIsFullyForgotten() {
@@ -1540,6 +1651,11 @@ final class AXWindowMatcherTests: XCTestCase {
 
 private final class DiscoveryDriftScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 1600, height: 1000) }
+    override var visibleFrame: NSRect { frame }
+}
+
+private final class DiscoveryRightDriftScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 1600, y: 0, width: 1600, height: 1000) }
     override var visibleFrame: NSRect { frame }
 }
 

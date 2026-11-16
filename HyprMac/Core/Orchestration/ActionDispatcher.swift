@@ -273,6 +273,13 @@ final class ActionDispatcher {
     func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow],
                       cursorPlacement gate: CursorPlacementGate = .open)
         -> [TilingEngine.AdmissionResult] {
+        // a reopen onto a hidden workspace is on screen where its app put
+        // it. a frame its ghost saved when that workspace was hidden would
+        // later pull it back there (reveal repair, a move to the scratchpad).
+        // a pin below saves a fresh one when it parks it
+        for id in changes.reopenedOntoHiddenWorkspace {
+            workspaceManager.clearSavedFloatingFrame(for: id)
+        }
         let pinnedReopens = pinnedReopenedWindows(changes)
         let pinFollow = admitNewWindows(changes, allWindows: allWindows, gate: gate,
                                         pinnedReopens: pinnedReopens)

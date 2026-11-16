@@ -52,6 +52,15 @@ window is placed like a new window: the focused tile first, then the walk. A
 window back from a minimize, a Cmd-H, another Space, a background tab or an
 app that did not answer still goes back to its slot.
 
+When such a return is on screen while its recorded workspace is hidden,
+discovery drifts it to the workspace visible on the screen it opened on
+(`WindowChanges.reopenedOntoHiddenWorkspace`). Drift skips floaters
+otherwise, but not this one. A floater keeps the frame its app gave it, with
+no tile, and `applyChanges` drops any floating frame its ghost saved before
+the close. Left on the hidden workspace, the window reads visible there, and
+the park repair (`WindowPlacement.repairParkedWindows`, after the pass) parks
+it in the corner. That hid never-tile apps like Spotify on reopen.
+
 A tiling pass resets ratios only when the membership changes. A split toggle,
 a keyboard resize and every scratchpad pass also reset ratios the user did not
 set. A pass over the same
@@ -780,7 +789,8 @@ app starts at its pinned workspace instead of the active one and spills the
 same way; if every workspace is full it stays on the active one, as it would
 unpinned. A pinned app's reopened window (a verified close whose id the app
 reused) that discovery would drift off its hidden workspace takes the same
-path instead of drifting onto the active one.
+path instead of drifting onto the active one. A floater does too, and
+`placePinnedFloater` carries it from the frame it reopened at.
 Startup and Retile All place pinned windows in their own batches
 ahead of the per-monitor ones, so a pin claims its workspace first. See
 "Window rules" in `docs/keybinds-and-actions.md`. This count limit does not guarantee

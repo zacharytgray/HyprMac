@@ -197,7 +197,8 @@ app:
 - **Reopened windows.** Some apps (Mail, Teams, Mimestream, Slack) reuse a
   closed window's id, so discovery reports the reopen as a return of the
   ghost. When a verified close comes back on screen while its recorded
-  workspace is hidden, discovery drifts it onto the visible workspace and
+  workspace is hidden, discovery drifts it onto the visible workspace,
+  floating or tiled, and
   marks it (`WindowChanges.reopenedOntoHiddenWorkspace`). For a pinned app
   that drift is dropped and the window goes through `assignNewWindows` like
   a new window: its pin, the same spill and the same follow. A scratchpad
@@ -208,7 +209,8 @@ app:
 - **Never tile apps.** They stay floating and still go to their pin.
   `WorkspaceOrchestrator.placePinnedFloater` carries the floater to the
   workspace's display, and parks it with that frame saved when the
-  workspace is hidden.
+  workspace is hidden. A reopened one starts from the frame it reopened at,
+  not one its ghost saved before the close.
 - **Retile All.** `WindowPlacement.startupPlacement` gives pinned windows
   their own batches ahead of the screen batches, so they claim their
   workspace first. Pinned floaters move too. Hidden windows and scratchpad
