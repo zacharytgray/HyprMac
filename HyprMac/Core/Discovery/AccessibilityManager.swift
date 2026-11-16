@@ -79,8 +79,33 @@ class AccessibilityManager {
     /// a second on the main thread, for two days. The windows of a stalled
     /// app stay held meanwhile, so nothing on screen depends on the answer.
     private var stallBackoff = StallBackoff()
+    /// The walk's time budget and what each app cost to read.
+    private var pacing = WalkPacing()
     /// how long the last walk took, and what it skipped, for the trace line
     private(set) var lastWalkDuration: TimeInterval = 0
+    /// injected so tests can move time
+    var now: () -> Date = { Date() }
+
+    /// Windows the last walk found listed by their app, as standard
+    /// windows with an id the SPI named, that it could not bind: the
+    /// window server shows nothing of the app, or that window is not on
+    /// screen, or another element holds it. A window its app lists before
+    /// the window server shows it ends up here, and discovery gives it
+    /// another look soon instead of at the ten-second reconcile.
+    var unboundWindowIDs: Set<CGWindowID> = []
+
+    /// Per app, the keys of the walk lines last logged for it (unbound
+    /// windows, position-fallback binds), so each logs once per episode.
+    private var walkLines: [pid_t: Set<String>] = [:]
+
+    /// How long until the walk can next ask an app it is skipping: a
+    /// stalled app whose backoff runs out, a stalled app that was due but
+    /// not the one asked, or an app the walk budget left out. The caller
+    /// polls then, so a window that app opened, or one held while it did
+    /// not answer, is not left for the ten-second reconcile. nil with none.
+    var secondsUntilABackoffEnds: TimeInterval? {
+        [stallBackoff.secondsUntilNextProbe(now: now()), pacing.secondsUntilRetry].compactMap { $0 }.min()
+    }
 
     /// Look up a window in the last discovery snapshot by `CGWindowID`.
     /// Wired by `WindowManager` to `stateCache.cachedWindows[id]`. Lets
@@ -227,7 +252,7 @@ class AccessibilityManager {
     func focusedWindowID(ofPID pid: pid_t) -> CGWindowID? {
         // a stalled app would time out here on every hover; nil polls, and
         // the walk skips it
-        if stallBackoff.isBackingOff(pid, now: Date()) { return nil }
+        if stallBackoff.isBackingOff(pid, now: now()) { return nil }
         let appRef = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
         var value: AnyObject?
@@ -295,7 +320,7 @@ class AccessibilityManager {
     /// too, so callers that keep a budget of asks skip it without spending
     /// one.
     func isBackingOff(pid: pid_t) -> Bool {
-        stallBackoff.isBackingOff(pid, now: Date())
+        stallBackoff.isBackingOff(pid, now: now())
     }
 
     /// Classify a hidden window. Returns nil when the AX list can't be
@@ -304,7 +329,7 @@ class AccessibilityManager {
         if NSRunningApplication(processIdentifier: pid)?.isHidden == true { return .appHidden }
         // an app the walk is backing off from would not answer this either;
         // nil is what a timed-out read returns, without the wait
-        if stallBackoff.isBackingOff(pid, now: Date()) { return nil }
+        if stallBackoff.isBackingOff(pid, now: now()) { return nil }
         let appRef = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
         var value: AnyObject?
@@ -324,26 +349,31 @@ class AccessibilityManager {
     /// Walks every regular-activation app's `kAXWindowsAttribute`, skips
     /// minimized windows, and lets `WindowAdmissionFilter` decide the rest:
     /// standard windows and Quick Look panels get in; sheets, dialogs and
-    /// other panels do not. Each standard window maps to a `CGWindowID` by
-    /// calling `_AXUIElementGetWindow` first and falling back to greedy
-    /// nearest-position matching when the SPI fails, or names an id that is
-    /// not on screen or is already taken. A Quick Look panel is
+    /// other panels do not. `AXWindowMatcher` pairs each standard window
+    /// with its `CGWindowID`: the id `_AXUIElementGetWindow` names, when
+    /// that window is on screen and free, and never another id when the
+    /// named window is real; the nearest unused on-screen window, within a
+    /// distance limit, only when the SPI fails. A Quick Look panel is
     /// matched by the SPI alone, and its id is claimed before the fallback
-    /// runs.
+    /// runs. A standard window that ends the walk unbound logs why, once.
+    ///
+    /// The walk keeps a time budget (`WalkPacing`): once it is spent, apps
+    /// not known to answer fast are skipped, their windows held, and asked
+    /// first on the next walk.
     ///
     /// Returns an empty array when AX permission has not been granted.
     func getAllWindows() -> [HyprWindow] {
         guard AXIsProcessTrusted() else { return [] }
 
-        let walkStarted = Date()
+        let walkStarted = now()
         let cgWindows = cgWindowsByPID()
         var windows: [HyprWindow] = []
         var usedIDs: Set<CGWindowID> = []
         var unreadable: Set<CGWindowID> = []
-        // at most one stalled app is asked again per walk, so a walk pays
-        // one timeout however many apps are stalled
-        var probedStalledApp = false
+        var unbound: Set<CGWindowID> = []
         var skipped: [String] = []
+        var overBudget: [pid_t] = []
+        var overBudgetBundles: [String] = []
 
         // quick look processes, never walked
         let excludedBundleIDs: Set<String> = [
@@ -351,10 +381,18 @@ class AccessibilityManager {
             "com.apple.QuickLookDaemon",
         ]
 
-        let apps = NSWorkspace.shared.runningApplications.filter {
+        let running = NSWorkspace.shared.runningApplications.filter {
             $0.activationPolicy == .regular &&
             !excludedBundleIDs.contains($0.bundleIdentifier ?? "")
         }
+        // apps the last walk's budget left out go first
+        let byPID = Dictionary(running.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
+        let apps = pacing.order(running.map(\.processIdentifier)).compactMap { byPID[$0] }
+        // one stalled app whose backoff is up is asked per walk, so a walk
+        // pays one timeout however many apps are stalled. the one asked
+        // longest ago goes, so an app that always stalls can't starve one
+        // that recovered
+        let probe = stallBackoff.probeTarget(among: apps.map(\.processIdentifier), now: walkStarted)
 
         // quick look panel ids seen this pass, so a panel that went away
         // logs again the next time it opens
@@ -371,14 +409,25 @@ class AccessibilityManager {
             let visible = candidates.filter { $0.alpha > 0.01 }
             // a stalled app is not asked until its backoff is up, and only
             // one of them per walk; its windows stay held meanwhile
-            let now = Date()
-            if stallBackoff.isBackingOff(pid, now: now)
-                || (stallBackoff.isDue(pid, now: now) && probedStalledApp) {
+            let appStarted = now()
+            if stallBackoff.isBackingOff(pid, now: appStarted)
+                || (stallBackoff.isDue(pid, now: appStarted) && pid != probe) {
                 unreadable.formUnion(visible.map(\.windowID))
                 skipped.append(bundle)
                 continue
             }
-            if stallBackoff.isDue(pid, now: now) { probedStalledApp = true }
+            // past the budget only apps that answered fast last time are
+            // asked. the rest are held, the same as a stalled app's
+            if pacing.shouldSkip(pid, elapsed: appStarted.timeIntervalSince(walkStarted)) {
+                unreadable.formUnion(visible.map(\.windowID))
+                skipped.append(bundle)
+                overBudget.append(pid)
+                overBudgetBundles.append(bundle)
+                continue
+            }
+            if pid == probe { stallBackoff.noteProbe(pid, now: appStarted) }
+            defer { pacing.noteCost(pid, now().timeIntervalSince(appStarted)) }
+
             let appRef = AXUIElementCreateApplication(pid)
             AXUIElementSetMessagingTimeout(appRef, Self.discoveryMessagingTimeout)
             var value: AnyObject?
@@ -388,16 +437,15 @@ class AccessibilityManager {
                 // and every one of its windows drops from the snapshot for
                 // the cycle. the window server still shows them, so they are
                 // reported unreadable and discovery holds them in place.
-                // log the outage edges only, not every cycle.
+                // log the outage edges only, not every cycle. an app opening
+                // its first window has none on screen yet, and logs too
                 unreadable.formUnion(visible.map(\.windowID))
-                let wait = stallBackoff.noteListReadFailure(pid, error: result, now: now)
-                if !visible.isEmpty {
-                    let n = (axListFailures[pid] ?? 0) + 1
-                    axListFailures[pid] = n
-                    if n == 1 {
-                        hyprLog(.notice, .discovery, "AX window-list read FAILED for \(bundle) (err \(result.rawValue)) — \(candidates.count) on-screen window(s) drop from this snapshot"
-                                + (wait.map { "; asked again in \(Int(($0 * 1000).rounded()))ms" } ?? ""))
-                    }
+                let wait = stallBackoff.noteListReadFailure(pid, error: result, now: appStarted)
+                let n = (axListFailures[pid] ?? 0) + 1
+                axListFailures[pid] = n
+                if n == 1 {
+                    hyprLog(.notice, .discovery, "AX window-list read FAILED for \(bundle) (err \(result.rawValue)) — \(candidates.count) on-screen window(s) drop from this snapshot"
+                            + (wait.map { "; asked again in \(Int(($0 * 1000).rounded()))ms" } ?? ""))
                 }
                 continue
             }
@@ -406,20 +454,32 @@ class AccessibilityManager {
                 hyprLog(.notice, .discovery, "AX window-list read recovered for \(bundle) after \(n) failed cycle(s)")
             }
 
-            // a quick look panel opened from the desktop can be the app's
-            // only on-screen window, and it may sit on the floating layer
-            guard !cgEntries.isEmpty else { continue }
+            // an app hidden with Cmd-H has nothing on screen and nothing to
+            // say about it. a quick look panel opened from the desktop can
+            // be the app's only on-screen window, on the floating layer
+            if cgEntries.isEmpty && app.isHidden {
+                noteWalkLines([:], pid: pid)
+                continue
+            }
 
             // collect the AX windows discovery keeps. WindowAdmissionFilter
             // decides: standard windows, plus quick look panels (which always
             // float). sheets, dialogs and other panels stay out and never
             // claim a CG id.
-            var axEntries: [(element: AXUIElement, frame: CGRect)] = []
+            var axEntries: [(element: AXUIElement, frame: CGRect, spiID: CGWindowID?)] = []
             var quickLookEntries: [(element: AXUIElement, windowID: CGWindowID, frame: CGRect)] = []
             // every quick look panel's own id, admitted or not. none of them
             // may be handed to another window by the position fallback.
             var quickLookOwnIDs: Set<CGWindowID> = []
             var frameDropCount = 0
+            // why each standard window that stays out of the snapshot does,
+            // keyed so a window logs once while the reason lasts
+            var lines: [String: String] = [:]
+            func noteUnbound(_ reason: String, id: CGWindowID?, frame: CGRect?, detail: String = "") {
+                let key = "unbound:\(reason):\(id.map { "\($0)" } ?? Self.text(frame))"
+                lines[key] = "AX window unbound: bundle=\(bundle) pid=\(pid) wid=\(id.map { "\($0)" } ?? "none")"
+                    + " reason=\(reason)\(detail) frame=\(Self.text(frame))"
+            }
             for axWin in axWindows {
                 AXUIElementSetMessagingTimeout(axWin, Self.discoveryMessagingTimeout)
                 var minimized: AnyObject?
@@ -446,14 +506,23 @@ class AccessibilityManager {
 
                 switch verdict {
                 case .standard:
+                    let spiID = windowID(for: axWin)
+                    // listed, but the window server shows nothing of the
+                    // app: not on screen yet, or on another Space
+                    guard !cgEntries.isEmpty else {
+                        if let spiID { unbound.insert(spiID) }
+                        noteUnbound("noOnScreenWindow", id: spiID, frame: nil)
+                        continue
+                    }
                     guard let frame = axFrame(for: axWin) else {
                         // the window is listed but its frame did not answer:
                         // unreadable, not absent
-                        if let wid = windowID(for: axWin) { unreadable.insert(wid) }
+                        if let spiID { unreadable.insert(spiID) }
                         frameDropCount += 1
+                        noteUnbound("frameUnreadable", id: spiID, frame: nil)
                         continue
                     }
-                    axEntries.append((element: axWin, frame: frame))
+                    axEntries.append((element: axWin, frame: frame, spiID: spiID))
                 case .quickLookPanel:
                     guard let id = ownID, let frame = axFrame(for: axWin) else {
                         frameDropCount += 1
@@ -500,56 +569,86 @@ class AccessibilityManager {
             }
             usedIDs.formUnion(quickLookOwnIDs)
 
-            let visibleCandidates = candidates.filter { $0.alpha > 0.01 }
-            let validCGIDs = Set(visibleCandidates.map { $0.windowID })
-
-            // primary path: ask AX directly for each element's CGWindowID
-            var unmatchedAX: [(element: AXUIElement, frame: CGRect)] = []
-            for entry in axEntries {
-                guard let wid = windowID(for: entry.element),
-                      validCGIDs.contains(wid),
-                      !usedIDs.contains(wid) else {
-                    unmatchedAX.append(entry)
-                    continue
-                }
-                usedIDs.insert(wid)
-                let hw = HyprWindow(element: entry.element, windowID: wid, ownerPID: pid)
+            // an id the SPI names is real when the window server knows it
+            // for this app, on screen or off
+            let match = AXWindowMatcher.match(
+                axEntries.map { AXWindowMatcher.Element(frame: $0.frame, spiID: $0.spiID) },
+                candidates: visible.map { AXWindowMatcher.Candidate(windowID: $0.windowID, bounds: $0.bounds) },
+                used: usedIDs,
+                isRealWindow: { id in cgEntries.contains { $0.windowID == id } || self.cgWindowOwner(id) == pid }
+            )
+            for bound in match.bound {
+                let entry = axEntries[bound.index]
+                usedIDs.insert(bound.windowID)
+                let hw = HyprWindow(element: entry.element, windowID: bound.windowID, ownerPID: pid)
                 hw.cachedFrame = entry.frame
                 hw.seedMinimumSize(bundleIdentifier: app.bundleIdentifier)
                 windows.append(hw)
-            }
-
-            // fallback path: SPI failed for some element, or named an id that is off
-            // screen or taken. greedy nearest-position match against unused candidates.
-            guard !unmatchedAX.isEmpty else { continue }
-            var availableCG = validCGIDs.subtracting(usedIDs)
-            for entry in unmatchedAX {
-                var bestWID: CGWindowID?
-                var bestDist = CGFloat.infinity
-                for cg in visibleCandidates where availableCG.contains(cg.windowID) {
-                    let dist = abs(entry.frame.origin.x - cg.bounds.origin.x)
-                             + abs(entry.frame.origin.y - cg.bounds.origin.y)
-                             + abs(entry.frame.width - cg.bounds.width)
-                             + abs(entry.frame.height - cg.bounds.height)
-                    if dist < bestDist { bestDist = dist; bestWID = cg.windowID }
-                }
-                if let wid = bestWID {
-                    availableCG.remove(wid)
-                    usedIDs.insert(wid)
-                    let hw = HyprWindow(element: entry.element, windowID: wid, ownerPID: pid)
-                    hw.cachedFrame = entry.frame
-                    hw.seedMinimumSize(bundleIdentifier: app.bundleIdentifier)
-                    windows.append(hw)
+                if let distance = bound.fallbackDistance {
+                    let cg = visible.first { $0.windowID == bound.windowID }
+                    lines["fallback:\(bound.windowID)"] = "AX position fallback bound: bundle=\(bundle) pid=\(pid)"
+                        + " wid=\(bound.windowID) spi=\(entry.spiID.map { "\($0) (not a window)" } ?? "failed")"
+                        + " distance=\(Int(distance.rounded())) frame=\(Self.text(entry.frame))"
+                        + " cg=\(Self.text(cg?.bounds))"
                 }
             }
+            for miss in match.unbound {
+                let entry = axEntries[miss.index]
+                switch miss.reason {
+                case .offScreen(let id):
+                    unbound.insert(id)
+                    noteUnbound("idOffScreen", id: id, frame: entry.frame)
+                case .taken(let id):
+                    noteUnbound("idTaken", id: id, frame: entry.frame)
+                case .noCandidate:
+                    noteUnbound("noFallbackCandidate", id: nil, frame: entry.frame)
+                case .tooFar(let nearest, let distance):
+                    noteUnbound("fallbackTooFar", id: nil, frame: entry.frame,
+                                detail: " nearest=\(nearest) distance=\(Int(distance.rounded()))")
+                }
+            }
+            noteWalkLines(lines, pid: pid)
         }
         quickLookVerdicts = quickLookVerdicts.filter { quickLookSeen.contains($0.key) }
-        stallBackoff.retain(Set(apps.map(\.processIdentifier)))
+        let runningPIDs = Set(apps.map(\.processIdentifier))
+        stallBackoff.retain(runningPIDs)
+        walkLines = walkLines.filter { runningPIDs.contains($0.key) }
+        if Set(overBudget) != Set(pacing.skippedLastWalk) {
+            if overBudget.isEmpty {
+                hyprLog(.notice, .discovery, "AX walk within its budget again")
+            } else {
+                hyprLog(.notice, .discovery, "AX walk over its \(Int(WalkPacing.budget * 1000))ms budget:"
+                        + " skipped \(overBudgetBundles) — their windows are held, and they are asked first next walk")
+            }
+        }
+        pacing.finishWalk(skipped: overBudget, running: runningPIDs)
         unreadableWindowIDs = unreadable
-        lastWalkDuration = Date().timeIntervalSince(walkStarted)
+        unboundWindowIDs = unbound
+        lastWalkDuration = now().timeIntervalSince(walkStarted)
         hyprLog(.debug, .discovery, "AX walk: apps=\(apps.count) windows=\(windows.count) unreadable=\(unreadable.count) \(Int((lastWalkDuration * 1000).rounded()))ms"
                 + (skipped.isEmpty ? "" : " skipped=\(skipped)"))
         return windows
+    }
+
+    /// Log one app's walk lines that are new since its last read, and
+    /// remember the set: each logs when its condition begins, not every walk.
+    private func noteWalkLines(_ lines: [String: String], pid: pid_t) {
+        let before = walkLines[pid] ?? []
+        for key in lines.keys.sorted() where !before.contains(key) {
+            hyprLog(.notice, .discovery, lines[key]!)
+        }
+        walkLines[pid] = Set(lines.keys)
+    }
+
+    /// The owner of any window the window server knows, on screen or not.
+    private func cgWindowOwner(_ id: CGWindowID) -> pid_t? {
+        var values: [UnsafeRawPointer?] = [UnsafeRawPointer(bitPattern: UInt(id))]
+        let array = values.withUnsafeMutableBufferPointer {
+            CFArrayCreate(nil, $0.baseAddress, 1, nil)
+        }
+        guard let array,
+              let info = CGWindowListCreateDescriptionFromArray(array) as? [[String: Any]] else { return nil }
+        return info.first?[kCGWindowOwnerPID as String] as? pid_t
     }
 
     /// Resolve the AX-focused window of the frontmost app to a
@@ -749,12 +848,16 @@ class AccessibilityManager {
 /// second to eight, and asked again once it is up; an answer ends the
 /// backoff. Nothing on screen waits on it: the app's windows are held in
 /// place until it answers, and a window it opens meanwhile is discovered
-/// when it does.
+/// when it does. One due app is asked per walk, the one asked longest ago,
+/// and the caller polls when the next one comes due.
 struct StallBackoff {
     var initial: TimeInterval = 0.5
     var cap: TimeInterval = 8
+    /// how soon to poll again when an app is due but another was asked
+    static let dueRetry: TimeInterval = 1.0
     private var until: [pid_t: Date] = [:]
     private var interval: [pid_t: TimeInterval] = [:]
+    private var lastProbe: [pid_t: Date] = [:]
 
     /// pids with a backoff on record, up or not
     var stalledPIDs: Set<pid_t> { Set(until.keys) }
@@ -769,6 +872,32 @@ struct StallBackoff {
     func isDue(_ pid: pid_t, now: Date) -> Bool {
         guard let until = until[pid] else { return false }
         return now >= until
+    }
+
+    /// The due app to ask this walk: the one asked longest ago, never-asked
+    /// first, then the one due longest. Enumeration order plays no part, so
+    /// an app that always stalls can't starve one that recovered.
+    func probeTarget(among pids: [pid_t], now: Date) -> pid_t? {
+        pids.filter { isDue($0, now: now) }.min { a, b in
+            let probedA = lastProbe[a] ?? .distantPast
+            let probedB = lastProbe[b] ?? .distantPast
+            if probedA != probedB { return probedA < probedB }
+            return (until[a] ?? now, a) < (until[b] ?? now, b)
+        }
+    }
+
+    mutating func noteProbe(_ pid: pid_t, now: Date) {
+        lastProbe[pid] = now
+    }
+
+    /// How long until the walk should ask a stalled app again: the next
+    /// backoff to run out, or `dueRetry` when one is already due. nil when
+    /// no app is stalled.
+    func secondsUntilNextProbe(now: Date) -> TimeInterval? {
+        guard !until.isEmpty else { return nil }
+        let ahead = until.values.filter { $0 > now }.map { $0.timeIntervalSince(now) }.min()
+        let due = until.values.contains { $0 <= now } ? Self.dueRetry : nil
+        return [ahead, due].compactMap { $0 }.min().map { max(0.05, $0) }
     }
 
     /// - Returns: how long the app is skipped from now.
@@ -793,11 +922,183 @@ struct StallBackoff {
     mutating func noteSuccess(_ pid: pid_t) {
         until.removeValue(forKey: pid)
         interval.removeValue(forKey: pid)
+        lastProbe.removeValue(forKey: pid)
     }
 
     /// Drop the record of apps no longer running.
     mutating func retain(_ running: Set<pid_t>) {
         until = until.filter { running.contains($0.key) }
         interval = interval.filter { running.contains($0.key) }
+        lastProbe = lastProbe.filter { running.contains($0.key) }
+    }
+}
+
+/// The discovery walk's time budget. The messaging timeout bounds one AX
+/// call, not a walk: several apps stalling for the first time, or an app
+/// whose window list answers fast and whose windows answer slowly, could
+/// keep the main thread for seconds. Once a walk has spent `budget`, it
+/// asks only apps whose last read took under `slowApp`; the rest are
+/// skipped, their windows held like a stalled app's, and asked first on
+/// the next walk, which the caller schedules after `skippedRetry`.
+struct WalkPacing {
+    static let budget: TimeInterval = 0.5
+    static let slowApp: TimeInterval = 0.1
+    static let skippedRetry: TimeInterval = 1.0
+
+    /// what each app's last read cost, list and windows together
+    private(set) var cost: [pid_t: TimeInterval] = [:]
+    /// apps the last walk skipped for the budget, in walk order
+    private(set) var skippedLastWalk: [pid_t] = []
+
+    /// The walk order: apps the last walk skipped first, then the rest as given.
+    func order(_ pids: [pid_t]) -> [pid_t] {
+        let present = Set(pids)
+        let first = skippedLastWalk.filter { present.contains($0) }
+        let firstSet = Set(first)
+        return first + pids.filter { !firstSet.contains($0) }
+    }
+
+    /// Whether to skip `pid` with `elapsed` of the walk spent. An app not
+    /// read yet counts as slow: it might be.
+    func shouldSkip(_ pid: pid_t, elapsed: TimeInterval) -> Bool {
+        guard elapsed >= Self.budget else { return false }
+        guard let cost = cost[pid] else { return true }
+        return cost >= Self.slowApp
+    }
+
+    mutating func noteCost(_ pid: pid_t, _ seconds: TimeInterval) {
+        cost[pid] = seconds
+    }
+
+    mutating func finishWalk(skipped: [pid_t], running: Set<pid_t>) {
+        skippedLastWalk = skipped
+        cost = cost.filter { running.contains($0.key) }
+    }
+
+    /// when to walk again for the apps the budget left out, or nil
+    var secondsUntilRetry: TimeInterval? {
+        skippedLastWalk.isEmpty ? nil : Self.skippedRetry
+    }
+}
+
+/// Pairs one app's standard AX windows with its on-screen CG windows.
+///
+/// The id `_AXUIElementGetWindow` names is the window's own. When that id
+/// is on screen and free, the element gets it. When it is a real window
+/// that is off screen (another Space, alpha 0, not shown yet) or already
+/// held, the element stays unbound: binding it to some other id would send
+/// that window's frame writes to this one. Only an element whose SPI
+/// failed, or named no window the app has, falls back to the nearest
+/// unused on-screen window, and only within `maxFallbackDistance`.
+///
+/// Threading: pure; no state.
+enum AXWindowMatcher {
+    /// summed difference of origin and size, in points. a window the SPI
+    /// can't name is still where the window server shows it, give or take
+    /// a stale read mid-move
+    static let maxFallbackDistance: CGFloat = 64
+
+    struct Element: Equatable {
+        let frame: CGRect
+        let spiID: CGWindowID?
+    }
+
+    struct Candidate: Equatable {
+        let windowID: CGWindowID
+        let bounds: CGRect
+    }
+
+    enum Unbound: Equatable {
+        /// the SPI named a real window that is not on screen
+        case offScreen(CGWindowID)
+        /// the SPI named an on-screen window another element already holds
+        case taken(CGWindowID)
+        /// no SPI id, and no unused on-screen window is left
+        case noCandidate
+        /// no SPI id, and the nearest unused on-screen window is too far
+        case tooFar(nearest: CGWindowID, distance: CGFloat)
+    }
+
+    struct Bound: Equatable {
+        let index: Int
+        let windowID: CGWindowID
+        /// how far the position fallback reached, or nil for an SPI bind
+        let fallbackDistance: CGFloat?
+    }
+
+    struct Result: Equatable {
+        var bound: [Bound] = []
+        var unbound: [(index: Int, reason: Unbound)] = []
+
+        static func == (a: Result, b: Result) -> Bool {
+            a.bound == b.bound && a.unbound.map(\.index) == b.unbound.map(\.index)
+                && a.unbound.map(\.reason) == b.unbound.map(\.reason)
+        }
+    }
+
+    static func distance(_ frame: CGRect, _ bounds: CGRect) -> CGFloat {
+        abs(frame.origin.x - bounds.origin.x) + abs(frame.origin.y - bounds.origin.y)
+            + abs(frame.width - bounds.width) + abs(frame.height - bounds.height)
+    }
+
+    /// - Parameters:
+    ///   - candidates: the app's visible on-screen windows
+    ///   - used: ids already bound this walk, never handed out again
+    ///   - isRealWindow: whether the window server knows the id for this
+    ///     app, on screen or off
+    /// - Returns: binds in element order, and every element left unbound
+    static func match(_ elements: [Element], candidates: [Candidate], used: Set<CGWindowID>,
+                      isRealWindow: (CGWindowID) -> Bool) -> Result {
+        var result = Result()
+        var used = used
+        let onScreen = Set(candidates.map(\.windowID))
+        var fallback: [Int] = []
+        for (index, element) in elements.enumerated() {
+            guard let id = element.spiID else {
+                fallback.append(index)
+                continue
+            }
+            if onScreen.contains(id) {
+                if used.insert(id).inserted {
+                    result.bound.append(Bound(index: index, windowID: id, fallbackDistance: nil))
+                } else {
+                    result.unbound.append((index, .taken(id)))
+                }
+            } else if isRealWindow(id) {
+                result.unbound.append((index, .offScreen(id)))
+            } else {
+                fallback.append(index)
+            }
+        }
+
+        // closest pairs first, so the order the app lists its windows in
+        // can't hand a near window's id to a far element
+        var pairs: [(index: Int, windowID: CGWindowID, distance: CGFloat)] = []
+        for index in fallback {
+            for candidate in candidates where !used.contains(candidate.windowID) {
+                pairs.append((index, candidate.windowID, distance(elements[index].frame, candidate.bounds)))
+            }
+        }
+        pairs.sort { ($0.distance, $0.index, $0.windowID) < ($1.distance, $1.index, $1.windowID) }
+        var placed: Set<Int> = []
+        for pair in pairs {
+            guard pair.distance <= maxFallbackDistance,
+                  !placed.contains(pair.index), !used.contains(pair.windowID) else { continue }
+            placed.insert(pair.index)
+            used.insert(pair.windowID)
+            result.bound.append(Bound(index: pair.index, windowID: pair.windowID, fallbackDistance: pair.distance))
+        }
+        // pairs is sorted, so the first still-unused candidate is the
+        // nearest one left, and it is past the limit or it would be bound
+        for index in fallback where !placed.contains(index) {
+            if let near = pairs.first(where: { $0.index == index && !used.contains($0.windowID) }) {
+                result.unbound.append((index, .tooFar(nearest: near.windowID, distance: near.distance)))
+            } else {
+                result.unbound.append((index, .noCandidate))
+            }
+        }
+        result.bound.sort { $0.index < $1.index }
+        result.unbound.sort { $0.index < $1.index }
+        return result
     }
 }

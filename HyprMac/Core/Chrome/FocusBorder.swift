@@ -4,6 +4,50 @@
 
 import Cocoa
 
+/// What marks each visible floating window. Any focus indicator outlines
+/// it, in Corners mode too; None draws nothing.
+enum FloaterMarkStyle: Equatable {
+    case outline, none
+
+    static func resolve(showFocusBorder: Bool, bracketStyle: FocusBracketStyle) -> Self {
+        showFocusBorder || bracketStyle != .off ? .outline : .none
+    }
+}
+
+/// Where a floater's outline and its glow sit in the floater panel.
+///
+/// The panel reaches `glowRoom` past the outline on every side so the
+/// glow's blur is not clipped. The outline itself stays where it always
+/// was: centered on the window edge.
+enum FloaterOutlineGeometry {
+    /// room past the outline for a blur of `glowRadius`
+    static func glowRoom(glowRadius: CGFloat) -> CGFloat {
+        (glowRadius * 3).rounded(.up)
+    }
+
+    /// how far the panel reaches past the window on each side
+    static func panelExpansion(borderWidth: CGFloat, glowRadius: CGFloat) -> CGFloat {
+        borderWidth / 2 + glowRoom(glowRadius: glowRadius)
+    }
+
+    /// the outline layer's frame in the panel's content bounds
+    static func outlineFrame(inPanelBounds bounds: CGRect, glowRadius: CGFloat) -> CGRect {
+        let room = glowRoom(glowRadius: glowRadius)
+        return bounds.insetBy(dx: room, dy: room)
+    }
+
+    /// The ring a `CALayer` border paints: `borderWidth` inside `bounds`,
+    /// outer corners at `cornerRadius`. Filled nonzero, as `shadowPath` is.
+    static func ringPath(in bounds: CGRect, cornerRadius: CGFloat, borderWidth: CGFloat) -> CGPath {
+        let center = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
+        guard center.width > 0, center.height > 0, borderWidth > 0 else { return CGMutablePath() }
+        // CGPath asserts when a corner exceeds half the width or height
+        let r = max(0, min(cornerRadius - borderWidth / 2, center.width / 2, center.height / 2))
+        let line = CGPath(roundedRect: center, cornerWidth: r, cornerHeight: r, transform: nil)
+        return line.copy(strokingWithWidth: borderWidth, lineCap: .butt, lineJoin: .miter, miterLimit: 10)
+    }
+}
+
 struct FocusBorderFeedbackLifecycle {
     private(set) var isActive = false
 
@@ -93,12 +137,24 @@ class FocusBorder {
     private var glideTarget: CGRect?
     private var glideOccluders: [CGRect] = []
     private var floaterFrames: [CGWindowID: CGRect] = [:]
+    // the dragged floater's live frame. it wins over the lagging frame a
+    // refresh reads, and the floater is in front of everything while it moves
+    private var floaterDrag: (id: CGWindowID, frame: CGRect)?
 
     private enum State { case active, settled, hidden }
+    // a floater's glowView fills the panel and carries the fade and the
+    // occlusion mask. its outline sublayer draws the stroke and the glow.
     private struct BorderPanel {
         let panel: NSPanel
         let glowView: NSView
+        let outline: CALayer
     }
+
+    /// Whether the floater panels draw. Pushed from config by `WindowManager`
+    /// next to `isEnabled`. Floaters draw even with `isEnabled` off, since
+    /// that flag is the focused-window border toggle and Corners mode
+    /// turns it off.
+    private(set) var floaterMarks: FloaterMarkStyle = .outline
 
     /// Tunables. Empirical timings (settle delay, shake step) and
     /// stroke widths. Corner radius comes from `WindowCornerRadius`, one
@@ -118,10 +174,18 @@ class FocusBorder {
         static let activeBorderWidth: CGFloat = 2
         static let settledBorderWidth: CGFloat = 1.5
         static let floatingBorderWidth: CGFloat = 1.5
+        // the faint glow around a floater outline, in the outline's color
+        static let floatingGlowRadius: CGFloat = 3
+        static let floatingGlowOpacity: Float = 0.45
         static let errorBorderWidth: CGFloat = 2.5
         static let activeFillAlpha: CGFloat = 0.08
         static let errorFillAlpha: CGFloat = 0.12
     }
+
+    /// How far a floater panel reaches past its window on each side: half
+    /// the stroke, plus room for the glow.
+    static let floaterPanelExpansion = FloaterOutlineGeometry.panelExpansion(
+        borderWidth: Tuning.floatingBorderWidth, glowRadius: Tuning.floatingGlowRadius)
 
     // The settled border keeps the active panel geometry, while an error
     // flash uses its wider stroke. Refreshes must preserve whichever
@@ -156,7 +220,8 @@ class FocusBorder {
                 : CGColor.clear
         }
         for (_, border) in floatingPanels {
-            border.glowView.layer?.borderColor = floatingColor
+            border.outline.borderColor = floatingColor
+            border.outline.shadowColor = floatingColor
         }
         CATransaction.commit()
     }
@@ -294,10 +359,34 @@ class FocusBorder {
                 + focusedCornerRadiusExpansion
         }
         for (windowID, border) in floatingPanels {
-            border.glowView.layer?.cornerRadius = WindowCornerRadius.resolve(for: windowID)
-                + Tuning.floatingBorderWidth / 2
+            stampOutlineShape(border.outline, cornerRadius: WindowCornerRadius.resolve(for: windowID)
+                + Tuning.floatingBorderWidth / 2)
         }
         CATransaction.commit()
+    }
+
+    /// Switch whether the floater panels draw. `.none` fades them out now.
+    func setFloaterMarks(_ style: FloaterMarkStyle) {
+        mainThreadOnly()
+        floaterMarks = style
+        if style == .none { hideFloatingBorders() }
+    }
+
+    /// Synchronous snapshot for tests: the outline width of the floater
+    /// panel for `windowID`, or nil when it has none.
+    func currentFloaterOutlineWidth(for windowID: CGWindowID) -> CGFloat? {
+        floatingPanels[windowID]?.outline.borderWidth
+    }
+
+    /// Synchronous snapshot for tests: the floater outline's frame in its
+    /// panel, its corner radius, and its glow.
+    func currentFloaterOutline(for windowID: CGWindowID)
+        -> (panel: NSRect, outline: CGRect, cornerRadius: CGFloat,
+            glowRadius: CGFloat, glowOpacity: Float, glowColor: CGColor?, glowPath: CGPath?)? {
+        guard let border = floatingPanels[windowID] else { return nil }
+        let o = border.outline
+        return (border.panel.frame, o.frame, o.cornerRadius, o.shadowRadius, o.shadowOpacity,
+                o.shadowColor, o.shadowPath)
     }
 
     /// Synchronous style snapshot used by regression tests and diagnostics.
@@ -310,9 +399,11 @@ class FocusBorder {
     /// whose id is not present in the input — so a single call brings
     /// the floating-border set into agreement with the current
     /// floating-window set.
-    func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
+    func updateFloatingBorders(_ incoming: [CGWindowID: CGRect], color: CGColor) {
         mainThreadOnly()
-        guard isEnabled else { return }
+        guard floaterMarks == .outline else { return }
+        var frames = incoming
+        if let drag = floaterDrag, frames[drag.id] != nil { frames[drag.id] = drag.frame }
         let visibleIDs = Set(frames.keys)
         let staleIDs = floatingPanels.keys.filter { !visibleIDs.contains($0) }
         for windowID in staleIDs { hideFloatingBorder(for: windowID) }
@@ -320,40 +411,68 @@ class FocusBorder {
         floaterFrames = frames
         let expansion = Tuning.floatingBorderWidth / 2
         for (windowID, frame) in frames {
-            let nsRect = panelRect(for: frame, expansion: expansion)
+            let nsRect = panelRect(for: frame, expansion: Self.floaterPanelExpansion)
             let windowRadius = WindowCornerRadius.resolve(for: windowID)
             let border: BorderPanel
-            let isNewPanel: Bool
             if let existing = floatingPanels[windowID] {
                 border = existing
                 border.panel.setFrame(nsRect, display: false)
-                positionGlowView(border.glowView, in: border.panel)
-                isNewPanel = false
+                positionFloaterViews(border)
             } else {
                 border = makeFloatingPanel(frame: nsRect)
                 floatingPanels[windowID] = border
-                isNewPanel = true
             }
 
-            if let layer = border.glowView.layer {
-                CATransaction.begin()
-                CATransaction.setDisableActions(true)
-                layer.borderColor = color
-                layer.borderWidth = Tuning.floatingBorderWidth
-                layer.cornerRadius = windowRadius + expansion
-                layer.backgroundColor = CGColor.clear
-                CATransaction.commit()
-            }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            let outline = border.outline
+            outline.borderColor = color
+            outline.borderWidth = Tuning.floatingBorderWidth
+            outline.backgroundColor = CGColor.clear
+            outline.shadowColor = color
+            outline.shadowOpacity = Tuning.floatingGlowOpacity
+            outline.shadowRadius = Tuning.floatingGlowRadius
+            outline.shadowOffset = .zero
+            stampOutlineShape(outline, cornerRadius: windowRadius + expansion)
+            CATransaction.commit()
 
+            // no fade in: a window that just floated, or came back with a
+            // workspace, is marked the moment it shows
             border.panel.alphaValue = 1.0
+            border.glowView.alphaValue = 1.0
             border.panel.orderFront(nil)
-            if isNewPanel {
-                fadeViewAlpha(border.glowView, from: 0, to: 1,
-                              duration: fadeDurationSec)
-            } else {
-                border.glowView.alphaValue = 1.0
-            }
         }
+    }
+
+    /// Move `windowID`'s outline to `frame` (CG) while the user drags the
+    /// window. Geometry only: no fade, no ordering. The dragged floater is
+    /// in front of everything, so its occlusion mask goes until the drag ends.
+    func followFloaterDrag(_ windowID: CGWindowID, to frame: CGRect) {
+        mainThreadOnly()
+        floaterDrag = (windowID, frame)
+        guard let border = floatingPanels[windowID] else { return }
+        floaterFrames[windowID] = frame
+        border.panel.setFrame(panelRect(for: frame, expansion: Self.floaterPanelExpansion), display: false)
+        positionFloaterViews(border)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        border.glowView.layer?.mask = nil
+        CATransaction.commit()
+    }
+
+    /// The drag ended. The refresh after the drop puts the outline on the
+    /// settled frame and masks it again.
+    func endFloaterDrag() {
+        mainThreadOnly()
+        floaterDrag = nil
+    }
+
+    /// The live drag frame the outline follows, nil when no drag is on. For tests.
+    var currentFloaterDrag: (id: CGWindowID, frame: CGRect)? { floaterDrag }
+
+    /// The floater panel's root layer, which carries the fade and the mask. For tests.
+    func currentFloaterGlowLayer(for windowID: CGWindowID) -> CALayer? {
+        floatingPanels[windowID]?.glowView.layer
     }
 
     /// Order out every floating-border panel with a fade and drop the cache.
@@ -583,9 +702,10 @@ class FocusBorder {
         }
         for (wid, border) in floatingPanels {
             guard let frame = floaterFrames[wid] else { continue }
-            let occluders = floaterOccluders[wid] ?? []
+            // the dragged floater is in front; the occluders came from a stale list
+            let occluders = wid == floaterDrag?.id ? [] : floaterOccluders[wid] ?? []
             applyMask(to: border.glowView, windowCGRect: frame,
-                      expansion: Tuning.floatingBorderWidth / 2,
+                      expansion: Self.floaterPanelExpansion,
                       occluders: occluders)
         }
     }
@@ -727,8 +847,14 @@ class FocusBorder {
         let p = makeBasePanel(frame: frame)
         let glow = makeGlowView()
         p.contentView?.addSubview(glow)
-        positionGlowView(glow, in: p)
-        return BorderPanel(panel: p, glowView: glow)
+        // the glow is a shadow, so the stroke's layer must not clip. the
+        // root still clips, and the panel has room for the blur
+        let outline = CALayer()
+        outline.masksToBounds = false
+        glow.layer?.addSublayer(outline)
+        let border = BorderPanel(panel: p, glowView: glow, outline: outline)
+        positionFloaterViews(border)
+        return border
     }
 
     /// Layer-hosting glow view. We assign the CALayer BEFORE `wantsLayer`
@@ -843,6 +969,7 @@ class FocusBorder {
         glowView = nil
         floatingPanels.removeAll()
         floaterFrames.removeAll()
+        floaterDrag = nil
         infoPanels.removeAll()
         renderedWindowID = nil
         trackedWindowFrame = nil
@@ -870,6 +997,26 @@ class FocusBorder {
         // slightly larger than the window so the stroke (drawn inset
         // from glow's outer edge) lands centered on the window edge.
         glow.frame = content.bounds
+    }
+
+    /// Fill the floater panel with its glow view and inset the outline by
+    /// the glow room, so the stroke stays centered on the window edge.
+    private func positionFloaterViews(_ border: BorderPanel) {
+        positionGlowView(border.glowView, in: border.panel)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        border.outline.frame = FloaterOutlineGeometry.outlineFrame(
+            inPanelBounds: border.glowView.bounds, glowRadius: Tuning.floatingGlowRadius)
+        stampOutlineShape(border.outline, cornerRadius: border.outline.cornerRadius)
+        CATransaction.commit()
+    }
+
+    /// Corner radius plus the glow's explicit path: the stroke's own ring,
+    /// so the shadow never has to read the layer's contents.
+    private func stampOutlineShape(_ outline: CALayer, cornerRadius: CGFloat) {
+        outline.cornerRadius = cornerRadius
+        outline.shadowPath = FloaterOutlineGeometry.ringPath(
+            in: outline.bounds, cornerRadius: cornerRadius, borderWidth: Tuning.floatingBorderWidth)
     }
 
     // MARK: - fade helpers

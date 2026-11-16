@@ -122,6 +122,26 @@ final class FloatingDimDragTrackerTests: XCTestCase {
         XCTAssertEqual(carves, [start.offsetBy(dx: 10, dy: 0).insetBy(dx: -2, dy: -2)])
     }
 
+    func testTheOutlineGetsTheLiveFrameWithoutTheCarveMargin() {
+        var live: [CGRect] = []
+        let tracker = FloatingDimDragTracker(
+            now: { [unowned self] in self.clock },
+            setCarve: { [unowned self] _, rect in self.carves.append(rect) },
+            setLiveFrame: { _, rect in live.append(rect) },
+            clearCarve: {})
+        listFrame = start
+        tracker.arm(id: 7, readFrame: { [unowned self] in self.listFrame },
+                    startFrame: start, downPointCG: CGPoint(x: 150, y: 110))
+        // a content drag moves nothing
+        tracker.update(cursorCG: CGPoint(x: 400, y: 400))
+        XCTAssertTrue(live.isEmpty)
+
+        listFrame = start.offsetBy(dx: 40, dy: 0)
+        tracker.update(cursorCG: CGPoint(x: 190, y: 120))
+        XCTAssertEqual(live, [start.offsetBy(dx: 40, dy: 10)])
+        XCTAssertEqual(carves, [start.offsetBy(dx: 40, dy: 10).insetBy(dx: -2, dy: -2)])
+    }
+
     func testDisarmKeepsTheOverrideAndFinishClearsIt() {
         let tracker = armed()
         tracker.disarm()
@@ -132,5 +152,24 @@ final class FloatingDimDragTrackerTests: XCTestCase {
         XCTAssertTrue(carves.isEmpty)
         tracker.finish()
         XCTAssertEqual(cleared, 1)
+    }
+}
+
+final class FloaterDragFollowTests: XCTestCase {
+    func testTheOutlineFollowsWheneverFloatersAreMarked() {
+        let plan = FloaterDragFollow.resolve(dimInactive: false, scratchpadVisible: false, marks: .outline)
+        XCTAssertEqual(plan, FloaterDragFollow(carve: false, outline: true))
+        XCTAssertTrue(plan.arms)
+    }
+
+    func testTheCarveFollowsInNormalDimModeOnly() {
+        XCTAssertTrue(FloaterDragFollow.resolve(dimInactive: true, scratchpadVisible: false, marks: .none).carve)
+        let scrim = FloaterDragFollow.resolve(dimInactive: true, scratchpadVisible: true, marks: .outline)
+        XCTAssertEqual(scrim, FloaterDragFollow(carve: false, outline: true),
+                       "a scratchpad member's outline still follows under the scrim")
+    }
+
+    func testNothingToFollowArmsNothing() {
+        XCTAssertFalse(FloaterDragFollow.resolve(dimInactive: false, scratchpadVisible: false, marks: .none).arms)
     }
 }

@@ -718,6 +718,55 @@ final class TiledDragTransactionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(actualFrames[1]?.width ?? 0, 619)
     }
 
+    func testSameTreeInsertThatCannotFitKnownMinimumsIsRefusedBeforeAnyWrite() {
+        // two dia windows side by side; stacking them in one 835 pt column
+        // needs 446 + 446 + gap, which no ratio can give
+        let tree = BSPTree()
+        let windows = [makeWindow(id: 1), makeWindow(id: 2)]
+        windows.forEach { _ = tree.insert($0, maxDepth: 3) }
+        let context = TiledDragContext(
+            workspace: 1, physicalDisplayID: 77,
+            usableFrame: CGRect(x: 0, y: 0, width: 1512, height: 835),
+            gap: 8, padding: 8, maxDepth: 3,
+            memberIDs: Set(windows.map(\.windowID)), floatingIDs: [],
+            fingerprint: tree.structuralFingerprint()
+        )
+        let originals = layoutFrames(tree, context)
+        let fake = FakeAX(frames: originals)
+        let transaction = TiledDragTransaction(
+            ioFactory: fake.factory,
+            minimumSize: { _ in CGSize(width: 500, height: 446) }
+        )
+        guard case let .captured(snapshot) = transaction.capture(
+            draggedID: 2, tree: tree, context: context, generation: 1,
+            currentContext: { context }) else { return XCTFail("capture failed") }
+        let hit = TiledDragTarget(windowID: 1, edge: .bottom)
+
+        XCTAssertNil(transaction.previewFrame(snapshot, plan: .sameTree(hit), swap: false,
+                                              target: nil),
+                     "the preview shows nothing where the drop would refuse")
+
+        fake.frames[2]!.origin.x -= 100
+        let outcome = transaction.drop(snapshot, mode: .insert(targetID: 1, edge: .bottom),
+                                       currentContext: { context })
+        guard case let .rejectedRestored(reason, _) = outcome else {
+            return XCTFail("expected a no-room restore, got \(outcome)")
+        }
+        XCTAssertEqual(reason, .preflight(.noRoom))
+        XCTAssertEqual(fake.frames, originals)
+        XCTAssertEqual(fake.writes.count, originals.count * 3,
+                       "only the resize-move-resize restoration is written, no candidate")
+        XCTAssertEqual(tree.structuralFingerprint(), context.fingerprint)
+
+        // minimums that fit the column still preview and drop
+        let roomy = TiledDragTransaction(
+            ioFactory: FakeAX(frames: originals).factory,
+            minimumSize: { _ in CGSize(width: 500, height: 400) }
+        )
+        XCTAssertNotNil(roomy.previewFrame(snapshot, plan: .sameTree(hit), swap: false,
+                                           target: nil))
+    }
+
     func testDropReleaseAtThresholdUsesOrdinaryNoTargetRestoration() {
         let (tree, _, context) = fixture()
         let originals = layoutFrames(tree, context)

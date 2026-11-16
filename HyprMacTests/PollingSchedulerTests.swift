@@ -325,3 +325,341 @@ final class PollingSchedulerTests: XCTestCase {
         XCTAssertFalse(first?.isValid == true)
     }
 }
+
+// trailing create polls, fire triggers and suppression wake-ups, on an
+// injected clock and queue so nothing here waits on the wall clock
+
+final class PollingSchedulerClockTests: XCTestCase {
+
+    private final class FakeQueue {
+        var nowNS: UInt64 = 1_000_000_000
+        private var queue: [(at: UInt64, seq: Int, block: () -> Void)] = []
+        private var seq = 0
+
+        func install(on scheduler: PollingScheduler) {
+            scheduler.now = { [unowned self] in DispatchTime(uptimeNanoseconds: self.nowNS) }
+            scheduler.arm = { [unowned self] delay, block in
+                self.seq += 1
+                self.queue.append((self.nowNS + UInt64((delay * 1e9).rounded()), self.seq, block))
+            }
+        }
+
+        var elapsed: TimeInterval { Double(nowNS - 1_000_000_000) / 1e9 }
+
+        func advance(by seconds: TimeInterval) {
+            let end = nowNS + UInt64((seconds * 1e9).rounded())
+            while let next = queue.enumerated()
+                .filter({ $0.element.at <= end })
+                .min(by: { ($0.element.at, $0.element.seq) < ($1.element.at, $1.element.seq) }) {
+                queue.remove(at: next.offset)
+                nowNS = max(nowNS, next.element.at)
+                next.element.block()
+            }
+            nowNS = end
+        }
+    }
+
+    private var fires: [(at: TimeInterval, fire: PollingScheduler.Fire)] = []
+    private var queue = FakeQueue()
+    private var scheduler: PollingScheduler!
+
+    override func setUp() {
+        super.setUp()
+        fires = []
+        queue = FakeQueue()
+        scheduler = PollingScheduler(periodicInterval: 1000) { [unowned self] in
+            self.fires.append((self.queue.elapsed, self.scheduler.currentFire!))
+        }
+        queue.install(on: scheduler)
+        scheduler.start()
+    }
+
+    override func tearDown() {
+        scheduler.stop()
+        scheduler = nil
+        super.tearDown()
+    }
+
+    func testCreateAfterAPendingPollStillGetsAPollAtItsOwnDeadline() {
+        // an activation poll is due in 50 ms when the create lands. the
+        // activation poll alone ran before AX listed the window
+        scheduler.schedule(after: 0.05, trigger: .activation)
+        queue.advance(by: 0.04)
+        let outcome = scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        XCTAssertEqual(outcome, .trailing(dueMS: 200, pendingDueMS: 10))
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.map(\.fire.triggers), [[.activation], [.create]])
+        XCTAssertEqual(fires[0].at, 0.05, accuracy: 0.001)
+        XCTAssertEqual(fires[1].at, 0.24, accuracy: 0.001)
+    }
+
+    func testPlainRequestStillCoalescesIntoThePendingPoll() {
+        scheduler.schedule(after: 0.05, trigger: .activation)
+        let outcome = scheduler.schedule(after: 0.2, trigger: .focus)
+        XCTAssertEqual(outcome, .coalesced(pendingDueMS: 50))
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.map(\.fire.triggers), [[.activation, .focus]])
+    }
+
+    func testTrailingRequestWithinTheSlackRidesThePendingPoll() {
+        scheduler.schedule(after: 0.2, trigger: .focus)
+        queue.advance(by: 0.01)
+        let outcome = scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        XCTAssertEqual(outcome, .coalesced(pendingDueMS: 190))
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].fire.triggers, [.focus, .create])
+    }
+
+    func testSoonerTrailingRequestMovesThePendingPollUp() {
+        scheduler.schedule(after: 5, trigger: .hold)
+        let outcome = scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        XCTAssertEqual(outcome, .advanced(dueMS: 200))
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.map(\.fire.triggers), [[.hold, .create]])
+    }
+
+    func testDeferredPollThatRunsPastTheTrailingDeadlineCoversIt() {
+        var suppressed = true
+        scheduler.isSuppressed = { suppressed }
+        scheduler.suppressionReason = { "workspace transition" }
+        scheduler.schedule(after: 0.05, trigger: .activation)
+        queue.advance(by: 0.06)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 0.6)
+        suppressed = false
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.count, 1, "one poll after the transition answers both")
+        XCTAssertEqual(fires[0].fire.triggers, [.activation, .create])
+        XCTAssertEqual(fires[0].fire.deferredBy, "workspace transition")
+        XCTAssertGreaterThan(fires[0].fire.deferredMS, 0)
+    }
+
+    func testTrailingPollCoalescesWithOneThePollAskedFor() {
+        // the poll that runs first asks for a follow-up before the trailing
+        // deadline; the trailing one then rides behind it, not beside it
+        var askedOnce = false
+        scheduler = PollingScheduler(periodicInterval: 1000) { [unowned self] in
+            self.fires.append((self.queue.elapsed, self.scheduler.currentFire!))
+            if !askedOnce {
+                askedOnce = true
+                self.scheduler.schedule(after: 0.3, trigger: .followUp)
+            }
+        }
+        queue.install(on: scheduler)
+        scheduler.start()
+        scheduler.schedule(after: 0.05, trigger: .activation)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 2)
+        XCTAssertEqual(fires.map(\.fire.triggers), [[.activation], [.followUp, .create]])
+        XCTAssertEqual(fires[1].at, 0.2, accuracy: 0.002)
+    }
+
+    func testFireReportsItsWait() {
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].fire.waitedMS, 200)
+        XCTAssertEqual(fires[0].fire.deferredMS, 0)
+        XCTAssertNil(fires[0].fire.deferredBy)
+        XCTAssertEqual(fires[0].fire.summary, "create, waited 200ms")
+    }
+
+    func testDeferredFireWakesWhenTheTimedSuppressionEnds() {
+        // a transition with 0.45 s left: the poll runs at its end, not on
+        // the next 0.3 s step after it
+        let liftsAt: TimeInterval = 0.5
+        scheduler.isSuppressed = { [unowned self] in self.queue.elapsed < liftsAt }
+        scheduler.suppressionEndsIn = { [unowned self] in
+            let left = liftsAt - self.queue.elapsed
+            return left > 0 ? left : nil
+        }
+        scheduler.schedule(after: 0.05, trigger: .create, trailing: true)
+        queue.advance(by: 2)
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].at, liftsAt + 0.01, accuracy: 0.002)
+        XCTAssertEqual(fires[0].fire.deferredMS, 460)
+    }
+
+    func testDeferredFireWithoutATimedEndStepsAtThreeTenths() {
+        var suppressed = true
+        scheduler.isSuppressed = { suppressed }
+        scheduler.schedule(after: 0.05, trigger: .create, trailing: true)
+        queue.advance(by: 0.5)
+        suppressed = false
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].at, 0.65, accuracy: 0.002, "fires on the 0.3 s step after the lift")
+    }
+
+    func testReconcileTickReportsItself() {
+        scheduler.reconcileTick()
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertTrue(fires[0].fire.isReconcileOnly)
+    }
+
+    func testSuppressedReconcileTickRunsOnceItLifts() {
+        var suppressed = true
+        scheduler.isSuppressed = { suppressed }
+        scheduler.reconcileTick()
+        scheduler.reconcileTick()
+        queue.advance(by: 0.4)
+        XCTAssertTrue(fires.isEmpty)
+        suppressed = false
+        queue.advance(by: 0.4)
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertTrue(fires[0].fire.isReconcileOnly)
+    }
+
+    func testRequestBeforeStartIsHeld() {
+        let idle = PollingScheduler(periodicInterval: 1000) {}
+        XCTAssertEqual(idle.schedule(after: 0.2, trigger: .create, trailing: true), .beforeStart)
+    }
+
+    // MARK: - admit-only pass under a switch's hold
+
+    private var admits: [(at: TimeInterval, fire: PollingScheduler.Fire)] = []
+
+    /// a hold that lifts at `liftsAt`, and a gate that opens at `settlesAt`
+    private func holdAdmits(liftsAt: TimeInterval, settlesAt: TimeInterval) {
+        admits = []
+        scheduler.isSuppressed = { [unowned self] in self.queue.elapsed < liftsAt }
+        scheduler.suppressionEndsIn = { [unowned self] in
+            let left = liftsAt - self.queue.elapsed
+            return left > 0 ? left : nil
+        }
+        scheduler.admitsNewWindowsDuringHold = { [unowned self] in self.queue.elapsed >= settlesAt }
+        scheduler.onAdmitDuringHold = { [unowned self] in
+            self.admits.append((self.queue.elapsed, self.scheduler.currentFire!))
+        }
+    }
+
+    func testACreateUnderASwitchHoldGetsAnAdmitPassOnceTheSwitchIsDone() {
+        // the switch writes frames until 0.4 s; its hold lasts to 1.5 s
+        holdAdmits(liftsAt: 1.5, settlesAt: 0.4)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 0.3)
+        XCTAssertTrue(admits.isEmpty, "not while the switch is still writing frames")
+        queue.advance(by: 0.3)
+        XCTAssertEqual(admits.count, 1)
+        XCTAssertEqual(admits[0].at, 0.5, accuracy: 0.002, "the first ask after the switch settled")
+        XCTAssertTrue(admits[0].fire.admitOnly)
+        XCTAssertEqual(admits[0].fire.triggers, [.create])
+        XCTAssertTrue(admits[0].fire.summary.hasSuffix("admit-only during the switch hold"))
+        XCTAssertTrue(fires.isEmpty, "the full poll still waits out the hold")
+        queue.advance(by: 2)
+        XCTAssertEqual(admits.count, 1, "one pass per request")
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].at, 1.51, accuracy: 0.002, "the full poll runs as the hold ends")
+        XCTAssertEqual(fires[0].fire.triggers, [.create])
+        XCTAssertFalse(fires[0].fire.admitOnly)
+    }
+
+    func testAnAdmitPassThatFoundNothingIsAskedAgainByTheWatchsRetry() {
+        holdAdmits(liftsAt: 1.5, settlesAt: 0)
+        scheduler.onAdmitDuringHold = { [unowned self] in
+            self.admits.append((self.queue.elapsed, self.scheduler.currentFire!))
+            // AX did not list the window yet: the watch asks again in 0.3 s
+            if self.admits.count == 1 { self.scheduler.schedule(after: 0.3, trigger: .followUp) }
+        }
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 1)
+        XCTAssertEqual(admits.map(\.fire.triggers), [[.create], [.followUp]])
+        XCTAssertEqual(admits[1].at, 0.5, accuracy: 0.002)
+        XCTAssertTrue(fires.isEmpty)
+    }
+
+    func testExistingWindowWorkGetsNoAdmitPass() {
+        holdAdmits(liftsAt: 1.5, settlesAt: 0)
+        scheduler.schedule(after: 0.2, trigger: .destroy)
+        scheduler.schedule(after: 0.2, trigger: .reveal)
+        queue.advance(by: 1)
+        XCTAssertTrue(admits.isEmpty)
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.map(\.fire.triggers), [[.destroy, .reveal]])
+    }
+
+    func testNoHoldMeansTheOrdinaryPollAndNoAdmitPass() {
+        holdAdmits(liftsAt: 0, settlesAt: 0)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 2)
+        XCTAssertTrue(admits.isEmpty)
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].at, 0.2, accuracy: 0.002)
+    }
+
+    /// the production gate over a real registry, with the switch done
+    private func registryHold(_ registry: SuppressionRegistry) {
+        admits = []
+        scheduler.isSuppressed = { registry.isSuppressed(.workspaceTransition) }
+        scheduler.admitsNewWindowsDuringHold = {
+            SwitchHoldAdmission.allows(
+                heldOnlyBySwitch: registry.isHeldOnlyByWorkspaceSwitch(.workspaceTransition),
+                switchSettled: true, mouseButtonDown: false, finishingDrag: false,
+                displayTransitionPending: false, sessionInterrupted: false)
+        }
+        scheduler.onAdmitDuringHold = { [unowned self] in
+            self.admits.append((self.queue.elapsed, self.scheduler.currentFire!))
+        }
+    }
+
+    func testAWakeHoldStillDefersANewWindow() {
+        let registry = SuppressionRegistry()
+        registryHold(registry)
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.systemInterruption)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 3)
+        XCTAssertTrue(admits.isEmpty, "a wake hold admits nothing early")
+        XCTAssertTrue(fires.isEmpty)
+        registry.clear(.workspaceTransition)
+        queue.advance(by: 0.4)
+        XCTAssertEqual(fires.count, 1, "the poll after the hold admits it")
+        XCTAssertTrue(admits.isEmpty)
+    }
+
+    func testADisplayHoldUnderASwitchStillDefersANewWindow() {
+        let registry = SuppressionRegistry()
+        registryHold(registry)
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.displaySettle)
+        // a switch inside the display settle is still held by the settle
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.transition, source: .workspaceSwitch)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 3)
+        XCTAssertTrue(admits.isEmpty)
+        registry.clear(.workspaceTransition)
+        queue.advance(by: 0.4)
+        XCTAssertEqual(fires.count, 1)
+    }
+
+    func testASwitchOnlyHoldAdmitsThroughTheRegistry() {
+        let registry = SuppressionRegistry()
+        registryHold(registry)
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.transition, source: .workspaceSwitch)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 0.3)
+        XCTAssertEqual(admits.count, 1)
+        XCTAssertTrue(fires.isEmpty)
+    }
+
+    func testTheGateOpensForAFinishedSwitchsOwnHoldOnly() {
+        func allows(switchOnly: Bool = true, settled: Bool = true, mouse: Bool = false,
+                    drag: Bool = false, display: Bool = false, interrupted: Bool = false) -> Bool {
+            SwitchHoldAdmission.allows(heldOnlyBySwitch: switchOnly, switchSettled: settled,
+                                       mouseButtonDown: mouse, finishingDrag: drag,
+                                       displayTransitionPending: display, sessionInterrupted: interrupted)
+        }
+        XCTAssertTrue(allows())
+        XCTAssertFalse(allows(switchOnly: false), "wake, display, move or scratchpad hold")
+        XCTAssertFalse(allows(settled: false), "the switch is still writing frames")
+        XCTAssertFalse(allows(mouse: true))
+        XCTAssertFalse(allows(drag: true))
+        XCTAssertFalse(allows(display: true))
+        XCTAssertFalse(allows(interrupted: true))
+    }
+
+    func testATiledMemberMissingFromTheWalkStopsTheAdmitPass() {
+        XCTAssertEqual(SwitchHoldAdmission.missingTiledMembers([1, 2, 3], listed: [1, 3, 9], held: []), [2])
+        XCTAssertEqual(SwitchHoldAdmission.missingTiledMembers([1, 2], listed: [1], held: [2]), [],
+                       "a held member keeps its leaf, so the pass may run")
+    }
+}

@@ -32,6 +32,9 @@ struct FrameSizingConfiguration {
     var aggregateSafetySlack: CGFloat = 1
     var stableTolerance: CGFloat = 0.01
     var requiredStableSamples: Int = 2
+    /// How long a window stable off its target waits before it is judged,
+    /// counted from when its own last setter returned. An app like Dia
+    /// reports its old size for a while after a write.
     var minimumMismatchSettle: TimeInterval = 0.24
     var perCallTimeout: TimeInterval = 0.1
     /// Windows that move before they are sized. The engine picks them: a

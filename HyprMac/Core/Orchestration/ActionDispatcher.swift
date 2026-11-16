@@ -193,31 +193,7 @@ final class ActionDispatcher {
     ///   `retile` and workspace assignment do not re-query AX.
     func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow])
         -> [TilingEngine.AdmissionResult] {
-        // CGWindowIDs get recycled. an id discovery calls new is a different
-        // window from the one that held it, so it must not inherit that
-        // window's verified admission — an inherited incumbency costs it its
-        // place in admission recovery.
-        for w in changes.newWindows {
-            tilingEngine.forgetAdmittedIdentity(windowID: w.windowID)
-        }
-
-        // a member app's new window joins the scratchpad while it's up. the
-        // admission below skips ws-0 windows
-        for w in changes.newWindows where !changes.newOnDisabledMonitor.contains(w.windowID) {
-            if isPinnedToScratchpad(w) {
-                adoptPinnedToScratchpad(w)
-            } else {
-                _ = admitToScratchpad(w)
-            }
-        }
-
-        // workspace assignment for new windows that didn't auto-float onto a
-        // disabled monitor. assigning by physical screen — cursor-based was
-        // unreliable under multi-monitor + display-reconfig churn.
-        let pinFollow = assignNewWindows(
-            changes.newWindows.filter { !changes.newOnDisabledMonitor.contains($0.windowID) },
-            fullyForgottenIDs: changes.fullyForgottenIDs
-        )
+        let pinFollow = admitNewWindows(changes)
 
         // engine/workspace/focus cleanup for ids the service forgot. out of
         // its tree first: the removal remembers the window's slot and the
@@ -256,6 +232,7 @@ final class ActionDispatcher {
                 changes.goneIDs.isEmpty ? nil : "gone=\(changes.goneIDs.sorted())",
                 changes.returned.isEmpty ? nil : "returned=\(changes.returned.map(\.windowID).sorted())",
                 changes.screenDrift.isEmpty ? nil : "drift=\(changes.screenDrift.map(\.windowID).sorted())",
+                changes.unfloated.isEmpty ? nil : "unfloated=\(changes.unfloated.sorted())",
             ].compactMap { $0 }.joined(separator: " ")
             hyprLog(.notice, .discovery, "discovery retile: \(causes)")
             // let surrounding windows fill gaps / make room.
@@ -269,6 +246,67 @@ final class ActionDispatcher {
             refocusUnderCursor()
         }
 
+        finishDiscoveryPass(pinFollow: pinFollow)
+        return retileResults
+    }
+
+    /// The new-window half of `applyChanges`, for the admit-only pass a
+    /// workspace switch's transition hold allows
+    /// (`WindowDiscoveryService.computeAdmissions`). Assignment, the retile
+    /// that tiles the newcomers, and the focus and floater steps that follow
+    /// any discovery pass, through the same code. `changes` carries new
+    /// windows only; nothing else is looked at.
+    ///
+    /// The retile is handed the walk's known windows only: a hidden window
+    /// this walk lists again is the full poll's return to make, and must
+    /// not join a tree here.
+    @discardableResult
+    func applyAdmissions(_ changes: WindowChanges, allWindows: [HyprWindow])
+        -> [TilingEngine.AdmissionResult] {
+        guard !changes.newWindows.isEmpty else { return [] }
+        let pinFollow = admitNewWindows(changes)
+        let tileable = allWindows.filter { stateCache.knownWindowIDs.contains($0.windowID) }
+        hyprLog(.notice, .discovery, "discovery retile: new=\(changes.newWindows.map(\.windowID).sorted())"
+                + " (admitted during the workspace transition hold)")
+        let results = retile(tileable)
+        finishDiscoveryPass(pinFollow: pinFollow)
+        return results
+    }
+
+    /// Recycled-id cleanup, scratchpad adoption and workspace assignment
+    /// for this diff's new windows.
+    ///
+    /// - Returns: the pinned window to follow onto its workspace, if any.
+    private func admitNewWindows(_ changes: WindowChanges) -> PinnedLanding? {
+        // CGWindowIDs get recycled. an id discovery calls new is a different
+        // window from the one that held it, so it must not inherit that
+        // window's verified admission — an inherited incumbency costs it its
+        // place in admission recovery.
+        for w in changes.newWindows {
+            tilingEngine.forgetAdmittedIdentity(windowID: w.windowID)
+        }
+
+        // a member app's new window joins the scratchpad while it's up. the
+        // admission below skips ws-0 windows
+        for w in changes.newWindows where !changes.newOnDisabledMonitor.contains(w.windowID) {
+            if isPinnedToScratchpad(w) {
+                adoptPinnedToScratchpad(w)
+            } else {
+                _ = admitToScratchpad(w)
+            }
+        }
+
+        // workspace assignment for new windows that didn't auto-float onto a
+        // disabled monitor. assigning by physical screen — cursor-based was
+        // unreliable under multi-monitor + display-reconfig churn.
+        return assignNewWindows(
+            changes.newWindows.filter { !changes.newOnDisabledMonitor.contains($0.windowID) },
+            fullyForgottenIDs: changes.fullyForgottenIDs
+        )
+    }
+
+    /// The focus and floater steps every discovery pass ends with.
+    private func finishDiscoveryPass(pinFollow: PinnedLanding?) {
         // catch-all: ensure something on the active workspace has focus + border.
         ensureFocusInvariant()
         // with the scratchpad up, an app that moved focus to its window on the
@@ -289,7 +327,6 @@ final class ActionDispatcher {
         if !stateCache.floatingWindowIDs.isEmpty {
             floatingController.raiseBehind()
         }
-        return retileResults
     }
 
     /// Route a single `Action` to the service that handles it. Called

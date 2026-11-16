@@ -122,6 +122,11 @@ class WindowManager {
     // between a destroy notification and the poll that acted on it.
     private var lastPollAt: Date?
 
+    // re-polls an app's announced window until a poll admits it
+    private var discoveryFollowUp = DiscoveryFollowUp()
+    // a press whose mouse-up never came, checked when it defers a poll
+    private var stalePress = StalePressCheck()
+
     // mouse tracking
     private var mouseMoveMonitor: Any?
     private var mouseDownMonitor: Any?
@@ -145,12 +150,25 @@ class WindowManager {
         set { mouseDragLifecycle.preDragFocusedID = newValue }
     }
 
-    // armed when a drag starts on a visible floating window while dim is on
-    // (normal mode). drives dimmingOverlay.setDragOverride so the bright carve
-    // hole tracks the floater live instead of trailing on the discovery poll.
+    // armed when a drag starts on a visible floating window. drives
+    // dimmingOverlay.setDragOverride so the bright carve hole tracks the
+    // floater live (normal dim mode), and moves the floater outline with it,
+    // instead of both trailing on the discovery poll.
     private lazy var dimDrag = FloatingDimDragTracker(
-        setCarve: { [dimmingOverlay] id, rect in dimmingOverlay.setDragOverride(id: id, rect: rect) },
-        clearCarve: { [dimmingOverlay] in dimmingOverlay.clearDragOverride() })
+        setCarve: { [weak self] id, rect in
+            guard let self, self.floaterDragFollow.carve else { return }
+            self.dimmingOverlay.setDragOverride(id: id, rect: rect)
+        },
+        setLiveFrame: { [weak self] id, frame in
+            guard let self, self.floaterDragFollow.outline else { return }
+            self.focusBorder.followFloaterDrag(id, to: frame)
+        },
+        clearCarve: { [dimmingOverlay, focusBorder] in
+            dimmingOverlay.clearDragOverride()
+            focusBorder.endFloaterDrag()
+        })
+    // what the armed drag moves, decided at the press
+    private var floaterDragFollow = FloaterDragFollow(carve: false, outline: false)
 
     // true while the Hypr key is physically held. drives focusBrackets — when held,
     // every focus change re-targets the brackets so they track Hypr+arrow even
@@ -216,7 +234,7 @@ class WindowManager {
         self.config = config
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
-        self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
+        self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .park) }
         self.tilingEngine = TilingEngine(displayManager: displayManager)
         self.tilingEngine.keepFixedSizeHints(in: .shared)
         self.discovery = WindowDiscoveryService(
@@ -267,7 +285,8 @@ class WindowManager {
         self.workspaceOrchestrator.onWillSwitch = { [weak self] workspace, screen in
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
-        self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3) }
+        self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
+        self.workspaceOrchestrator.onFloatersRevealed = { [weak self] windows in self?.markRevealedFloaters(windows) }
         self.workspaceOrchestrator.onDidSwitch = { [weak self] _, _ in
             self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()
@@ -328,10 +347,44 @@ class WindowManager {
         // mouseUp instead of being lost until the 10s reconcile.
         pollingScheduler.isSuppressed = { [weak self] in
             guard let self else { return false }
+            // hover clears a press whose mouse-up never came, but only on a
+            // move. typing with the pointer still kept every poll deferred
+            if self.stalePress.isStale(pressHeld: self.mouseButtonDown,
+                                       physicalDown: self.mouseTracker.isPhysicalButtonDown(),
+                                       now: CFAbsoluteTimeGetCurrent()) {
+                hyprLog(.notice, .mouse, "press state stuck with no button held — clearing so the deferred poll runs")
+                self.clearStalePress()
+            }
             return self.mouseButtonDown
                 || self.tiledDrag.isFinishingDrag
                 || self.suppressions.isSuppressed(.workspaceTransition)
         }
+        pollingScheduler.suppressionReason = { [weak self] in
+            guard let self else { return "stopped" }
+            if self.mouseButtonDown { return "mouse button down" }
+            if self.tiledDrag.isFinishingDrag { return "tiled drag finishing" }
+            let left = self.suppressions.remaining(.workspaceTransition).map { " (\(Int(($0 * 1000).rounded()))ms left)" } ?? ""
+            return "workspace transition" + left
+        }
+        // a transition's end is known, so a deferred poll runs right then
+        // rather than up to one 0.3 s step later
+        pollingScheduler.suppressionEndsIn = { [weak self] in
+            guard let self, !self.mouseButtonDown, !self.tiledDrag.isFinishingDrag else { return nil }
+            return self.suppressions.remaining(.workspaceTransition)
+        }
+        // a window opened right after a switch is tiled once the switch is
+        // done, not when its hold ends. existing windows still wait
+        pollingScheduler.admitsNewWindowsDuringHold = { [weak self] in
+            guard let self else { return false }
+            return SwitchHoldAdmission.allows(
+                heldOnlyBySwitch: self.suppressions.isHeldOnlyByWorkspaceSwitch(.workspaceTransition),
+                switchSettled: self.workspaceOrchestrator.isSwitchSettled,
+                mouseButtonDown: self.mouseButtonDown,
+                finishingDrag: self.tiledDrag.isFinishingDrag,
+                displayTransitionPending: self.displayTransitionPending,
+                sessionInterrupted: self.discovery.isSessionInterrupted)
+        }
+        pollingScheduler.onAdmitDuringHold = { [weak self] in self?.admitNewWindowsDuringHold() }
 
         hotkeyManager.onAction = { [weak self] action in
             guard let self else { return }
@@ -486,7 +539,7 @@ class WindowManager {
         tiledDrag.acceptTiledDragCapture = { [weak self] frames in self?.acceptTiledDragCapture(frames) }
         tiledDrag.isFullscreenSuppressed = { [weak self] w in self?.isFullscreenSuppressed(focused: w) ?? false }
         tiledDrag.refreshDimming = { [weak self] rects in self?.refreshDimming(tiledRectsOverride: rects) }
-        tiledDrag.schedulePoll = { [weak self] in self?.pollingScheduler.schedule() }
+        tiledDrag.schedulePoll = { [weak self] in self?.pollingScheduler.schedule(trigger: .drag) }
         focusBorder.onErrorFeedbackFinishedToken = { [weak self] token in
             self?.tiledDragFeedback.errorFinished(token: token)
         }
@@ -721,10 +774,14 @@ class WindowManager {
                 focusColor: trackedColor.cgColor,
                 floatingColor: floatingColor.cgColor)
         }
-        if changes.contains(.bracketAppearance) {
+        if changes.contains(.bracketAppearance) || changes.contains(.colors) {
+            let markedID = focusBrackets.trackedWindowID ?? 0
             focusBrackets.applyAppearance(
                 style: state.focusBracketStyle,
-                color: bracketColor.cgColor,
+                color: FocusMarkColor.resolve(
+                    focusedIsFloating: stateCache.floatingWindowIDs.contains(markedID),
+                    markColor: bracketColor.cgColor,
+                    floatingColor: floatingColor.cgColor),
                 radius: state.focusBracketRadius,
                 thickness: state.focusBracketThickness,
                 length: state.focusBracketLength)
@@ -745,6 +802,13 @@ class WindowManager {
         }
         if changes.contains(.visibility) {
             focusBorder.isEnabled = state.showFocusBorder
+        }
+        if changes.contains(.visibility) || changes.contains(.bracketAppearance) {
+            focusBorder.setFloaterMarks(
+                FloaterMarkStyle.resolve(showFocusBorder: state.showFocusBorder,
+                                         bracketStyle: state.focusBracketStyle))
+        }
+        if changes.contains(.visibility) {
             if state.showFocusBorder, isRunning {
                 let focusedID = focusBorder.trackedWindowID ?? focusController.lastFocusedID
                 if let focused = stateCache.cachedWindows[focusedID] {
@@ -752,7 +816,13 @@ class WindowManager {
                 } else {
                     refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
                 }
+            } else if isRunning {
+                // corners mode outlines the floaters without a focus border
+                refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
             }
+        } else if changes.contains(.bracketAppearance), isRunning {
+            // style on or off decides whether the floaters are outlined
+            refreshFloatingBorders(windows: Array(stateCache.cachedWindows.values))
         }
         if changes.contains(.dimming) || changes.contains(.windowCornerRadius) {
             if isRunning { refreshDimming() }
@@ -785,17 +855,29 @@ class WindowManager {
         axNotifications.onEvent = { [weak self] kind, pid in
             guard let self else { return }
             hyprLog(.debug, .discovery, "ax event: \(kind) pid=\(pid)")
+            self.discoveryFollowUp.noteEvent("\(kind)", pid: pid, now: CFAbsoluteTimeGetCurrent())
             switch kind {
             case .windowDestroyed:
                 self.destroyRecheck.noteDestroy(pid: pid)
-                self.pollingScheduler.schedule()
-            case .windowCreated, .windowMiniaturized, .windowDeminiaturized:
+                self.pollingScheduler.schedule(trigger: .destroy)
+            case .windowCreated, .windowDeminiaturized:
+                // trailing: a poll already pending can run ms after this,
+                // before AX lists the window. the watch re-polls if this one
+                // misses it too
+                self.discoveryFollowUp.watch(pid: pid, reason: "\(kind)", blindRetry: true,
+                                             now: CFAbsoluteTimeGetCurrent())
+                let outcome = self.pollingScheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+                hyprLog(.notice, .discovery, "ax \(kind) pid=\(pid): \(outcome.description)"
+                        + (self.pollHoldReason.map { ", polls held: \($0)" } ?? ""))
+            case .windowMiniaturized:
                 self.pollingScheduler.schedule(after: 0.2)
             case .focusedWindowChanged:
                 self.scheduleFocusPoll(pid: pid, via: "axFocus", after: 0.15)
                 self.scheduleRestackRefresh(after: 0.05)
             case .mainWindowChanged:
-                // a new main window usually came forward; nothing to discover
+                // a new main window usually came forward. it needs a poll
+                // only if the app has a window on screen no poll has seen
+                self.pollIfUnseenWindow(pid: pid, via: "axMain", after: 0.15)
                 self.scheduleRestackRefresh(after: 0.05)
             }
         }
@@ -807,6 +889,7 @@ class WindowManager {
         scratchpad.tiledRegionInset = config.scratchpadRegionInset
         scratchpad.tileNewMembers = config.scratchpadTileByDefault
         focusBorder.isEnabled = config.showFocusBorder
+        focusBorder.setFloaterMarks(floaterMarks)
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
         focusBorder.fadeDurationSec = config.chromeFadeDurationSec
         focusBrackets.primaryScreenHeight = displayManager.primaryScreenHeight
@@ -979,6 +1062,7 @@ class WindowManager {
         restoreAllWindows()
         axNotifications.detachAll()
         pollingScheduler.stop()
+        discoveryFollowUp = DiscoveryFollowUp()
         screenshotPicker.stop()
         stopMouseTracking()
         if !keepPauseShortcut { hotkeyManager.stop() }
@@ -1057,6 +1141,7 @@ class WindowManager {
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self else { return }
             self.mouseDragLifecycle.beginPress(hyprHeld: self.hyprHeld)
+            self.stalePress.reset()
             self.mouseDownFloatingWindowID = 0
             self.mouseDownFloatingFrame = nil
             // the event carries the exact click location. sampling
@@ -1072,7 +1157,7 @@ class WindowManager {
             // a press is what opens a menu, so the next hover must read a fresh list
             self.mouseTracker.invalidateWindowListCache()
             self.tiledDrag.handleMouseDown(at: downCG)
-            self.armDimDragIfFloating(downPointNS: downNS)
+            self.armFloaterDrag(downPointNS: downNS)
             // a menu open at the OS level eats clicks before we'd see them
             // here, so a global mouseDown reaching us is unambiguous proof
             // there is no menu currently tracking. clears the flag if a
@@ -1105,16 +1190,14 @@ class WindowManager {
                 self.scratchpad.handleMouseDown(atCG: cgPoint, synthetic: Self.isOwnSyntheticEvent(event))
             }
         }
-        // when the user drags a floating window, its frame changes 60Hz but our
-        // border only repositions on the discovery poll — so it lags behind ugly. hide
-        // the border for the duration of the drag and restore it on mouseUp.
+        // when the user drags a floating window, its frame changes 60Hz but the
+        // poll only reads it every so often. the dim carve and the floater
+        // outline follow the live drag rect instead; the focused border hides
+        // for the drag and comes back on mouseUp.
         mouseDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
             guard let self = self else { return }
             self.mouseDragLifecycle.observeDrag(hyprHeld: self.hyprHeld)
             self.tiledDrag.updateTiledDropPreview(event)
-            if self.mouseDownFloatingWindowID != 0 {
-                self.focusBorder.hideFloatingBorder(for: self.mouseDownFloatingWindowID)
-            }
             self.dimDrag.update(cursorCG: self.displayManager.flippedY(NSEvent.mouseLocation))
             guard self.preDragFocusedID == 0 else { return }
             guard let tid = self.focusBorder.trackedWindowID else { return }
@@ -1261,7 +1344,7 @@ class WindowManager {
     /// own), one with it off, plus an AX frame read per tile.
     private func scheduleRestackRefresh(after delay: TimeInterval) {
         guard isRunning, !restackRefreshPending,
-              config.dimInactiveWindows || config.showFocusBorder,
+              config.dimInactiveWindows || floaterMarks != .none,
               stateCache.floatingWindowIDs.contains(where: workspaceManager.isWindowVisible) else { return }
         restackRefreshPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -1348,7 +1431,7 @@ class WindowManager {
         if hyprHeld, let frame = window.frame {
             focusBrackets.applyAppearance(
                 style: config.focusBracketStyle,
-                color: config.resolvedFocusBracketColor.cgColor,
+                color: focusMarkColor(for: window.windowID),
                 radius: config.resolvedFocusBracketRadius,
                 thickness: config.resolvedFocusBracketThickness,
                 length: config.resolvedFocusBracketLength)
@@ -1371,7 +1454,8 @@ class WindowManager {
             refreshFloatingBorders()
         } else {
             focusBorder.hidePersistentBorder()
-            focusBorder.hideFloatingBorders()
+            // corners mode still marks the floaters; none hides them
+            refreshFloatingBorders()
         }
         refreshDimming(focusedID: window.windowID)
     }
@@ -1388,7 +1472,7 @@ class WindowManager {
         guard let frame = window.frame else { return }
         focusBrackets.applyAppearance(
             style: config.focusBracketStyle,
-            color: config.resolvedFocusBracketColor.cgColor,
+            color: focusMarkColor(for: fid),
             radius: config.resolvedFocusBracketRadius,
             thickness: config.resolvedFocusBracketThickness,
             length: config.resolvedFocusBracketLength)
@@ -1402,15 +1486,17 @@ class WindowManager {
     /// window. Runs at 0.05s and 0.25s to catch both fast and slow OS
     /// re-raise paths.
     private func reassertFocusBorderAfterHyprRelease() {
+        // cache-based: this fires on every Hypr release and previously ran
+        // up to three full-desktop enumerations (one here + two delayed
+        // reasserts). the border geometry comes from live frame reads of
+        // cached windows either way. corners mode re-masks its floater outlines
+        // here too; the focused-border reassert below needs borders.
+        guard isRunning, config.enabled, floaterMarks != .none else { return }
+        refreshFloatingBorders()
         guard Self.permitsHyprReleaseReassert(
             isRunning: isRunning,
             enabled: config.enabled,
             showFocusBorder: config.showFocusBorder) else { return }
-        // cache-based: this fires on every Hypr release and previously ran
-        // up to three full-desktop enumerations (one here + two delayed
-        // reasserts). the border geometry comes from live frame reads of
-        // cached windows either way.
-        refreshFloatingBorders()
 
         guard let tid = focusBorder.trackedWindowID,
               stateCache.floatingWindowIDs.contains(tid) else { return }
@@ -1906,9 +1992,8 @@ class WindowManager {
     }
 
     /// Accept the verified mouse-down frame batch. Also note the floating
-    /// window under the click (if any) — and its frame — so the
-    /// drag monitor knows to hide that floater's border for the drag
-    /// duration and the dim carve can anchor to a consistent pair.
+    /// window under the click (if any) — and its frame — so the dim carve
+    /// and the floater outline can follow the drag from a consistent pair.
     private func acceptTiledDragCapture(_ frames: [CGWindowID: CGRect]) {
         mouseDownFloatingWindowID = 0
         mouseDownFloatingFrame = nil
@@ -1948,18 +2033,20 @@ class WindowManager {
         }
     }
 
-    /// Arm the live dim-carve override if the press landed on a visible
-    /// ordinary floating window and dim is active (normal mode). Reuses the
+    /// Arm the live drag follow if the press landed on a visible ordinary
+    /// floating window and something follows it: the dim carve (normal dim
+    /// mode) or the floater outline (`FloaterDragFollow`). Reuses the
     /// hit AND the frame read by verified tiled-drag capture — no new AX
     /// queries. The anchor pair must be sampled consistently: the frame
     /// from the mouse-down enumeration with the event's click point. A
     /// fresh `w.frame` here still reports the pre-drag position (Tahoe AX
     /// reads lag) while a live cursor read is already mid-flick — that
     /// mismatch permanently offset the carve by the initial flick distance.
-    private func armDimDragIfFloating(downPointNS: NSPoint) {
+    private func armFloaterDrag(downPointNS: NSPoint) {
         dimDrag.disarm()
-        guard config.dimInactiveWindows, !scratchpad.isVisible,
-              mouseDownFloatingWindowID != 0 else { return }
+        floaterDragFollow = .resolve(dimInactive: config.dimInactiveWindows,
+                                     scratchpadVisible: scratchpad.isVisible, marks: floaterMarks)
+        guard floaterDragFollow.arms, mouseDownFloatingWindowID != 0 else { return }
         let id = mouseDownFloatingWindowID
         guard let w = stateCache.cachedWindows[id] else { return }
         guard let frame = mouseDownFloatingFrame ?? w.frame else { return }
@@ -2094,15 +2181,31 @@ class WindowManager {
         if focusBrackets.isVisible, let bid = focusBrackets.trackedWindowID,
            let w = stateCache.cachedWindows[bid], let frame = w.frame {
             focusBrackets.updatePosition(frame)
+            // a float toggle mid-press changes the mark color
+            focusBrackets.recolor(focusMarkColor(for: bid))
         }
         refreshDimming()
     }
 
+    /// What marks the visible floaters: outlines or nothing.
+    private var floaterMarks: FloaterMarkStyle {
+        .resolve(showFocusBorder: config.showFocusBorder, bracketStyle: config.focusBracketStyle)
+    }
+
+    /// The focus marks take the Floating color on a floating window.
+    private func focusMarkColor(for windowID: CGWindowID) -> CGColor {
+        FocusMarkColor.resolve(
+            focusedIsFloating: stateCache.floatingWindowIDs.contains(windowID),
+            markColor: config.resolvedFocusBracketColor.cgColor,
+            floatingColor: config.resolvedFloatingBorderColor.cgColor)
+    }
+
     /// Recompute floater frames and push them into the focus border. Each
     /// floater gets a persistent outline at the floating border color so
-    /// the user can spot a floater that ended up behind a tile.
+    /// the user can spot a floater that ended up behind a tile. It draws in
+    /// Corners mode too, with no focus border.
     private func refreshFloatingBorders(windows: [HyprWindow]? = nil) {
-        if config.showFocusBorder {
+        if floaterMarks != .none {
             let source = windows ?? Array(stateCache.cachedWindows.values)
             var frames = floatingFrames(from: source)
             // prime the radius cache for each visible floater so the
@@ -2124,6 +2227,17 @@ class WindowManager {
         }
     }
 
+    /// A floater the switch could not reveal came out of the hide corner
+    /// later. Outline it now instead of at the next refresh.
+    private func markRevealedFloaters(_ windows: [HyprWindow]) {
+        guard isRunning else { return }
+        for w in windows { stateCache.cachedWindows[w.windowID] = w }
+        let fid = focusBorder.trackedWindowID ?? focusController.lastFocusedID
+        guard !isFullscreenSuppressed(focused: stateCache.cachedWindows[fid]) else { return }
+        refreshFloatingBorders()
+        refreshDimming()
+    }
+
     /// Compute per-border occluder rects and push them into the focus
     /// border so each border layer is masked to its window's visible
     /// region.
@@ -2137,7 +2251,7 @@ class WindowManager {
     /// window. The border layer's mask cuts those occluders out so the
     /// border does not draw over windows that are visually on top of it.
     private func refreshBorderOcclusion(floaterFrames: [CGWindowID: CGRect]) {
-        guard config.showFocusBorder else { return }
+        guard floaterMarks != .none else { return }
         guard let info = CGWindowListCopyWindowInfo(
                 [.optionOnScreenOnly, .excludeDesktopElements],
                 kCGNullWindowID) as? [[String: Any]] else { return }
@@ -2165,12 +2279,16 @@ class WindowManager {
         }
 
         var floaterOccluders: [CGWindowID: [CGRect]] = [:]
+        // the floater's glow reaches past its frame, so a window in front
+        // that only touches the glow hides it too
+        let glowReach = FocusBorder.floaterPanelExpansion
         for (fid, frect) in floaterFrames {
             guard let fz = zIndex[fid] else { continue }
+            let panelRect = frect.insetBy(dx: -glowReach, dy: -glowReach)
             var list: [CGRect] = []
             for (id, rect) in trackedRects where id != fid {
                 guard let z = zIndex[id], z < fz else { continue }
-                if rect.intersects(frect) { list.append(rect) }
+                if rect.intersects(panelRect) { list.append(rect) }
             }
             if !list.isEmpty { floaterOccluders[fid] = list }
         }
@@ -2290,11 +2408,12 @@ class WindowManager {
         // a hypothetical direct call landing mid-drag.
         guard !mouseButtonDown else { return }
 
+        let fire = pollingScheduler.currentFire
         let allWindows = accessibility.getAllWindows()
         let now = Date()
         let gap = lastPollAt.map { "\(Int(now.timeIntervalSince($0) * 1000))ms since last" } ?? "first poll"
         lastPollAt = now
-        hyprLog(.debug, .discovery, "poll: \(allWindows.count) windows, \(gap)")
+        hyprLog(.debug, .discovery, "poll: \(allWindows.count) windows, \(gap), trigger \(fire?.summary ?? "direct")")
         // add window-level AX subscriptions (destroy / miniaturize) for any
         // new windows in this snapshot — deduped by CGWindowID inside.
         axNotifications.ensureWindowSubscriptions(for: allWindows)
@@ -2318,8 +2437,9 @@ class WindowManager {
         // window, or finds it back, is asked for then, not at the next
         // ten-second reconcile
         if let wait = discovery.secondsUntilAHoldEnds {
-            pollingScheduler.schedule(after: wait + 0.05)
+            pollingScheduler.schedule(after: wait + 0.05, trigger: .hold)
         }
+        if let wait = discovery.secondsUntilARetryIsDue { pollingScheduler.schedule(after: wait, trigger: .axRetry) }
         // read before the apply: its focus fallback can front another app
         let returnTarget = userHiddenReturnTarget(changes)
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
@@ -2353,11 +2473,117 @@ class WindowManager {
             // a real mass close is delayed by this, a partial snapshot gets
             // the time it needs to fill in. at 0.1 s the three skips the
             // guard allows were over in a third of a second
-            pollingScheduler.schedule(after: 0.5)
+            pollingScheduler.schedule(after: 0.5, trigger: .recheck)
         } else if destroyRecheck.resolve(goneIDs: changes.goneIDs, ownersBefore: ownersBefore,
                                          runningPIDs: runningPIDs) {
             hyprLog(.debug, .discovery, "destroy recheck: closed window not yet gone from the snapshot — re-polling")
-            pollingScheduler.schedule(after: DestroyRecheck.delay)
+            pollingScheduler.schedule(after: DestroyRecheck.delay, trigger: .recheck)
+        }
+        settleDiscoveryFollowUps(changes, allWindows: allWindows, fire: fire)
+    }
+
+    /// The admit-only pass a finished workspace switch's hold allows
+    /// (`SwitchHoldAdmission`). Walks the windows and admits only the ones
+    /// discovery has never known, through the ordinary assignment and
+    /// verified tile pass. Everything else this walk shows (gone, hidden,
+    /// returned, drift) is left to the full poll the hold still defers.
+    private func admitNewWindowsDuringHold() {
+        guard !mouseButtonDown else { return }
+        let fire = pollingScheduler.currentFire
+        let allWindows = accessibility.getAllWindows()
+        // the retile lays out every visible workspace from this walk
+        var members: Set<CGWindowID> = []
+        for screen in displayManager.screens where !workspaceManager.isMonitorDisabled(screen) {
+            members.formUnion(workspaceManager.windowIDs(onWorkspace: workspaceManager.workspaceForScreen(screen)))
+        }
+        members.subtract(stateCache.floatingWindowIDs)
+        members.subtract(stateCache.hiddenWindowIDs)
+        let missing = SwitchHoldAdmission.missingTiledMembers(
+            members, listed: Set(allWindows.map(\.windowID)), held: tilingEngine.heldWindowIDsSource())
+        guard missing.isEmpty else {
+            hyprLog(.notice, .discovery, "admit-only pass skipped: tiled \(missing.sorted()) missing from the walk"
+                    + " — left to the poll after the workspace transition")
+            return
+        }
+        let changes = discovery.computeAdmissions(
+            snapshot: allWindows,
+            excludedBundleIDs: Set(config.excludedBundleIDs),
+            unreadableWindowIDs: accessibility.unreadableWindowIDs)
+        if !changes.newWindows.isEmpty {
+            let left = suppressions.remaining(.workspaceTransition).map { Int(($0 * 1000).rounded()) } ?? 0
+            axNotifications.ensureWindowSubscriptions(for: changes.newWindows)
+            tilingEngine.primeMinimumSizes(changes.newWindows)
+            hyprLog(.notice, .discovery, "admitted \(changes.newWindows.map(\.windowID).sorted()) during workspace"
+                    + " transition (\(left)ms left on the hold), \(fire?.summary ?? "direct")")
+            actionDispatcher.applyAdmissions(changes, allWindows: allWindows)
+        }
+        settleDiscoveryFollowUps(changes, allWindows: allWindows, fire: fire)
+    }
+
+    /// After a poll: say how a reconcile tick came to be the one that found
+    /// a window, and re-poll an app whose announced window this poll missed.
+    private func settleDiscoveryFollowUps(_ changes: WindowChanges, allWindows: [HyprWindow],
+                                          fire: PollingScheduler.Fire?) {
+        let now = CFAbsoluteTimeGetCurrent()
+        let stack = WindowStacking.onScreen() ?? []
+        let unknown = DiscoveryFollowUp.unknownOnScreen(
+            stack, known: stateCache.knownWindowIDs, hidden: stateCache.hiddenWindowIDs, ownPID: getpid())
+        var admitted: [pid_t: [CGWindowID]] = [:]
+        for w in changes.newWindows + changes.returned { admitted[w.ownerPID, default: []].append(w.windowID) }
+        let trigger = "(" + (fire?.summary ?? "direct") + ")"
+
+        // discovery's own look found a window no watch was waiting on. a
+        // watched app's admission gets the watch's line below instead
+        if fire?.triggers.contains(.axRetry) == true {
+            for (pid, ids) in admitted.sorted(by: { $0.key < $1.key }) where discoveryFollowUp.watches[pid] == nil {
+                hyprLog(.notice, .discovery, "ax retry pid=\(pid): admitted \(ids.sorted()), poll \(trigger)")
+            }
+        }
+
+        // the event path should have found these. the line says whether an
+        // event came and how long the window sat there
+        if fire?.isReconcileOnly == true {
+            var found: [pid_t: [CGWindowID]] = [:]
+            for w in changes.newWindows { found[w.ownerPID, default: []].append(w.windowID) }
+            for (pid, ids) in found.sorted(by: { $0.key < $1.key }) {
+                let seen = ids.compactMap { discoveryFollowUp.onScreenMS($0, now: now) }.max()
+                let event = discoveryFollowUp.lastEvent[pid].map {
+                    "last ax event from it: \($0.kind) \(Int(((now - $0.at) * 1000).rounded()))ms ago"
+                } ?? "no ax event from it since launch"
+                let create = discoveryFollowUp.lastCreate[pid].map {
+                    "last windowCreated \(Int(((now - $0) * 1000).rounded()))ms ago"
+                } ?? "no windowCreated"
+                hyprLog(.notice, .discovery, "reconcile poll found new window(s) \(ids.sorted()) of pid=\(pid): "
+                        + (seen.map { "on screen at least \($0)ms" } ?? "no earlier poll or focus check saw it on screen")
+                        + "; \(event); \(create)")
+            }
+        }
+
+        func walk(_ pid: pid_t) -> String {
+            let cg = stack.filter { $0.ownerPID == pid && $0.layer == 0 }
+            let unreadable = cg.filter { accessibility.unreadableWindowIDs.contains($0.windowID) }.count
+            return "AX \(allWindows.filter { $0.ownerPID == pid }.count), CG \(cg.count), "
+                + "unknown on screen \((unknown[pid] ?? []).sorted()), unreadable \(unreadable)"
+        }
+        for outcome in discoveryFollowUp.afterPoll(admitted: admitted, unknown: unknown, now: now) {
+            switch outcome {
+            case let .admitted(pid, ids, afterMS, retries, reason):
+                hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): admitted \(ids) "
+                        + "\(afterMS)ms after the event, retries \(retries), poll \(trigger)")
+            case let .retry(pid, delay, attempt, _, reason):
+                hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): poll \(trigger) admitted nothing — "
+                        + "\(walk(pid)); retry \(attempt)/\(DiscoveryFollowUp.backoff.count) in \(Int(delay * 1000))ms")
+                pollingScheduler.schedule(after: delay, trigger: .followUp)
+            case let .gaveUp(pid, retries, left, afterMS, reason):
+                // the walk's own quick looks can outlast the watch
+                let looking = left.filter(discovery.windowsAwaitingALook.contains)
+                hyprLog(.notice, .discovery, "new-window watch pid=\(pid) (\(reason)): nothing admitted after "
+                        + "\(retries) retries, \(afterMS)ms — \(walk(pid)); "
+                        + (looking.isEmpty ? "left to the reconcile" : "ax retry still due for \(looking)"))
+            case let .settled(pid, retries, reason):
+                hyprLog(.debug, .discovery, "new-window watch pid=\(pid) (\(reason)): nothing unknown on screen "
+                        + "after \(retries) retries — done")
+            }
         }
     }
 
@@ -2372,10 +2598,38 @@ class WindowManager {
             hidden: stateCache.hiddenWindowIDs,
             onVisibleWorkspace: { workspaceManager.workspaceFor($0).map(workspaceManager.isWorkspaceVisible) ?? false })
         if needed {
-            pollingScheduler.schedule(after: delay)
-        } else {
+            pollingScheduler.schedule(after: delay, trigger: .focus)
+        } else if !pollIfUnseenWindow(pid: pid, via: via, after: delay) {
             hyprLog(.debug, .discovery, "focus poll skipped: wid=\(focused ?? 0) via=\(via)")
         }
+    }
+
+    /// Poll when `pid` has a window on screen that discovery does not know
+    /// and no poll has walked past yet. An app that sends no create still
+    /// sends focus and main-window changes when a window opens, and the
+    /// focused one can be a window discovery already knows. One window list
+    /// read per event; the walk only when such a window is there.
+    @discardableResult
+    private func pollIfUnseenWindow(pid: pid_t, via: String, after delay: TimeInterval) -> Bool {
+        guard let stack = WindowStacking.onScreen() else { return false }
+        let now = CFAbsoluteTimeGetCurrent()
+        let unknown = DiscoveryFollowUp.unknownOnScreen(
+            stack.filter { $0.ownerPID == pid }, known: stateCache.knownWindowIDs,
+            hidden: stateCache.hiddenWindowIDs, ownPID: getpid())[pid] ?? []
+        let unseen = discoveryFollowUp.unpolled(unknown, now: now)
+        guard !unseen.isEmpty else { return false }
+        discoveryFollowUp.watch(pid: pid, reason: via, blindRetry: false, now: now)
+        let outcome = pollingScheduler.schedule(after: delay, trigger: .newWindow, trailing: true)
+        hyprLog(.notice, .discovery, "ax \(via) pid=\(pid): window(s) \(unseen.sorted()) on screen that no poll has seen — "
+                + outcome.description + (pollHoldReason.map { ", polls held: \($0)" } ?? ""))
+        return true
+    }
+
+    /// What holds polls off right now, nil when nothing does.
+    private var pollHoldReason: String? {
+        guard mouseButtonDown || tiledDrag.isFinishingDrag
+                || suppressions.isSuppressed(.workspaceTransition) else { return nil }
+        return pollingScheduler.suppressionReason()
     }
 
     /// Same-screen drift: hand this poll's tiled frames to the monitor and
@@ -2532,7 +2786,7 @@ class WindowManager {
         if causedByHyprMac, let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
             scheduleFocusPoll(pid: app.processIdentifier, via: "activation", after: 0.2)
         } else {
-            pollingScheduler.schedule()
+            pollingScheduler.schedule(trigger: .activation)
         }
         // activation brings windows forward; floater cutouts follow the new stack
         scheduleRestackRefresh(after: 0.1)
@@ -2675,7 +2929,7 @@ class WindowManager {
             // idempotent and retries once if the app isn't AX-ready yet.
             axNotifications.attach(pid: app.processIdentifier)
         }
-        pollingScheduler.schedule(after: 0.5)
+        pollingScheduler.schedule(after: 0.5, trigger: .launch)
     }
 
     /// React to an app terminating. Prunes every window owned by the dead
@@ -2686,14 +2940,15 @@ class WindowManager {
         if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
             axNotifications.detach(pid: app.processIdentifier)
             forgetApp(app.processIdentifier)
+            discoveryFollowUp.forget(pid: app.processIdentifier)
         }
-        pollingScheduler.schedule()
+        pollingScheduler.schedule(trigger: .terminate)
     }
 
     /// React to an app being hidden or unhidden (Cmd-H, Hide Others, etc.).
     /// Short delay lets AX settle before discovery picks up the change.
     @objc private func appVisibilityChanged(_ notification: Notification) {
-        pollingScheduler.schedule(after: 0.3)
+        pollingScheduler.schedule(after: 0.3, trigger: .visibility)
     }
 
     /// React to a screen configuration change (monitor connect/disconnect,

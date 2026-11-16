@@ -37,6 +37,25 @@ Window shape and key-press marks have separate controls. **Window corner radius*
 
 Explicit saved dimming, border, color, radius, and fade preferences remain authoritative. Missing fields, fresh configurations, and Reset to Defaults use the new baseline. Error feedback still shows a red overlay shake and message after rejection even when persistent borders or corner cues are off. It does not shake application windows.
 
+### Floater marks
+
+Every visible floating window carries a solid outline in the **Floating window color** (brand magenta by default, light and dark aware), so a floater sitting flush in a tile slot does not pass for tiled. The outline is the same in every mode: 1.5 points, with the same panels, occlusion masking, scratchpad filter, fullscreen hiding and fade out.
+
+The outline stays on while the floater is dragged. It follows the same live rect as the dim's bright carve (`FloatingDimDragTracker`), so it moves with the window and does not wait for a poll. A content drag inside the window moves nothing. The dragged floater is in front of everything, so its occlusion mask is dropped for the drag. A refresh during the drag keeps the live rect, and the refresh after the drop puts the outline on the settled frame and masks it again.
+
+A new outline has no fade in. A window that just floated (Hypr+T, an auto-float, a new floater) or came back with a workspace is marked the moment the refresh that sees it runs. A floater whose app was too busy to answer the switch is outlined as soon as the reveal retry or the reveal repair restores it. A brand-new window still waits for the discovery poll that admits it, about 0.2 seconds after its create event.
+
+The outline has a faint glow in the same color: a layer shadow with no offset, a 3-point radius and 0.45 opacity (`Tuning.floatingGlowRadius` and `Tuning.floatingGlowOpacity` in `FocusBorder.swift`). The shadow uses an explicit path, the stroke's own ring, so it never reads layer contents. The floater panel reaches 9 points (three times the radius) past the outline so the blur is not clipped. The outline itself stays centered on the window edge. `FloaterOutlineGeometry` holds that math. The glow takes the Floating color live, follows a drag, fades out with the outline and goes with it. A window in front that only touches the glow still masks it. At a screen edge the glow is simply cut off; nothing moves.
+
+| Focus indicator | Floater mark | Focus marks on a floating window |
+| --- | --- | --- |
+| Corners | Outline | Floating color |
+| Window borders | Outline | n/a |
+| Both | Outline | Floating color |
+| None | Nothing | n/a |
+
+In Corners mode the outline draws even though the focused-window border stays off. The window-border toggle only controls the focused-window border. Focus marks on a floater keep their configured length, thickness and contrast stroke; only the color changes. The Floating window color row shows in Corners mode too, inside the corner group. There is no separate toggle. Changing the indicator or color repaints the outlines without retiling, moving windows or changing focus.
+
 ### Corner compatibility
 
 The optional `focusBracketStyle`, `focusBracketColorHex`, and `focusBracketRadius` fields extend the existing configuration without renaming its keys. For an older file with no style field, an explicit focus-border color becomes the initial bracket color. Once the new style field is saved, an absent bracket color means the black default and never reimports the old border color. Thus the laptop's saved black cue is preserved until changed deliberately. Old builds can ignore the new fields, but may discard them if they rewrite the shared file; cross-version iCloud writes cannot preserve preferences unknown to the old writer.
@@ -84,7 +103,7 @@ Gap/padding, split limits, monitor enablement, and scratchpad region size still 
 
 ## Control groups
 
-Mark roundness, length, thickness, and corner color form one group without internal dividers. With window borders enabled, tiled color, floating color, and fade duration form one group. Fade remains available for dimming even when window borders are disabled. Fresh installs select Corners with persistent window borders off. Explicit saved choices remain intact.
+Mark roundness, length, thickness, corner color and, in Corners mode, floating color form one group without internal dividers. With window borders enabled, tiled color and floating color form one group instead. Fade remains available for dimming even when window borders are disabled. Fresh installs select Corners with persistent window borders off. Explicit saved choices remain intact.
 
 ## Launch at login setup
 

@@ -182,8 +182,10 @@ struct TiledDragTransaction {
             return generation
         }
         let ids = windows.map(\.windowID)
-        let captured = FrameSizingAttempt(io: io).captureFrames(windowIDs: ids,
-                                                                generation: generation)
+        // reads every window one after another, so its deadline grows per window
+        let captured = FrameSizingAttempt(io: io, configuration: FrameReadbackPoller.captureConfiguration(
+            FrameSizingConfiguration(), for: ids.count))
+            .captureFrames(windowIDs: ids, generation: generation)
         guard case .accepted = captured.verdict,
               captured.actualFrames.count == ids.count else {
             return .unknown(captured.verdict.failure ?? .windowUnavailable(ids.first ?? 0))
@@ -246,8 +248,10 @@ struct TiledDragTransaction {
             }
             return generation
         }
-        let captured = FrameSizingAttempt(io: io).captureFrames(windowIDs: ids,
-                                                                generation: generation)
+        // reads every window one after another, so its deadline grows per window
+        let captured = FrameSizingAttempt(io: io, configuration: FrameReadbackPoller.captureConfiguration(
+            FrameSizingConfiguration(), for: ids.count))
+            .captureFrames(windowIDs: ids, generation: generation)
         guard case .accepted = captured.verdict,
               captured.actualFrames.count == ids.count else {
             let failure: FrameSizingFailure
@@ -291,6 +295,11 @@ struct TiledDragTransaction {
             return restore(snapshot, reason: .preflight(rejection), attempt: attempt)
         }
         let layouts = adjustedLayouts(candidate, context: snapshot.context)
+        if case let (window, slot)? = crowded(layouts) {
+            hyprLog(.notice, .tiling, "tiled drag: no room for \(window.windowID) "
+                    + "min=\(minimumSize(window)) slot=\(slot.size)")
+            return restore(snapshot, reason: .preflight(.noRoom), attempt: attempt)
+        }
         guard valid(layouts, context: snapshot.context, attempt: attempt) else {
             return restore(snapshot, reason: .preflight(.invalidTarget), attempt: attempt)
         }
@@ -441,7 +450,10 @@ struct TiledDragTransaction {
             return restore(snapshot, reason: .preflight(.invalidTarget), attempt: attempt)
         }
 
-        let captured = sizing(attempt).capture(windowIDs: targetIDs, generation: snapshot.generation)
+        // the read gets a deadline grown per window, within this drop's cap
+        let captureAttempt = FrameSizingAttempt(io: io, configuration: FrameReadbackPoller.captureConfiguration(
+            configuration, for: targetIDs.count))
+        let captured = sizing(captureAttempt).capture(windowIDs: targetIDs, generation: snapshot.generation)
         guard case .accepted = captured.verdict, captured.actualFrames.count == targetIDs.count else {
             let failure = captured.verdict.failure
                 ?? .windowUnavailable(targetIDs.first ?? snapshot.draggedID)
@@ -627,7 +639,8 @@ struct TiledDragTransaction {
                 return nil
             }
             layouts = adjustedLayouts(candidate, context: snapshot.context)
-            guard valid(layouts, context: snapshot.context, attempt: attempt) else { return nil }
+            guard crowded(layouts) == nil,
+                  valid(layouts, context: snapshot.context, attempt: attempt) else { return nil }
         case let .otherMonitor(hit):
             guard let target,
                   case let .success(built) = crossCandidates(snapshot, into: target, hit: hit,
@@ -722,12 +735,8 @@ struct TiledDragTransaction {
                               attempt: FrameSizingAttempt) -> CrossLayouts {
         let sourceLayouts = adjustedLayouts(built.source, context: snapshot.context)
         let targetLayouts = adjustedLayouts(built.target, context: target.context)
-        if let crowded = (sourceLayouts + targetLayouts).first(where: { window, frame in
-            let minimum = minimumSize(window)
-            return minimum.width > frame.width + TilingConfig.frameToleranceXPx
-                || minimum.height > frame.height + TilingConfig.frameToleranceXPx
-        }) {
-            return .noRoom(crowded.0, crowded.1)
+        if case let (window, slot)? = crowded(sourceLayouts + targetLayouts) {
+            return .noRoom(window, slot)
         }
         guard valid(sourceLayouts, memberIDs: Set(built.source.allWindows.map(\.windowID)),
                     usableFrame: snapshot.context.usableFrame, gap: snapshot.context.gap,
@@ -822,6 +831,17 @@ struct TiledDragTransaction {
                                   padding: context.padding)
         }
         return layouts
+    }
+
+    /// The first window whose known minimum still overflows its slot after
+    /// ratio adjustment by more than a readback may overshoot. A drop that
+    /// has one is refused before any write, on either path.
+    private func crowded(_ layouts: [(HyprWindow, CGRect)]) -> (HyprWindow, CGRect)? {
+        layouts.first { window, frame in
+            let minimum = minimumSize(window)
+            return minimum.width > frame.width + TilingConfig.frameToleranceXPx
+                || minimum.height > frame.height + TilingConfig.frameToleranceXPx
+        }
     }
 
     private func valid(_ layouts: [(HyprWindow, CGRect)], context: TiledDragContext,

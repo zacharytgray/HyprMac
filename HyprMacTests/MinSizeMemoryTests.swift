@@ -379,4 +379,89 @@ final class MinSizeMemoryTests: XCTestCase {
         // bound the app imposed
         XCTAssertEqual(memory.entry(for: 102)?.provenance, .appHint)
     }
+
+    // MARK: - a hint's other axis
+
+    private func diaWindow(_ id: CGWindowID) -> HyprWindow {
+        let window = makeWindow(id: id)
+        window.bundleID = "company.thebrowser.dia"
+        return window
+    }
+
+    private func diaHint(_ memory: MinSizeMemory, from id: CGWindowID) {
+        memory.recordObserved(diaWindow(id), target: CGSize(width: 368, height: 413.5),
+                              actual: CGSize(width: 500, height: 446),
+                              widthConflict: true, heightConflict: true,
+                              phase: .candidate)
+    }
+
+    func testARefusalKeepsTheHintedAxisItSaidNothingAbout() {
+        // Dia's hint said 500x446. its next window refused the height in a
+        // full-width slot, which says nothing about the width
+        let memory = MinSizeMemory()
+        diaHint(memory, from: 140)
+        let second = diaWindow(141)
+        memory.prime([second])
+
+        memory.recordObserved(second, target: CGSize(width: 744, height: 413.5),
+                              actual: CGSize(width: 744, height: 446),
+                              widthConflict: false, heightConflict: true,
+                              phase: .candidate)
+
+        XCTAssertEqual(memory.entry(for: 141),
+                       MinSizeMemory.Entry(size: CGSize(width: 500, height: 446), provenance: .observed))
+    }
+
+    func testAHintedAxisTheWindowTookLessOnIsDropped() {
+        let memory = MinSizeMemory()
+        diaHint(memory, from: 142)
+        let second = diaWindow(143)
+        memory.prime([second])
+
+        memory.recordObserved(second, target: CGSize(width: 368, height: 413.5),
+                              actual: CGSize(width: 368, height: 446),
+                              widthConflict: false, heightConflict: true,
+                              phase: .candidate)
+
+        XCTAssertEqual(memory.minimumSize(for: second), CGSize(width: 0, height: 446))
+    }
+
+    func testACarriedHintAxisDoesNotRaiseTheAppsHint() {
+        let memory = MinSizeMemory()
+        diaHint(memory, from: 144)
+        let carrier = diaWindow(145)
+        memory.prime([carrier])
+        // another window of the app takes 300 wide, so the app's hint comes down
+        let narrow = diaWindow(146)
+        memory.prime([narrow])
+        memory.lowerIfAccepted(narrow, actual: CGSize(width: 300, height: 446))
+
+        memory.recordObserved(carrier, target: CGSize(width: 744, height: 413.5),
+                              actual: CGSize(width: 744, height: 446),
+                              widthConflict: false, heightConflict: true,
+                              phase: .candidate)
+
+        let next = diaWindow(147)
+        memory.prime([next])
+        XCTAssertEqual(memory.minimumSize(for: next), CGSize(width: 300, height: 446),
+                       "the 500 the carrier still holds is the old hint, not its own refusal")
+    }
+
+    func testTheWindowsOwnRefusalReplacesTheAxisItCarried() {
+        let memory = MinSizeMemory()
+        diaHint(memory, from: 148)
+        let second = diaWindow(149)
+        memory.prime([second])
+        memory.recordObserved(second, target: CGSize(width: 744, height: 413.5),
+                              actual: CGSize(width: 744, height: 446),
+                              widthConflict: false, heightConflict: true,
+                              phase: .candidate)
+
+        memory.recordObserved(second, target: CGSize(width: 368, height: 835),
+                              actual: CGSize(width: 480, height: 835),
+                              widthConflict: true, heightConflict: false,
+                              phase: .candidate)
+
+        XCTAssertEqual(memory.minimumSize(for: second), CGSize(width: 480, height: 446))
+    }
 }

@@ -12,24 +12,44 @@ import Cocoa
 /// destroy notification only fires for the first close. so a window that was
 /// away gets added again. adding one that is still registered is a no-op.
 struct WindowSubscriptionLedger {
+    /// failed adds in a row before a window is recorded as it stands. a
+    /// window that refuses a notification for good would otherwise cost
+    /// three AX calls on every poll
+    static let maxFailedAdds = 5
+
     private(set) var subscribed: Set<CGWindowID> = []
     private var presentLastPass: Set<CGWindowID> = []
+    private var failedAdds: [CGWindowID: Int] = [:]
 
     func needsAdd(_ id: CGWindowID) -> Bool {
         !subscribed.contains(id) || !presentLastPass.contains(id)
     }
 
-    /// a failed add stays unrecorded, so the next poll tries it again
-    mutating func noteAdd(_ id: CGWindowID, tookHold: Bool) {
+    /// a failed add stays unrecorded, so the next poll tries it again, up
+    /// to `maxFailedAdds` times in a row.
+    /// - Returns: true when this failure was the last try
+    @discardableResult
+    mutating func noteAdd(_ id: CGWindowID, tookHold: Bool) -> Bool {
         if tookHold {
             subscribed.insert(id)
-        } else {
-            subscribed.remove(id)
+            failedAdds[id] = nil
+            return false
         }
+        let failures = (failedAdds[id] ?? 0) + 1
+        if failures >= Self.maxFailedAdds {
+            failedAdds[id] = nil
+            subscribed.insert(id)
+            return true
+        }
+        failedAdds[id] = failures
+        subscribed.remove(id)
+        return false
     }
 
     mutating func finishPass(present: Set<CGWindowID>) {
         presentLastPass = present
+        // a window that left gets a fresh budget when it comes back
+        failedAdds = failedAdds.filter { present.contains($0.key) }
     }
 
     /// the event doesn't say which window. the app can reopen it before the
@@ -37,6 +57,33 @@ struct WindowSubscriptionLedger {
     mutating func noteDestroyEvent() {
         presentLastPass.removeAll()
     }
+}
+
+/// The app-level notifications one app has not taken yet, and the tries
+/// each has had. An app still launching can refuse some and take others,
+/// and each is asked again on its own until it takes or runs out of tries.
+struct AppSubscriptionRetry {
+    static let maxAttempts = 5
+
+    private(set) var attempts: [String: Int] = [:]
+
+    /// Record one try. - Returns: true when this failure was the last try.
+    @discardableResult
+    mutating func note(_ name: String, tookHold: Bool) -> Bool {
+        guard !tookHold else {
+            attempts[name] = nil
+            return false
+        }
+        let tries = (attempts[name] ?? 0) + 1
+        attempts[name] = tries
+        return tries == Self.maxAttempts
+    }
+
+    /// the names still owed a try, in a stable order
+    var due: [String] { attempts.filter { $0.value < Self.maxAttempts }.keys.sorted() }
+
+    /// names that ran out of tries
+    var gaveUp: [String] { attempts.filter { $0.value >= Self.maxAttempts }.keys.sorted() }
 }
 
 /// Owns one `AXObserver` per regular running app and routes their AX
@@ -79,8 +126,30 @@ final class AXNotificationService {
     /// hold. A failed add must not be recorded — the window would never
     /// report its close.
     static func subscriptionRecorded(destroyed error: AXError) -> Bool {
+        registered(error)
+    }
+
+    /// `true` when an add took hold, now or earlier.
+    static func registered(_ error: AXError) -> Bool {
         error == .success || error == .notificationAlreadyRegistered
     }
+
+    /// A window is done once all three window-level adds took hold. A
+    /// failed minimize or deminiaturize add is retried like a failed
+    /// destroy add: without it a minimize, or the restore that brings the
+    /// window back, waits for a focus event or the reconcile.
+    static func windowSubscriptionsRecorded(destroyed: AXError, miniaturized: AXError,
+                                            deminiaturized: AXError) -> Bool {
+        registered(destroyed) && registered(miniaturized) && registered(deminiaturized)
+    }
+
+    /// The app-level notifications, each added on its own and retried on its own.
+    static let appNotifications: [String] = [
+        kAXWindowCreatedNotification as String,
+        kAXFocusedWindowChangedNotification as String,
+        // a window coming forward can bury a floater; only the stacking visuals use this
+        kAXMainWindowChangedNotification as String,
+    ]
 
     /// The AX notifications we translate and forward. Each maps to one or
     /// more `kAX…Notification` strings on the app or window element.
@@ -105,6 +174,7 @@ final class AXNotificationService {
         let observer: AXObserver
         let appElement: AXUIElement
         var ledger = WindowSubscriptionLedger()
+        var appRetry = AppSubscriptionRetry()
         // retain the window elements we subscribed to — HyprWindow may be
         // released between passes, but the observer needs a live element.
         var windowElements: [CGWindowID: AXUIElement] = [:]
@@ -116,9 +186,10 @@ final class AXNotificationService {
     }
 
     private var entries: [pid_t: Entry] = [:]
-    // pids whose first attach failed and are waiting on their single retry.
-    // guards attach() against re-entry while the retry is pending.
-    private var retrying: Set<pid_t> = []
+    // pids whose observer could not be created yet, with the tries so far.
+    // guards attach() against re-entry while a retry is pending; later
+    // polls try again, up to AppSubscriptionRetry.maxAttempts.
+    private var retrying: [pid_t: Int] = [:]
 
     // callbacks reach us through an unretained refcon — every run loop
     // source must be gone before this object is. WindowManager holds the
@@ -148,7 +219,7 @@ final class AXNotificationService {
     func attach(pid: pid_t) {
         mainThreadOnly()
         guard pid != selfPID else { return }
-        guard entries[pid] == nil, !retrying.contains(pid) else { return }
+        guard entries[pid] == nil, retrying[pid] == nil else { return }
         attemptAttach(pid: pid)
     }
 
@@ -156,7 +227,7 @@ final class AXNotificationService {
     /// ARC releases the observer and retained elements.
     func detach(pid: pid_t) {
         mainThreadOnly()
-        retrying.remove(pid)
+        retrying[pid] = nil
         guard let entry = entries.removeValue(forKey: pid) else { return }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(entry.observer), .commonModes)
         hyprLog(.debug, .discovery, "AX observer detached pid=\(pid)")
@@ -174,15 +245,23 @@ final class AXNotificationService {
     /// haven't subscribed yet. Called after each discovery pass with the
     /// fresh snapshot.
     ///
-    /// Deduped by `CGWindowID`, but only once the destroy subscription
-    /// took hold — a window recorded after a failed add would never report
-    /// its close, so a failure is left unrecorded and retried next poll.
+    /// Deduped by `CGWindowID`, but only once the destroy, miniaturize and
+    /// deminiaturize subscriptions all took hold — a window recorded after a
+    /// failed add would never report its close or its minimize, so a
+    /// failure is left unrecorded and retried on the next polls, up to
+    /// `WindowSubscriptionLedger.maxFailedAdds` in a row. Each poll also
+    /// retries app-level adds an app refused and observers that could not
+    /// be created, up to `AppSubscriptionRetry.maxAttempts`.
     /// A window that left the snapshot is added again when it returns, since
     /// its id may be back on a new AX element. Nothing is removed — a
     /// minimized window leaves the snapshot but must keep its deminiaturize
     /// subscription. `detach` prunes a pid's bookkeeping wholesale on quit.
     func ensureWindowSubscriptions(for snapshot: [HyprWindow]) {
         mainThreadOnly()
+        // a poll is the next chance for an app-level add or an observer
+        // that failed before
+        retryAttaches()
+        retryAppSubscriptions()
         let refcon = Unmanaged.passUnretained(self).toOpaque()
         for window in snapshot {
             guard let entry = entries[window.ownerPID] else { continue }
@@ -191,21 +270,29 @@ final class AXNotificationService {
 
             let element = window.element
             let destroyedErr = AXObserverAddNotification(entry.observer, element, kAXUIElementDestroyedNotification as CFString, refcon)
-            AXObserverAddNotification(entry.observer, element, kAXWindowMiniaturizedNotification as CFString, refcon)
-            AXObserverAddNotification(entry.observer, element, kAXWindowDeminiaturizedNotification as CFString, refcon)
+            let miniErr = AXObserverAddNotification(entry.observer, element, kAXWindowMiniaturizedNotification as CFString, refcon)
+            let deminiErr = AXObserverAddNotification(entry.observer, element, kAXWindowDeminiaturizedNotification as CFString, refcon)
 
             // retain the element either way — the miniaturize adds above may
-            // have taken hold and need it alive; only a landed destroy add
+            // have taken hold and need it alive; only all three landing
             // marks the window done. already-registered means the retained
             // element is the one the observer holds, so it stays.
             if destroyedErr != .notificationAlreadyRegistered || entry.windowElements[wid] == nil {
                 entry.windowElements[wid] = element
             }
-            let tookHold = Self.subscriptionRecorded(destroyed: destroyedErr)
-            entry.ledger.noteAdd(wid, tookHold: tookHold)
-            hyprLog(.debug, .discovery, tookHold
-                ? "destroy subscription for window \(wid): err \(destroyedErr.rawValue)"
-                : "destroy subscription failed for window \(wid) (err \(destroyedErr.rawValue)) — retrying next poll")
+            let tookHold = Self.windowSubscriptionsRecorded(destroyed: destroyedErr, miniaturized: miniErr,
+                                                            deminiaturized: deminiErr)
+            let errors = "destroy err \(destroyedErr.rawValue), miniaturized err \(miniErr.rawValue),"
+                + " deminiaturized err \(deminiErr.rawValue)"
+            if entry.ledger.noteAdd(wid, tookHold: tookHold) {
+                hyprLog(.notice, .discovery, "window \(wid) AX subscriptions incomplete after"
+                        + " \(WindowSubscriptionLedger.maxFailedAdds) tries (\(errors)) — its close or"
+                        + " minimize may wait for the reconcile poll")
+            } else {
+                hyprLog(.debug, .discovery, tookHold
+                    ? "window subscriptions for window \(wid): \(errors)"
+                    : "window subscriptions failed for window \(wid) (\(errors)) — retrying next poll")
+            }
         }
         let presentByPID = Dictionary(grouping: snapshot, by: \.ownerPID)
         for (pid, entry) in entries {
@@ -219,44 +306,81 @@ final class AXNotificationService {
         var observer: AXObserver?
         let createErr = AXObserverCreate(pid, axNotificationCallback, &observer)
         guard createErr == .success, let observer else {
-            handleAttachFailure(pid: pid, stage: "create", err: createErr)
+            handleAttachFailure(pid: pid, err: createErr)
             return
         }
 
-        let appElement = AXUIElementCreateApplication(pid)
-        let refcon = Unmanaged.passUnretained(self).toOpaque()
-        let createdErr = AXObserverAddNotification(observer, appElement, kAXWindowCreatedNotification as CFString, refcon)
-        let focusedErr = AXObserverAddNotification(observer, appElement, kAXFocusedWindowChangedNotification as CFString, refcon)
-        // a window coming forward can bury a floater; only the stacking visuals use this
-        AXObserverAddNotification(observer, appElement, kAXMainWindowChangedNotification as CFString, refcon)
-
-        // a newly launched app may not be AX-ready — treat "subscribed to
-        // nothing" as a failure and let the retry catch it once.
-        guard createdErr == .success || focusedErr == .success else {
-            handleAttachFailure(pid: pid, stage: "add", err: createdErr == .success ? focusedErr : createdErr)
-            return
-        }
-
+        let entry = Entry(observer: observer, appElement: AXUIElementCreateApplication(pid))
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
-        entries[pid] = Entry(observer: observer, appElement: appElement)
-        retrying.remove(pid)
-        hyprLog(.debug, .discovery, "AX observer attached pid=\(pid)")
+        entries[pid] = entry
+        retrying[pid] = nil
+        // a newly launched app may not be AX-ready, and may take one add
+        // and refuse another. each refused one is retried on its own
+        addAppSubscriptions(Self.appNotifications, pid: pid, entry: entry)
+        hyprLog(.debug, .discovery, "AX observer attached pid=\(pid)"
+                + (entry.appRetry.due.isEmpty ? "" : ", still owed \(entry.appRetry.due)"))
+        guard !entry.appRetry.due.isEmpty else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self, let entry = self.entries[pid], !entry.appRetry.due.isEmpty else { return }
+            self.addAppSubscriptions(entry.appRetry.due, pid: pid, entry: entry)
+        }
     }
 
-    private func handleAttachFailure(pid: pid_t, stage: String, err: AXError) {
-        if retrying.contains(pid) {
-            // already retried once — give up quietly. the 10s reconcile poll
-            // is the safety net for apps that refuse observers.
-            retrying.remove(pid)
-            hyprLog(.notice, .discovery, "AX observer attach gave up for pid=\(pid) after retry (\(stage) err \(err.rawValue)) — reconcile poll covers it")
+    /// Add `names` on the app element and record each result. One that
+    /// runs out of tries logs at notice: without the window-created add a
+    /// new window waits for a focus event or the reconcile poll.
+    private func addAppSubscriptions(_ names: [String], pid: pid_t, entry: Entry) {
+        let refcon = Unmanaged.passUnretained(self).toOpaque()
+        for name in names {
+            let err = AXObserverAddNotification(entry.observer, entry.appElement, name as CFString, refcon)
+            let wasOwed = entry.appRetry.attempts[name] != nil
+            let tookHold = Self.registered(err)
+            if entry.appRetry.note(name, tookHold: tookHold) {
+                let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "pid \(pid)"
+                let effect = name == kAXWindowCreatedNotification as String
+                    ? "its new windows wait for a focus event or the reconcile poll"
+                    : name == kAXFocusedWindowChangedNotification as String
+                        ? "its focus changes wait for the next poll"
+                        : "floater stacking may lag"
+                hyprLog(.notice, .discovery, "AX observer for \(bundle) pid=\(pid) has no \(name) subscription"
+                        + " after \(AppSubscriptionRetry.maxAttempts) tries (err \(err.rawValue)) — \(effect)")
+            } else if tookHold && wasOwed {
+                hyprLog(.debug, .discovery, "AX observer pid=\(pid): \(name) subscription took on retry")
+            }
+        }
+    }
+
+    /// One more try for every attached app's owed app-level adds.
+    private func retryAppSubscriptions() {
+        for (pid, entry) in entries where !entry.appRetry.due.isEmpty {
+            addAppSubscriptions(entry.appRetry.due, pid: pid, entry: entry)
+        }
+    }
+
+    /// One more try for every app whose observer could not be created.
+    private func retryAttaches() {
+        for pid in retrying.keys.sorted() where entries[pid] == nil {
+            attemptAttach(pid: pid)
+        }
+    }
+
+    private func handleAttachFailure(pid: pid_t, err: AXError) {
+        let tries = (retrying[pid] ?? 0) + 1
+        guard tries < AppSubscriptionRetry.maxAttempts else {
+            // the 10s reconcile poll is the safety net for apps that refuse observers
+            retrying[pid] = nil
+            hyprLog(.notice, .discovery, "AX observer attach gave up for pid=\(pid) after \(tries) tries"
+                    + " (create err \(err.rawValue)) — reconcile poll covers it")
             return
         }
-        retrying.insert(pid)
-        hyprLog(.debug, .discovery, "AX observer attach failed pid=\(pid) (\(stage) err \(err.rawValue)) — retrying in 2s")
+        retrying[pid] = tries
+        hyprLog(.debug, .discovery, "AX observer attach failed pid=\(pid) (create err \(err.rawValue))"
+                + (tries == 1 ? " — retrying in 2s, then on later polls" : " — retrying on a later poll"))
+        guard tries == 1 else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             guard let self else { return }
             // app may have quit (detach cleared retrying) or attached since.
-            guard self.retrying.contains(pid), self.entries[pid] == nil else { return }
+            guard self.retrying[pid] != nil, self.entries[pid] == nil else { return }
             self.attemptAttach(pid: pid)
         }
     }

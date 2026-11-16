@@ -164,7 +164,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `WorkspaceStatusPresenter` | Read-only views of workspace state: menu bar, overview, status export, state dump. |
 | `TiledDragController` | Capture and drop wiring for `TiledDragHandler`, the live drop preview, and what a finished drop owes. |
 | `TiledDragFeedbackCoordinator` | Holds a degraded drop's error until a later layout settles it. |
-| `FloatingDimDragTracker` | Keeps the dim's carve on a floater while it is dragged. Reads the floater's frame from the window list (`WindowStacking.bounds(of:)`), not from AX. |
+| `FloatingDimDragTracker` | Keeps the dim's carve and the floater outline on a floater while it is dragged. `FloaterDragFollow` decides which of the two follow. Reads the floater's frame from the window list (`WindowStacking.bounds(of:)`), not from AX. |
 | `DockAffordance` | What an outside app activation does when none of that app's windows are on screen. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
@@ -188,8 +188,8 @@ live for the entire app lifetime. The process-wide singletons are
 | `FrameSizingAttempt` | Bounded AX writes and complete frame readback through an injected clock and IO surface. |
 | `FrameSizingTransaction` | A candidate attempt, then a rollback to the original frames when it fails, with one retry after an AX timeout when the caller asks. `TiledDragTransaction` uses it. |
 | `AXFrameWriteBatch` | Brackets a window's frame writes: sets the app's AX messaging timeout and turns `AXEnhancedUserInterface` off for the writes, then restores it. |
-| `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. |
-| `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. |
+| `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. Also owns one outline panel per visible floater, drawn in Corners and Window borders modes alike (`FloaterMarkStyle`: outline, or none in None mode). `WindowManager.refreshFloatingBorders` feeds it one floater set and one occlusion pass. |
+| `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. They take the floating color on a floater (`FocusMarkColor`). `CornerMarkGeometry` builds the corner paths. |
 | `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. A floater's cutout covers only the part of it that is in front. |
 | `CursorManager` | Cursor warp via `CGWarpMouseCursorPosition` + reassociate dance. |
 | `AppLauncherManager` | Launch-or-focus path for the `launchApp` action. |
@@ -235,7 +235,26 @@ These types decompose what would otherwise be a monolithic
   are the primary trigger. WindowManager suppresses polling while the mouse
   is down, a tiled release is finishing, or a workspace transition is active.
   The drag finishing flag lasts through the deferred settle and verified
-  transaction rather than expiring after a fixed timeout.
+  transaction rather than expiring after a fixed timeout. A suppressed fire
+  is deferred, not dropped: it asks again every 0.3 s, or at the end of the
+  workspace transition when that comes sooner. A deferral that finds the
+  press flag set with no button physically down twice, 0.25 s apart, clears
+  the stale press (a missed mouse-up) so the poll can run.
+  A window create asks for a *trailing* poll: when a poll is already due
+  sooner, that one still runs and a second runs 0.2 s after the create,
+  since the earlier one can land before AX lists the window. Each poll
+  carries its triggers (`PollTrigger`) for the log lines. New-window work
+  (`create`, `new-window`, `follow-up`, `focus`, `ax-retry`) also gets its own
+  attempt at its deadline: under a finished workspace switch's hold it runs
+  the admit-only pass instead of waiting (see "Suppression timing").
+- **`DiscoveryFollowUp`** watches an app after a window create (or a focus
+  or main-window event that showed an unseen window) until a poll admits a
+  window of that app. A poll that misses asks for another at 0.3, 0.6 and
+  1.2 s. The first retry after a create is blind; later ones need an
+  on-screen layer-0 window of the app that discovery does not know. A
+  focus or main-window event on an already known window polls only when the
+  app has such a window that no poll has walked past yet, so a window
+  discovery rejects costs one poll, not one per focus change.
 - **`AXNotificationService`** owns one `AXObserver` per regular app and
   translates their AX notifications (window created / destroyed /
   miniaturized / deminiaturized, focused-window changed, main-window
@@ -243,7 +262,9 @@ These types decompose what would otherwise be a monolithic
   report changes instead of being polled, so the discovery diff runs
   only when something changed. App-level subscriptions attach on
   `attachToRunningApps` / `attach(pid:)`; window-level ones attach lazily
-  via `ensureWindowSubscriptions(for:)` after each discovery pass. Same
+  via `ensureWindowSubscriptions(for:)` after each discovery pass. Each
+  refused registration is retried on its own on later polls, up to five
+  tries, and running out logs at notice. Same
   architecture as yabai / AeroSpace.
 - **`WindowDiscoveryService`** runs the diff between the previous and
   current AX snapshot. Owns the lifecycle/classification cache
@@ -306,6 +327,14 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
     → ActionDispatcher.applyChanges
     → TiledDriftMonitor (only when the poll did not retile)
     → WindowPlacement.repairParkedWindows
+    → DiscoveryFollowUp.afterPoll  (re-poll an announced window still missing)
+
+  under a finished workspace switch's hold, for new-window work only:
+  → WindowManager.admitNewWindowsDuringHold
+    → AccessibilityManager.getAllWindows
+    → WindowDiscoveryService.computeAdmissions   (never-known ids only)
+    → ActionDispatcher.applyAdmissions           (assign, retile, focus)
+    → DiscoveryFollowUp.afterPoll
 ```
 
 Per-app AXObserver notifications are the primary discovery trigger; the
@@ -320,9 +349,21 @@ a 0.25 s messaging timeout on the elements it reads, so a stalled app
 costs a quarter second and is held rather than judged. An app whose
 window list timed out is not asked again until a backoff is up, half a
 second doubling to eight (`StallBackoff`), and only one stalled app is
-asked per walk, so a walk pays at most one timeout however many apps
-are stalled. The walk logs its duration and what it
-skipped at debug (`AX walk:`). A missing
+asked per walk, the one asked longest ago, so a walk pays at most one
+timeout however many apps are stalled and no app starves another. A walk
+also has a 500 ms budget (`WalkPacing`): past it, only apps known to
+answer fast are asked, and the rest are held and go first next walk. The
+walk logs its duration and what it
+skipped at debug (`AX walk:`). `AXWindowMatcher` pairs AX windows with
+CG ids: an id the SPI names is used only when that window is on screen and
+free, and never swapped for another when it is real; only an element whose
+SPI failed falls back to the nearest on-screen window, within 64 points.
+Nothing reports when a skipped app can be asked again or a window that
+was not ready becomes ready, so `WindowDiscoveryService.secondsUntilARetryIsDue`
+tells the poll when to run again: a backoff's end, a budget skip, a few
+quick looks at a new window that was unbound or unreadable, and the
+re-checks of a window floated for a fixed size, which goes back to tiling
+if it turns resizable. A missing
 window its app still lists, neither minimized nor hidden with the app —
 another Space, a native full-screen excursion, a stale snapshot — is held
 the same way for five seconds (`WindowDiscoveryService.listedHoldSpan`)
@@ -464,6 +505,39 @@ while HyprMac is quit clears every snapshot.
 | `workspaceTransition` | 4 s | Sleep, wake, lock, unlock |
 | `workspaceTransition` | 3 or 6 s | A display timer that waits again: the stability window plus 1 s |
 | `workspaceTransition` | 6 s | A change within 20 s of a wake: `DisplaySettle.wakeSettleWindow` plus 1 s |
+
+`workspaceTransition` holds every discovery poll: a poll mid-transition
+reads windows at frames the switch or macOS has not settled yet, and screen
+drift would move them to the wrong workspace. A poll deferred by it runs
+10 ms after it ends, not on the next 0.3 s step.
+
+A workspace switch's own hold lets brand-new windows in early. The switch
+tags its suppression `source: .workspaceSwitch`; every other caller is
+`.other`, and `SuppressionRegistry.isHeldOnlyByWorkspaceSwitch` is true
+only while no `.other` hold is live. `SwitchHoldAdmission.allows` then also
+needs `WorkspaceOrchestrator.isSwitchSettled` (no `switchWorkspace` call
+under way, so its walk, retile and focus steps are done, and no floater
+reveal retry still pending), no held button or finishing drag, no pending
+display change and no session interruption. While all of that holds, a
+new-window request runs `admitNewWindowsDuringHold` at its deadline instead
+of waiting:
+
+- `WindowDiscoveryService.computeAdmissions` takes only ids that are not
+  known, not hidden (ghosts, minimized, Cmd-H'd), not unreadable and not
+  on any workspace. Known windows the switch parked or revealed, gone and
+  returning windows, drift and fixed-size re-checks are not looked at.
+- The pass is skipped when a tiled member of a visible workspace is missing
+  from the walk and not held: the retile would drop it from its tree, and
+  whether it closed is the full poll's call.
+- `ActionDispatcher.applyAdmissions` assigns the newcomer with the normal
+  rules (the workspace now on its screen, or its window rule) and retiles
+  the visible workspaces with the walk's known windows only, through the
+  normal verified pass.
+- The deferred poll still runs in full once the hold ends.
+
+Moves, the scratchpad, display settle and wake keep holding new windows
+until their hold ends. So does a move that follows its window, since the
+move's own hold is `.other`.
 
 ## Threading
 

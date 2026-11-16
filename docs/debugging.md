@@ -329,6 +329,10 @@ The admission recovery's narrowing lines, all `[notice] [tiling]`:
   retrying […] without them (round <n> of 3)` — the retry was refused on
   some of its newcomers: those float, the rest get the pass again inside
   the same retry. After three rounds the rest float as before.
+- `admission retry tries the slot the learned minima fit: ws<N> ids=[…]
+  cause=<failure> pass=<n> of 2` — the attempt was refused but taught a
+  new minimum, and the fit check with it found a slot. The pass runs again
+  into the unchanged incumbent tree before anything floats.
 
 The admission recovery's timeout lines, all `[notice] [tiling]`:
 
@@ -371,11 +375,13 @@ The admission recovery's timeout lines, all `[notice] [tiling]`:
   source=own-measurement was=appHint` — an explicit request set the app's
   hint aside, the attempt was accepted, and the entry became this window's
   own record at the size it actually took.
-- `min-size record: wid=<id> old=<none|<w>x<h> source=<seeded|observed>>
+- `min-size record: wid=<id> old=<none|<w>x<h> source=<seeded|observed|appHint>>
   new=<w>x<h> target=<w>x<h> actual=<w>x<h> axis=<…> phase=<…>
   source=readback` — guarded refusal evidence. The `old=` field names
   the provenance of the entry being replaced, because observed evidence
-  replaces a seeded hint rather than merging with it. When the new value
+  replaces a seeded hint rather than merging with it. An app hint's axis
+  the readback did not refuse is kept, and the line ends
+  `kept-hint=<width|height>`. When the new value
   fails the sanity check the line ends `refused=unusable` and carries no
   `new=`.
 - `min-size lower: wid=<id> old=<w>x<h> new=<<w>x<h>|none> actual=<w>x<h>
@@ -1012,9 +1018,98 @@ looked", which only the file log keeps:
 
 - `ax event: windowDestroyed pid=1304` — one per AX notification, kind
   and pid only.
-- `poll: 14 windows, 213ms since last` — at the top of every
-  `pollWindowChanges`, with the snapshot size and the elapsed wall
-  clock since the previous poll.
+- `poll: 14 windows, 213ms since last, trigger create+focus, waited 200ms`
+  — at the top of every `pollWindowChanges`, with the snapshot size, the
+  elapsed wall clock since the previous poll, and what asked for this one
+  (`PollTrigger`; `reconcile` is the 10 s timer, `hold` an off-screen
+  hold running out, `ax-retry` discovery's own look again at a window or
+  app that was not ready, `direct` a call outside the scheduler).
+
+### A new window took seconds to tile
+
+```
+subsystem:com.zachgray.HyprMac category:discovery
+```
+
+The create-to-admission chain logs at `[notice] [discovery]`, so a Release
+log shows where the time went. A normal window open is two lines:
+
+```
+ax windowCreated pid=1159: poll due in 200ms
+new-window watch pid=1159 (windowCreated): admitted [4628] 210ms after the event, retries 0, poll (create, waited 200ms)
+```
+
+The first line also reads `rides the pending poll (due in 40ms)`,
+`pending poll (due in 10ms) kept, trailing poll due in 200ms` (a poll
+already due runs first and a second one 0.2 s after the create), or
+`pending poll moved up`. `, polls held: workspace transition (900ms left)`
+(or `mouse button down`, `tiled drag finishing`) means a suppression holds
+polls at that moment. The `poll (…)` part of the second line names the poll's
+triggers, its wait, and `deferred 900ms by workspace transition (…)` when a
+suppression held it.
+
+A window opened right after a workspace switch is admitted under the
+switch's hold, once the switch is done, by the admit-only pass:
+
+```
+ax windowCreated pid=1159: poll due in 200ms, polls held: workspace transition (1490ms left)
+admitted [4628] during workspace transition (1290ms left on the hold), create, waited 200ms, admit-only during the switch hold
+discovery retile: new=[4628] (admitted during the workspace transition hold)
+new-window watch pid=1159 (windowCreated): admitted [4628] 210ms after the event, retries 0, poll (create, waited 200ms, admit-only during the switch hold)
+poll deferred: workspace transition (1200ms left) (trigger create)
+```
+
+The full poll still runs when the hold ends. No `admitted … during
+workspace transition` line under a switch hold means the gate stayed shut:
+the hold was also a move's, the scratchpad's, a display change's or a
+wake's, a floater reveal retry was still running, or a button was held.
+`admit-only pass skipped: tiled [ids] missing from the walk` means a tiled
+window of a visible workspace did not answer the walk, so the pass left
+everything to the poll after the hold.
+
+A poll that ran but did not admit the window, and the retries after it:
+
+```
+poll deferred: workspace transition (1200ms left) (trigger create)
+new-window watch pid=1159 (windowCreated): poll (create, waited 210ms) admitted nothing — AX 1, CG 2, unknown on screen [4628], unreadable 0; retry 1/3 in 300ms
+new-window watch pid=1159 (windowCreated): nothing admitted after 3 retries, 2310ms — AX 1, CG 2, unknown on screen [4628], unreadable 0; left to the reconcile
+```
+
+`AX` counts the app's windows the walk kept, `CG` its on-screen layer-0
+windows, `unknown on screen` the ones discovery does not know (40 pt or
+larger), and `unreadable` those the walk could not read. `CG` above `AX`
+with the window in `unknown` means AX did not list or answer for it. A
+window that stays in `unknown` after the retries and also has an `AX filter
+dropped` line was rejected on purpose. The last line ends `ax retry still
+due for [4628]` instead of `left to the reconcile` when the walk's own quick
+looks at an unbound or unreadable window are not done yet. A create whose window a focus poll
+already admitted ends with a `.debug` `nothing unknown on screen` line
+after one extra look.
+
+A focus or main-window change that names a known window still polls when
+the app has an unknown window on screen that no poll has seen yet:
+
+```
+ax axMain pid=1159: window(s) [4628] on screen that no poll has seen — poll due in 150ms
+```
+
+If the 10 s reconcile timer is what found a window, one line says whether
+the app sent anything:
+
+```
+reconcile poll found new window(s) [4628] of pid=1159: on screen at least 4650ms; last ax event from it: windowCreated 4600ms ago; last windowCreated 4600ms ago
+reconcile poll found new window(s) [4630] of pid=812: no earlier poll or focus check saw it on screen; no ax event from it since launch; no windowCreated
+```
+
+The first shape is the event path failing after the event arrived; the
+retry lines above it say why. The second is a missed or never-sent event.
+A press whose mouse-up never arrived used to defer every poll until the
+pointer moved; a deferral now clears it after two checks with no button
+held, `[notice] [mouse]`:
+
+```
+press state stuck with no button held — clearing so the deferred poll runs
+```
 
 ### Windows rearranged after a lock or sleep
 
@@ -1087,6 +1182,86 @@ both holds in place it should be rare. Every tile pass logs
 `retile: ws<N> holds […] — leaves kept, no frame written` for the members
 it kept out of the pass.
 
+### A new window was found late, or got the wrong id
+
+The walk pairs each standard AX window with its CG id
+(`AXWindowMatcher`). The id `_AXUIElementGetWindow` names is used when that
+window is on screen and free. When it names a real window that is off
+screen or already held, the element stays out of the snapshot; it is never
+handed another window's id. Only an element whose SPI failed, or named no
+window the app has, falls back to the nearest unused on-screen window,
+within 64 points of summed origin and size difference. Each of these logs
+once while it lasts, `[notice] [discovery]`:
+
+```
+AX window unbound: bundle=com.example.App pid=812 wid=4630 reason=idOffScreen frame=(100,80,900,700)
+AX window unbound: bundle=com.example.App pid=812 wid=none reason=fallbackTooFar nearest=4611 distance=812 frame=(100,80,900,700)
+AX position fallback bound: bundle=com.example.App pid=812 wid=4611 spi=failed distance=4 frame=(100,80,900,700) cg=(100,80,900,704)
+```
+
+`reason` is one of:
+
+- `noOnScreenWindow`: the app lists the window, but the window server shows
+  nothing of the app. A Cmd-H'd app is skipped and does not log.
+- `frameUnreadable`: the window's position or size read failed. It is held
+  like an unreadable window.
+- `idOffScreen`: the SPI named a real window that is not on screen: not
+  shown yet, alpha 0 while it fades in, or on another Space.
+- `idTaken`: the SPI named an on-screen window another element already holds.
+- `noFallbackCandidate`: the SPI failed and no unused on-screen window is left.
+- `fallbackTooFar`: the SPI failed and the nearest unused on-screen window
+  is past the limit. `nearest` and `distance` name it.
+
+`spi=` on a fallback line is `failed`, or `<id> (not a window)` when the
+SPI named an id the window server does not know for the app.
+
+No event follows when such a window becomes usable. So a new window that
+was unbound, or on screen but unreadable, gets up to four quick polls, at
+0.25, 0.5, 1 and 2 s gaps (`WindowDiscoveryService.readinessDelays`).
+After that it waits for events and the 10 s reconcile. These polls, and
+the backoff and budget polls below, carry the `ax-retry` trigger. One that
+admits a window of an app with no new-window watch logs `[notice]
+[discovery] ax retry pid=<pid>: admitted [<id>], poll (ax-retry, waited
+250ms)`; a watched app gets the watch's `admitted` line instead.
+
+An app whose window-list read timed out is skipped until its backoff ends.
+A poll is scheduled for then, so its held windows and any window it opened
+are read without waiting for the reconcile. One due app is asked per walk,
+the one asked longest ago. `AX window-list read FAILED for <bundle>` now
+logs for an app with no window on screen too, so an app opening its first
+window shows its failure.
+
+The walk also keeps a 500 ms budget. Past it, only apps whose last read
+took under 100 ms are asked. The rest are held like a stalled app's, asked
+first on the next walk, and a poll follows in a second:
+
+```
+AX walk over its 500ms budget: skipped ["com.example.Slow"] — their windows are held, and they are asked first next walk
+AX walk within its budget again
+```
+
+A new window whose size is not settable floats, and is asked again 0.5, 1.5
+and 3.5 s later. If it became resizable and is still floating, not on the
+scratchpad, and not on a disabled monitor, it goes back to tiling through
+the next retile. Its `discovery retile:` line names it as `unfloated=[…]`.
+
+```
+auto-float window is not resizable: 'Untitled' (4630) com.example.App — re-checked 3 times over 3.5s
+auto-float re-check: 'Untitled' (4630) is resizable now — handing it back to tiling
+```
+
+The observer side retries each registration on its own. Every poll asks
+again for an app-level add an app refused, and for an observer that could
+not be created, up to five tries. A window counts as subscribed only once
+its destroy, miniaturize and deminiaturize adds all took; a failure is
+retried on later polls, up to five in a row. Running out logs once:
+
+```
+AX observer for com.example.App pid=812 has no AXWindowCreated subscription after 5 tries (err -25204) — its new windows wait for a focus event or the reconcile poll
+AX observer attach gave up for pid=812 after 5 tries (create err -25211) — reconcile poll covers it
+window 4630 AX subscriptions incomplete after 5 tries (destroy err 0, miniaturized err -25207, deminiaturized err 0) — its close or minimize may wait for the reconcile poll
+```
+
 ### "Why isn't this window managed?" (filtered windows, Quick Look)
 
 Discovery keeps only what `WindowAdmissionFilter` admits: standard windows
@@ -1152,7 +1327,7 @@ window(s)`, see "A window vanished for a poll"). Notice-tier evidence chain (all
   discovery transitions.
 - `FLAP: '<title>' (<id>) returned <ms>ms after vanishing` — a return within
   5 s of vanishing, i.e. almost certainly not a real minimize.
-- `discovery retile: new=[...] gone=[...] returned=[...] drift=[...]` — one line per
+- `discovery retile: new=[...] gone=[...] returned=[...] drift=[...] unfloated=[...]` — one line per
   discovery-driven re-layout naming its cause. Only the causes that apply are printed.
 
 Pull with:

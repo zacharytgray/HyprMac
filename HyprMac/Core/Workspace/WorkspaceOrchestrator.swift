@@ -67,6 +67,9 @@ final class WorkspaceOrchestrator {
     /// it was readable (its app did not answer the walk). The next poll's
     /// reveal repair restores it once the app answers.
     var onRevealMissed: () -> Void = { }
+    /// Fired with the floaters a reveal retry or the reveal repair restored
+    /// after the switch, so they are marked now and not at the next refresh.
+    var onFloatersRevealed: (_ windows: [HyprWindow]) -> Void = { _ in }
     /// The floaters among `ids` that `pid` lists right now, or nil when its
     /// window list does not answer. A seam for the reveal retry.
     var revealRetryWindows: (_ ids: Set<CGWindowID>, _ pid: pid_t) -> [HyprWindow]?
@@ -81,6 +84,13 @@ final class WorkspaceOrchestrator {
     private var revealRetryDue: Date?
     static let revealRetryInterval: TimeInterval = 0.1
     static let revealRetryAttempts = 15
+    /// `switchWorkspace` calls under way; the walk, retile and focus steps
+    /// all run inside the call.
+    private var switchesInFlight = 0
+    /// No switch is writing frames: none is under way, and no floater it
+    /// could not reveal is still being retried. A brand-new window may be
+    /// tiled during the switch's transition hold only then.
+    var isSwitchSettled: Bool { switchesInFlight == 0 && revealRetryPending.isEmpty }
     var excludedBundleIDs: () -> Set<String> = { [] }
     var isScratchpadWindow: (CGWindowID) -> Bool = { _ in false }
 
@@ -346,10 +356,15 @@ final class WorkspaceOrchestrator {
                          preferredFrame: CGRect? = nil) {
         // hold polls off for the duration of the transition. Tahoe AX
         // writes lag, so a poll mid-transition reads stale frames and
-        // drift detection can falsely reassign windows.
-        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
+        // drift detection can falsely reassign windows. tagged as the
+        // switch's own: once the switch returns, a brand-new window may be
+        // admitted under it (`isSwitchSettled`)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition,
+                              source: .workspaceSwitch)
         suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
         suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
+        switchesInFlight += 1
+        defer { switchesInFlight -= 1 }
 
         let currentScreen = screenUnderCursor()
 
@@ -501,6 +516,8 @@ final class WorkspaceOrchestrator {
         // whether the app's own replies did
         let late = revealRetryDue.map(Self.ms(since:)) ?? 0
         let byApp = Dictionary(grouping: revealRetryPending) { stateCache.windowOwners[$0] }
+        var revealed: [HyprWindow] = []
+        defer { if !revealed.isEmpty { onFloatersRevealed(revealed) } }
         for (pid, ids) in byApp {
             guard let pid else { continue }
             let readStart = Date()
@@ -514,6 +531,7 @@ final class WorkspaceOrchestrator {
                 // app was busy a moment ago, at the process-wide 1 s timeout
                 let restoreStart = Date()
                 workspaceManager.restoreFloatingFrame(w)
+                revealed.append(w)
                 revealRetryPending.remove(w.windowID)
                 hyprLog(.notice, .lifecycle, "reveal retry: \(w.windowID) readable on attempt \(revealRetryAttempt), restored its saved frame"
                         + " (ran \(late)ms late, list read \(readMS)ms, restore \(Self.ms(since: restoreStart))ms)")
@@ -535,6 +553,8 @@ final class WorkspaceOrchestrator {
     /// walk. A floater that reads on-screen is left alone, so a stale saved
     /// frame cannot yank a window the user has since moved.
     func repairUnrevealedFloaters(_ allWindows: [HyprWindow]) {
+        var revealed: [HyprWindow] = []
+        defer { if !revealed.isEmpty { onFloatersRevealed(revealed) } }
         for w in allWindows where stateCache.floatingWindowIDs.contains(w.windowID) {
             guard let ws = workspaceManager.workspaceFor(w.windowID),
                   ws != ScratchpadController.workspace,
@@ -546,6 +566,7 @@ final class WorkspaceOrchestrator {
             }) { continue }
             hyprLog(.notice, .lifecycle, "reveal repair: '\(w.title ?? "?")' (\(w.windowID)) on visible ws\(ws) still parked, restoring its saved frame")
             workspaceManager.restoreFloatingFrame(w)
+            revealed.append(w)
         }
     }
 

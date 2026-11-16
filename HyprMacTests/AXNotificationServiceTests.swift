@@ -101,6 +101,62 @@ final class AXNotificationServiceTests: XCTestCase {
         XCTAssertTrue(ledger.needsAdd(17396))
     }
 
+    /// codex 8: only the destroy result was read. a window whose minimize
+    /// add failed was recorded done and its minimize never reported
+    func testAFailedMinimizeAddIsRetried() {
+        XCTAssertTrue(AXNotificationService.windowSubscriptionsRecorded(
+            destroyed: .success, miniaturized: .notificationAlreadyRegistered, deminiaturized: .success))
+        XCTAssertFalse(AXNotificationService.windowSubscriptionsRecorded(
+            destroyed: .success, miniaturized: .cannotComplete, deminiaturized: .success))
+        XCTAssertFalse(AXNotificationService.windowSubscriptionsRecorded(
+            destroyed: .success, miniaturized: .success, deminiaturized: .failure))
+    }
+
+    func testAWindowThatKeepsRefusingIsRecordedAfterTheBudget() {
+        var ledger = WindowSubscriptionLedger()
+        var lastTry: [Bool] = []
+        for _ in 0..<WindowSubscriptionLedger.maxFailedAdds {
+            XCTAssertTrue(ledger.needsAdd(17396))
+            lastTry.append(ledger.noteAdd(17396, tookHold: false))
+            ledger.finishPass(present: [17396])
+        }
+        XCTAssertEqual(lastTry.filter { $0 }.count, 1)
+        XCTAssertTrue(lastTry.last!)
+        XCTAssertFalse(ledger.needsAdd(17396), "no more tries while it stays")
+
+        // away and back: a fresh budget
+        ledger.finishPass(present: [])
+        XCTAssertTrue(ledger.needsAdd(17396))
+        XCTAssertFalse(ledger.noteAdd(17396, tookHold: false))
+    }
+
+    /// codex 8 / fable: attach counted as done when either the create or
+    /// the focus add took, and the one that failed was never asked again
+    func testEachRefusedAppSubscriptionIsRetriedOnItsOwn() {
+        var retry = AppSubscriptionRetry()
+        let created = kAXWindowCreatedNotification as String
+        let focused = kAXFocusedWindowChangedNotification as String
+        retry.note(created, tookHold: false)
+        retry.note(focused, tookHold: true)
+        XCTAssertEqual(retry.due, [created])
+
+        retry.note(created, tookHold: true)
+        XCTAssertTrue(retry.due.isEmpty)
+        XCTAssertTrue(retry.gaveUp.isEmpty)
+    }
+
+    func testARefusedAppSubscriptionGivesUpAfterTheBudget() {
+        var retry = AppSubscriptionRetry()
+        let created = kAXWindowCreatedNotification as String
+        var lastTry: [Bool] = []
+        for _ in 0..<AppSubscriptionRetry.maxAttempts {
+            lastTry.append(retry.note(created, tookHold: false))
+        }
+        XCTAssertEqual(lastTry, Array(repeating: false, count: AppSubscriptionRetry.maxAttempts - 1) + [true])
+        XCTAssertTrue(retry.due.isEmpty)
+        XCTAssertEqual(retry.gaveUp, [created])
+    }
+
     func testStartupAttachesAppsBeforeSubscribingInitialWindows() {
         var calls: [String] = []
         var subscribed: [CGWindowID] = []

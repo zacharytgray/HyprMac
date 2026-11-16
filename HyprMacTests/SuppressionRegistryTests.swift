@@ -35,6 +35,40 @@ final class SuppressionRegistryTests: XCTestCase {
         XCTAssertFalse(r.isSuppressed(.workspaceTransition))
     }
 
+    // MARK: - who holds a key
+
+    func testASwitchAloneHoldsTheTransitionAsASwitch() {
+        let r = SuppressionRegistry()
+        XCTAssertFalse(r.isHeldOnlyByWorkspaceSwitch(.workspaceTransition), "not held at all")
+        r.suppress(.workspaceTransition, for: 1.0, source: .workspaceSwitch)
+        XCTAssertTrue(r.isHeldOnlyByWorkspaceSwitch(.workspaceTransition))
+    }
+
+    func testAnyOtherHolderMakesItNotTheSwitchsAlone() {
+        let r = SuppressionRegistry()
+        r.suppress(.workspaceTransition, for: 1.0)
+        r.suppress(.workspaceTransition, for: 1.0, source: .workspaceSwitch)
+        XCTAssertFalse(r.isHeldOnlyByWorkspaceSwitch(.workspaceTransition))
+    }
+
+    func testAShorterOtherHoldUnderALongerSwitchHoldStillCounts() {
+        // the expiry is never shortened, but the other hold is not lost
+        let r = SuppressionRegistry()
+        r.suppress(.workspaceTransition, for: 1.0, source: .workspaceSwitch)
+        r.suppress(.workspaceTransition, for: 0.05)
+        XCTAssertFalse(r.isHeldOnlyByWorkspaceSwitch(.workspaceTransition))
+        Thread.sleep(forTimeInterval: 0.08)
+        XCTAssertTrue(r.isHeldOnlyByWorkspaceSwitch(.workspaceTransition), "the other hold ran out")
+    }
+
+    func testClearDropsTheOtherHolderToo() {
+        let r = SuppressionRegistry()
+        r.suppress(.workspaceTransition, for: 1.0)
+        r.clear(.workspaceTransition)
+        r.suppress(.workspaceTransition, for: 1.0, source: .workspaceSwitch)
+        XCTAssertTrue(r.isHeldOnlyByWorkspaceSwitch(.workspaceTransition))
+    }
+
     // MARK: - expiry
 
     func testExpiredKeyReadsFalse() {
@@ -127,5 +161,18 @@ final class ExpectedActivationTests: XCTestCase {
         r.expectActivation(of: 4242)
         r.clearAll()
         XCTAssertFalse(r.consumeExpectedActivation(of: 4242))
+    }
+
+    func testRemainingReportsTheTimeLeftOnlyWhileActive() {
+        let r = SuppressionRegistry()
+        XCTAssertNil(r.remaining(.workspaceTransition))
+        r.suppress(.workspaceTransition, for: 1.5)
+        let left = r.remaining(.workspaceTransition)
+        XCTAssertNotNil(left)
+        XCTAssertLessThanOrEqual(left ?? 0, 1.5)
+        XCTAssertGreaterThan(left ?? 0, 1.0)
+        r.suppress(.workspaceTransition, for: -1)
+        r.clear(.workspaceTransition)
+        XCTAssertNil(r.remaining(.workspaceTransition))
     }
 }
