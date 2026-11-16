@@ -58,6 +58,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(wanted)
     }
 
+    /// HyprMac runs until the user quits it. `MenuBarExtra(isInserted:)`
+    /// makes SwiftUI answer true here, so closing the menu bar panel or
+    /// Settings quit the app in v0.22.7.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     /// Opening HyprMac again (Spotlight, Finder, a Dock click) shows
     /// Settings. With both icons hidden, this is the way back in.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

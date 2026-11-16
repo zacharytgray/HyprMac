@@ -78,6 +78,11 @@ final class RuntimeVariantTests: XCTestCase {
 
     // LSUIElement keeps a second `open` of the running app from making it
     // a Dock app again, which undid Show in Dock = off
+    // closing the menu bar panel or Settings must not quit the app
+    func testClosingTheLastWindowDoesNotQuit() {
+        XCTAssertFalse(AppDelegate().applicationShouldTerminateAfterLastWindowClosed(NSApplication.shared))
+    }
+
     func testAppBundleStartsOutOfTheDock() throws {
         let plist = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent()
