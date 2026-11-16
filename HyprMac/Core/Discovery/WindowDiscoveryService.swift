@@ -63,12 +63,17 @@ struct WindowChanges {
     /// Subset of `returned` that AX confirmed as minimized or Cmd-H'd
     /// while hidden. Not an unreadable hide, and not a verified close.
     var returnedFromUserHide: Set<CGWindowID> = []
+    /// Windows auto-floated as not resizable that a re-check found
+    /// resizable. The service cleared their floating flag; the retile
+    /// tiles them like any other member of their workspace.
+    var unfloated: Set<CGWindowID> = []
 
     /// `true` when at least one observed change warrants a retile.
     /// Stale-state sweeps do not bump this — they are silent state
     /// hygiene with no visual consequence.
     var needsRetile: Bool {
         !newWindows.isEmpty || !goneIDs.isEmpty || !returned.isEmpty || !screenDrift.isEmpty
+            || !unfloated.isEmpty
     }
 }
 
@@ -207,6 +212,59 @@ final class WindowDiscoveryService {
         return max(0.1, Self.listedHoldSpan - now().timeIntervalSince(earliest))
     }
 
+    /// Windows the walk saw but could not use, and when to look again: on
+    /// screen but unreadable, or listed by their app before the window
+    /// server showed them. No event follows when such a window becomes
+    /// readable, so without these it waited for the ten-second reconcile.
+    private var readinessRetries: [CGWindowID: (attempts: Int, due: Date)] = [:]
+    /// the gaps between looks; one look per gap, then it waits for events
+    static let readinessDelays: [TimeInterval] = [0.25, 0.5, 1, 2]
+
+    /// Windows auto-floated because their size was not settable at first
+    /// sight, and when to ask again. Some apps make a new window resizable
+    /// a moment after it opens.
+    private var fixedSizeRechecks: [CGWindowID: (attempts: Int, due: Date)] = [:]
+    static let fixedSizeRecheckDelays: [TimeInterval] = [0.5, 1, 2]
+
+    /// How long until discovery wants another poll for something no event
+    /// will report: a window not ready yet, a fixed-size re-check, or an
+    /// app the walk is skipping (stalled, or left out by its budget) whose
+    /// windows, held or new, it reads once the app is asked again. nil
+    /// without one.
+    var secondsUntilARetryIsDue: TimeInterval? {
+        let now = self.now()
+        let dues = readinessRetries.values.map(\.due) + fixedSizeRechecks.values.map(\.due)
+        // a look still due after the cycle means the cycle was guarded
+        // (mass-gone) and checked nothing; give the guard its own pace
+        let ours = dues.filter { $0 != .distantFuture }.min()
+            .map { $0 > now ? max(0.05, $0.timeIntervalSince(now)) : Self.overdueRetry }
+        return [ours, accessibility.secondsUntilABackoffEnds].compactMap { $0 }.min()
+    }
+    static let overdueRetry: TimeInterval = 0.5
+
+    /// Advance the readiness looks for this cycle's not-ready windows. A
+    /// look is spent by a poll at or after its due time; one that resolves
+    /// or leaves drops its entry.
+    private func noteNotReady(_ pending: Set<CGWindowID>) {
+        let now = self.now()
+        readinessRetries = readinessRetries.filter { pending.contains($0.key) }
+        let delays = Self.readinessDelays
+        for id in pending.sorted() {
+            guard let entry = readinessRetries[id] else {
+                readinessRetries[id] = (0, now.addingTimeInterval(delays[0]))
+                continue
+            }
+            guard now >= entry.due else { continue }
+            let next = entry.attempts + 1
+            if next < delays.count {
+                readinessRetries[id] = (next, now.addingTimeInterval(delays[next]))
+            } else {
+                readinessRetries[id] = (next, .distantFuture)
+                hyprLog(.debug, .discovery, "window \(id) still not readable after \(next) quick look(s) — left to events and the reconcile")
+            }
+        }
+    }
+
     private func noteHeld(unreadable: Set<CGWindowID>, listed: Set<CGWindowID>) {
         if unreadable != heldUnreadableIDs {
             let began = unreadable.subtracting(heldUnreadableIDs)
@@ -340,6 +398,12 @@ final class WindowDiscoveryService {
                         focusedWindowID: CGWindowID,
                         unreadableWindowIDs: Set<CGWindowID> = []) -> WindowChanges {
         let currentIDs = Set(snapshot.map { $0.windowID })
+        // a window the walk saw but could not use gets a few quick looks:
+        // one on screen whose app or frame did not answer, and a new one its
+        // app lists before the window server shows it
+        noteNotReady(unreadableWindowIDs.subtracting(currentIDs)
+            .union(accessibility.unboundWindowIDs.subtracting(currentIDs)
+                .subtracting(stateCache.knownWindowIDs).subtracting(stateCache.hiddenWindowIDs)))
 
         // a known window missing from the snapshot is gone only when AX
         // answered for it. one that is on screen by the window server's
@@ -434,7 +498,17 @@ final class WindowDiscoveryService {
                 isQuickLookPanel: w.isQuickLookPanel
             ) {
                 stateCache.setFloating(true, window: w)
-                hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
+                if reason == .fixedSize {
+                    // read once, at first sight. some apps make a window
+                    // resizable a moment after it opens, so ask again
+                    fixedSizeRechecks[w.windowID] = (0, now().addingTimeInterval(Self.fixedSizeRecheckDelays[0]))
+                    hyprLog(.notice, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")' (\(w.windowID))"
+                            + " \(bundleIDForPID(w.ownerPID) ?? "pid \(w.ownerPID)") — re-checked"
+                            + " \(Self.fixedSizeRecheckDelays.count) times over"
+                            + " \(Self.fixedSizeRecheckDelays.reduce(0, +))s")
+                } else {
+                    hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
+                }
             }
 
             // auto-float on disabled monitors — surface so caller skips workspace assignment
@@ -444,6 +518,8 @@ final class WindowDiscoveryService {
                     hyprLog(.debug, .discovery, "auto-float on disabled monitor: '\(w.title ?? "?")'")
                 }
                 newOnDisabled.insert(w.windowID)
+                // it floats for the monitor, whatever its size says
+                fixedSizeRechecks[w.windowID] = nil
                 hyprLog(.debug, .discovery, "new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
             } else {
                 hyprLog(.debug, .discovery, "new window: '\(w.title ?? "?")' (\(w.windowID))")
@@ -451,6 +527,8 @@ final class WindowDiscoveryService {
 
             newWindows.append(w)
         }
+
+        let unfloated = recheckFixedSize(snapshot)
 
         // gone. the held ids stay out of this: they are still known
         let gone = apparentlyGone
@@ -540,8 +618,57 @@ final class WindowDiscoveryService {
             screenDrift: drift,
             focusedWindowGone: focusedGone,
             requestsRecheck: false,
-            returnedFromUserHide: fromUserHide
+            returnedFromUserHide: fromUserHide,
+            unfloated: unfloated
         )
+    }
+
+    /// Ask again whether the windows auto-floated as not resizable are.
+    /// One that is now goes back to tiling: its floating flag clears and
+    /// the caller's retile places it. One the user tiled meanwhile, one
+    /// floating for another reason now, and one that left are dropped;
+    /// one held this cycle keeps its turn.
+    private func recheckFixedSize(_ snapshot: [HyprWindow]) -> Set<CGWindowID> {
+        guard !fixedSizeRechecks.isEmpty else { return [] }
+        let now = self.now()
+        let byID = Dictionary(snapshot.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        var unfloated: Set<CGWindowID> = []
+        for (id, entry) in fixedSizeRechecks.sorted(by: { $0.key < $1.key }) {
+            guard let w = byID[id] else {
+                if !stateCache.knownWindowIDs.contains(id) {
+                    fixedSizeRechecks[id] = nil
+                } else if now >= entry.due {
+                    // held this cycle: same turn, asked after the same gap
+                    fixedSizeRechecks[id] = (entry.attempts,
+                                             now.addingTimeInterval(Self.fixedSizeRecheckDelays[entry.attempts]))
+                }
+                continue
+            }
+            guard now >= entry.due else { continue }
+            guard stateCache.floatingWindowIDs.contains(id),
+                  let workspace = workspaceManager.workspaceFor(id),
+                  workspace != ScratchpadController.workspace,
+                  !(displayManager.screen(for: w).map(workspaceManager.isMonitorDisabled) ?? false) else {
+                fixedSizeRechecks[id] = nil
+                continue
+            }
+            if isWindowSizeSettable(w) == true {
+                fixedSizeRechecks[id] = nil
+                stateCache.setFloating(false, window: w)
+                unfloated.insert(id)
+                hyprLog(.notice, .discovery, "auto-float re-check: '\(w.title ?? "?")' (\(id)) is resizable now"
+                        + " — handing it back to tiling")
+                continue
+            }
+            let next = entry.attempts + 1
+            if next < Self.fixedSizeRecheckDelays.count {
+                fixedSizeRechecks[id] = (next, now.addingTimeInterval(Self.fixedSizeRecheckDelays[next]))
+            } else {
+                fixedSizeRechecks[id] = nil
+                hyprLog(.debug, .discovery, "auto-float re-check: \(id) still not resizable — stays floating")
+            }
+        }
+        return unfloated
     }
 
     /// Fully forget every window owned by `pid`.

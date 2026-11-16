@@ -17,8 +17,11 @@ final class StubAccessibility: AccessibilityManager {
     var queries: [CGWindowID] = []
     /// pids the walk is backing off from
     var backingOff: Set<pid_t> = []
+    /// when the walk would next ask a skipped app
+    var backoffWake: TimeInterval?
 
     override func isBackingOff(pid: pid_t) -> Bool { backingOff.contains(pid) }
+    override var secondsUntilABackoffEnds: TimeInterval? { backoffWake }
 
     override func hiddenWindowState(windowID: CGWindowID, pid: pid_t) -> AccessibilityManager.HiddenWindowState? {
         queries.append(windowID)
@@ -908,6 +911,196 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(svc.forgetApp(99999).isEmpty)
     }
 
+    // MARK: - quick looks for windows not ready yet
+
+    /// a window its app lists before the window server shows it gets no
+    /// event when it appears. it used to wait for the ten-second reconcile
+    func testANewWindowListedBeforeItIsOnScreenGetsQuickLooks() {
+        let access = StubAccessibility()
+        let (svc, _, _) = makeService(accessibility: access)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        XCTAssertNil(svc.secondsUntilARetryIsDue)
+
+        access.unboundWindowIDs = [50]
+        _ = compute(svc, snapshot: [])
+        XCTAssertEqual(svc.secondsUntilARetryIsDue!, 0.25, accuracy: 0.001)
+
+        // a poll before the look is due spends nothing
+        clock += 0.1
+        _ = compute(svc, snapshot: [])
+        XCTAssertEqual(svc.secondsUntilARetryIsDue!, 0.15, accuracy: 0.001)
+
+        // each due poll spends one look, with a longer gap, until they run out
+        var gaps: [TimeInterval] = []
+        clock += 0.15
+        for _ in 0..<4 {
+            _ = compute(svc, snapshot: [])
+            guard let wait = svc.secondsUntilARetryIsDue else { break }
+            gaps.append(wait)
+            clock += wait
+        }
+        XCTAssertEqual(gaps, [0.5, 1, 2])
+        XCTAssertNil(svc.secondsUntilARetryIsDue, "left to events and the reconcile")
+    }
+
+    func testANewWindowThatTurnsUpEndsItsLooks() {
+        let access = StubAccessibility()
+        let (svc, _, _) = makeService(accessibility: access)
+        svc.now = { Date(timeIntervalSinceReferenceDate: 1000) }
+        access.unboundWindowIDs = [50]
+        _ = compute(svc, snapshot: [])
+        XCTAssertNotNil(svc.secondsUntilARetryIsDue)
+
+        access.unboundWindowIDs = []
+        let changes = compute(svc, snapshot: [makeWindow(id: 50, pid: 9)])
+        XCTAssertEqual(changes.newWindows.map(\.windowID), [50])
+        XCTAssertNil(svc.secondsUntilARetryIsDue)
+    }
+
+    /// on screen by the window server's account, unreadable to AX: a new
+    /// id was not held and got no second look
+    func testANewUnreadableWindowGetsQuickLooks() {
+        let (svc, cache, _) = makeService()
+        svc.now = { Date(timeIntervalSinceReferenceDate: 1000) }
+        let changes = compute(svc, snapshot: [], unreadable: [60])
+        XCTAssertTrue(changes.newWindows.isEmpty)
+        XCTAssertFalse(cache.knownWindowIDs.contains(60))
+        XCTAssertEqual(svc.secondsUntilARetryIsDue!, 0.25, accuracy: 0.001)
+    }
+
+    /// a known window its app lists off screen has the listed hold and its
+    /// own wake-up; it takes no quick looks
+    func testAKnownListedWindowTakesNoQuickLooks() {
+        let access = StubAccessibility()
+        access.stateAnswer = .present
+        let (svc, cache, _) = makeService(accessibility: access)
+        svc.now = { Date(timeIntervalSinceReferenceDate: 1000) }
+        cache.knownWindowIDs = [10, 12]
+        cache.windowOwners = [10: 8200, 12: 8200]
+        access.unboundWindowIDs = [12]
+        _ = compute(svc, snapshot: [makeWindow(id: 10, pid: 8200)], runningPIDs: [8200])
+        XCTAssertNil(svc.secondsUntilARetryIsDue)
+        XCTAssertNotNil(svc.secondsUntilAHoldEnds)
+    }
+
+    /// a held window of a stalled app is read when the app is asked again.
+    /// the poll for that comes when its backoff ends, after the quick looks
+    /// have run out too
+    func testAHeldWindowOfAStalledAppWakesWhenTheBackoffEnds() {
+        let access = StubAccessibility()
+        let (svc, cache, _) = makeService(accessibility: access)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        cache.knownWindowIDs = [10]
+        cache.windowOwners = [10: 8200]
+        access.backoffWake = 6
+        for _ in 0..<6 {
+            _ = compute(svc, snapshot: [], runningPIDs: [8200], unreadable: [10])
+            clock += 2
+        }
+        XCTAssertEqual(svc.heldWindowIDs, [10])
+        XCTAssertEqual(svc.secondsUntilARetryIsDue, 6)
+        access.backoffWake = nil
+        XCTAssertNil(svc.secondsUntilARetryIsDue)
+    }
+
+    /// a look still due after a cycle means the cycle was guarded and
+    /// checked nothing; the wake must not undercut the guard's half second
+    func testAnOverdueLookDoesNotAskForATightPoll() {
+        let access = StubAccessibility()
+        let (svc, _, _) = makeService(accessibility: access)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        access.unboundWindowIDs = [50]
+        _ = compute(svc, snapshot: [])
+        clock += 5
+        XCTAssertEqual(svc.secondsUntilARetryIsDue, WindowDiscoveryService.overdueRetry)
+    }
+
+    // MARK: - fixed-size auto-float re-check
+
+    private func fixedSizeFixture(settable: @escaping () -> Bool?)
+        -> (WindowDiscoveryService, WindowStateCache, WorkspaceManager, HyprWindow, () -> Void) {
+        let (svc, cache, workspaces) = makeService(isWindowSizeSettable: { _ in settable() })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 2, pid: 100)
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        workspaces.assignWindow(2, toWorkspace: 1)
+        return (svc, cache, workspaces, w, { clock += svc.secondsUntilARetryIsDue ?? 100 })
+    }
+
+    /// floated once at first sight, never asked again: a window its app made
+    /// resizable a moment later stayed floating
+    func testAWindowThatBecomesResizableGoesBackToTiling() {
+        var settable: Bool? = false
+        let (svc, cache, _, w, advance) = fixedSizeFixture { settable }
+        XCTAssertTrue(cache.floatingWindowIDs.contains(2))
+        XCTAssertEqual(svc.secondsUntilARetryIsDue!, 0.5, accuracy: 0.001)
+
+        settable = true
+        advance()
+        let changes = compute(svc, snapshot: [w], runningPIDs: [100])
+        XCTAssertEqual(changes.unfloated, [2])
+        XCTAssertTrue(changes.needsRetile)
+        XCTAssertFalse(cache.floatingWindowIDs.contains(2))
+        XCTAssertFalse(w.isFloating)
+        XCTAssertNil(svc.secondsUntilARetryIsDue)
+    }
+
+    func testAWindowThatStaysFixedStaysFloatingAfterThreeChecks() {
+        var checks = 0
+        let (svc, cache, _, w, advance) = fixedSizeFixture { checks += 1; return false }
+        for _ in 0..<5 {
+            advance()
+            XCTAssertTrue(compute(svc, snapshot: [w], runningPIDs: [100]).unfloated.isEmpty)
+        }
+        XCTAssertEqual(checks, 1 + WindowDiscoveryService.fixedSizeRecheckDelays.count)
+        XCTAssertTrue(cache.floatingWindowIDs.contains(2))
+        XCTAssertNil(svc.secondsUntilARetryIsDue)
+    }
+
+    /// the user tiled it before the check: the check leaves it alone
+    func testAWindowTheUserTiledIsNotRechecked() {
+        var settable: Bool? = false
+        let (svc, cache, _, w, advance) = fixedSizeFixture { settable }
+        cache.setFloating(false, window: w)
+        settable = true
+        advance()
+        XCTAssertTrue(compute(svc, snapshot: [w], runningPIDs: [100]).unfloated.isEmpty)
+        XCTAssertNil(svc.secondsUntilARetryIsDue)
+    }
+
+    /// a scratchpad member floats for the scratchpad, whatever its size says
+    func testAScratchpadMemberIsNotHandedToTiling() {
+        var settable: Bool? = false
+        let (svc, cache, workspaces, w, advance) = fixedSizeFixture { settable }
+        workspaces.moveWindow(2, toWorkspace: ScratchpadController.workspace)
+        settable = true
+        advance()
+        XCTAssertTrue(compute(svc, snapshot: [w], runningPIDs: [100]).unfloated.isEmpty)
+        XCTAssertTrue(cache.floatingWindowIDs.contains(2))
+    }
+
+    /// an unreadable cycle keeps the check's turn
+    func testAHeldWindowKeepsItsRecheck() {
+        var settable: Bool? = false
+        let (svc, cache, _, w, advance) = fixedSizeFixture { settable }
+        settable = true
+        advance()
+        _ = compute(svc, snapshot: [], runningPIDs: [100], unreadable: [2])
+        XCTAssertTrue(cache.floatingWindowIDs.contains(2))
+        // no tight loop of polls while it is held
+        XCTAssertGreaterThanOrEqual(svc.secondsUntilARetryIsDue!, 0.25)
+        var unfloated: Set<CGWindowID> = []
+        for _ in 0..<3 where unfloated.isEmpty {
+            advance()
+            unfloated = compute(svc, snapshot: [w], runningPIDs: [100]).unfloated
+        }
+        XCTAssertEqual(unfloated, [2])
+    }
+
     // MARK: - needsRetile derivation
 
     func testNeedsRetileOnlyTrueForLifecycleChanges() {
@@ -981,5 +1174,188 @@ final class StallBackoffTests: XCTestCase {
         _ = backoff.noteFailure(8, now: t0)
         backoff.retain([8])
         XCTAssertEqual(backoff.stalledPIDs, [8])
+    }
+}
+
+extension StallBackoffTests {
+    /// codex 4: one due app is probed per walk, and it was the first in
+    /// enumeration order. with walks ten seconds apart and an eight-second
+    /// cap, an earlier app that always stalls was due on every walk and a
+    /// later one that had recovered was never asked again
+    func testARecoveredAppIsNotStarvedByOneThatAlwaysStalls() {
+        var backoff = StallBackoff()
+        var now = t0
+        backoff.noteFailure(1, now: now)
+        backoff.noteFailure(2, now: now)
+        var asked: [pid_t] = []
+        for _ in 0..<4 {
+            now = now.addingTimeInterval(10)
+            guard let probe = backoff.probeTarget(among: [1, 2], now: now) else { continue }
+            backoff.noteProbe(probe, now: now)
+            asked.append(probe)
+            if probe == 1 {
+                backoff.noteFailure(1, now: now)
+            } else {
+                backoff.noteSuccess(2)
+            }
+        }
+        XCTAssertTrue(asked.contains(2), "asked: \(asked)")
+        XCTAssertFalse(backoff.stalledPIDs.contains(2))
+    }
+
+    func testTheProbeGoesToTheAppAskedLongestAgo() {
+        var backoff = StallBackoff()
+        backoff.noteFailure(1, now: t0)
+        backoff.noteFailure(2, now: t0)
+        backoff.noteFailure(3, now: t0)
+        let later = t0.addingTimeInterval(1)
+        backoff.noteProbe(1, now: t0)
+        backoff.noteProbe(2, now: t0.addingTimeInterval(0.5))
+        XCTAssertEqual(backoff.probeTarget(among: [1, 2, 3], now: later), 3, "never asked goes first")
+        backoff.noteProbe(3, now: later)
+        XCTAssertEqual(backoff.probeTarget(among: [1, 2, 3], now: later), 1)
+        XCTAssertNil(backoff.probeTarget(among: [4], now: later))
+    }
+
+    /// fable A: nothing polled when a backoff ended, so an app that
+    /// stalled once waited for the next unrelated event or the reconcile
+    func testTheWakeUpIsWhenTheNextBackoffEnds() {
+        var backoff = StallBackoff()
+        XCTAssertNil(backoff.secondsUntilNextProbe(now: t0))
+        backoff.noteFailure(7, now: t0)
+        XCTAssertEqual(backoff.secondsUntilNextProbe(now: t0)!, 0.5, accuracy: 0.001)
+        XCTAssertEqual(backoff.secondsUntilNextProbe(now: t0.addingTimeInterval(0.3))!, 0.2, accuracy: 0.001)
+        // due but not asked: another walk soon, not at once
+        XCTAssertEqual(backoff.secondsUntilNextProbe(now: t0.addingTimeInterval(0.6))!, StallBackoff.dueRetry,
+                       accuracy: 0.001)
+        backoff.noteSuccess(7)
+        XCTAssertNil(backoff.secondsUntilNextProbe(now: t0.addingTimeInterval(0.6)))
+    }
+}
+
+/// the discovery walk's whole-walk time budget
+final class WalkPacingTests: XCTestCase {
+    func testPastTheBudgetOnlyAppsKnownToBeFastAreAsked() {
+        var pacing = WalkPacing()
+        pacing.noteCost(1, 0.02)
+        pacing.noteCost(2, 0.3)
+        XCTAssertFalse(pacing.shouldSkip(2, elapsed: 0.2), "within the budget every app is asked")
+        XCTAssertFalse(pacing.shouldSkip(1, elapsed: 0.6))
+        XCTAssertTrue(pacing.shouldSkip(2, elapsed: 0.6))
+        XCTAssertTrue(pacing.shouldSkip(3, elapsed: 0.6), "an app not read yet might be slow")
+    }
+
+    /// codex 10: ten apps timing out for the first time cost a walk two
+    /// and a half seconds on the main thread
+    func testFirstTimeStallsCannotStretchAWalk() {
+        var pacing = WalkPacing()
+        let pids: [pid_t] = Array(1...10)
+        var elapsed: TimeInterval = 0
+        var asked: [pid_t] = []
+        for pid in pacing.order(pids) where !pacing.shouldSkip(pid, elapsed: elapsed) {
+            elapsed += 0.25
+            pacing.noteCost(pid, 0.25)
+            asked.append(pid)
+        }
+        let skipped = pids.filter { !asked.contains($0) }
+        pacing.finishWalk(skipped: skipped, running: Set(pids))
+        XCTAssertLessThanOrEqual(elapsed, WalkPacing.budget + 0.25)
+        XCTAssertEqual(asked, [1, 2])
+        XCTAssertEqual(pacing.secondsUntilRetry, WalkPacing.skippedRetry)
+        // the skipped apps are asked first next walk, so none waits forever
+        XCTAssertEqual(Array(pacing.order(pids).prefix(2)), [3, 4])
+    }
+
+    func testAWalkWithinBudgetSchedulesNothing() {
+        var pacing = WalkPacing()
+        pacing.finishWalk(skipped: [3], running: [1, 3])
+        pacing.finishWalk(skipped: [], running: [1, 3])
+        XCTAssertNil(pacing.secondsUntilRetry)
+        XCTAssertEqual(pacing.order([1, 3]), [1, 3])
+    }
+
+    func testAnAppThatQuitIsForgotten() {
+        var pacing = WalkPacing()
+        pacing.noteCost(1, 0.02)
+        pacing.noteCost(2, 0.02)
+        pacing.finishWalk(skipped: [], running: [2])
+        XCTAssertEqual(Set(pacing.cost.keys), [2])
+    }
+}
+
+/// how one app's AX windows pair with its CG windows
+final class AXWindowMatcherTests: XCTestCase {
+    private func element(_ frame: CGRect, spi: CGWindowID?) -> AXWindowMatcher.Element {
+        .init(frame: frame, spiID: spi)
+    }
+    private func candidate(_ id: CGWindowID, _ bounds: CGRect) -> AXWindowMatcher.Candidate {
+        .init(windowID: id, bounds: bounds)
+    }
+    private let left = CGRect(x: 0, y: 0, width: 800, height: 600)
+    private let right = CGRect(x: 800, y: 0, width: 800, height: 600)
+
+    func testAnOnScreenSPIIDBinds() {
+        let result = AXWindowMatcher.match([element(left, spi: 100)], candidates: [candidate(100, left)],
+                                           used: [], isRealWindow: { _ in true })
+        XCTAssertEqual(result.bound, [.init(index: 0, windowID: 100, fallbackDistance: nil)])
+        XCTAssertTrue(result.unbound.isEmpty)
+    }
+
+    /// codex 2 / B6: window A is off screen and named correctly by the SPI;
+    /// B is on screen but not in this AX list yet. A's element took B's id,
+    /// so B's frame writes went to A
+    func testAnOffScreenSPIIDIsNeverReboundToAnotherWindow() {
+        let result = AXWindowMatcher.match([element(left, spi: 100)], candidates: [candidate(200, left)],
+                                           used: [], isRealWindow: { $0 == 100 })
+        XCTAssertTrue(result.bound.isEmpty)
+        XCTAssertEqual(result.unbound.map(\.reason), [.offScreen(100)])
+    }
+
+    func testATakenSPIIDStaysUnbound() {
+        let result = AXWindowMatcher.match([element(left, spi: 100), element(right, spi: 100)],
+                                           candidates: [candidate(100, left), candidate(200, right)],
+                                           used: [], isRealWindow: { _ in true })
+        XCTAssertEqual(result.bound.map(\.windowID), [100])
+        XCTAssertEqual(result.unbound.map(\.reason), [.taken(100)])
+    }
+
+    func testAFailedSPIFallsBackToANearWindow() {
+        let near = left.offsetBy(dx: 3, dy: 1)
+        let result = AXWindowMatcher.match([element(near, spi: nil)], candidates: [candidate(100, left)],
+                                           used: [], isRealWindow: { _ in true })
+        XCTAssertEqual(result.bound, [.init(index: 0, windowID: 100, fallbackDistance: 4)])
+    }
+
+    func testAnSPIIDTheWindowServerDoesNotKnowFallsBack() {
+        let result = AXWindowMatcher.match([element(left, spi: 999)], candidates: [candidate(100, left)],
+                                           used: [], isRealWindow: { _ in false })
+        XCTAssertEqual(result.bound.map(\.windowID), [100])
+    }
+
+    /// the fallback had no distance limit: any unused id would do
+    func testTheFallbackRefusesAFarWindow() {
+        let result = AXWindowMatcher.match([element(left, spi: nil)], candidates: [candidate(200, right)],
+                                           used: [], isRealWindow: { _ in true })
+        XCTAssertTrue(result.bound.isEmpty)
+        XCTAssertEqual(result.unbound.map(\.reason), [.tooFar(nearest: 200, distance: 800)])
+    }
+
+    func testTheFallbackNeverHandsOutAUsedID() {
+        let result = AXWindowMatcher.match([element(left, spi: nil)], candidates: [candidate(100, left)],
+                                           used: [100], isRealWindow: { _ in true })
+        XCTAssertEqual(result.unbound.map(\.reason), [.noCandidate])
+    }
+
+    /// closest pairs first, so the order the app lists windows in can't
+    /// hand the nearer element's window to the farther one
+    func testTheFallbackPairsTheClosestFirst() {
+        let a = left.offsetBy(dx: 30, dy: 0)
+        let b = left.offsetBy(dx: 2, dy: 0)
+        let c2 = left.offsetBy(dx: 60, dy: 0)
+        let result = AXWindowMatcher.match([element(a, spi: nil), element(b, spi: nil)],
+                                           candidates: [candidate(1, left), candidate(2, c2)],
+                                           used: [], isRealWindow: { _ in true })
+        XCTAssertEqual(result.bound, [.init(index: 0, windowID: 2, fallbackDistance: 30),
+                                      .init(index: 1, windowID: 1, fallbackDistance: 2)])
     }
 }

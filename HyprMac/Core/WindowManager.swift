@@ -2320,6 +2320,7 @@ class WindowManager {
         if let wait = discovery.secondsUntilAHoldEnds {
             pollingScheduler.schedule(after: wait + 0.05)
         }
+        if let wait = discovery.secondsUntilARetryIsDue { pollingScheduler.schedule(after: wait) }
         // read before the apply: its focus fallback can front another app
         let returnTarget = userHiddenReturnTarget(changes)
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)

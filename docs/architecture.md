@@ -243,7 +243,9 @@ These types decompose what would otherwise be a monolithic
   report changes instead of being polled, so the discovery diff runs
   only when something changed. App-level subscriptions attach on
   `attachToRunningApps` / `attach(pid:)`; window-level ones attach lazily
-  via `ensureWindowSubscriptions(for:)` after each discovery pass. Same
+  via `ensureWindowSubscriptions(for:)` after each discovery pass. Each
+  refused registration is retried on its own on later polls, up to five
+  tries, and running out logs at notice. Same
   architecture as yabai / AeroSpace.
 - **`WindowDiscoveryService`** runs the diff between the previous and
   current AX snapshot. Owns the lifecycle/classification cache
@@ -320,9 +322,21 @@ a 0.25 s messaging timeout on the elements it reads, so a stalled app
 costs a quarter second and is held rather than judged. An app whose
 window list timed out is not asked again until a backoff is up, half a
 second doubling to eight (`StallBackoff`), and only one stalled app is
-asked per walk, so a walk pays at most one timeout however many apps
-are stalled. The walk logs its duration and what it
-skipped at debug (`AX walk:`). A missing
+asked per walk, the one asked longest ago, so a walk pays at most one
+timeout however many apps are stalled and no app starves another. A walk
+also has a 500 ms budget (`WalkPacing`): past it, only apps known to
+answer fast are asked, and the rest are held and go first next walk. The
+walk logs its duration and what it
+skipped at debug (`AX walk:`). `AXWindowMatcher` pairs AX windows with
+CG ids: an id the SPI names is used only when that window is on screen and
+free, and never swapped for another when it is real; only an element whose
+SPI failed falls back to the nearest on-screen window, within 64 points.
+Nothing reports when a skipped app can be asked again or a window that
+was not ready becomes ready, so `WindowDiscoveryService.secondsUntilARetryIsDue`
+tells the poll when to run again: a backoff's end, a budget skip, a few
+quick looks at a new window that was unbound or unreadable, and the
+re-checks of a window floated for a fixed size, which goes back to tiling
+if it turns resizable. A missing
 window its app still lists, neither minimized nor hidden with the app —
 another Space, a native full-screen excursion, a stale snapshot — is held
 the same way for five seconds (`WindowDiscoveryService.listedHoldSpan`)
