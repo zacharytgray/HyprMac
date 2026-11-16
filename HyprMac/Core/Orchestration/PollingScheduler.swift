@@ -33,6 +33,12 @@ enum PollTrigger: String {
     var looksForNewWindow: Bool {
         self == .create || self == .followUp || self == .newWindow
     }
+
+    /// work a brand-new window waits on: an announced window, the watch's
+    /// re-polls, a focus that can name a window no poll has seen, and
+    /// discovery's own look at a window it could not use yet. a workspace
+    /// switch's hold lets an admit-only pass answer these early
+    var isNewWindowWork: Bool { looksForNewWindow || self == .focus || self == .axRetry }
 }
 
 /// Polling driver for `WindowDiscoveryService`.
@@ -78,12 +84,15 @@ final class PollingScheduler {
         /// ms the poll spent deferred by a suppression
         let deferredMS: Int
         let deferredBy: String?
+        /// the admit-only pass a workspace switch's hold allows, not a poll
+        var admitOnly = false
 
-        var isReconcileOnly: Bool { triggers == [.reconcile] }
+        var isReconcileOnly: Bool { triggers == [.reconcile] && !admitOnly }
 
         var summary: String {
             var line = triggers.map(\.rawValue).joined(separator: "+") + ", waited \(waitedMS)ms"
             if let deferredBy, deferredMS > 0 { line += ", deferred \(deferredMS)ms by \(deferredBy)" }
+            if admitOnly { line += ", admit-only during the switch hold" }
             return line
         }
     }
@@ -128,6 +137,11 @@ final class PollingScheduler {
     private var trailingTriggers: [PollTrigger] = []
     private var scheduleGeneration: UInt64 = 0
     private let onPoll: () -> Void
+    /// the earliest new-window request no poll or admit pass has answered
+    private var admitDue: DispatchTime?
+    private var admitTriggers: [PollTrigger] = []
+    private var admitRequestedAt: DispatchTime?
+    private var admitGeneration: UInt64 = 0
 
     /// The poll `onPoll` is running, nil outside it.
     private(set) var currentFire: Fire?
@@ -140,6 +154,12 @@ final class PollingScheduler {
     /// Seconds until a timed suppression lifts, nil when none is timed. A
     /// deferred fire wakes then instead of on the next fixed step.
     var suppressionEndsIn: () -> TimeInterval? = { nil }
+    /// Whether the hold that defers polls right now is a finished workspace
+    /// switch's alone, so brand-new windows may be admitted under it.
+    var admitsNewWindowsDuringHold: () -> Bool = { false }
+    /// The admit-only pass. nil turns it off: new-window work then waits
+    /// out every hold, as all polls do.
+    var onAdmitDuringHold: (() -> Void)?
 
     // test seams: the clock and the main-queue delay
     var now: () -> DispatchTime = { .now() }
@@ -188,7 +208,9 @@ final class PollingScheduler {
         timer = nil
         isStarted = false
         clearPending()
+        clearAdmit()
         scheduleGeneration &+= 1
+        admitGeneration &+= 1
     }
 
     /// Schedule a single coalesced poll `delay` seconds from now.
@@ -229,6 +251,7 @@ final class PollingScheduler {
         }
         let at = now()
         let deadline = at + delay
+        if trigger.isNewWindowWork { noteAdmitRequest(trigger, at: at, delay: delay) }
         if pendingPoll {
             // only a sooner request re-arms. a deferred fire's deadline is
             // already past, so it is never re-armed
@@ -274,6 +297,62 @@ final class PollingScheduler {
         }
     }
 
+    // MARK: - admit-only pass
+
+    /// New-window work also gets its own attempt at its deadline. A poll
+    /// that runs first answers it; a hold that `admitsNewWindowsDuringHold`
+    /// allows gets the admit-only pass instead of the wait. The poll itself
+    /// stays deferred, and runs in full once the hold ends.
+    private func noteAdmitRequest(_ trigger: PollTrigger, at: DispatchTime, delay: TimeInterval) {
+        guard onAdmitDuringHold != nil else { return }
+        add(trigger, to: &admitTriggers)
+        if admitRequestedAt == nil { admitRequestedAt = at }
+        let deadline = at + delay
+        guard admitDue.map({ deadline < $0 }) ?? true else { return }
+        admitDue = deadline
+        admitGeneration &+= 1
+        armAdmit(after: delay, generation: admitGeneration)
+    }
+
+    private func armAdmit(after delay: TimeInterval, generation: UInt64) {
+        arm(delay) { [weak self] in
+            guard let self, self.admitDue != nil, self.admitGeneration == generation else { return }
+            // no poll left to answer for: nothing is waiting
+            guard self.pendingPoll else {
+                self.clearAdmit()
+                return
+            }
+            if self.isSuppressed(), self.admitsNewWindowsDuringHold() {
+                self.runAdmit()
+                return
+            }
+            // no hold: the pending poll runs and answers it. a switch still
+            // writing frames, or a hold that is not a switch's (wake, a
+            // display change, a move, a held button): asked again, the way
+            // a deferred poll is, until a poll or an admit pass answers it
+            let step = self.suppressionEndsIn()
+                .map { min(Self.deferStep, max(0.02, $0 + 0.01)) } ?? Self.deferStep
+            self.armAdmit(after: step, generation: generation)
+        }
+    }
+
+    private func runAdmit() {
+        let at = now()
+        let fire = Fire(triggers: admitTriggers,
+                        waitedMS: admitRequestedAt.flatMap { Self.ms(from: $0, to: at) } ?? 0,
+                        deferredMS: 0, deferredBy: nil, admitOnly: true)
+        clearAdmit()
+        currentFire = fire
+        onAdmitDuringHold?()
+        currentFire = nil
+    }
+
+    private func clearAdmit() {
+        admitDue = nil
+        admitTriggers = []
+        admitRequestedAt = nil
+    }
+
     /// logs the first deferral of a pending poll only
     private func noteDeferral() {
         guard deferredSince == nil else { return }
@@ -313,6 +392,9 @@ final class PollingScheduler {
     }
 
     private func run(_ fire: Fire) {
+        // a full poll answers every new-window request made before it. one
+        // the poll makes itself (a watch's retry) sets it again
+        clearAdmit()
         currentFire = fire
         onPoll()
         currentFire = nil

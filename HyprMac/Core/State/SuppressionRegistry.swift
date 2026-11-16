@@ -15,6 +15,14 @@ enum SuppressionKey: String {
     case workspaceTransition = "workspace-transition"
 }
 
+/// Who asked for a suppression. A workspace switch's own transition hold
+/// lets brand-new windows in once the switch is done; every other caller
+/// (moves, the scratchpad, display settle, wake) holds everything.
+enum SuppressionSource {
+    case workspaceSwitch
+    case other
+}
+
 /// How long each kind of event holds a key. The settle windows in
 /// `DisplaySettle` add to these. `docs/architecture.md` has the table.
 enum SuppressionDelay {
@@ -40,14 +48,23 @@ enum SuppressionDelay {
 /// Threading: main-thread only. No synchronization.
 final class SuppressionRegistry {
     private var until: [SuppressionKey: Date] = [:]
+    /// The latest expiry any caller but a workspace switch asked for.
+    private var otherUntil: [SuppressionKey: Date] = [:]
 
     /// Suppress `key` for `duration` seconds from now.
     ///
     /// Extends an existing suppression if the new expiry is later; never
     /// shortens. `reason`, when supplied, logs at `.notice` so the
-    /// suppression is greppable in Console.
-    func suppress(_ key: SuppressionKey, for duration: TimeInterval, reason: String? = nil) {
+    /// suppression is greppable in Console. `source` is kept apart only so
+    /// `isHeldOnlyByWorkspaceSwitch` can tell a switch's hold from the rest.
+    func suppress(_ key: SuppressionKey, for duration: TimeInterval, reason: String? = nil,
+                  source: SuppressionSource = .other) {
         let newExpiry = Date().addingTimeInterval(duration)
+        // recorded before the early return: a shorter hold from a wake or a
+        // move still counts while it lasts, even under a longer switch hold
+        if source == .other, otherUntil[key].map({ $0 < newExpiry }) ?? true {
+            otherUntil[key] = newExpiry
+        }
         if let existing = until[key], existing > newExpiry {
             return
         }
@@ -70,6 +87,19 @@ final class SuppressionRegistry {
         return true
     }
 
+    /// `true` while `key` is suppressed and every caller still holding it
+    /// was a workspace switch. A wake, a display change, a move or the
+    /// scratchpad holding it too makes this `false`.
+    func isHeldOnlyByWorkspaceSwitch(_ key: SuppressionKey) -> Bool {
+        guard isSuppressed(key) else { return false }
+        guard let other = otherUntil[key] else { return true }
+        if Date() >= other {
+            otherUntil.removeValue(forKey: key)
+            return true
+        }
+        return false
+    }
+
     /// Seconds until `key` lifts, nil when it is not active.
     func remaining(_ key: SuppressionKey) -> TimeInterval? {
         guard isSuppressed(key), let expiry = until[key] else { return nil }
@@ -79,11 +109,13 @@ final class SuppressionRegistry {
     /// Drop `key` immediately, regardless of its expiry.
     func clear(_ key: SuppressionKey) {
         until.removeValue(forKey: key)
+        otherUntil.removeValue(forKey: key)
     }
 
     /// Drop every active suppression.
     func clearAll() {
         until.removeAll()
+        otherUntil.removeAll()
         expectedActivations.removeAll()
     }
 

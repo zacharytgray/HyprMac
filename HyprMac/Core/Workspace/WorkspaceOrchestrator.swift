@@ -81,6 +81,13 @@ final class WorkspaceOrchestrator {
     private var revealRetryDue: Date?
     static let revealRetryInterval: TimeInterval = 0.1
     static let revealRetryAttempts = 15
+    /// `switchWorkspace` calls under way; the walk, retile and focus steps
+    /// all run inside the call.
+    private var switchesInFlight = 0
+    /// No switch is writing frames: none is under way, and no floater it
+    /// could not reveal is still being retried. A brand-new window may be
+    /// tiled during the switch's transition hold only then.
+    var isSwitchSettled: Bool { switchesInFlight == 0 && revealRetryPending.isEmpty }
     var excludedBundleIDs: () -> Set<String> = { [] }
     var isScratchpadWindow: (CGWindowID) -> Bool = { _ in false }
 
@@ -346,10 +353,15 @@ final class WorkspaceOrchestrator {
                          preferredFrame: CGRect? = nil) {
         // hold polls off for the duration of the transition. Tahoe AX
         // writes lag, so a poll mid-transition reads stale frames and
-        // drift detection can falsely reassign windows.
-        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition)
+        // drift detection can falsely reassign windows. tagged as the
+        // switch's own: once the switch returns, a brand-new window may be
+        // admitted under it (`isSwitchSettled`)
+        suppressions.suppress(.workspaceTransition, for: SuppressionDelay.transition,
+                              source: .workspaceSwitch)
         suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
         suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
+        switchesInFlight += 1
+        defer { switchesInFlight -= 1 }
 
         let currentScreen = screenUnderCursor()
 

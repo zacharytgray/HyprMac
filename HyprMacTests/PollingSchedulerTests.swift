@@ -515,4 +515,151 @@ final class PollingSchedulerClockTests: XCTestCase {
         let idle = PollingScheduler(periodicInterval: 1000) {}
         XCTAssertEqual(idle.schedule(after: 0.2, trigger: .create, trailing: true), .beforeStart)
     }
+
+    // MARK: - admit-only pass under a switch's hold
+
+    private var admits: [(at: TimeInterval, fire: PollingScheduler.Fire)] = []
+
+    /// a hold that lifts at `liftsAt`, and a gate that opens at `settlesAt`
+    private func holdAdmits(liftsAt: TimeInterval, settlesAt: TimeInterval) {
+        admits = []
+        scheduler.isSuppressed = { [unowned self] in self.queue.elapsed < liftsAt }
+        scheduler.suppressionEndsIn = { [unowned self] in
+            let left = liftsAt - self.queue.elapsed
+            return left > 0 ? left : nil
+        }
+        scheduler.admitsNewWindowsDuringHold = { [unowned self] in self.queue.elapsed >= settlesAt }
+        scheduler.onAdmitDuringHold = { [unowned self] in
+            self.admits.append((self.queue.elapsed, self.scheduler.currentFire!))
+        }
+    }
+
+    func testACreateUnderASwitchHoldGetsAnAdmitPassOnceTheSwitchIsDone() {
+        // the switch writes frames until 0.4 s; its hold lasts to 1.5 s
+        holdAdmits(liftsAt: 1.5, settlesAt: 0.4)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 0.3)
+        XCTAssertTrue(admits.isEmpty, "not while the switch is still writing frames")
+        queue.advance(by: 0.3)
+        XCTAssertEqual(admits.count, 1)
+        XCTAssertEqual(admits[0].at, 0.5, accuracy: 0.002, "the first ask after the switch settled")
+        XCTAssertTrue(admits[0].fire.admitOnly)
+        XCTAssertEqual(admits[0].fire.triggers, [.create])
+        XCTAssertTrue(admits[0].fire.summary.hasSuffix("admit-only during the switch hold"))
+        XCTAssertTrue(fires.isEmpty, "the full poll still waits out the hold")
+        queue.advance(by: 2)
+        XCTAssertEqual(admits.count, 1, "one pass per request")
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].at, 1.51, accuracy: 0.002, "the full poll runs as the hold ends")
+        XCTAssertEqual(fires[0].fire.triggers, [.create])
+        XCTAssertFalse(fires[0].fire.admitOnly)
+    }
+
+    func testAnAdmitPassThatFoundNothingIsAskedAgainByTheWatchsRetry() {
+        holdAdmits(liftsAt: 1.5, settlesAt: 0)
+        scheduler.onAdmitDuringHold = { [unowned self] in
+            self.admits.append((self.queue.elapsed, self.scheduler.currentFire!))
+            // AX did not list the window yet: the watch asks again in 0.3 s
+            if self.admits.count == 1 { self.scheduler.schedule(after: 0.3, trigger: .followUp) }
+        }
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 1)
+        XCTAssertEqual(admits.map(\.fire.triggers), [[.create], [.followUp]])
+        XCTAssertEqual(admits[1].at, 0.5, accuracy: 0.002)
+        XCTAssertTrue(fires.isEmpty)
+    }
+
+    func testExistingWindowWorkGetsNoAdmitPass() {
+        holdAdmits(liftsAt: 1.5, settlesAt: 0)
+        scheduler.schedule(after: 0.2, trigger: .destroy)
+        scheduler.schedule(after: 0.2, trigger: .reveal)
+        queue.advance(by: 1)
+        XCTAssertTrue(admits.isEmpty)
+        queue.advance(by: 1)
+        XCTAssertEqual(fires.map(\.fire.triggers), [[.destroy, .reveal]])
+    }
+
+    func testNoHoldMeansTheOrdinaryPollAndNoAdmitPass() {
+        holdAdmits(liftsAt: 0, settlesAt: 0)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 2)
+        XCTAssertTrue(admits.isEmpty)
+        XCTAssertEqual(fires.count, 1)
+        XCTAssertEqual(fires[0].at, 0.2, accuracy: 0.002)
+    }
+
+    /// the production gate over a real registry, with the switch done
+    private func registryHold(_ registry: SuppressionRegistry) {
+        admits = []
+        scheduler.isSuppressed = { registry.isSuppressed(.workspaceTransition) }
+        scheduler.admitsNewWindowsDuringHold = {
+            SwitchHoldAdmission.allows(
+                heldOnlyBySwitch: registry.isHeldOnlyByWorkspaceSwitch(.workspaceTransition),
+                switchSettled: true, mouseButtonDown: false, finishingDrag: false,
+                displayTransitionPending: false, sessionInterrupted: false)
+        }
+        scheduler.onAdmitDuringHold = { [unowned self] in
+            self.admits.append((self.queue.elapsed, self.scheduler.currentFire!))
+        }
+    }
+
+    func testAWakeHoldStillDefersANewWindow() {
+        let registry = SuppressionRegistry()
+        registryHold(registry)
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.systemInterruption)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 3)
+        XCTAssertTrue(admits.isEmpty, "a wake hold admits nothing early")
+        XCTAssertTrue(fires.isEmpty)
+        registry.clear(.workspaceTransition)
+        queue.advance(by: 0.4)
+        XCTAssertEqual(fires.count, 1, "the poll after the hold admits it")
+        XCTAssertTrue(admits.isEmpty)
+    }
+
+    func testADisplayHoldUnderASwitchStillDefersANewWindow() {
+        let registry = SuppressionRegistry()
+        registryHold(registry)
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.displaySettle)
+        // a switch inside the display settle is still held by the settle
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.transition, source: .workspaceSwitch)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 3)
+        XCTAssertTrue(admits.isEmpty)
+        registry.clear(.workspaceTransition)
+        queue.advance(by: 0.4)
+        XCTAssertEqual(fires.count, 1)
+    }
+
+    func testASwitchOnlyHoldAdmitsThroughTheRegistry() {
+        let registry = SuppressionRegistry()
+        registryHold(registry)
+        registry.suppress(.workspaceTransition, for: SuppressionDelay.transition, source: .workspaceSwitch)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        queue.advance(by: 0.3)
+        XCTAssertEqual(admits.count, 1)
+        XCTAssertTrue(fires.isEmpty)
+    }
+
+    func testTheGateOpensForAFinishedSwitchsOwnHoldOnly() {
+        func allows(switchOnly: Bool = true, settled: Bool = true, mouse: Bool = false,
+                    drag: Bool = false, display: Bool = false, interrupted: Bool = false) -> Bool {
+            SwitchHoldAdmission.allows(heldOnlyBySwitch: switchOnly, switchSettled: settled,
+                                       mouseButtonDown: mouse, finishingDrag: drag,
+                                       displayTransitionPending: display, sessionInterrupted: interrupted)
+        }
+        XCTAssertTrue(allows())
+        XCTAssertFalse(allows(switchOnly: false), "wake, display, move or scratchpad hold")
+        XCTAssertFalse(allows(settled: false), "the switch is still writing frames")
+        XCTAssertFalse(allows(mouse: true))
+        XCTAssertFalse(allows(drag: true))
+        XCTAssertFalse(allows(display: true))
+        XCTAssertFalse(allows(interrupted: true))
+    }
+
+    func testATiledMemberMissingFromTheWalkStopsTheAdmitPass() {
+        XCTAssertEqual(SwitchHoldAdmission.missingTiledMembers([1, 2, 3], listed: [1, 3, 9], held: []), [2])
+        XCTAssertEqual(SwitchHoldAdmission.missingTiledMembers([1, 2], listed: [1], held: [2]), [],
+                       "a held member keeps its leaf, so the pass may run")
+    }
 }
