@@ -63,6 +63,10 @@ struct WindowChanges {
     /// Subset of `returned` that AX confirmed as minimized or Cmd-H'd
     /// while hidden. Not an unreadable hide, and not a verified close.
     var returnedFromUserHide: Set<CGWindowID> = []
+    /// Subset of `returned` that was a verified close: the app reused the
+    /// window's id (Mail, Teams). Not minimized, Cmd-H'd or unreadable. A
+    /// pinned app's reopen goes to its pin instead of drifting.
+    var reopened: Set<CGWindowID> = []
     /// Windows auto-floated as not resizable that a re-check found
     /// resizable. The service cleared their floating flag; the retile
     /// tiles them like any other member of their workspace.
@@ -578,6 +582,7 @@ final class WindowDiscoveryService {
             focusedWindowGone: focusedGone,
             requestsRecheck: false,
             returnedFromUserHide: fromUserHide,
+            reopened: reopened,
             unfloated: unfloated
         )
     }

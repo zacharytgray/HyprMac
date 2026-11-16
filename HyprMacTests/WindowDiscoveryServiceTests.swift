@@ -804,6 +804,27 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertFalse(cache.reservedHiddenWindowIDs.contains(13))
     }
 
+    // only a verified close is a reopen: a pin may move it, a user hide never
+    func testOnlyAVerifiedCloseReturnsAsAReopen() {
+        let access = StubAccessibility()
+        let (svc, cache, _) = makeService(accessibility: access)
+        cache.knownWindowIDs = [15, 16]
+        cache.windowOwners[15] = 8500
+        cache.windowOwners[16] = 8500
+
+        access.stateAnswer = .absent
+        _ = compute(svc, snapshot: [makeWindow(id: 16, pid: 8500)], runningPIDs: [8500])
+        access.stateAnswer = .minimized
+        _ = compute(svc, snapshot: [], runningPIDs: [8500])
+
+        let back = compute(svc, snapshot: [makeWindow(id: 15, pid: 8500), makeWindow(id: 16, pid: 8500)],
+                           runningPIDs: [8500])
+
+        XCTAssertEqual(Set(back.returned.map(\.windowID)), [15, 16])
+        XCTAssertEqual(back.reopened, [15])
+        XCTAssertEqual(back.returnedFromUserHide, [16])
+    }
+
     // MARK: - gone (dead pid → fully forgotten)
 
     func testGoneWindowWithDeadPIDIsFullyForgotten() {
