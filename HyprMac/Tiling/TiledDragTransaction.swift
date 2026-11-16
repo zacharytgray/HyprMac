@@ -182,8 +182,10 @@ struct TiledDragTransaction {
             return generation
         }
         let ids = windows.map(\.windowID)
-        let captured = FrameSizingAttempt(io: io).captureFrames(windowIDs: ids,
-                                                                generation: generation)
+        // reads every window one after another, so its deadline grows per window
+        let captured = FrameSizingAttempt(io: io, configuration: FrameReadbackPoller.captureConfiguration(
+            FrameSizingConfiguration(), for: ids.count))
+            .captureFrames(windowIDs: ids, generation: generation)
         guard case .accepted = captured.verdict,
               captured.actualFrames.count == ids.count else {
             return .unknown(captured.verdict.failure ?? .windowUnavailable(ids.first ?? 0))
@@ -246,8 +248,10 @@ struct TiledDragTransaction {
             }
             return generation
         }
-        let captured = FrameSizingAttempt(io: io).captureFrames(windowIDs: ids,
-                                                                generation: generation)
+        // reads every window one after another, so its deadline grows per window
+        let captured = FrameSizingAttempt(io: io, configuration: FrameReadbackPoller.captureConfiguration(
+            FrameSizingConfiguration(), for: ids.count))
+            .captureFrames(windowIDs: ids, generation: generation)
         guard case .accepted = captured.verdict,
               captured.actualFrames.count == ids.count else {
             let failure: FrameSizingFailure
@@ -446,7 +450,10 @@ struct TiledDragTransaction {
             return restore(snapshot, reason: .preflight(.invalidTarget), attempt: attempt)
         }
 
-        let captured = sizing(attempt).capture(windowIDs: targetIDs, generation: snapshot.generation)
+        // the read gets a deadline grown per window, within this drop's cap
+        let captureAttempt = FrameSizingAttempt(io: io, configuration: FrameReadbackPoller.captureConfiguration(
+            configuration, for: targetIDs.count))
+        let captured = sizing(captureAttempt).capture(windowIDs: targetIDs, generation: snapshot.generation)
         guard case .accepted = captured.verdict, captured.actualFrames.count == targetIDs.count else {
             let failure = captured.verdict.failure
                 ?? .windowUnavailable(targetIDs.first ?? snapshot.draggedID)

@@ -324,7 +324,10 @@ position settle budget for every position-first target, and the sample
 limit with it. The capture before the first pass grows the same way, 80 ms
 for every window past three, up to `PassBudget.total`: it reads every
 window's position and size in turn, and eight windows at 25 ms a read ran
-out of the base 0.36 seconds before a single write.
+out of the base 0.36 seconds before a single write. A tiled drag's press
+capture, its occluder capture and the release screen's read on a drop
+across monitors use the same per-window deadline
+(`FrameReadbackPoller.captureConfiguration`).
 
 The forward passes of one attempt share one cap (`PassBudget.total`,
 two seconds): the candidate, its adjusted pass, the topology recovery and

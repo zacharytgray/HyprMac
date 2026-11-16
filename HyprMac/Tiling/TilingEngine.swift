@@ -741,8 +741,9 @@ class TilingEngine {
             }
             return generation
         }
-        let captured = FrameSizingAttempt(io: io).captureFrames(
-            windowIDs: windows.map(\.windowID), generation: generation)
+        let captured = FrameSizingAttempt(io: io, configuration: FrameReadbackPoller.captureConfiguration(
+            FrameSizingConfiguration(), for: windows.count))
+            .captureFrames(windowIDs: windows.map(\.windowID), generation: generation)
         guard case .accepted = captured.verdict,
               captured.actualFrames.count == windows.count,
               layoutGeneration == generation,
