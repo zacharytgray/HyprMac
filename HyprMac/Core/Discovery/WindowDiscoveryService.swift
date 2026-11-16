@@ -142,6 +142,22 @@ final class WindowDiscoveryService {
     /// flap cycle drives two retiles (sibling expands full-screen, then
     /// shrinks back). See "Retile churn" in docs/debugging.md.
     private var hiddenAt: [CGWindowID: Date] = [:]
+    /// windows sent to the cursor's monitor, by deadline. drift leaves each
+    /// alone until it stands mostly on its workspace's screen or the
+    /// deadline passes, so it is not sent back while on its way
+    private var driftExemptions: [CGWindowID: Date] = [:]
+    static let driftExemptionSpan: TimeInterval = 2
+
+    /// Keep drift off `windowID` while it moves to the cursor's monitor.
+    func exemptFromDrift(_ windowID: CGWindowID) {
+        driftExemptions[windowID] = now().addingTimeInterval(Self.driftExemptionSpan)
+    }
+
+    func endDriftExemption(_ windowID: CGWindowID) {
+        driftExemptions.removeValue(forKey: windowID)
+    }
+
+    var driftExemptWindowIDs: Set<CGWindowID> { Set(driftExemptions.keys) }
     private static let flapWindowSec: TimeInterval = 5.0
 
     /// A locked session, sleeping displays or a switched-out user session
@@ -561,6 +577,7 @@ final class WindowDiscoveryService {
         // show up in the gone set, or generic drift across cache fields.
         let swept = sweepStaleState(runningPIDs: runningPIDs)
         fullyForgotten.formUnion(swept)
+        for id in fullyForgotten { driftExemptions.removeValue(forKey: id) }
 
         // drift detection. just-returned windows that were verifiably CLOSED
         // (not minimized/Cmd-H'd) get special handling: a recycled-CGWindowID
@@ -850,6 +867,8 @@ final class WindowDiscoveryService {
         -> (drifts: [(windowID: CGWindowID, fromWorkspace: Int, toWorkspace: Int)],
             reopenedOntoHidden: Set<CGWindowID>) {
         let visibleWorkspaces = Set(workspaceManager.monitorWorkspace.values)
+        let clock = now()
+        driftExemptions = driftExemptions.filter { $0.value > clock }
         var drifts: [(CGWindowID, Int, Int)] = []
         var reopenedOntoHidden: Set<CGWindowID> = []
         for w in allWindows {
@@ -870,7 +889,14 @@ final class WindowDiscoveryService {
                   let physicalScreen = majorityOverlapScreen(w) else { continue }
             // skip if the window sits on a disabled monitor — handled elsewhere
             guard !workspaceManager.isMonitorDisabled(physicalScreen) else { continue }
+            // on its way to the cursor's monitor: left alone until it is
+            // mostly on its workspace's screen
             let physicalWs = workspaceManager.workspaceForScreen(physicalScreen)
+            if driftExemptions[w.windowID] != nil {
+                guard physicalWs == recordedWs
+                        || workspaceManager.homeScreenForWorkspace(recordedWs) == physicalScreen else { continue }
+                driftExemptions.removeValue(forKey: w.windowID)
+            }
             guard physicalWs != recordedWs else { continue }
             // a window that just returned from hidden while its recorded ws
             // is hidden is a recycled-id reopen — without reassignment it

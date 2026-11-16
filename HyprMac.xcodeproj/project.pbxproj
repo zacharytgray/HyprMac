@@ -231,6 +231,7 @@
 		95AF23F08DD358F2C15BCBEF /* UserConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A029C0AE0E8E5DEE2416684 /* UserConfig.swift */; };
 		96FC11AF63A197C78BBE9E40 /* KeybindEditorViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */; };
 		96FE6F4A503490B05934FE5B /* KeybindDisplayHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7681B5C6FAEC2BFB53A30743 /* KeybindDisplayHelpers.swift */; };
+		97351C68BADE4C0E663C01BA /* CursorMonitorPlacementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0340E39E1A2FD9BE5C2790F4 /* CursorMonitorPlacementTests.swift */; };
 		98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */; };
 		9A7B1CB7BE53FAD102B90AE5 /* DebugLogFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 92C350B5FCD0242E1993F822 /* DebugLogFileTests.swift */; };
 		9AD5ACC91E919779EAB74F5B /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53410A7A5185F2585DFFFB0A /* HotkeyManager.swift */; };
@@ -404,6 +405,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0340E39E1A2FD9BE5C2790F4 /* CursorMonitorPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorMonitorPlacementTests.swift; sourceTree = "<group>"; };
 		05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngine.swift; sourceTree = "<group>"; };
 		0675BA00E19351F741399A5F /* TilingEngineVerifiedLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineVerifiedLayoutTests.swift; sourceTree = "<group>"; };
 		075CB706E42649E175CB784A /* HoverResponseRateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverResponseRateTests.swift; sourceTree = "<group>"; };
@@ -888,6 +890,7 @@
 				B4B8A362BCC405405997D733 /* ConfigStoreWatcherTests.swift */,
 				27E1D4391AFE7A5802FF00C4 /* ConfigUpdateCoordinatorTests.swift */,
 				D69DC45709436657D8D4925A /* CrossMonitorMoveRecoveryTests.swift */,
+				0340E39E1A2FD9BE5C2790F4 /* CursorMonitorPlacementTests.swift */,
 				92C350B5FCD0242E1993F822 /* DebugLogFileTests.swift */,
 				68F3C17F26B93203A2CDE8B7 /* DeclaredSizeLimitsTests.swift */,
 				6B23E3313247FD77173D35DD /* DefaultKeybindsTests.swift */,
@@ -1522,6 +1525,7 @@
 				DE18F2DAE4D0C80F9135D9A1 /* ConfigStoreWatcherTests.swift in Sources */,
 				C4C0FB5F11923E54D785E16B /* ConfigUpdateCoordinatorTests.swift in Sources */,
 				1572D4138929F7D5B8E2D1A8 /* CrossMonitorMoveRecoveryTests.swift in Sources */,
+				97351C68BADE4C0E663C01BA /* CursorMonitorPlacementTests.swift in Sources */,
 				9A7B1CB7BE53FAD102B90AE5 /* DebugLogFileTests.swift in Sources */,
 				01DCEAC13BD82585442FB4B7 /* DeclaredSizeLimitsTests.swift in Sources */,
 				2A235468195A778CCCA51C70 /* DefaultKeybindsTests.swift in Sources */,

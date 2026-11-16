@@ -77,6 +77,68 @@ final class ActionDispatcher {
         return moved.first { $0.windowID == focusedWindowID } ?? moved.first
     }
 
+    /// Whether this poll may send a window to the cursor's monitor.
+    enum CursorPlacementGate: Equatable {
+        case open
+        /// the slow reconcile tick found it; the user did not just open it
+        case reconcilePoll
+        /// the displays are changing, so the cursor's screen is not trusted
+        case displayTransition
+    }
+
+    /// Why a window that opened on another monitor than the cursor's stays
+    /// where it opened.
+    enum CursorPlacementSkip: String, Equatable {
+        case alreadyOnCursorMonitor = "already on the cursor's monitor"
+        case reconcilePoll = "reconcile poll"
+        case displayTransition = "display transition"
+        case pinned
+        case floating
+        case quickLookPanel = "quick look panel"
+        case cursorMonitorDisabled = "cursor monitor disabled"
+        case appHasWindowOnScreen = "app has a window on screen"
+        case workspaceFull = "workspace full"
+    }
+
+    enum CursorPlacement: Equatable {
+        case move(toWorkspace: Int)
+        case stay(CursorPlacementSkip)
+    }
+
+    /// What the cursor placement rule looks at for one new or reopened
+    /// window. Plain values, so the rule tests without AX.
+    struct CursorPlacementFacts: Equatable {
+        var standsOnCursorMonitor = false
+        var gate: CursorPlacementGate = .open
+        /// a workspace or scratchpad pin
+        var isPinned = false
+        var isFloating = false
+        var isQuickLookPanel = false
+        var cursorMonitorEnabled = true
+        /// another window of the app is on screen. the same batch's do not count
+        var appHasOtherWindowOnScreen = false
+        var cursorWorkspace: Int
+        var cursorWorkspaceHasRoom = true
+    }
+
+    /// An app's first window goes to the visible workspace of the monitor
+    /// under the pointer. Anything else stays where it opened.
+    static func cursorPlacement(_ facts: CursorPlacementFacts) -> CursorPlacement {
+        if facts.standsOnCursorMonitor { return .stay(.alreadyOnCursorMonitor) }
+        switch facts.gate {
+        case .open: break
+        case .reconcilePoll: return .stay(.reconcilePoll)
+        case .displayTransition: return .stay(.displayTransition)
+        }
+        if facts.isPinned { return .stay(.pinned) }
+        if facts.isFloating { return .stay(.floating) }
+        if facts.isQuickLookPanel { return .stay(.quickLookPanel) }
+        if !facts.cursorMonitorEnabled { return .stay(.cursorMonitorDisabled) }
+        if facts.appHasOtherWindowOnScreen { return .stay(.appHasWindowOnScreen) }
+        if !facts.cursorWorkspaceHasRoom { return .stay(.workspaceFull) }
+        return .move(toWorkspace: facts.cursorWorkspace)
+    }
+
     static func existingAssignmentsForAdmission(
         _ assignments: [Int: Set<CGWindowID>],
         fullyForgottenIDs: Set<CGWindowID>
@@ -146,6 +208,23 @@ final class ActionDispatcher {
     var retileAll: () -> Void = {}
     // switch to a pinned new window's workspace and focus it
     var followPinnedWindow: (CGWindowID, Int) -> Void = { _, _ in }
+    // keep drift off a window sent to the cursor's monitor, and end that
+    var exemptFromDrift: (CGWindowID) -> Void = { _ in }
+    var endDriftExemption: (CGWindowID) -> Void = { _ in }
+    // drop a window's admission retry
+    var cancelAdmissionRecovery: (CGWindowID, String) -> Void = { _, _ in }
+
+    /// A window this discovery pass sends to the cursor's monitor.
+    struct CursorMove: Equatable {
+        let targetWorkspace: Int
+        /// the visible workspace of the screen it opened on
+        let sourceWorkspace: Int
+        let sourceScreenName: String
+        /// where a refused pass rolls it back to
+        let origin: CGRect
+    }
+    /// this pass's moves; empty between passes
+    private(set) var cursorMoves: [CGWindowID: CursorMove] = [:]
 
     init(stateCache: WindowStateCache,
          accessibility: AccessibilityManager,
@@ -191,10 +270,12 @@ final class ActionDispatcher {
     /// - Parameter allWindows: the same window snapshot
     ///   `WindowDiscoveryService` consumed; passed through so
     ///   `retile` and workspace assignment do not re-query AX.
-    func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow])
+    func applyChanges(_ changes: WindowChanges, allWindows: [HyprWindow],
+                      cursorPlacement gate: CursorPlacementGate = .open)
         -> [TilingEngine.AdmissionResult] {
         let pinnedReopens = pinnedReopenedWindows(changes)
-        let pinFollow = admitNewWindows(changes, pinnedReopens: pinnedReopens)
+        let pinFollow = admitNewWindows(changes, allWindows: allWindows, gate: gate,
+                                        pinnedReopens: pinnedReopens)
 
         // engine/workspace/focus cleanup for ids the service forgot. out of
         // its tree first: the removal remembers the window's slot and the
@@ -225,8 +306,9 @@ final class ActionDispatcher {
         scratchpadDiscovery(changes.goneIDs, changes.returned)
 
         // apply cross-screen drift reassignments. a pinned reopen went to
-        // its pin above instead
-        let pinPlaced = Set(pinnedReopens.map(\.windowID))
+        // its pin above instead, and a window sent to the cursor's monitor
+        // is on its way there
+        let pinPlaced = Set(pinnedReopens.map(\.windowID)).union(cursorMoves.keys)
         for drift in changes.screenDrift where !pinPlaced.contains(drift.windowID) {
             workspaceManager.moveWindow(drift.windowID, toWorkspace: drift.toWorkspace)
         }
@@ -246,6 +328,7 @@ final class ActionDispatcher {
             // let surrounding windows fill gaps / make room.
             retileResults = retile(allWindows)
         }
+        retileResults += returnRefusedCursorMoves(retileResults, windows: allWindows)
 
         // if the FFM-tracked window disappeared, refocus to whatever tiled window
         // is under the cursor now. without this, focus gets stuck because
@@ -271,14 +354,16 @@ final class ActionDispatcher {
     /// this walk lists again is the full poll's return to make, and must
     /// not join a tree here.
     @discardableResult
-    func applyAdmissions(_ changes: WindowChanges, allWindows: [HyprWindow])
+    func applyAdmissions(_ changes: WindowChanges, allWindows: [HyprWindow],
+                         cursorPlacement gate: CursorPlacementGate = .open)
         -> [TilingEngine.AdmissionResult] {
         guard !changes.newWindows.isEmpty else { return [] }
-        let pinFollow = admitNewWindows(changes)
+        let pinFollow = admitNewWindows(changes, allWindows: allWindows, gate: gate)
         let tileable = allWindows.filter { stateCache.knownWindowIDs.contains($0.windowID) }
         hyprLog(.notice, .discovery, "discovery retile: new=\(changes.newWindows.map(\.windowID).sorted())"
                 + " (admitted during the workspace transition hold)")
-        let results = retile(tileable)
+        var results = retile(tileable)
+        results += returnRefusedCursorMoves(results, windows: tileable)
         finishDiscoveryPass(pinFollow: pinFollow, newWindowIDs: Set(changes.newWindows.map(\.windowID)),
                             results: results)
         return results
@@ -299,7 +384,8 @@ final class ActionDispatcher {
     /// for this diff's new windows, and for reopened windows a rule pins.
     ///
     /// - Returns: the pinned window to follow onto its workspace, if any.
-    private func admitNewWindows(_ changes: WindowChanges,
+    private func admitNewWindows(_ changes: WindowChanges, allWindows: [HyprWindow],
+                                 gate: CursorPlacementGate,
                                  pinnedReopens: [HyprWindow] = []) -> PinnedLanding? {
         // CGWindowIDs get recycled. an id discovery calls new is a different
         // window from the one that held it, so it must not inherit that
@@ -324,15 +410,128 @@ final class ActionDispatcher {
         }
 
         // workspace assignment for new windows that didn't auto-float onto a
-        // disabled monitor. assigning by physical screen — cursor-based was
-        // unreliable under multi-monitor + display-reconfig churn.
-        let reopenedIDs = Set(pinnedReopens.map(\.windowID))
-        return assignNewWindows(
+        // disabled monitor: an app's first window goes to the cursor's
+        // monitor, anything else to the screen it opened on
+        cursorMoves = planCursorMoves(changes, allWindows: allWindows, gate: gate)
+        let cursorScreen = screenUnderCursor()
+        let cursorReopens = changes.returned.filter { cursorMoves[$0.windowID] != nil }
+        let reopenedIDs = Set(pinnedReopens.map(\.windowID)).union(cursorReopens.map(\.windowID))
+        let landing = assignNewWindows(
             changes.newWindows.filter { !changes.newOnDisabledMonitor.contains($0.windowID) }
-                + pinnedReopens.filter { !isPinnedToScratchpad($0) },
+                + pinnedReopens.filter { !isPinnedToScratchpad($0) } + cursorReopens,
             reopenedIDs: reopenedIDs,
+            onScreen: cursorMoves.mapValues { _ in cursorScreen },
             fullyForgottenIDs: changes.fullyForgottenIDs
         )
+        // a move the capacity plan spilled elsewhere is no move
+        cursorMoves = cursorMoves.filter { workspaceManager.workspaceFor($0.key) == $0.value.targetWorkspace }
+        for id in cursorMoves.keys { exemptFromDrift(id) }
+        return landing
+    }
+
+    /// The windows of this diff that go to the cursor's monitor
+    /// (`cursorPlacement`): new tiled windows, and returns after a verified
+    /// close, of an app with nothing else on screen.
+    private func planCursorMoves(_ changes: WindowChanges, allWindows: [HyprWindow],
+                                 gate: CursorPlacementGate) -> [CGWindowID: CursorMove] {
+        let candidates = changes.newWindows.filter {
+            !changes.newOnDisabledMonitor.contains($0.windowID)
+                && workspaceManager.workspaceFor($0.windowID) != ScratchpadController.workspace
+        } + changes.returned.filter { changes.reopenedAfterClose.contains($0.windowID) }
+        guard !candidates.isEmpty else { return [:] }
+        let cursorScreen = screenUnderCursor()
+        let cursorEnabled = !workspaceManager.isMonitorDisabled(cursorScreen)
+        let target = workspaceManager.workspaceForScreen(cursorScreen)
+        let batch = Set((changes.newWindows + changes.returned).map(\.windowID))
+        let quickLook = Set(allWindows.filter(\.isQuickLookPanel).map(\.windowID))
+        let sourceScreen: [CGWindowID: NSScreen] = candidates.reduce(into: [:]) { screens, window in
+            if let frame = window.cachedFrame ?? window.frame,
+               let screen = displayManager.screen(containingMostOf: frame) {
+                screens[window.windowID] = screen
+            }
+        }
+        let isPinned = { (w: HyprWindow) in self.pinnedWorkspace(for: w) != nil || self.isPinnedToScratchpad(w) }
+        let tileable = { (w: HyprWindow) in
+            !self.stateCache.floatingWindowIDs.contains(w.windowID) && !w.isQuickLookPanel && !isPinned(w)
+        }
+        // the admission capacity rule, with this batch's windows that open
+        // on the cursor's monitor already counted
+        let capacity = workspaceManager.homeScreenForWorkspace(target)
+            .map { RetileAllPlanner.workspaceCapacity(maxDepth: tilingEngine.maxDepth(for: $0)) } ?? 0
+        let excluded = Self.admissionExclusions(floatingWindowIDs: stateCache.floatingWindowIDs,
+                                                hiddenWindowIDs: stateCache.hiddenWindowIDs,
+                                                reservedHiddenWindowIDs: stateCache.reservedHiddenWindowIDs)
+        let arriving = candidates.filter { sourceScreen[$0.windowID] == cursorScreen && tileable($0) }.count
+        var room = capacity - workspaceManager.windowIDs(onWorkspace: target)
+            .subtracting(excluded).subtracting(batch).count - arriving
+
+        var moves: [CGWindowID: CursorMove] = [:]
+        for window in candidates {
+            let id = window.windowID
+            guard let source = sourceScreen[id] else { continue }
+            let othersOnScreen = stateCache.knownWindowIDs.contains { other in
+                !batch.contains(other) && stateCache.windowOwners[other] == window.ownerPID
+                    && !quickLook.contains(other) && stateCache.cachedWindows[other]?.isQuickLookPanel != true
+                    && workspaceManager.isWindowVisible(other)
+            }
+            let decision = Self.cursorPlacement(CursorPlacementFacts(
+                standsOnCursorMonitor: source == cursorScreen,
+                gate: gate,
+                isPinned: isPinned(window),
+                isFloating: stateCache.floatingWindowIDs.contains(id),
+                isQuickLookPanel: window.isQuickLookPanel,
+                cursorMonitorEnabled: cursorEnabled,
+                appHasOtherWindowOnScreen: othersOnScreen,
+                cursorWorkspace: target,
+                cursorWorkspaceHasRoom: room > 0))
+            switch decision {
+            case .move(let workspace):
+                room -= 1
+                moves[id] = CursorMove(targetWorkspace: workspace,
+                                       sourceWorkspace: workspaceManager.workspaceForScreen(source),
+                                       sourceScreenName: source.localizedName,
+                                       origin: displayManager.cgRect(for: source)
+                                           .union(window.cachedFrame ?? window.frame ?? .null))
+                hyprLog(.notice, .orchestration, "open on cursor monitor: '\(window.title ?? "?")' (\(id))"
+                        + " opened on \(source.localizedName) → ws\(workspace) on \(cursorScreen.localizedName)")
+            case .stay(.alreadyOnCursorMonitor):
+                break
+            case .stay(let reason):
+                hyprLog(.debug, .orchestration, "open on cursor monitor skipped: '\(window.title ?? "?")' (\(id))"
+                        + " on \(source.localizedName), cursor on \(cursorScreen.localizedName): \(reason.rawValue)")
+            }
+        }
+        return moves
+    }
+
+    /// A window the cursor's monitor would not take goes back to the
+    /// monitor it opened on, assigned to that monitor's workspace, and one
+    /// more retile places it there. A timeout is not a refusal: its retry
+    /// keeps it tiled where it is.
+    private func returnRefusedCursorMoves(_ results: [TilingEngine.AdmissionResult],
+                                          windows: [HyprWindow]) -> [TilingEngine.AdmissionResult] {
+        let moves = cursorMoves
+        cursorMoves = [:]
+        var sentBack = false
+        for (id, move) in moves.sorted(by: { $0.key < $1.key }) {
+            guard let result = results.first(where: {
+                $0.workspace == move.targetWorkspace && $0.strandedIDs.contains(id)
+            }) else { continue }
+            if !result.refusedIDs.contains(id), result.failure?.isTimeout == true { continue }
+            cancelAdmissionRecovery(id, "open on cursor monitor refused")
+            endDriftExemption(id)
+            workspaceManager.assignWindow(id, toWorkspace: move.sourceWorkspace)
+            hyprLog(.notice, .orchestration, "open on cursor monitor refused: (\(id)) ws\(move.targetWorkspace)"
+                    + " would not take it, back to ws\(move.sourceWorkspace) on \(move.sourceScreenName)")
+            sentBack = true
+        }
+        return sentBack ? retile(windows) : []
+    }
+
+    /// Where a window this pass sent to the cursor's monitor stood when it
+    /// opened. The engine rolls a refused pass back to it.
+    func cursorMoveOrigin(_ windowID: CGWindowID) -> CGRect? {
+        cursorMoves[windowID]?.origin
     }
 
     /// The focus and floater steps every discovery pass ends with.
@@ -476,10 +675,12 @@ final class ActionDispatcher {
     }
 
     /// Assign a newly-discovered window to a workspace: its app's window
-    /// rule when one pins it, otherwise where it physically opened.
+    /// rule when one pins it, the cursor's monitor when `chosen` names it
+    /// (an app's first window, see `cursorPlacement`), otherwise where it
+    /// physically opened.
     ///
-    /// Without a rule, prefers the window's own screen — that is where
-    /// macOS placed it — and falls back to the cursor's screen only when
+    /// Without a rule or a choice, prefers the window's own screen, where
+    /// macOS placed it, and falls back to the cursor's screen only when
     /// the window has no usable frame yet. Always overwrites any prior
     /// assignment: a recycled `CGWindowID` could carry a leftover entry
     /// pointing at a workspace the user has not touched in days.
@@ -489,6 +690,7 @@ final class ActionDispatcher {
     ///
     /// - Returns: the pinned window to follow onto its workspace, if any.
     private func assignNewWindows(_ windows: [HyprWindow], reopenedIDs: Set<CGWindowID> = [],
+                                  onScreen chosen: [CGWindowID: NSScreen] = [:],
                                   fullyForgottenIDs: Set<CGWindowID>) -> PinnedLanding? {
         let admittedIDs = Set(Self.newWindowIDsForAdmission(
             windows.map(\.windowID), workspaceFor: workspaceManager.workspaceFor
@@ -498,7 +700,7 @@ final class ActionDispatcher {
         var groups: [(workspace: Int, windows: [HyprWindow])] = []
         var openedOn: [CGWindowID: Int] = [:]
         for window in windows where admittedIDs.contains(window.windowID) {
-            let screen = displayManager.screen(for: window) ?? screenUnderCursor()
+            let screen = chosen[window.windowID] ?? displayManager.screen(for: window) ?? screenUnderCursor()
             guard !workspaceManager.isMonitorDisabled(screen) else { continue }
             let screenWorkspace = workspaceManager.workspaceForScreen(screen)
             var workspace = screenWorkspace

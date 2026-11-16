@@ -610,6 +610,11 @@ class WindowManager {
         actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }
         actionDispatcher.restoreLayout = { [weak self] in self?.restoreLayoutSnapshot(manual: true) }
         actionDispatcher.retileAll = { [weak self] in self?.retileAllRequested() }
+        actionDispatcher.exemptFromDrift = { [weak self] id in self?.discovery.exemptFromDrift(id) }
+        actionDispatcher.endDriftExemption = { [weak self] id in self?.discovery.endDriftExemption(id) }
+        actionDispatcher.cancelAdmissionRecovery = { [weak self] id, reason in
+            self?.admissionRecovery.cancel(id, reason: reason)
+        }
         actionDispatcher.followPinnedWindow = { [weak self] windowID, workspace in
             guard let self else { return }
             // a workspace switch like any other: not mid-transition, and the
@@ -2442,7 +2447,8 @@ class WindowManager {
         if let wait = discovery.secondsUntilARetryIsDue { pollingScheduler.schedule(after: wait, trigger: .axRetry) }
         // read before the apply: its focus fallback can front another app
         let returnTarget = userHiddenReturnTarget(changes)
-        let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
+        let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows,
+                                                          cursorPlacement: cursorPlacementGate(fire))
         // the switch walks AX again, so this snapshot's frames are stale for
         // the park repair below
         if let returnTarget { followUserHiddenReturn(returnTarget) }
@@ -2487,6 +2493,14 @@ class WindowManager {
     /// discovery has never known, through the ordinary assignment and
     /// verified tile pass. Everything else this walk shows (gone, hidden,
     /// returned, drift) is left to the full poll the hold still defers.
+    /// Whether this poll may send an app's first window to the cursor's
+    /// monitor: not a reconcile tick, and not while the displays change.
+    private func cursorPlacementGate(_ fire: PollingScheduler.Fire?) -> ActionDispatcher.CursorPlacementGate {
+        if displayTransitionPending { return .displayTransition }
+        if fire?.isReconcileOnly == true { return .reconcilePoll }
+        return .open
+    }
+
     private func admitNewWindowsDuringHold() {
         guard !mouseButtonDown else { return }
         let fire = pollingScheduler.currentFire
@@ -2515,7 +2529,8 @@ class WindowManager {
             tilingEngine.primeMinimumSizes(changes.newWindows)
             hyprLog(.notice, .discovery, "admitted \(changes.newWindows.map(\.windowID).sorted()) during workspace"
                     + " transition (\(left)ms left on the hold), \(fire?.summary ?? "direct")")
-            actionDispatcher.applyAdmissions(changes, allWindows: allWindows)
+            actionDispatcher.applyAdmissions(changes, allWindows: allWindows,
+                                             cursorPlacement: cursorPlacementGate(fire))
         }
         settleDiscoveryFollowUps(changes, allWindows: allWindows, fire: fire)
     }
@@ -3132,6 +3147,10 @@ private extension WindowManager {
                 .subtracting(self.stateCache.hiddenWindowIDs)
         }
         // the tile a new window splits: the one HyprMac last focused
+        // a window sent to the cursor's monitor rolls back to where it opened
+        tilingEngine.newcomerOriginSource = { [weak self] id in
+            self?.actionDispatcher.cursorMoveOrigin(id)
+        }
         tilingEngine.splitTargetSource = { [weak self] in
             guard let self else { return nil }
             let id = self.focusBorder.trackedWindowID ?? self.focusController.lastFocusedID

@@ -2388,9 +2388,12 @@ class TilingEngine {
                                    generation: generation, inserted: inserted,
                                    refused: Set(m.refusedWindows.map(\.windowID)).subtracting(incumbents))
         }
+        // a newcomer sent here from another screen rolls back to where it opened
+        let reach = m.insertedWindows.compactMap { newcomerOriginSource($0.windowID) }
+            .reduce(extraReach) { union, rect in union.map { $0.union(rect) } ?? rect }
         let outcome = applyTrackedLayout(t, in: rect, generation: generation, key: key,
                                          inserted: m.insertedWindows.map(\.windowID).filter { !incumbents.contains($0) },
-                                         restorationUsableFrame: extraReach.map { restorationRect(for: rect).union($0) },
+                                         restorationUsableFrame: reach.map { restorationRect(for: rect).union($0) },
                                          topologyRecoveryMaxDepth: admissionTopologyRecovery
                                              && live == nil && incumbents.isEmpty
                                              && m.insertedWindows.count
@@ -3339,6 +3342,12 @@ class TilingEngine {
     /// Wired by `WindowManager` to the focus record. nil splits by the
     /// right-to-left walk alone (see `splitTarget(in:)`).
     var splitTargetSource: () -> CGWindowID? = { nil }
+
+    /// Where a newcomer HyprMac sent to the cursor's monitor stood when it
+    /// opened, so a refused pass rolls it back to that screen instead of
+    /// leaving it where the candidate put it. Wired by `WindowManager` to
+    /// the discovery pass under way. nil for every other window.
+    var newcomerOriginSource: (CGWindowID) -> CGRect? = { _ in nil }
 
     /// The held members of the pass under way: named by the source and
     /// absent from the list the pass was given. One the list carries is
