@@ -28,12 +28,16 @@ final class WorkspaceRevealRepairTests: XCTestCase {
     private var parked: [CGWindowID: RevealWindow] = [:]
     private var visible: Int!
     private var hidden: Int!
+    private var display: DisplayManager!
+    private var suppressions: SuppressionRegistry!
     private let saved = CGRect(x: 100, y: 120, width: 600, height: 400)
 
     override func setUpWithError() throws {
         let screen = RevealScreen()
         self.screen = screen
         let display = DisplayManager(screenSource: { [screen] })
+        self.display = display
+        suppressions = SuppressionRegistry()
         workspaceManager = WorkspaceManager(displayManager: display)
         workspaceManager.initializeMonitors()
         stateCache = WindowStateCache()
@@ -43,7 +47,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
             accessibility: AccessibilityManager(), displayManager: display,
             cursorManager: CursorManager(), stateCache: stateCache,
             focusController: FocusStateController(focusBorder: border), focusBorder: border,
-            dimmingOverlay: DimmingOverlay(), suppressions: SuppressionRegistry(),
+            dimmingOverlay: DimmingOverlay(), suppressions: suppressions,
             revalidation: MinimaRevalidation())
         orchestrator.screenUnderCursor = { [unowned self] in self.screen }
         orchestrator.onRevealMissed = { [unowned self] in self.revealMissed += 1 }
@@ -208,12 +212,121 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), saved)
     }
 
+    // MARK: - when the switch is done, for the admit-only pass
+
+    func testTheSwitchIsNotSettledWhileItsRetileRuns() {
+        var settledDuringRetile: Bool?
+        orchestrator.tileAllVisibleSpaces = { [unowned self] _ in
+            settledDuringRetile = self.orchestrator.isSwitchSettled
+        }
+        XCTAssertTrue(orchestrator.isSwitchSettled)
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(settledDuringRetile, false)
+        XCTAssertTrue(orchestrator.isSwitchSettled)
+        XCTAssertTrue(suppressions.isHeldOnlyByWorkspaceSwitch(.workspaceTransition),
+                      "the switch's hold is its own")
+    }
+
+    func testTheSwitchIsNotSettledWhileAFloaterRevealIsRetried() {
+        _ = parkedFloater(id: 7320, on: hidden)
+        orchestrator.allWindows = { [] }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertFalse(orchestrator.isSwitchSettled, "the retry still writes a frame")
+        appAnswers = true
+        stepRetry()
+        XCTAssertTrue(orchestrator.isSwitchSettled)
+    }
+
+    // Hypr+2, then Cmd-N: the create lands under the switch's 1.5 s hold.
+    // the newcomer is tiled once the switch is done, before the hold ends,
+    // and the window the switch revealed is left exactly as it was
+    func testACreateDuringTheSwitchHoldIsAdmittedAfterTheSwitchAndBeforeTheHoldEnds() {
+        let floater = parkedFloater(id: 7321, on: hidden)
+        stateCache.knownWindowIDs.insert(floater.windowID)
+        orchestrator.allWindows = { [] }
+        let discovery = WindowDiscoveryService(
+            stateCache: stateCache, accessibility: AccessibilityManager(), displayManager: display,
+            workspaceManager: workspaceManager, bundleIDForPID: { _ in nil }, isWindowSizeSettable: { _ in true })
+        let clock = StepClock()
+        var polls = 0
+        var admitted: [CGWindowID] = []
+        let scheduler = PollingScheduler(periodicInterval: 1000) { polls += 1 }
+        clock.install(on: scheduler)
+        scheduler.isSuppressed = { [unowned self] in self.suppressions.isSuppressed(.workspaceTransition) }
+        scheduler.admitsNewWindowsDuringHold = { [unowned self] in
+            SwitchHoldAdmission.allows(
+                heldOnlyBySwitch: self.suppressions.isHeldOnlyByWorkspaceSwitch(.workspaceTransition),
+                switchSettled: self.orchestrator.isSwitchSettled, mouseButtonDown: false,
+                finishingDrag: false, displayTransitionPending: false, sessionInterrupted: false)
+        }
+        // the walk still reads the floater in the hide corner
+        let newcomer = makeWindow(id: 8101, pid: 9877)
+        scheduler.onAdmitDuringHold = {
+            let changes = discovery.computeAdmissions(snapshot: [floater, newcomer], excludedBundleIDs: [])
+            admitted += changes.newWindows.map(\.windowID)
+        }
+        scheduler.start()
+        defer { scheduler.stop() }
+
+        orchestrator.switchWorkspace(hidden)
+        scheduler.schedule(after: 0.2, trigger: .create, trailing: true)
+        clock.advance(by: 0.6)
+        XCTAssertTrue(admitted.isEmpty, "the switch is still revealing a floater")
+
+        appAnswers = true
+        stepRetry()
+        clock.advance(by: 0.3)
+
+        XCTAssertEqual(admitted, [8101])
+        XCTAssertTrue(suppressions.isSuppressed(.workspaceTransition), "before the hold ended")
+        XCTAssertEqual(polls, 0, "the full poll still waits out the hold")
+        XCTAssertEqual(workspaceManager.workspaceFor(floater.windowID), hidden)
+        XCTAssertEqual(stateCache.knownWindowIDs, [floater.windowID, 8101])
+        XCTAssertTrue(stateCache.hiddenWindowIDs.isEmpty)
+
+        suppressions.clear(.workspaceTransition)
+        clock.advance(by: 0.4)
+        XCTAssertEqual(polls, 1, "the full poll runs once the hold ends")
+        XCTAssertEqual(admitted, [8101])
+    }
+
     func testTheRepairLeavesAFloaterOnAHiddenWorkspaceParked() {
         let floater = parkedFloater(id: 7304, on: hidden)
 
         orchestrator.repairUnrevealedFloaters([floater])
 
         XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), saved)
+    }
+}
+
+/// the scheduler's clock and main-queue delay, stepped by hand
+private final class StepClock {
+    private var nowNS: UInt64 = 1_000_000_000
+    private var queue: [(at: UInt64, seq: Int, block: () -> Void)] = []
+    private var seq = 0
+
+    func install(on scheduler: PollingScheduler) {
+        scheduler.now = { [unowned self] in DispatchTime(uptimeNanoseconds: self.nowNS) }
+        scheduler.arm = { [unowned self] delay, block in
+            self.seq += 1
+            self.queue.append((self.nowNS + UInt64((delay * 1e9).rounded()), self.seq, block))
+        }
+    }
+
+    func advance(by seconds: TimeInterval) {
+        let end = nowNS + UInt64((seconds * 1e9).rounded())
+        while let next = queue.enumerated()
+            .filter({ $0.element.at <= end })
+            .min(by: { ($0.element.at, $0.element.seq) < ($1.element.at, $1.element.seq) }) {
+            queue.remove(at: next.offset)
+            nowNS = max(nowNS, next.element.at)
+            next.element.block()
+        }
+        nowNS = end
     }
 }
 

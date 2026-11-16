@@ -358,6 +358,19 @@ class WindowManager {
             guard let self, !self.mouseButtonDown, !self.tiledDrag.isFinishingDrag else { return nil }
             return self.suppressions.remaining(.workspaceTransition)
         }
+        // a window opened right after a switch is tiled once the switch is
+        // done, not when its hold ends. existing windows still wait
+        pollingScheduler.admitsNewWindowsDuringHold = { [weak self] in
+            guard let self else { return false }
+            return SwitchHoldAdmission.allows(
+                heldOnlyBySwitch: self.suppressions.isHeldOnlyByWorkspaceSwitch(.workspaceTransition),
+                switchSettled: self.workspaceOrchestrator.isSwitchSettled,
+                mouseButtonDown: self.mouseButtonDown,
+                finishingDrag: self.tiledDrag.isFinishingDrag,
+                displayTransitionPending: self.displayTransitionPending,
+                sessionInterrupted: self.discovery.isSessionInterrupted)
+        }
+        pollingScheduler.onAdmitDuringHold = { [weak self] in self?.admitNewWindowsDuringHold() }
 
         hotkeyManager.onAction = { [weak self] action in
             guard let self else { return }
@@ -2400,6 +2413,44 @@ class WindowManager {
                                          runningPIDs: runningPIDs) {
             hyprLog(.debug, .discovery, "destroy recheck: closed window not yet gone from the snapshot — re-polling")
             pollingScheduler.schedule(after: DestroyRecheck.delay, trigger: .recheck)
+        }
+        settleDiscoveryFollowUps(changes, allWindows: allWindows, fire: fire)
+    }
+
+    /// The admit-only pass a finished workspace switch's hold allows
+    /// (`SwitchHoldAdmission`). Walks the windows and admits only the ones
+    /// discovery has never known, through the ordinary assignment and
+    /// verified tile pass. Everything else this walk shows (gone, hidden,
+    /// returned, drift) is left to the full poll the hold still defers.
+    private func admitNewWindowsDuringHold() {
+        guard !mouseButtonDown else { return }
+        let fire = pollingScheduler.currentFire
+        let allWindows = accessibility.getAllWindows()
+        // the retile lays out every visible workspace from this walk
+        var members: Set<CGWindowID> = []
+        for screen in displayManager.screens where !workspaceManager.isMonitorDisabled(screen) {
+            members.formUnion(workspaceManager.windowIDs(onWorkspace: workspaceManager.workspaceForScreen(screen)))
+        }
+        members.subtract(stateCache.floatingWindowIDs)
+        members.subtract(stateCache.hiddenWindowIDs)
+        let missing = SwitchHoldAdmission.missingTiledMembers(
+            members, listed: Set(allWindows.map(\.windowID)), held: tilingEngine.heldWindowIDsSource())
+        guard missing.isEmpty else {
+            hyprLog(.notice, .discovery, "admit-only pass skipped: tiled \(missing.sorted()) missing from the walk"
+                    + " — left to the poll after the workspace transition")
+            return
+        }
+        let changes = discovery.computeAdmissions(
+            snapshot: allWindows,
+            excludedBundleIDs: Set(config.excludedBundleIDs),
+            unreadableWindowIDs: accessibility.unreadableWindowIDs)
+        if !changes.newWindows.isEmpty {
+            let left = suppressions.remaining(.workspaceTransition).map { Int(($0 * 1000).rounded()) } ?? 0
+            axNotifications.ensureWindowSubscriptions(for: changes.newWindows)
+            tilingEngine.primeMinimumSizes(changes.newWindows)
+            hyprLog(.notice, .discovery, "admitted \(changes.newWindows.map(\.windowID).sorted()) during workspace"
+                    + " transition (\(left)ms left on the hold), \(fire?.summary ?? "direct")")
+            actionDispatcher.applyAdmissions(changes, allWindows: allWindows)
         }
         settleDiscoveryFollowUps(changes, allWindows: allWindows, fire: fire)
     }

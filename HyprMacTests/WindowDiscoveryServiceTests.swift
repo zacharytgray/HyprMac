@@ -98,6 +98,76 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertFalse(changes.needsRetile)
     }
 
+    // MARK: - admit-only pass under a workspace switch's hold
+
+    private func admit(_ svc: WindowDiscoveryService, _ snapshot: [HyprWindow],
+                       unreadable: Set<CGWindowID> = []) -> WindowChanges {
+        svc.computeAdmissions(snapshot: snapshot, excludedBundleIDs: [], unreadableWindowIDs: unreadable)
+    }
+
+    func testTheAdmitOnlyPassTakesABrandNewWindow() {
+        let (svc, cache, _) = makeService()
+        let changes = admit(svc, [makeWindow(id: 300, pid: 5000)])
+
+        XCTAssertEqual(changes.newWindows.map(\.windowID), [300])
+        XCTAssertTrue(cache.knownWindowIDs.contains(300))
+        XCTAssertEqual(cache.windowOwners[300], 5000)
+        XCTAssertTrue(changes.returned.isEmpty)
+        XCTAssertTrue(changes.goneIDs.isEmpty)
+        XCTAssertTrue(changes.screenDrift.isEmpty)
+    }
+
+    // the switch parks and reveals known windows, and a walk mid-hold reads
+    // them at stale frames. the admit-only pass must change nothing about
+    // them, nor about ghosts, minimized windows or one missing from the walk
+    func testTheAdmitOnlyPassLeavesEveryWindowItAlreadyKnowsAlone() {
+        let (svc, cache, workspaces) = makeService()
+        cache.knownWindowIDs = [10, 11, 12]
+        cache.hiddenWindowIDs = [20, 21]
+        cache.reservedHiddenWindowIDs = [21]
+        cache.floatingWindowIDs = [11]
+        for id: CGWindowID in [10, 11, 12, 20, 21] { cache.windowOwners[id] = 5000 }
+        // 10 tiled on the revealed workspace, 11 a floater being parked, 20 a
+        // ghost, 21 minimized. 30 is unknown to discovery but already on a
+        // workspace: the switch's to move, not a newcomer
+        workspaces.assignWindow(10, toWorkspace: 2)
+        workspaces.assignWindow(11, toWorkspace: 1)
+        workspaces.assignWindow(20, toWorkspace: 1)
+        workspaces.assignWindow(21, toWorkspace: 2)
+        workspaces.assignWindow(30, toWorkspace: 1)
+        let known = cache.knownWindowIDs, hidden = cache.hiddenWindowIDs
+        let reserved = cache.reservedHiddenWindowIDs, owners = cache.windowOwners
+
+        // 12 is missing from this walk, 40 could not be read
+        let changes = admit(svc, [10, 11, 20, 21, 30, 40].map { makeWindow(id: $0, pid: 5000) },
+                            unreadable: [40])
+
+        XCTAssertTrue(changes.newWindows.isEmpty)
+        XCTAssertFalse(changes.needsRetile)
+        XCTAssertEqual(cache.knownWindowIDs, known, "12 is not gone, 20 and 21 are not back")
+        XCTAssertEqual(cache.hiddenWindowIDs, hidden)
+        XCTAssertEqual(cache.reservedHiddenWindowIDs, reserved)
+        XCTAssertEqual(cache.floatingWindowIDs, [11])
+        XCTAssertEqual(cache.windowOwners, owners)
+        XCTAssertEqual(workspaces.workspaceFor(10), 2)
+        XCTAssertEqual(workspaces.workspaceFor(11), 1)
+        XCTAssertEqual(workspaces.workspaceFor(30), 1)
+    }
+
+    func testTheAdmitOnlyPassAdmitsNothingWhileTheSessionIsLocked() {
+        let (svc, cache, _) = makeService()
+        svc.noteSystemInterruption(Self.locked)
+        XCTAssertTrue(admit(svc, [makeWindow(id: 301, pid: 5000)]).newWindows.isEmpty)
+        XCTAssertFalse(cache.knownWindowIDs.contains(301))
+    }
+
+    func testTheFullPollAfterTheHoldDoesNotAdmitAnAdmittedWindowAgain() {
+        let (svc, _, _) = makeService()
+        let w = makeWindow(id: 302, pid: 5000)
+        _ = admit(svc, [w])
+        XCTAssertTrue(compute(svc, snapshot: [w], runningPIDs: [5000]).newWindows.isEmpty)
+    }
+
     // MARK: - new-window detection
 
     func testNewWindowAppearsInNewWindowsAndUpdatesCache() {

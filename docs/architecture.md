@@ -243,7 +243,10 @@ These types decompose what would otherwise be a monolithic
   A window create asks for a *trailing* poll: when a poll is already due
   sooner, that one still runs and a second runs 0.2 s after the create,
   since the earlier one can land before AX lists the window. Each poll
-  carries its triggers (`PollTrigger`) for the log lines.
+  carries its triggers (`PollTrigger`) for the log lines. New-window work
+  (`create`, `new-window`, `follow-up`, `focus`, `ax-retry`) also gets its own
+  attempt at its deadline: under a finished workspace switch's hold it runs
+  the admit-only pass instead of waiting (see "Suppression timing").
 - **`DiscoveryFollowUp`** watches an app after a window create (or a focus
   or main-window event that showed an unseen window) until a poll admits a
   window of that app. A poll that misses asks for another at 0.3, 0.6 and
@@ -325,6 +328,13 @@ PollingScheduler.timer (10s reconcile net)     ┘        (coalesced)
     → TiledDriftMonitor (only when the poll did not retile)
     → WindowPlacement.repairParkedWindows
     → DiscoveryFollowUp.afterPoll  (re-poll an announced window still missing)
+
+  under a finished workspace switch's hold, for new-window work only:
+  → WindowManager.admitNewWindowsDuringHold
+    → AccessibilityManager.getAllWindows
+    → WindowDiscoveryService.computeAdmissions   (never-known ids only)
+    → ActionDispatcher.applyAdmissions           (assign, retile, focus)
+    → DiscoveryFollowUp.afterPoll
 ```
 
 Per-app AXObserver notifications are the primary discovery trigger; the
@@ -496,12 +506,38 @@ while HyprMac is quit clears every snapshot.
 | `workspaceTransition` | 3 or 6 s | A display timer that waits again: the stability window plus 1 s |
 | `workspaceTransition` | 6 s | A change within 20 s of a wake: `DisplaySettle.wakeSettleWindow` plus 1 s |
 
-`workspaceTransition` holds every discovery poll, new windows included: a
-poll mid-transition reads windows at frames the switch or macOS has not
-settled yet, and screen drift would move them to the wrong workspace. A
-poll deferred by it runs 10 ms after it ends, not on the next 0.3 s step.
-Admitting only new windows during a transition would need an admit-only
-diff in `WindowDiscoveryService`; it does not exist.
+`workspaceTransition` holds every discovery poll: a poll mid-transition
+reads windows at frames the switch or macOS has not settled yet, and screen
+drift would move them to the wrong workspace. A poll deferred by it runs
+10 ms after it ends, not on the next 0.3 s step.
+
+A workspace switch's own hold lets brand-new windows in early. The switch
+tags its suppression `source: .workspaceSwitch`; every other caller is
+`.other`, and `SuppressionRegistry.isHeldOnlyByWorkspaceSwitch` is true
+only while no `.other` hold is live. `SwitchHoldAdmission.allows` then also
+needs `WorkspaceOrchestrator.isSwitchSettled` (no `switchWorkspace` call
+under way, so its walk, retile and focus steps are done, and no floater
+reveal retry still pending), no held button or finishing drag, no pending
+display change and no session interruption. While all of that holds, a
+new-window request runs `admitNewWindowsDuringHold` at its deadline instead
+of waiting:
+
+- `WindowDiscoveryService.computeAdmissions` takes only ids that are not
+  known, not hidden (ghosts, minimized, Cmd-H'd), not unreadable and not
+  on any workspace. Known windows the switch parked or revealed, gone and
+  returning windows, drift and fixed-size re-checks are not looked at.
+- The pass is skipped when a tiled member of a visible workspace is missing
+  from the walk and not held: the retile would drop it from its tree, and
+  whether it closed is the full poll's call.
+- `ActionDispatcher.applyAdmissions` assigns the newcomer with the normal
+  rules (the workspace now on its screen, or its window rule) and retiles
+  the visible workspaces with the walk's known windows only, through the
+  normal verified pass.
+- The deferred poll still runs in full once the hold ends.
+
+Moves, the scratchpad, display settle and wake keep holding new windows
+until their hold ends. So does a move that follows its window, since the
+move's own hold is `.other`.
 
 ## Threading
 

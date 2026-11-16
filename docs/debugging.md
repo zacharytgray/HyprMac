@@ -1048,6 +1048,25 @@ polls at that moment. The `poll (…)` part of the second line names the poll's
 triggers, its wait, and `deferred 900ms by workspace transition (…)` when a
 suppression held it.
 
+A window opened right after a workspace switch is admitted under the
+switch's hold, once the switch is done, by the admit-only pass:
+
+```
+ax windowCreated pid=1159: poll due in 200ms, polls held: workspace transition (1490ms left)
+admitted [4628] during workspace transition (1290ms left on the hold), create, waited 200ms, admit-only during the switch hold
+discovery retile: new=[4628] (admitted during the workspace transition hold)
+new-window watch pid=1159 (windowCreated): admitted [4628] 210ms after the event, retries 0, poll (create, waited 200ms, admit-only during the switch hold)
+poll deferred: workspace transition (1200ms left) (trigger create)
+```
+
+The full poll still runs when the hold ends. No `admitted … during
+workspace transition` line under a switch hold means the gate stayed shut:
+the hold was also a move's, the scratchpad's, a display change's or a
+wake's, a floater reveal retry was still running, or a button was held.
+`admit-only pass skipped: tiled [ids] missing from the walk` means a tiled
+window of a visible workspace did not answer the walk, so the pass left
+everything to the poll after the hold.
+
 A poll that ran but did not admit the window, and the retries after it:
 
 ```

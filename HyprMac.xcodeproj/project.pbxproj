@@ -261,6 +261,7 @@
 		AFC5CF768D94777F8D4C3581 /* GeometryLedger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 269859599A7D70B7780BE2F2 /* GeometryLedger.swift */; };
 		AFDFFD00A9BBCC444E730DEB /* SkyLightFunctions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72035E79DADD52282DFEFA0E /* SkyLightFunctions.swift */; };
 		B1ACB629A1DDE243422217A9 /* DirectionalFocusGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D4C2638F2735ACBB733C2C4 /* DirectionalFocusGeometryTests.swift */; };
+		B29AEC8E0D2A8DC14BD9DD83 /* SwitchHoldAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D1265151DA4C639244CBC5 /* SwitchHoldAdmission.swift */; };
 		B3B976E2663A1446F4D9A7A3 /* AdmissionRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14EDE284FED93137B1A0BADB /* AdmissionRecovery.swift */; };
 		B3BCB4B56872B79D3B673912 /* HoverResponseRate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936B7CF6C89B974F27A4E2BC /* HoverResponseRate.swift */; };
 		B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
@@ -310,6 +311,7 @@
 		D849455C3C1CF4C164649D9A /* RetileAllPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B4FC8814875264166E19 /* RetileAllPlanner.swift */; };
 		DA37938105A87387AB0BD336 /* LayoutEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9927DB9594D281BB5179CA3 /* LayoutEngine.swift */; };
 		DA506BA26A104FA2BA45FF3C /* KeybindCategory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F4BE620A1670E1D89160707 /* KeybindCategory.swift */; };
+		DB742D01C22B4C56B9CA9623 /* SwitchHoldAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D1265151DA4C639244CBC5 /* SwitchHoldAdmission.swift */; };
 		DB9D75296F8B54704ECDA2AB /* WindowManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */; };
 		DC4C934E44DA35557737D99F /* TiledDragHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18C35BE3ADE2DF9C15856DAC /* TiledDragHandler.swift */; };
 		DC96C52C1A40C7842A944CCC /* WorkspaceRevealRepairTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E39FE774062F6A10A6720B58 /* WorkspaceRevealRepairTests.swift */; };
@@ -471,6 +473,7 @@
 		43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandleDisplayChangeTests.swift; sourceTree = "<group>"; };
 		46201EFD7BEA95F414A2D2CF /* CrossScreenWriteOrder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossScreenWriteOrder.swift; sourceTree = "<group>"; };
 		470C300B4896249F52535AF2 /* MaximizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaximizeTests.swift; sourceTree = "<group>"; };
+		47D1265151DA4C639244CBC5 /* SwitchHoldAdmission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchHoldAdmission.swift; sourceTree = "<group>"; };
 		4D8F5AAFA837B55AEB2831E8 /* FrameSizingTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameSizingTransaction.swift; sourceTree = "<group>"; };
 		4DC1746711F81E185BA81143 /* Log.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Log.swift; sourceTree = "<group>"; };
 		4DE1252424844EA3C4E1B709 /* HyprKeySystemGuidanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprKeySystemGuidanceTests.swift; sourceTree = "<group>"; };
@@ -755,6 +758,7 @@
 				2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */,
 				71CC5EC901778762C96E67D4 /* DiscoveryFollowUp.swift */,
 				E8F0266F4B35C59914C66A1E /* FocusPollGate.swift */,
+				47D1265151DA4C639244CBC5 /* SwitchHoldAdmission.swift */,
 				D8425DC47E2604936890FF01 /* TiledDriftMonitor.swift */,
 				7D21846E7D9A34CB1271FE64 /* WindowAdmissionFilter.swift */,
 				8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */,
@@ -1303,6 +1307,7 @@
 				C9E5DAE2D8BD6D6C0985D5E1 /* StatusExport.swift in Sources */,
 				83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */,
 				4F02885D6EF2D5ED8B4A92F8 /* SwitchCoalescer.swift in Sources */,
+				DB742D01C22B4C56B9CA9623 /* SwitchHoldAdmission.swift in Sources */,
 				DD38C6D3A18D2B209CDDB9BC /* ThreadAssertions.swift in Sources */,
 				04136D7AB66B8C7B662E76DA /* TiledDragController.swift in Sources */,
 				941830F1BB6F9B51AD98E639 /* TiledDragEvent.swift in Sources */,
@@ -1446,6 +1451,7 @@
 				4FC8C5B7AAFD12D0F4ADCFF0 /* StatusExport.swift in Sources */,
 				532AEB9F865B40C952760ECF /* SuppressionRegistry.swift in Sources */,
 				D758B499FD8183F4AC73F042 /* SwitchCoalescer.swift in Sources */,
+				B29AEC8E0D2A8DC14BD9DD83 /* SwitchHoldAdmission.swift in Sources */,
 				2E6EF6D73356C6C381F5E6BC /* ThreadAssertions.swift in Sources */,
 				6B4053B1DB0D80741D2016C1 /* TiledDragController.swift in Sources */,
 				9DFD6E23049B6DEACBAC46F1 /* TiledDragEvent.swift in Sources */,

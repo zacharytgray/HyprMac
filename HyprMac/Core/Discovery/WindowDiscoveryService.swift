@@ -483,53 +483,7 @@ final class WindowDiscoveryService {
 
         // new
         for w in snapshot where !stateCache.knownWindowIDs.contains(w.windowID) {
-            if let frame = w.frame {
-                let onScreen = displayManager.screens.contains { screen in
-                    frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
-                }
-                if onScreen {
-                    stateCache.originalFrames[w.windowID] = frame
-                }
-            }
-            stateCache.knownWindowIDs.insert(w.windowID)
-            stateCache.windowOwners[w.windowID] = w.ownerPID
-
-            // auto-float excluded apps, explicitly fixed-size windows and
-            // quick look previews
-            let excluded = bundleIDForPID(w.ownerPID).map(excludedBundleIDs.contains) ?? false
-            if let reason = FloatingAdmissionPolicy.reason(
-                isExcluded: excluded,
-                isSizeSettable: isWindowSizeSettable(w),
-                isQuickLookPanel: w.isQuickLookPanel
-            ) {
-                stateCache.setFloating(true, window: w)
-                if reason == .fixedSize {
-                    // read once, at first sight. some apps make a window
-                    // resizable a moment after it opens, so ask again
-                    fixedSizeRechecks[w.windowID] = (0, now().addingTimeInterval(Self.fixedSizeRecheckDelays[0]))
-                    hyprLog(.notice, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")' (\(w.windowID))"
-                            + " \(bundleIDForPID(w.ownerPID) ?? "pid \(w.ownerPID)") — re-checked"
-                            + " \(Self.fixedSizeRecheckDelays.count) times over"
-                            + " \(Self.fixedSizeRecheckDelays.reduce(0, +))s")
-                } else {
-                    hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
-                }
-            }
-
-            // auto-float on disabled monitors — surface so caller skips workspace assignment
-            if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
-                if !stateCache.floatingWindowIDs.contains(w.windowID) {
-                    stateCache.setFloating(true, window: w)
-                    hyprLog(.debug, .discovery, "auto-float on disabled monitor: '\(w.title ?? "?")'")
-                }
-                newOnDisabled.insert(w.windowID)
-                // it floats for the monitor, whatever its size says
-                fixedSizeRechecks[w.windowID] = nil
-                hyprLog(.debug, .discovery, "new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
-            } else {
-                hyprLog(.debug, .discovery, "new window: '\(w.title ?? "?")' (\(w.windowID))")
-            }
-
+            admitNew(w, excludedBundleIDs: excludedBundleIDs, newOnDisabled: &newOnDisabled)
             newWindows.append(w)
         }
 
@@ -626,6 +580,93 @@ final class WindowDiscoveryService {
             returnedFromUserHide: fromUserHide,
             unfloated: unfloated
         )
+    }
+
+    /// First sight of `w`: the cache half of admitting it. Known from now
+    /// on, its owner and on-screen frame kept, auto-floated when policy or a
+    /// disabled monitor says so (then in `newOnDisabled`).
+    private func admitNew(_ w: HyprWindow, excludedBundleIDs: Set<String>,
+                          newOnDisabled: inout Set<CGWindowID>) {
+        if let frame = w.frame {
+            let onScreen = displayManager.screens.contains { screen in
+                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
+            }
+            if onScreen {
+                stateCache.originalFrames[w.windowID] = frame
+            }
+        }
+        stateCache.knownWindowIDs.insert(w.windowID)
+        stateCache.windowOwners[w.windowID] = w.ownerPID
+
+        // auto-float excluded apps, explicitly fixed-size windows and
+        // quick look previews
+        let excluded = bundleIDForPID(w.ownerPID).map(excludedBundleIDs.contains) ?? false
+        if let reason = FloatingAdmissionPolicy.reason(
+            isExcluded: excluded,
+            isSizeSettable: isWindowSizeSettable(w),
+            isQuickLookPanel: w.isQuickLookPanel
+        ) {
+            stateCache.setFloating(true, window: w)
+            if reason == .fixedSize {
+                // read once, at first sight. some apps make a window
+                // resizable a moment after it opens, so ask again
+                fixedSizeRechecks[w.windowID] = (0, now().addingTimeInterval(Self.fixedSizeRecheckDelays[0]))
+                hyprLog(.notice, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")' (\(w.windowID))"
+                        + " \(bundleIDForPID(w.ownerPID) ?? "pid \(w.ownerPID)") — re-checked"
+                        + " \(Self.fixedSizeRecheckDelays.count) times over"
+                        + " \(Self.fixedSizeRecheckDelays.reduce(0, +))s")
+            } else {
+                hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
+            }
+        }
+
+        // auto-float on disabled monitors — surface so caller skips workspace assignment
+        if let screen = displayManager.screen(for: w), workspaceManager.isMonitorDisabled(screen) {
+            if !stateCache.floatingWindowIDs.contains(w.windowID) {
+                stateCache.setFloating(true, window: w)
+                hyprLog(.debug, .discovery, "auto-float on disabled monitor: '\(w.title ?? "?")'")
+            }
+            newOnDisabled.insert(w.windowID)
+            // it floats for the monitor, whatever its size says
+            fixedSizeRechecks[w.windowID] = nil
+            hyprLog(.debug, .discovery, "new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
+        } else {
+            hyprLog(.debug, .discovery, "new window: '\(w.title ?? "?")' (\(w.windowID))")
+        }
+    }
+
+    /// The admit-only diff a workspace switch's transition hold allows once
+    /// the switch is done. Only windows discovery has never known are taken:
+    /// not known, not hidden (a ghost, a minimized or Cmd-H'd window), with
+    /// no workspace assignment (nothing the switch parked or revealed), and
+    /// readable in this walk. Those get the same cache half as in
+    /// `computeChanges`. Nothing else in the snapshot is looked at: no
+    /// gone, hidden, returned or held bookkeeping, no fixed-size re-check,
+    /// no screen drift. The full poll after the hold does all of that.
+    func computeAdmissions(snapshot: [HyprWindow], excludedBundleIDs: Set<String>,
+                           unreadableWindowIDs: Set<CGWindowID> = []) -> WindowChanges {
+        var newWindows: [HyprWindow] = []
+        var newOnDisabled: Set<CGWindowID> = []
+        // a locked or asleep session's walk is not the desktop
+        if !sessionInterruptionActive() {
+            for w in snapshot where Self.isBrandNew(
+                w.windowID, known: stateCache.knownWindowIDs, hidden: stateCache.hiddenWindowIDs,
+                unreadable: unreadableWindowIDs, assigned: workspaceManager.workspaceFor(w.windowID) != nil) {
+                admitNew(w, excludedBundleIDs: excludedBundleIDs, newOnDisabled: &newOnDisabled)
+                if w.isQuickLookPanel { quickLookPanelIDs.insert(w.windowID) }
+                newWindows.append(w)
+            }
+        }
+        return WindowChanges(newWindows: newWindows, newOnDisabledMonitor: newOnDisabled, returned: [],
+                             goneIDs: [], fullyForgottenIDs: [], screenDrift: [],
+                             focusedWindowGone: false, requestsRecheck: false)
+    }
+
+    /// A window id discovery has never known, so admitting it cannot touch
+    /// any window the switch is moving.
+    static func isBrandNew(_ id: CGWindowID, known: Set<CGWindowID>, hidden: Set<CGWindowID>,
+                           unreadable: Set<CGWindowID>, assigned: Bool) -> Bool {
+        !known.contains(id) && !hidden.contains(id) && !unreadable.contains(id) && !assigned
     }
 
     /// Ask again whether the windows auto-floated as not resizable are.
