@@ -15,16 +15,16 @@ struct PassBudget {
     /// The rollbacks are outside it. A rollback is the safety net that puts
     /// every window back, and one cut short stops mid-write with some
     /// windows still on candidate frames under the old tree. Each keeps its
-    /// own deadline: 0.75 s plus 80 ms per target past three, or the
+    /// own deadline: 0.75 s plus 100 ms per target past three, or the
     /// scale-change budget when it carries a window back across scales.
     ///
     /// The clock runs from the attempt's start, so a rollback's time counts
     /// against the passes after it, but nothing cuts the rollback itself.
     /// The real worst case for one attempt is the capture before it
-    /// (0.36 s plus 80 ms per window past three), 2 s of passes, and one last rollback on its own deadline,
+    /// (0.36 s plus 100 ms per window past three), 2 s of passes, and one last rollback on its own deadline,
     /// plus one AX call past each pass's last check (100 ms, 250 ms on the
-    /// timeout retry). Eight windows on one scale: 0.76 + 2 + 1.15, about
-    /// 3.9 s.
+    /// timeout retry). Eight windows on one scale: 0.86 + 2 + 1.25, about
+    /// 4.1 s.
     static let total: TimeInterval = 2.0
     /// The least a pass gets: the candidate is never cut below it, and a
     /// later pass that would be is skipped.

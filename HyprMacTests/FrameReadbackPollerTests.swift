@@ -942,6 +942,28 @@ final class FrameReadbackPollerBudgetTests: XCTestCase {
                        accuracy: 0.0001)
     }
 
+    /// two readback samples of eight windows, position and size each at
+    /// 25 ms, are 0.8 s. the deadline grown for eight windows was 0.76 s,
+    /// so a pass that wrote every frame timed out before its second sample
+    func testEightWindowsAt25msAReadFinishTheirPass() {
+        let windows = (1...8).map { makeWindow(id: CGWindowID(730 + $0)) }
+        let targets = (0..<8).map { CGRect(x: CGFloat($0) * 400, y: 0, width: 392, height: 800) }
+        let app = LaggingSizeApp(frames: Dictionary(uniqueKeysWithValues: windows.enumerated().map {
+            ($0.element.windowID, CGRect(x: CGFloat($0.offset) * 300, y: 0, width: 600, height: 700))
+        }))
+        app.readCost = 0.025
+
+        let result = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in app.io() })
+            .applyLayout(Array(zip(windows, targets)),
+                         usableFrame: CGRect(x: 0, y: 0, width: 3200, height: 800),
+                         gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(result.actualFrames.count, 8)
+        XCTAssertGreaterThan(app.time, 0.8 - 0.0001, "two full samples were read")
+        XCTAssertLessThanOrEqual(app.time, FrameReadbackPoller.scaled(FrameSizingConfiguration(), for: 8).deadline)
+    }
+
     /// slow writes to the first two windows used to spend the third
     /// window's 240 ms settle. it read stale twice right after its setter,
     /// was judged a refusal and taught its old width as a minimum

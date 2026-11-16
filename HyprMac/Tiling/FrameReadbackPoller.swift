@@ -155,9 +155,13 @@ struct FrameReadbackPoller {
     /// Windows the base deadline is sized for, and what each one past that
     /// adds. One deadline covered every setter and every readback sample of
     /// the whole key, so a workspace of eight healthy windows ran out of it
-    /// on ordinary IPC latency and rolled back.
+    /// on ordinary IPC latency and rolled back. Each window past the base
+    /// gets two stable samples of its position and size at a slow app's
+    /// read speed. At 80 ms, eight windows at 25 ms a read needed 0.8 s for
+    /// two samples and had 0.76 s, so a pass timed out after a good capture.
     static let windowsInBaseBudget = 3
-    static let perWindowBudget: TimeInterval = 0.08
+    static let slowReadCost: TimeInterval = 0.025
+    static let perWindowBudget: TimeInterval = 2 * 2 * slowReadCost
 
     /// `configuration` with its deadline grown for `count` targets, and by
     /// the position settle each of the `positionFirst` targets may spend

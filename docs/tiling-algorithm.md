@@ -319,9 +319,11 @@ that the size goes out anyway and the readback judges.  The cap is per window, a
 the deadline grows by it for every position-first target, so a reveal of
 several parked windows has the time their settles take.  A cut wait ends with the readback's verdict, and a `geometryMismatch` there is a refusal, which can float the window.
 
-The deadline grows by 80 ms for every target past three and by the
+The deadline grows by 100 ms for every target past three and by the
 position settle budget for every position-first target, and the sample
-limit with it. The capture before the first pass grows the same way, 80 ms
+limit with it. 100 ms is two stable samples of a window's position and
+size at 25 ms a read; at 80 ms, eight such windows timed out after their
+writes. The capture before the first pass grows the same way, 100 ms
 for every window past three, up to `PassBudget.total`: it reads every
 window's position and size in turn, and eight windows at 25 ms a read ran
 out of the base 0.36 seconds before a single write. A tiled drag's press
@@ -336,8 +338,8 @@ when it starts, and a pass after the candidate with less than a quarter
 second left does not start.  The rollbacks sit outside the cap.
 A rollback is the safety net, and one cut short stops mid-write with some
 windows still on candidate frames, so each keeps its own deadline of 0.75
-seconds plus 80 ms per target past three. The worst case for one attempt
-of eight windows is about 3.9 seconds: the capture, two seconds of passes,
+seconds plus 100 ms per target past three. The worst case for one attempt
+of eight windows is about 4.1 seconds: the capture, two seconds of passes,
 and one last rollback. Admission recovery's narrowing rounds for a key
 share one such cap between them, and stop narrowing once it is spent.
 

@@ -1373,8 +1373,8 @@ final class TilingEnginePassBudgetTests: XCTestCase {
     func testOnceTheBudgetIsSpentTheTimeoutRetryDoesNotStart() {
         let (engine, tree, trace, originals) = fixture(8)
         // 24 setters at 25 ms and a read that times out at 100 ms: 0.7 s,
-        // inside the candidate's 0.76 s. the rollback's 24 at 45 ms and a
-        // settle take 1.11 s of its 1.15 s, leaving 0.19 s
+        // inside the candidate's 0.86 s. the rollback's 24 at 45 ms and a
+        // settle take 1.11 s of its 1.25 s, leaving 0.19 s
         trace.setterCost = 0.025
         trace.afterTimeoutSetterCost = 0.045
 
