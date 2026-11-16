@@ -1029,6 +1029,14 @@ This hard limit also applies to Hypr swaps and manual resize candidates;
 an existing tree deeper than a newly lowered limit is restored rather than
 applied. Keyboard swapping retains its existing path.
 
+The candidate's layout gets the known-minimum ratio adjustment. If a known
+minimum still overflows its slot by more than 20 points
+(`TilingConfig.frameToleranceXPx`), the drop is refused (`noRoom`) before
+any candidate write, and the captured frames are restored. Two windows with
+a 446 pt minimum height cannot stack in an 835 pt column, for example. This
+covers inserts, Hypr swaps and manual resizes. The cross-monitor drop uses
+the same check (`crowded`).
+
 The engine applies the candidate through the verified sizing transaction
 and replaces the mapped tree only after all resulting frames are accepted.
 Failure leaves the old topology in place and verifies actual pre-drag frame
@@ -1073,8 +1081,8 @@ members' actual frames become its originals for a rollback. The target tile is
 chosen from that tree's own layout slots, the same ones the live preview uses.
 Both candidates are private clones from `BSPTree`, built in the engine's drop
 path. Each must stay within its own screen's Max Splits. Each layout gets the
-same known-minimum ratio adjustment as a same-tree drop. If a known minimum
-still overflows its slot by more than 20 points
+same known-minimum ratio adjustment and refusal as a same-tree drop. If a
+known minimum still overflows its slot by more than 20 points
 (`TilingConfig.frameToleranceXPx`, the overshoot a readback may show), the
 drop is refused (`noRoom`) before any candidate write. The release screen's
 frames go out first, then the source's. Each screen has its own

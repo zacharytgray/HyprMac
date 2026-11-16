@@ -371,7 +371,7 @@ The admission recovery's timeout lines, all `[notice] [tiling]`:
   source=own-measurement was=appHint` — an explicit request set the app's
   hint aside, the attempt was accepted, and the entry became this window's
   own record at the size it actually took.
-- `min-size record: wid=<id> old=<none|<w>x<h> source=<seeded|observed>>
+- `min-size record: wid=<id> old=<none|<w>x<h> source=<seeded|observed|appHint>>
   new=<w>x<h> target=<w>x<h> actual=<w>x<h> axis=<…> phase=<…>
   source=readback` — guarded refusal evidence. The `old=` field names
   the provenance of the entry being replaced, because observed evidence
