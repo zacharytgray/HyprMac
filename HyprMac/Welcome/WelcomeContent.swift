@@ -26,20 +26,25 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "checkmark.circle",
-            title: "The Menu Bar Panel Stays Put",
-            description: "Closing the menu bar panel no longer quits HyprMac, a bug in v0.22.7."
+            icon: "macwindow.on.rectangle",
+            title: "See Which Windows Float",
+            description: "Floating windows now get a thin outline with a faint glow in Corners mode too, and it follows them while you drag. A focused floating window's corner marks turn the floating color.",
+            tint: .magenta
         ),
         WhatsNewFeature(
-            icon: "dock.rectangle",
-            title: "Show HyprMac in the Dock",
-            description: "A new Show in Dock setting in General gives HyprMac a Dock icon. Left off, HyprMac now stays out of the Dock even when you open it again.",
-            credit: "jessegray"
+            icon: "bolt.horizontal",
+            title: "New Windows Tile Faster",
+            description: "A new window no longer waits seconds for the next background check, including one opened right after you switch workspaces."
         ),
         WhatsNewFeature(
-            icon: "menubar.rectangle",
-            title: "Hide the Menu Bar Icon",
-            description: "Show in menu bar sits next to it. Opening HyprMac again from Spotlight or Finder brings up Settings, so it stays reachable with both icons hidden."
+            icon: "rectangle.split.2x1",
+            title: "Fewer Windows Float by Mistake",
+            description: "When an app's minimum size rules out the first spot, HyprMac now tries the spot that fits instead of floating the window. Dia's first window after launch tiles again."
+        ),
+        WhatsNewFeature(
+            icon: "hand.draw",
+            title: "Steadier Dragging and Layouts",
+            description: "A drop that can't fit is refused up front instead of resizing and snapping back, and busy apps no longer get windows mixed up or slow every check."
         ),
     ]
 }
