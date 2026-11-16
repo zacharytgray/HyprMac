@@ -2255,12 +2255,16 @@ class WindowManager {
         }
 
         var floaterOccluders: [CGWindowID: [CGRect]] = [:]
+        // the floater's glow reaches past its frame, so a window in front
+        // that only touches the glow hides it too
+        let glowReach = FocusBorder.floaterPanelExpansion
         for (fid, frect) in floaterFrames {
             guard let fz = zIndex[fid] else { continue }
+            let panelRect = frect.insetBy(dx: -glowReach, dy: -glowReach)
             var list: [CGRect] = []
             for (id, rect) in trackedRects where id != fid {
                 guard let z = zIndex[id], z < fz else { continue }
-                if rect.intersects(frect) { list.append(rect) }
+                if rect.intersects(panelRect) { list.append(rect) }
             }
             if !list.isEmpty { floaterOccluders[fid] = list }
         }

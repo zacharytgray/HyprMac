@@ -41,6 +41,8 @@ Explicit saved dimming, border, color, radius, and fade preferences remain autho
 
 Every visible floating window carries a solid outline in the **Floating window color** (brand magenta by default, light and dark aware), so a floater sitting flush in a tile slot does not pass for tiled. The outline is the same in every mode: 1.5 points, with the same panels, occlusion masking, scratchpad filter, fullscreen hiding, drag hiding and fade.
 
+The outline has a faint glow in the same color: a layer shadow with no offset, a 3-point radius and 0.45 opacity (`Tuning.floatingGlowRadius` and `Tuning.floatingGlowOpacity` in `FocusBorder.swift`). The shadow uses an explicit path, the stroke's own ring, so it never reads layer contents. The floater panel reaches 9 points (three times the radius) past the outline so the blur is not clipped. The outline itself stays centered on the window edge. `FloaterOutlineGeometry` holds that math. The glow takes the Floating color live, fades with the outline and goes with it. A window in front that only touches the glow still masks it. At a screen edge the glow is simply cut off; nothing moves.
+
 | Focus indicator | Floater mark | Focus marks on a floating window |
 | --- | --- | --- |
 | Corners | Outline | Floating color |

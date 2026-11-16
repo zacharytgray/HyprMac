@@ -104,6 +104,40 @@ final class CornerMarkGeometryTests: XCTestCase {
     }
 }
 
+final class FloaterOutlineGeometryTests: XCTestCase {
+    func testThePanelGrowsByTheGlowRoomAndTheOutlineStaysPut() {
+        // 3 pt blur: 9 pt of room past the outline, plus half the stroke
+        XCTAssertEqual(FloaterOutlineGeometry.glowRoom(glowRadius: 3), 9)
+        XCTAssertEqual(FloaterOutlineGeometry.panelExpansion(borderWidth: 1.5, glowRadius: 3), 9.75)
+        XCTAssertEqual(FocusBorder.floaterPanelExpansion, 9.75)
+
+        // window at 100,100 400x300: the outline still reaches 0.75 pt past it
+        let e = FocusBorder.floaterPanelExpansion
+        let panel = CGRect(x: 0, y: 0, width: 400 + e * 2, height: 300 + e * 2)
+        let outline = FloaterOutlineGeometry.outlineFrame(inPanelBounds: panel, glowRadius: 3)
+        XCTAssertEqual(outline, CGRect(x: 9, y: 9, width: 401.5, height: 301.5))
+    }
+
+    func testTheGlowPathIsTheStrokesRing() {
+        let bounds = CGRect(x: 0, y: 0, width: 401.5, height: 301.5)
+        let ring = FloaterOutlineGeometry.ringPath(in: bounds, cornerRadius: 16.75, borderWidth: 1.5)
+        let box = ring.boundingBoxOfPath
+        XCTAssertEqual(box.minX, 0, accuracy: 0.01)
+        XCTAssertEqual(box.maxX, 401.5, accuracy: 0.01)
+        XCTAssertEqual(box.maxY, 301.5, accuracy: 0.01)
+        XCTAssertTrue(ring.contains(CGPoint(x: 200, y: 0.75)), "on the stroke")
+        XCTAssertFalse(ring.contains(CGPoint(x: 200, y: 150)), "the window inside is not filled")
+        XCTAssertFalse(ring.contains(CGPoint(x: 1, y: 1)), "the rounded corner is cut")
+    }
+
+    func testATinyOrEmptyRectGetsNoRingAndNoCrash() {
+        XCTAssertTrue(FloaterOutlineGeometry.ringPath(in: .zero, cornerRadius: 16, borderWidth: 1.5).isEmpty)
+        let tiny = FloaterOutlineGeometry.ringPath(in: CGRect(x: 0, y: 0, width: 4, height: 4),
+                                                   cornerRadius: 16, borderWidth: 1.5)
+        XCTAssertFalse(tiny.isEmpty)
+    }
+}
+
 final class FloaterOutlinePanelTests: XCTestCase {
     override func setUpWithError() throws {
         if ProcessInfo.processInfo.environment["HYPRMAC_HEADLESS_TESTS"] == "1" {
@@ -124,6 +158,32 @@ final class FloaterOutlinePanelTests: XCTestCase {
 
         border.setFloaterMarks(.none)
         XCTAssertNil(border.currentFloaterOutlineWidth(for: 42))
+    }
+
+    func testTheOutlineGlowsInItsColorWithRoomForTheBlur() throws {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        border.setFloaterMarks(.outline)
+        let window = CGRect(x: 100, y: 100, width: 400, height: 300)
+        border.updateFloatingBorders([42: window], color: NSColor.systemPink.cgColor)
+
+        let o = try XCTUnwrap(border.currentFloaterOutline(for: 42))
+        let e = FocusBorder.floaterPanelExpansion
+        XCTAssertEqual(o.panel, NSRect(x: 100 - e, y: 1080 - 400 - e, width: 400 + e * 2, height: 300 + e * 2))
+        // the stroke sits where it always did: 0.75 pt past the window edge
+        XCTAssertEqual(o.outline, CGRect(x: 9, y: 9, width: 401.5, height: 301.5))
+        XCTAssertEqual(o.cornerRadius, WindowCornerRadius.resolve(for: 42) + 0.75)
+        XCTAssertEqual(o.glowRadius, 3)
+        XCTAssertEqual(o.glowOpacity, 0.45)
+        XCTAssertEqual(o.glowColor, NSColor.systemPink.cgColor)
+        XCTAssertEqual(o.glowPath?.boundingBoxOfPath.width ?? 0, 401.5, accuracy: 0.01)
+
+        // a new Floating color repaints the glow too
+        border.refreshAppearance(focusColor: NSColor.blue.cgColor, floatingColor: NSColor.green.cgColor)
+        XCTAssertEqual(border.currentFloaterOutline(for: 42)?.glowColor, NSColor.green.cgColor)
+
+        border.hideFloatingBorder(for: 42)
+        XCTAssertNil(border.currentFloaterOutline(for: 42), "the glow goes with the outline")
     }
 
     func testNoneDrawsNoFloaterOutline() {
