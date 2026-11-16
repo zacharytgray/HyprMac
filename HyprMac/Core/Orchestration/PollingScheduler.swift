@@ -15,6 +15,10 @@ enum PollTrigger: String {
     case followUp = "follow-up"
     case destroy
     case hold
+    /// discovery's own look again: a window the walk saw but could not use
+    /// yet (unbound, unreadable), a fixed-size re-check, or a stalled or
+    /// skipped app's backoff running out. no event reports any of these
+    case axRetry = "ax-retry"
     case recheck
     case activation
     case launch

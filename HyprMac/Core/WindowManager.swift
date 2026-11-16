@@ -2359,9 +2359,9 @@ class WindowManager {
         // window, or finds it back, is asked for then, not at the next
         // ten-second reconcile
         if let wait = discovery.secondsUntilAHoldEnds {
-            pollingScheduler.schedule(after: wait + 0.05)
+            pollingScheduler.schedule(after: wait + 0.05, trigger: .hold)
         }
-        if let wait = discovery.secondsUntilARetryIsDue { pollingScheduler.schedule(after: wait) }
+        if let wait = discovery.secondsUntilARetryIsDue { pollingScheduler.schedule(after: wait, trigger: .axRetry) }
         // read before the apply: its focus fallback can front another app
         let returnTarget = userHiddenReturnTarget(changes)
         let retileResults = actionDispatcher.applyChanges(changes, allWindows: allWindows)
@@ -2414,6 +2414,15 @@ class WindowManager {
             stack, known: stateCache.knownWindowIDs, hidden: stateCache.hiddenWindowIDs, ownPID: getpid())
         var admitted: [pid_t: [CGWindowID]] = [:]
         for w in changes.newWindows + changes.returned { admitted[w.ownerPID, default: []].append(w.windowID) }
+        let trigger = "(" + (fire?.summary ?? "direct") + ")"
+
+        // discovery's own look found a window no watch was waiting on. a
+        // watched app's admission gets the watch's line below instead
+        if fire?.triggers.contains(.axRetry) == true {
+            for (pid, ids) in admitted.sorted(by: { $0.key < $1.key }) where discoveryFollowUp.watches[pid] == nil {
+                hyprLog(.notice, .discovery, "ax retry pid=\(pid): admitted \(ids.sorted()), poll \(trigger)")
+            }
+        }
 
         // the event path should have found these. the line says whether an
         // event came and how long the window sat there
@@ -2434,7 +2443,6 @@ class WindowManager {
             }
         }
 
-        let trigger = "(" + (fire?.summary ?? "direct") + ")"
         func walk(_ pid: pid_t) -> String {
             let cg = stack.filter { $0.ownerPID == pid && $0.layer == 0 }
             let unreadable = cg.filter { accessibility.unreadableWindowIDs.contains($0.windowID) }.count

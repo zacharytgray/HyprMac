@@ -1021,8 +1021,9 @@ looked", which only the file log keeps:
 - `poll: 14 windows, 213ms since last, trigger create+focus, waited 200ms`
   — at the top of every `pollWindowChanges`, with the snapshot size, the
   elapsed wall clock since the previous poll, and what asked for this one
-  (`PollTrigger`; `reconcile` is the 10 s timer, `direct` a call outside
-  the scheduler).
+  (`PollTrigger`; `reconcile` is the 10 s timer, `hold` an off-screen
+  hold running out, `ax-retry` discovery's own look again at a window or
+  app that was not ready, `direct` a call outside the scheduler).
 
 ### A new window took seconds to tile
 
@@ -1196,7 +1197,11 @@ SPI named an id the window server does not know for the app.
 No event follows when such a window becomes usable. So a new window that
 was unbound, or on screen but unreadable, gets up to four quick polls, at
 0.25, 0.5, 1 and 2 s gaps (`WindowDiscoveryService.readinessDelays`).
-After that it waits for events and the 10 s reconcile.
+After that it waits for events and the 10 s reconcile. These polls, and
+the backoff and budget polls below, carry the `ax-retry` trigger. One that
+admits a window of an app with no new-window watch logs `[notice]
+[discovery] ax retry pid=<pid>: admitted [<id>], poll (ax-retry, waited
+250ms)`; a watched app gets the watch's `admitted` line instead.
 
 An app whose window-list read timed out is skipped until its backoff ends.
 A poll is scheduled for then, so its held windows and any window it opened
