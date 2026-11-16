@@ -26,25 +26,30 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "macwindow.on.rectangle",
-            title: "See Which Windows Float",
-            description: "Floating windows now get a thin outline with a faint glow in Corners mode too, and it follows them while you drag. A focused floating window's corner marks turn the floating color.",
-            tint: .magenta
+            icon: "rectangle.split.2x1",
+            title: "New Windows Split the Focused Tile",
+            description: "A new window now opens beside the tile you have focused instead of at the end of the layout. A window you close and reopen does the same.",
+            credit: "wbalbinot"
+        ),
+        WhatsNewFeature(
+            icon: "display.2",
+            title: "Apps Open on the Monitor You're On",
+            description: "An app's first window now opens on the monitor under your pointer, beside the focused tile. Pinned apps still go to their workspace."
+        ),
+        WhatsNewFeature(
+            icon: "pin",
+            title: "Pinned Apps Reopen on Their Workspace",
+            description: "A pinned app's window that you close and reopen now goes back to its pinned workspace instead of the one on screen."
         ),
         WhatsNewFeature(
             icon: "bolt.horizontal",
-            title: "New Windows Tile Faster",
-            description: "A new window no longer waits seconds for the next background check, including one opened right after you switch workspaces."
+            title: "No More Tiles Stuck in the Corner",
+            description: "A tile whose app was busy during a workspace switch now appears as soon as the app answers, instead of staying hidden for seconds."
         ),
         WhatsNewFeature(
-            icon: "rectangle.split.2x1",
-            title: "Fewer Windows Float by Mistake",
-            description: "When an app's minimum size rules out the first spot, HyprMac now tries the spot that fits instead of floating the window. Dia's first window after launch tiles again."
-        ),
-        WhatsNewFeature(
-            icon: "hand.draw",
-            title: "Steadier Dragging and Layouts",
-            description: "A drop that can't fit is refused up front instead of resizing and snapping back, and busy apps no longer get windows mixed up or slow every check."
+            icon: "ruler",
+            title: "Size-Limited Windows Settle Sooner",
+            description: "HyprMac no longer retries sizes it already learned an app refuses, so a window with a minimum size is placed with fewer resizes."
         ),
     ]
 }
