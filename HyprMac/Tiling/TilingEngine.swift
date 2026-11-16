@@ -276,6 +276,17 @@ class TilingEngine {
     private var observedMinimumGeneration: [CGWindowID: UInt64] = [:]
     /// the declared minimum each window last logged as not enforced
     private var declaredFloorReported: [CGWindowID: CGSize] = [:]
+    /// uptime at each window's assignment, for the declared-limits timing logs
+    private var declaredLimitsAssignedAt: [CGWindowID: TimeInterval] = [:]
+    /// windows whose declared limits at their first pass were logged
+    private var declaredFirstPassLogged: Set<CGWindowID> = []
+    /// Injected so tests can drive the re-reads. Production hands it to the
+    /// main queue.
+    var scheduleDeclaredLimitsRead: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
+    }
+    /// when an empty assign-time read is tried again, in ms after assignment
+    static let declaredLimitsRereadMilliseconds = [50, 100, 200, 400, 800, 1600, 3200, 6400]
     /// windows whose older observed minima one pass is ignoring, each with
     /// the generation to ignore them below. Per window, because two newcomers
     /// retried together were admitted at different generations and one must
@@ -353,6 +364,8 @@ class TilingEngine {
         minSizes.forget(windowID: windowID)
         observedMinimumGeneration.removeValue(forKey: windowID)
         declaredFloorReported.removeValue(forKey: windowID)
+        declaredLimitsAssignedAt.removeValue(forKey: windowID)
+        declaredFirstPassLogged.remove(windowID)
     }
 
     /// Record `ids` as verified incumbents of `workspace`. A window belongs
@@ -2210,6 +2223,50 @@ class TilingEngine {
                 + " declared=\(DeclaredSizeLimits.text(declared.min)) actual=\(Self.sizeText(actual))")
     }
 
+    // measurement only: how long a new window takes to declare its limits.
+    // an empty assign-time read is tried again until one arrives or the
+    // schedule runs out. nothing reads the result but the log
+    func watchDeclaredLimits(_ window: HyprWindow, readAtAssign: DeclaredSizeLimits?) {
+        let assignedAt = ProcessInfo.processInfo.systemUptime
+        declaredLimitsAssignedAt[window.windowID] = assignedAt
+        guard DeclaredSizeLimits.isEmpty(readAtAssign) else { return }
+        rereadDeclaredLimits(window.windowID, bundle: window.bundleID ?? "none",
+                             assignedAt: assignedAt, step: 0)
+    }
+
+    private func rereadDeclaredLimits(_ windowID: CGWindowID, bundle: String,
+                                      assignedAt: TimeInterval, step: Int) {
+        let delays = Self.declaredLimitsRereadMilliseconds
+        let after = delays[step]
+        let wait = after - (step == 0 ? 0 : delays[step - 1])
+        scheduleDeclaredLimitsRead(Double(wait) / 1000) { [weak self] in
+            // forgotten, or assigned again since
+            guard let self, self.declaredLimitsAssignedAt[windowID] == assignedAt else { return }
+            let read = DeclaredSizeLimits.read(windowID)
+            if let read, !DeclaredSizeLimits.isEmpty(read) {
+                hyprLog(.notice, .tiling, "declared limits arrived: wid=\(windowID) bundle=\(bundle)"
+                        + " after=\(after)ms \(read.logText)")
+            } else if step + 1 == delays.count {
+                hyprLog(.notice, .tiling, "declared limits never arrived: wid=\(windowID) bundle=\(bundle)"
+                        + " after=\(after)ms last=\(read?.logText ?? "none")")
+            } else {
+                self.rereadDeclaredLimits(windowID, bundle: bundle, assignedAt: assignedAt, step: step + 1)
+            }
+        }
+    }
+
+    // measurement only, once per window: what it declares when a pass first
+    // tries to fit it, before any frame is written
+    private func logDeclaredLimitsAtFirstPass(_ window: HyprWindow) {
+        guard declaredFirstPassLogged.insert(window.windowID).inserted else { return }
+        let age = declaredLimitsAssignedAt[window.windowID].map {
+            String(Int(((ProcessInfo.processInfo.systemUptime - $0) * 1000).rounded()))
+        } ?? "unknown"
+        hyprLog(.notice, .tiling, "declared limits at first pass: wid=\(window.windowID)"
+                + " bundle=\(window.bundleID ?? "none") age=\(age)ms"
+                + " \(DeclaredSizeLimits.read(window.windowID)?.logText ?? "none")")
+    }
+
     private func overflowingWindows(in layouts: [(HyprWindow, CGRect)]) -> [HyprWindow] {
         layouts.compactMap { window, frame in
             let minSize = minimumSize(for: window)
@@ -2243,7 +2300,8 @@ class TilingEngine {
                                     maxDepth: Int, rect: CGRect,
                                     skippingTenants: Set<CGWindowID> = [],
                                     splitting target: CGWindowID? = nil) -> Bool {
-        layoutEngine.smartInsertFitting(window, into: tree, maxDepth: maxDepth,
+        logDeclaredLimitsAtFirstPass(window)
+        return layoutEngine.smartInsertFitting(window, into: tree, maxDepth: maxDepth,
                                         rect: rect, skippingTenants: skippingTenants,
                                         preferringTenant: target,
                                         minimumSize: minimumSize(for:))

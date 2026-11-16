@@ -80,4 +80,50 @@ final class DeclaredSizeLimitsTests: XCTestCase {
                                           preferred: CGSize(width: 1040, height: 835))
         XCTAssertEqual(declared.logText, "min=414x414 max=infx100000 pref=1040x835")
     }
+
+    func testAReadIsEmptyUntilEitherAxisDeclaresAMinimum() {
+        XCTAssertTrue(DeclaredSizeLimits.isEmpty(nil))
+        XCTAssertTrue(DeclaredSizeLimits.isEmpty(DeclaredSizeLimits(min: .zero, max: .zero, preferred: .zero)))
+        XCTAssertTrue(DeclaredSizeLimits.isEmpty(limits(min: CGSize(width: 1, height: 1))))
+        XCTAssertFalse(DeclaredSizeLimits.isEmpty(limits(min: CGSize(width: 0, height: 320))))
+        XCTAssertFalse(DeclaredSizeLimits.isEmpty(limits(min: CGSize(width: 637, height: 320))))
+    }
+
+    // the fake window id reads nil, so every re-read stays empty
+    private func watch(_ engine: TilingEngine, readAtAssign: DeclaredSizeLimits?) -> () -> [TimeInterval] {
+        var waits: [TimeInterval] = []
+        var pending: [() -> Void] = []
+        engine.scheduleDeclaredLimitsRead = { wait, body in
+            waits.append(wait)
+            pending.append(body)
+        }
+        engine.watchDeclaredLimits(makeWindow(id: CGWindowID.max - 7), readAtAssign: readAtAssign)
+        return {
+            while !pending.isEmpty { pending.removeFirst()() }
+            return waits
+        }
+    }
+
+    func testAnEmptyAssignReadIsTriedAgainOnTheSchedule() {
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [] }))
+        let waits = watch(engine, readAtAssign: nil)()
+        let ms = waits.reduce(into: [Int]()) { out, wait in
+            out.append((out.last ?? 0) + Int((wait * 1000).rounded()))
+        }
+        XCTAssertEqual(ms, TilingEngine.declaredLimitsRereadMilliseconds)
+        XCTAssertEqual(ms, [50, 100, 200, 400, 800, 1600, 3200, 6400])
+    }
+
+    func testADeclaredAssignReadIsNotTriedAgain() {
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [] }))
+        let waits = watch(engine, readAtAssign: limits(min: CGSize(width: 637, height: 320)))()
+        XCTAssertEqual(waits, [])
+    }
+
+    func testAForgottenWindowStopsTheReReads() {
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [] }))
+        let drain = watch(engine, readAtAssign: nil)
+        engine.forgetMinimumSize(windowID: CGWindowID.max - 7)
+        XCTAssertEqual(drain().count, 1, "the first read was already scheduled; it finds the window gone")
+    }
 }

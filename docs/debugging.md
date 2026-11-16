@@ -552,21 +552,37 @@ with `SLSWindowQueryWindows`, `SLSWindowQueryResultCopyWindows`,
 `SLSWindowIteratorAdvance` and `SLSWindowIteratorGetConstraints`, all looked
 up with `dlsym` at first use. It is logged only, to measure how far the
 declared floor can be trusted. No fit check, layout or `MinSizeMemory`
-reads it. Three `[notice] [tiling]` lines:
+reads it. Six `[notice] [tiling]` lines:
 
 ```
 declared limits: wid=<id> bundle=<id> min=<w>x<h> max=<w>x<h> pref=<w>x<h>
+declared limits arrived: wid=<id> bundle=<id> after=<ms>ms min=<w>x<h> max=<w>x<h> pref=<w>x<h>
+declared limits never arrived: wid=<id> bundle=<id> after=6400ms last=<min=… max=… pref=…|none>
+declared limits at first pass: wid=<id> bundle=<id> age=<ms|unknown>ms min=<w>x<h> max=<w>x<h> pref=<w>x<h>
 declared vs enforced: wid=<id> bundle=<id> declared=<w>x<h> enforced=<w>x<h> verdict=<…>
 declared floor not enforced: wid=<id> bundle=<id> declared=<w>x<h> actual=<w>x<h>
 ```
 
 The first comes once, when a new window is assigned a workspace. It reads
-`none` when the read failed. The second comes each time a refusal records
-an observed minimum. `verdict` compares the declared minimum with the
+`none` when the read failed. A brand-new window often reads empty here:
+`none`, or a min of 1x1 or less on both axes. Then
+`TilingEngine.watchDeclaredLimits` reads it again on the main queue about
+50, 100, 200, 400, 800, 1600, 3200 and 6400 ms after assignment. The
+first non-empty read logs `declared limits arrived` once, with the nominal
+delay. If every read is empty it logs `declared limits never arrived` once,
+with the last read. A window that cannot resize reads all zeros, so it
+always ends there. A window forgotten first logs neither. `declared limits
+at first pass` comes once per window, the first time any pass tries to fit
+it into a tree (`smartInsertFitting`), before any frame is written. `age`
+is the time since assignment, or `unknown` for a window tiled without
+one.
+
+`declared vs enforced` comes each time a refusal records an observed
+minimum. `verdict` compares the declared minimum with the
 refused size on the refused axes: `match` within 1 pt, `declaredLow`,
 `declaredHigh`, `undeclared` (a declared min of 1 or less) or `unreadable`.
-`declaredHigh` wins when two axes disagree. The third comes when an
-accepted layout leaves a window more than 1 pt below its declared minimum,
+`declaredHigh` wins when two axes disagree. `declared floor not enforced`
+comes when an accepted layout leaves a window more than 1 pt below its declared minimum,
 once per window and declared value. That is the direction that would make
 the declared value refuse slots the app takes: Fantastical declared 838 pt
 wide and took 541.

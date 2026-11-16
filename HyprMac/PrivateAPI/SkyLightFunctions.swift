@@ -34,6 +34,13 @@ struct DeclaredSizeLimits: Equatable {
         String(format: "%gx%g", Double(size.width), Double(size.height))
     }
 
+    /// Nothing declared yet: a failed read, or no minimum on either axis.
+    /// A brand-new window often reads this way for a while.
+    static func isEmpty(_ limits: DeclaredSizeLimits?) -> Bool {
+        guard let limits else { return true }
+        return limits.min.width <= 1 && limits.min.height <= 1
+    }
+
     /// How a declared minimum compares with the one the app enforced.
     enum Verdict: String {
         case match, declaredLow, declaredHigh, undeclared, unreadable
