@@ -137,6 +137,9 @@ class FocusBorder {
     private var glideTarget: CGRect?
     private var glideOccluders: [CGRect] = []
     private var floaterFrames: [CGWindowID: CGRect] = [:]
+    // the dragged floater's live frame. it wins over the lagging frame a
+    // refresh reads, and the floater is in front of everything while it moves
+    private var floaterDrag: (id: CGWindowID, frame: CGRect)?
 
     private enum State { case active, settled, hidden }
     // a floater's glowView fills the panel and carries the fade and the
@@ -396,9 +399,11 @@ class FocusBorder {
     /// whose id is not present in the input — so a single call brings
     /// the floating-border set into agreement with the current
     /// floating-window set.
-    func updateFloatingBorders(_ frames: [CGWindowID: CGRect], color: CGColor) {
+    func updateFloatingBorders(_ incoming: [CGWindowID: CGRect], color: CGColor) {
         mainThreadOnly()
         guard floaterMarks == .outline else { return }
+        var frames = incoming
+        if let drag = floaterDrag, frames[drag.id] != nil { frames[drag.id] = drag.frame }
         let visibleIDs = Set(frames.keys)
         let staleIDs = floatingPanels.keys.filter { !visibleIDs.contains($0) }
         for windowID in staleIDs { hideFloatingBorder(for: windowID) }
@@ -409,16 +414,13 @@ class FocusBorder {
             let nsRect = panelRect(for: frame, expansion: Self.floaterPanelExpansion)
             let windowRadius = WindowCornerRadius.resolve(for: windowID)
             let border: BorderPanel
-            let isNewPanel: Bool
             if let existing = floatingPanels[windowID] {
                 border = existing
                 border.panel.setFrame(nsRect, display: false)
                 positionFloaterViews(border)
-                isNewPanel = false
             } else {
                 border = makeFloatingPanel(frame: nsRect)
                 floatingPanels[windowID] = border
-                isNewPanel = true
             }
 
             CATransaction.begin()
@@ -434,15 +436,43 @@ class FocusBorder {
             stampOutlineShape(outline, cornerRadius: windowRadius + expansion)
             CATransaction.commit()
 
+            // no fade in: a window that just floated, or came back with a
+            // workspace, is marked the moment it shows
             border.panel.alphaValue = 1.0
+            border.glowView.alphaValue = 1.0
             border.panel.orderFront(nil)
-            if isNewPanel {
-                fadeViewAlpha(border.glowView, from: 0, to: 1,
-                              duration: fadeDurationSec)
-            } else {
-                border.glowView.alphaValue = 1.0
-            }
         }
+    }
+
+    /// Move `windowID`'s outline to `frame` (CG) while the user drags the
+    /// window. Geometry only: no fade, no ordering. The dragged floater is
+    /// in front of everything, so its occlusion mask goes until the drag ends.
+    func followFloaterDrag(_ windowID: CGWindowID, to frame: CGRect) {
+        mainThreadOnly()
+        floaterDrag = (windowID, frame)
+        guard let border = floatingPanels[windowID] else { return }
+        floaterFrames[windowID] = frame
+        border.panel.setFrame(panelRect(for: frame, expansion: Self.floaterPanelExpansion), display: false)
+        positionFloaterViews(border)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        border.glowView.layer?.mask = nil
+        CATransaction.commit()
+    }
+
+    /// The drag ended. The refresh after the drop puts the outline on the
+    /// settled frame and masks it again.
+    func endFloaterDrag() {
+        mainThreadOnly()
+        floaterDrag = nil
+    }
+
+    /// The live drag frame the outline follows, nil when no drag is on. For tests.
+    var currentFloaterDrag: (id: CGWindowID, frame: CGRect)? { floaterDrag }
+
+    /// The floater panel's root layer, which carries the fade and the mask. For tests.
+    func currentFloaterGlowLayer(for windowID: CGWindowID) -> CALayer? {
+        floatingPanels[windowID]?.glowView.layer
     }
 
     /// Order out every floating-border panel with a fade and drop the cache.
@@ -672,7 +702,8 @@ class FocusBorder {
         }
         for (wid, border) in floatingPanels {
             guard let frame = floaterFrames[wid] else { continue }
-            let occluders = floaterOccluders[wid] ?? []
+            // the dragged floater is in front; the occluders came from a stale list
+            let occluders = wid == floaterDrag?.id ? [] : floaterOccluders[wid] ?? []
             applyMask(to: border.glowView, windowCGRect: frame,
                       expansion: Self.floaterPanelExpansion,
                       occluders: occluders)
@@ -938,6 +969,7 @@ class FocusBorder {
         glowView = nil
         floatingPanels.removeAll()
         floaterFrames.removeAll()
+        floaterDrag = nil
         infoPanels.removeAll()
         renderedWindowID = nil
         trackedWindowFrame = nil

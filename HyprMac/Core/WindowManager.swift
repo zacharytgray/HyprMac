@@ -150,12 +150,25 @@ class WindowManager {
         set { mouseDragLifecycle.preDragFocusedID = newValue }
     }
 
-    // armed when a drag starts on a visible floating window while dim is on
-    // (normal mode). drives dimmingOverlay.setDragOverride so the bright carve
-    // hole tracks the floater live instead of trailing on the discovery poll.
+    // armed when a drag starts on a visible floating window. drives
+    // dimmingOverlay.setDragOverride so the bright carve hole tracks the
+    // floater live (normal dim mode), and moves the floater outline with it,
+    // instead of both trailing on the discovery poll.
     private lazy var dimDrag = FloatingDimDragTracker(
-        setCarve: { [dimmingOverlay] id, rect in dimmingOverlay.setDragOverride(id: id, rect: rect) },
-        clearCarve: { [dimmingOverlay] in dimmingOverlay.clearDragOverride() })
+        setCarve: { [weak self] id, rect in
+            guard let self, self.floaterDragFollow.carve else { return }
+            self.dimmingOverlay.setDragOverride(id: id, rect: rect)
+        },
+        setLiveFrame: { [weak self] id, frame in
+            guard let self, self.floaterDragFollow.outline else { return }
+            self.focusBorder.followFloaterDrag(id, to: frame)
+        },
+        clearCarve: { [dimmingOverlay, focusBorder] in
+            dimmingOverlay.clearDragOverride()
+            focusBorder.endFloaterDrag()
+        })
+    // what the armed drag moves, decided at the press
+    private var floaterDragFollow = FloaterDragFollow(carve: false, outline: false)
 
     // true while the Hypr key is physically held. drives focusBrackets — when held,
     // every focus change re-targets the brackets so they track Hypr+arrow even
@@ -273,6 +286,7 @@ class WindowManager {
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
         self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
+        self.workspaceOrchestrator.onFloatersRevealed = { [weak self] windows in self?.markRevealedFloaters(windows) }
         self.workspaceOrchestrator.onDidSwitch = { [weak self] _, _ in
             self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()
@@ -1143,7 +1157,7 @@ class WindowManager {
             // a press is what opens a menu, so the next hover must read a fresh list
             self.mouseTracker.invalidateWindowListCache()
             self.tiledDrag.handleMouseDown(at: downCG)
-            self.armDimDragIfFloating(downPointNS: downNS)
+            self.armFloaterDrag(downPointNS: downNS)
             // a menu open at the OS level eats clicks before we'd see them
             // here, so a global mouseDown reaching us is unambiguous proof
             // there is no menu currently tracking. clears the flag if a
@@ -1176,16 +1190,14 @@ class WindowManager {
                 self.scratchpad.handleMouseDown(atCG: cgPoint, synthetic: Self.isOwnSyntheticEvent(event))
             }
         }
-        // when the user drags a floating window, its frame changes 60Hz but our
-        // border only repositions on the discovery poll — so it lags behind ugly. hide
-        // the border for the duration of the drag and restore it on mouseUp.
+        // when the user drags a floating window, its frame changes 60Hz but the
+        // poll only reads it every so often. the dim carve and the floater
+        // outline follow the live drag rect instead; the focused border hides
+        // for the drag and comes back on mouseUp.
         mouseDragMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
             guard let self = self else { return }
             self.mouseDragLifecycle.observeDrag(hyprHeld: self.hyprHeld)
             self.tiledDrag.updateTiledDropPreview(event)
-            if self.mouseDownFloatingWindowID != 0 {
-                self.focusBorder.hideFloatingBorder(for: self.mouseDownFloatingWindowID)
-            }
             self.dimDrag.update(cursorCG: self.displayManager.flippedY(NSEvent.mouseLocation))
             guard self.preDragFocusedID == 0 else { return }
             guard let tid = self.focusBorder.trackedWindowID else { return }
@@ -1980,9 +1992,8 @@ class WindowManager {
     }
 
     /// Accept the verified mouse-down frame batch. Also note the floating
-    /// window under the click (if any) — and its frame — so the
-    /// drag monitor knows to hide that floater's border for the drag
-    /// duration and the dim carve can anchor to a consistent pair.
+    /// window under the click (if any) — and its frame — so the dim carve
+    /// and the floater outline can follow the drag from a consistent pair.
     private func acceptTiledDragCapture(_ frames: [CGWindowID: CGRect]) {
         mouseDownFloatingWindowID = 0
         mouseDownFloatingFrame = nil
@@ -2022,18 +2033,20 @@ class WindowManager {
         }
     }
 
-    /// Arm the live dim-carve override if the press landed on a visible
-    /// ordinary floating window and dim is active (normal mode). Reuses the
+    /// Arm the live drag follow if the press landed on a visible ordinary
+    /// floating window and something follows it: the dim carve (normal dim
+    /// mode) or the floater outline (`FloaterDragFollow`). Reuses the
     /// hit AND the frame read by verified tiled-drag capture — no new AX
     /// queries. The anchor pair must be sampled consistently: the frame
     /// from the mouse-down enumeration with the event's click point. A
     /// fresh `w.frame` here still reports the pre-drag position (Tahoe AX
     /// reads lag) while a live cursor read is already mid-flick — that
     /// mismatch permanently offset the carve by the initial flick distance.
-    private func armDimDragIfFloating(downPointNS: NSPoint) {
+    private func armFloaterDrag(downPointNS: NSPoint) {
         dimDrag.disarm()
-        guard config.dimInactiveWindows, !scratchpad.isVisible,
-              mouseDownFloatingWindowID != 0 else { return }
+        floaterDragFollow = .resolve(dimInactive: config.dimInactiveWindows,
+                                     scratchpadVisible: scratchpad.isVisible, marks: floaterMarks)
+        guard floaterDragFollow.arms, mouseDownFloatingWindowID != 0 else { return }
         let id = mouseDownFloatingWindowID
         guard let w = stateCache.cachedWindows[id] else { return }
         guard let frame = mouseDownFloatingFrame ?? w.frame else { return }
@@ -2212,6 +2225,17 @@ class WindowManager {
         } else {
             focusBorder.hideFloatingBorders()
         }
+    }
+
+    /// A floater the switch could not reveal came out of the hide corner
+    /// later. Outline it now instead of at the next refresh.
+    private func markRevealedFloaters(_ windows: [HyprWindow]) {
+        guard isRunning else { return }
+        for w in windows { stateCache.cachedWindows[w.windowID] = w }
+        let fid = focusBorder.trackedWindowID ?? focusController.lastFocusedID
+        guard !isFullscreenSuppressed(focused: stateCache.cachedWindows[fid]) else { return }
+        refreshFloatingBorders()
+        refreshDimming()
     }
 
     /// Compute per-border occluder rects and push them into the focus

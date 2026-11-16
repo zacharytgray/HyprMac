@@ -20,6 +20,8 @@ final class WorkspaceRevealRepairTests: XCTestCase {
     private var stateCache: WindowStateCache!
     private var orchestrator: WorkspaceOrchestrator!
     private var revealMissed = 0
+    /// what the reveal told the chrome to mark, per call
+    private var marked: [[CGWindowID]] = []
     /// the next scheduled reveal retry, stepped by hand
     private var retries: [() -> Void] = []
     /// whether the floaters' app answers its window list, and how often it was asked
@@ -51,6 +53,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
             revalidation: MinimaRevalidation())
         orchestrator.screenUnderCursor = { [unowned self] in self.screen }
         orchestrator.onRevealMissed = { [unowned self] in self.revealMissed += 1 }
+        orchestrator.onFloatersRevealed = { [unowned self] in self.marked.append($0.map(\.windowID)) }
         orchestrator.scheduleRevealRetry = { [unowned self] _, retry in self.retries.append(retry) }
         orchestrator.revealRetryWindows = { [unowned self] ids, _ in
             self.appAsks += 1
@@ -99,6 +102,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertNil(workspaceManager.savedFloatingFrame(for: floater.windowID),
                      "revealed on the first retry its app answered")
         XCTAssertTrue(retries.isEmpty, "nothing left to retry")
+        XCTAssertEqual(marked, [[floater.windowID]], "outlined the moment it came back")
     }
 
     // the app answered its window list a moment ago and may be busy again:
@@ -125,6 +129,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
 
         XCTAssertEqual(appAsks, WorkspaceOrchestrator.revealRetryAttempts)
         XCTAssertTrue(retries.isEmpty, "gave up")
+        XCTAssertTrue(marked.isEmpty, "nothing revealed, nothing to mark")
         XCTAssertEqual(revealMissed, 1, "the repair poll was asked for all along")
         XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), saved)
     }
@@ -189,6 +194,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
 
         XCTAssertNil(workspaceManager.savedFloatingFrame(for: floater.windowID),
                      "the reveal repair restored the saved frame")
+        XCTAssertEqual(marked, [[floater.windowID]], "outlined by the poll that revealed it")
     }
 
     func testAFloaterTheSwitchCanReadIsRevealedWithoutARepairPoll() {
@@ -210,6 +216,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         orchestrator.repairUnrevealedFloaters([floater])
 
         XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), saved)
+        XCTAssertTrue(marked.isEmpty)
     }
 
     // MARK: - when the switch is done, for the admit-only pass

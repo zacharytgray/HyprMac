@@ -164,7 +164,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `WorkspaceStatusPresenter` | Read-only views of workspace state: menu bar, overview, status export, state dump. |
 | `TiledDragController` | Capture and drop wiring for `TiledDragHandler`, the live drop preview, and what a finished drop owes. |
 | `TiledDragFeedbackCoordinator` | Holds a degraded drop's error until a later layout settles it. |
-| `FloatingDimDragTracker` | Keeps the dim's carve on a floater while it is dragged. Reads the floater's frame from the window list (`WindowStacking.bounds(of:)`), not from AX. |
+| `FloatingDimDragTracker` | Keeps the dim's carve and the floater outline on a floater while it is dragged. `FloaterDragFollow` decides which of the two follow. Reads the floater's frame from the window list (`WindowStacking.bounds(of:)`), not from AX. |
 | `DockAffordance` | What an outside app activation does when none of that app's windows are on screen. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |

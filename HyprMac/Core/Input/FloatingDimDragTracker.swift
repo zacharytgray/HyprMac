@@ -1,7 +1,22 @@
-// Keeps the dim's bright carve on a floater while it is dragged, instead of
-// trailing behind on the discovery poll.
+// Keeps the dim's bright carve and the floater outline on a floater while it
+// is dragged, instead of trailing behind on the discovery poll.
 
 import Cocoa
+
+/// What follows a floater while it is dragged. The dim's bright carve
+/// follows in normal dim mode only; the scrim of an open scratchpad has no
+/// carve to move. The outline follows whenever floaters are marked.
+struct FloaterDragFollow: Equatable {
+    var carve: Bool
+    var outline: Bool
+
+    var arms: Bool { carve || outline }
+
+    static func resolve(dimInactive: Bool, scratchpadVisible: Bool,
+                        marks: FloaterMarkStyle) -> Self {
+        Self(carve: dimInactive && !scratchpadVisible, outline: marks != .none)
+    }
+}
 
 final class FloatingDimDragTracker {
     // startFrame + downPointCG are the tracking anchor and MUST be a
@@ -25,13 +40,18 @@ final class FloatingDimDragTracker {
     private var drag: State?
     private let now: () -> TimeInterval
     private let setCarve: (CGWindowID, CGRect) -> Void
+    private let setLiveFrame: (CGWindowID, CGRect) -> Void
     private let clearCarve: () -> Void
 
+    /// `setCarve` gets the live frame grown by the dim's 2 pt carve margin,
+    /// `setLiveFrame` the live frame itself, for the outline.
     init(now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
          setCarve: @escaping (CGWindowID, CGRect) -> Void,
+         setLiveFrame: @escaping (CGWindowID, CGRect) -> Void = { _, _ in },
          clearCarve: @escaping () -> Void) {
         self.now = now
         self.setCarve = setCarve
+        self.setLiveFrame = setLiveFrame
         self.clearCarve = clearCarve
     }
 
@@ -108,5 +128,6 @@ final class FloatingDimDragTracker {
         self.drag = drag
         // match floatingFrames(expandedBy: 2): negative inset enlarges
         setCarve(drag.id, liveRect.insetBy(dx: -2, dy: -2))
+        setLiveFrame(drag.id, liveRect)
     }
 }

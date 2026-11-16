@@ -186,6 +186,48 @@ final class FloaterOutlinePanelTests: XCTestCase {
         XCTAssertNil(border.currentFloaterOutline(for: 42), "the glow goes with the outline")
     }
 
+    func testANewOutlineIsOnScreenAtOnceWithNoFadeIn() throws {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        border.setFloaterMarks(.outline)
+        border.updateFloatingBorders([42: CGRect(x: 100, y: 100, width: 400, height: 300)],
+                                     color: NSColor.systemPink.cgColor)
+        let layer = try XCTUnwrap(border.currentFloaterGlowLayer(for: 42))
+        XCTAssertEqual(layer.opacity, 1)
+        XCTAssertNil(layer.animation(forKey: "fade"), "no fade in to wait through")
+    }
+
+    func testTheOutlineFollowsADragAndAStaleRefreshDoesNotPullItBack() throws {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        border.setFloaterMarks(.outline)
+        let start = CGRect(x: 100, y: 100, width: 400, height: 300)
+        border.updateFloatingBorders([42: start], color: NSColor.systemPink.cgColor)
+        border.applyOcclusion(focusedOccluders: [],
+                              floaterOccluders: [42: [CGRect(x: 300, y: 100, width: 400, height: 300)]])
+        XCTAssertNotNil(border.currentFloaterGlowLayer(for: 42)?.mask)
+
+        let moved = start.offsetBy(dx: 250, dy: 40)
+        border.followFloaterDrag(42, to: moved)
+        let e = FocusBorder.floaterPanelExpansion
+        let expected = NSRect(x: 350 - e, y: 1080 - 440 - e, width: 400 + e * 2, height: 300 + e * 2)
+        XCTAssertEqual(border.currentFloaterOutline(for: 42)?.panel, expected)
+        XCTAssertNil(border.currentFloaterGlowLayer(for: 42)?.mask, "the dragged floater is in front")
+
+        // a refresh mid-drag reads the lagging frame
+        border.updateFloatingBorders([42: start], color: NSColor.systemPink.cgColor)
+        border.applyOcclusion(focusedOccluders: [],
+                              floaterOccluders: [42: [CGRect(x: 300, y: 100, width: 400, height: 300)]])
+        XCTAssertEqual(border.currentFloaterOutline(for: 42)?.panel, expected)
+        XCTAssertNil(border.currentFloaterGlowLayer(for: 42)?.mask)
+
+        // the drop: the next refresh lands on the settled frame
+        border.endFloaterDrag()
+        XCTAssertNil(border.currentFloaterDrag)
+        border.updateFloatingBorders([42: moved.offsetBy(dx: 1, dy: 0)], color: NSColor.systemPink.cgColor)
+        XCTAssertEqual(border.currentFloaterOutline(for: 42)?.panel, expected.offsetBy(dx: 1, dy: 0))
+    }
+
     func testNoneDrawsNoFloaterOutline() {
         let border = FocusBorder()
         border.primaryScreenHeight = 1080
