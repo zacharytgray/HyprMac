@@ -1865,12 +1865,20 @@ class TilingEngine {
         return layoutCanAccommodateKnownMinimums(recovered, rect: rect) ? recovered : nil
     }
 
-    /// The members whose observed minimum does not fit the slot the tree
+    /// The members whose known minimum does not fit the slot the tree
     /// gives them, with that minimum as the size to make room for.
+    ///
+    /// An observed bound and an app hint both count: the hint is what this
+    /// app's other window just refused, and writing the slot anyway only
+    /// repeats that refusal on a window the user is watching. A window
+    /// that took a smaller size has its entry lowered to it, and an explicit
+    /// request's bypass reads the hint as zero, so neither is held to a
+    /// sibling's floor. A seeded guess still goes out as the plain layout.
     private func knownMinimumConflicts(in tree: BSPTree, rect: CGRect) -> [(window: HyprWindow, actual: CGSize)] {
         let slack = TilingConfig.minSizeConflictSlackPx
         return tree.layout(in: rect, gap: gapSize, padding: outerPadding).compactMap { window, frame in
-            guard minSizes.entry(for: window.windowID)?.provenance == .observed else { return nil }
+            guard let provenance = minSizes.entry(for: window.windowID)?.provenance,
+                  provenance != .seeded else { return nil }
             let minimum = minimumSize(for: window)
             guard minimum.width > frame.width + slack || minimum.height > frame.height + slack else { return nil }
             return (window, minimum)

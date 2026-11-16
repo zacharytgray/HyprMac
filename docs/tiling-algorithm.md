@@ -326,9 +326,13 @@ of eight windows is about 3.5 seconds: the capture, two seconds of passes,
 and one last rollback. Admission recovery's narrowing rounds for a key
 share one such cap between them, and stop narrowing once it is spent.
 
-A minimum the memory already knows (`observed` provenance) shapes the
-first pass: the candidate is adjusted for it before any frame is written,
-and its ratios are kept while the membership stays the same.
+A minimum the memory already knows (`observed` or `appHint` provenance)
+shapes the first pass: the candidate is adjusted for it before any frame is
+written, and its ratios are kept while the membership stays the same. The
+hint counts because it is what another window of the app just refused:
+without it the second Dia window was asked for the 413.5 pt its sibling had
+refused, and refused it too. A `seeded` guess does not shape the pass, and an
+explicit request's bypass reads a hint as zero here as everywhere.
 
 A window that rounds its size up by less than the size tolerance passes
 its own match and can still fail the pair or the screen: a terminal a
@@ -704,10 +708,16 @@ Fit checks read all three the same way; the state dump and the logs print
 the source. A bypass keys on `observed`, and an explicit user request — a
 float→tile, a move, the fit diagnostic — sets an `appHint` aside as well,
 because a hint is somebody else's evidence and the window it is refusing has
-never been asked. Real evidence
-*replaces* a hint of either kind rather than merging with it, so the axis a
-readback did not refuse goes back to unknown instead of inheriting a guess
-under an `observed` label.
+never been asked. Real evidence *replaces* a `seeded` guess rather than
+merging with it, so the axis a readback did not refuse goes back to unknown
+instead of inheriting a guess under an `observed` label. An `appHint` is
+another window's refusal, so its axis the readback did not refuse is kept,
+carried, unless the window just took a size at least
+`lowerMinSizeAcceptedDeltaPx` below it there. Dropping it reopened the
+admission trap: Dia's next window refused the height, forgot the hinted 500 width, and
+was split the other way into a width it refused too. A carried axis counts in
+every fit check, and the window's own refusal on that axis replaces it, but it
+never feeds the app's hint, which only real refusals raise.
 
 **Per-app hints.** Every `observed` bound also raises a per-bundle-id hint,
 the per-axis max of what that app's windows have refused. One exception

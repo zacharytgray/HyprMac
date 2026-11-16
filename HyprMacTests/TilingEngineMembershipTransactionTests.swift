@@ -1391,6 +1391,30 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(f.trace.frames[f.newcomer.windowID]?.height ?? 0, 446)
     }
 
+    func testTheNextWindowOfTheAppGetsItsHintedFloorOnTheFirstWrite() throws {
+        // the app's hint is pre-applied like an observed bound, so the third
+        // Dia window is not asked for the 413.5 its sibling already refused
+        let f = diaIncident(bundleID: "company.thebrowser.dia")
+        let retry = f.engine.retryAdmission([f.messages, f.dia, f.newcomer], onWorkspace: 1, screen: f.screen,
+                                            bypassingMinimaBefore: [f.newcomer.windowID: f.admission.generation],
+                                            refusingImpossibleArrangements: true)
+        XCTAssertTrue(retry.published)
+        // the newcomer closes, and Messages has its half back
+        XCTAssertTrue(f.engine.tileWindows([f.messages, f.dia], onWorkspace: 1, screen: f.screen).published)
+        let third = makeWindow(id: 46_005)
+        third.bundleID = "company.thebrowser.dia"
+        let rect = f.engine.displayManager.cgRect(for: f.screen)
+        f.trace.frames[third.windowID] = CGRect(x: rect.minX + 29, y: rect.minY + 14, width: 744, height: 835)
+        f.trace.minSize[third.windowID] = CGSize(width: 500, height: 446)
+
+        let result = f.engine.tileWindows([f.messages, f.dia, third], onWorkspace: 1, screen: f.screen)
+
+        XCTAssertTrue(result.published, "failure=\(String(describing: result.failure))")
+        XCTAssertEqual(f.engine.knownMinimumSizes[third.windowID]?.provenance, .appHint,
+                       "accepted on the first write: no refusal taught it anything")
+        XCTAssertGreaterThanOrEqual(f.trace.requested[third.windowID]?.height ?? 0, 446)
+    }
+
     func testTheFitChecksAfterAFailedRetryJudgeThePassOrderNotTheListedOrder() {
         // both checks take the pass's order, so the newcomer given up on does
         // not change with the order the window server lists the windows in
