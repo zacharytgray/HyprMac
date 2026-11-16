@@ -542,6 +542,9 @@ final class ActionDispatcher {
                     let physicalName = physical?.localizedName ?? "nil"
                     let homeName = workspaceManager.homeScreenForWorkspace(workspace)?.localizedName ?? "nil"
                     hyprLog(.notice, .orchestration, "assignNewWindow: '\(window.title ?? "?")' (\(window.windowID)) frame=\(frameDesc) physical=\(physicalName) cursor=\(cursor.localizedName) → ws\(workspace) home=\(homeName)")
+                    // measurement only, see DeclaredSizeLimits
+                    let limits = DeclaredSizeLimits.read(windowID)?.logText ?? "none"
+                    hyprLog(.notice, .tiling, "declared limits: wid=\(windowID) bundle=\(window.bundleID ?? "none") \(limits)")
                 }
                 workspaceManager.assignWindow(windowID, toWorkspace: workspace)
             },

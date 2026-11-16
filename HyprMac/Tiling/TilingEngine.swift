@@ -271,6 +271,8 @@ class TilingEngine {
     /// generation at which each window last had an `.observed` minimum
     /// recorded. Only the bypass reads it.
     private var observedMinimumGeneration: [CGWindowID: UInt64] = [:]
+    /// the declared minimum each window last logged as not enforced
+    private var declaredFloorReported: [CGWindowID: CGSize] = [:]
     /// windows whose older observed minima one pass is ignoring, each with
     /// the generation to ignore them below. Per window, because two newcomers
     /// retried together were admitted at different generations and one must
@@ -344,6 +346,7 @@ class TilingEngine {
         slotMemory.removeValue(forKey: windowID)
         minSizes.forget(windowID: windowID)
         observedMinimumGeneration.removeValue(forKey: windowID)
+        declaredFloorReported.removeValue(forKey: windowID)
     }
 
     /// Record `ids` as verified incumbents of `workspace`. A window belongs
@@ -2075,6 +2078,7 @@ class TilingEngine {
                                        phase: result.progress.phase,
                                        sharedWithApp: !obs.positionFirst) {
                 observedMinimumGeneration[obs.window.windowID] = generation
+                logDeclaredVersusEnforced(obs)
             }
         }
         for fixed in result.fixedSizes {
@@ -2082,6 +2086,7 @@ class TilingEngine {
                                      target: fixed.target, proven: fixed.proven)
         }
         for (window, size) in result.accepted {
+            logDeclaredFloorNotEnforced(window, actual: size)
             // a window whose app hint this pass set aside has now been
             // measured on its own, so its entry stops being somebody else's
             if minimaBypass?[window.windowID] != nil {
@@ -2090,6 +2095,30 @@ class TilingEngine {
             minSizes.lowerIfAccepted(window, actual: size)
         }
         return result
+    }
+
+    // measurement only: the declared limits never feed the memory or a fit
+    private func logDeclaredVersusEnforced(_ obs: FrameReadbackPoller.Observation) {
+        let declared = DeclaredSizeLimits.read(obs.window.windowID)
+        let verdict = DeclaredSizeLimits.verdict(declared: declared, enforced: obs.actual,
+                                                 widthRefused: obs.widthConflict,
+                                                 heightRefused: obs.heightConflict)
+        hyprLog(.notice, .tiling, "declared vs enforced: wid=\(obs.window.windowID)"
+                + " bundle=\(obs.window.bundleID ?? "none")"
+                + " declared=\(declared.map { DeclaredSizeLimits.text($0.min) } ?? "none")"
+                + " enforced=\(Self.sizeText(obs.actual)) verdict=\(verdict.rawValue)")
+    }
+
+    // a declared floor the app took less than is the one that would refuse
+    // slots it fits. once per window per declared value
+    private func logDeclaredFloorNotEnforced(_ window: HyprWindow, actual: CGSize) {
+        guard let declared = DeclaredSizeLimits.read(window.windowID),
+              declared.min.width > actual.width + 1 || declared.min.height > actual.height + 1,
+              declaredFloorReported[window.windowID] != declared.min else { return }
+        declaredFloorReported[window.windowID] = declared.min
+        hyprLog(.notice, .tiling, "declared floor not enforced: wid=\(window.windowID)"
+                + " bundle=\(window.bundleID ?? "none")"
+                + " declared=\(DeclaredSizeLimits.text(declared.min)) actual=\(Self.sizeText(actual))")
     }
 
     private func overflowingWindows(in layouts: [(HyprWindow, CGRect)]) -> [HyprWindow] {
