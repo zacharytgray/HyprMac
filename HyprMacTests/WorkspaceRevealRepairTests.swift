@@ -13,6 +13,11 @@ import XCTest
 //
 // the fake window's frame writes go to a placeholder AX element, so what a
 // test can see of a reveal is the saved frame being consumed.
+//
+// a tile its app did not answer for is held by the switch's tile pass: it
+// keeps its leaf and gets no frame, so it stays parked on the workspace now
+// showing. the same retry asks its app and, once the app answers, retiles
+// from a walk that reads it. those tests see the engine's frame writes.
 
 final class WorkspaceRevealRepairTests: XCTestCase {
     private var screen: RevealScreen!
@@ -32,6 +37,8 @@ final class WorkspaceRevealRepairTests: XCTestCase {
     private var hidden: Int!
     private var display: DisplayManager!
     private var suppressions: SuppressionRegistry!
+    private var engine: TilingEngine!
+    private let tileWrites = TileWrites()
     private let saved = CGRect(x: 100, y: 120, width: 600, height: 400)
 
     override func setUpWithError() throws {
@@ -44,8 +51,10 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         workspaceManager.initializeMonitors()
         stateCache = WindowStateCache()
         let border = FocusBorder()
+        engine = TilingEngine(displayManager: display,
+                              frameSizingIOFactory: { [tileWrites] _, generation in tileWrites.io(generation) })
         orchestrator = WorkspaceOrchestrator(
-            workspaceManager: workspaceManager, tilingEngine: TilingEngine(displayManager: display),
+            workspaceManager: workspaceManager, tilingEngine: engine,
             accessibility: AccessibilityManager(), displayManager: display,
             cursorManager: CursorManager(), stateCache: stateCache,
             focusController: FocusStateController(focusBorder: border), focusBorder: border,
@@ -130,7 +139,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertEqual(appAsks, WorkspaceOrchestrator.revealRetryAttempts)
         XCTAssertTrue(retries.isEmpty, "gave up")
         XCTAssertTrue(marked.isEmpty, "nothing revealed, nothing to mark")
-        XCTAssertEqual(revealMissed, 1, "the repair poll was asked for all along")
+        XCTAssertEqual(revealMissed, 2, "the repair poll was asked for all along, and again on giving up")
         XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), saved)
     }
 
@@ -301,6 +310,179 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertEqual(admitted, [8101])
     }
 
+    // MARK: - held tiles
+
+    /// two tiles on the hidden workspace, tiled while both answered. the
+    /// second one's app (Messages, busy with its own Dock activation) does
+    /// not answer the switch's walk while `appAnswers` is false
+    private func heldTileSetup(walkReadsHeld: @escaping () -> Bool = { true })
+        -> (answering: RevealWindow, busy: RevealWindow) {
+        let answering = RevealWindow(id: 7401, frame: CGRect(origin: workspaceManager.hidePosition(),
+                                                             size: saved.size))
+        let busy = RevealWindow(id: 7402, frame: CGRect(origin: workspaceManager.hidePosition(),
+                                                        size: saved.size))
+        for w in [answering, busy] {
+            workspaceManager.assignWindow(w.windowID, toWorkspace: hidden)
+            stateCache.windowOwners[w.windowID] = w.ownerPID
+            tileWrites.frames[w.windowID] = w.storedFrame
+        }
+        parked[busy.windowID] = busy
+        XCTAssertTrue(engine.tileWindows([answering, busy], onWorkspace: hidden, screen: screen).published)
+        // then parked by the switch away, off their slots
+        for w in [answering, busy] { tileWrites.frames[w.windowID] = w.storedFrame }
+        tileWrites.written = []
+
+        let readsBusy = { [unowned self] in self.appAnswers && walkReadsHeld() }
+        orchestrator.allWindows = { readsBusy() ? [answering, busy] : [answering] }
+        orchestrator.unreadableWindowIDs = { readsBusy() ? [] : [busy.windowID] }
+        // wired as WindowManager wires it: hidden windows are never held
+        engine.heldWindowIDsSource = { [unowned self] in
+            self.orchestrator.unreadableWindowIDs().subtracting(self.stateCache.hiddenWindowIDs)
+        }
+        orchestrator.tileAllVisibleSpaces = { [unowned self] walk in
+            let ws = self.workspaceManager.workspaceForScreen(self.screen)
+            let ids = self.workspaceManager.windowIDs(onWorkspace: ws)
+            self.engine.tileWindows((walk ?? []).filter { ids.contains($0.windowID) },
+                                    onWorkspace: ws, screen: self.screen)
+        }
+        orchestrator.keepsCursorOnSwitch = { true }
+        return (answering, busy)
+    }
+
+    func testAHeldTileIsRetiledOnTheFirstAttemptItsAppAnswers() {
+        let (answering, busy) = heldTileSetup()
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(tileWrites.written, [answering.windowID], "the busy app's tile got no frame")
+        XCTAssertEqual(engine.heldMembers(onWorkspace: hidden), [busy.windowID])
+        XCTAssertEqual(revealMissed, 1, "the repair poll is asked for")
+        XCTAssertFalse(orchestrator.isSwitchSettled, "the retry still writes a frame")
+        tileWrites.written = []
+
+        appAnswers = true
+        stepRetry()
+
+        XCTAssertEqual(appAsks, 1)
+        XCTAssertTrue(tileWrites.written.contains(busy.windowID), "the engine gave it its frame")
+        XCTAssertTrue(engine.heldMembers(onWorkspace: hidden).isEmpty, "the hold is released")
+        XCTAssertTrue(retries.isEmpty, "nothing left to retry")
+        XCTAssertTrue(orchestrator.isSwitchSettled)
+        XCTAssertTrue(marked.isEmpty, "only floaters are marked")
+    }
+
+    func testAHeldTileWaitsOutABusyAppThenIsRetiled() {
+        let (_, busy) = heldTileSetup()
+        orchestrator.switchWorkspace(hidden)
+        tileWrites.written = []
+
+        for _ in 0..<3 { stepRetry() }
+        XCTAssertEqual(appAsks, 3)
+        XCTAssertTrue(tileWrites.written.isEmpty, "nothing written while its app is busy")
+        XCTAssertEqual(engine.heldMembers(onWorkspace: hidden), [busy.windowID])
+
+        appAnswers = true
+        stepRetry()
+
+        XCTAssertEqual(appAsks, 4)
+        XCTAssertTrue(tileWrites.written.contains(busy.windowID))
+        XCTAssertTrue(engine.heldMembers(onWorkspace: hidden).isEmpty)
+        XCTAssertTrue(retries.isEmpty)
+        XCTAssertEqual(revealMissed, 1, "no second poll request when the retry succeeds")
+    }
+
+    // the app listed it, then did not answer the walk: still held, asked again
+    func testAHeldTileTheWalkStillCannotReadStaysPending() {
+        var walkReads = false
+        let (_, busy) = heldTileSetup(walkReadsHeld: { walkReads })
+        orchestrator.switchWorkspace(hidden)
+        tileWrites.written = []
+
+        appAnswers = true
+        stepRetry()
+
+        XCTAssertFalse(tileWrites.written.contains(busy.windowID))
+        XCTAssertEqual(engine.heldMembers(onWorkspace: hidden), [busy.windowID])
+        XCTAssertEqual(retries.count, 1, "asked again")
+
+        walkReads = true
+        stepRetry()
+
+        XCTAssertTrue(tileWrites.written.contains(busy.windowID))
+        XCTAssertTrue(retries.isEmpty)
+    }
+
+    func testAHeldTileRetryGivesUpAndRequestsThePoll() {
+        let (_, busy) = heldTileSetup()
+        orchestrator.switchWorkspace(hidden)
+        tileWrites.written = []
+
+        for _ in 0..<WorkspaceOrchestrator.revealRetryAttempts { stepRetry() }
+
+        XCTAssertEqual(appAsks, WorkspaceOrchestrator.revealRetryAttempts)
+        XCTAssertTrue(retries.isEmpty, "gave up")
+        XCTAssertEqual(revealMissed, 2, "a poll is asked for again on giving up")
+        XCTAssertTrue(tileWrites.written.isEmpty)
+        XCTAssertEqual(engine.heldMembers(onWorkspace: hidden), [busy.windowID],
+                       "still held, for the poll that reads it to release")
+        XCTAssertTrue(orchestrator.isSwitchSettled)
+    }
+
+    func testSwitchingAwayCancelsAHeldTileRetry() {
+        let (_, busy) = heldTileSetup()
+        orchestrator.switchWorkspace(hidden)
+
+        // switched back before Messages answered: its tile belongs parked
+        orchestrator.switchWorkspace(visible)
+        tileWrites.written = []
+        appAnswers = true
+        stepRetry()
+
+        XCTAssertEqual(appAsks, 0, "its app is not asked")
+        XCTAssertTrue(retries.isEmpty)
+        XCTAssertFalse(tileWrites.written.contains(busy.windowID), "not revealed onto a hidden workspace")
+    }
+
+    // closed while its app runs: the app will never list it again
+    func testAGhostTileStartsNoRetry() {
+        let (_, busy) = heldTileSetup()
+        stateCache.hiddenWindowIDs.insert(busy.windowID)
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(revealMissed, 0)
+        XCTAssertTrue(retries.isEmpty)
+    }
+
+    // a tile held as off on another Space: its app answers, so the retry
+    // would only walk for nothing
+    func testAHeldTileWhoseAppAnsweredTheWalkStartsNoRetry() {
+        let (_, busy) = heldTileSetup()
+        engine.heldWindowIDsSource = { [busy.windowID] }
+        orchestrator.unreadableWindowIDs = { [] }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(engine.heldMembers(onWorkspace: hidden), [busy.windowID])
+        XCTAssertEqual(revealMissed, 0)
+        XCTAssertTrue(retries.isEmpty)
+    }
+
+    func testAFloaterAndAHeldTileOfTheSameSwitchShareOneRetry() {
+        let (_, busy) = heldTileSetup()
+        let floater = parkedFloater(id: 7403, on: hidden)
+        orchestrator.switchWorkspace(hidden)
+        tileWrites.written = []
+
+        appAnswers = true
+        stepRetry()
+
+        XCTAssertEqual(appAsks, 1, "one read for the app of both")
+        XCTAssertNil(workspaceManager.savedFloatingFrame(for: floater.windowID))
+        XCTAssertTrue(tileWrites.written.contains(busy.windowID))
+        XCTAssertTrue(retries.isEmpty)
+    }
+
     func testTheRepairLeavesAFloaterOnAHiddenWorkspaceParked() {
         let floater = parkedFloater(id: 7304, on: hidden)
 
@@ -334,6 +516,26 @@ private final class StepClock {
             next.element.block()
         }
         nowNS = end
+    }
+}
+
+/// the engine's frame writes, and the frames it reads back
+private final class TileWrites {
+    var frames: [CGWindowID: CGRect] = [:]
+    var written: Set<CGWindowID> = []
+
+    func io(_ generation: @escaping () -> UInt64) -> FrameSizingIO {
+        FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { [self] id, size, _ in
+                written.insert(id); frames[id, default: .zero].size = size; return .success
+            },
+            writePosition: { [self] id, position, _ in
+                written.insert(id); frames[id, default: .zero].origin = position; return .success
+            },
+            readPosition: { [self] id, _ in (.success, frames[id]?.origin) },
+            readSize: { [self] id, _ in (.success, frames[id]?.size) },
+            now: { 0 }, sleep: { _ in }, currentGeneration: generation)
     }
 }
 
