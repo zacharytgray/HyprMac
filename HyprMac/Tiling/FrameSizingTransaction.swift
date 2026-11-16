@@ -309,20 +309,37 @@ struct FrameSizingAttempt {
         }
         let started = io.now()
         var actualFrames: [CGWindowID: CGRect] = [:]
+        // when each window's last setter returned. its mismatch settle
+        // runs from there, not from the start of every window's writes
+        var settleStarts: [CGWindowID: TimeInterval] = [:]
+        // the deadline bounds the writes and the readback. the one thing
+        // that may run past it is a stable off-target window still inside
+        // its own settle: writes that ran long would otherwise leave a real
+        // refusal no time to be judged. it gets its settle and two samples
+        // past it, within the pass's cap
+        var settleDeadline = configuration.deadline
+        var awaitingSettle = false
 
         func interruption() -> FrameSizingFailure? {
             if io.currentGeneration() != generation { return .superseded }
-            if io.now() - started >= configuration.deadline { return .deadlineExceeded }
+            let deadline = awaitingSettle ? settleDeadline : configuration.deadline
+            if io.now() - started >= deadline { return .deadlineExceeded }
             return nil
         }
 
         for target in targets {
             let result = write(target, actualFrames: actualFrames, progress: &progress,
-                               timings: &timings, checkpoint: interruption)
+                               timings: &timings, settleStarts: &settleStarts,
+                               checkpoint: interruption)
             timings.write = io.now() - started
             if let result { return out(result) }
         }
         timings.write = io.now() - started
+        if let lastSetter = settleStarts.values.max() {
+            settleDeadline = configuration.capped(max(
+                configuration.deadline,
+                lastSetter - started + configuration.minimumMismatchSettle + 2 * configuration.pollInterval))
+        }
         let readStarted = io.now()
 
         var stableAnchors: [CGWindowID: CGRect] = [:]
@@ -365,11 +382,20 @@ struct FrameSizingAttempt {
                     stableCounts[target.windowID] = 1
                 }
             }
+            awaitingSettle = false
             if targets.allSatisfy({ stableCounts[$0.windowID, default: 0] >= configuration.requiredStableSamples }) {
-                let allOnTarget = targets.allSatisfy { target in
-                    actualFrames[target.windowID].map { matches($0, target.frame) } ?? false
+                // an off-target window is judged only once its own settle
+                // has run. slow writes to the windows before it must not eat
+                // it: a stale size read 30 ms after its setter is not a floor
+                let now = io.now()
+                let judged = targets.allSatisfy { target in
+                    guard let frame = actualFrames[target.windowID] else { return false }
+                    return matches(frame, target.frame)
+                        || now - (settleStarts[target.windowID] ?? started)
+                            >= configuration.minimumMismatchSettle
                 }
-                if allOnTarget || io.now() - started >= configuration.minimumMismatchSettle {
+                awaitingSettle = !judged
+                if judged {
                     timings.read = io.now() - readStarted
                     return out(validateFrames(targets: targets, actualFrames: actualFrames,
                                               usableFrame: usableFrame, gap: gap))
@@ -415,6 +441,7 @@ struct FrameSizingAttempt {
 
     private func write(_ target: Target, actualFrames: [CGWindowID: CGRect],
                        progress: inout Progress, timings: inout Timings,
+                       settleStarts: inout [CGWindowID: TimeInterval],
                        checkpoint: () -> FrameSizingFailure?) -> Result? {
         let phase = progress.phase
         let writeStarted = io.now()
@@ -608,6 +635,7 @@ struct FrameSizingAttempt {
         // every setter returned success. record that before cleanup —
         // a cleanup error is its own failure and does not unwrite them.
         progress.writesCompleted.insert(target.windowID)
+        settleStarts[target.windowID] = io.now()
         traceSteps(true)
         let ended = end(token, windowID: target.windowID,
                         preserving: Result(verdict: .accepted, actualFrames: actualFrames),

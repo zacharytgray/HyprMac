@@ -909,4 +909,159 @@ final class FrameReadbackPollerBudgetTests: XCTestCase {
             original: CGSize(width: 1200, height: 934), target: CGSize(width: 900, height: 1395),
             actual: CGSize(width: 1200, height: 1395), tolerance: 20))
     }
+
+    // MARK: capture budget and per-window mismatch settle
+
+    func testACaptureOfEightSlowButAnsweringWindowsFitsItsBudget() {
+        let windows = (1...8).map { makeWindow(id: CGWindowID(700 + $0)) }
+        let app = LaggingSizeApp(frames: Dictionary(uniqueKeysWithValues: windows.enumerated().map {
+            ($0.element.windowID, CGRect(x: CGFloat($0.offset) * 100, y: 0, width: 90, height: 400))
+        }))
+        app.readCost = 0.025
+
+        let captured = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in app.io() })
+            .captureFrames(windows, generation: 1)
+
+        // 16 reads at 25 ms is 0.4 s, past the base 0.36
+        XCTAssertEqual(captured.verdict, .accepted)
+        XCTAssertEqual(captured.actualFrames.count, 8)
+        XCTAssertEqual(app.time, 0.4, accuracy: 0.001)
+    }
+
+    func testTheCaptureBudgetGrowsPerWindowLikeAPassAndStopsAtTheCap() {
+        let base = FrameSizingConfiguration()
+        XCTAssertEqual(FrameReadbackPoller.captureConfiguration(base, for: 3).deadline, base.deadline)
+        XCTAssertEqual(FrameReadbackPoller.captureConfiguration(base, for: 8).deadline,
+                       FrameReadbackPoller.scaled(base, for: 8).deadline, accuracy: 0.0001)
+        XCTAssertEqual(FrameReadbackPoller.captureConfiguration(base, for: 40).deadline,
+                       FrameReadbackPoller.captureDeadlineCap, accuracy: 0.0001)
+        // a remaining budget below the cap still holds
+        var remaining = base
+        remaining.deadlineCap = 0.5
+        XCTAssertEqual(FrameReadbackPoller.captureConfiguration(remaining, for: 8).deadline, 0.5,
+                       accuracy: 0.0001)
+    }
+
+    /// slow writes to the first two windows used to spend the third
+    /// window's 240 ms settle. it read stale twice right after its setter,
+    /// was judged a refusal and taught its old width as a minimum
+    func testSlowWritesToEarlierWindowsDoNotShortenALaterWindowsSettle() {
+        let windows = (1...3).map { makeWindow(id: CGWindowID(710 + $0)) }
+        let targets = [CGRect(x: 0, y: 0, width: 594, height: 800),
+                       CGRect(x: 602, y: 0, width: 594, height: 800),
+                       CGRect(x: 1204, y: 0, width: 596, height: 800)]
+        let app = LaggingSizeApp(frames: Dictionary(uniqueKeysWithValues: windows.enumerated().map {
+            ($0.element.windowID, CGRect(x: CGFloat($0.offset) * 50, y: 0, width: 700, height: 800))
+        }))
+        app.setterCost = [711: 0.03, 712: 0.03]
+        app.sizeLag = 0.08
+
+        let result = FrameReadbackPoller(generation: { 1 }, ioFactory: { _, _ in app.io() })
+            .applyLayout(Array(zip(windows, targets)),
+                         usableFrame: CGRect(x: 0, y: 0, width: 1800, height: 800),
+                         gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertTrue(result.observations.isEmpty)
+        XCTAssertTrue(result.conflicts.isEmpty)
+    }
+
+    /// a window that really refuses is still judged, once its own settle
+    /// has run from its own last setter. writes that spent most of the
+    /// deadline leave the readback room for that settle
+    func testARefusalIsJudgedAFullSettleAfterItsOwnSetter() {
+        let app = refusingAfterSlowWrites()
+        let configuration = FrameSizingConfiguration()
+
+        let result = FrameSizingAttempt(io: app.io(), configuration: configuration)
+            .apply(targets: Self.refusalTargets, usableFrame: Self.refusalUsable, gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .rejected(.geometryMismatch(722)))
+        XCTAssertTrue(result.progress.readbackStable)
+        guard let setter = app.lastSetter[722] else { return XCTFail("722 was never written") }
+        XCTAssertEqual(setter, 0.21, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(app.time - setter, configuration.minimumMismatchSettle - 0.0001)
+        XCTAssertGreaterThan(app.time, configuration.deadline, "the readback ran past the base deadline")
+    }
+
+    /// that room stays inside the pass's cap
+    func testTheSettleRoomStaysInsideThePassCap() {
+        let app = refusingAfterSlowWrites()
+        var configuration = FrameSizingConfiguration()
+        configuration.deadlineCap = configuration.deadline
+
+        let result = FrameSizingAttempt(io: app.io(), configuration: configuration)
+            .apply(targets: Self.refusalTargets, usableFrame: Self.refusalUsable, gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .unknown(.deadlineExceeded))
+        XCTAssertLessThan(app.time, configuration.deadline + 0.05)
+    }
+
+    private static let refusalUsable = CGRect(x: 0, y: 0, width: 1800, height: 800)
+    private static let refusalTargets: [FrameSizingAttempt.Target] = [
+        .init(windowID: 721, frame: CGRect(x: 0, y: 0, width: 896, height: 800)),
+        .init(windowID: 722, frame: CGRect(x: 904, y: 0, width: 496, height: 800))
+    ]
+
+    // 721's three setters take 210 ms; 722 never goes below 700 wide
+    private func refusingAfterSlowWrites() -> LaggingSizeApp {
+        let app = LaggingSizeApp(frames: [721: CGRect(x: 0, y: 0, width: 500, height: 800),
+                                          722: CGRect(x: 600, y: 0, width: 700, height: 800)])
+        app.setterCost = [721: 0.07]
+        app.floors = [722: 700]
+        return app
+    }
+}
+
+/// An app that answers each call after a cost, and reports its old size for
+/// `sizeLag` after a size write, the way Dia does. A window with a floor
+/// never takes a width below it.
+private final class LaggingSizeApp {
+    var time: TimeInterval = 0
+    var frames: [CGWindowID: CGRect]
+    var setterCost: [CGWindowID: TimeInterval] = [:]
+    var readCost: TimeInterval = 0
+    var sizeLag: TimeInterval = 0
+    var floors: [CGWindowID: CGFloat] = [:]
+    /// when each window's last setter returned
+    private(set) var lastSetter: [CGWindowID: TimeInterval] = [:]
+    private var pending: [CGWindowID: (size: CGSize, at: TimeInterval)] = [:]
+
+    init(frames: [CGWindowID: CGRect]) {
+        self.frames = frames
+    }
+
+    func io() -> FrameSizingIO {
+        FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { [unowned self] id, size, _ in
+                time += setterCost[id] ?? 0
+                var landed = size
+                if let floor = floors[id] { landed.width = max(landed.width, floor) }
+                pending[id] = (landed, time + sizeLag)
+                lastSetter[id] = time
+                return .success
+            },
+            writePosition: { [unowned self] id, position, _ in
+                time += setterCost[id] ?? 0
+                frames[id]?.origin = position
+                lastSetter[id] = time
+                return .success
+            },
+            readPosition: { [unowned self] id, _ in
+                time += readCost
+                return (.success, frames[id]?.origin)
+            },
+            readSize: { [unowned self] id, _ in
+                time += readCost
+                if let next = pending[id], time >= next.at - 0.000_001 {
+                    frames[id]?.size = next.size
+                    pending[id] = nil
+                }
+                return (.success, frames[id]?.size)
+            },
+            now: { [unowned self] in time },
+            sleep: { [unowned self] in time += $0 },
+            currentGeneration: { 1 })
+    }
 }
