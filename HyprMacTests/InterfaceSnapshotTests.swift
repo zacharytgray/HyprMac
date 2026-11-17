@@ -40,6 +40,16 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("keys-capslock-dark", tab(KeybindsSettingsView()))
         try render("keys-capslock-light", tab(KeybindsSettingsView()), dark: false)
         try render("general-dark", tab(GeneralSettingsView(showTutorial: {})))
+        try withInputMonitoring(granted: false) {
+            try render("general-im-off-dark", tab(GeneralSettingsView(showTutorial: {})))
+            try render("general-im-off-light", tab(GeneralSettingsView(showTutorial: {})), dark: false)
+        }
+        try withInputMonitoring(granted: true) {
+            try render("general-im-on-dark", tab(GeneralSettingsView(showTutorial: {})))
+        }
+        try withInputMonitoring(granted: true, openFailed: true) {
+            try render("general-im-relaunch-dark", tab(GeneralSettingsView(showTutorial: {})))
+        }
         try render("layout-dark", tab(TilingSettingsView()))
         try render("settings-window-dark", SettingsView(showTutorial: {}), size: CGSize(width: 760, height: 600))
 
