@@ -94,6 +94,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         hyprLog(.debug, .lifecycle, "bundle: \(Bundle.main.bundleIdentifier ?? "?")")
         hyprLog(.debug, .lifecycle, "AXIsProcessTrusted=\(AXIsProcessTrusted())")
+        hyprLog(.debug, .lifecycle, "Input Monitoring access=\(InputMonitoringPermission.accessDescription)")
 
         #if HYPRMAC_DEBUG_VARIANT
         if CommandLine.arguments.contains("--request-accessibility") {
@@ -101,6 +102,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             let trusted = AXIsProcessTrustedWithOptions(options as CFDictionary)
             print("HyprMac accessibility request trusted=\(trusted) bundle=\(Bundle.main.bundleIdentifier ?? "?")")
+            fflush(stdout)
+            NSApp.terminate(nil)
+            return
+        }
+
+        if CommandLine.arguments.contains("--check-input-monitoring") {
+            diagnosticOnly = true
+            print("HyprMac input monitoring access=\(InputMonitoringPermission.accessDescription) bundle=\(Bundle.main.bundleIdentifier ?? "?")")
             fflush(stdout)
             NSApp.terminate(nil)
             return

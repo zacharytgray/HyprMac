@@ -429,7 +429,6 @@ class HotkeyManager {
         let flags = ModifierFlags.from(eventFlags(for: event), hyprDown: hyprKeyDown)
 
         let packed = HotkeyManager.packKey(keyCode, flags)
-
         if let bind = keybindMap[packed] {
             let action = bind.action
             guard Self.actionIsAvailable(action, tilingEnabled: tilingEnabled) else {

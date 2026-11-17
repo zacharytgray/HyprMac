@@ -35,7 +35,9 @@ The Debug app lives at `/Applications/HyprMac Debug.app`.
    (see [debugging.md](debugging.md)).
 
 Accessibility trust carries over because the signing identity and bundle id
-do not change. Launch through Launch Services (`/usr/bin/open`); a binary
+do not change. Input Monitoring is a separate grant for the same bundle id
+and carries over the same way. The Debug app (`com.zachgray.HyprMac.debug`)
+has its own entries in both lists, apart from the release app's. Launch through Launch Services (`/usr/bin/open`); a binary
 started directly from SSH reports untrusted.
 
 Debug and release share `~/Library/Application Support/HyprMac/`.
@@ -63,6 +65,10 @@ Launch Services so the result is about the app and not the SSH session:
   '/Applications/HyprMac Debug.app' --args --check-accessibility
 cat /tmp/hyprmac-ax.log
 ```
+
+`--check-input-monitoring` works the same way and prints `granted`,
+`denied` or `unknown` (never asked). See
+[debugging.md](debugging.md#hypr-ended-early-after-a-control-shortcut-81).
 
 ## Previewing the overlays
 

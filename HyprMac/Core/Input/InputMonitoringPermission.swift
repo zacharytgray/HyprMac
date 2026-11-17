@@ -40,6 +40,15 @@ enum InputMonitoringPermission {
 
     static var isGranted: Bool { accessCheck() }
 
+    /// The raw TCC answer, for logs and `--check-input-monitoring`.
+    static var accessDescription: String {
+        switch IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) {
+        case kIOHIDAccessTypeGranted: return "granted"
+        case kIOHIDAccessTypeDenied: return "denied"
+        default: return "unknown"
+        }
+    }
+
     private static let lock = NSLock()
     private static var openFailed = false
 
