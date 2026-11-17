@@ -26,8 +26,8 @@ enum InputMonitoringPermission {
 
     static let title = "Input Monitoring"
     static let purpose = "Keeps Hypr held through Control shortcuts."
-    static let scope = "HyprMac reads only whether Caps Lock is up or down."
-    static let promptNote = "macOS calls this “receive keystrokes from any application.”"
+    static let scope = "It reads only whether Caps Lock is held."
+    static let promptNote = "macOS will ask to let it “receive keystrokes.”"
     static let relaunchNote = "macOS turns on Input Monitoring after HyprMac relaunches."
     static let relaunchButtonTitle = "Relaunch HyprMac"
 

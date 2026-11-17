@@ -69,6 +69,19 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("permissions-gate-dark",
                    PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
                    size: CGSize(width: 520, height: 530))
+        try withInputMonitoring(granted: false) {
+            try render("permissions-gate-im-off-dark",
+                       PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
+                       size: CGSize(width: 520, height: 530))
+            try render("permissions-gate-im-off-light",
+                       PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
+                       size: CGSize(width: 520, height: 530), dark: false)
+        }
+        try withInputMonitoring(granted: true) {
+            try render("permissions-gate-im-on-dark",
+                       PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
+                       size: CGSize(width: 520, height: 530))
+        }
         // the release variant builds the menu with a sparkle updater; the
         // debug variant has none, so only render it there
         #if HYPRMAC_DEBUG_VARIANT
@@ -170,6 +183,20 @@ final class InterfaceSnapshotTests: XCTestCase {
             .padding(.vertical, HyprSpacing.lg)
             .frame(width: 568)
             .background(Color.hyprBackground)
+    }
+
+    /// Input Monitoring as granted or not, and optionally granted with
+    /// the keyboards failing to open (the relaunch state).
+    private func withInputMonitoring(granted: Bool, openFailed: Bool = false,
+                                     _ body: () throws -> Void) rethrows {
+        let savedCheck = InputMonitoringPermission.accessCheck
+        InputMonitoringPermission.accessCheck = { granted }
+        InputMonitoringPermission.openFailedWithAccess = openFailed
+        defer {
+            InputMonitoringPermission.accessCheck = savedCheck
+            InputMonitoringPermission.openFailedWithAccess = false
+        }
+        try body()
     }
 
     private func render<V: View>(_ name: String, _ view: V, width: CGFloat = 568, dark: Bool = true) throws {
