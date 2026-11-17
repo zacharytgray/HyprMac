@@ -24,6 +24,12 @@ import Carbon
 /// work to main. Mutable chord/modifier state is guarded by `stateLock`
 /// (written from main on config changes, read per-keystroke on the tap
 /// thread). Callbacks (`onAction` etc.) always fire on main.
+///
+/// With Caps Lock as the Hypr key and Input Monitoring granted, a
+/// `PhysicalKeyMonitor` on the same thread reads the key itself. macOS
+/// sends an F18 release when Control comes up while Caps Lock is still
+/// held (#81); the monitor's answer lets the tap ignore it and end Hypr
+/// on the real release instead.
 class HotkeyManager {
     fileprivate var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
@@ -32,7 +38,17 @@ class HotkeyManager {
     private var healthCheckTimer: Timer?
     fileprivate let stateLock = NSLock()
     // physical caps lock, for the F18 release macOS sends while it's held
-    private let physicalKeys = PhysicalKeyMonitor()
+    private let physicalKeys: PhysicalCapsLockReading
+    private let inputMonitoringGranted: () -> Bool
+    // main thread only: last open failure logged, so retries stay quiet
+    private var lastPhysicalOpenFailure: IOReturn?
+
+    init(physicalKeys: PhysicalCapsLockReading = PhysicalKeyMonitor(),
+         inputMonitoringGranted: @escaping () -> Bool = { InputMonitoringPermission.isGranted }) {
+        self.physicalKeys = physicalKeys
+        self.inputMonitoringGranted = inputMonitoringGranted
+        physicalKeys.onRelease = { [weak self] in self?.physicalCapsLockReleased() }
+    }
 
     /// Fires for every recognized chord (Hypr + bound key).
     var onAction: ((Action) -> Void)?
@@ -50,6 +66,9 @@ class HotkeyManager {
 
     // physical key currently acting as the logical Hypr modifier
     fileprivate var hyprKeyDown = false
+    // an F18 release was ignored because Caps Lock was still held; the
+    // physical release ends this press
+    private var ignoredHyprRelease = false
     private var hyprKey: HyprKey = .capsLock
     private var pressedModifierKeyCodes: Set<UInt16> = []
 
@@ -112,11 +131,75 @@ class HotkeyManager {
     /// of the swap is not misinterpreted.
     func updateHyprKey(_ key: HyprKey) {
         stateLock.lock()
-        defer { stateLock.unlock() }
         hyprKey = key
         hyprKeyDown = false
+        ignoredHyprRelease = false
         pressedModifierKeyCodes.removeAll()
+        stateLock.unlock()
         hyprLog(.debug, .lifecycle, "hypr key set to \(key.displayName)")
+        refreshPhysicalKeyMonitor()
+    }
+
+    /// Run the physical Caps Lock monitor only while it matters: Caps Lock
+    /// is the Hypr key, the tap is running, and Input Monitoring is
+    /// granted. Otherwise no keyboard is opened and the tap behaves as it
+    /// always has. Main thread, never under `stateLock`: closing the
+    /// manager can call back into `physicalCapsLockReleased`.
+    ///
+    /// `runLoop` defaults to the tap thread's; tests pass their own.
+    func refreshPhysicalKeyMonitor(runLoop: CFRunLoop? = nil) {
+        stateLock.lock()
+        let key = hyprKey
+        stateLock.unlock()
+        let loop = runLoop ?? tapRunLoop
+
+        guard key.usesCapsLockRemap, let loop else {
+            if physicalKeys.isActive {
+                stopPhysicalKeyMonitor(reason: "Hypr key is \(key.displayName)")
+            }
+            InputMonitoringPermission.openFailedWithAccess = false
+            return
+        }
+
+        let granted = inputMonitoringGranted()
+        if physicalKeys.isActive {
+            // turned off while running: values may stop arriving, and a
+            // stale held state would swallow the real release
+            if !granted {
+                stopPhysicalKeyMonitor(reason: "Input Monitoring was turned off")
+            }
+            return
+        }
+        // no access: today's behavior, no prompt, no log
+        guard granted else { return }
+
+        let result = physicalKeys.start(on: loop)
+        if result == kIOReturnSuccess {
+            lastPhysicalOpenFailure = nil
+            hyprLog(.notice, .hotkey, "physical key monitor started")
+            InputMonitoringPermission.openFailedWithAccess = false
+            InputMonitoringPermission.postChange()
+        } else {
+            if lastPhysicalOpenFailure != result {
+                hyprLog(.notice, .hotkey, "physical key monitor failed to open (0x\(String(UInt32(bitPattern: result), radix: 16))) — Input Monitoring is granted, so macOS may need a relaunch")
+            }
+            lastPhysicalOpenFailure = result
+            InputMonitoringPermission.openFailedWithAccess = true
+        }
+    }
+
+    private func stopPhysicalKeyMonitor(reason: String) {
+        physicalKeys.stop()
+        hyprLog(.notice, .hotkey, "physical key monitor stopped — \(reason)")
+        // a release ignored before the stop would leave Hypr held with no
+        // physical up left to end it
+        stateLock.lock()
+        if ignoredHyprRelease {
+            ignoredHyprRelease = false
+            setHyprKeyDown(false)
+        }
+        stateLock.unlock()
+        InputMonitoringPermission.postChange()
     }
 
     /// Install the event tap on a dedicated thread's run loop.
@@ -157,16 +240,11 @@ class HotkeyManager {
         // dedicated run loop so a busy main thread can never delay
         // keystroke delivery. published before start() returns so stop()
         // always has a run loop to tear down.
-        physicalKeys.onRelease = { [weak self] in self?.physicalCapsLockReleased() }
         let ready = DispatchSemaphore(value: 0)
         let thread = Thread { [weak self] in
             self?.tapRunLoop = CFRunLoopGetCurrent()
             CFRunLoopAddSource(CFRunLoopGetCurrent(), source, .commonModes)
             CGEvent.tapEnable(tap: tap, enable: true)
-            // same thread as the tap, so a busy main thread can't delay a release
-            if PhysicalKeyMonitor.hasAccess {
-                self?.physicalKeys.start(on: CFRunLoopGetCurrent())
-            }
             ready.signal()
             CFRunLoopRun()
         }
@@ -176,9 +254,9 @@ class HotkeyManager {
         thread.start()
         ready.wait()
 
-        if !PhysicalKeyMonitor.hasAccess {
-            PhysicalKeyMonitor.requestAccess()
-        }
+        // scheduled on the tap's run loop, so a busy main thread can't
+        // delay a release either
+        refreshPhysicalKeyMonitor()
         startTapHealthCheck()
         hyprLog(.debug, .lifecycle, "event tap started on dedicated thread, \(keybinds.count) keybinds (\(hyprKey.displayName) = Hypr key)")
     }
@@ -204,6 +282,7 @@ class HotkeyManager {
         stateLock.lock()
         eventTap = nil
         hyprKeyDown = false
+        ignoredHyprRelease = false
         pressedModifierKeyCodes.removeAll()
         stateLock.unlock()
     }
@@ -219,15 +298,15 @@ class HotkeyManager {
     /// Catch a silently dead tap. The callback re-enables on
     /// `tapDisabledByTimeout`, but a tap can also stop delivering with
     /// no disable event at all (re-sign race after rebuild, TCC flap) —
-    /// a non-nil tap is not a healthy tap. Cheap: one flag read per tick.
+    /// a non-nil tap is not a healthy tap. Cheap: one flag read per tick,
+    /// plus an Input Monitoring check while Caps Lock is the Hypr key, so a
+    /// grant made after launch takes effect without a relaunch when macOS
+    /// allows it.
     private func startTapHealthCheck() {
         healthCheckTimer?.invalidate()
         let timer = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in
             guard let self, let tap = self.eventTap else { return }
-            // Input Monitoring granted after launch: start without a relaunch
-            if let rl = self.tapRunLoop, !self.physicalKeys.isActive, PhysicalKeyMonitor.hasAccess {
-                self.physicalKeys.start(on: rl)
-            }
+            self.refreshPhysicalKeyMonitor()
             if !CGEvent.tapIsEnabled(tap: tap) {
                 hyprLog(.notice, .hotkey, "health check found event tap disabled — re-enabling")
                 CGEvent.tapEnable(tap: tap, enable: true)
@@ -258,17 +337,24 @@ class HotkeyManager {
             hyprLog(.notice, .hotkey, "resetting stuck hyprKeyDown after tap interruption")
         }
         setHyprKeyDown(false)
+        ignoredHyprRelease = false
         pressedModifierKeyCodes.removeAll()
         physicalKeys.reset()
     }
 
-    /// The last physical Caps Lock came up. Ends a press whose F18 release
-    /// was ignored, or arrived before this. Runs on the tap thread.
+    /// The last physical Caps Lock came up, or its keyboard went away.
+    /// Ends a press whose F18 release was ignored. On a normal press this
+    /// lands a few ms before the F18 release and ends it a touch early.
+    /// Runs on the tap thread.
     private func physicalCapsLockReleased() {
         stateLock.lock()
         defer { stateLock.unlock() }
+        let wasIgnored = ignoredHyprRelease
+        ignoredHyprRelease = false
         guard hyprKey.usesCapsLockRemap, hyprKeyDown else { return }
-        hyprLog(.notice, .hotkey, "Caps Lock physically released — ending Hypr")
+        if wasIgnored {
+            hyprLog(.notice, .hotkey, "Caps Lock physically released — ending Hypr")
+        }
         setHyprKeyDown(false)
     }
 
@@ -306,16 +392,18 @@ class HotkeyManager {
 
         // track the configured physical key as our logical Hypr modifier
         if keyCode == hyprKey.keyCode {
-            // #81 diagnostic: every hypr key event, autorepeat included
-            hyprLog(.notice, .hotkey, "diag81 hyprEvent type=\(type.rawValue) repeat=\(event.getIntegerValueField(.keyboardEventAutorepeat)) flags=0x\(String(event.flags.rawValue, radix: 16)) \(Self.diag81Source(event))")
             if type == .keyDown {
                 setHyprKeyDown(true)
             } else if type == .keyUp {
                 // macOS sends this F18 release when Control comes up, even
                 // with Caps Lock still held. the keyboard itself knows better
-                if hyprKey.usesCapsLockRemap, physicalKeys.isCapsLockDown {
-                    hyprLog(.notice, .hotkey, "ignoring Hypr release — Caps Lock is still physically held")
+                if hyprKey.usesCapsLockRemap, physicalKeys.isActive, physicalKeys.isCapsLockDown {
+                    if hyprKeyDown && !ignoredHyprRelease {
+                        hyprLog(.notice, .hotkey, "ignoring Hypr release — Caps Lock is still physically held")
+                    }
+                    ignoredHyprRelease = hyprKeyDown
                 } else {
+                    ignoredHyprRelease = false
                     setHyprKeyDown(false)
                 }
             } else if type == .flagsChanged, hyprKey.isNativeModifier {
@@ -335,27 +423,12 @@ class HotkeyManager {
             setHyprKeyDown(false)
         }
 
-        // #81 diagnostic: every modifier change, and arrow key-ups
-        if type == .flagsChanged {
-            hyprLog(.notice, .hotkey, "diag81 flagsChanged key=\(keyCode) flags=0x\(String(event.flags.rawValue, radix: 16)) hypr=\(hyprKeyDown) \(Self.diag81Source(event))")
-        }
-        if type == .keyUp, (123...126).contains(keyCode) {
-            hyprLog(.notice, .hotkey, "diag81 keyUp key=\(keyCode) flags=0x\(String(event.flags.rawValue, radix: 16)) hypr=\(hyprKeyDown)")
-        }
-
         // only check keybinds on keyDown
         guard type == .keyDown else { return event }
 
         let flags = ModifierFlags.from(eventFlags(for: event), hyprDown: hyprKeyDown)
 
         let packed = HotkeyManager.packKey(keyCode, flags)
-
-        // #81 diagnostic: chord keys while hypr is held, and arrows always.
-        // keycodes and flags only, never characters.
-        if hyprKeyDown || (123...126).contains(keyCode) {
-            let match = keybindMap[packed].map { ActionDispatcher.discriminator(for: $0.action) } ?? "none"
-            hyprLog(.notice, .hotkey, "diag81 keyDown key=\(keyCode) flags=0x\(String(event.flags.rawValue, radix: 16)) mods=0x\(String(flags.rawValue, radix: 16)) hypr=\(hyprKeyDown) repeat=\(event.getIntegerValueField(.keyboardEventAutorepeat)) match=\(match)")
-        }
 
         if let bind = keybindMap[packed] {
             let action = bind.action
@@ -392,15 +465,6 @@ class HotkeyManager {
         }
 
         return event
-    }
-
-    // #81 diagnostic: where the event came from, and what the HID layer
-    // says right now
-    private static func diag81Source(_ event: CGEvent) -> String {
-        let f18 = CGEventSource.keyState(.hidSystemState, key: 79)
-        let caps = CGEventSource.keyState(.hidSystemState, key: 57)
-        let hidFlags = CGEventSource.flagsState(.hidSystemState).rawValue
-        return "ts=\(event.timestamp) src=\(event.getIntegerValueField(.eventSourceStateID)) pid=\(event.getIntegerValueField(.eventSourceUnixProcessID)) user=\(event.getIntegerValueField(.eventSourceUserData)) kb=\(event.getIntegerValueField(.keyboardEventKeyboardType)) hidF18=\(f18) hidCaps=\(caps) hidFlags=0x\(String(hidFlags, radix: 16))"
     }
 
     // assumes stateLock held. the onHyprKeyDown/Up callbacks fire async

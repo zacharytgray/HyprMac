@@ -7,27 +7,58 @@
 import Foundation
 import IOKit.hid
 
-final class PhysicalKeyMonitor {
+/// Which keyboards hold the key right now. Pure, so the multi-device
+/// rules are testable without a keyboard.
+struct PhysicalKeyHoldState: Equatable {
+    private(set) var holders: Set<UInt> = []
+
+    var isHeld: Bool { !holders.isEmpty }
+
+    /// true when this change let go of the last holder
+    @discardableResult
+    mutating func keyChanged(device: UInt, isDown: Bool) -> Bool {
+        let wasHeld = isHeld
+        if isDown {
+            holders.insert(device)
+        } else {
+            holders.remove(device)
+        }
+        return wasHeld && !isHeld
+    }
+
+    /// An unplugged keyboard can't send its up. true when it was the last holder.
+    @discardableResult
+    mutating func deviceRemoved(_ device: UInt) -> Bool {
+        keyChanged(device: device, isDown: false)
+    }
+
+    mutating func reset() {
+        holders.removeAll()
+    }
+}
+
+/// What `HotkeyManager` needs from the physical Caps Lock reader. A
+/// protocol so tests can drive the held state.
+protocol PhysicalCapsLockReading: AnyObject {
+    var isActive: Bool { get }
+    var isCapsLockDown: Bool { get }
+    /// Fires when the last held Caps Lock comes up or its keyboard goes away.
+    var onRelease: (() -> Void)? { get set }
+    @discardableResult func start(on runLoop: CFRunLoop) -> IOReturn
+    func stop()
+    func reset()
+}
+
+final class PhysicalKeyMonitor: PhysicalCapsLockReading {
     static let capsLockUsage = UInt32(kHIDUsage_KeyboardCapsLock)
 
     private let lock = NSLock()
     private var manager: IOHIDManager?
     private var runLoop: CFRunLoop?
-    // devices holding caps lock right now
-    private var downDevices: Set<UnsafeMutableRawPointer> = []
+    private var hold = PhysicalKeyHoldState()
 
-    /// Fires on the scheduled run loop when the last held Caps Lock comes up.
+    /// Fires on the scheduled run loop.
     var onRelease: (() -> Void)?
-
-    static var hasAccess: Bool {
-        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
-    }
-
-    /// Shows the system prompt the first time. true when already granted.
-    @discardableResult
-    static func requestAccess() -> Bool {
-        IOHIDRequestAccess(kIOHIDRequestTypeListenEvent)
-    }
 
     var isActive: Bool {
         lock.lock()
@@ -38,16 +69,17 @@ final class PhysicalKeyMonitor {
     var isCapsLockDown: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return !downDevices.isEmpty
+        return hold.isHeld
     }
 
-    /// Opens every keyboard without seizing it. false when access is
-    /// missing or the open fails; the caller keeps the old behavior then.
+    /// Opens every keyboard without seizing it, matched to Caps Lock only,
+    /// so no other key reaches us. Returns the open result; anything but
+    /// success leaves the monitor off and the caller on the old behavior.
     @discardableResult
-    func start(on runLoop: CFRunLoop) -> Bool {
+    func start(on runLoop: CFRunLoop) -> IOReturn {
         // IOKit calls stay outside the lock: open and close can call back
         // into handle(), which takes it
-        guard !isActive else { return true }
+        guard !isActive else { return kIOReturnSuccess }
 
         let mgr = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         let devices: [String: Any] = [
@@ -69,15 +101,14 @@ final class PhysicalKeyMonitor {
         let result = IOHIDManagerOpen(mgr, IOOptionBits(kIOHIDOptionsTypeNone))
         guard result == kIOReturnSuccess else {
             IOHIDManagerUnscheduleFromRunLoop(mgr, runLoop, CFRunLoopMode.defaultMode.rawValue)
-            hyprLog(.notice, .hotkey, "physical key monitor did not open (0x\(String(UInt32(bitPattern: result), radix: 16))) — Input Monitoring granted: \(Self.hasAccess)")
-            return false
+            return result
         }
         lock.lock()
         manager = mgr
         self.runLoop = runLoop
+        hold.reset()
         lock.unlock()
-        hyprLog(.notice, .hotkey, "physical key monitor started")
-        return true
+        return result
     }
 
     func stop() {
@@ -86,7 +117,7 @@ final class PhysicalKeyMonitor {
         let rl = runLoop
         manager = nil
         runLoop = nil
-        downDevices.removeAll()
+        hold.reset()
         lock.unlock()
         guard let mgr else { return }
         if let rl {
@@ -99,7 +130,7 @@ final class PhysicalKeyMonitor {
     /// can go missing. Worst case is the old behavior until the next press.
     func reset() {
         lock.lock()
-        downDevices.removeAll()
+        hold.reset()
         lock.unlock()
     }
 
@@ -107,33 +138,30 @@ final class PhysicalKeyMonitor {
         let element = IOHIDValueGetElement(value)
         guard IOHIDElementGetUsagePage(element) == UInt32(kHIDPage_KeyboardOrKeypad),
               IOHIDElementGetUsage(element) == Self.capsLockUsage else { return }
-        let device = Unmanaged.passUnretained(IOHIDElementGetDevice(element)).toOpaque()
+        let device = UInt(bitPattern: Unmanaged.passUnretained(IOHIDElementGetDevice(element)).toOpaque())
         let isDown = IOHIDValueGetIntegerValue(value) != 0
 
         lock.lock()
-        let wasDown = !downDevices.isEmpty
-        if isDown {
-            downDevices.insert(device)
-        } else {
-            downDevices.remove(device)
-        }
-        let nowDown = !downDevices.isEmpty
+        let active = manager != nil
+        let released = active && hold.keyChanged(device: device, isDown: isDown)
+        let held = hold.isHeld
         lock.unlock()
+        // a value queued before stop() lands after it; don't track that
+        guard active else { return }
 
-        hyprLog(.notice, .hotkey, "diag81 physical caps \(isDown ? "down" : "up") held=\(nowDown)")
-        if wasDown && !nowDown {
+        hyprLog(.debug, .hotkey, "physical Caps Lock \(isDown ? "down" : "up") (held=\(held))")
+        if released {
             onRelease?()
         }
     }
 
     fileprivate func handleRemoval(device: IOHIDDevice) {
-        let key = Unmanaged.passUnretained(device).toOpaque()
+        let key = UInt(bitPattern: Unmanaged.passUnretained(device).toOpaque())
         lock.lock()
-        let wasDown = !downDevices.isEmpty
-        downDevices.remove(key)
-        let nowDown = !downDevices.isEmpty
+        let released = hold.deviceRemoved(key)
         lock.unlock()
-        if wasDown && !nowDown {
+        if released {
+            hyprLog(.notice, .hotkey, "keyboard holding Caps Lock was removed — treating it as released")
             onRelease?()
         }
     }
