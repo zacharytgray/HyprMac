@@ -74,6 +74,20 @@ final class InterfaceSnapshotTests: XCTestCase {
                    size: CGSize(width: 520, height: 440))
         try render("tour-hypr-key-light", TourView(mode: .firstRun, onDismiss: {}),
                    size: CGSize(width: 520, height: 440), dark: false)
+        try withInputMonitoring(granted: false) {
+            try render("tour-hypr-key-im-off-dark", TourView(mode: .firstRun, onDismiss: {}),
+                       size: CGSize(width: 520, height: 440))
+            try render("tour-hypr-key-im-off-light", TourView(mode: .firstRun, onDismiss: {}),
+                       size: CGSize(width: 520, height: 440), dark: false)
+        }
+        try withInputMonitoring(granted: true) {
+            try render("tour-hypr-key-im-on-dark", TourView(mode: .firstRun, onDismiss: {}),
+                       size: CGSize(width: 520, height: 440))
+        }
+        try withInputMonitoring(granted: true, openFailed: true) {
+            try render("tour-hypr-key-im-relaunch-dark", TourView(mode: .firstRun, onDismiss: {}),
+                       size: CGSize(width: 520, height: 440))
+        }
         try render("whats-new-dark", TourView(mode: .whatsNew, onDismiss: {}),
                    size: CGSize(width: 520, height: 440))
         try render("permissions-gate-dark",

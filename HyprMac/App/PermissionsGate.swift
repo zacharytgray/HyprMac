@@ -75,17 +75,7 @@ struct PermissionStatusRow: View {
             Spacer(minLength: 8)
 
             if granted {
-                HStack(spacing: 4) {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("Granted")
-                        .font(.system(size: 10, weight: .medium))
-                }
-                .foregroundStyle(Color.hyprCyan)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(Color.hyprCyan.opacity(0.1)))
-                .overlay(Capsule().strokeBorder(Color.hyprCyan.opacity(0.5), lineWidth: 1))
+                PermissionGrantedBadge()
             } else {
                 Button("Grant", action: onGrant)
                     .buttonStyle(.borderedProminent)
@@ -101,6 +91,23 @@ struct PermissionStatusRow: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Color.hyprTextPrimary.opacity(0.08), lineWidth: 1)
         )
+    }
+}
+
+/// The cyan "✓ Granted" capsule shown in place of a Grant button.
+struct PermissionGrantedBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 9, weight: .bold))
+            Text("Granted")
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundStyle(Color.hyprCyan)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(Color.hyprCyan.opacity(0.1)))
+        .overlay(Capsule().strokeBorder(Color.hyprCyan.opacity(0.5), lineWidth: 1))
     }
 }
 
