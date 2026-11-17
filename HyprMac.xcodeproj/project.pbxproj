@@ -268,6 +268,7 @@
 		B29AEC8E0D2A8DC14BD9DD83 /* SwitchHoldAdmission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D1265151DA4C639244CBC5 /* SwitchHoldAdmission.swift */; };
 		B3B976E2663A1446F4D9A7A3 /* AdmissionRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14EDE284FED93137B1A0BADB /* AdmissionRecovery.swift */; };
 		B3BCB4B56872B79D3B673912 /* HoverResponseRate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 936B7CF6C89B974F27A4E2BC /* HoverResponseRate.swift */; };
+		B6B470A396C5B7DFEE0D30A7 /* PhysicalKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEDEB39CC2B8A579809780E2 /* PhysicalKeyMonitor.swift */; };
 		B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
 		B7B452BA5C221D28C3A8CA4E /* TiledDragTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC27FADCFF305913BD49A6CA /* TiledDragTransaction.swift */; };
 		B7C740B8E2778EB4330ACAF4 /* RunCommandKeybindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AFC5423BCB8E65F59C907F4 /* RunCommandKeybindTests.swift */; };
@@ -325,6 +326,7 @@
 		DF0E5FD5CAEC61956386B687 /* WindowManagerDecisionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 57BDECBC66A21863C3FB11B1 /* WindowManagerDecisionTests.swift */; };
 		DFA806AC7404D54A992E432F /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49CB059612127CA6F3E7766 /* SettingsComponents.swift */; };
 		DFB503500879F243DD9C3FC1 /* HyprWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA85C3347F1D7A782EA9EA39 /* HyprWindow.swift */; };
+		DFCD23D134644697F8DCF3D8 /* PhysicalKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEDEB39CC2B8A579809780E2 /* PhysicalKeyMonitor.swift */; };
 		DFE89755AA5CF65CC6319D33 /* HyprKeySystemGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE1252424844EA3C4E1B709 /* HyprKeySystemGuidanceTests.swift */; };
 		E0EC87378AAEFCEB313B283E /* TilingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */; };
 		E25ABCCD628CDF38B9E06744 /* TiledDragSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B6952D8617CE03DF8A8E96 /* TiledDragSnapshot.swift */; };
@@ -636,6 +638,7 @@
 		ED60042FE9D6F1A775F97858 /* TiledDragFeedbackReconciler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragFeedbackReconciler.swift; sourceTree = "<group>"; };
 		EDAAA3743D0898468DBA8EBC /* ConfigMigration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigMigration.swift; sourceTree = "<group>"; };
 		EE740E91A8A260E9F899EB51 /* RuntimeVariant.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RuntimeVariant.swift; sourceTree = "<group>"; };
+		EEDEB39CC2B8A579809780E2 /* PhysicalKeyMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalKeyMonitor.swift; sourceTree = "<group>"; };
 		EF9248FBC1729E7F502A6186 /* AXFrameWriteBatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXFrameWriteBatchTests.swift; sourceTree = "<group>"; };
 		EFD825028CFC92058B0564BC /* WindowPlacement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowPlacement.swift; sourceTree = "<group>"; };
 		F1251E3F489A8D9DBD9866FE /* FixedSizeHintStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixedSizeHintStore.swift; sourceTree = "<group>"; };
@@ -1080,6 +1083,7 @@
 				53410A7A5185F2585DFFFB0A /* HotkeyManager.swift */,
 				40D33713C81721E9590DB1A5 /* KeyRemapper.swift */,
 				10694681DB82FF2083F59195 /* MouseTrackingManager.swift */,
+				EEDEB39CC2B8A579809780E2 /* PhysicalKeyMonitor.swift */,
 				A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */,
 				1CE7C605576D58BB77A314D0 /* TiledDragController.swift */,
 				8665ECFAEE8AA274A2CD6635 /* TiledDragEvent.swift */,
@@ -1308,6 +1312,7 @@
 				0CFEDE16FAF291E190636DE2 /* ParkAttempt.swift in Sources */,
 				F796DE8B56511CF5325B6F7D /* PassBudget.swift in Sources */,
 				59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */,
+				B6B470A396C5B7DFEE0D30A7 /* PhysicalKeyMonitor.swift in Sources */,
 				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
 				527D68624FC4FDB4EAF54FA8 /* ProbeFrame.swift in Sources */,
 				D849455C3C1CF4C164649D9A /* RetileAllPlanner.swift in Sources */,
@@ -1452,6 +1457,7 @@
 				E746F728FF8F6E5A9EC338ED /* ParkAttempt.swift in Sources */,
 				8DBC52E0F9E7B680EDD2F573 /* PassBudget.swift in Sources */,
 				35764B87C3B878BA57801CA5 /* PermissionsGate.swift in Sources */,
+				DFCD23D134644697F8DCF3D8 /* PhysicalKeyMonitor.swift in Sources */,
 				DDF87D62ED61F50A5F0681B9 /* PollingScheduler.swift in Sources */,
 				ED9AA2A6F6F62A2DBB5D3FF9 /* ProbeFrame.swift in Sources */,
 				FF545C88698CCEFDF156CDFF /* RetileAllPlanner.swift in Sources */,
