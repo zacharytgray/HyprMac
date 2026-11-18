@@ -26,6 +26,12 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "capslock",
+            title: "Hypr Holds Through Control",
+            description: "Letting go of Control during a Hypr shortcut no longer ends Hypr while Caps Lock is still held.",
+            credit: "wbalbinot"
+        ),
+        WhatsNewFeature(
             icon: "rectangle.split.2x1",
             title: "New Windows Split the Focused Tile",
             description: "A new window now opens beside the tile you have focused instead of at the end of the layout. A window you close and reopen does the same.",
