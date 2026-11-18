@@ -154,7 +154,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `WindowManager` | Orchestrator. Wires services, drives lifecycle, owns mouse monitors and observers, the display settle's timer, and the focus chrome refresh. |
 | `HotkeyManager` | Session-level CGEventTap on a dedicated thread. Translates Hypr-key chords into `Action` values, dispatched to main. |
 | `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. Adds and removes only its own `UserKeyMapping` entry (see "Caps Lock remap"). |
-| `PhysicalKeyMonitor` | IOHIDManager read of the physical Caps Lock key, on the tap thread. Lets `HotkeyManager` ignore the F18 release macOS sends on Control up (see "Physical Caps Lock read"). Optional; needs Input Monitoring. |
+| `PhysicalKeyMonitor` | IOHIDManager read of the physical Caps Lock key, on the tap thread. Lets `HotkeyManager` ignore the F18 release macOS sends on Control up (see "Physical Caps Lock read"). Its keyboard access comes with Accessibility. |
 | `AccessibilityManager` | AX bridge. Enumerates windows, resolves the focused window, picks directional neighbors. |
 | `DisplayManager` | NSScreen tracking and CG ↔ NS coordinate conversion. |
 | `ActionPolicy`, `ScratchpadActionRoute` | Pure gates a pressed action passes before `ActionDispatcher`. `WindowManager.handleAction` runs the effects. |
@@ -944,19 +944,25 @@ drive it with a fake.
   up then ends Hypr. On a normal press the physical up lands 1–5 ms before
   the F18 keyUp, so presses end on time.
 - The monitor runs only while Caps Lock is the Hypr key, the tap is
-  running, and Input Monitoring is granted. `refreshPhysicalKeyMonitor` decides,
-  on start, on a Hypr key change and on each 5 s health-check tick.
-  Anything else means no keyboard is opened and the tap behaves as before.
-- A grant made after launch starts the monitor on the next tick. If macOS
-  says granted but `IOHIDManagerOpen` still fails, `InputMonitoringPermission`
-  reports "needs relaunch" and the UI offers Relaunch HyprMac. The relaunch
-  waits for the old process to exit before `open`, so the quit-time Caps
-  Lock restore can't undo the new launch's remap.
+  running, and `IOHIDCheckAccess(kIOHIDRequestTypeListenEvent)` says
+  granted. `refreshPhysicalKeyMonitor` decides, on start, on a Hypr key
+  change and on each 5 s health-check tick. Anything else means no
+  keyboard is opened and the tap behaves as before.
+- Reading a keyboard needs ListenEvent access, the one System Settings
+  lists as Input Monitoring. macOS grants it to an app that has
+  Accessibility, so HyprMac never asks for it and shows no UI for it.
+  Confirmed on macOS 27.2.1 with the Debug app: after
+  `tccutil reset ListenEvent`, with no Input Monitoring entry at all, the
+  check said granted and `IOHIDManagerOpen` succeeded. Accessibility off
+  made the check say denied; back on, granted again and the monitor
+  started. HyprMac never calls `IOHIDRequestAccess`.
+- If the open fails, it logs once per error code and the tap keeps the
+  old behavior. The health check retries quietly.
 - Missed ups can't leave Hypr stuck for long: a tap interruption, sleep,
   wake, lock or unlock resets the held state; a keyboard removal releases
-  its hold; a revoked grant stops the monitor and ends a press whose F18
-  release was ignored. If an up is missed anyway, the next Caps Lock press
-  ends it.
+  its hold; revoked access (Accessibility turned off) stops the monitor
+  and ends a press whose F18 release was ignored. If an up is missed
+  anyway, the next Caps Lock press ends it.
 
 ## Permissions
 
@@ -965,15 +971,9 @@ drive it with a fake.
   `AppDelegate.applicationDidFinishLaunching` checks it. Without it, the
   non-modal permissions gate (`App/PermissionsGate.swift`) opens and polls
   once a second, and a grant starts HyprMac with no relaunch.
-- **Input Monitoring** (System Settings → Privacy → Input Monitoring) —
-  optional, and shown only when Caps Lock is the Hypr key. It powers the
-  physical Caps Lock read above. HyprMac never asks at launch. The
-  permissions gate, the tour's Hypr key page and Settings → General →
-  Status each have a Grant button: `IOHIDRequestAccess` shows the system
-  prompt the first time, and the Input Monitoring pane opens when it
-  returns ungranted. macOS words the prompt as "receive keystrokes from any
-  application"; HyprMac only matches Caps Lock. Without the grant, behavior
-  is the same as before.
+  Accessibility also covers the physical Caps Lock read above: macOS
+  treats an app with Accessibility as having Input Monitoring, so there is
+  no second permission to grant.
 - **Caps Lock set to "⇪ Caps Lock"** in System Settings → Keyboard →
   Keyboard Shortcuts… → Modifier Keys — that pane applies in the HID
   event system, before the `hidutil` user mapping and before any

@@ -116,10 +116,6 @@ the keys.
 
 - macOS 13 (Ventura) or later, on Apple silicon or Intel.
 - Accessibility permission, in System Settings → Privacy & Security → Accessibility.
-- Optional, with Caps Lock as the Hypr key: Input Monitoring, in System Settings → Privacy &
-  Security → Input Monitoring. It keeps Hypr held when you let go of Control during a Hypr
-  shortcut. HyprMac reads only whether Caps Lock is held. macOS calls this permission "receive
-  keystrokes from any application".
 - Nothing else. System Integrity Protection stays on.
 
 > [!IMPORTANT]

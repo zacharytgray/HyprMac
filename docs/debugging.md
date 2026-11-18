@@ -1410,49 +1410,50 @@ to update.
 ### Hypr ended early after a Control shortcut (#81)
 
 With Caps Lock as the Hypr key, macOS sends an F18 release when Control
-comes up while Caps Lock is still held. Without Input Monitoring, Hypr ends
-there and the next arrow is a plain arrow. With it, `PhysicalKeyMonitor`
-reads the key itself (see "Physical Caps Lock read" in
-[architecture.md](architecture.md)). All `[hotkey]`, `.notice` unless noted:
+comes up while Caps Lock is still held. `PhysicalKeyMonitor` reads the key
+itself and ignores that release (see "Physical Caps Lock read" in
+[architecture.md](architecture.md)). When the monitor isn't running, Hypr
+ends there and the next arrow is a plain arrow. All `[hotkey]`, `.notice`
+unless noted:
 
 ```
 physical key monitor started
-physical key monitor failed to open (0xe00002e2) — Input Monitoring is granted, so macOS may need a relaunch
+physical key monitor failed to open (0xe00002e2)
 physical key monitor stopped — Hypr key is Tab
-physical key monitor stopped — Input Monitoring was turned off
+physical key monitor stopped — keyboard access was revoked
 ignoring Hypr release — Caps Lock is still physically held
 Caps Lock physically released — ending Hypr
 keyboard holding Caps Lock was removed — treating it as released
 physical Caps Lock down (held=true)          (.debug, every press)
 physical Caps Lock up (held=false)           (.debug, every press)
-Input Monitoring requested — granted: false
 ```
 
 An early end shows as `hypr ↑` right after a Control `flagsChanged`, with
 no "ignoring Hypr release" line before it. No "physical key monitor started"
 line since launch means the monitor isn't running: the Hypr key isn't Caps
-Lock, or Input Monitoring isn't granted. The open failure logs once per
+Lock, or the keyboard access check said no. The open failure logs once per
 error code; the 5 s health check keeps retrying quietly. The launch line
 `Input Monitoring access=granted|denied|unknown` is `.debug` (`[lifecycle]`).
 
-Check the grant. `IOHIDCheckAccess` answers for the calling process, so ask
-the app, not a shell (Debug app only):
+The keyboard access check is ListenEvent, shown in System Settings as Input
+Monitoring. macOS answers it from Accessibility: HyprMac never asks for it
+and needs no entry in the Input Monitoring list. Confirmed on macOS 27.2.1
+with the Debug app. After `tccutil reset ListenEvent
+com.zachgray.HyprMac.debug` the check still said granted and the monitor
+started. With Accessibility turned off it said denied.
+
+`IOHIDCheckAccess` answers for the calling process, so ask the app, not a
+shell (Debug app only):
 
 ```sh
 /usr/bin/open -n -W --stdout /tmp/hyprmac-im.log \
   '/Applications/HyprMac Debug.app' --args --check-input-monitoring
-cat /tmp/hyprmac-im.log   # granted, denied, or unknown (never asked)
+cat /tmp/hyprmac-im.log   # granted or denied
 ```
 
-Start over from "never asked", so the system prompt shows again on the next
-Grant:
-
-```sh
-tccutil reset ListenEvent com.zachgray.HyprMac.debug   # or com.zachgray.HyprMac
-```
-
-Settings → General → Status shows the same state: OK, Grant, or Relaunch
-HyprMac.
+To see the monitor follow Accessibility, turn Accessibility off for the app
+and run the check (denied), then turn it back on (granted, and
+"physical key monitor started" within 5 s).
 
 ## Retile churn / full-screen flicker
 
