@@ -52,8 +52,10 @@ struct AdmissionPass {
 /// pass again for the rest without them, up to `narrowingRounds` times.
 /// Eight windows opening on a laptop screen used to float as a set because
 /// two of them could not share it with anyone. A failure that names an
-/// incumbent or nobody says nothing about which newcomer to give up on, so
-/// it ends in the ordinary fallback for all of them.
+/// incumbent or nobody says nothing about which newcomer to give up on. An
+/// AX failure that names only incumbents is retried like a timeout and
+/// never floats the newcomers; any other ends in the ordinary fallback for
+/// all of them.
 ///
 /// A retry that times out was not refused: the app did not answer in time.
 /// It gets up to `timeoutRetryDelays.count` more retries with backoff, and
@@ -535,15 +537,22 @@ final class AdmissionRecovery {
                     }
                     var timedOut: Set<CGWindowID> = []
                     var keyBackoff: TimeInterval?
+                    // an incumbent's AX failure is not the newcomers' to pay
+                    // for: it is retried like a timeout and never floats them
+                    let incumbentFault = Self.blamesOnlyIncumbents(result.failure,
+                                                                   newcomers: Set(entry.bypass.keys))
                     for id in waiting.sorted() {
                         if !refused.contains(id),
-                           let delay = rearmAfterTimeout(id, failure: result.failure) {
+                           let delay = rearmAfterTimeout(id, failure: result.failure,
+                                                         incumbentFault: incumbentFault) {
                             timedOut.insert(id)
                             keyBackoff = min(keyBackoff ?? delay, delay)
-                        } else if let failure = result.failure, failure.isTimeout, !refused.contains(id) {
+                        } else if let failure = result.failure, failure.isTimeout || incumbentFault,
+                                  !refused.contains(id) {
                             // the last retry timed out before every window got its
-                            // whole frame, so the engine had nothing to keep tiled.
-                            // a timeout still does not float anything
+                            // whole frame, so the engine had nothing to keep tiled,
+                            // or an incumbent still failed its AX call. neither
+                            // floats anything
                             holdUnanswered(id, workspace: workspace, failure: failure)
                         } else if finish(id, retryFailure: refused.contains(id) ? .noFittingSlot(id) : result.failure) {
                             floated[workspace] = entry.screen
@@ -551,9 +560,16 @@ final class AdmissionRecovery {
                     }
                     if let keyBackoff {
                         backoff = min(backoff ?? keyBackoff, keyBackoff)
-                        hyprLog(.notice, .tiling, "admission retry timed out: ids=\(Self.list(timedOut))"
-                                + " ws\(workspace) cause=\(Self.text(result.failure))"
-                                + " — not a refusal, retrying in \(Int((keyBackoff * 1000).rounded()))ms")
+                        if incumbentFault {
+                            hyprLog(.notice, .tiling, "admission retry failed on an incumbent:"
+                                    + " ids=\(Self.list(timedOut)) ws\(workspace)"
+                                    + " cause=\(Self.text(result.failure)) (not the newcomers'),"
+                                    + " retrying in \(Int((keyBackoff * 1000).rounded()))ms")
+                        } else {
+                            hyprLog(.notice, .tiling, "admission retry timed out: ids=\(Self.list(timedOut))"
+                                    + " ws\(workspace) cause=\(Self.text(result.failure))"
+                                    + " — not a refusal, retrying in \(Int((keyBackoff * 1000).rounded()))ms")
+                        }
                     }
                     break
                 }
@@ -613,6 +629,21 @@ final class AdmissionRecovery {
         return giveUp.count < waiting.count ? giveUp : nil
     }
 
+    /// An AX failure (a setter, a read or the cleanup after them) that names
+    /// only windows outside `newcomers`: an incumbent of the key did not
+    /// carry out a call. That says nothing against the newcomers, so it must
+    /// not float them. Seen live: Dia, tiled on ws1, answered its size write
+    /// with -25205 on the reveal pass and on the retry, and the PDF moved in
+    /// beside it was floated for it. A geometric refusal still counts against
+    /// the arrangement, and a failure naming nobody is left to the timeout
+    /// rules.
+    static func blamesOnlyIncumbents(_ failure: FrameSizingFailure?,
+                                     newcomers: Set<CGWindowID>) -> Bool {
+        guard let failure, failure.isAXFailure, !failure.isTimeout else { return false }
+        let named = failure.namedWindowIDs
+        return !named.isEmpty && named.isDisjoint(with: newcomers)
+    }
+
     /// The last retry timed out before every window got its whole frame, so
     /// there was no tile to keep. Hold it: an explicit record with no timer
     /// and no float, released when a later layout tiles it, exactly like an
@@ -623,17 +654,26 @@ final class AdmissionRecovery {
         record.phase = .held
         record.attempted = true
         records[id] = record
+        guard failure.isTimeout else {
+            hyprLog(.notice, .tiling, "admission recovery held: ids=[\(id)] ws\(workspace):"
+                    + " an incumbent still failed its AX call on the last retry"
+                    + " (\(failure.trace)); in no tree, not floated")
+            return
+        }
         hyprLog(.notice, .tiling, "admission recovery held: ids=[\(id)] ws\(workspace)"
                 + " — last retry timed out without a complete write (\(failure)); in no tree, not floated")
     }
 
     /// Give a retry that timed out another one later, while the bound lasts.
     /// A timeout is the app not answering, not the app refusing, so it does
-    /// not earn the float a refusal gets.
-    /// - Returns: the delay to arm, or nil when the failure is not a timeout
-    ///   or the bound is spent.
-    private func rearmAfterTimeout(_ id: CGWindowID, failure: FrameSizingFailure?) -> TimeInterval? {
-        guard let failure, failure.isTimeout, var record = records[id],
+    /// not earn the float a refusal gets. An incumbent's AX failure
+    /// (`incumbentFault`) gets the same retries for the same reason: nothing
+    /// the newcomer did was refused.
+    /// - Returns: the delay to arm, or nil when the failure is neither a
+    ///   timeout nor an incumbent's fault, or the bound is spent.
+    private func rearmAfterTimeout(_ id: CGWindowID, failure: FrameSizingFailure?,
+                                   incumbentFault: Bool = false) -> TimeInterval? {
+        guard let failure, failure.isTimeout || incumbentFault, var record = records[id],
               record.timeouts < timeoutRetryDelays.count else { return nil }
         let delay = timeoutRetryDelays[record.timeouts]
         record.timeouts += 1

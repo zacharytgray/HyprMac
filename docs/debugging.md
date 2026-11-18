@@ -350,6 +350,18 @@ The admission recovery's timeout lines, all `[notice] [tiling]`:
   a complete write (<failure>); in no tree, not floated` — some window did
   not get all three setters back, so the last retry had nothing to keep. A
   later layout that tiles the window releases it.
+- `admission retry failed on an incumbent: ids=[…] ws<N> cause=<failure>
+  (not the newcomers'), retrying in <ms>ms`: the pass failed on an AX error
+  of a window already tiled there, not of a newcomer. It gets the timeout
+  retries instead of floating the newcomers, and ends in
+  `admission recovery held: ids=[<id>] ws<N>: an incumbent still failed its
+  AX call on the last retry (<failure>); in no tree, not floated`.
+- `size write refused, read back: wid=<id> error=-25205 read=<w>x<h>
+  target=<w>x<h>: it landed, treating the write as done` (also `position`,
+  `size2`, `position2`): a setter came back -25205 and its own attribute
+  read back on target, so the candidate goes on to the full readback
+  instead of failing with `writeFailed`. `off target, failing the write`
+  is the old refusal.
 
 `MinSizeMemory` then logs what it did with that evidence under
 `category: lifecycle`, in these shapes:

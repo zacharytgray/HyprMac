@@ -475,6 +475,69 @@ final class AdmissionRecoveryTests: XCTestCase {
         XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
     }
 
+    // MARK: - an incumbent's AX failure is not the newcomer's
+
+    func testAnIncumbentsAXFailureBacksOffInsteadOfFloatingTheNewcomer() {
+        // the Dia case: ws1's tiled browser (11) answered its size write with
+        // -25205 on the reveal pass and on the retry, and the PDF moved in
+        // beside it (26) was floated for it
+        harness.failure = .writeFailed(11, .attributeUnsupported)
+        recovery.note(failedAdmission([26], failure: .writeFailed(11, .attributeUnsupported)))
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty, "the newcomer refused nothing")
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingRetry)
+        XCTAssertEqual(harness.scheduled.map(\.delay), [0.25, 0.5], "it backs off like a timeout")
+        XCTAssertFalse(harness.calls.contains("retileAfterFallback"))
+    }
+
+    func testAnIncumbentThatKeepsFailingLeavesTheNewcomerHeldNotFloated() {
+        harness.failure = .cleanupFailed(11, primary: .writeFailed(11, .attributeUnsupported),
+                                         error: .failure)
+        harness.keepsTimeouts = false
+        recovery.note(failedAdmission([26], failure: .writeFailed(11, .attributeUnsupported)))
+        for _ in 0...recovery.timeoutRetryDelays.count { harness.fire() }
+
+        XCTAssertEqual(harness.attempts.count, 3, "bounded by the timeout retries")
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertEqual(recovery.phase(of: 26), .held, "tracked: in no tree, but not floated")
+
+        harness.fire()
+        XCTAssertEqual(harness.attempts.count, 3, "held means no timer and no attempt of its own")
+    }
+
+    func testANewcomersOwnRefusalAfterAnIncumbentsAXFailureStillFloats() {
+        harness.failures = [.writeFailed(11, .attributeUnsupported), .geometryMismatch(26)]
+        recovery.note(failedAdmission([26], failure: .writeFailed(11, .attributeUnsupported)))
+        harness.fire()
+        XCTAssertTrue(harness.floated.isEmpty)
+
+        harness.fire()
+
+        XCTAssertEqual(harness.floated.map(\.id), [26], "the newcomer answered, and it said no")
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty)
+    }
+
+    func testTheIncumbentFaultRuleReadsOnlyAXFailuresNamingNoNewcomer() {
+        let newcomers: Set<CGWindowID> = [26, 27]
+        XCTAssertTrue(AdmissionRecovery.blamesOnlyIncumbents(.writeFailed(11, .attributeUnsupported),
+                                                             newcomers: newcomers))
+        XCTAssertTrue(AdmissionRecovery.blamesOnlyIncumbents(.readFailed(11, .failure),
+                                                             newcomers: newcomers))
+        XCTAssertTrue(AdmissionRecovery.blamesOnlyIncumbents(
+            .cleanupFailed(11, primary: .writeFailed(11, .failure), error: .failure), newcomers: newcomers))
+        XCTAssertFalse(AdmissionRecovery.blamesOnlyIncumbents(.writeFailed(27, .attributeUnsupported),
+                                                              newcomers: newcomers),
+                       "a newcomer's own failure is the ordinary fallback")
+        XCTAssertFalse(AdmissionRecovery.blamesOnlyIncumbents(.geometryMismatch(11), newcomers: newcomers),
+                       "a geometric refusal counts against the arrangement")
+        XCTAssertFalse(AdmissionRecovery.blamesOnlyIncumbents(.writeFailed(11, .cannotComplete),
+                                                              newcomers: newcomers),
+                       "a timeout has its own rules")
+        XCTAssertFalse(AdmissionRecovery.blamesOnlyIncumbents(.deadlineExceeded, newcomers: newcomers))
+        XCTAssertFalse(AdmissionRecovery.blamesOnlyIncumbents(nil, newcomers: newcomers))
+    }
+
     func testARefusalNamingTheOnlyWaitingNewcomerIsTheOrdinaryFallback() {
         recovery.note(failedAdmission([26]))
         harness.failure = .geometryMismatch(26)
