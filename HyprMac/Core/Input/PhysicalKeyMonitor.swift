@@ -2,7 +2,9 @@
 // IOHIDManager. This sits below the event system's key remapping, so it
 // reports the key itself, not the F18 it becomes. macOS sends an F18
 // release while Caps Lock is still held when Control comes up (#81);
-// this is the answer the event tap can't give. Needs Input Monitoring.
+// this is the answer the event tap can't give. Reading a keyboard needs
+// the ListenEvent (Input Monitoring) access, and macOS gives that to an
+// app with Accessibility, so HyprMac never asks for it separately.
 
 import Foundation
 import IOKit.hid
@@ -51,6 +53,20 @@ protocol PhysicalCapsLockReading: AnyObject {
 
 final class PhysicalKeyMonitor: PhysicalCapsLockReading {
     static let capsLockUsage = UInt32(kHIDUsage_KeyboardCapsLock)
+
+    /// Whether this process may read keyboards. Follows Accessibility.
+    static var hasAccess: Bool {
+        IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeGranted
+    }
+
+    /// The raw TCC answer, for logs and `--check-input-monitoring`.
+    static var accessDescription: String {
+        switch IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) {
+        case kIOHIDAccessTypeGranted: return "granted"
+        case kIOHIDAccessTypeDenied: return "denied"
+        default: return "unknown"
+        }
+    }
 
     private let lock = NSLock()
     private var manager: IOHIDManager?

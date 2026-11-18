@@ -25,8 +25,8 @@ import Carbon
 /// (written from main on config changes, read per-keystroke on the tap
 /// thread). Callbacks (`onAction` etc.) always fire on main.
 ///
-/// With Caps Lock as the Hypr key and Input Monitoring granted, a
-/// `PhysicalKeyMonitor` on the same thread reads the key itself. macOS
+/// With Caps Lock as the Hypr key, a `PhysicalKeyMonitor` on the same
+/// thread reads the key itself. macOS
 /// sends an F18 release when Control comes up while Caps Lock is still
 /// held (#81); the monitor's answer lets the tap ignore it and end Hypr
 /// on the real release instead.
@@ -39,14 +39,14 @@ class HotkeyManager {
     fileprivate let stateLock = NSLock()
     // physical caps lock, for the F18 release macOS sends while it's held
     private let physicalKeys: PhysicalCapsLockReading
-    private let inputMonitoringGranted: () -> Bool
+    private let hasKeyboardAccess: () -> Bool
     // main thread only: last open failure logged, so retries stay quiet
     private var lastPhysicalOpenFailure: IOReturn?
 
     init(physicalKeys: PhysicalCapsLockReading = PhysicalKeyMonitor(),
-         inputMonitoringGranted: @escaping () -> Bool = { InputMonitoringPermission.isGranted }) {
+         hasKeyboardAccess: @escaping () -> Bool = { PhysicalKeyMonitor.hasAccess }) {
         self.physicalKeys = physicalKeys
-        self.inputMonitoringGranted = inputMonitoringGranted
+        self.hasKeyboardAccess = hasKeyboardAccess
         physicalKeys.onRelease = { [weak self] in self?.physicalCapsLockReleased() }
     }
 
@@ -141,9 +141,10 @@ class HotkeyManager {
     }
 
     /// Run the physical Caps Lock monitor only while it matters: Caps Lock
-    /// is the Hypr key, the tap is running, and Input Monitoring is
-    /// granted. Otherwise no keyboard is opened and the tap behaves as it
-    /// always has. Main thread, never under `stateLock`: closing the
+    /// is the Hypr key, the tap is running, and macOS lets us read
+    /// keyboards (it does whenever Accessibility is granted). Otherwise no
+    /// keyboard is opened and the tap behaves as it always has. Never asks
+    /// for access. Main thread, never under `stateLock`: closing the
     /// manager can call back into `physicalCapsLockReleased`.
     ///
     /// `runLoop` defaults to the tap thread's; tests pass their own.
@@ -157,34 +158,31 @@ class HotkeyManager {
             if physicalKeys.isActive {
                 stopPhysicalKeyMonitor(reason: "Hypr key is \(key.displayName)")
             }
-            InputMonitoringPermission.openFailedWithAccess = false
             return
         }
 
-        let granted = inputMonitoringGranted()
+        let granted = hasKeyboardAccess()
         if physicalKeys.isActive {
             // turned off while running: values may stop arriving, and a
             // stale held state would swallow the real release
             if !granted {
-                stopPhysicalKeyMonitor(reason: "Input Monitoring was turned off")
+                stopPhysicalKeyMonitor(reason: "keyboard access was revoked")
             }
             return
         }
-        // no access: today's behavior, no prompt, no log
+        // no access: the old behavior, no prompt, no log
         guard granted else { return }
 
         let result = physicalKeys.start(on: loop)
         if result == kIOReturnSuccess {
             lastPhysicalOpenFailure = nil
             hyprLog(.notice, .hotkey, "physical key monitor started")
-            InputMonitoringPermission.openFailedWithAccess = false
-            InputMonitoringPermission.postChange()
         } else {
+            // the old behavior until a later tick opens it
             if lastPhysicalOpenFailure != result {
-                hyprLog(.notice, .hotkey, "physical key monitor failed to open (0x\(String(UInt32(bitPattern: result), radix: 16))) — Input Monitoring is granted, so macOS may need a relaunch")
+                hyprLog(.notice, .hotkey, "physical key monitor failed to open (0x\(String(UInt32(bitPattern: result), radix: 16)))")
             }
             lastPhysicalOpenFailure = result
-            InputMonitoringPermission.openFailedWithAccess = true
         }
     }
 
@@ -199,7 +197,6 @@ class HotkeyManager {
             setHyprKeyDown(false)
         }
         stateLock.unlock()
-        InputMonitoringPermission.postChange()
     }
 
     /// Install the event tap on a dedicated thread's run loop.
@@ -299,9 +296,8 @@ class HotkeyManager {
     /// `tapDisabledByTimeout`, but a tap can also stop delivering with
     /// no disable event at all (re-sign race after rebuild, TCC flap) —
     /// a non-nil tap is not a healthy tap. Cheap: one flag read per tick,
-    /// plus an Input Monitoring check while Caps Lock is the Hypr key, so a
-    /// grant made after launch takes effect without a relaunch when macOS
-    /// allows it.
+    /// plus a keyboard access check while Caps Lock is the Hypr key, so
+    /// revoked access stops the physical monitor and a later grant starts it.
     private func startTapHealthCheck() {
         healthCheckTimer?.invalidate()
         let timer = Timer(timeInterval: 5.0, repeats: true) { [weak self] _ in

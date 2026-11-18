@@ -105,13 +105,12 @@ final class HotkeyManagerPhysicalCapsLockTests: XCTestCase {
         super.setUp()
         physical = FakePhysicalCapsLock()
         granted = true
-        manager = HotkeyManager(physicalKeys: physical, inputMonitoringGranted: { [unowned self] in self.granted })
+        manager = HotkeyManager(physicalKeys: physical, hasKeyboardAccess: { [unowned self] in self.granted })
         manager.updateKeybinds([Keybind(keyCode: chordKey, modifiers: .hypr, action: .toggleFloating)])
         manager.updateHyprKey(.capsLock)
     }
 
     override func tearDown() {
-        InputMonitoringPermission.openFailedWithAccess = false
         manager = nil
         physical = nil
         super.tearDown()
@@ -192,7 +191,7 @@ final class HotkeyManagerPhysicalCapsLockTests: XCTestCase {
         granted = false
         manager.refreshPhysicalKeyMonitor(runLoop: CFRunLoopGetCurrent())
         XCTAssertFalse(physical.isActive)
-        XCTAssertEqual(physical.startCount, 0, "no keyboard is opened without Input Monitoring")
+        XCTAssertEqual(physical.startCount, 0, "no keyboard is opened without access")
         // even a stale held answer is not trusted while the monitor is off
         physical.isCapsLockDown = true
         hypr(down: true)
@@ -279,35 +278,18 @@ final class HotkeyManagerPhysicalCapsLockTests: XCTestCase {
         XCTAssertTrue(physical.isActive)
     }
 
-    func testOpenFailureWithAccessAsksForARelaunchAndRetries() {
+    func testOpenFailureKeepsTheOldBehaviorAndRetries() {
         physical.startResult = IOReturn(bitPattern: 0xE000_02E2) // kIOReturnNotPermitted
         manager.refreshPhysicalKeyMonitor(runLoop: CFRunLoopGetCurrent())
         XCTAssertFalse(physical.isActive)
-        XCTAssertTrue(InputMonitoringPermission.openFailedWithAccess)
+        physical.isCapsLockDown = true
+        hypr(down: true)
+        hypr(down: false)
+        XCTAssertFalse(chordFires(), "a failed open must not hold Hypr")
 
         physical.startResult = kIOReturnSuccess
         manager.refreshPhysicalKeyMonitor(runLoop: CFRunLoopGetCurrent())
         XCTAssertTrue(physical.isActive)
-        XCTAssertFalse(InputMonitoringPermission.openFailedWithAccess)
-    }
-}
-
-final class InputMonitoringPermissionTests: XCTestCase {
-    func testStatus() {
-        XCTAssertEqual(InputMonitoringPermission.status(granted: true, openFailed: false), .granted)
-        XCTAssertEqual(InputMonitoringPermission.status(granted: true, openFailed: true), .needsRelaunch)
-        XCTAssertEqual(InputMonitoringPermission.status(granted: false, openFailed: false), .notGranted)
-        XCTAssertEqual(InputMonitoringPermission.status(granted: false, openFailed: true), .notGranted)
-    }
-
-    func testSettingsLinkOpensTheInputMonitoringPane() {
-        XCTAssertEqual(InputMonitoringPermission.settingsURL.absoluteString,
-                       "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent")
-    }
-
-    func testCopyNamesCapsLockAndNotKeystrokes() {
-        XCTAssertTrue(InputMonitoringPermission.scope.contains("Caps Lock"))
-        XCTAssertFalse(InputMonitoringPermission.purpose.lowercased().contains("keystroke"))
-        XCTAssertFalse(InputMonitoringPermission.scope.lowercased().contains("keystroke"))
+        XCTAssertEqual(physical.startCount, 2)
     }
 }

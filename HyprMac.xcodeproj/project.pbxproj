@@ -279,7 +279,6 @@
 		BACD47346AB8972892D8DA10 /* NewcomerRefusal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AF564A30012810C25B9FD63 /* NewcomerRefusal.swift */; };
 		BC3FDA5074F38001F6917FBB /* FloatingFocusStackingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C3932D77600EA8C6056C2E3 /* FloatingFocusStackingTests.swift */; };
 		BE19E12C9FCCB4AA75FF061E /* DiscoveryFollowUpTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAEBB2EAD6484E26F809E2EE /* DiscoveryFollowUpTests.swift */; };
-		BE97C3FA6CF4A36891C6BD7D /* InputMonitoringPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF2D4E59B71F9B5A4526E44 /* InputMonitoringPermission.swift */; };
 		C0CB8311CCCD82F35DE8A451 /* WorkspaceFollowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2931B6DAD1E489B5F372FC /* WorkspaceFollowTests.swift */; };
 		C1621C4239A1CD9F9E3A969D /* MouseTrackingManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10694681DB82FF2083F59195 /* MouseTrackingManager.swift */; };
 		C1CCA6C07D0B273CF3AB3D6C /* HandleDisplayChangeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43D8A7DDD1BB3D497B6F88EF /* HandleDisplayChangeTests.swift */; };
@@ -392,7 +391,6 @@
 		F9857D1EBAD4EB6F9113B6E1 /* FullscreenWorkspaceTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56823428D522E6724F9CB840 /* FullscreenWorkspaceTransferTests.swift */; };
 		F9B5B6843894B0557303F503 /* ConfigMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDAAA3743D0898468DBA8EBC /* ConfigMigration.swift */; };
 		F9DAC6038768E4C6FF5600CD /* LayoutMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 704DCC0F96A16AC32FD1A5C0 /* LayoutMatcher.swift */; };
-		FCA23107D219F7F57FBD709D /* InputMonitoringPermission.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BF2D4E59B71F9B5A4526E44 /* InputMonitoringPermission.swift */; };
 		FCAEB41890B6B555CBDC3082 /* PhysicalCapsLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508797A1BAD90161C6257D63 /* PhysicalCapsLockTests.swift */; };
 		FF545C88698CCEFDF156CDFF /* RetileAllPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B4FC8814875264166E19 /* RetileAllPlanner.swift */; };
 		FFC928AF672970AB27D199D9 /* LayoutTreeCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5732D75E720237317C4CCD3 /* LayoutTreeCodec.swift */; };
@@ -524,7 +522,6 @@
 		6AFC5423BCB8E65F59C907F4 /* RunCommandKeybindTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunCommandKeybindTests.swift; sourceTree = "<group>"; };
 		6B23E3313247FD77173D35DD /* DefaultKeybindsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DefaultKeybindsTests.swift; sourceTree = "<group>"; };
 		6B33190C87FE4067512AEFD0 /* DisplayManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayManager.swift; sourceTree = "<group>"; };
-		6BF2D4E59B71F9B5A4526E44 /* InputMonitoringPermission.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputMonitoringPermission.swift; sourceTree = "<group>"; };
 		6E4E656D3CA021B130775CC3 /* Keybind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keybind.swift; sourceTree = "<group>"; };
 		6E6472ACE23C8EB1DC35E7F2 /* WorkspaceOverviewPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceOverviewPresentationTests.swift; sourceTree = "<group>"; };
 		6EDEEE13B637CED75A9FD8A9 /* TourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TourView.swift; sourceTree = "<group>"; };
@@ -1087,7 +1084,6 @@
 				3EE2080A8407FC04C516123A /* CursorManager.swift */,
 				7494EE86AE0F7C9129ADB20C /* FloatingDimDragTracker.swift */,
 				53410A7A5185F2585DFFFB0A /* HotkeyManager.swift */,
-				6BF2D4E59B71F9B5A4526E44 /* InputMonitoringPermission.swift */,
 				40D33713C81721E9590DB1A5 /* KeyRemapper.swift */,
 				10694681DB82FF2083F59195 /* MouseTrackingManager.swift */,
 				EEDEB39CC2B8A579809780E2 /* PhysicalKeyMonitor.swift */,
@@ -1291,7 +1287,6 @@
 				E75F4991C42DA20A1A207121 /* HyprMacApp.swift in Sources */,
 				7786D1CCB8F91E102903C66B /* HyprMark.swift in Sources */,
 				DFB503500879F243DD9C3FC1 /* HyprWindow.swift in Sources */,
-				BE97C3FA6CF4A36891C6BD7D /* InputMonitoringPermission.swift in Sources */,
 				28BD7C8DD76D02FBC83769F7 /* KeyBadgeViews.swift in Sources */,
 				D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */,
 				E49C450CFEE3A7BC692AA590 /* KeyRecorderView.swift in Sources */,
@@ -1437,7 +1432,6 @@
 				009796C274F82462C0393933 /* HyprMacApp.swift in Sources */,
 				F138E48253F73312CA570322 /* HyprMark.swift in Sources */,
 				A76080D3089550F74088990D /* HyprWindow.swift in Sources */,
-				FCA23107D219F7F57FBD709D /* InputMonitoringPermission.swift in Sources */,
 				7B2295B46D2B165BC529E9A9 /* KeyBadgeViews.swift in Sources */,
 				09BB89D34D8ECB6D50C7AA2A /* KeyCodeUtils.swift in Sources */,
 				6FDB52DF012B387B6593B42B /* KeyRecorderView.swift in Sources */,

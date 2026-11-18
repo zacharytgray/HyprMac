@@ -250,14 +250,11 @@ private struct TourHeroPage: View {
     @ObservedObject var config: UserConfig
     // flips once the app reports a focusDirection while this page is up
     @State private var tried = false
-    @State private var inputMonitoring = InputMonitoringPermission.currentStatus
-
-    private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
             keycap
-                .padding(.bottom, config.hyprKey.usesCapsLockRemap ? 16 : 22)
+                .padding(.bottom, 22)
 
             Text(config.hyprKey == .capsLock
                  ? "Caps Lock is your HYPR key by default."
@@ -281,19 +278,9 @@ private struct TourHeroPage: View {
                 modifierKeysNote(guidance)
                     .padding(.top, 16)
             }
-
-            // optional: keeps Hypr held when Control comes up (#81)
-            if config.hyprKey.usesCapsLockRemap {
-                inputMonitoringNote
-                    .padding(.top, 8)
-            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 32)
-        .onReceive(poll) { _ in inputMonitoring = InputMonitoringPermission.currentStatus }
-        .onReceive(NotificationCenter.default.publisher(for: .hyprMacInputMonitoringChanged)) { _ in
-            inputMonitoring = InputMonitoringPermission.currentStatus
-        }
         // observe dispatched actions; flip on any focusDirection
         .onReceive(NotificationCenter.default.publisher(for: .hyprMacActionDispatched)) { note in
             if note.userInfo?["action"] as? String == "focusDirection" {
@@ -302,71 +289,12 @@ private struct TourHeroPage: View {
         }
     }
 
-    private var inputMonitoringDetail: String {
-        switch inputMonitoring {
-        case .granted:
-            return "Input Monitoring is on. HyprMac reads only whether Caps Lock is held."
-        case .notGranted:
-            return "Needs Input Monitoring. HyprMac reads only whether Caps Lock is held. \(InputMonitoringPermission.promptNote)"
-        case .needsRelaunch:
-            return InputMonitoringPermission.relaunchNote
-        }
-    }
-
-    // compact optional grant, same box as the Modifier Keys note
-    private var inputMonitoringNote: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "capslock")
-                .font(.system(size: 12))
-                .foregroundStyle(Color.hyprCyan)
-                .frame(width: 16)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Optional: \(InputMonitoringPermission.purpose.prefix(1).lowercased())\(InputMonitoringPermission.purpose.dropFirst())")
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(Color.hyprTextPrimary.opacity(0.75))
-                Text(inputMonitoringDetail)
-                    .font(.system(size: 10))
-                    .lineSpacing(1)
-                    .foregroundStyle(Color.hyprTextPrimary.opacity(0.45))
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            switch inputMonitoring {
-            case .granted:
-                PermissionGrantedBadge()
-            case .notGranted:
-                Button("Grant…") { InputMonitoringPermission.requestThenOpen() }
-                    .controlSize(.small)
-                    .fixedSize()
-                    .accessibilityLabel("Grant Input Monitoring")
-            case .needsRelaunch:
-                Button("Relaunch") { InputMonitoringPermission.relaunch() }
-                    .controlSize(.small)
-                    .fixedSize()
-                    .accessibilityLabel(InputMonitoringPermission.relaunchButtonTitle)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .frame(maxWidth: 456)
-        .background(
-            RoundedRectangle(cornerRadius: HyprRadius.md + 3, style: .continuous)
-                .fill(Color.hyprSurface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: HyprRadius.md + 3, style: .continuous)
-                .strokeBorder(Color.hyprTextPrimary.opacity(0.08), lineWidth: 1)
-        )
-    }
-
     // compact reminder: macOS can hide the Hypr key before HyprMac sees it
     private func modifierKeysNote(_ guidance: HyprKeySystemGuidance) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "keyboard")
                 .font(.system(size: 12))
                 .foregroundStyle(Color.hyprCyan)
-                .frame(width: 16)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(guidance.title)

@@ -2,8 +2,7 @@
 // Accessibility is missing at startup.
 //
 // Accessibility is required — the app can't function without it, so the
-// only exits are granting it (auto-close + live start) or Quit. Input
-// Monitoring is optional and shows only when Caps Lock is the Hypr key.
+// only exits are granting it (auto-close + live start) or Quit.
 
 import SwiftUI
 
@@ -75,7 +74,17 @@ struct PermissionStatusRow: View {
             Spacer(minLength: 8)
 
             if granted {
-                PermissionGrantedBadge()
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("Granted")
+                        .font(.system(size: 10, weight: .medium))
+                }
+                .foregroundStyle(Color.hyprCyan)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.hyprCyan.opacity(0.1)))
+                .overlay(Capsule().strokeBorder(Color.hyprCyan.opacity(0.5), lineWidth: 1))
             } else {
                 Button("Grant", action: onGrant)
                     .buttonStyle(.borderedProminent)
@@ -91,23 +100,6 @@ struct PermissionStatusRow: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Color.hyprTextPrimary.opacity(0.08), lineWidth: 1)
         )
-    }
-}
-
-/// The cyan "✓ Granted" capsule shown in place of a Grant button.
-struct PermissionGrantedBadge: View {
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "checkmark")
-                .font(.system(size: 9, weight: .bold))
-            Text("Granted")
-                .font(.system(size: 10, weight: .medium))
-        }
-        .foregroundStyle(Color.hyprCyan)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(Color.hyprCyan.opacity(0.1)))
-        .overlay(Capsule().strokeBorder(Color.hyprCyan.opacity(0.5), lineWidth: 1))
     }
 }
 
@@ -182,15 +174,10 @@ final class PermissionsGateModel: ObservableObject {
     @Published var axGranted = AccessibilityManager.isAccessibilityEnabled()
     /// nil when the selected Hypr key can't be remapped in Modifier Keys
     @Published var modifierGuidance = HyprKeySystemGuidance.forKey(UserConfig.shared.hyprKey)
-    /// Input Monitoring only matters with Caps Lock as the Hypr key
-    @Published var showsInputMonitoring = UserConfig.shared.hyprKey.usesCapsLockRemap
-    @Published var inputMonitoringGranted = InputMonitoringPermission.isGranted
 
     func refresh() {
         axGranted = AccessibilityManager.isAccessibilityEnabled()
         modifierGuidance = HyprKeySystemGuidance.forKey(UserConfig.shared.hyprKey)
-        showsInputMonitoring = UserConfig.shared.hyprKey.usesCapsLockRemap
-        inputMonitoringGranted = InputMonitoringPermission.isGranted
     }
 }
 
@@ -260,21 +247,6 @@ struct PermissionsGateView: View {
             )
             .frame(maxWidth: 420)
             .padding(.top, 18)
-
-            if model.showsInputMonitoring {
-                PermissionStatusRow(
-                    icon: "capslock",
-                    title: InputMonitoringPermission.title,
-                    required: false,
-                    detail: model.inputMonitoringGranted
-                        ? "\(InputMonitoringPermission.purpose) \(InputMonitoringPermission.scope)"
-                        : "\(InputMonitoringPermission.purpose) \(InputMonitoringPermission.scope) \(InputMonitoringPermission.promptNote)",
-                    granted: model.inputMonitoringGranted,
-                    onGrant: { InputMonitoringPermission.requestThenOpen() }
-                )
-                .frame(maxWidth: 420)
-                .padding(.top, 10)
-            }
 
             if let guidance = model.modifierGuidance {
                 ModifierKeysCheckRow(guidance: guidance)

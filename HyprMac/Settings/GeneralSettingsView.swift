@@ -11,7 +11,6 @@ struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
-    @State private var inputMonitoring = InputMonitoringPermission.currentStatus
     @StateObject private var loginItem = LoginItemController()
     @State private var showingWorkspaceNames = false
 
@@ -27,48 +26,19 @@ struct GeneralSettingsView: View {
             footerPanel
         }
         .onAppear {
-            refreshPermissions()
+            accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
             loginItem.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            refreshPermissions()
             loginItem.refresh()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .hyprMacInputMonitoringChanged)) { _ in
-            inputMonitoring = InputMonitoringPermission.currentStatus
-        }
-    }
-
-    private func refreshPermissions() {
-        accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
-        inputMonitoring = InputMonitoringPermission.currentStatus
     }
 
     // MARK: status
 
-    /// Input Monitoring only matters with Caps Lock as the Hypr key.
-    private var showsInputMonitoring: Bool { config.hyprKey.usesCapsLockRemap }
-
-    private var statusFooter: String? {
-        var lines: [String] = []
-        if !accessibilityGranted {
-            lines.append("Accessibility permission is required for HyprMac to function. Open System Settings to grant it.")
-        }
-        if showsInputMonitoring {
-            switch inputMonitoring {
-            case .granted:
-                break
-            case .notGranted:
-                lines.append("Without Input Monitoring, letting go of Control during a Hypr shortcut can end Hypr early. HyprMac reads only whether Caps Lock is held.")
-            case .needsRelaunch:
-                lines.append(InputMonitoringPermission.relaunchNote)
-            }
-        }
-        return lines.isEmpty ? nil : lines.joined(separator: " ")
-    }
-
     private var statusPanel: some View {
-        HyprPanel("Status", footer: statusFooter) {
+        HyprPanel("Status",
+                  footer: accessibilityGranted ? nil : "Accessibility permission is required for HyprMac to function. Open System Settings to grant it.") {
             HyprRow("HyprMac", icon: "bolt.fill") {
                 // the toggle style carries its own spacer; keep the badge beside it
                 HStack(spacing: 0) {
@@ -83,7 +53,7 @@ struct GeneralSettingsView: View {
             }
             HyprRow(accessibilityGranted ? "Accessibility granted" : "Accessibility required",
                     icon: accessibilityGranted ? "checkmark.shield" : "exclamationmark.shield",
-                    divider: showsInputMonitoring) {
+                    divider: false) {
                 if accessibilityGranted {
                     HyprChip("OK")
                 } else {
@@ -91,32 +61,6 @@ struct GeneralSettingsView: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }
-            }
-            if showsInputMonitoring {
-                inputMonitoringRow
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var inputMonitoringRow: some View {
-        switch inputMonitoring {
-        case .granted:
-            HyprRow("Input Monitoring granted", icon: "capslock", divider: false) {
-                HyprChip("OK")
-            }
-        case .notGranted:
-            HyprRow("Input Monitoring", icon: "capslock",
-                    subtitle: "Optional. \(InputMonitoringPermission.purpose)", divider: false) {
-                Button("Grant") { InputMonitoringPermission.requestThenOpen() }
-                    .controlSize(.small)
-            }
-        case .needsRelaunch:
-            HyprRow("Input Monitoring needs a relaunch", icon: "capslock",
-                    subtitle: InputMonitoringPermission.purpose, divider: false) {
-                Button(InputMonitoringPermission.relaunchButtonTitle) { InputMonitoringPermission.relaunch() }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
             }
         }
     }

@@ -40,16 +40,6 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("keys-capslock-dark", tab(KeybindsSettingsView()))
         try render("keys-capslock-light", tab(KeybindsSettingsView()), dark: false)
         try render("general-dark", tab(GeneralSettingsView(showTutorial: {})))
-        try withInputMonitoring(granted: false) {
-            try render("general-im-off-dark", tab(GeneralSettingsView(showTutorial: {})))
-            try render("general-im-off-light", tab(GeneralSettingsView(showTutorial: {})), dark: false)
-        }
-        try withInputMonitoring(granted: true) {
-            try render("general-im-on-dark", tab(GeneralSettingsView(showTutorial: {})))
-        }
-        try withInputMonitoring(granted: true, openFailed: true) {
-            try render("general-im-relaunch-dark", tab(GeneralSettingsView(showTutorial: {})))
-        }
         try render("layout-dark", tab(TilingSettingsView()))
         try render("settings-window-dark", SettingsView(showTutorial: {}), size: CGSize(width: 760, height: 600))
 
@@ -74,38 +64,11 @@ final class InterfaceSnapshotTests: XCTestCase {
                    size: CGSize(width: 520, height: 440))
         try render("tour-hypr-key-light", TourView(mode: .firstRun, onDismiss: {}),
                    size: CGSize(width: 520, height: 440), dark: false)
-        try withInputMonitoring(granted: false) {
-            try render("tour-hypr-key-im-off-dark", TourView(mode: .firstRun, onDismiss: {}),
-                       size: CGSize(width: 520, height: 440))
-            try render("tour-hypr-key-im-off-light", TourView(mode: .firstRun, onDismiss: {}),
-                       size: CGSize(width: 520, height: 440), dark: false)
-        }
-        try withInputMonitoring(granted: true) {
-            try render("tour-hypr-key-im-on-dark", TourView(mode: .firstRun, onDismiss: {}),
-                       size: CGSize(width: 520, height: 440))
-        }
-        try withInputMonitoring(granted: true, openFailed: true) {
-            try render("tour-hypr-key-im-relaunch-dark", TourView(mode: .firstRun, onDismiss: {}),
-                       size: CGSize(width: 520, height: 440))
-        }
         try render("whats-new-dark", TourView(mode: .whatsNew, onDismiss: {}),
                    size: CGSize(width: 520, height: 440))
         try render("permissions-gate-dark",
                    PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
                    size: CGSize(width: 520, height: 530))
-        try withInputMonitoring(granted: false) {
-            try render("permissions-gate-im-off-dark",
-                       PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
-                       size: CGSize(width: 520, height: 530))
-            try render("permissions-gate-im-off-light",
-                       PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
-                       size: CGSize(width: 520, height: 530), dark: false)
-        }
-        try withInputMonitoring(granted: true) {
-            try render("permissions-gate-im-on-dark",
-                       PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
-                       size: CGSize(width: 520, height: 530))
-        }
         // the release variant builds the menu with a sparkle updater; the
         // debug variant has none, so only render it there
         #if HYPRMAC_DEBUG_VARIANT
@@ -207,20 +170,6 @@ final class InterfaceSnapshotTests: XCTestCase {
             .padding(.vertical, HyprSpacing.lg)
             .frame(width: 568)
             .background(Color.hyprBackground)
-    }
-
-    /// Input Monitoring as granted or not, and optionally granted with
-    /// the keyboards failing to open (the relaunch state).
-    private func withInputMonitoring(granted: Bool, openFailed: Bool = false,
-                                     _ body: () throws -> Void) rethrows {
-        let savedCheck = InputMonitoringPermission.accessCheck
-        InputMonitoringPermission.accessCheck = { granted }
-        InputMonitoringPermission.openFailedWithAccess = openFailed
-        defer {
-            InputMonitoringPermission.accessCheck = savedCheck
-            InputMonitoringPermission.openFailedWithAccess = false
-        }
-        try body()
     }
 
     private func render<V: View>(_ name: String, _ view: V, width: CGFloat = 568, dark: Bool = true) throws {
