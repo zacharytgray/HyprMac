@@ -8,7 +8,11 @@
   outputs =
     { self, nixpkgs }:
     let
-      darwinSystems = [
+      darwinSystems = builtins.filter (
+        system:
+        nixpkgs.legacyPackages ? ${system}
+        && (builtins.tryEval nixpkgs.legacyPackages.${system}.stdenv.hostPlatform.system).success
+      ) [
         "aarch64-darwin"
         "x86_64-darwin"
       ];

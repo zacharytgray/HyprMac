@@ -1,10 +1,11 @@
 # Nix and Home Manager
 
-HyprMac ships a Nix flake (`flake.nix`) for macOS (`aarch64-darwin` and
-`x86_64-darwin`). It packages the signed, notarized universal release DMG so
-macOS Accessibility permissions stay bound to the upstream Developer ID team
-across updates, and provides a Home Manager module (`programs.hyprmac`) for
-declarative configuration and `launchd` startup.
+HyprMac ships a Nix flake (`flake.nix`) for macOS (`aarch64-darwin`, plus
+`x86_64-darwin` when used with a `nixpkgs` branch that still supports Intel
+macOS, such as `nixpkgs-26.05-darwin`). It packages the signed, notarized
+universal release DMG so macOS Accessibility permissions stay bound to the
+upstream Developer ID team across updates, and provides a Home Manager module
+(`programs.hyprmac`) for declarative configuration and `launchd` startup.
 
 ## Flake outputs
 
