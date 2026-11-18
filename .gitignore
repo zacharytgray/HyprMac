@@ -2,6 +2,8 @@
 build/
 dist/
 DerivedData/
+result
+result-*
 *.app
 *.dSYM
 *.dSYM.zip
