@@ -17,6 +17,9 @@ final class FrameSizingTransactionTests: XCTestCase {
         var sizeReadAdvances: [TimeInterval] = []
         var callAdvance: TimeInterval = 0
         var sizeWriteTimes: [TimeInterval] = []
+        /// a scripted write error still applies the write, like an app that
+        /// answers -25205 to a setter it carried out
+        var scriptedErrorsLand = false
 
         func io() -> FrameSizingIO {
             FrameSizingIO(
@@ -30,14 +33,20 @@ final class FrameSizingTransactionTests: XCTestCase {
                     operations.append("size:\(id)")
                     sizeWriteTimes.append(time)
                     time += writeAdvances.isEmpty ? callAdvance : writeAdvances.removeFirst()
-                    if !writeErrors.isEmpty { return writeErrors.removeFirst() }
+                    if !writeErrors.isEmpty {
+                        if scriptedErrorsLand { frames[id]?.size = size }
+                        return writeErrors.removeFirst()
+                    }
                     frames[id]?.size = size
                     return .success
                 },
                 writePosition: { [unowned self] id, point, _ in
                     operations.append("position:\(id)")
                     time += writeAdvances.isEmpty ? callAdvance : writeAdvances.removeFirst()
-                    if !writeErrors.isEmpty { return writeErrors.removeFirst() }
+                    if !writeErrors.isEmpty {
+                        if scriptedErrorsLand { frames[id]?.origin = point }
+                        return writeErrors.removeFirst()
+                    }
                     frames[id]?.origin = point
                     return .success
                 },
@@ -152,6 +161,69 @@ final class FrameSizingTransactionTests: XCTestCase {
             targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 200, height: 200))],
             usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
         XCTAssertEqual(result.verdict, .rejected(.writeFailed(9, .cannotComplete)))
+    }
+
+    // seen live 2026-11-18: a parked Dia window revealed into the left half
+    // answered both size setters with -25205, even after the 1pt nudge
+    // resend, and read back 1491x1646 against a 1492x1646 target
+    func testARefusedSizeThatReadsBackOnTargetCountsAsWritten() {
+        let fake = Fake()
+        let id: CGWindowID = 7345
+        let target = CGRect(x: 8, y: 38, width: 1492, height: 1646)
+        // the nudge to 1491 took and the resend to 1492 was refused. the
+        // fake applies nothing it scripts, so it already stands there
+        fake.frames[id] = CGRect(x: 8, y: 38, width: 1491, height: 1646)
+        fake.writeErrors = [.success, .attributeUnsupported, .attributeUnsupported]
+        var config = FrameSizingConfiguration()
+        config.positionSettleWindowIDs = [id]
+
+        let result = FrameSizingAttempt(io: fake.io(), configuration: config).apply(
+            targets: [.init(windowID: id, frame: target)],
+            usableFrame: CGRect(x: 0, y: 30, width: 3008, height: 1662), gap: 8, generation: 1)
+
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(result.actualFrames[id], CGRect(x: 8, y: 38, width: 1491, height: 1646))
+        XCTAssertEqual(result.progress.writesCompleted, [id])
+        XCTAssertEqual(fake.operations.filter { $0 == "size:\(id)" }.count, 2,
+                       "a landed refusal goes on to the next setter")
+    }
+
+    func testARefusedSizeThatReadsBackOffTargetIsStillRejected() {
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 100, height: 100)
+        fake.writeErrors = [.attributeUnsupported]
+        let result = FrameSizingAttempt(io: fake.io()).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 200, height: 200))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .rejected(.writeFailed(9, .attributeUnsupported)))
+        XCTAssertEqual(fake.operations.filter { $0 == "size:9" }.count, 1)
+        XCTAssertTrue(fake.operations.contains("size-read:9"), "the refusal was checked against a readback")
+    }
+
+    func testARefusedPositionThatReadsBackOnTargetCountsAsWritten() {
+        let fake = Fake()
+        let target = CGRect(x: 20, y: 20, width: 300, height: 400)
+        fake.frames[27] = CGRect(x: 0, y: 0, width: 300, height: 400)
+        fake.writeErrors = [.success, .attributeUnsupported]
+        fake.scriptedErrorsLand = true
+        let result = FrameSizingAttempt(io: fake.io()).apply(
+            targets: [.init(windowID: 27, frame: target)],
+            usableFrame: CGRect(x: 0, y: 0, width: 1000, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(fake.operations.filter { $0 == "size:27" }.count, 2)
+    }
+
+    func testACannotCompleteIsNotReadBack() {
+        // a messaging timeout: the app is not answering, and a read would
+        // wait out another timeout. the recovery retries it as a timeout
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 200, height: 200)
+        fake.writeErrors = [.cannotComplete]
+        let result = FrameSizingAttempt(io: fake.io()).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 200, height: 200))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .rejected(.writeFailed(9, .cannotComplete)))
+        XCTAssertFalse(fake.operations.contains("size-read:9"))
     }
 
     func testFailedReadIsUnknownAndNeverSynthesizesTarget() {

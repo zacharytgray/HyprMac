@@ -537,7 +537,11 @@ struct FrameSizingAttempt {
             let primary: Result
             if let failure = checkpoint() {
                 primary = Result(verdict: .unknown(failure), actualFrames: actualFrames)
-            } else if error != .success {
+            } else if error != .success,
+                      !landedDespite(error, label: label, target: target,
+                                     origin: label == "position" ? firstOrigin : target.frame.origin,
+                                     progress: &progress,
+                                     checkpoint: checkpoint) {
                 primary = Result(verdict: .rejected(.writeFailed(target.windowID, error)),
                                  actualFrames: actualFrames)
             } else {
@@ -632,8 +636,9 @@ struct FrameSizingAttempt {
             return end(token, windowID: target.windowID, preserving: primary,
                        checkpoint: checkpoint)
         }
-        // every setter returned success. record that before cleanup —
-        // a cleanup error is its own failure and does not unwrite them.
+        // every setter returned success, or read back on target after a
+        // refusal (see landedDespite). record that before cleanup: a
+        // cleanup error is its own failure and does not unwrite them.
         progress.writesCompleted.insert(target.windowID)
         settleStarts[target.windowID] = io.now()
         traceSteps(true)
@@ -641,6 +646,50 @@ struct FrameSizingAttempt {
                         preserving: Result(verdict: .accepted, actualFrames: actualFrames),
                         checkpoint: checkpoint)
         return ended.verdict == .accepted ? nil : ended
+    }
+
+    /// Whether a setter the app refused with -25205 landed anyway. Some
+    /// apps answer that to a write they carried out. Seen live with Dia: its
+    /// size write to 1492x1646 was refused even after the 1pt nudge resend,
+    /// and the window read back at 1491x1646. Failing the candidate on that
+    /// code blamed a window that had taken its frame. So the setter's own
+    /// attribute is read back once, and a value on target within the
+    /// verdict's tolerance counts as written. The full readback after the
+    /// writes still judges the whole frame.
+    ///
+    /// -25204 is not asked: it is what a messaging timeout returns, the
+    /// recovery already treats it as one, and a read would wait out another
+    /// timeout for the same silence.
+    private func landedDespite(_ error: AXError, label: String, target: Target, origin: CGPoint,
+                               progress: inout Progress,
+                               checkpoint: () -> FrameSizingFailure?) -> Bool {
+        guard error == .attributeUnsupported, prepareRead(target.windowID, checkpoint: checkpoint) == nil else { return false }
+        let started = io.now()
+        let landed: Bool
+        let read: String
+        if label.hasPrefix("size") {
+            let (readError, size) = io.readSize(target.windowID, configuration.perCallTimeout)
+            noteTimeoutShape(readError, started: started, progress: &progress)
+            guard readError == .success, let size, size.width.isFinite, size.height.isFinite else { return false }
+            landed = matchesSize(size.width, target.frame.width)
+                && matchesSize(size.height, target.frame.height)
+            read = "\(traced(size.width))x\(traced(size.height))"
+        } else {
+            let (readError, position) = io.readPosition(target.windowID, configuration.perCallTimeout)
+            noteTimeoutShape(readError, started: started, progress: &progress)
+            guard readError == .success, let position, position.x.isFinite, position.y.isFinite else { return false }
+            landed = abs(position.x - origin.x) <= configuration.positionTolerance
+                && abs(position.y - origin.y) <= configuration.positionTolerance
+            read = "(\(traced(position.x)),\(traced(position.y)))"
+        }
+        guard checkpoint() == nil else { return false }
+        let wanted = label.hasPrefix("size")
+            ? "\(traced(target.frame.width))x\(traced(target.frame.height))"
+            : "(\(traced(origin.x)),\(traced(origin.y)))"
+        hyprLog(.notice, .tiling, "\(label) write refused, read back: wid=\(target.windowID) error=\(error.rawValue)"
+                + " read=\(read) target=\(wanted)"
+                + (landed ? ": it landed, treating the write as done" : ": off target, failing the write"))
+        return landed
     }
 
     private func read(_ target: Target, actualFrames: inout [CGWindowID: CGRect],
