@@ -106,7 +106,8 @@ Homebrew refuses to load casks from third-party taps until you trust them. The f
 only the HyprMac cask, which also lets `brew upgrade --cask hyprmac` work later.
 
 No Homebrew? Download **[HyprMac.dmg][dmg]**, open it, and drag HyprMac to Applications. Older
-versions are on the [releases page][releases].
+versions are on the [releases page][releases]. Using Nix or Home Manager on macOS? See
+[Nix and Home Manager](docs/nix.md).
 
 Then follow the [install guide](https://hyprmac.app/guides/install/) for first-run setup,
 permissions, and the recommended macOS settings. A short tour on first launch walks you through
@@ -352,6 +353,7 @@ it every day.
 - [Keybinds and actions](docs/keybinds-and-actions.md): the `Action` enum and its JSON schema
 - [Status bars](docs/status-bar.md): `state.json`, the change hook and `hyprmac://` links for sketchybar, turned on by hand in `monitor-config.json`
 - [Control from other apps](docs/external-control.md): `hyprmac://action/…` links for BetterTouchTool, Raycast and scripts
+- [Nix and Home Manager](docs/nix.md): flake package, overlay, and declarative `programs.hyprmac` setup on macOS
 - [Debugging](docs/debugging.md): Console filters, verbose logging, common recipes
 - [Release pipeline](docs/release.md): how a release is built, signed, and published
 
