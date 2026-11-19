@@ -199,6 +199,17 @@ final class KeybindOverlayContentTests: XCTestCase {
         XCTAssertEqual(command(kVK_Home, "\u{F729}", .function), .swallow)
     }
 
+    func testOverlayAsksTheInjectedScreenAndStaysClosedWithoutOne() {
+        let overlay = KeybindOverlayController()
+        var asked = 0
+        overlay.screenUnderCursor = { asked += 1; return nil }
+
+        overlay.toggle(keybinds: [])
+
+        XCTAssertEqual(asked, 1, "the overlay must open on the injected screen, not NSScreen.main")
+        XCTAssertFalse(overlay.isShowing)
+    }
+
     func testCommandAndControlChordsPassThrough() {
         XCTAssertEqual(command(kVK_ANSI_C, "c", .command), .passThrough)
         XCTAssertEqual(command(kVK_DownArrow, "\u{F701}", .control), .passThrough)
