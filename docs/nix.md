@@ -3,7 +3,9 @@
 The flake and Home Manager module are community-maintained. They package the
 signed, notarized release DMG, so Accessibility trust survives updates. Version
 and SHA-256 come from `Casks/hyprmac.rb`. Managed config files need HyprMac
-0.25.0 or later; older builds don't reload a re-pointed link.
+0.25.0 or later; older builds don't reload a re-pointed link. This flake lands
+only after a release that includes that support, so the cask pins 0.25.0 or
+later from the start.
 
 ## Install
 
@@ -40,11 +42,20 @@ programs.hyprmac = {
 `enabled = true` for any you leave out. Set `settings.version` to override the
 schema version. Missing built-in keybinds are added at load, as for any config.
 
+Turn on `targets.darwin.copyApps`. It keeps a real copy in
+`~/Applications/Home Manager Apps`, which is what macOS grants Accessibility
+to. Running straight from the store path can hit the macOS 26.3 code signature
+problem Home Manager
+[worked around](https://github.com/nix-community/home-manager/commit/e82d4a4ecd18363aa2054cbaa3e32e4134c3dbf4).
+
 The launchd agent restarts HyprMac after a crash, but not after you quit it. It
-runs the copy in `~/Applications/Home Manager Apps` when
-`targets.darwin.copyApps` is on, and the store path otherwise. Leave the in-app
-"Launch at login" off when you use it. The agent hasn't been tested by the
-HyprMac maintainers.
+runs the copied app when `copyApps` is on, and the store path otherwise. Leave
+the in-app "Launch at login" off when you use it. Quit HyprMac before the switch
+that first turns on `launchd.enable`, or the agent starts a second copy. The
+agent hasn't been tested by the HyprMac maintainers.
+
+After a switch that updates HyprMac, quit it and open it again. With `copyApps`
+the agent isn't restarted, so the old version keeps running.
 
 ## Read-only behavior
 
@@ -64,6 +75,10 @@ If `config.json` or `monitor-config.json` already exists as a regular file,
 Home Manager stops the switch rather than replace it. Move the file aside, or
 run `home-manager switch -b backup`. To carry your current settings over, copy
 values from the old file into `settings`.
+
+An iCloud sync link at `config.json` blocks the switch the same way. Turn off
+Settings → General → "Sync settings via iCloud" first. That puts a regular file
+back at the path, which you can then move aside as above.
 
 ## Caps Lock
 
