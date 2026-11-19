@@ -359,10 +359,71 @@ off the destination screen moves first to a staging origin where that size
 stands on the screen, is sized there, then moves to its target and is sized
 again (`stagingOrigins`).
 
-An app can report the size it was last asked for and refuse an equal write
-with `attributeUnsupported` (-25205) without resizing. `HyprWindow.writeSize`
-answers that refusal by writing one point narrower and then the target
-(`resendRefusedSize`).
+A setter can answer `attributeUnsupported` (-25205) whatever the app did with
+it. Dia gives that answer to size writes it carried out (seen live 2026-11-18:
+the window server had the new size when the answer came back) and to a close
+press that closed the window. A note from 2026-10-30 also has it not applying
+an equal write. So the code is not evidence either way.
+
+`HyprWindow.writeSize` first answers it by writing one point narrower and then
+the target (`resendRefusedSize`). Either way the window becomes a suspect.
+
+Suspects live in `FrameSuspects`, keyed by owner pid and window id. The key is
+not the `HyprWindow` wrapper, because a fresh window walk builds new wrappers
+and an admission retry or a rollback must still find the mark. A mark is
+recorded as soon as the setter's answer returns, before any deadline check,
+and it lasts as long as the window does. Nothing expires and no pass clears
+it. It is retired only when discovery forgets the window
+(`forgetMinimumSize`) or the window comes back after a verified close
+(`forgetRememberedSlot`), so a reused id starts clean. Hiding, minimizing and
+leaving a tree keep it. The cost of a lasting mark is a 0.2 ms server lookup
+in place of two AX calls.
+
+Each window has one frame reader per operation (`FrameSizingAttempt.FrameSource`),
+used for every read of it: the capture, the in-place confirmation, the
+position settle, the readback and the rollback's readback. A suspect reads the
+window server (`FrameSizingIO.serverFrame`, a lookup by window id of the whole
+window bounds, in the same global coordinates as AX) and is never asked
+through AX, so a failing or slow AX read cannot veto or starve the verdict.
+Every other window reads AX. The one change of reader inside an operation is a
+setter answering -25205 during it, which moves that window to the server for
+the rest of it. So a rollback restores a suspect to what was on screen, and a
+layout still skips its writes when every window confirms on target through
+its own reader.
+
+- Only the attribute whose last setter still answered -25205 is held against
+  its target (`refusedSizes`, `refusedPositions`). Off target on the server
+  after `serverMismatchSettle` (360 ms from the window's last setter), the
+  attempt fails with `writeFailed(-25205)`, never as a geometry mismatch, so
+  no minimum is learned from it and no adjusted layout runs. The admission
+  recovery then floats the waiting newcomers after its retry: the refused
+  window itself when it is the newcomer, and the newcomers beside it when it
+  is an incumbent.
+- Everything else is judged like any other window, on the server's frame. A
+  size short of its target after a size setter that got a success code is
+  still a geometry mismatch, and still teaches the minimum. That holds when
+  only the position was refused, and when the last size setter succeeded.
+- A marked window can pass alone and still be on its way: 412 wide against a
+  400 target lies over its neighbour until the server catches up. An overlap,
+  gap or containment rejection that names a marked window waits for that
+  window's settle and judges the whole layout again. A valid layout returns
+  at once.
+- The pass budget ends first: `deadlineExceeded`, a timeout the admission
+  recovery retries.
+- The window server has no description twice running (the window closed):
+  `windowUnavailable`, not a refusal. A setter that returns
+  `invalidUIElement` is the same. When that window is an incumbent, the
+  admission recovery retries on the timeout backoff instead of floating the
+  newcomers at once (`AdmissionRecovery.unavailableIncumbent`).
+
+The capture before a pass reads an unmarked window through AX. The window
+server trails the app by tens of ms, so a server capture taken right after
+another pass's write could return the frame from before that write, and a
+rollback would then restore the wrong one. So a window that gets its first
+mark in the middle of a pass is rolled back to the frame AX gave before the
+refusal, which is the frame HyprMac last laid it out at. The next capture
+reads the server. The lookup costs about 0.2 ms (p99 0.25 ms over 3980 calls
+on the hub) and runs once per suspect window per sample.
 
 A position-first window whose target fits the screen it stands on sizes as
 soon as its first position read is on target, because that screen cannot clamp

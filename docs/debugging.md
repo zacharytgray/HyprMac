@@ -351,6 +351,41 @@ The admission recovery's timeout lines, all `[notice] [tiling]`:
   not get all three setters back, so the last retry had nothing to keep. A
   later layout that tiles the window releases it.
 
+A setter that answers -25205, all `[notice] [tiling]`:
+
+- `size write refused: wid=<id> pid=<pid> size=<w>x<h> — resent after a 1pt
+  nudge: <code> server=(…)`: the first answer, the code the resend got, and
+  where the window server had the window right after. The server trails the
+  app by a few tens of ms, so an old size here is not yet a failed write.
+- `size write answered -25205 before its resend: wid=<id> phase=<phase>
+  target=(…): the window server judges this window`: the resend got a success
+  code. The readback still comes from the window server.
+- `size write answered -25205: wid=<id> phase=<phase> target=(…): the window
+  server judges this window` (also `position`, `size2`, `position2`): the
+  resend was answered -25205 too. The attempt goes on.
+- `refused <size|position|size+position> write judged by the window server:
+  wid=<id> phase=<phase> target=(…) server=(…): on target`, or `: off target,
+  write failed`: the verdict for the attribute whose last setter was still
+  answered -25205. Off target ends in the usual
+  `verified layout candidate failed: reason=writeFailed(<id>, -25205)`.
+- `window server has no frame for wid=<id> phase=<phase> twice running:
+  unavailable, not refused`: the window closed during the readback.
+- `admission retry lost window <id>: ids=[…] ws<N> cause=<failure> — not a
+  refusal, retrying in <ms>ms with a fresh window walk`: the retry could
+  not find a window that is not one of its newcomers. It shares the timeout
+  retries. Each retry walks the windows again and the engine removes a tree
+  member the walk no longer lists, so it gets another chance to see a close;
+  nothing promises the window is gone by then. If the last retry still
+  loses a window, the newcomers float.
+
+The trigger inside Dia is not known. Each refusal followed a change of Dia's
+main window, and a standalone AX client could not cause one. To separate the
+candidates, log at the refusal: the app's `AXEnhancedUserInterface` value and
+whether this batch toggled it (it read false on 2026-11-18), the window's
+`AXMain` and whether the app is frontmost, the time since the last
+`focusWithoutRaise` and the last observer registration for that pid, and the
+time since the previous setter to the same window.
+
 `MinSizeMemory` then logs what it did with that evidence under
 `category: lifecycle`, in these shapes:
 

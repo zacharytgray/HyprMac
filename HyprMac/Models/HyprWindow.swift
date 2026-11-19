@@ -184,16 +184,36 @@ class HyprWindow: Equatable, Hashable {
         var point = point
         guard let value = AXValueCreate(.cgPoint, &point) else { return .illegalArgument }
         cachedFrame = nil
-        return AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
+        let error = AXUIElementSetAttributeValue(element, kAXPositionAttribute as CFString, value)
+        // recorded when the answer returns, as a size write's is, so a
+        // caller that stops on its deadline cannot lose it
+        if error == .attributeUnsupported {
+            FrameSuspects.shared.mark(FrameSuspects.Key(pid: ownerPID, windowID: windowID))
+        }
+        return error
     }
 
     func writeSize(_ size: CGSize) -> AXError {
         let error = setSize(size)
+        // the resend below can hide this answer behind a success code. the
+        // window gave it all the same, so it is marked by identity, not on
+        // this wrapper: a fresh walk builds another wrapper for the window
+        if error == .attributeUnsupported {
+            FrameSuspects.shared.mark(FrameSuspects.Key(pid: ownerPID, windowID: windowID))
+        }
         guard error == .attributeUnsupported else { return error }
         let resent = Self.resendRefusedSize(size, write: setSize)
+        // the one extra read here is the window server's, about 0.2 ms and
+        // no call into the app. an AX read would wait on the app again,
+        // outside the attempt's timeout bookkeeping
         hyprLog(.notice, .tiling, "size write refused: wid=\(windowID) pid=\(ownerPID)"
-                + " size=\(Int(size.width))x\(Int(size.height)) — resent after a 1pt nudge: \(resent.rawValue)")
+                + " size=\(Int(size.width))x\(Int(size.height)) — resent after a 1pt nudge: \(resent.rawValue)"
+                + " server=\(Self.traced(WindowStacking.bounds(of: windowID)))")
         return resent
+    }
+
+    private static func traced(_ rect: CGRect?) -> String {
+        rect.map { "(\(Int($0.minX)),\(Int($0.minY)),\(Int($0.width)),\(Int($0.height)))" } ?? "unread"
     }
 
     private func setSize(_ size: CGSize) -> AXError {

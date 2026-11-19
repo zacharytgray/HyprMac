@@ -342,6 +342,9 @@ class TilingEngine {
     /// Drop any stored min-size memory for `windowID`. Called when a
     /// window is forgotten by the discovery layer.
     func forgetMinimumSize(windowID: CGWindowID) {
+        // discovery forgot the window: its suspect mark goes with it. leaving
+        // a tree, hiding and minimizing do not come through here
+        FrameSuspects.shared.forget(windowID: windowID)
         forgetAdmittedIdentity(windowID: windowID)
         slotMemory.removeValue(forKey: windowID)
         minSizes.forget(windowID: windowID)
@@ -3459,6 +3462,8 @@ class TilingEngine {
     /// smart insert like a new window's. For a window that came back after
     /// a verified close; its minimums and admission stay.
     func forgetRememberedSlot(_ windowID: CGWindowID) {
+        // back after a verified close: a reused id starts clean
+        FrameSuspects.shared.forget(windowID: windowID)
         guard slotMemory.removeValue(forKey: windowID) != nil else { return }
         hyprLog(.debug, .tiling, "slot forgotten: \(windowID) reopened after a close")
     }

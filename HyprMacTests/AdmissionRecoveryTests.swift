@@ -234,6 +234,121 @@ final class AdmissionRecoveryTests: XCTestCase {
         XCTAssertEqual(recovery.phase(of: 26), .awaitingRetry)
     }
 
+    // MARK: - a pass that lost an incumbent
+
+    func testAnIncumbentThatVanishedDuringTheRetryDoesNotFloatTheNewcomer() {
+        // 11 closed between the capture and the readback, or the window
+        // server had no description of it. 26 refused nothing
+        harness.failures = [.windowUnavailable(11), nil]
+        harness.placements = [[], [26]]
+        recovery.note(failedAdmission([26], failure: .writeFailed(11, .attributeUnsupported)))
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty, "missing evidence about an incumbent is not a refusal")
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingRetry)
+        XCTAssertEqual(harness.scheduled.map(\.delay), [0.25, 0.5])
+
+        harness.alive.remove(11)
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty, "the rerun without the gone window tiled it")
+        XCTAssertEqual(harness.attempts.count, 2)
+    }
+
+    func testAnIncumbentThatStaysUnavailableIsBoundedAndEndsInTheFloatNeverAHold() {
+        harness.failure = .windowUnavailable(11)
+        recovery.note(failedAdmission([26], failure: .windowUnavailable(11)))
+        for _ in 0...recovery.timeoutRetryDelays.count { harness.fire() }
+
+        XCTAssertEqual(harness.attempts.count, 1 + recovery.timeoutRetryDelays.count)
+        XCTAssertEqual(harness.scheduled.map(\.delay), [0.25, 0.5, 1.0])
+        XCTAssertEqual(harness.floated.map(\.id), [26], "the fallback is the float, as for a refusal")
+        XCTAssertNil(recovery.phase(of: 26), "no hold")
+
+        harness.fire()
+        XCTAssertEqual(harness.attempts.count, 1 + recovery.timeoutRetryDelays.count, "nothing re-arms")
+    }
+
+    func testAnIncumbentLostUnderTwoFailedCleanupsStillDoesNotFloatTheNewcomer() {
+        harness.failure = .cleanupFailed(
+            11, primary: .cleanupFailed(11, primary: .windowUnavailable(11), error: .cannotComplete),
+            error: .failure)
+        recovery.note(failedAdmission([26], failure: .windowUnavailable(11)))
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingRetry)
+        XCTAssertEqual(harness.scheduled.map(\.delay), [0.25, 0.5])
+    }
+
+    func testAnIncumbentClosingUnderItsSetterReachesTheBackoffAndTilesOnceItIsGone() throws {
+        // the setter path end to end: 11 closes under its size setter, the
+        // sizing attempt reports it, and the recovery acts on that report.
+        // the placement depends on 11 being gone, not on a script
+        var time: TimeInterval = 0
+        let io = FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { id, _, _ in id == 11 ? .invalidUIElement : .success },
+            writePosition: { _, _, _ in .success },
+            readPosition: { _, _ in (.success, .zero) },
+            readSize: { _, _ in (.success, CGSize(width: 400, height: 800)) },
+            now: { time },
+            sleep: { time += $0 },
+            currentGeneration: { 1 })
+        let pass = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 11, frame: CGRect(x: 0, y: 0, width: 400, height: 800)),
+                      .init(windowID: 26, frame: CGRect(x: 408, y: 0, width: 400, height: 800))],
+            usableFrame: CGRect(x: 0, y: 0, width: 816, height: 800), gap: 8, generation: 1)
+        let failure = try XCTUnwrap(pass.verdict.failure)
+        XCTAssertEqual(failure, .windowUnavailable(11), "not writeFailed(11, invalidUIElement)")
+
+        harness.lostWhileAlive = (11, failure)
+        recovery.note(failedAdmission([26], failure: failure))
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty, "the first retry still lists 11 and loses it again")
+        XCTAssertEqual(recovery.phase(of: 26), .awaitingRetry)
+        XCTAssertEqual(harness.scheduled.map(\.delay), [0.25, 0.5])
+
+        harness.alive.remove(11)
+        harness.fire()
+
+        XCTAssertTrue(harness.floated.isEmpty)
+        XCTAssertTrue(recovery.pendingWindowIDs.isEmpty, "tiled by the retry that no longer lists 11")
+        XCTAssertEqual(harness.attempts.count, 2)
+    }
+
+    func testANewcomerThatIsItselfUnavailableGetsNoExtraRetry() {
+        harness.failure = .windowUnavailable(26)
+        recovery.note(failedAdmission([26], failure: .geometryMismatch(26)))
+        harness.fire()
+
+        XCTAssertEqual(harness.scheduled.count, 1, "its own failure is not a stale membership")
+        XCTAssertEqual(harness.floated.map(\.id), [26])
+    }
+
+    func testTheLostIncumbentRuleNamesOnlyAWindowOutsideTheNewcomers() {
+        XCTAssertEqual(AdmissionRecovery.unavailableIncumbent(.windowUnavailable(11), newcomers: [26]), 11)
+        XCTAssertEqual(AdmissionRecovery.unavailableIncumbent(
+            .cleanupFailed(11, primary: .windowUnavailable(11), error: .failure), newcomers: [26]), 11)
+        // both cleanups of a write failed: the transaction wraps twice
+        let nested = FrameSizingFailure.cleanupFailed(
+            11, primary: .cleanupFailed(11, primary: .windowUnavailable(11), error: .cannotComplete),
+            error: .failure)
+        XCTAssertEqual(AdmissionRecovery.unavailableIncumbent(nested, newcomers: [26]), 11)
+        XCTAssertNil(AdmissionRecovery.unavailableIncumbent(
+            .cleanupFailed(26, primary: .cleanupFailed(26, primary: .windowUnavailable(26), error: .failure),
+                           error: .failure), newcomers: [26]))
+        XCTAssertNil(AdmissionRecovery.unavailableIncumbent(
+            .cleanupFailed(11, primary: nil, error: .failure), newcomers: [26]))
+        XCTAssertNil(AdmissionRecovery.unavailableIncumbent(.windowUnavailable(26), newcomers: [26]))
+        XCTAssertNil(AdmissionRecovery.unavailableIncumbent(.writeFailed(11, .attributeUnsupported),
+                                                            newcomers: [26]))
+        XCTAssertNil(AdmissionRecovery.unavailableIncumbent(.geometryMismatch(11), newcomers: [26]))
+        XCTAssertNil(AdmissionRecovery.unavailableIncumbent(nil, newcomers: [26]))
+    }
+
     func testARefusalAfterATimeoutStillFloats() {
         harness.failures = [.deadlineExceeded, .geometryMismatch(26)]
         recovery.note(failedAdmission([26], failure: .deadlineExceeded))
@@ -1115,6 +1230,9 @@ private final class RecoveryHarness {
     /// the production retile reports its pass back through `note`
     weak var reportsTo: AdmissionRecovery?
     var failure: FrameSizingFailure? = .geometryMismatch(11)
+    /// an incumbent the pass loses: every attempt fails with `failure`
+    /// while `id` is alive and places its newcomers once it is not
+    var lostWhileAlive: (id: CGWindowID, failure: FrameSizingFailure)?
     var displayTransitionPending = false
     var sessionInterrupted = false
 
@@ -1168,6 +1286,13 @@ private final class RecoveryHarness {
             self.calls.append("attempt")
             self.attempts.append(Attempt(workspace: workspace, bypass: bypass,
                                          keepOnTimeout: keepOnTimeout))
+            if let lost = self.lostWhileAlive {
+                // the pass fails for as long as the walk still lists the
+                // window, and tiles every newcomer once it is gone
+                return self.alive.contains(lost.id)
+                    ? AdmissionRecovery.AttemptResult(placed: [], failure: lost.failure)
+                    : AdmissionRecovery.AttemptResult(placed: Set(bypass.keys), failure: nil)
+            }
             let failure = self.failures.isEmpty ? self.failure : self.failures.removeFirst()
             let placed = self.placements.isEmpty ? self.place : self.placements.removeFirst()
             let refused = self.refusals.isEmpty ? [] : self.refusals.removeFirst()

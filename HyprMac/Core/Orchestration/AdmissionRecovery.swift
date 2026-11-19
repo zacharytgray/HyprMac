@@ -59,6 +59,10 @@ struct AdmissionPass {
 /// It gets up to `timeoutRetryDelays.count` more retries with backoff, and
 /// the last one keeps the window tiled with its key marked unverified.
 ///
+/// A retry that lost a window other than its newcomers ran with a stale
+/// membership. It shares those retries, and the last one floats as a
+/// refusal does: see `unavailableIncumbent`.
+///
 /// Once a workspace's newcomers are floated the key gets one ordinary
 /// retile, so incumbents the refused pass left out of the tree are admitted
 /// on their own. Anything that retile still leaves visible, nonfloating and
@@ -535,9 +539,14 @@ final class AdmissionRecovery {
                     }
                     var timedOut: Set<CGWindowID> = []
                     var keyBackoff: TimeInterval?
+                    // the pass lost a window that is not one of these newcomers:
+                    // the membership it ran with is stale, and nobody refused
+                    let lost = Self.unavailableIncumbent(result.failure,
+                                                         newcomers: Set(entry.bypass.keys))
                     for id in waiting.sorted() {
                         if !refused.contains(id),
-                           let delay = rearmAfterTimeout(id, failure: result.failure) {
+                           let delay = rearmAfterTimeout(id, failure: result.failure,
+                                                         staleMembership: lost != nil) {
                             timedOut.insert(id)
                             keyBackoff = min(keyBackoff ?? delay, delay)
                         } else if let failure = result.failure, failure.isTimeout, !refused.contains(id) {
@@ -551,9 +560,17 @@ final class AdmissionRecovery {
                     }
                     if let keyBackoff {
                         backoff = min(backoff ?? keyBackoff, keyBackoff)
-                        hyprLog(.notice, .tiling, "admission retry timed out: ids=\(Self.list(timedOut))"
-                                + " ws\(workspace) cause=\(Self.text(result.failure))"
-                                + " — not a refusal, retrying in \(Int((keyBackoff * 1000).rounded()))ms")
+                        if let lost {
+                            hyprLog(.notice, .tiling, "admission retry lost window \(lost):"
+                                    + " ids=\(Self.list(timedOut)) ws\(workspace)"
+                                    + " cause=\(Self.text(result.failure)) — not a refusal,"
+                                    + " retrying in \(Int((keyBackoff * 1000).rounded()))ms"
+                                    + " with a fresh window walk")
+                        } else {
+                            hyprLog(.notice, .tiling, "admission retry timed out: ids=\(Self.list(timedOut))"
+                                    + " ws\(workspace) cause=\(Self.text(result.failure))"
+                                    + " — not a refusal, retrying in \(Int((keyBackoff * 1000).rounded()))ms")
+                        }
                     }
                     break
                 }
@@ -613,6 +630,31 @@ final class AdmissionRecovery {
         return giveUp.count < waiting.count ? giveUp : nil
     }
 
+    /// The window a pass could not find, when it is not one of `newcomers`:
+    /// an incumbent closed between the capture and the readback, or the
+    /// window server had no description of it twice running. The pass ran
+    /// with a membership that no longer holds, which says nothing against
+    /// the newcomers. It gets the timeout's bounded retries. Each retry
+    /// walks the windows again before it lays out, and the engine removes a
+    /// tree member the walk no longer lists, so a retry gets another chance
+    /// to see the close. Nothing promises the window is gone by then.
+    /// Unlike a timeout it is never held or kept unverified: if the last
+    /// retry still loses a window, the newcomers float as before.
+    ///
+    /// Both cleanups of a write can fail, which wraps the failure twice, so
+    /// every `cleanupFailed` layer is unwrapped.
+    static func unavailableIncumbent(_ failure: FrameSizingFailure?,
+                                     newcomers: Set<CGWindowID>) -> CGWindowID? {
+        switch failure {
+        case let .windowUnavailable(id)? where !newcomers.contains(id):
+            return id
+        case let .cleanupFailed(_, primary: primary?, _)?:
+            return unavailableIncumbent(primary, newcomers: newcomers)
+        default:
+            return nil
+        }
+    }
+
     /// The last retry timed out before every window got its whole frame, so
     /// there was no tile to keep. Hold it: an explicit record with no timer
     /// and no float, released when a later layout tiles it, exactly like an
@@ -630,10 +672,13 @@ final class AdmissionRecovery {
     /// Give a retry that timed out another one later, while the bound lasts.
     /// A timeout is the app not answering, not the app refusing, so it does
     /// not earn the float a refusal gets.
-    /// - Returns: the delay to arm, or nil when the failure is not a timeout
-    ///   or the bound is spent.
-    private func rearmAfterTimeout(_ id: CGWindowID, failure: FrameSizingFailure?) -> TimeInterval? {
-        guard let failure, failure.isTimeout, var record = records[id],
+    /// A pass that lost an incumbent (`staleMembership`, see
+    /// `unavailableIncumbent`) shares the same bound.
+    /// - Returns: the delay to arm, or nil when the failure is neither, or
+    ///   the bound is spent.
+    private func rearmAfterTimeout(_ id: CGWindowID, failure: FrameSizingFailure?,
+                                   staleMembership: Bool = false) -> TimeInterval? {
+        guard let failure, failure.isTimeout || staleMembership, var record = records[id],
               record.timeouts < timeoutRetryDelays.count else { return nil }
         let delay = timeoutRetryDelays[record.timeouts]
         record.timeouts += 1

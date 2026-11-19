@@ -154,6 +154,541 @@ final class FrameSizingTransactionTests: XCTestCase {
         XCTAssertEqual(result.verdict, .rejected(.writeFailed(9, .cannotComplete)))
     }
 
+    // PR #82, 2026-11-18: a parked Dia window revealed into the left half
+    // answered its size write with -25205 again after the 1pt nudge resend.
+    // AX then read 1491x1646, the nudge value, whatever the window did.
+    private func refusedReveal(server: CGRect?) -> (FrameSizingAttempt.Result, Fake) {
+        let fake = Fake()
+        let id: CGWindowID = 7345
+        // the fake applies nothing it scripts an error for, so AX already
+        // reports the nudge value, as Dia's did
+        fake.frames[id] = CGRect(x: 8, y: 38, width: 1491, height: 1646)
+        fake.writeErrors = [.success, .attributeUnsupported, .attributeUnsupported]
+        var config = FrameSizingConfiguration()
+        config.positionSettleWindowIDs = [id]
+        var io = fake.io()
+        if let server { io.serverFrame = { _ in server } }
+        let result = FrameSizingAttempt(io: io, configuration: config).apply(
+            targets: [.init(windowID: id, frame: CGRect(x: 8, y: 38, width: 1492, height: 1646))],
+            usableFrame: CGRect(x: 0, y: 30, width: 3008, height: 1662), gap: 8, generation: 1)
+        return (result, fake)
+    }
+
+    func testARefusedSizeTheWindowServerHasOnTargetIsAccepted() {
+        let landed = CGRect(x: 8, y: 38, width: 1492, height: 1646)
+        let (result, fake) = refusedReveal(server: landed)
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(result.actualFrames[7345], landed, "the published frame is the window server's")
+        XCTAssertEqual(result.progress.serverJudged, [7345])
+        XCTAssertEqual(result.progress.writesCompleted, [7345])
+        XCTAssertEqual(fake.operations.filter { $0 == "size:7345" }.count, 2,
+                       "a refused setter goes on to the next one")
+    }
+
+    func testARefusedSizeIsNotAcceptedOnTheAppsOwnReadback() {
+        // AX says 1491 wide, a point off the target. the window never
+        // shrank: the window server still has it full width
+        let (result, _) = refusedReveal(server: CGRect(x: 8, y: 38, width: 2992, height: 1646))
+        XCTAssertEqual(result.verdict, .rejected(.writeFailed(7345, .attributeUnsupported)),
+                       "a write failure, not a geometry mismatch: nothing was learned about a minimum")
+        XCTAssertEqual(result.actualFrames[7345]?.width, 2992)
+    }
+
+    func testARefusedSizeWithNoWindowServerProviderStaysAWriteFailure() {
+        let (result, fake) = refusedReveal(server: nil)
+        XCTAssertEqual(result.verdict, .rejected(.writeFailed(7345, .attributeUnsupported)))
+        XCTAssertEqual(fake.operations.filter { $0 == "size:7345" }.count, 1)
+        XCTAssertTrue(result.progress.serverJudged.isEmpty)
+    }
+
+    // both size writes on window 9 answered -25205 (size, position, size2),
+    // then the window server answers from `server`, which sees the fake's clock
+    private func refusedGrow(deadline: TimeInterval? = nil,
+                             lastSize: AXError = .attributeUnsupported,
+                             server: @escaping (Fake) -> CGRect?) -> (FrameSizingAttempt.Result, Fake) {
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 200, height: 200)
+        fake.writeErrors = [.attributeUnsupported, .success, lastSize]
+        var config = FrameSizingConfiguration()
+        if let deadline {
+            config.deadline = deadline
+            config.deadlineCap = deadline
+        }
+        var io = fake.io()
+        io.serverFrame = { [unowned fake] _ in server(fake) }
+        let result = FrameSizingAttempt(io: io, configuration: config).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 200, height: 200))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        return (result, fake)
+    }
+
+    private static let old9 = CGRect(x: 0, y: 0, width: 100, height: 200)
+    private static let landed9 = CGRect(x: 0, y: 0, width: 200, height: 200)
+
+    func testAWindowServerThatCatchesUpInsideThePassIsAccepted() {
+        // the ordinary settle would have judged the old bounds at 240 ms
+        for lag in [0.0, 0.24, 0.30] {
+            let (result, fake) = refusedGrow { $0.time + 0.0001 >= lag ? Self.landed9 : Self.old9 }
+            XCTAssertEqual(result.verdict, .accepted, "server lag \(lag)")
+            XCTAssertEqual(result.actualFrames[9], Self.landed9)
+            XCTAssertLessThan(fake.time, 0.40)
+        }
+    }
+
+    func testAWindowServerStillOffTargetAfterItsWholeWindowIsAFailedWrite() {
+        let (result, fake) = refusedGrow { _ in Self.old9 }
+        XCTAssertEqual(result.verdict, .rejected(.writeFailed(9, .attributeUnsupported)))
+        XCTAssertGreaterThanOrEqual(fake.time + 0.0001, 0.36, "not judged before the server settle ran")
+        XCTAssertEqual(result.progress.refusedSetters, [9])
+    }
+
+    func testASizeWhoseLastSetterSucceededIsJudgedAsGeometry() {
+        // size answered -25205, size2 got a success code: the last answer
+        // counts, so a size still short is a mismatch to learn from
+        let (result, _) = refusedGrow(lastSize: .success) { _ in Self.old9 }
+        XCTAssertEqual(result.verdict, .rejected(.geometryMismatch(9)))
+        XCTAssertEqual(result.progress.serverJudged, [9])
+        XCTAssertTrue(result.progress.refusedSetters.isEmpty)
+    }
+
+    func testABudgetThatEndsBeforeTheServerWindowIsATimeoutNotARefusal() {
+        let (result, _) = refusedGrow(deadline: 0.2) { _ in Self.old9 }
+        XCTAssertEqual(result.verdict, .unknown(.deadlineExceeded))
+        XCTAssertTrue(result.verdict.failure?.isTimeout ?? false, "the recovery retries it, never floats for it")
+    }
+
+    func testOneMissingWindowServerFrameIsAskedAgain() {
+        var asked = 0
+        let (result, _) = refusedGrow { _ in
+            asked += 1
+            return asked == 1 ? nil : Self.landed9
+        }
+        XCTAssertEqual(result.verdict, .accepted)
+    }
+
+    func testAWindowTheServerNoLongerDescribesIsUnavailableNotRefused() {
+        // it closed after the AX reads: missing evidence, not a refused frame
+        let (result, _) = refusedGrow { _ in nil }
+        XCTAssertEqual(result.verdict, .unknown(.windowUnavailable(9)))
+    }
+
+    func testANewerGenerationDuringAServerLookupStopsThePass() {
+        let (result, _) = refusedGrow { fake in
+            fake.generation = 2
+            return Self.landed9
+        }
+        XCTAssertEqual(result.verdict, .unknown(.superseded))
+    }
+
+    func testARefusedPositionOnAStagedWindowStillSendsEverySetter() {
+        // position-first with a staging origin: position, size, position2, size2
+        let fake = Fake()
+        let id: CGWindowID = 31
+        let target = CGRect(x: -1072, y: 853, width: 1064, height: 462)
+        fake.frames[id] = CGRect(x: 3439, y: 1310, width: 1708, height: 1296)
+        fake.writeErrors = [.attributeUnsupported, .success, .attributeUnsupported, .success]
+        var config = FrameSizingConfiguration()
+        config.positionSettleWindowIDs = [id]
+        config.stagingOrigins = [id: CGPoint(x: -1072, y: -88)]
+        var io = fake.io()
+        io.serverFrame = { _ in target }
+        let result = FrameSizingAttempt(io: io, configuration: config).apply(
+            targets: [.init(windowID: id, frame: target)],
+            usableFrame: CGRect(x: -1080, y: -96, width: 1080, height: 1890), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .accepted, "a display left of and above the primary: negative origins")
+        XCTAssertEqual(fake.operations.filter { $0 == "position:\(id)" }.count, 2)
+        XCTAssertEqual(fake.operations.filter { $0 == "size:\(id)" }.count, 2)
+        XCTAssertEqual(result.progress.refusedSetters, [id])
+    }
+
+    // the 1pt nudge got a success code after a first -25205
+    private func nudged(server: CGRect) -> FrameSizingAttempt.Result {
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 500, height: 400)
+        var io = fake.io()
+        io.serverFrame = { _ in server }
+        io.suspects.mark(.init(pid: 0, windowID: 9))
+        return FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 300, height: 400))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+    }
+
+    func testAWriteTheNudgeRescuedIsStillJudgedByTheWindowServer() {
+        let result = nudged(server: CGRect(x: 0, y: 0, width: 300, height: 400))
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertEqual(result.progress.serverJudged, [9])
+        XCTAssertTrue(result.progress.refusedSetters.isEmpty)
+    }
+
+    func testANudgedWindowHeldAtItsMinimumIsStillAGeometryMismatch() {
+        // AX says 300 wide. the window server has it at its 500 minimum.
+        // that stays a mismatch the min-size memory can learn from
+        let result = nudged(server: CGRect(x: 0, y: 0, width: 500, height: 400))
+        XCTAssertEqual(result.verdict, .rejected(.geometryMismatch(9)))
+        XCTAssertEqual(result.actualFrames[9]?.width, 500)
+    }
+
+    func testAnotherWindowsMinimumIsStillReportedBesideARefusedSetter() {
+        // 1 is held at a minimum and read through AX. 2 answered -25205 and
+        // stands on its target on the window server
+        let fake = Fake()
+        let left = CGRect(x: 0, y: 0, width: 300, height: 800)
+        let right = CGRect(x: 308, y: 0, width: 400, height: 800)
+        fake.frames[1] = CGRect(x: 0, y: 0, width: 500, height: 800)
+        fake.frames[2] = right
+        // 1: size refused by its minimum (scripted, not applied), position, size2. 2: size answered -25205
+        fake.writeErrors = [.success, .success, .success, .attributeUnsupported]
+        var io = fake.io()
+        io.serverFrame = { _ in right }
+        let result = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 1, frame: left), .init(windowID: 2, frame: right)],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .rejected(.geometryMismatch(1)))
+        XCTAssertEqual(result.progress.serverJudged, [2])
+    }
+
+    // left (2) is judged by the window server, right (1) by AX. AX has both
+    // exactly on target, so only the server's frame can fail the pair
+    private func mixedPair(serverLeft: CGRect) -> FrameSizingAttempt.Verdict {
+        let fake = Fake()
+        let left = CGRect(x: 0, y: 0, width: 400, height: 800)
+        let right = CGRect(x: 408, y: 0, width: 400, height: 800)
+        fake.frames[2] = left
+        fake.frames[1] = right
+        var io = fake.io()
+        io.serverFrame = { _ in serverLeft }
+        io.suspects.mark(.init(pid: 0, windowID: 2))
+        return FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 2, frame: left), .init(windowID: 1, frame: right)],
+            usableFrame: CGRect(x: 0, y: 0, width: 816, height: 800), gap: 8, generation: 1).verdict
+    }
+
+    func testAServerFrameAndAnAXFrameAreCheckedTogether() {
+        // each within the 20 pt size allowance on its own
+        XCTAssertEqual(mixedPair(serverLeft: CGRect(x: 0, y: 0, width: 400, height: 800)), .accepted)
+        XCTAssertEqual(mixedPair(serverLeft: CGRect(x: 0, y: 0, width: 405, height: 800)), .accepted)
+        XCTAssertEqual(mixedPair(serverLeft: CGRect(x: 0, y: 0, width: 407.5, height: 800)),
+                       .rejected(.gapViolation(2, 1)), "the server frame eats the gap")
+        XCTAssertEqual(mixedPair(serverLeft: CGRect(x: 0, y: 0, width: 412, height: 800)),
+                       .rejected(.overlap(2, 1)), "the server frame lies over its neighbour")
+    }
+
+    // MARK: - round 5: probes from the review of 81f3059
+
+    func testARollbackOfAMarkedWindowIsVerifiedByTheWindowServerToo() {
+        // the candidate's size was answered -25205 and the window stopped at
+        // 500. the rollback setters succeed and AX reports the original 600,
+        // but the window server still has 500: nothing was restored
+        let fake = Fake()
+        let original = CGRect(x: 0, y: 0, width: 600, height: 800)
+        let stuck = CGRect(x: 0, y: 0, width: 500, height: 800)
+        fake.frames[14] = original
+        fake.writeErrors = [.attributeUnsupported, .success, .attributeUnsupported]
+        var serverReadsInRollback = 0
+        var io = fake.io()
+        io.serverFrame = { [unowned fake] _ in
+            if fake.operations.filter({ $0 == "size:14" }).count > 2 { serverReadsInRollback += 1 }
+            return stuck
+        }
+        let outcome = FrameSizingTransaction(attempt: FrameSizingAttempt(io: io)).apply(
+            targets: [.init(windowID: 14, frame: CGRect(x: 0, y: 0, width: 400, height: 800))],
+            originalFrames: [14: original],
+            usableFrame: CGRect(x: 0, y: 0, width: 1000, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(outcome.outcome, .degraded(candidateReason: .writeFailed(14, .attributeUnsupported),
+                                                  restorationReason: .geometryMismatch(14),
+                                                  actualFrames: [14: stuck]))
+        XCTAssertGreaterThan(serverReadsInRollback, 0)
+    }
+
+    // left (2) is marked and shrinking on the window server from 412 to 400
+    // beside a neighbour at x=408. each sample passes the size allowance alone
+    private func shrinkingBesideANeighbour(landsAt: TimeInterval?) -> (FrameSizingAttempt.Verdict, TimeInterval) {
+        let fake = Fake()
+        let left = CGRect(x: 0, y: 0, width: 400, height: 800)
+        let right = CGRect(x: 408, y: 0, width: 400, height: 800)
+        fake.frames[2] = left
+        fake.frames[1] = right
+        var io = fake.io()
+        io.serverFrame = { [unowned fake] _ in
+            if let landsAt, fake.time + 0.0001 >= landsAt { return left }
+            return CGRect(x: 0, y: 0, width: 412, height: 800)
+        }
+        io.suspects.mark(.init(pid: 0, windowID: 2))
+        let verdict = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 2, frame: left), .init(windowID: 1, frame: right)],
+            usableFrame: CGRect(x: 0, y: 0, width: 816, height: 800), gap: 8, generation: 1).verdict
+        return (verdict, fake.time)
+    }
+
+    func testAMarkedWindowStillSettlingDoesNotFailTheAggregateChecksEarly() {
+        let (verdict, time) = shrinkingBesideANeighbour(landsAt: 0.06)
+        XCTAssertEqual(verdict, .accepted, "the overlap at 30 ms was a window on its way")
+        XCTAssertLessThan(time, 0.2)
+    }
+
+    func testAMarkedWindowThatNeverSettlesFailsTheAggregateCheckAtItsDeadline() {
+        let (verdict, time) = shrinkingBesideANeighbour(landsAt: nil)
+        XCTAssertEqual(verdict, .rejected(.overlap(2, 1)))
+        XCTAssertGreaterThanOrEqual(time + 0.0001, 0.36)
+    }
+
+    func testAMarkedWindowIsNeverReadThroughAX() {
+        // AX size answers -25205 too. the window server has it on target
+        let fake = Fake()
+        let target = CGRect(x: 0, y: 0, width: 300, height: 400)
+        fake.frames[9] = target
+        fake.sizeReads[9] = Array(repeating: (.attributeUnsupported, nil), count: 40)
+        var io = fake.io()
+        io.serverFrame = { _ in target }
+        io.suspects.mark(.init(pid: 0, windowID: 9))
+        let result = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: target)],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .accepted)
+        XCTAssertFalse(fake.operations.contains("size-read:9"))
+        XCTAssertFalse(fake.operations.contains("position-read:9"))
+    }
+
+    func testARefusedPositionThatLandedDoesNotHideAMinimum() {
+        // size, position, size2: the position was answered -25205 and landed.
+        // both sizes succeeded and the window server shows a real 500 floor
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 40, y: 40, width: 500, height: 400)
+        fake.writeErrors = [.success, .attributeUnsupported, .success]
+        var io = fake.io()
+        io.serverFrame = { _ in CGRect(x: 0, y: 0, width: 500, height: 400) }
+        let result = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 300, height: 400))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .rejected(.geometryMismatch(9)),
+                       "the size setters succeeded, so a short size is a floor to learn")
+    }
+
+    func testARefusedPositionThatDidNotLandIsStillAWriteFailure() {
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 40, y: 40, width: 300, height: 400)
+        fake.writeErrors = [.success, .attributeUnsupported, .success]
+        var io = fake.io()
+        io.serverFrame = { _ in CGRect(x: 40, y: 40, width: 300, height: 400) }
+        let result = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 300, height: 400))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .rejected(.writeFailed(9, .attributeUnsupported)))
+    }
+
+    // MARK: - round 6: one reader per window, marks in an identity-keyed store
+
+    func testACaptureReadsASuspectWindowFromTheWindowServerAndNeverThroughAX() {
+        // AX says 600 and its size read fails. the window server has 500
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 600, height: 400)
+        fake.frames[10] = CGRect(x: 608, y: 0, width: 200, height: 400)
+        fake.sizeReads[9] = [(.attributeUnsupported, nil)]
+        let io = fake.io().withServer { $0 == 9 ? CGRect(x: 0, y: 0, width: 500, height: 400) : nil }
+        io.suspects.mark(.init(pid: 0, windowID: 9))
+        let capture = FrameSizingAttempt(io: io).captureFrames(windowIDs: [9, 10], generation: 1)
+        XCTAssertEqual(capture.verdict, .accepted)
+        XCTAssertEqual(capture.actualFrames[9]?.width, 500, "what is on screen, so a rollback restores that")
+        XCTAssertEqual(capture.actualFrames[10]?.width, 200, "its neighbour still reads AX")
+        XCTAssertFalse(fake.operations.contains("size-read:9"))
+        XCTAssertFalse(fake.operations.contains("position-read:9"))
+        XCTAssertTrue(io.suspects.contains(.init(pid: 0, windowID: 9)), "a capture does not clear a mark")
+    }
+
+    func testTheMarkIsKeyedByIdentityAndSurvivesANewIOForTheSameWindow() {
+        // an admission retry walks the windows again and builds a new IO
+        let suspects = FrameSuspects()
+        let first = Fake()
+        first.frames[9] = CGRect(x: 0, y: 0, width: 600, height: 400)
+        first.writeErrors = [.attributeUnsupported, .success, .attributeUnsupported]
+        var io = first.io().withServer { _ in CGRect(x: 0, y: 0, width: 500, height: 400) }
+        io.suspects = suspects
+        io.suspectKey = { .init(pid: 77, windowID: $0) }
+        let refused = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 300, height: 400))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(refused.verdict, .rejected(.writeFailed(9, .attributeUnsupported)))
+        XCTAssertTrue(suspects.contains(.init(pid: 77, windowID: 9)))
+
+        let second = Fake()
+        second.frames[9] = CGRect(x: 0, y: 0, width: 600, height: 400)
+        var retry = second.io().withServer { _ in CGRect(x: 0, y: 0, width: 500, height: 400) }
+        retry.suspects = suspects
+        retry.suspectKey = { .init(pid: 77, windowID: $0) }
+        let capture = FrameSizingAttempt(io: retry).captureFrames(windowIDs: [9], generation: 1)
+        XCTAssertEqual(capture.actualFrames[9]?.width, 500, "the new IO reads the server at once")
+
+        // the same window id under another pid is another window
+        retry.suspectKey = { .init(pid: 78, windowID: $0) }
+        XCTAssertEqual(FrameSizingAttempt(io: retry).captureFrames(windowIDs: [9], generation: 1)
+            .actualFrames[9]?.width, 600)
+        suspects.forget(windowID: 9)
+        XCTAssertFalse(suspects.contains(.init(pid: 77, windowID: 9)), "closed or replaced: a reused id starts clean")
+    }
+
+    // MARK: - round 7: a mark lasts as long as the window
+
+    func testAnAcceptedPassDoesNotHideTheMarkFromALaterRollback() {
+        // a cross-display drag: display one accepts 500 -> 300, display two
+        // fails, and the rollback of display one must still ask the server
+        let fake = Fake()
+        let key = FrameSuspects.Key(pid: 0, windowID: 9)
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 500, height: 400)
+        var server = CGRect(x: 0, y: 0, width: 500, height: 400)
+        var serverReads = 0
+        let io = fake.io().withServer { _ in serverReads += 1; return server }
+        io.suspects.mark(key)
+        let attempt = FrameSizingAttempt(io: io)
+        let usable = CGRect(x: 0, y: 0, width: 800, height: 800)
+
+        server.size.width = 300
+        let first = attempt.apply(targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 300, height: 400))],
+                                  usableFrame: usable, gap: 8, generation: 1)
+        XCTAssertEqual(first.verdict, .accepted)
+        XCTAssertTrue(io.suspects.contains(key), "no pass retires a mark")
+
+        // the rollback setters succeed and AX says 500. the window stays at 300
+        serverReads = 0
+        let rollback = attempt.apply(targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 500, height: 400))],
+                                     usableFrame: usable, gap: 8, generation: 1, phase: .restoration)
+        XCTAssertEqual(fake.frames[9]?.width, 500)
+        XCTAssertNotEqual(rollback.verdict, .accepted)
+        XCTAssertEqual(rollback.actualFrames[9]?.width, 300)
+        XCTAssertGreaterThan(serverReads, 0)
+    }
+
+    func testAPositionRefusalThatReturnsPastTheDeadlineIsStillRecorded() {
+        let fake = Fake()
+        let key = FrameSuspects.Key(pid: 0, windowID: 9)
+        fake.frames[9] = CGRect(x: 40, y: 40, width: 500, height: 400)
+        fake.writeErrors = [.success, .attributeUnsupported]
+        fake.writeAdvances = [0, 0.5]
+        let io = fake.io().withServer { _ in CGRect(x: 40, y: 40, width: 300, height: 400) }
+        let result = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 300, height: 400))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .unknown(.deadlineExceeded), "the deadline verdict stands")
+        XCTAssertTrue(io.suspects.contains(key), "and the answer was recorded before it")
+
+        // so the rollback is read from the window server: AX says 500, it has 300
+        let rollback = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 40, y: 40, width: 500, height: 400))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1,
+            phase: .restoration)
+        XCTAssertNotEqual(rollback.verdict, .accepted)
+        XCTAssertEqual(rollback.actualFrames[9]?.width, 300)
+    }
+
+    func testHidingAWindowKeepsItsMarkAndOnlyAForgottenOrReopenedOneLosesIt() {
+        let screen = SuspectTestScreen()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }))
+        let id: CGWindowID = 4_000_000_823
+        let key = FrameSuspects.Key(pid: 4242, windowID: id)
+        defer { FrameSuspects.shared.forget(windowID: id) }
+
+        FrameSuspects.shared.mark(key)
+        engine.removeWindowID(id)
+        XCTAssertTrue(FrameSuspects.shared.contains(key), "hidden, minimized or out of its tree: still suspect")
+
+        engine.forgetRememberedSlot(id)
+        XCTAssertFalse(FrameSuspects.shared.contains(key), "back after a verified close: a reused id starts clean")
+
+        FrameSuspects.shared.mark(key)
+        engine.forgetMinimumSize(windowID: id)
+        XCTAssertFalse(FrameSuspects.shared.contains(key), "discovery forgot it")
+    }
+
+    func testAReturningSuspectIsConfirmedOnTheWindowServerNotOnTwoAXReads() {
+        // after a hide and a return AX says 600 twice. the window server has 500
+        let fake = Fake()
+        let target = CGRect(x: 0, y: 0, width: 600, height: 400)
+        fake.frames[9] = target
+        let io = fake.io().withServer { _ in CGRect(x: 0, y: 0, width: 500, height: 400) }
+        io.suspects.mark(.init(pid: 0, windowID: 9))
+        let attempt = FrameSizingAttempt(io: io)
+        let capture = attempt.captureFrames(windowIDs: [9], generation: 1)
+        XCTAssertNil(attempt.alreadyApplied(targets: [.init(windowID: 9, frame: target)],
+                                            originalFrames: capture.actualFrames,
+                                            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800),
+                                            gap: 8, generation: 1))
+    }
+
+    func testOneSuspectWindowDoesNotCostItsNeighboursTheInPlaceShortcut() {
+        // both already on target. the suspect one is confirmed on the window
+        // server, the other through AX, and nothing is written
+        let fake = Fake()
+        let left = CGRect(x: 0, y: 0, width: 400, height: 800)
+        let right = CGRect(x: 408, y: 0, width: 400, height: 800)
+        fake.frames[2] = CGRect(x: 0, y: 0, width: 999, height: 800) // AX is wrong about 2
+        fake.frames[1] = right
+        let io = fake.io().withServer { $0 == 2 ? left : nil }
+        io.suspects.mark(.init(pid: 0, windowID: 2))
+        let attempt = FrameSizingAttempt(io: io)
+        let targets: [FrameSizingAttempt.Target] = [.init(windowID: 2, frame: left), .init(windowID: 1, frame: right)]
+        let capture = attempt.captureFrames(windowIDs: [2, 1], generation: 1)
+        let inPlace = attempt.alreadyApplied(targets: targets, originalFrames: capture.actualFrames,
+                                             usableFrame: CGRect(x: 0, y: 0, width: 816, height: 800),
+                                             gap: 8, generation: 1)
+        XCTAssertEqual(inPlace?.verdict, .accepted)
+        XCTAssertFalse(fake.operations.contains { $0.hasPrefix("size:") || $0.hasPrefix("position:") },
+                       "zero setters")
+
+        // and a suspect window that is off target on the server is not taken as in place
+        let moved = fake.io().withServer { $0 == 2 ? CGRect(x: 0, y: 0, width: 500, height: 800) : nil }
+        moved.suspects.mark(.init(pid: 0, windowID: 2))
+        fake.frames[2] = left // AX says it is fine
+        let stale = FrameSizingAttempt(io: moved).captureFrames(windowIDs: [2, 1], generation: 1)
+        XCTAssertNil(FrameSizingAttempt(io: moved).alreadyApplied(
+            targets: targets, originalFrames: stale.actualFrames,
+            usableFrame: CGRect(x: 0, y: 0, width: 816, height: 800), gap: 8, generation: 1))
+    }
+
+    func testAWindowThatClosesDuringASetterIsUnavailableNotAWriteFailure() {
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 100, height: 100)
+        fake.writeErrors = [.invalidUIElement]
+        let result = FrameSizingAttempt(io: fake.io()).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 200, height: 200))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .unknown(.windowUnavailable(9)))
+    }
+
+    func testARefusedCandidateRollsBackAndTheRollbackIsJudgedTheSameWay() {
+        let fake = Fake()
+        let original = CGRect(x: 0, y: 0, width: 500, height: 800)
+        let candidate = CGRect(x: 0, y: 0, width: 300, height: 800)
+        fake.frames[14] = original
+        // candidate: both sizes answered -25205. rollback: the same.
+        // the window never moved: the window server has the original throughout
+        fake.writeErrors = [.attributeUnsupported, .success, .attributeUnsupported,
+                            .attributeUnsupported, .success, .attributeUnsupported]
+        var io = fake.io()
+        io.serverFrame = { _ in original }
+        // already a suspect, so its original is the window server's
+        io.suspects.mark(.init(pid: 0, windowID: 14))
+        let attempt = FrameSizingAttempt(io: io)
+        let capture = attempt.captureFrames(windowIDs: [14], generation: 1)
+        let outcome = FrameSizingTransaction(attempt: attempt).apply(
+            targets: [.init(windowID: 14, frame: candidate)], originalFrames: capture.actualFrames,
+            usableFrame: CGRect(x: 0, y: 0, width: 1000, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(outcome.outcome, .rejectedRestored(reason: .writeFailed(14, .attributeUnsupported),
+                                                          actualFrames: [14: original]))
+    }
+
+    func testACannotCompleteIsNeverLeftToTheWindowServer() {
+        // a messaging timeout: the recovery retries it as a timeout
+        let fake = Fake()
+        fake.frames[9] = CGRect(x: 0, y: 0, width: 200, height: 200)
+        fake.writeErrors = [.cannotComplete]
+        var io = fake.io()
+        io.serverFrame = { _ in CGRect(x: 0, y: 0, width: 200, height: 200) }
+        let result = FrameSizingAttempt(io: io).apply(
+            targets: [.init(windowID: 9, frame: CGRect(x: 0, y: 0, width: 200, height: 200))],
+            usableFrame: CGRect(x: 0, y: 0, width: 800, height: 800), gap: 8, generation: 1)
+        XCTAssertEqual(result.verdict, .rejected(.writeFailed(9, .cannotComplete)))
+        XCTAssertTrue(result.progress.serverJudged.isEmpty)
+    }
+
     func testFailedReadIsUnknownAndNeverSynthesizesTarget() {
         let fake = Fake()
         fake.frames[10] = CGRect(x: 0, y: 0, width: 100, height: 100)
@@ -1706,4 +2241,17 @@ final class RefusedSizeResendTests: XCTestCase {
         XCTAssertEqual(error, .cannotComplete)
         XCTAssertEqual(writes, [CGSize(width: 743, height: 839)])
     }
+}
+
+private extension FrameSizingIO {
+    func withServer(_ frame: @escaping (CGWindowID) -> CGRect?) -> FrameSizingIO {
+        var io = self
+        io.serverFrame = frame
+        return io
+    }
+}
+
+private final class SuspectTestScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 0, y: 0, width: 1512, height: 982) }
+    override var visibleFrame: NSRect { NSRect(x: 0, y: 0, width: 1512, height: 851) }
 }

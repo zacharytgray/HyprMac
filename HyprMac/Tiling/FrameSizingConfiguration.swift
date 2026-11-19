@@ -36,6 +36,13 @@ struct FrameSizingConfiguration {
     /// counted from when its own last setter returned. An app like Dia
     /// reports its old size for a while after a write.
     var minimumMismatchSettle: TimeInterval = 0.24
+    /// The same wait for a window the window server judges (see
+    /// `FrameSizingAttempt.Progress.serverJudged`). The server trails the
+    /// app: about 40 ms live with Dia, and no more than 300 ms in any probe.
+    /// A stable off-target frame counts as a failed write only after this
+    /// long, so a write that lands inside the pass is never called failed.
+    /// A pass whose budget ends first is a timeout, not a refusal.
+    var serverMismatchSettle: TimeInterval = 0.36
     var perCallTimeout: TimeInterval = 0.1
     /// Windows that move before they are sized. The engine picks them: a
     /// parked window, or one whose target is bigger than the screen it
