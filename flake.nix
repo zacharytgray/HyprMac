@@ -58,7 +58,7 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         import ./nix/checks.nix {
-          inherit pkgs hmModule;
+          inherit pkgs;
           inherit (self.packages.${system}) hyprmac;
         }
       );
