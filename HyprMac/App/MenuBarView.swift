@@ -148,12 +148,17 @@ struct MenuBarView: View {
                 }
             }
             #if !HYPRMAC_DEBUG_VARIANT
-            MenuBarRow("Check for updates…", icon: "arrow.down.circle") {
-                updater.checkForUpdates()
-            } trailing: {
-                Text("v\(appVersion)")
-                    .font(.hyprMonoXs)
-                    .foregroundStyle(Color.hyprTextTertiary)
+            if RuntimeVariant.updatesManagedByNix {
+                MenuBarRow("Updates are managed by Nix", icon: "shippingbox", action: {}) {
+                    versionLabel
+                }
+                .disabled(true)
+            } else {
+                MenuBarRow("Check for updates…", icon: "arrow.down.circle") {
+                    updater.checkForUpdates()
+                } trailing: {
+                    versionLabel
+                }
             }
             #endif
             Rectangle()
@@ -164,6 +169,12 @@ struct MenuBarView: View {
                 NSApp.terminate(nil)
             }
         }
+    }
+
+    private var versionLabel: some View {
+        Text("v\(appVersion)")
+            .font(.hyprMonoXs)
+            .foregroundStyle(Color.hyprTextTertiary)
     }
 
     private var appVersion: String {

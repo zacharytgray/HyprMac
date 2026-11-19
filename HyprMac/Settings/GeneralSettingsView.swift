@@ -301,11 +301,13 @@ struct GeneralSettingsView: View {
             }
 
             if config.isICloudDriveAvailable {
-                HyprRow("Sync settings via iCloud", icon: "icloud") {
+                HyprRow("Sync settings via iCloud", icon: "icloud",
+                        subtitle: config.isICloudSyncLocked ? "Off while another tool manages the config file." : nil) {
                     Toggle("", isOn: $config.iCloudSyncEnabled)
                         .toggleStyle(HyprToggleStyle())
                         .labelsHidden()
                 }
+                .disabled(config.isICloudSyncLocked)
             } else {
                 HyprRow("Sync settings via iCloud", icon: "xmark.icloud",
                         subtitle: "Enable iCloud Drive in System Settings") { EmptyView() }

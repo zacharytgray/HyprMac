@@ -7,6 +7,7 @@ import SwiftUI
 /// detail pane.
 struct SettingsView: View {
     let showTutorial: () -> Void
+    @ObservedObject private var config = UserConfig.shared
     @State private var selectedTab: SettingsTab = .general
 
     enum SettingsTab: String, CaseIterable, Hashable {
@@ -104,6 +105,7 @@ struct SettingsView: View {
             // body
             ScrollView {
                 VStack(spacing: HyprSpacing.lg) {
+                    if config.isConfigReadOnly { ReadOnlyConfigNotice() }
                     switch selectedTab {
                     case .general: GeneralSettingsView(showTutorial: showTutorial)
                     case .keys:    KeybindsSettingsView()

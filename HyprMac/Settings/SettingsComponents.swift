@@ -195,6 +195,22 @@ struct HyprAccentBadge: View {
     }
 }
 
+// MARK: - ReadOnlyConfigNotice
+
+/// Shown above every tab while a config file can't be saved, as when Nix
+/// or a dotfiles tool manages it.
+struct ReadOnlyConfigNotice: View {
+    var body: some View {
+        HyprPanel {
+            HyprRow("Managed outside HyprMac", icon: "lock.doc",
+                    subtitle: "The config file is read-only. Changes here work until it reloads, and aren't saved.",
+                    divider: false) {
+                HyprChip("READ-ONLY")
+            }
+        }
+    }
+}
+
 // MARK: - HyprToggleStyle
 
 /// Pill switch. Custom because the default macOS `ToggleStyle.switch`
