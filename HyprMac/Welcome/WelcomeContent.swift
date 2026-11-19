@@ -26,6 +26,18 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "sparkle",
+            title: "Turn Off the Focus Flash",
+            description: "With window borders on, a new setting keeps the border but skips the brief tint when focus moves to a window.",
+            credit: "Ealianis"
+        ),
+        WhatsNewFeature(
+            icon: "cursorarrow.rays",
+            title: "Overview Opens Where You Are",
+            description: "The workspace overview and the keybind list now open on the monitor under your pointer, like every other Hypr action.",
+            credit: "Thiago Goncalves"
+        ),
+        WhatsNewFeature(
             icon: "rectangle.split.2x1",
             title: "Windows Tile Beside Dia",
             description: "A window moved next to Dia now tiles beside it instead of floating on top. HyprMac no longer believes Dia when it wrongly reports a resize failed.",
@@ -34,7 +46,8 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "lock.doc",
             title: "Configs Managed by Other Tools",
-            description: "When Nix, a dotfiles tool or a read-only file owns your config, Settings says so and HyprMac never overwrites it."
+            description: "When Nix, a dotfiles tool or a read-only file owns your config, Settings says so and HyprMac never overwrites it.",
+            credit: "emilnymann"
         ),
         WhatsNewFeature(
             icon: "arrow.triangle.2.circlepath",
