@@ -13,6 +13,7 @@ struct GeneralSettingsView: View {
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
     @StateObject private var loginItem = LoginItemController()
     @State private var showingWorkspaceNames = false
+    @State private var choosingSyncSide = false
 
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
@@ -259,6 +260,17 @@ struct GeneralSettingsView: View {
 
     // MARK: system — menu bar + iCloud + login items
 
+    // turning sync on asks first when this Mac and iCloud disagree
+    private var iCloudSyncBinding: Binding<Bool> {
+        Binding(get: { config.iCloudSyncEnabled }, set: { on in
+            if on, config.iCloudCopyDiffersFromLocal {
+                choosingSyncSide = true
+            } else {
+                config.iCloudSyncEnabled = on
+            }
+        })
+    }
+
     private var systemPanel: some View {
         HyprPanel("System",
                   footer: loginItemFooter) {
@@ -301,10 +313,20 @@ struct GeneralSettingsView: View {
             }
 
             if config.isICloudDriveAvailable {
-                HyprRow("Sync settings via iCloud", icon: "icloud") {
-                    Toggle("", isOn: $config.iCloudSyncEnabled)
+                HyprRow("Sync settings via iCloud", icon: "icloud",
+                        subtitle: config.isICloudSyncLocked ? "Off while another tool manages the config file." : nil) {
+                    Toggle("", isOn: iCloudSyncBinding)
                         .toggleStyle(HyprToggleStyle())
                         .labelsHidden()
+                }
+                .disabled(config.isICloudSyncLocked)
+                .opacity(config.isICloudSyncLocked ? 0.5 : 1)
+                .alert("iCloud has different settings", isPresented: $choosingSyncSide) {
+                    Button("Use the settings in iCloud") { config.turnOnICloudSync(usingThisMac: false) }
+                    Button("Use this Mac's settings") { config.turnOnICloudSync(usingThisMac: true) }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("The other settings are kept as a backup beside config.json.")
                 }
             } else {
                 HyprRow("Sync settings via iCloud", icon: "xmark.icloud",

@@ -22,6 +22,17 @@ enum RuntimeVariant {
         return release?[key] as? Bool ?? false
     }
 
+    /// True when Nix installed this copy: the bundle sits in the Nix store
+    /// or in a folder nix-darwin or Home Manager fills with store apps.
+    /// Sparkle would replace a bundle Nix owns, so it stays off.
+    static let updatesManagedByNix = isNixInstall(bundlePath: Bundle.main.bundlePath)
+
+    static func isNixInstall(bundlePath: String) -> Bool {
+        let folders = URL(fileURLWithPath: bundlePath).deletingLastPathComponent().pathComponents
+        return bundlePath.hasPrefix("/nix/store/")
+            || folders.contains("Nix Apps") || folders.contains("Home Manager Apps")
+    }
+
     static func shouldShowWelcome(hasSeenOnboarding: Bool,
                                   lastVersion: String?,
                                   currentVersion: String?,

@@ -1,6 +1,6 @@
 // On-disk persistence for user config. File paths, raw JSON load /
 // save, iCloud Drive sync lifecycle (link + repair), a file watcher
-// that fires when the file changes externally, and the copies kept
+// that fires when either file changes externally, and the copies kept
 // before a config file is replaced.
 
 import Foundation
@@ -71,38 +71,112 @@ final class ConfigStore {
             .appendingPathComponent("config.json")
     }
 
+    /// How the watcher opens a file: `open(2)` with the given flags. Tests
+    /// swap it to make the open fail.
+    typealias WatchOpener = (_ path: String, _ flags: Int32) -> Int32
+
     /// Every path is injectable so tests run against scratch files.
+    /// `watchInterval` is how often the watcher looks at what the two paths
+    /// reach. `datalessFlag` marks a file iCloud hasn't downloaded; tests
+    /// pass a flag they can set themselves.
     init(localConfigURL: URL = ConfigStore.configPath,
          monitorConfigURL: URL = ConfigStore.monitorConfigPath,
-         iCloudRootURL: URL = ConfigStore.defaultICloudRootURL) {
+         iCloudRootURL: URL = ConfigStore.defaultICloudRootURL,
+         watchInterval: TimeInterval = 2,
+         watchOpener: @escaping WatchOpener = { Darwin.open($0, $1) },
+         datalessFlag: UInt32 = UInt32(SF_DATALESS)) {
         self.localConfigURL = localConfigURL
         self.monitorConfigURL = monitorConfigURL
         self.iCloudRootURL = iCloudRootURL
+        self.datalessFlag = datalessFlag
+        self.watchInterval = watchInterval
+        self.watch = ConfigWatch(urls: [localConfigURL, monitorConfigURL],
+                                 interval: watchInterval, opener: watchOpener)
+        watch.onObserved = { [weak self] epoch, written in self?.reconcile(epoch: epoch, written: written) }
     }
 
     var isICloudDriveAvailable: Bool {
         FileManager.default.fileExists(atPath: iCloudRootURL.path)
     }
 
-    private var isLocalSymlink: Bool {
-        (try? FileManager.default.destinationOfSymbolicLink(atPath: localConfigURL.path)) != nil
+    private var isLocalSymlink: Bool { Self.isLink(localConfigURL) }
+
+    private static func isLink(_ url: URL) -> Bool {
+        (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
+    }
+
+    /// True when config.json is the link into iCloud, as found on disk now.
+    var isLinkedToICloud: Bool { linksToICloud }
+
+    private var linksToICloud: Bool {
+        guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: localConfigURL.path) else {
+            return false
+        }
+        let target = URL(fileURLWithPath: destination, relativeTo: localConfigURL.deletingLastPathComponent())
+        return Self.samePath(target, iCloudConfigURL)
+    }
+
+    /// True when config.json sits where another tool put it: the file is a
+    /// link that doesn't go to the iCloud file, or its folder is itself a
+    /// link, as when the whole HyprMac folder lives in a dotfiles checkout.
+    /// Saves still go through, but the iCloud switch must never move it.
+    var isLinkedByAnotherTool: Bool {
+        !linksToICloud && (isLocalSymlink || Self.isLink(localConfigURL.deletingLastPathComponent()))
+    }
+
+    // the two spellings of a temp or home folder (/var and /private/var) are one path
+    private static func samePath(_ a: URL, _ b: URL) -> Bool {
+        func resolved(_ url: URL) -> String {
+            url.deletingLastPathComponent().resolvingSymlinksInPath()
+                .appendingPathComponent(url.lastPathComponent).path
+        }
+        return a.standardizedFileURL.path == b.standardizedFileURL.path || resolved(a) == resolved(b)
+    }
+
+    /// True when HyprMac can't save config.json: the file it resolves to,
+    /// or that file's folder, can't be written, as in the Nix store.
+    /// Changes made in Settings then last until the next load.
+    var isConfigReadOnly: Bool { Self.isReadOnly(localConfigURL) }
+
+    var isMonitorConfigReadOnly: Bool { Self.isReadOnly(monitorConfigURL) }
+
+    // an atomic save renames over the file, which only needs the folder.
+    // a file locked on its own must stop it too
+    private static func isReadOnly(_ url: URL) -> Bool {
+        let file = writeTarget(of: url).path
+        let folder = (file as NSString).deletingLastPathComponent
+        func locked(_ path: String) -> Bool { access(path, F_OK) == 0 && access(path, W_OK) != 0 }
+        return locked(file) || locked(folder)
     }
 
     // MARK: - file watcher state
 
-    // fired (on main queue) when the watched file changes from disk.
+    // fired (on main queue) when a watched file changes from disk.
     // owners typically reload state in response.
     var onFileChanged: (() -> Void)?
 
-    private var fileWatcherSource: DispatchSourceFileSystemObject?
-    private var fileWatcherFD: Int32 = -1
-    // start asked for a watcher and stop hasn't cancelled it. a save closes
-    // the watcher around its rename, and reopens only when this is set
+    fileprivate enum ConfigFile: Int, CaseIterable {
+        case config, monitor
+    }
+
+    private func url(of file: ConfigFile) -> URL {
+        file == .config ? localConfigURL : monitorConfigURL
+    }
+
+    private let watch: ConfigWatch
+    // bumped by every start and stop, so what a stopped watcher saw is dropped
+    private var watchEpoch = 0
     private var watcherWanted = false
-    // bumped whenever the watcher closes so a pending re-arm retry knows it's stale
-    private var rearmGeneration = 0
-    private static let rearmMaxDelay: TimeInterval = 4
+    // what memory holds of each file: the mark taken at the last read or
+    // save. the watcher reports a file only when it no longer matches, so a
+    // change made while nobody was watching is still found. missing from
+    // here means never read
+    private var baseline: [ConfigFile: FileMark] = [:]
     private var ownWriteReportPending = false
+    private let datalessFlag: UInt32
+    private let watchInterval: TimeInterval
+    // paths a background read is bringing down from iCloud
+    private var downloading: Set<String> = []
 
     // MARK: - load
 
@@ -130,9 +204,12 @@ final class ConfigStore {
     // only logs. a read mid iCloud sync can look unreadable, so the file is
     // left alone until something is about to overwrite it
     private func read<Value: Decodable>(_ url: URL, as type: Value.Type) -> ConfigRead<Value> {
+        // marked before the read: a change that lands in between shows up
+        // as one more reload, never as a missed one
+        baseline[url == localConfigURL ? .config : .monitor] = FileMark.of(url)
         let data: Data
         do {
-            data = try Data(contentsOf: url)
+            data = try bytes(at: url)
         } catch {
             if Self.isFileMissing(error) { return .missing }
             return unreadable(url, Self.reason(for: error))
@@ -150,6 +227,48 @@ final class ConfigStore {
         return .unreadable(reason: reason)
     }
 
+    private enum FileError: Error {
+        case notAFile, notDownloaded
+    }
+
+    // a pipe or a device at the path would hold the main thread until
+    // something writes to it, and a file iCloud hasn't downloaded would
+    // hold it until the network brings it
+    private func bytes(at url: URL) throws -> Data {
+        var info = stat()
+        guard fstatat(AT_FDCWD, url.path, &info, 0) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        guard info.st_mode & S_IFMT == S_IFREG else { throw FileError.notAFile }
+        guard info.st_flags & datalessFlag == 0 else {
+            download(url)
+            throw FileError.notDownloaded
+        }
+        return try Data(contentsOf: url)
+    }
+
+    // reading the file is what brings it down, so read it off the main
+    // thread. once it's here, owners reload, whether or not the watcher saw it
+    private func download(_ url: URL) {
+        guard downloading.insert(url.path).inserted else { return }
+        let flag = datalessFlag
+        let interval = watchInterval
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var arrived = false
+            for _ in 0..<5 where !arrived {
+                _ = try? Data(contentsOf: url)
+                var info = stat()
+                arrived = fstatat(AT_FDCWD, url.path, &info, 0) == 0 && info.st_flags & flag == 0
+                if !arrived { Thread.sleep(forTimeInterval: interval) }
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.downloading.remove(url.path)
+                if arrived { self.onFileChanged?() }
+            }
+        }
+    }
+
     private static func isFileMissing(_ error: Error) -> Bool {
         let error = error as NSError
         return (error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError)
@@ -159,6 +278,10 @@ final class ConfigStore {
     // the file is hand-editable, so its values stay out of the log
     private static func reason(for error: Error) -> String {
         switch error {
+        case FileError.notAFile:
+            return "not a regular file"
+        case FileError.notDownloaded:
+            return "not downloaded from iCloud yet"
         case DecodingError.dataCorrupted:
             return "not valid JSON"
         case DecodingError.keyNotFound(let key, _):
@@ -195,27 +318,30 @@ final class ConfigStore {
     func writeSavedConfig(_ saved: SavedConfig) {
         guard !writesHeld,
               let data = encode(saved, for: localConfigURL),
-              keepUnreadableCopy(of: localConfigURL, as: SavedConfig.self) else { return }
-        // the rename below would look like an outside replace to a watcher on
-        // the old file. reopen on the new file now, with no re-arm gap
-        let reopen = watcherWanted
-        closeWatcher()
-        let wrote = writeAtomically(data, to: localConfigURL)
-        guard reopen else { return }
-        if !openWatcher() { rearmAfterReplace() }
-        if wrote { reportOwnWrite() }
+              keepUnreadableCopy(of: localConfigURL, as: SavedConfig.self),
+              writeAtomically(data, to: localConfigURL) else { return }
+        adopt(.config)
+        reportOwnWrite()
     }
 
     func writeSavedMonitorConfig(_ mc: SavedMonitorConfig) {
         guard let data = encode(mc, for: monitorConfigURL),
-              keepUnreadableCopy(of: monitorConfigURL, as: SavedMonitorConfig.self) else { return }
-        writeAtomically(data, to: monitorConfigURL)
+              keepUnreadableCopy(of: monitorConfigURL, as: SavedMonitorConfig.self),
+              writeAtomically(data, to: monitorConfigURL) else { return }
+        adopt(.monitor)
+    }
+
+    // memory holds what this save wrote, so the watcher must not report it
+    // as an outside edit
+    private func adopt(_ file: ConfigFile) {
+        baseline[file] = FileMark.of(url(of: file))
+        watch.checkNow()
     }
 
     /// Keep what a reset is about to replace.
     func keepCopiesBeforeReset() {
         for url in [localConfigURL, monitorConfigURL] {
-            if let data = try? Data(contentsOf: url) {
+            if let data = try? bytes(at: url) {
                 keepCopy(data, of: url, suffix: "replaced")
             }
         }
@@ -232,6 +358,12 @@ final class ConfigStore {
 
     @discardableResult
     private func writeAtomically(_ data: Data, to url: URL) -> Bool {
+        // the file belongs to whoever made it read-only: Nix, a dotfiles
+        // tool, the user. changes last until the next load
+        guard !Self.isReadOnly(url) else {
+            hyprLog(.info, .config, "\(url.lastPathComponent) not saved: it is read-only")
+            return false
+        }
         do {
             try data.write(to: Self.writeTarget(of: url), options: .atomic)
             return true
@@ -280,7 +412,7 @@ final class ConfigStore {
     // only the first is safe to replace with no copy
     private func contents(of url: URL) -> FileContents {
         do {
-            return .data(try Data(contentsOf: url))
+            return .data(try bytes(at: url))
         } catch {
             return Self.isFileMissing(error) ? .missing : .blocked(reason: Self.reason(for: error))
         }
@@ -289,7 +421,9 @@ final class ConfigStore {
     // never overwrites an older copy: the first one may be the only good
     // version of someone's settings. the same bytes are not copied twice
     @discardableResult
-    private func keepCopy(_ data: Data, of url: URL, suffix: String) -> Bool {
+    // `source` is the file the bytes came from, for its mode. a copy is as
+    // private as the file it copies
+    private func keepCopy(_ data: Data, of url: URL, suffix: String, source: URL? = nil) -> Bool {
         guard !data.isEmpty else { return true }
         let base = "\(url.path).\(suffix)"
         var path = base
@@ -302,6 +436,7 @@ final class ConfigStore {
         let copy = URL(fileURLWithPath: path)
         do {
             try data.write(to: copy, options: .atomic)
+            Self.copyMode(from: source ?? url, to: copy)
             hyprLog(.warning, .config, "kept a copy of \(url.lastPathComponent) at \(copy.lastPathComponent)")
             return true
         } catch {
@@ -313,65 +448,107 @@ final class ConfigStore {
     // MARK: - iCloud Drive sync
 
     // enable iCloud sync — puts the local file (or current state via the
-    // snapshot closure) in iCloud, then symlinks the local path at it. the
-    // last Mac to enable wins, so whatever was in iCloud gets a copy. the
-    // local file goes only after iCloud holds its data.
-    func enableICloudSync(snapshot: () -> SavedConfig) {
-        defer { restartFileWatcher() }
+    // snapshot closure) in iCloud, then symlinks the local path at it. a
+    // readable copy already in iCloud is another Mac's, and wins: this Mac
+    // links to it and keeps its own file beside the link. the local file
+    // goes only after iCloud holds its data.
+    //
+    // returns true when the path now reads a different file, so the
+    // caller must reload.
+    //
+    // `cloudWins: false` is the user choosing this Mac's settings: they go
+    // up, and the copy in iCloud is kept as config.json.replaced.
+    @discardableResult
+    func enableICloudSync(snapshot: () -> SavedConfig, cloudWins: Bool = true) -> Bool {
+        guard !isLinkedByAnotherTool else {
+            hyprLog(.warning, .config, "iCloud sync not set up: another tool put config.json where it is")
+            return false
+        }
+        defer { watch.checkNow() }
         let fm = FileManager.default
         let isLink = isLocalSymlink
 
+        if !isLink, cloudWins, hasReadableICloudCopy { return joinICloud() }
+
         if !isLink || !fm.fileExists(atPath: localConfigURL.path) {
-            let data = fm.fileExists(atPath: localConfigURL.path)
-                ? try? Data(contentsOf: localConfigURL)
-                : encode(snapshot(), for: iCloudConfigURL)
+            let hasLocal = fm.fileExists(atPath: localConfigURL.path)
+            let data = hasLocal ? try? bytes(at: localConfigURL) : encode(snapshot(), for: iCloudConfigURL)
             guard let data else {
                 hyprLog(.warning, .config, "iCloud sync not set up: couldn't read config.json")
-                return
+                return false
             }
             do {
                 try fm.createDirectory(at: iCloudConfigURL.deletingLastPathComponent(),
                                        withIntermediateDirectories: true)
             } catch {
                 hyprLog(.warning, .config, "iCloud sync not set up: \(Self.code(of: error))")
-                return
+                return false
             }
             switch contents(of: iCloudConfigURL) {
             case .missing:
                 break
             case .blocked(let reason):
                 hyprLog(.warning, .config, "iCloud sync not set up: can't read the file there (\(reason))")
-                return
+                return false
             case .data(let existing):
-                if existing != data, !keepCopy(existing, of: localConfigURL, suffix: "replaced") {
-                    return
+                if existing != data,
+                   !keepCopy(existing, of: localConfigURL, suffix: "replaced", source: iCloudConfigURL) {
+                    return false
                 }
             }
-            guard writeAtomically(data, to: iCloudConfigURL) else { return }
+            guard writeAtomically(data, to: iCloudConfigURL) else { return false }
+            if hasLocal { Self.copyMode(from: localConfigURL, to: iCloudConfigURL) }
         }
 
-        if !isLink, !linkLocalToICloud() { return }
+        if !isLink, !linkLocalToICloud() { return false }
         writesHeld = false
+        return false
+    }
+
+    /// True when turning sync on has a choice to make: this Mac has its own
+    /// config.json, and iCloud holds a different one that reads.
+    var iCloudCopyDiffersFromLocal: Bool {
+        guard !isLocalSymlink, hasReadableICloudCopy, let local = try? bytes(at: localConfigURL) else { return false }
+        return local != (try? bytes(at: iCloudConfigURL))
+    }
+
+    private var hasReadableICloudCopy: Bool {
+        guard let data = try? bytes(at: iCloudConfigURL) else { return false }
+        return (try? JSONDecoder().decode(SavedConfig.self, from: data)) != nil
     }
 
     // disable iCloud sync — read data via the symlink and put it over the
     // link as a regular file. snapshot is a fallback if the read fails.
     func disableICloudSync(snapshot: () -> SavedConfig) {
-        defer { restartFileWatcher() }
+        // only the iCloud link is ours to replace. a hold on another tool's
+        // unreadable link stays too, so defaults never reach its file
+        guard !isLinkedByAnotherTool else {
+            hyprLog(.notice, .config, "another tool put config.json where it is; leaving it alone")
+            return
+        }
+        defer { watch.checkNow() }
         writesHeld = false
         guard isLocalSymlink else { return }
-        guard let data = (try? Data(contentsOf: localConfigURL)) ?? encode(snapshot(), for: localConfigURL) else {
+        guard let data = (try? bytes(at: localConfigURL)) ?? encode(snapshot(), for: localConfigURL) else {
             return
         }
         // beside the link so the rename replaces the link, not what it points at
         let temp = URL(fileURLWithPath: "\(localConfigURL.path).tmp-\(UUID().uuidString)")
         do {
             try data.write(to: temp)
+            Self.copyMode(from: localConfigURL, to: temp)
             try Self.rename(temp, over: localConfigURL)
         } catch {
             try? FileManager.default.removeItem(at: temp)
             hyprLog(.warning, .config, "iCloud link not removed: \(Self.code(of: error))")
         }
+    }
+
+    // a new file gets the default mode, so a private file has to stay private by hand
+    private static func copyMode(from source: URL, to destination: URL) {
+        let fm = FileManager.default
+        guard let mode = try? fm.attributesOfItem(atPath: writeTarget(of: source).path)[.posixPermissions] else { return }
+        try? fm.setAttributes([.posixPermissions: mode], ofItemAtPath: destination.path)
     }
 
     // verify symlink integrity when iCloudSyncEnabled is set in UserDefaults
@@ -382,13 +559,19 @@ final class ConfigStore {
     // values are stale and it must reload before anything saves them over iCloud.
     @discardableResult
     func ensureICloudSymlinkIntegrity(snapshot: () -> SavedConfig) -> Bool {
-        guard !isLocalSymlink else { return false }
+        guard !isLocalSymlink, !isLinkedByAnotherTool else { return false }
 
         guard FileManager.default.fileExists(atPath: iCloudConfigURL.path) else {
             // iCloud file doesn't exist — set up fresh
             enableICloudSync(snapshot: snapshot)
             return false
         }
+        return joinICloud()
+    }
+
+    // link to the copy in iCloud, keeping this Mac's file beside the link
+    // when it differs. true when the path now reads that copy
+    private func joinICloud() -> Bool {
         switch contents(of: localConfigURL) {
         case .missing:
             break
@@ -396,13 +579,14 @@ final class ConfigStore {
             hyprLog(.warning, .config, "config.json not linked to iCloud: can't read it to keep a copy (\(reason))")
             return false
         case .data(let local):
-            if local != (try? Data(contentsOf: iCloudConfigURL)),
+            if local != (try? bytes(at: iCloudConfigURL)),
                !keepCopy(local, of: localConfigURL, suffix: "replaced") {
                 return false
             }
         }
         guard linkLocalToICloud() else { return false }
-        hyprLog(.notice, .config, "config.json linked back to iCloud")
+        writesHeld = false
+        hyprLog(.notice, .config, "config.json linked to the copy in iCloud")
         return true
     }
 
@@ -429,79 +613,50 @@ final class ConfigStore {
 
     // MARK: - file watcher
 
-    /// Keeps trying when the file isn't there yet: a first run before any
-    /// save, or a link waiting on iCloud. When it appears, owners reload.
+    /// Watches both config files, whatever their paths go through: plain
+    /// files, links, linked folders. A file that isn't there yet is picked
+    /// up when it appears. A change made since the last read is reported
+    /// right away, so nothing is lost between a load and the start.
     func startFileWatcher() {
-        closeWatcher()
+        watchEpoch += 1
         watcherWanted = true
-        if !openWatcher() { rearmAfterReplace() }
+        // never read by anyone: nothing in memory to compare with
+        for file in ConfigFile.allCases where baseline[file] == nil {
+            baseline[file] = FileMark.of(url(of: file))
+        }
+        watch.start(epoch: watchEpoch)
     }
 
-    private func openWatcher() -> Bool {
-        // resolve the actual file path (follows symlinks)
-        let watchPath = localConfigURL.resolvingSymlinksInPath().path
-        let fd = open(watchPath, O_EVTONLY)
-        guard fd >= 0 else { return false }
-        fileWatcherFD = fd
+    /// True while the watcher runs and has config.json open, so a write in
+    /// place is heard at once and not at the next look.
+    var isWatchingFile: Bool { watch.isSubscribed(ConfigFile.config.rawValue) }
 
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .rename, .delete],
-            queue: .main
-        )
-        source.setEventHandler { [weak self, unowned source] in
-            guard let self else { return }
-            let replaced = !source.data.isDisjoint(with: [.rename, .delete])
-            self.onFileChanged?()
-            // an atomic save (most editors, `mv tmp config.json`) swaps in a
-            // new inode and leaves this fd on the unlinked old one, which
-            // never fires again. re-open the path so later edits still land
-            if replaced {
-                hyprLog(.notice, .config, "config file replaced on disk, re-arming watcher")
-                self.rearmAfterReplace()
-            }
-        }
-        source.setCancelHandler {
-            close(fd)
-        }
-        source.resume()
-        fileWatcherSource = source
-        return true
-    }
-
-    var isWatchingFile: Bool { fileWatcherSource != nil }
+    var isWatchingMonitorFile: Bool { watch.isSubscribed(ConfigFile.monitor.rawValue) }
 
     func stopFileWatcher() {
-        closeWatcher()
+        watchEpoch += 1
         watcherWanted = false
+        watch.stop()
     }
 
-    private func closeWatcher() {
-        fileWatcherSource?.cancel()
-        fileWatcherSource = nil
-        fileWatcherFD = -1
-        rearmGeneration += 1
-    }
-
-    // re-open the path after the file was replaced, or when it isn't there
-    // yet. editors that rename the old file away before writing the new one
-    // leave nothing to open for a moment, so keep retrying with backoff. once
-    // the new file is watched, reload again: a save that landed in the gap
-    // fired no event.
-    private func rearmAfterReplace(delay: TimeInterval = 0.5) {
-        closeWatcher()
-        let generation = rearmGeneration
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, generation == self.rearmGeneration else { return }
-            if self.openWatcher() {
-                self.onFileChanged?()
-            } else {
-                if delay == 0.5 {
-                    hyprLog(.notice, .config, "config file missing at re-arm, retrying")
-                }
-                self.rearmAfterReplace(delay: min(delay * 2, Self.rearmMaxDelay))
-            }
+    // the watcher saw something change. it only looks; whether memory is
+    // out of date is decided here, on the main queue, against the baseline.
+    // `written` are files that were written in place: those are reread even
+    // when nothing about them looks different
+    private func reconcile(epoch: Int, written: Set<Int>) {
+        guard epoch == watchEpoch else { return }
+        var changed = false
+        for file in ConfigFile.allCases {
+            let now = FileMark.of(url(of: file))
+            guard baseline[file] != now || written.contains(file.rawValue) else { continue }
+            baseline[file] = now
+            changed = true
         }
+        guard changed else { return }
+        // main can get here ahead of the watcher's own next look, so have
+        // it look now: a file that just appeared is open before the owner hears
+        watch.checkNow()
+        onFileChanged?()
     }
 
     // a watcher on the old file would have reported this save, and the
@@ -510,19 +665,192 @@ final class ConfigStore {
     private func reportOwnWrite() {
         guard !ownWriteReportPending else { return }
         ownWriteReportPending = true
+        let epoch = watchEpoch
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.ownWriteReportPending = false
-            if self.watcherWanted { self.onFileChanged?() }
+            if self.watcherWanted, epoch == self.watchEpoch { self.onFileChanged?() }
+        }
+    }
+}
+
+// MARK: - file mark
+
+/// What a path holds right now: the entry at the path, its folder, and the
+/// file it reaches. Equal marks mean nothing changed. Three lookups and no
+/// link walk: a link or folder swapped on the way changes the file reached.
+private struct FileMark: Equatable {
+    // one directory entry, not followed
+    struct Entry: Equatable {
+        let device: dev_t
+        let inode: ino_t
+        let isLink: Bool
+    }
+
+    // ctime moves on every write and can't be set back, so an edit that
+    // keeps size and mtime still shows
+    struct Content: Equatable {
+        let device: dev_t
+        let inode: ino_t
+        let size: off_t
+        let modified: Int64
+        let changed: Int64
+    }
+
+    let entry: Entry?
+    let folder: Entry?
+    // nil when the path reaches no file
+    let content: Content?
+
+    static func of(_ url: URL) -> FileMark {
+        of(path: url.path, folder: url.deletingLastPathComponent().path)
+    }
+
+    static func of(path: String, folder: String) -> FileMark {
+        var info = stat()
+        var content: Content?
+        if fstatat(AT_FDCWD, path, &info, 0) == 0 {
+            content = Content(device: info.st_dev, inode: info.st_ino, size: info.st_size,
+                              modified: nanoseconds(info.st_mtimespec), changed: nanoseconds(info.st_ctimespec))
+        }
+        return FileMark(entry: entry(at: path), folder: entry(at: folder), content: content)
+    }
+
+    private static func entry(at path: String) -> Entry? {
+        var info = stat()
+        guard fstatat(AT_FDCWD, path, &info, AT_SYMLINK_NOFOLLOW) == 0 else { return nil }
+        return Entry(device: info.st_dev, inode: info.st_ino, isLink: info.st_mode & S_IFMT == S_IFLNK)
+    }
+
+    private static func nanoseconds(_ time: timespec) -> Int64 {
+        Int64(time.tv_sec) * 1_000_000_000 + Int64(time.tv_nsec)
+    }
+}
+
+// MARK: - config watch
+
+/// Looks at what the config paths hold on a timer, off the main queue, and
+/// tells main when that changed. The timer finds every kind of change: a
+/// re-pointed link, a swapped folder, a file that appears or goes. Each
+/// reached file is also held open for events, so an edit in place shows at
+/// once. If a file won't open, the timer still covers it.
+private final class ConfigWatch {
+    /// Called on the main queue with the epoch `start` was given, and the
+    /// indexes of files that were written in place since the last call.
+    var onObserved: ((_ epoch: Int, _ written: Set<Int>) -> Void)?
+
+    // as strings: the timer reads them every look
+    private let paths: [(file: String, folder: String)]
+    private let interval: TimeInterval
+    private let opener: ConfigStore.WatchOpener
+    private let queue = DispatchQueue(label: "com.zachgray.HyprMac.config-watch", qos: .utility)
+
+    private struct Leaf {
+        let device: dev_t
+        let inode: ino_t
+        let source: DispatchSourceFileSystemObject
+    }
+
+    // everything below is touched only on `queue`
+    private var timer: DispatchSourceTimer?
+    private var epoch = 0
+    private var observed: [FileMark]?
+    private var leaves: [Leaf?]
+
+    init(urls: [URL], interval: TimeInterval, opener: @escaping ConfigStore.WatchOpener) {
+        self.paths = urls.map { ($0.path, $0.deletingLastPathComponent().path) }
+        self.interval = interval
+        self.opener = opener
+        self.leaves = Array(repeating: nil, count: urls.count)
+    }
+
+    deinit {
+        timer?.cancel()
+        leaves.forEach { $0?.source.cancel() }
+    }
+
+    /// Looks once before it returns, so the files are open from here on.
+    func start(epoch: Int) {
+        queue.sync {
+            halt()
+            self.epoch = epoch
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + interval, repeating: interval, leeway: .milliseconds(100))
+            timer.setEventHandler { [weak self] in self?.look() }
+            timer.resume()
+            self.timer = timer
+            look()
         }
     }
 
-    func restartFileWatcher() {
-        stopFileWatcher()
-        // small delay — let the filesystem settle after move/symlink ops.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.startFileWatcher()
+    func stop() {
+        queue.sync { halt() }
+    }
+
+    /// Look now, for the caller that just changed a file itself. It doesn't
+    /// wait: the look runs on the watch queue, ahead of anything asked after.
+    func checkNow() {
+        queue.async { [weak self] in
+            guard let self, self.timer != nil else { return }
+            self.look()
         }
+    }
+
+    func isSubscribed(_ index: Int) -> Bool {
+        queue.sync { timer != nil && leaves[index] != nil }
+    }
+
+    private func halt() {
+        timer?.cancel()
+        timer = nil
+        observed = nil
+        for index in leaves.indices {
+            leaves[index]?.source.cancel()
+            leaves[index] = nil
+        }
+    }
+
+    // `written` is the file an event just reported a write to, if any. a
+    // write is passed on even when the marks came out equal: the bytes changed
+    private func look(written: Int? = nil) {
+        let marks = paths.map { FileMark.of(path: $0.file, folder: $0.folder) }
+        for (index, mark) in marks.enumerated() { follow(index, mark.content) }
+        // the first look after a start always reports: the owner checks it
+        // against what it last read
+        guard observed != marks || written != nil else { return }
+        observed = marks
+        let epoch = epoch
+        let written: Set<Int> = written.map { [$0] } ?? []
+        DispatchQueue.main.async { [weak self] in self?.onObserved?(epoch, written) }
+    }
+
+    // keep the file the path reaches open for events. an atomic save or a
+    // re-pointed link leaves the old one open, so swap when the mark moves on
+    private func follow(_ index: Int, _ content: FileMark.Content?) {
+        if let leaf = leaves[index], let content, leaf.device == content.device, leaf.inode == content.inode {
+            return
+        }
+        leaves[index]?.source.cancel()
+        leaves[index] = nil
+        guard content != nil else { return }
+        // non-blocking: even an open for events waits on a pipe. and only
+        // a regular file is followed
+        let fd = opener(paths[index].file, O_EVTONLY | O_NONBLOCK)
+        guard fd >= 0 else { return }
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+            close(fd)
+            return
+        }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .extend, .attrib, .rename, .delete], queue: queue)
+        source.setEventHandler { [weak self, unowned source] in
+            let wasWritten = !source.data.isDisjoint(with: [.write, .extend])
+            self?.look(written: wasWritten ? index : nil)
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        leaves[index] = Leaf(device: info.st_dev, inode: info.st_ino, source: source)
     }
 }
 

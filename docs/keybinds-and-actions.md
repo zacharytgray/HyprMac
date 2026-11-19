@@ -419,8 +419,7 @@ Two on-disk files:
   export keys `statusExportEnabled` and `statusHookCommand` live here
   too, set by hand with no Settings UI (see [status-bar.md](status-bar.md)).
   So does `externalControlEnabled` (see [external-control.md](external-control.md)).
-  The file watcher follows only `config.json`, so quit HyprMac before
-  editing this file and reopen it after.
+  HyprMac watches this file too and reloads it on change.
 
 A file HyprMac can't decode is copied to `<name>.unreadable` before a save
 overwrites it. A file that exists but won't open is not overwritten at all: the
@@ -569,11 +568,17 @@ Config lives at `~/Library/Application Support/HyprMac/config.json`
 { "keyCode": 123, "modifiers": 1, "action": { "focusDirection": { "_0": "left" } } }
 ```
 
-`ConfigStore` watches the file and reloads it on change. After an atomic
-save (most editors, `mv tmp config.json`) the file has a new inode, so the
-watcher re-opens the path, retries while the path is briefly missing, and
-reloads once more so a save in that gap is not lost. If an edit does not
-show up, restart HyprMac. If an edit leaves the file unreadable, HyprMac keeps
+`ConfigStore` watches both files and reloads on change. It holds each file
+open, so an edit in place shows at once. Every two seconds it also checks
+which file each path reaches, so an atomic save, a re-pointed link (Home
+Manager, Stow, chezmoi) or a swapped folder is picked up too. If an edit does
+not show up, restart HyprMac.
+
+A config file HyprMac can't write, such as a link into the Nix store, still
+loads. Settings shows a read-only notice, and changes made there last until
+the next reload. HyprMac never replaces a read-only file, even in a writable
+folder. The iCloud switch stays off while the config is read-only, or while
+another tool's link or linked folder puts it where it is. If an edit leaves the file unreadable, HyprMac keeps
 its current settings. A copy of the broken file goes to `config.json.unreadable`
 before the next save replaces it. A restart with the broken file runs on
 defaults. Example — bind Hypr+B to launch Safari:

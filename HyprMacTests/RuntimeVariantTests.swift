@@ -96,4 +96,17 @@ final class RuntimeVariantTests: XCTestCase {
             hasSeenOnboarding: true, lastVersion: nil,
             currentVersion: "0.12.0", debugApp: true))
     }
+
+    func testOnlyANixInstallLeavesUpdatesToNix() {
+        let nix = ["/nix/store/abc123-hyprmac-0.24.2/Applications/HyprMac.app",
+                   "/Applications/Nix Apps/HyprMac.app",
+                   "/Users/me/Applications/Home Manager Apps/HyprMac.app"]
+        for path in nix { XCTAssertTrue(RuntimeVariant.isNixInstall(bundlePath: path), path) }
+
+        let other = ["/Applications/HyprMac.app",
+                     "/Users/me/Applications/HyprMac.app",
+                     "/Users/me/Nix Apps Backup/HyprMac.app",
+                     "/Volumes/HyprMac/HyprMac.app"]
+        for path in other { XCTAssertFalse(RuntimeVariant.isNixInstall(bundlePath: path), path) }
+    }
 }
