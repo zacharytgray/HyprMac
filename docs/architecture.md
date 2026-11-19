@@ -844,12 +844,13 @@ Config safety, all in `ConfigStore`:
 | Any save | Atomic, written to the real file behind a symlink so the iCloud link survives. A failure is logged with its error code and the old file stays |
 | Any save to a file or folder HyprMac can't write | Skipped. `access(W_OK)` on the resolved file and its folder, so a 0444 file in a writable folder isn't renamed over. Settings shows a read-only notice |
 | Something that isn't a regular file at the path (a pipe) | Unreadable, checked with one `stat` before the read, so launch can't block on it |
-| A file iCloud hasn't downloaded (`SF_DATALESS`) | Not read on the main thread. It counts as unreadable, so a link to it holds saves. A background read asks for the download, and the watcher reloads when it lands |
+| A file iCloud hasn't downloaded (`SF_DATALESS`) | Not read on the main thread. It counts as unreadable, so a link to it holds saves. A background read brings it down, and owners reload when it lands |
 | A link or linked folder another tool made (Nix, Stow, chezmoi) | Saves go through it if it's writable. The iCloud switch never replaces or moves it, and turns back off |
 | Launch finds a link it can't read | Hold `config.json` saves so defaults never reach other Macs. A good file arriving ends the hold, and so does turning sync off or on. `monitor-config.json` still saves. A file lost while running isn't held, because memory holds real settings |
 | Launch finds a regular file where the iCloud link belongs | Copy it to `config.json.replaced` if it differs, link, then reload before anything can save |
-| Enable sync over a readable iCloud file | The iCloud copy wins, through the launch-repair path: the local file goes to `config.json.replaced` if it differs, the path links to iCloud, and the shared settings load |
-| Enable sync over an iCloud file that doesn't decode | The local file goes up. The bad iCloud file is copied to `config.json.replaced` first, and the local file goes only after iCloud holds its data |
+| Enable sync over a readable iCloud file | When the two differ, Settings asks which to keep. iCloud's: the launch-repair path, so the local file goes to `config.json.replaced`, the path links to iCloud, and the shared settings load. This Mac's: the upload path below. Launch repair never asks; iCloud wins |
+| Enable sync that sets nothing up (an iCloud copy not downloaded, a write that fails) | The switch and its preference go back off |
+| Enable sync over an iCloud file that doesn't decode, or choosing this Mac's settings | The local file goes up. The bad iCloud file is copied to `config.json.replaced` first, and the local file goes only after iCloud holds its data |
 | Toggle sync on a private file | The mode carries across, so a 0600 file stays 0600 in iCloud and back |
 | Reset all settings | One update. The button has no confirmation, so both files are copied to `<name>.replaced` first |
 

@@ -195,17 +195,34 @@ class UserConfig: ObservableObject {
             if iCloudSyncEnabled, store.isLinkedByAnotherTool {
                 iCloudSyncEnabled = false
             }
-            UserDefaults.standard.set(iCloudSyncEnabled, forKey: "iCloudSyncEnabled")
             if iCloudSyncEnabled {
                 // joined a copy already in iCloud: its settings are the live ones now
-                if store.enableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty }) {
+                if store.enableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty },
+                                          cloudWins: !joinUsesThisMac) {
                     reloadFromDisk()
                 }
+                // nothing set up, say a copy in iCloud not downloaded yet. the
+                // switch must not show a sync that isn't happening
+                if !store.isLinkedToICloud { iCloudSyncEnabled = false }
             } else {
                 store.disableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
             }
+            UserDefaults.standard.set(iCloudSyncEnabled, forKey: "iCloudSyncEnabled")
         }
     }
+
+    private var joinUsesThisMac = false
+
+    /// Turns sync on after the user picked a side, when this Mac and iCloud
+    /// hold different settings. The other side is kept as config.json.replaced.
+    func turnOnICloudSync(usingThisMac: Bool) {
+        joinUsesThisMac = usingThisMac
+        iCloudSyncEnabled = true
+        joinUsesThisMac = false
+    }
+
+    /// True when turning sync on should ask which settings to keep.
+    var iCloudCopyDiffersFromLocal: Bool { store.iCloudCopyDiffersFromLocal }
 
     static let showDockIconKey = "showDockIcon"
     // per Mac too. read through @AppStorage by the menu bar scene and the

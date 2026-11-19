@@ -89,6 +89,7 @@ final class ConfigStore {
         self.monitorConfigURL = monitorConfigURL
         self.iCloudRootURL = iCloudRootURL
         self.datalessFlag = datalessFlag
+        self.watchInterval = watchInterval
         self.watch = ConfigWatch(urls: [localConfigURL, monitorConfigURL],
                                  interval: watchInterval, opener: watchOpener)
         watch.onObserved = { [weak self] epoch, written in self?.reconcile(epoch: epoch, written: written) }
@@ -103,6 +104,9 @@ final class ConfigStore {
     private static func isLink(_ url: URL) -> Bool {
         (try? FileManager.default.destinationOfSymbolicLink(atPath: url.path)) != nil
     }
+
+    /// True when config.json is the link into iCloud, as found on disk now.
+    var isLinkedToICloud: Bool { linksToICloud }
 
     private var linksToICloud: Bool {
         guard let destination = try? FileManager.default.destinationOfSymbolicLink(atPath: localConfigURL.path) else {
@@ -170,6 +174,9 @@ final class ConfigStore {
     private var baseline: [ConfigFile: FileMark] = [:]
     private var ownWriteReportPending = false
     private let datalessFlag: UInt32
+    private let watchInterval: TimeInterval
+    // paths a background read is bringing down from iCloud
+    private var downloading: Set<String> = []
 
     // MARK: - load
 
@@ -234,12 +241,32 @@ final class ConfigStore {
         }
         guard info.st_mode & S_IFMT == S_IFREG else { throw FileError.notAFile }
         guard info.st_flags & datalessFlag == 0 else {
-            // reading it is what brings it down. do that off the main thread;
-            // the watcher reloads when it lands
-            DispatchQueue.global(qos: .utility).async { _ = try? Data(contentsOf: url) }
+            download(url)
             throw FileError.notDownloaded
         }
         return try Data(contentsOf: url)
+    }
+
+    // reading the file is what brings it down, so read it off the main
+    // thread. once it's here, owners reload, whether or not the watcher saw it
+    private func download(_ url: URL) {
+        guard downloading.insert(url.path).inserted else { return }
+        let flag = datalessFlag
+        let interval = watchInterval
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            var arrived = false
+            for _ in 0..<5 where !arrived {
+                _ = try? Data(contentsOf: url)
+                var info = stat()
+                arrived = fstatat(AT_FDCWD, url.path, &info, 0) == 0 && info.st_flags & flag == 0
+                if !arrived { Thread.sleep(forTimeInterval: interval) }
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.downloading.remove(url.path)
+                if arrived { self.onFileChanged?() }
+            }
+        }
     }
 
     private static func isFileMissing(_ error: Error) -> Bool {
@@ -425,8 +452,11 @@ final class ConfigStore {
     //
     // returns true when the path now reads a different file, so the
     // caller must reload.
+    //
+    // `cloudWins: false` is the user choosing this Mac's settings: they go
+    // up, and the copy in iCloud is kept as config.json.replaced.
     @discardableResult
-    func enableICloudSync(snapshot: () -> SavedConfig) -> Bool {
+    func enableICloudSync(snapshot: () -> SavedConfig, cloudWins: Bool = true) -> Bool {
         guard !isLinkedByAnotherTool else {
             hyprLog(.warning, .config, "iCloud sync not set up: another tool put config.json where it is")
             return false
@@ -435,7 +465,7 @@ final class ConfigStore {
         let fm = FileManager.default
         let isLink = isLocalSymlink
 
-        if !isLink, hasReadableICloudCopy { return joinICloud() }
+        if !isLink, cloudWins, hasReadableICloudCopy { return joinICloud() }
 
         if !isLink || !fm.fileExists(atPath: localConfigURL.path) {
             let hasLocal = fm.fileExists(atPath: localConfigURL.path)
@@ -469,6 +499,13 @@ final class ConfigStore {
         if !isLink, !linkLocalToICloud() { return false }
         writesHeld = false
         return false
+    }
+
+    /// True when turning sync on has a choice to make: this Mac has its own
+    /// config.json, and iCloud holds a different one that reads.
+    var iCloudCopyDiffersFromLocal: Bool {
+        guard !isLocalSymlink, hasReadableICloudCopy, let local = try? bytes(at: localConfigURL) else { return false }
+        return local != (try? bytes(at: iCloudConfigURL))
     }
 
     private var hasReadableICloudCopy: Bool {

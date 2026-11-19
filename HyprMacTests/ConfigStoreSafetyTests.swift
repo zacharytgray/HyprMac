@@ -1055,4 +1055,85 @@ final class ConfigStoreSafetyTests: XCTestCase {
         waitUntil("the downloaded file loads") { config.gapSize == 41 }
         XCTAssertFalse(cloudStore.writesHeld)
     }
+
+    // the download lands while the watcher sees nothing: the background
+    // read itself has the owner reload
+    func testADownloadedFileLoadsWithoutTheWatcher() throws {
+        let blind = ConfigStore(localConfigURL: local, monitorConfigURL: monitor, iCloudRootURL: iCloudRoot,
+                                watchInterval: 0.15, watchOpener: { _, _ in -1 },
+                                datalessFlag: UInt32(UF_NODUMP))
+        addTeardownBlock { blind.stopFileWatcher() }
+        try putInICloud(other)
+        try linkLocalToICloud()
+        XCTAssertEqual(chflags(iCloudFile.path, UInt32(UF_NODUMP)), 0)
+        let config = UserConfig(store: blind, iCloudSyncEnabled: true)
+        // stopped, so only the background read can report it
+        blind.stopFileWatcher()
+        XCTAssertEqual(config.gapSize, UserConfigDefaults.gapSize)
+
+        XCTAssertEqual(chflags(iCloudFile.path, 0), 0)
+
+        waitUntil("the downloaded file loads") { config.gapSize == 41 }
+    }
+
+    // MARK: the sync switch shows what is on disk
+
+    func testTheSwitchGoesBackOffWhenNothingWasSetUp() throws {
+        let cloudStore = ConfigStore(localConfigURL: local, monitorConfigURL: monitor, iCloudRootURL: iCloudRoot,
+                                     datalessFlag: UInt32(UF_NODUMP))
+        addTeardownBlock { cloudStore.stopFileWatcher() }
+        try good.write(to: local)
+        try putInICloud(other)
+        XCTAssertEqual(chflags(iCloudFile.path, UInt32(UF_NODUMP)), 0)
+        let config = UserConfig(store: cloudStore, iCloudSyncEnabled: false)
+
+        config.iCloudSyncEnabled = true
+
+        XCTAssertFalse(isLink(local))
+        XCTAssertFalse(config.iCloudSyncEnabled, "the switch shows a sync that isn't happening")
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: "iCloudSyncEnabled"))
+        XCTAssertEqual(try savedGap(local), 23)
+    }
+
+    // MARK: choosing a side when both differ
+
+    func testOnlyDifferentFilesOnBothSidesAskWhichToKeep() throws {
+        XCTAssertFalse(store.iCloudCopyDiffersFromLocal, "nothing on either side")
+        try good.write(to: local)
+        XCTAssertFalse(store.iCloudCopyDiffersFromLocal, "nothing in iCloud")
+        try putInICloud(good)
+        XCTAssertFalse(store.iCloudCopyDiffersFromLocal, "the same bytes")
+        try putInICloud(garbage)
+        XCTAssertFalse(store.iCloudCopyDiffersFromLocal, "a damaged copy is not a choice")
+        try putInICloud(other)
+        XCTAssertTrue(store.iCloudCopyDiffersFromLocal)
+    }
+
+    // sync off, an edit here, sync on: the user can keep the edit
+    func testChoosingThisMacsSettingsUploadsThemAndKeepsTheICloudCopy() throws {
+        try good.write(to: local)
+        try putInICloud(other)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+
+        config.turnOnICloudSync(usingThisMac: true)
+
+        XCTAssertTrue(config.iCloudSyncEnabled)
+        XCTAssertTrue(isLink(local))
+        XCTAssertEqual(config.gapSize, 23)
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), good)
+        XCTAssertEqual(copy(local, "replaced"), other, "the iCloud side is kept")
+    }
+
+    func testChoosingTheICloudSettingsJoinsAndKeepsThisMacsFile() throws {
+        try good.write(to: local)
+        try putInICloud(other)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+
+        config.turnOnICloudSync(usingThisMac: false)
+
+        XCTAssertTrue(config.iCloudSyncEnabled)
+        XCTAssertEqual(config.gapSize, 41)
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), other)
+        XCTAssertEqual(copy(local, "replaced"), good, "this Mac's side is kept")
+    }
 }
