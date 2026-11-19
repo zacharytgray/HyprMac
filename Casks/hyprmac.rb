@@ -5,7 +5,7 @@ cask "hyprmac" do
   url "https://github.com/zacharytgray/HyprMac/releases/download/v#{version}/HyprMac.dmg"
   name "HyprMac"
   desc "Tiling window manager for macOS inspired by Hyprland"
-  homepage "https://github.com/zacharytgray/HyprMac"
+  homepage "https://hyprmac.app"
 
   depends_on macos: :ventura
 
