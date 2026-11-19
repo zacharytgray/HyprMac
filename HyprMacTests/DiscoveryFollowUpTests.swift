@@ -23,6 +23,21 @@ final class DiscoveryFollowUpTests: XCTestCase {
         XCTAssertEqual(unknown, [1159: [2], 99: [6]])
     }
 
+    func testAWindowTheWalkReadAndFilteredOutIsNotUnknown() {
+        // Helium's dropdown: AX lists it, the filter drops it by subrole
+        let windows = [win(1), win(105605), win(105606)]
+        let unknown = DiscoveryFollowUp.unknownOnScreen(windows, known: [1], hidden: [],
+                                                        filtered: [105605], ownPID: 2)
+        XCTAssertEqual(unknown, [1159: [105606]])
+    }
+
+    func testACreateForAFilteredPopupCostsTheBlindRetryOnly() {
+        var f = DiscoveryFollowUp()
+        let unknown = DiscoveryFollowUp.unknownOnScreen([win(105605)], known: [], hidden: [],
+                                                        filtered: [105605], ownPID: 2)
+        XCTAssertEqual(retries(&f, unknown: unknown[pid] ?? [], from: 0), 1)
+    }
+
     func testAPollThatAdmitsTheAppsWindowEndsTheWatch() {
         var f = DiscoveryFollowUp()
         f.watch(pid: pid, reason: "windowCreated", blindRetry: true, now: 0)

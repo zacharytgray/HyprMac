@@ -68,6 +68,11 @@ class AccessibilityManager {
     /// hold discovery took in an earlier poll: a window in it is readable
     /// and on screen, whatever that poll said.
     private(set) var readWindowIDs: Set<CGWindowID> = []
+    /// Windows the last `getAllWindows` walk read and the filter kept out:
+    /// a tooltip, a dropdown, a browser's hover card. AX listed them and
+    /// the filter answered, so they are not windows discovery has yet to
+    /// see, and no follow-up poll waits for them.
+    private(set) var filteredWindowIDs: Set<CGWindowID> = []
 
     /// Messaging timeout for the discovery walk. The process-wide default is
     /// one second, which is what one stalled app costs the main thread per
@@ -197,13 +202,14 @@ class AccessibilityManager {
     /// description, identifier, title and CG layer for context. Each pass
     /// pays one `_AXUIElementGetWindow` call per dropped window for the key;
     /// the rest is read only the first time.
+    /// Returns the window's id when it has one, logged or not.
     private func logDropOnce(_ element: AXUIElement, pid: pid_t, bundle: String,
                              role: String?, subrole: String?, isModal: Bool,
                              reason: WindowAdmissionFilter.DropReason,
-                             cgEntries: [CGWindowInfo]) {
+                             cgEntries: [CGWindowInfo]) -> CGWindowID? {
         let wid = windowID(for: element)
         let key = wid.map { "\($0)" } ?? "\(pid):\(role ?? "nil"):\(subrole ?? "nil")"
-        guard loggedDrops.insert(key).inserted else { return }
+        guard loggedDrops.insert(key).inserted else { return wid }
         let title = stringAttribute(element, kAXTitleAttribute).map { String($0.prefix(80)) } ?? ""
         let roleDescription = stringAttribute(element, kAXRoleDescriptionAttribute) ?? "nil"
         let identifier = stringAttribute(element, kAXIdentifierAttribute) ?? "nil"
@@ -216,6 +222,7 @@ class AccessibilityManager {
                 + "bundle=\(bundle) reason=\(reason.rawValue) role=\(role ?? "nil") "
                 + "subrole=\(subroleText ?? "nil") roleDesc=\(roleDescription) ident=\(identifier) "
                 + "modal=\(modal) title='\(title)' frame=\(Self.text(axFrame(for: element))) cg=\(cgText)")
+        return wid
     }
 
     /// Log a Quick Look panel's verdict when it changes: on the first pass
@@ -413,6 +420,7 @@ class AccessibilityManager {
         var windows: [HyprWindow] = []
         var usedIDs: Set<CGWindowID> = []
         var unreadable: Set<CGWindowID> = []
+        var filtered: Set<CGWindowID> = []
         var unbound: Set<CGWindowID> = []
         var skipped: [String] = []
         var overBudget: [pid_t] = []
@@ -591,9 +599,10 @@ class AccessibilityManager {
                         quickLookSeen.insert(id)
                         noteQuickLookVerdict(verdict, windowID: id, pid: pid, bundle: bundle,
                                              frame: { self.axFrame(for: axWin) }, cg: ownCG)
-                    } else {
-                        logDropOnce(axWin, pid: pid, bundle: bundle, role: role, subrole: subrole,
-                                    isModal: isModal, reason: reason, cgEntries: cgEntries)
+                    } else if let id = logDropOnce(axWin, pid: pid, bundle: bundle, role: role,
+                                                   subrole: subrole, isModal: isModal, reason: reason,
+                                                   cgEntries: cgEntries) {
+                        filtered.insert(id)
                     }
                 }
             }
@@ -685,6 +694,7 @@ class AccessibilityManager {
         }
         pacing.finishWalk(skipped: overBudget, running: runningPIDs)
         unreadableWindowIDs = unreadable
+        filteredWindowIDs = filtered
         readWindowIDs = Set(windows.map(\.windowID))
         unboundWindowIDs = unbound
         lastWalkDuration = now().timeIntervalSince(walkStarted)

@@ -66,13 +66,19 @@ struct DiscoveryFollowUp {
     private(set) var lastEvent: [pid_t: (kind: String, at: TimeInterval)] = [:]
     private(set) var lastCreate: [pid_t: TimeInterval] = [:]
 
-    /// Unknown on-screen layer-0 windows by app.
+    /// Unknown on-screen layer-0 windows by app. `filtered` are the windows
+    /// the last walk read and its filter kept out: a browser's dropdown or
+    /// hover card is listed by AX and answered for, so it is not a window a
+    /// later poll could still admit. Every one of them used to cost its
+    /// create three retries.
     static func unknownOnScreen(_ windows: [StackedWindow], known: Set<CGWindowID>,
-                                hidden: Set<CGWindowID>, ownPID: pid_t) -> [pid_t: [CGWindowID]] {
+                                hidden: Set<CGWindowID>, filtered: Set<CGWindowID> = [],
+                                ownPID: pid_t) -> [pid_t: [CGWindowID]] {
         var result: [pid_t: [CGWindowID]] = [:]
         for w in windows where w.layer == 0 && w.alpha > 0.01 && w.ownerPID != ownPID {
             guard let b = w.bounds, b.width >= minimumSide, b.height >= minimumSide,
-                  !known.contains(w.windowID), !hidden.contains(w.windowID) else { continue }
+                  !known.contains(w.windowID), !hidden.contains(w.windowID),
+                  !filtered.contains(w.windowID) else { continue }
             result[w.ownerPID, default: []].append(w.windowID)
         }
         return result
