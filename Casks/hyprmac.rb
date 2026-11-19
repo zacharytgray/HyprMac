@@ -1,11 +1,11 @@
 cask "hyprmac" do
-  version "0.24.2"
-  sha256 "242be2445da0b660394d9b0ee3b3a2ce878993ba96b71f32abef6846555466cb"
+  version "0.25.0"
+  sha256 "c891c760219b853e301a02227ef17a837346ac54afe170a25a8c83aa7e87e239"
 
   url "https://github.com/zacharytgray/HyprMac/releases/download/v#{version}/HyprMac.dmg"
   name "HyprMac"
   desc "Tiling window manager for macOS inspired by Hyprland"
-  homepage "https://github.com/zacharytgray/HyprMac"
+  homepage "https://hyprmac.app"
 
   depends_on macos: :ventura
 

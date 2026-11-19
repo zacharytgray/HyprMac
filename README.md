@@ -9,6 +9,7 @@
 ### Tile your Mac from the keyboard.
 
 A keyboard-driven tiling window manager for macOS, inspired by [Hyprland](https://hyprland.org).<br>
+Windows tile themselves in a dwindle (BSP) layout. macOS 13+, Apple silicon and Intel, SIP stays on.<br>
 Free, open source, and the first real job your Caps Lock key has ever had.
 
 [![Latest release][badge-release]][releases]
@@ -222,6 +223,21 @@ Dragging works too. Drag a tiled window by its title bar onto another tile's edg
 there, or hold Hypr while dragging to swap the two. The tile can be on another monitor, and an
 empty workspace there takes the window whole.
 
+## Choosing a Mac tiler
+
+HyprMac is for you if you want Hyprland's dwindle layout, a Settings window instead of dotfiles,
+and SIP left on, on macOS 13 or later on either chip. Other good tools fit other people:
+
+- [AeroSpace](https://github.com/nikitabobko/AeroSpace) for i3-style trees, a TOML config and a CLI.
+- [yabai](https://github.com/asmvik/yabai) for BSP on native Spaces and deep shell scripting. Some
+  features need SIP partly disabled.
+- [OmniWM](https://github.com/OmniNull/OmniWM) for dwindle plus Niri-style scrolling, on Apple
+  silicon with macOS 26 or later.
+- [Amethyst](https://github.com/ianyh/Amethyst) for xmonad-style layouts.
+
+The [full comparison](https://hyprmac.app/guides/macos-tiling-window-managers/) has a side-by-side
+table with a source for every claim.
+
 ## Reference
 
 <details>
@@ -369,10 +385,10 @@ test gate:
 ## Inspired by
 
 - [Hyprland](https://hyprland.org): the Wayland compositor this project takes after
-- [yabai](https://github.com/koekeishiya/yabai): macOS tiling window manager
+- [yabai](https://github.com/asmvik/yabai): macOS tiling window manager
 - [AeroSpace](https://github.com/nikitabobko/AeroSpace): Swift tiling window manager with virtual workspaces
 - [Amethyst](https://github.com/ianyh/Amethyst): macOS tiling window manager
-- [skhd](https://github.com/koekeishiya/skhd): hotkey daemon
+- [skhd](https://github.com/asmvik/skhd): hotkey daemon
 
 ## License
 

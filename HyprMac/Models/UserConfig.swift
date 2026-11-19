@@ -189,14 +189,48 @@ class UserConfig: ObservableObject {
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(iCloudSyncEnabled, forKey: "iCloudSyncEnabled")
+            // another tool's link or folder is not ours to move into iCloud.
+            // the switch goes back off, so it never shows a sync that isn't
+            // happening. setting it here doesn't run didSet again
+            if iCloudSyncEnabled, store.isLinkedByAnotherTool {
+                iCloudSyncEnabled = false
+            }
             if iCloudSyncEnabled {
-                store.enableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
+                // joined a copy already in iCloud: its settings are the live ones now
+                if store.enableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty },
+                                          cloudWins: !joinUsesThisMac) {
+                    reloadFromDisk()
+                }
+                // nothing set up, say a copy in iCloud not downloaded yet. the
+                // switch must not show a sync that isn't happening
+                if !store.isLinkedToICloud { iCloudSyncEnabled = false }
             } else {
                 store.disableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
             }
+            UserDefaults.standard.set(iCloudSyncEnabled, forKey: "iCloudSyncEnabled")
         }
     }
+
+    private var joinUsesThisMac = false
+
+    // the path changed while running: another tool's link, or a file that
+    // can't be written, took the place of the iCloud link. the switch and
+    // its preference follow the disk, as at launch
+    private func matchSyncSwitchToDisk() {
+        guard iCloudSyncEnabled, isICloudSyncLocked, !store.isLinkedToICloud else { return }
+        iCloudSyncEnabled = false
+    }
+
+    /// Turns sync on after the user picked a side, when this Mac and iCloud
+    /// hold different settings. The other side is kept as config.json.replaced.
+    func turnOnICloudSync(usingThisMac: Bool) {
+        joinUsesThisMac = usingThisMac
+        iCloudSyncEnabled = true
+        joinUsesThisMac = false
+    }
+
+    /// True when turning sync on should ask which settings to keep.
+    var iCloudCopyDiffersFromLocal: Bool { store.iCloudCopyDiffersFromLocal }
 
     static let showDockIconKey = "showDockIcon"
     // per Mac too. read through @AppStorage by the menu bar scene and the
@@ -228,6 +262,14 @@ class UserConfig: ObservableObject {
 
     var isICloudDriveAvailable: Bool { store.isICloudDriveAvailable }
 
+    /// True when a config file can't be saved, as when Nix manages it.
+    /// Changes made in Settings then last until the next load.
+    var isConfigReadOnly: Bool { store.isConfigReadOnly || store.isMonitorConfigReadOnly }
+
+    /// True when the iCloud switch can't be used: the config is read-only,
+    /// or another tool put it where it is.
+    var isICloudSyncLocked: Bool { store.isConfigReadOnly || store.isLinkedByAnotherTool }
+
     /// `repairsOnLaunch: false` skips the iCloud relink and the monitor-file
     /// migration, the only writes a launch makes before anything changes.
     init(store: ConfigStore = ConfigStore(),
@@ -235,7 +277,7 @@ class UserConfig: ObservableObject {
          showDockIcon: Bool = RuntimeVariant.inheritedBool(forKey: UserConfig.showDockIconKey),
          repairsOnLaunch: Bool = true) {
         self.store = store
-        self.iCloudSyncEnabled = iCloudSyncEnabled
+        self.iCloudSyncEnabled = iCloudSyncEnabled && !store.isLinkedByAnotherTool
         self.showDockIcon = showDockIcon
 
         let monitorConfig = store.loadSavedMonitorConfig()
@@ -339,7 +381,10 @@ class UserConfig: ObservableObject {
             reloadFromDisk()
         }
 
-        store.onFileChanged = { [weak self] in self?.reloadFromDisk() }
+        store.onFileChanged = { [weak self] in
+            self?.matchSyncSwitchToDisk()
+            self?.reloadFromDisk()
+        }
         store.startFileWatcher()
     }
 
@@ -557,7 +602,16 @@ class UserConfig: ObservableObject {
     }
 
     func reloadFromDisk() {
-        guard let saved = store.loadSavedConfig() else { return }
+        // each file loads on its own. Nix can manage monitor-config.json
+        // with no config.json at all
+        guard let saved = store.loadSavedConfig() else {
+            guard let mc = store.loadSavedMonitorConfig() else { return }
+            isReloading = true
+            applyMonitorConfig(mc)
+            isReloading = false
+            didApplyRuntimeChange.send()
+            return
+        }
 
         isReloading = true
         keybinds = Self.mergeNewDefaults(saved: saved.keybinds,
@@ -594,18 +648,22 @@ class UserConfig: ObservableObject {
 
         // monitor settings come from the local file, not the synced config
         if let mc = store.loadSavedMonitorConfig() {
-            maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
-            disabledMonitors = Set(mc.disabledMonitors ?? [])
-            outerPaddingPerMonitor = mc.outerPaddingPerMonitor ?? [:]
-            workspaceMonitors = mc.workspaceMonitors ?? [:]
-            statusExportEnabled = mc.statusExportEnabled ?? false
-            statusHookCommand = mc.statusHookCommand
-            externalControlEnabled = mc.externalControlEnabled ?? false
+            applyMonitorConfig(mc)
         }
         // else keep current values — don't overwrite with synced defaults
 
         isReloading = false
         didApplyRuntimeChange.send()
+    }
+
+    private func applyMonitorConfig(_ mc: SavedMonitorConfig) {
+        maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
+        disabledMonitors = Set(mc.disabledMonitors ?? [])
+        outerPaddingPerMonitor = mc.outerPaddingPerMonitor ?? [:]
+        workspaceMonitors = mc.workspaceMonitors ?? [:]
+        statusExportEnabled = mc.statusExportEnabled ?? false
+        statusHookCommand = mc.statusHookCommand
+        externalControlEnabled = mc.externalControlEnabled ?? false
     }
 }
 

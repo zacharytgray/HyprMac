@@ -21,12 +21,9 @@ file and keep its other keys:
 
 If the file is not there yet, an object with just the two keys works.
 
-Quit HyprMac before the edit and open it again afterwards. HyprMac reads
-`monitor-config.json` at launch. Its file watcher follows only `config.json`,
-so an edit to this file while HyprMac runs is not picked up. The next
-change HyprMac saves (any Settings change) writes its in-memory copy over the
-file and drops the edit. To turn the export off, set `statusExportEnabled` to
-`false` or remove it, the same way. "Reset all settings…" in Settings → General also turns
+HyprMac watches `monitor-config.json` and reloads it within about two
+seconds of an edit, so there is no need to quit first. To turn the export
+off, set `statusExportEnabled` to `false` or remove it, the same way. "Reset all settings…" in Settings → General also turns
 it off and clears the command.
 
 With `statusExportEnabled` off or missing, nothing below happens: no file, no

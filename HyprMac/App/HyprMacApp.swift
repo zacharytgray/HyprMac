@@ -11,7 +11,9 @@ import Sparkle
 struct HyprMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     #if !HYPRMAC_DEBUG_VARIANT
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+    // Nix replaces the bundle on its own; Sparkle must not
+    private let updaterController = SPUStandardUpdaterController(
+        startingUpdater: !RuntimeVariant.updatesManagedByNix, updaterDelegate: nil, userDriverDelegate: nil)
     #endif
     // per Mac, off removes the menu bar item. reopening the app shows Settings
     @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true

@@ -26,36 +26,25 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "capslock",
-            title: "Hypr Holds Through Control",
-            description: "Letting go of Control during a Hypr shortcut no longer ends Hypr while Caps Lock is still held.",
-            credit: "wbalbinot"
-        ),
-        WhatsNewFeature(
             icon: "rectangle.split.2x1",
-            title: "New Windows Split the Focused Tile",
-            description: "A new window now opens beside the tile you have focused instead of at the end of the layout. A window you close and reopen does the same.",
-            credit: "wbalbinot"
+            title: "Windows Tile Beside Dia",
+            description: "A window moved next to Dia now tiles beside it instead of floating on top. HyprMac no longer believes Dia when it wrongly reports a resize failed.",
+            credit: "cipas"
         ),
         WhatsNewFeature(
-            icon: "display.2",
-            title: "Apps Open on the Monitor You're On",
-            description: "An app's first window now opens on the monitor under your pointer, beside the focused tile. Pinned apps still go to their workspace."
+            icon: "lock.doc",
+            title: "Configs Managed by Other Tools",
+            description: "When Nix, a dotfiles tool or a read-only file owns your config, Settings says so and HyprMac never overwrites it."
         ),
         WhatsNewFeature(
-            icon: "pin",
-            title: "Pinned Apps Reopen on Their Workspace",
-            description: "A pinned app's window that you close and reopen now goes back to its pinned workspace instead of the one on screen."
+            icon: "arrow.triangle.2.circlepath",
+            title: "Config Edits Load Right Away",
+            description: "Changes to config.json or monitor-config.json from an editor or another tool now apply within a couple of seconds."
         ),
         WhatsNewFeature(
-            icon: "bolt.horizontal",
-            title: "No More Tiles Stuck in the Corner",
-            description: "A tile whose app was busy during a workspace switch now appears as soon as the app answers, instead of staying hidden for seconds."
-        ),
-        WhatsNewFeature(
-            icon: "ruler",
-            title: "Size-Limited Windows Settle Sooner",
-            description: "HyprMac no longer retries sizes it already learned an app refuses, so a window with a minimum size is placed with fewer resizes."
+            icon: "icloud",
+            title: "Safer iCloud Sync",
+            description: "Turning on sync now asks which settings to keep when this Mac and iCloud differ. It keeps a backup of the other and keeps private files private."
         ),
     ]
 }

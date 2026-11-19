@@ -42,13 +42,39 @@ struct FrameSizingAttempt {
     /// `possiblyWritten` records that a setter was issued — it is evidence
     /// of a possible mutation, never proof the app applied the frame.
     /// `writesCompleted` means every frame setter returned success for
-    /// that window; the cleanup that follows carries its own error.
+    /// that window, or answered -25205 and left it `serverJudged`; the
+    /// cleanup that follows carries its own error.
     struct Progress: Equatable {
         var phase: FrameSizingPhase = .candidate
         var generation: UInt64 = 0
         var targetIDs: [CGWindowID] = []
         var possiblyWritten: Set<CGWindowID> = []
         var writesCompleted: Set<CGWindowID> = []
+        /// Windows with a setter that answered -25205 (`attributeUnsupported`)
+        /// in this attempt, on its first try or after the nudge resend.
+        /// Seen live with Dia on 2026-11-18: it gives that answer to requests
+        /// it carried out. A size write had landed on the window server when
+        /// the answer came back, and a close press closed the window. A note
+        /// from 2026-10-30 also has it not applying an equal write. So the
+        /// code is not evidence either way, and the app that gave it is not
+        /// asked where the window stands: the readback comes from the window
+        /// server instead.
+        ///
+        /// The mark itself lives in `FrameSuspects`, keyed by owner pid and
+        /// window id, for as long as the window does. This set is the
+        /// pass's view of it: the targets marked when it started, plus any
+        /// a setter marked on the way.
+        var serverJudged: Set<CGWindowID> = []
+        /// The subsets whose last size setter, or last position setter,
+        /// still answered -25205 after any resend. Only that attribute is
+        /// held against its target: off target on the window server, it
+        /// fails as the write it was. The other attribute, and a window the
+        /// resend got a success code for, are judged like any other, so a
+        /// size short of its target after a successful size setter is still
+        /// a minimum to learn.
+        var refusedSizes: Set<CGWindowID> = []
+        var refusedPositions: Set<CGWindowID> = []
+        var refusedSetters: Set<CGWindowID> { refusedSizes.union(refusedPositions) }
         /// A setter, a frame read or the enhanced-UI read before a window's
         /// writes returned `cannotComplete` after consuming nearly all of its
         /// configured messaging timeout.
@@ -135,85 +161,42 @@ struct FrameSizingAttempt {
                                 targetIDs: windowIDs.sorted())
         // a capture never writes, so only the readback fields and the
         // timeout shape move
-        func out(_ result: Result) -> Result {
+        func out(_ verdict: Verdict) -> Result {
             var stamped = progress
-            stamped.readbackComplete = windowIDs.allSatisfy { result.actualFrames[$0] != nil }
-            return Result(verdict: result.verdict, actualFrames: result.actualFrames,
-                          progress: stamped)
+            stamped.readbackComplete = windowIDs.allSatisfy { frames[$0] != nil }
+            return Result(verdict: verdict, actualFrames: frames, progress: stamped)
         }
-        guard io.currentGeneration() == generation else {
-            return out(Result(verdict: .unknown(.superseded), actualFrames: frames))
+        func interruption() -> FrameSizingFailure? {
+            if io.currentGeneration() != generation { return .superseded }
+            if io.now() - started >= configuration.deadline { return .deadlineExceeded }
+            return nil
         }
+        guard io.currentGeneration() == generation else { return out(.unknown(.superseded)) }
         var seen = Set<CGWindowID>()
         for windowID in windowIDs where !seen.insert(windowID).inserted {
-            return out(Result(verdict: .unknown(.duplicateWindowID(windowID)), actualFrames: frames))
+            return out(.unknown(.duplicateWindowID(windowID)))
         }
+        var misses: [CGWindowID: Int] = [:]
         for windowID in windowIDs.sorted() {
-            guard io.currentGeneration() == generation else {
-                return out(Result(verdict: .unknown(.superseded), actualFrames: frames))
+            if let failure = interruption() { return out(.unknown(failure)) }
+            // each window through its own reader: a suspect one is captured
+            // from the window server, so a rollback restores what was on
+            // screen and an in-place confirmation checks what is on screen
+            let source = source(for: windowID)
+            if source == .windowServer { progress.serverJudged.insert(windowID) }
+            var sample = sampleFrame(windowID, from: source, progress: &progress,
+                                     misses: &misses, checkpoint: interruption)
+            if case .missed = sample {
+                sample = sampleFrame(windowID, from: source, progress: &progress,
+                                     misses: &misses, checkpoint: interruption)
             }
-            guard io.now() - started < configuration.deadline else {
-                return out(Result(verdict: .unknown(.deadlineExceeded), actualFrames: frames))
+            switch sample {
+            case let .value(frame): frames[windowID] = frame
+            case .missed: return out(.unknown(.windowUnavailable(windowID)))
+            case let .failed(failure): return out(.unknown(failure))
             }
-            let timeoutError = io.setMessagingTimeout(windowID, configuration.perCallTimeout)
-            guard io.currentGeneration() == generation else {
-                return out(Result(verdict: .unknown(.superseded), actualFrames: frames))
-            }
-            guard io.now() - started < configuration.deadline else {
-                return out(Result(verdict: .unknown(.deadlineExceeded), actualFrames: frames))
-            }
-            guard timeoutError == .success else {
-                let failure: FrameSizingFailure = timeoutError == .invalidUIElement
-                    ? .windowUnavailable(windowID) : .readFailed(windowID, timeoutError)
-                return out(Result(verdict: .unknown(failure), actualFrames: frames))
-            }
-            let positionStarted = io.now()
-            let (positionError, position) = io.readPosition(windowID, configuration.perCallTimeout)
-            noteTimeoutShape(positionError, started: positionStarted, progress: &progress)
-            guard io.currentGeneration() == generation else {
-                return out(Result(verdict: .unknown(.superseded), actualFrames: frames))
-            }
-            guard io.now() - started < configuration.deadline else {
-                return out(Result(verdict: .unknown(.deadlineExceeded), actualFrames: frames))
-            }
-            guard positionError == .success, let position else {
-                let failure: FrameSizingFailure = positionError == .invalidUIElement
-                    ? .windowUnavailable(windowID) : .readFailed(windowID, positionError)
-                return out(Result(verdict: .unknown(failure), actualFrames: frames))
-            }
-            let sizeTimeoutError = io.setMessagingTimeout(windowID, configuration.perCallTimeout)
-            guard io.currentGeneration() == generation else {
-                return out(Result(verdict: .unknown(.superseded), actualFrames: frames))
-            }
-            guard io.now() - started < configuration.deadline else {
-                return out(Result(verdict: .unknown(.deadlineExceeded), actualFrames: frames))
-            }
-            guard sizeTimeoutError == .success else {
-                let failure: FrameSizingFailure = sizeTimeoutError == .invalidUIElement
-                    ? .windowUnavailable(windowID) : .readFailed(windowID, sizeTimeoutError)
-                return out(Result(verdict: .unknown(failure), actualFrames: frames))
-            }
-            let sizeStarted = io.now()
-            let (sizeError, size) = io.readSize(windowID, configuration.perCallTimeout)
-            noteTimeoutShape(sizeError, started: sizeStarted, progress: &progress)
-            guard io.currentGeneration() == generation else {
-                return out(Result(verdict: .unknown(.superseded), actualFrames: frames))
-            }
-            guard io.now() - started < configuration.deadline else {
-                return out(Result(verdict: .unknown(.deadlineExceeded), actualFrames: frames))
-            }
-            guard sizeError == .success, let size else {
-                let failure: FrameSizingFailure = sizeError == .invalidUIElement
-                    ? .windowUnavailable(windowID) : .readFailed(windowID, sizeError)
-                return out(Result(verdict: .unknown(failure), actualFrames: frames))
-            }
-            let frame = CGRect(origin: position, size: size)
-            guard valid(frame) else {
-                return out(Result(verdict: .unknown(.invalidFrame(windowID)), actualFrames: frames))
-            }
-            frames[windowID] = frame
         }
-        return out(Result(verdict: .accepted, actualFrames: frames))
+        return out(.accepted)
     }
 
     /// Traced wrapper around the attempt. `.debug` lines are built inside
@@ -307,6 +290,13 @@ struct FrameSizingAttempt {
                 return out(Result(verdict: .rejected(.invalidFrame(target.windowID)), actualFrames: [:]))
             }
         }
+        if io.serverFrame != nil {
+            progress.serverJudged = Set(targets.map(\.windowID).filter { io.suspects.contains(key($0)) })
+            if !progress.serverJudged.isEmpty {
+                hyprLog(.debug, .tiling, "frame attempt: phase=\(phase.rawValue) starts with"
+                        + " \(Self.ids(progress.serverJudged)) left to the window server")
+            }
+        }
         let started = io.now()
         var actualFrames: [CGWindowID: CGRect] = [:]
         // when each window's last setter returned. its mismatch settle
@@ -335,24 +325,38 @@ struct FrameSizingAttempt {
             if let result { return out(result) }
         }
         timings.write = io.now() - started
-        if let lastSetter = settleStarts.values.max() {
-            settleDeadline = configuration.capped(max(
-                configuration.deadline,
-                lastSetter - started + configuration.minimumMismatchSettle + 2 * configuration.pollInterval))
+        if let latest = settleStarts.map({ id, setter in
+            setter - started + mismatchSettle(for: id, progress) + 2 * configuration.pollInterval
+        }).max() {
+            settleDeadline = configuration.capped(max(configuration.deadline, latest))
         }
+        // a server-judged window may wait longer than the default samples
+        // cover. the deadline still bounds the loop
+        let sampleLimit = progress.serverJudged.isEmpty
+            ? configuration.maximumAttempts
+            : max(configuration.maximumAttempts,
+                  Int((settleDeadline / configuration.pollInterval).rounded(.up)) + 1)
         let readStarted = io.now()
 
         var stableAnchors: [CGWindowID: CGRect] = [:]
-        for attemptIndex in 0..<configuration.maximumAttempts {
+        var serverMisses: [CGWindowID: Int] = [:]
+        for attemptIndex in 0..<sampleLimit {
             timings.samples = attemptIndex + 1
             for target in targets {
                 let readCallStarted = io.now()
                 let failed = read(target, actualFrames: &actualFrames, progress: &progress,
-                                  checkpoint: interruption)
+                                  serverMisses: &serverMisses, checkpoint: interruption)
                 timings.slowestRead = max(timings.slowestRead, io.now() - readCallStarted)
                 if let result = failed {
                     timings.read = io.now() - readStarted
                     return out(result)
+                }
+                if serverMisses[target.windowID, default: 0] > 0 {
+                    // no window-server frame this sample. nothing to compare,
+                    // so its stability starts over at the next one
+                    stableAnchors[target.windowID] = nil
+                    stableCounts[target.windowID] = 0
+                    continue
                 }
                 guard let frame = actualFrames[target.windowID] else {
                     timings.read = io.now() - readStarted
@@ -392,16 +396,32 @@ struct FrameSizingAttempt {
                     guard let frame = actualFrames[target.windowID] else { return false }
                     return matches(frame, target.frame)
                         || now - (settleStarts[target.windowID] ?? started)
-                            >= configuration.minimumMismatchSettle
+                            >= mismatchSettle(for: target.windowID, progress)
                 }
                 awaitingSettle = !judged
                 if judged {
-                    timings.read = io.now() - readStarted
-                    return out(validateFrames(targets: targets, actualFrames: actualFrames,
-                                              usableFrame: usableFrame, gap: gap))
+                    let verdict = serverVerdict(targets: targets, actualFrames: actualFrames,
+                                                progress: progress)
+                        ?? validateFrames(targets: targets, actualFrames: actualFrames,
+                                          usableFrame: usableFrame, gap: gap)
+                    // a marked window can pass on its own and still be on
+                    // its way: 412 wide against a 400 target lies over its
+                    // neighbour until the window server catches up. a
+                    // rejection that names one waits for its settle, then
+                    // the whole layout is judged again. a valid layout
+                    // returns at once
+                    let stillSettling = (verdict.verdict.failure?.namedWindowIDs ?? []).contains { id in
+                        progress.serverJudged.contains(id)
+                            && now - (settleStarts[id] ?? started) < mismatchSettle(for: id, progress)
+                    }
+                    if !stillSettling {
+                        timings.read = io.now() - readStarted
+                        return out(verdict)
+                    }
+                    awaitingSettle = true
                 }
             }
-            if attemptIndex + 1 < configuration.maximumAttempts {
+            if attemptIndex + 1 < sampleLimit {
                 io.sleep(configuration.pollInterval)
                 timings.settle += configuration.pollInterval
                 if let failure = interruption() {
@@ -532,15 +552,35 @@ struct FrameSizingAttempt {
             progress.possiblyWritten.insert(target.windowID)
             let startedStep = io.now()
             let error = operation()
+            // recorded as soon as the answer is back, before the deadline or a
+            // newer generation is looked at: whatever ends this pass, the
+            // next reader of this window must know
+            if error == .attributeUnsupported, io.serverFrame != nil {
+                io.suspects.mark(key(target.windowID))
+            }
             noteTimeoutShape(error, started: startedStep, progress: &progress)
             steps.append("\(label):\(error.rawValue)/\(Self.ms(io.now() - startedStep))")
             let primary: Result
             if let failure = checkpoint() {
                 primary = Result(verdict: .unknown(failure), actualFrames: actualFrames)
-            } else if error != .success {
+            } else if error == .invalidUIElement {
+                // the window closed under the setter, as the read path has it:
+                // missing, not refused. the recovery retries with a fresh walk
+                primary = Result(verdict: .unknown(.windowUnavailable(target.windowID)),
+                                 actualFrames: actualFrames)
+            } else if error != .success, !leftToTheServer(error, label: label, target: target,
+                                                          progress: &progress) {
                 primary = Result(verdict: .rejected(.writeFailed(target.windowID, error)),
                                  actualFrames: actualFrames)
             } else {
+                if error == .success {
+                    // the last answer for an attribute is the one that counts
+                    if label.hasPrefix("size") {
+                        progress.refusedSizes.remove(target.windowID)
+                    } else {
+                        progress.refusedPositions.remove(target.windowID)
+                    }
+                }
                 if label == "position", settlePositionBeforeSizing {
                     let settleStarted = io.now()
                     var anchor: CGPoint?
@@ -548,39 +588,22 @@ struct FrameSizingAttempt {
                     var samples = 0
                     var stableCount = 0
                     var settled = false
-                    for attempt in 0..<configuration.maximumAttempts {
-                        if let failure = prepareRead(target.windowID, checkpoint: checkpoint) {
+                    var settleMisses: [CGWindowID: Int] = [:]
+                    settle: for attempt in 0..<configuration.maximumAttempts {
+                        let position: CGPoint
+                        switch sampleOrigin(target.windowID, from: source(for: target.windowID, progress),
+                                            progress: &progress, misses: &settleMisses,
+                                            checkpoint: checkpoint) {
+                        case let .value(point):
+                            position = point
+                        case .missed:
+                            if io.now() - settleStarted >= configuration.positionSettleBudget { break settle }
+                            io.sleep(configuration.pollInterval)
+                            continue
+                        case let .failed(failure):
                             traceSteps(false)
                             return end(token, windowID: target.windowID,
                                        preserving: Result(verdict: .unknown(failure),
-                                                          actualFrames: actualFrames),
-                                       checkpoint: checkpoint)
-                        }
-                        let readStarted = io.now()
-                        let (readError, position) = io.readPosition(target.windowID,
-                                                                    configuration.perCallTimeout)
-                        noteTimeoutShape(readError, started: readStarted, progress: &progress)
-                        if let failure = checkpoint() {
-                            traceSteps(false)
-                            return end(token, windowID: target.windowID,
-                                       preserving: Result(verdict: .unknown(failure),
-                                                          actualFrames: actualFrames),
-                                       checkpoint: checkpoint)
-                        }
-                        guard readError == .success, let position else {
-                            let failure: FrameSizingFailure = readError == .invalidUIElement
-                                ? .windowUnavailable(target.windowID)
-                                : .readFailed(target.windowID, readError)
-                            traceSteps(false)
-                            return end(token, windowID: target.windowID,
-                                       preserving: Result(verdict: .unknown(failure),
-                                                          actualFrames: actualFrames),
-                                       checkpoint: checkpoint)
-                        }
-                        guard position.x.isFinite, position.y.isFinite else {
-                            traceSteps(false)
-                            return end(token, windowID: target.windowID,
-                                       preserving: Result(verdict: .unknown(.invalidFrame(target.windowID)),
                                                           actualFrames: actualFrames),
                                        checkpoint: checkpoint)
                         }
@@ -625,6 +648,13 @@ struct FrameSizingAttempt {
                                 + "— writing size anyway")
                     }
                 }
+                if error == .success, label.hasPrefix("size"), io.serverFrame != nil,
+                   io.suspects.contains(key(target.windowID)),
+                   progress.serverJudged.insert(target.windowID).inserted {
+                    hyprLog(.notice, .tiling, "\(label) write answered -25205 before its resend:"
+                            + " wid=\(target.windowID) phase=\(progress.phase.rawValue)"
+                            + " target=\(traced(target.frame)): the window server judges this window")
+                }
                 probe(label)
                 continue
             }
@@ -632,8 +662,10 @@ struct FrameSizingAttempt {
             return end(token, windowID: target.windowID, preserving: primary,
                        checkpoint: checkpoint)
         }
-        // every setter returned success. record that before cleanup —
-        // a cleanup error is its own failure and does not unwrite them.
+        // every setter returned success, or answered -25205 and left the
+        // verdict to the window server (see leftToTheServer). record that
+        // before cleanup: a cleanup error is its own failure and does not
+        // unwrite them.
         progress.writesCompleted.insert(target.windowID)
         settleStarts[target.windowID] = io.now()
         traceSteps(true)
@@ -643,42 +675,182 @@ struct FrameSizingAttempt {
         return ended.verdict == .accepted ? nil : ended
     }
 
+    /// Whether a setter that did not return success goes on to the next
+    /// one. Only -25205 does, and only when the window server can be asked:
+    /// the code alone does not say whether the write landed, so the window
+    /// is marked `serverJudged` and its readback decides. -25204 is a
+    /// timeout and stays a failure; the recovery retries it as one.
+    private func leftToTheServer(_ error: AXError, label: String, target: Target,
+                                 progress: inout Progress) -> Bool {
+        guard error == .attributeUnsupported, io.serverFrame != nil else { return false }
+        progress.serverJudged.insert(target.windowID)
+        if label.hasPrefix("size") {
+            progress.refusedSizes.insert(target.windowID)
+        } else {
+            progress.refusedPositions.insert(target.windowID)
+        }
+        hyprLog(.notice, .tiling, "\(label) write answered -25205: wid=\(target.windowID)"
+                + " phase=\(progress.phase.rawValue) target=\(traced(target.frame))"
+                + ": the window server judges this window")
+        return true
+    }
+
+    /// How long a window stable off its target waits before it is judged.
+    private func mismatchSettle(for windowID: CGWindowID, _ progress: Progress) -> TimeInterval {
+        progress.serverJudged.contains(windowID)
+            ? max(configuration.serverMismatchSettle, configuration.minimumMismatchSettle)
+            : configuration.minimumMismatchSettle
+    }
+
+    /// Where one window's frame is read from. Chosen once per window for an
+    /// operation, and every read of that window in it goes through the same
+    /// one: the capture, the in-place confirmation (two captures), the
+    /// position settle, the readback and the rollback's readback. A window
+    /// the suspect store names reads the window server and is never asked
+    /// through AX. The one change of source inside an operation is a setter
+    /// answering -25205 during it, which moves that window to the server for
+    /// the rest of the operation.
+    enum FrameSource {
+        case accessibility, windowServer
+    }
+
+    private enum Sample<Value> {
+        case value(Value)
+        /// the window server had no description this time. a second miss
+        /// running is `windowUnavailable`
+        case missed
+        case failed(FrameSizingFailure)
+    }
+
+    private func key(_ windowID: CGWindowID) -> FrameSuspects.Key { io.suspectKey(windowID) }
+
+    /// The source for a read-only operation, from the store.
+    private func source(for windowID: CGWindowID) -> FrameSource {
+        io.serverFrame != nil && io.suspects.contains(key(windowID)) ? .windowServer : .accessibility
+    }
+
+    /// The source inside a pass, from the marks the pass holds.
+    private func source(for windowID: CGWindowID, _ progress: Progress) -> FrameSource {
+        progress.serverJudged.contains(windowID) ? .windowServer : .accessibility
+    }
+
+    private func sampleFrame(_ windowID: CGWindowID, from source: FrameSource,
+                             progress: inout Progress, misses: inout [CGWindowID: Int],
+                             checkpoint: () -> FrameSizingFailure?) -> Sample<CGRect> {
+        switch source {
+        case .windowServer:
+            // one lookup per window per sample, about 0.2 ms, and a call like
+            // any other: the deadline and a newer generation stop after it
+            let server = io.serverFrame?(windowID)
+            if let failure = checkpoint() { return .failed(failure) }
+            guard let server else {
+                // no description. a window that closed loses it, and one
+                // lookup can fail on its own. neither says the app refused a
+                // frame, so it is never a write failure
+                misses[windowID, default: 0] += 1
+                guard misses[windowID, default: 0] < 2 else {
+                    hyprLog(.notice, .tiling, "window server has no frame for wid=\(windowID)"
+                            + " phase=\(progress.phase.rawValue) twice running: unavailable, not refused")
+                    return .failed(.windowUnavailable(windowID))
+                }
+                return .missed
+            }
+            misses[windowID] = 0
+            return valid(server) ? .value(server) : .failed(.invalidFrame(windowID))
+        case .accessibility:
+            let origin: CGPoint
+            switch sampleOrigin(windowID, from: .accessibility, progress: &progress,
+                                misses: &misses, checkpoint: checkpoint) {
+            case let .value(point): origin = point
+            case .missed: return .missed
+            case let .failed(failure): return .failed(failure)
+            }
+            if let failure = prepareRead(windowID, checkpoint: checkpoint) { return .failed(failure) }
+            let sizeStarted = io.now()
+            let (sizeError, size) = io.readSize(windowID, configuration.perCallTimeout)
+            noteTimeoutShape(sizeError, started: sizeStarted, progress: &progress)
+            if let failure = checkpoint() { return .failed(failure) }
+            guard sizeError == .success, let size else {
+                return .failed(sizeError == .invalidUIElement
+                    ? .windowUnavailable(windowID) : .readFailed(windowID, sizeError))
+            }
+            let frame = CGRect(origin: origin, size: size)
+            return valid(frame) ? .value(frame) : .failed(.invalidFrame(windowID))
+        }
+    }
+
+    private func sampleOrigin(_ windowID: CGWindowID, from source: FrameSource,
+                              progress: inout Progress, misses: inout [CGWindowID: Int],
+                              checkpoint: () -> FrameSizingFailure?) -> Sample<CGPoint> {
+        switch source {
+        case .windowServer:
+            switch sampleFrame(windowID, from: .windowServer, progress: &progress,
+                               misses: &misses, checkpoint: checkpoint) {
+            case let .value(frame): return .value(frame.origin)
+            case .missed: return .missed
+            case let .failed(failure): return .failed(failure)
+            }
+        case .accessibility:
+            if let failure = prepareRead(windowID, checkpoint: checkpoint) { return .failed(failure) }
+            let started = io.now()
+            let (error, position) = io.readPosition(windowID, configuration.perCallTimeout)
+            noteTimeoutShape(error, started: started, progress: &progress)
+            if let failure = checkpoint() { return .failed(failure) }
+            guard error == .success, let position else {
+                return .failed(error == .invalidUIElement
+                    ? .windowUnavailable(windowID) : .readFailed(windowID, error))
+            }
+            guard position.x.isFinite, position.y.isFinite else { return .failed(.invalidFrame(windowID)) }
+            return .value(position)
+        }
+    }
+
     private func read(_ target: Target, actualFrames: inout [CGWindowID: CGRect],
                       progress: inout Progress,
+                      serverMisses: inout [CGWindowID: Int],
                       checkpoint: () -> FrameSizingFailure?) -> Result? {
-        if let failure = prepareRead(target.windowID, checkpoint: checkpoint) {
+        switch sampleFrame(target.windowID, from: source(for: target.windowID, progress),
+                           progress: &progress, misses: &serverMisses, checkpoint: checkpoint) {
+        case let .value(frame):
+            actualFrames[target.windowID] = frame
+            return nil
+        case .missed:
+            return nil
+        case let .failed(failure):
             return Result(verdict: .unknown(failure), actualFrames: actualFrames)
         }
-        let positionStarted = io.now()
-        let (positionError, position) = io.readPosition(target.windowID, configuration.perCallTimeout)
-        noteTimeoutShape(positionError, started: positionStarted, progress: &progress)
-        if let failure = checkpoint() {
-            return Result(verdict: .unknown(failure), actualFrames: actualFrames)
+    }
+
+    /// The verdict for the windows whose last size or position setter still
+    /// answered -25205, once every window is stable and settled. Only the
+    /// refused attribute is held against its target. Off target on the
+    /// window server, it fails as the write the app refused, not as a
+    /// geometry mismatch: nothing there says the app has a minimum, so
+    /// nothing may be learned as one. Everything else is left to
+    /// `validateFrames`.
+    private func serverVerdict(targets: [Target], actualFrames: [CGWindowID: CGRect],
+                               progress: Progress) -> Result? {
+        for target in targets {
+            let id = target.windowID
+            let sizeRefused = progress.refusedSizes.contains(id)
+            let positionRefused = progress.refusedPositions.contains(id)
+            guard sizeRefused || positionRefused, let frame = actualFrames[id] else { continue }
+            let sizeOff = sizeRefused && !(matchesSize(frame.width, target.frame.width)
+                                           && matchesSize(frame.height, target.frame.height))
+            let positionOff = positionRefused
+                && !(abs(frame.minX - target.frame.minX) <= configuration.positionTolerance
+                     && abs(frame.minY - target.frame.minY) <= configuration.positionTolerance)
+            let refused = [sizeRefused ? "size" : nil, positionRefused ? "position" : nil]
+                .compactMap { $0 }.joined(separator: "+")
+            hyprLog(.notice, .tiling, "refused \(refused) write judged by the window server: wid=\(id)"
+                    + " phase=\(progress.phase.rawValue) target=\(traced(target.frame))"
+                    + " server=\(traced(frame))"
+                    + (sizeOff || positionOff ? ": off target, write failed" : ": on target"))
+            if sizeOff || positionOff {
+                return Result(verdict: .rejected(.writeFailed(id, .attributeUnsupported)),
+                              actualFrames: actualFrames)
+            }
         }
-        guard positionError == .success, let position else {
-            let failure: FrameSizingFailure = positionError == .invalidUIElement
-                ? .windowUnavailable(target.windowID) : .readFailed(target.windowID, positionError)
-            return Result(verdict: .unknown(failure), actualFrames: actualFrames)
-        }
-        if let failure = prepareRead(target.windowID, checkpoint: checkpoint) {
-            return Result(verdict: .unknown(failure), actualFrames: actualFrames)
-        }
-        let sizeStarted = io.now()
-        let (sizeError, size) = io.readSize(target.windowID, configuration.perCallTimeout)
-        noteTimeoutShape(sizeError, started: sizeStarted, progress: &progress)
-        if let failure = checkpoint() {
-            return Result(verdict: .unknown(failure), actualFrames: actualFrames)
-        }
-        guard sizeError == .success, let size else {
-            let failure: FrameSizingFailure = sizeError == .invalidUIElement
-                ? .windowUnavailable(target.windowID) : .readFailed(target.windowID, sizeError)
-            return Result(verdict: .unknown(failure), actualFrames: actualFrames)
-        }
-        let frame = CGRect(origin: position, size: size)
-        guard valid(frame) else {
-            return Result(verdict: .unknown(.invalidFrame(target.windowID)), actualFrames: actualFrames)
-        }
-        actualFrames[target.windowID] = frame
         return nil
     }
 
