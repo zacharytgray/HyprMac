@@ -213,6 +213,14 @@ class UserConfig: ObservableObject {
 
     private var joinUsesThisMac = false
 
+    // the path changed while running: another tool's link, or a file that
+    // can't be written, took the place of the iCloud link. the switch and
+    // its preference follow the disk, as at launch
+    private func matchSyncSwitchToDisk() {
+        guard iCloudSyncEnabled, isICloudSyncLocked, !store.isLinkedToICloud else { return }
+        iCloudSyncEnabled = false
+    }
+
     /// Turns sync on after the user picked a side, when this Mac and iCloud
     /// hold different settings. The other side is kept as config.json.replaced.
     func turnOnICloudSync(usingThisMac: Bool) {
@@ -373,7 +381,10 @@ class UserConfig: ObservableObject {
             reloadFromDisk()
         }
 
-        store.onFileChanged = { [weak self] in self?.reloadFromDisk() }
+        store.onFileChanged = { [weak self] in
+            self?.matchSyncSwitchToDisk()
+            self?.reloadFromDisk()
+        }
         store.startFileWatcher()
     }
 

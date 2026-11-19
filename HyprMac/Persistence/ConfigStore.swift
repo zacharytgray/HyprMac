@@ -421,7 +421,9 @@ final class ConfigStore {
     // never overwrites an older copy: the first one may be the only good
     // version of someone's settings. the same bytes are not copied twice
     @discardableResult
-    private func keepCopy(_ data: Data, of url: URL, suffix: String) -> Bool {
+    // `source` is the file the bytes came from, for its mode. a copy is as
+    // private as the file it copies
+    private func keepCopy(_ data: Data, of url: URL, suffix: String, source: URL? = nil) -> Bool {
         guard !data.isEmpty else { return true }
         let base = "\(url.path).\(suffix)"
         var path = base
@@ -434,6 +436,7 @@ final class ConfigStore {
         let copy = URL(fileURLWithPath: path)
         do {
             try data.write(to: copy, options: .atomic)
+            Self.copyMode(from: source ?? url, to: copy)
             hyprLog(.warning, .config, "kept a copy of \(url.lastPathComponent) at \(copy.lastPathComponent)")
             return true
         } catch {
@@ -488,7 +491,8 @@ final class ConfigStore {
                 hyprLog(.warning, .config, "iCloud sync not set up: can't read the file there (\(reason))")
                 return false
             case .data(let existing):
-                if existing != data, !keepCopy(existing, of: localConfigURL, suffix: "replaced") {
+                if existing != data,
+                   !keepCopy(existing, of: localConfigURL, suffix: "replaced", source: iCloudConfigURL) {
                     return false
                 }
             }

@@ -1136,4 +1136,57 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: iCloudFile), other)
         XCTAssertEqual(copy(local, "replaced"), good, "this Mac's side is kept")
     }
+
+    // MARK: the switch follows the link at runtime
+
+    // sync on, then a dotfiles tool or Home Manager takes the path while
+    // the app runs. the locked switch must not still read on
+    func testTheSwitchTurnsOffWhenAnotherToolTakesThePathWhileRunning() throws {
+        let watched = ConfigStore(localConfigURL: local, monitorConfigURL: monitor, iCloudRootURL: iCloudRoot,
+                                  watchInterval: 0.15)
+        addTeardownBlock { watched.stopFileWatcher() }
+        try putInICloud(good)
+        try linkLocalToICloud()
+        let config = UserConfig(store: watched, iCloudSyncEnabled: true)
+        XCTAssertTrue(config.iCloudSyncEnabled)
+
+        let file = try linkLocalToReadOnlyFile(other)
+
+        waitUntil("the switch follows the link") { !config.iCloudSyncEnabled }
+        XCTAssertFalse(UserDefaults.standard.bool(forKey: "iCloudSyncEnabled"))
+        XCTAssertTrue(watched.isLinkedByAnotherTool, "the tool's link was replaced")
+        XCTAssertEqual(try Data(contentsOf: file), other)
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), good)
+    }
+
+    // MARK: copies stay as private as what they copy
+
+    func testAResetCopyKeepsTheFilesMode() throws {
+        try good.write(to: local)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+
+        config.resetToDefaults()
+
+        XCTAssertEqual(copy(local, "replaced"), good)
+        XCTAssertEqual(try mode(URL(fileURLWithPath: "\(local.path).replaced")), 0o600)
+    }
+
+    // both sides of a join are kept, each as private as it was
+    func testJoinCopiesKeepTheModeOfTheSideTheyCameFrom() throws {
+        try good.write(to: local)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
+        try putInICloud(other)
+        try fm.setAttributes([.posixPermissions: 0o640], ofItemAtPath: iCloudFile.path)
+        store.enableICloudSync(snapshot: { self.goodConfig() })
+        XCTAssertEqual(try mode(URL(fileURLWithPath: "\(local.path).replaced")), 0o600, "this Mac's file")
+
+        store.disableICloudSync(snapshot: { self.goodConfig() })
+        try good.write(to: local)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
+        try fm.setAttributes([.posixPermissions: 0o640], ofItemAtPath: iCloudFile.path)
+        store.enableICloudSync(snapshot: { self.goodConfig() }, cloudWins: false)
+        XCTAssertEqual(copy(local, "replaced.2"), other)
+        XCTAssertEqual(try mode(URL(fileURLWithPath: "\(local.path).replaced.2")), 0o640, "the iCloud copy")
+    }
 }
