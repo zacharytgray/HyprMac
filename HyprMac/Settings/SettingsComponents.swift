@@ -203,7 +203,7 @@ struct ReadOnlyConfigNotice: View {
     var body: some View {
         HyprPanel {
             HyprRow("Managed outside HyprMac", icon: "lock.doc",
-                    subtitle: "The config file is read-only. Changes here work until it reloads, and aren't saved.",
+                    subtitle: "Changes here aren't saved. They last until the file reloads.",
                     divider: false) {
                 HyprChip("READ-ONLY")
             }

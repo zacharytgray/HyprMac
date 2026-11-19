@@ -320,6 +320,7 @@ struct GeneralSettingsView: View {
                         .labelsHidden()
                 }
                 .disabled(config.isICloudSyncLocked)
+                .opacity(config.isICloudSyncLocked ? 0.5 : 1)
                 .alert("iCloud has different settings", isPresented: $choosingSyncSide) {
                     Button("Use the settings in iCloud") { config.turnOnICloudSync(usingThisMac: false) }
                     Button("Use this Mac's settings") { config.turnOnICloudSync(usingThisMac: true) }
