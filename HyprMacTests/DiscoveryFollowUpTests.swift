@@ -50,6 +50,48 @@ final class DiscoveryFollowUpTests: XCTestCase {
         XCTAssertTrue(f.watches.isEmpty)
     }
 
+    /// Runs a create watch to its end against `unknown` and returns how
+    /// many polls it asked for after the first.
+    private func retries(_ f: inout DiscoveryFollowUp, unknown: [CGWindowID], from start: TimeInterval) -> Int {
+        f.watch(pid: pid, reason: "windowCreated", blindRetry: true, now: start)
+        var t = start + 0.2
+        var count = 0
+        while true {
+            let out = f.afterPoll(admitted: [:], unknown: unknown.isEmpty ? [:] : [pid: unknown], now: t)
+            guard case let .retry(_, after, _, _, _) = out.first else { return count }
+            count += 1
+            t += after
+        }
+    }
+
+    func testAWindowAWatchGaveUpOnIsNoEvidenceForTheNextCreate() {
+        // Safari: two layer-0 windows AX never lists, and a create per popover
+        var f = DiscoveryFollowUp()
+        XCTAssertEqual(retries(&f, unknown: [104038, 104075], from: 0), 3)
+        XCTAssertEqual(f.givenUp, [104038, 104075])
+        // the next create gets its blind retry and nothing more
+        XCTAssertEqual(retries(&f, unknown: [104038, 104075], from: 10), 1)
+        XCTAssertTrue(f.watches.isEmpty)
+    }
+
+    func testANewUnknownWindowBesideAGivenUpOneGetsTheWholeBudget() {
+        var f = DiscoveryFollowUp()
+        _ = retries(&f, unknown: [104038], from: 0)
+        f.watch(pid: pid, reason: "windowCreated", blindRetry: true, now: 10)
+        let out = f.afterPoll(admitted: [:], unknown: [pid: [104038, 105000]], now: 10.2)
+        XCTAssertEqual(out, [.retry(pid: pid, after: 0.3, attempt: 1, unknown: [105000], reason: "windowCreated")])
+        f.forget(pid: pid)
+        XCTAssertEqual(retries(&f, unknown: [104038, 105000], from: 20), 3)
+    }
+
+    func testAGivenUpWindowThatLeftTheScreenCountsAgainWhenItComesBack() {
+        var f = DiscoveryFollowUp()
+        _ = retries(&f, unknown: [104038], from: 0)
+        _ = f.afterPoll(admitted: [:], unknown: [:], now: 10)
+        XCTAssertTrue(f.givenUp.isEmpty)
+        XCTAssertEqual(retries(&f, unknown: [104038], from: 20), 3)
+    }
+
     func testRetryThatFindsTheWindowStops() {
         var f = DiscoveryFollowUp()
         f.watch(pid: pid, reason: "windowCreated", blindRetry: true, now: 0)

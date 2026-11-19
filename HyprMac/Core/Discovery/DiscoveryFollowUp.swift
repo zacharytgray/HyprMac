@@ -17,6 +17,12 @@ import Foundation
 /// unknown window no poll has walked past yet, so a window discovery
 /// rejects (a dialog, an excluded app) costs one poll, not one per focus.
 ///
+/// A window a watch spent its whole budget on is no evidence for the next
+/// watch while it stays on screen. Safari keeps two layer-0 windows up
+/// that AX never lists, and sends a create for every popover; each of
+/// those used to cost the create poll and three retries, four walks of
+/// the desktop for a window that was never coming.
+///
 /// Pure: the caller supplies the clock and the window list.
 struct DiscoveryFollowUp {
     /// waits before each retry, from the poll that missed
@@ -51,6 +57,9 @@ struct DiscoveryFollowUp {
     private(set) var seenByPoll: Set<CGWindowID> = []
     /// unknown windows a poll was already asked for, until it runs
     private(set) var asked: Set<CGWindowID> = []
+    /// unknown on-screen windows a watch gave up on, until they leave the
+    /// screen. The reconcile still looks at them
+    private(set) var givenUp: Set<CGWindowID> = []
     /// when each unknown on-screen window was first noticed
     private(set) var firstSeen: [CGWindowID: TimeInterval] = [:]
     /// the last AX event from each app, for the reconcile line
@@ -108,6 +117,7 @@ struct DiscoveryFollowUp {
         firstSeen = firstSeen.filter { onScreen.contains($0.key) }
         seenByPoll = onScreen
         asked = []
+        givenUp.formIntersection(onScreen)
 
         var outcomes: [Outcome] = []
         for pid in watches.keys.sorted() {
@@ -120,7 +130,7 @@ struct DiscoveryFollowUp {
                 continue
             }
             if now - w.since < Self.minimumLook { continue }
-            let left = (unknown[pid] ?? []).sorted()
+            let left = (unknown[pid] ?? []).filter { !givenUp.contains($0) }.sorted()
             let evidence = !left.isEmpty || (w.blindRetry && w.retries == 0)
             if w.retries < Self.backoff.count, evidence {
                 outcomes.append(.retry(pid: pid, after: Self.backoff[w.retries], attempt: w.retries + 1,
@@ -133,6 +143,7 @@ struct DiscoveryFollowUp {
             } else {
                 outcomes.append(.gaveUp(pid: pid, retries: w.retries, unknown: left,
                                         afterMS: afterMS, reason: w.reason))
+                givenUp.formUnion(left)
                 watches[pid] = nil
             }
         }
