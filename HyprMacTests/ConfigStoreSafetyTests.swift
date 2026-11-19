@@ -483,17 +483,6 @@ final class ConfigStoreSafetyTests: XCTestCase {
 
     // MARK: turning sync on and off
 
-    func testEnablingKeepsWhatWasInICloud() throws {
-        try good.write(to: local)
-        try putInICloud(other)
-
-        store.enableICloudSync(snapshot: { .empty })
-
-        XCTAssertTrue(isLink(local))
-        XCTAssertEqual(try Data(contentsOf: iCloudFile), good)
-        XCTAssertEqual(copy(local, "replaced"), other)
-    }
-
     func testEnablingWithNoLocalFileWritesTheSnapshot() throws {
         store.enableICloudSync(snapshot: { .empty })
         XCTAssertTrue(isLink(local))
@@ -661,5 +650,409 @@ final class ConfigStoreSafetyTests: XCTestCase {
         let config = UserConfig(store: store, iCloudSyncEnabled: true)
         config.resetToDefaults()
         XCTAssertFalse(fm.fileExists(atPath: iCloudFile.path))
+    }
+
+    // MARK: files another tool manages (Nix, dotfiles)
+
+    private func mode(_ url: URL) throws -> Int {
+        ((try fm.attributesOfItem(atPath: url.path))[.posixPermissions] as? NSNumber)?.intValue ?? -1
+    }
+
+    private func inode(_ url: URL) throws -> UInt64 {
+        ((try fm.attributesOfItem(atPath: url.path))[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+    }
+
+    private func settle(_ seconds: TimeInterval) {
+        let settled = expectation(description: "settled")
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { settled.fulfill() }
+        wait(for: [settled], timeout: seconds + 2)
+    }
+
+    private func goodConfig() -> SavedConfig {
+        try! JSONDecoder().decode(SavedConfig.self, from: good)
+    }
+
+    // config.json -> generation link -> a file in a folder nobody can write,
+    // the way Home Manager links into the Nix store
+    @discardableResult
+    private func linkLocalToReadOnlyFile(_ data: Data, named name: String = "store") throws -> URL {
+        let folder = dir.appendingPathComponent(name, isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let file = folder.appendingPathComponent("hyprmac-config.json")
+        try data.write(to: file)
+        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: file.path)
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+        addTeardownBlock { [fm] in
+            try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        }
+        let generation = dir.appendingPathComponent("\(name)-generation.json")
+        try? fm.removeItem(at: generation)
+        try fm.createSymbolicLink(at: generation, withDestinationURL: file)
+        let temp = dir.appendingPathComponent("link-\(UUID().uuidString)")
+        try fm.createSymbolicLink(at: temp, withDestinationURL: generation)
+        XCTAssertEqual(rename(temp.path, local.path), 0)
+        return file
+    }
+
+    // its folder can be written, the file itself can't. a rename would get
+    // around that, so it must not be used
+    func testAReadOnlyFileInAWritableFolderIsNotReplaced() throws {
+        try good.write(to: local)
+        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: local.path)
+        let before = try inode(local)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+
+        config.gapSize = 31
+
+        XCTAssertEqual(try Data(contentsOf: local), good)
+        XCTAssertEqual(try inode(local), before, "the read-only file was swapped for a new one")
+        XCTAssertEqual(try mode(local), 0o444)
+        XCTAssertEqual(config.gapSize, 31, "the change still applies until the next load")
+    }
+
+    func testSavingToAReadOnlyLinkLeavesTheLinkAndTheFile() throws {
+        let file = try linkLocalToReadOnlyFile(good)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+
+        config.gapSize = 31
+
+        XCTAssertTrue(isLink(local))
+        XCTAssertEqual(try Data(contentsOf: file), good)
+        XCTAssertNil(copy(local, "unreadable"))
+    }
+
+    // what a Nix or dotfiles config has to hold at the least. the Nix
+    // module fills in exactly these four keys
+    func testTheSmallestConfigAnotherToolCanWriteLoads() throws {
+        try linkLocalToReadOnlyFile(Data(#"{"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true}"#.utf8))
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        XCTAssertEqual(config.keybinds, Keybind.defaults, "an empty list gets every default")
+        XCTAssertEqual(config.gapSize, UserConfigDefaults.gapSize)
+        XCTAssertEqual(config.outerPadding, UserConfigDefaults.outerPadding)
+        XCTAssertEqual(config.enabled, UserConfigDefaults.enabled)
+    }
+
+    // succeeds only while a reader is waiting, and lets it go
+    private func unblockReaders(of pipe: URL, after seconds: TimeInterval) {
+        let path = pipe.path
+        DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
+            for _ in 0..<100 {
+                let descriptor = open(path, O_WRONLY | O_NONBLOCK)
+                if descriptor >= 0 { close(descriptor) }
+                usleep(50_000)
+            }
+        }
+    }
+
+    // a named pipe at the path. opening it to read waits for a writer,
+    // and launch reads on the main thread
+    func testAPipeAtTheConfigPathDoesNotHoldUpALaunch() throws {
+        XCTAssertEqual(mkfifo(local.path, 0o600), 0)
+        XCTAssertEqual(mkfifo(monitor.path, 0o600), 0)
+        unblockReaders(of: local, after: 1.5)
+        unblockReaders(of: monitor, after: 1.5)
+
+        let started = Date()
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        config.gapSize = 31
+        let took = Date().timeIntervalSince(started)
+
+        XCTAssertLessThan(took, 1, "launch waited on a pipe")
+        var info = stat()
+        XCTAssertEqual(lstat(local.path, &info), 0)
+        XCTAssertEqual(info.st_mode & S_IFMT, S_IFIFO, "the pipe was replaced")
+        settle(0.4)
+        XCTAssertFalse(store.isWatchingFile, "a pipe is not a file to watch")
+    }
+
+    // a private config.json stays private into iCloud and back out
+    func testTurningSyncOnAndOffKeepsTheFilePrivate() throws {
+        try good.write(to: local)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
+
+        store.enableICloudSync { self.goodConfig() }
+        XCTAssertTrue(isLink(local))
+        XCTAssertEqual(try mode(iCloudFile), 0o600, "the copy in iCloud was opened up to others")
+
+        store.disableICloudSync { self.goodConfig() }
+        XCTAssertFalse(isLink(local))
+        XCTAssertEqual(try mode(local), 0o600, "the file that came back was opened up to others")
+        XCTAssertEqual(try Data(contentsOf: local), good)
+    }
+
+    // the iCloud switch must not take a link it didn't make. turning it on
+    // and off again replaced a Nix or dotfiles link with a regular file,
+    // and the next Home Manager switch then refused to run
+    func testTurningSyncOnAndOffLeavesAnotherToolsLinkAlone() throws {
+        let file = try linkLocalToReadOnlyFile(good)
+        let before = try fm.destinationOfSymbolicLink(atPath: local.path)
+
+        store.enableICloudSync { self.goodConfig() }
+        store.disableICloudSync { self.goodConfig() }
+
+        XCTAssertEqual(try? fm.destinationOfSymbolicLink(atPath: local.path), before)
+        XCTAssertEqual(try Data(contentsOf: file), good)
+        XCTAssertFalse(fm.fileExists(atPath: iCloudFile.path), "nothing of theirs goes to iCloud either")
+    }
+
+    func testRepairAtLaunchLeavesAnotherToolsLinkAlone() throws {
+        try linkLocalToReadOnlyFile(good)
+        try putInICloud(other)
+        let before = try fm.destinationOfSymbolicLink(atPath: local.path)
+
+        let config = UserConfig(store: store, iCloudSyncEnabled: true)
+
+        XCTAssertEqual(try? fm.destinationOfSymbolicLink(atPath: local.path), before)
+        XCTAssertEqual(config.gapSize, 23)
+        XCTAssertFalse(config.iCloudSyncEnabled, "the switch shows a sync that isn't happening")
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), other)
+    }
+
+    // HyprMac -> dotfiles/hyprmac, with a regular config.json inside
+    private func storeInALinkedFolder() throws -> (store: ConfigStore, real: URL) {
+        let repo = dir.appendingPathComponent("dotfiles/hyprmac", isDirectory: true)
+        try fm.createDirectory(at: repo, withIntermediateDirectories: true)
+        try good.write(to: repo.appendingPathComponent("config.json"))
+        let folder = dir.appendingPathComponent("HyprMac")
+        try fm.createSymbolicLink(at: folder, withDestinationURL: repo)
+        let linked = ConfigStore(localConfigURL: folder.appendingPathComponent("config.json"),
+                                 monitorConfigURL: folder.appendingPathComponent("monitor-config.json"),
+                                 iCloudRootURL: iCloudRoot)
+        addTeardownBlock { linked.stopFileWatcher() }
+        return (linked, repo.appendingPathComponent("config.json"))
+    }
+
+    // turning sync on used to swap the checkout's own config.json for a
+    // link into iCloud
+    func testSyncDoesNotTakeAFileOutOfALinkedFolder() throws {
+        let (linked, real) = try storeInALinkedFolder()
+
+        linked.enableICloudSync { self.goodConfig() }
+
+        XCTAssertFalse(isLink(real), "the checkout's file became a link into iCloud")
+        XCTAssertEqual(try Data(contentsOf: real), good)
+        XCTAssertFalse(fm.fileExists(atPath: iCloudFile.path))
+    }
+
+    func testTheSyncSwitchGoesBackOffInALinkedFolder() throws {
+        let (linked, real) = try storeInALinkedFolder()
+        let config = UserConfig(store: linked, iCloudSyncEnabled: false)
+
+        config.iCloudSyncEnabled = true
+
+        XCTAssertFalse(config.iCloudSyncEnabled)
+        XCTAssertFalse(isLink(real))
+        XCTAssertFalse(fm.fileExists(atPath: iCloudFile.path))
+    }
+
+    func testRepairAtLaunchLeavesALinkedFolderAlone() throws {
+        let (linked, real) = try storeInALinkedFolder()
+        try putInICloud(other)
+
+        let config = UserConfig(store: linked, iCloudSyncEnabled: true)
+
+        XCTAssertFalse(config.iCloudSyncEnabled)
+        XCTAssertFalse(isLink(real))
+        XCTAssertEqual(config.gapSize, 23)
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), other)
+    }
+
+    // a link into iCloud is ours wherever its folder lives, so off still works
+    func testAnICloudLinkInALinkedFolderIsStillOurs() throws {
+        let (linked, real) = try storeInALinkedFolder()
+        try putInICloud(good)
+        try fm.removeItem(at: real)
+        try fm.createSymbolicLink(at: real, withDestinationURL: iCloudFile)
+
+        linked.disableICloudSync { self.goodConfig() }
+
+        XCTAssertFalse(isLink(real))
+        XCTAssertEqual(try Data(contentsOf: real), good)
+    }
+
+    // MARK: joining a copy already in iCloud
+
+    // a second Mac turns sync on. the copy in iCloud is the shared one, so
+    // it stays, and this Mac's file is kept beside the link
+    func testASecondMacJoiningKeepsTheCopyInICloud() throws {
+        try good.write(to: local)
+        try putInICloud(other)
+
+        store.enableICloudSync { self.goodConfig() }
+
+        XCTAssertTrue(isLink(local))
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), other, "the copy in iCloud was overwritten")
+        XCTAssertEqual(copy(local, "replaced"), good)
+    }
+
+    // the settings that are live after joining are the shared ones
+    func testJoiningLoadsTheSettingsInICloud() throws {
+        try good.write(to: local)
+        try putInICloud(other)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        XCTAssertEqual(config.gapSize, 23)
+        var signals = 0
+        let observation = config.didApplyRuntimeChange.sink { signals += 1 }
+        defer { observation.cancel() }
+
+        config.iCloudSyncEnabled = true
+
+        XCTAssertTrue(config.iCloudSyncEnabled)
+        XCTAssertEqual(config.gapSize, 41, "the shared settings were linked to and not loaded")
+        XCTAssertTrue(config.enabled)
+        XCTAssertGreaterThanOrEqual(signals, 1, "the window manager is told")
+
+        // a change made now goes to the shared copy, not over it with old values
+        config.outerPadding = 7
+        XCTAssertEqual(try savedGap(iCloudFile), 41)
+        XCTAssertEqual(copy(local, "replaced"), good)
+    }
+
+    // a copy in iCloud that won't decode isn't anyone's settings to join.
+    // this Mac's file goes up, and the bad copy is kept
+    func testJoiningOverADamagedCopyInICloudUploadsThisMacsFile() throws {
+        try good.write(to: local)
+        try putInICloud(garbage)
+
+        store.enableICloudSync { self.goodConfig() }
+
+        XCTAssertTrue(isLink(local))
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), good)
+        XCTAssertEqual(copy(local, "replaced"), garbage)
+    }
+
+    // MARK: outside changes reach the running config
+
+    // a Home Manager switch: the link now goes to a new read-only file
+    func testANewLinkTargetReachesTheRunningConfig() throws {
+        try linkLocalToReadOnlyFile(good)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        settle(0.5)
+
+        try linkLocalToReadOnlyFile(other, named: "store2")
+
+        waitUntil("new file loaded") { config.gapSize == 41 }
+        XCTAssertTrue(config.enabled, "every value comes from the new file")
+    }
+
+    // a Home Manager switch that changes only monitorSettings
+    func testANewMonitorLinkTargetReachesTheRunningConfig() throws {
+        try linkLocalToReadOnlyFile(good)
+        let folder = dir.appendingPathComponent("monitor-store", isDirectory: true)
+        try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+        let first = folder.appendingPathComponent("one.json")
+        let second = folder.appendingPathComponent("two.json")
+        try Data(#"{"maxSplitsPerMonitor":{"DELL":2}}"#.utf8).write(to: first)
+        try Data(#"{"maxSplitsPerMonitor":{"DELL":3},"externalControlEnabled":true}"#.utf8).write(to: second)
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: folder.path)
+        addTeardownBlock { [fm] in try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) }
+        try fm.createSymbolicLink(at: monitor, withDestinationURL: first)
+
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        XCTAssertEqual(config.maxSplitsPerMonitor, ["DELL": 2])
+        settle(0.5)
+
+        let temp = dir.appendingPathComponent("monitor-link-new")
+        try fm.createSymbolicLink(at: temp, withDestinationURL: second)
+        XCTAssertEqual(rename(temp.path, monitor.path), 0)
+
+        waitUntil("new monitor file loaded") { config.maxSplitsPerMonitor == ["DELL": 3] }
+        XCTAssertTrue(config.externalControlEnabled)
+        XCTAssertEqual(config.gapSize, 23)
+    }
+
+    // monitorSettings alone, with no config.json at all
+    func testAMonitorEditLoadsWithNoMainConfig() throws {
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        settle(0.5)
+
+        try Data(#"{"maxSplitsPerMonitor":{"DELL":2}}"#.utf8).write(to: monitor)
+
+        waitUntil("monitor settings loaded") { config.maxSplitsPerMonitor == ["DELL": 2] }
+        XCTAssertFalse(fm.fileExists(atPath: local.path), "loading one file doesn't create the other")
+    }
+
+    // MARK: who owns the file
+
+    func testOnlyAFileOrFolderThatCantBeWrittenIsReadOnly() throws {
+        XCTAssertFalse(store.isConfigReadOnly, "no file yet")
+        try good.write(to: local)
+        XCTAssertFalse(store.isConfigReadOnly)
+        XCTAssertFalse(store.isLinkedByAnotherTool)
+        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: local.path)
+        XCTAssertTrue(store.isConfigReadOnly, "a locked file in a writable folder")
+
+        try fm.removeItem(at: local)
+        try putInICloud(good)
+        try linkLocalToICloud()
+        XCTAssertFalse(store.isConfigReadOnly)
+        XCTAssertFalse(store.isLinkedByAnotherTool, "the iCloud link is ours")
+
+        try linkLocalToReadOnlyFile(good)
+        XCTAssertTrue(store.isConfigReadOnly)
+        XCTAssertTrue(store.isLinkedByAnotherTool)
+        XCTAssertFalse(store.isMonitorConfigReadOnly, "each file is judged on its own")
+    }
+
+    // a dotfiles link to a file the user can write is theirs, and saves go through
+    func testAWritableLinkFromAnotherToolIsNotReadOnly() throws {
+        let real = dir.appendingPathComponent("dotfiles.json")
+        try good.write(to: real)
+        try fm.createSymbolicLink(at: local, withDestinationURL: real)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        XCTAssertTrue(store.isLinkedByAnotherTool)
+        XCTAssertFalse(config.isConfigReadOnly)
+        XCTAssertTrue(config.isICloudSyncLocked)
+
+        config.gapSize = 31
+
+        XCTAssertTrue(isLink(local))
+        XCTAssertEqual(try savedGap(real), 31)
+    }
+
+    func testAFolderLinkIsAnotherToolsButAnICloudLinkInItIsNot() throws {
+        let (linked, real) = try storeInALinkedFolder()
+        XCTAssertTrue(linked.isLinkedByAnotherTool)
+        try putInICloud(good)
+        try fm.removeItem(at: real)
+        try fm.createSymbolicLink(at: real, withDestinationURL: iCloudFile)
+        XCTAssertFalse(linked.isLinkedByAnotherTool)
+    }
+
+    func testTheICloudSwitchIsLockedOnlyForAManagedConfig() throws {
+        try good.write(to: local)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        XCTAssertFalse(config.isICloudSyncLocked)
+        XCTAssertFalse(config.isConfigReadOnly)
+
+        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: local.path)
+        XCTAssertTrue(config.isICloudSyncLocked)
+        XCTAssertTrue(config.isConfigReadOnly)
+    }
+
+    // MARK: a file iCloud hasn't downloaded
+
+    // reading a dataless file waits on the network, and launch reads on the
+    // main thread. UF_NODUMP stands in for SF_DATALESS, which only the
+    // system can set
+    func testAFileNotDownloadedIsNotReadAtLaunchAndLoadsWhenItArrives() throws {
+        let cloudStore = ConfigStore(localConfigURL: local, monitorConfigURL: monitor, iCloudRootURL: iCloudRoot,
+                                     watchInterval: 0.15, datalessFlag: UInt32(UF_NODUMP))
+        addTeardownBlock { cloudStore.stopFileWatcher() }
+        try putInICloud(other)
+        try linkLocalToICloud()
+        XCTAssertEqual(chflags(iCloudFile.path, UInt32(UF_NODUMP)), 0)
+
+        let config = UserConfig(store: cloudStore, iCloudSyncEnabled: true)
+
+        XCTAssertEqual(config.gapSize, UserConfigDefaults.gapSize, "launch read a file that isn't there yet")
+        XCTAssertTrue(cloudStore.writesHeld, "defaults could reach the other Macs")
+        config.gapSize = 5
+        XCTAssertEqual(try Data(contentsOf: iCloudFile), other)
+
+        // the download lands
+        XCTAssertEqual(chflags(iCloudFile.path, 0), 0)
+        waitUntil("the downloaded file loads") { config.gapSize == 41 }
+        XCTAssertFalse(cloudStore.writesHeld)
     }
 }

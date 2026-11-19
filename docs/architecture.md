@@ -842,19 +842,30 @@ Config safety, all in `ConfigStore`:
 | Any save over a file that exists but won't open | Skip the save and log a `.warning`, so nothing replaces bytes HyprMac could not copy. iCloud setup and repair stop the same way |
 | Any save over a file that doesn't decode | Copy it to `<name>.unreadable` first, for `config.json` and `monitor-config.json`. If the copy fails, the save is skipped |
 | Any save | Atomic, written to the real file behind a symlink so the iCloud link survives. A failure is logged with its error code and the old file stays |
+| Any save to a file or folder HyprMac can't write | Skipped. `access(W_OK)` on the resolved file and its folder, so a 0444 file in a writable folder isn't renamed over. Settings shows a read-only notice |
+| Something that isn't a regular file at the path (a pipe) | Unreadable, checked with one `stat` before the read, so launch can't block on it |
+| A file iCloud hasn't downloaded (`SF_DATALESS`) | Not read on the main thread. It counts as unreadable, so a link to it holds saves. A background read asks for the download, and the watcher reloads when it lands |
+| A link or linked folder another tool made (Nix, Stow, chezmoi) | Saves go through it if it's writable. The iCloud switch never replaces or moves it, and turns back off |
 | Launch finds a link it can't read | Hold `config.json` saves so defaults never reach other Macs. A good file arriving ends the hold, and so does turning sync off or on. `monitor-config.json` still saves. A file lost while running isn't held, because memory holds real settings |
 | Launch finds a regular file where the iCloud link belongs | Copy it to `config.json.replaced` if it differs, link, then reload before anything can save |
-| Enable sync over an existing iCloud file | Last Mac wins. The iCloud file is copied to `config.json.replaced` first, and the local file goes only after iCloud holds its data |
+| Enable sync over a readable iCloud file | The iCloud copy wins, through the launch-repair path: the local file goes to `config.json.replaced` if it differs, the path links to iCloud, and the shared settings load |
+| Enable sync over an iCloud file that doesn't decode | The local file goes up. The bad iCloud file is copied to `config.json.replaced` first, and the local file goes only after iCloud holds its data |
+| Toggle sync on a private file | The mode carries across, so a 0600 file stays 0600 in iCloud and back |
 | Reset all settings | One update. The button has no confirmation, so both files are copied to `<name>.replaced` first |
 
 Copies live beside the local path and never sync. An older copy is never
 overwritten: new bytes get `.2`, `.3` and so on, and the same bytes aren't
 copied twice. Nothing reads or prunes them. They are there for a person.
 
-A save closes the watcher, renames, and reopens on the new file, so there is no
-re-arm gap. It then reports the change once, because the reload that follows a
-save is existing behavior: it re-merges default keybinds and pins the bracket
-length. `startFileWatcher` keeps retrying when the file isn't there yet.
+The watcher covers both files. Off the main queue it checks every 2 s which
+entry, folder and file each path reaches (`FileMark`: device, inode, size,
+mtime, ctime), and holds the reached file open for events so an edit in place
+shows at once. Main compares each mark with the one taken at the last read or
+save, so only outside changes reload, and a change made while stopped shows at
+the next start. A re-pointed Home Manager link, a swapped folder and a file
+that appears late all show up this way. A save of `config.json` still reports
+once, because the reload that follows a save is existing behavior: it re-merges
+default keybinds and pins the bracket length.
 
 Known limits: on macOS 13, an evicted iCloud file is a `.config.json.icloud`
 placeholder that nothing here asks to download, so that link stays held and

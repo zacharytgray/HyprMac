@@ -189,9 +189,18 @@ class UserConfig: ObservableObject {
     // iCloud sync state — stored in UserDefaults, not config.json
     @Published var iCloudSyncEnabled: Bool {
         didSet {
+            // another tool's link or folder is not ours to move into iCloud.
+            // the switch goes back off, so it never shows a sync that isn't
+            // happening. setting it here doesn't run didSet again
+            if iCloudSyncEnabled, store.isLinkedByAnotherTool {
+                iCloudSyncEnabled = false
+            }
             UserDefaults.standard.set(iCloudSyncEnabled, forKey: "iCloudSyncEnabled")
             if iCloudSyncEnabled {
-                store.enableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
+                // joined a copy already in iCloud: its settings are the live ones now
+                if store.enableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty }) {
+                    reloadFromDisk()
+                }
             } else {
                 store.disableICloudSync(snapshot: { [weak self] in self?.makeSavedConfig() ?? .empty })
             }
@@ -228,6 +237,14 @@ class UserConfig: ObservableObject {
 
     var isICloudDriveAvailable: Bool { store.isICloudDriveAvailable }
 
+    /// True when a config file can't be saved, as when Nix manages it.
+    /// Changes made in Settings then last until the next load.
+    var isConfigReadOnly: Bool { store.isConfigReadOnly || store.isMonitorConfigReadOnly }
+
+    /// True when the iCloud switch can't be used: the config is read-only,
+    /// or another tool put it where it is.
+    var isICloudSyncLocked: Bool { store.isConfigReadOnly || store.isLinkedByAnotherTool }
+
     /// `repairsOnLaunch: false` skips the iCloud relink and the monitor-file
     /// migration, the only writes a launch makes before anything changes.
     init(store: ConfigStore = ConfigStore(),
@@ -235,7 +252,7 @@ class UserConfig: ObservableObject {
          showDockIcon: Bool = RuntimeVariant.inheritedBool(forKey: UserConfig.showDockIconKey),
          repairsOnLaunch: Bool = true) {
         self.store = store
-        self.iCloudSyncEnabled = iCloudSyncEnabled
+        self.iCloudSyncEnabled = iCloudSyncEnabled && !store.isLinkedByAnotherTool
         self.showDockIcon = showDockIcon
 
         let monitorConfig = store.loadSavedMonitorConfig()
@@ -557,7 +574,16 @@ class UserConfig: ObservableObject {
     }
 
     func reloadFromDisk() {
-        guard let saved = store.loadSavedConfig() else { return }
+        // each file loads on its own. Nix can manage monitor-config.json
+        // with no config.json at all
+        guard let saved = store.loadSavedConfig() else {
+            guard let mc = store.loadSavedMonitorConfig() else { return }
+            isReloading = true
+            applyMonitorConfig(mc)
+            isReloading = false
+            didApplyRuntimeChange.send()
+            return
+        }
 
         isReloading = true
         keybinds = Self.mergeNewDefaults(saved: saved.keybinds,
@@ -594,18 +620,22 @@ class UserConfig: ObservableObject {
 
         // monitor settings come from the local file, not the synced config
         if let mc = store.loadSavedMonitorConfig() {
-            maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
-            disabledMonitors = Set(mc.disabledMonitors ?? [])
-            outerPaddingPerMonitor = mc.outerPaddingPerMonitor ?? [:]
-            workspaceMonitors = mc.workspaceMonitors ?? [:]
-            statusExportEnabled = mc.statusExportEnabled ?? false
-            statusHookCommand = mc.statusHookCommand
-            externalControlEnabled = mc.externalControlEnabled ?? false
+            applyMonitorConfig(mc)
         }
         // else keep current values — don't overwrite with synced defaults
 
         isReloading = false
         didApplyRuntimeChange.send()
+    }
+
+    private func applyMonitorConfig(_ mc: SavedMonitorConfig) {
+        maxSplitsPerMonitor = mc.maxSplitsPerMonitor ?? [:]
+        disabledMonitors = Set(mc.disabledMonitors ?? [])
+        outerPaddingPerMonitor = mc.outerPaddingPerMonitor ?? [:]
+        workspaceMonitors = mc.workspaceMonitors ?? [:]
+        statusExportEnabled = mc.statusExportEnabled ?? false
+        statusHookCommand = mc.statusHookCommand
+        externalControlEnabled = mc.externalControlEnabled ?? false
     }
 }
 
