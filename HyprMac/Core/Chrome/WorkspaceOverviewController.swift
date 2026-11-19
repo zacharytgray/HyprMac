@@ -145,6 +145,8 @@ struct WorkspaceHUDGeneration {
 final class WorkspaceOverviewController {
     var onSelectWorkspace: (Int) -> Void = { _ in }
     var onSelectWindow: (Int, CGWindowID) -> Void = { _, _ in }
+    /// Where the overview opens. Wired to the cursor's screen.
+    var screenUnderCursor: () -> NSScreen? = { NSScreen.main }
 
     private var overviewPanel: NSPanel?
     private var overviewModel: WorkspaceOverviewModel?
@@ -239,7 +241,7 @@ final class WorkspaceOverviewController {
     }
 
     private func showOverview(_ snapshots: [WorkspaceSnapshot], scratchpad: [WorkspaceWindowSnapshot]) {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = screenUnderCursor() else { return }
         let maxWidth = min(1400, screen.visibleFrame.width - 48)
         let maxHeight = screen.visibleFrame.height - 48
         let model = WorkspaceOverviewModel(snapshots: snapshots, scratchpad: scratchpad)

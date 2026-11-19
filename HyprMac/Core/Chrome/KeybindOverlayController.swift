@@ -15,6 +15,8 @@ import SwiftUI
 class KeybindOverlayController {
 
     var onShowTutorial: () -> Void = {}
+    /// Where the overlay opens. Wired to the cursor's screen.
+    var screenUnderCursor: () -> NSScreen? = { NSScreen.main }
 
     private var panel: NSPanel?
     private var keyMonitor: Any?
@@ -56,7 +58,7 @@ class KeybindOverlayController {
     }
 
     private func show(keybinds: [Keybind]) {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = screenUnderCursor() else { return }
 
         input.text = ""  // fresh filter on every show
 

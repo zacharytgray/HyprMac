@@ -300,6 +300,9 @@ class WindowManager {
         self.workspaceOrchestrator.noteAdmission = { [weak self] result in
             self?.admissionRecovery.note(result)
         }
+        // overview and keybind list open where the cursor is, like every hypr action
+        self.workspaceOverview.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() }
+        self.keybindOverlay.screenUnderCursor = { [weak self] in self?.displayManager.screenUnderCursor() }
         self.workspaceOverview.onSelectWorkspace = { [weak self] workspace in
             guard let self, self.config.enabled else { return }
             self.handleAction(.switchWorkspace(workspace))

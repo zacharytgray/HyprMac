@@ -211,6 +211,17 @@ final class WorkspaceOverviewPresentationTests: XCTestCase {
         XCTAssertFalse(walked, "a closed overview must not walk AX for snapshots")
     }
 
+    func testOverviewAsksTheInjectedScreenAndStaysClosedWithoutOne() {
+        let controller = WorkspaceOverviewController()
+        var asked = 0
+        controller.screenUnderCursor = { asked += 1; return nil }
+
+        controller.toggle(snapshots: [])
+
+        XCTAssertEqual(asked, 1, "the overview must open on the injected screen, not NSScreen.main")
+        XCTAssertFalse(controller.isOpen)
+    }
+
     @MainActor
     func testOpenOverviewViewRedrawsFromModelUpdates() throws {
         guard ProcessInfo.processInfo.environment["HYPRMAC_HEADLESS_TESTS"] == "1" else {
