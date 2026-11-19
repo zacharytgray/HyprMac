@@ -771,6 +771,10 @@ class WindowManager {
         let bracketColor = state.focusBracketColorHex.flatMap(NSColor.fromHex)
             ?? UserConfigDefaults.focusBracketColor
 
+        // before .colors, so a repaint in the same update uses the new fill
+        if changes.contains(.focusFlash) {
+            focusBorder.flashesOnFocus = state.focusBorderFlash
+        }
         if changes.contains(.colors) {
             let trackedID = focusBorder.trackedWindowID ?? 0
             let trackedColor = stateCache.floatingWindowIDs.contains(trackedID)
@@ -894,6 +898,7 @@ class WindowManager {
         scratchpad.tiledRegionInset = config.scratchpadRegionInset
         scratchpad.tileNewMembers = config.scratchpadTileByDefault
         focusBorder.isEnabled = config.showFocusBorder
+        focusBorder.flashesOnFocus = config.focusBorderFlash
         focusBorder.setFloaterMarks(floaterMarks)
         focusBorder.primaryScreenHeight = displayManager.primaryScreenHeight
         focusBorder.fadeDurationSec = config.chromeFadeDurationSec

@@ -81,6 +81,10 @@ class UserConfig: ObservableObject {
     @Published var showFocusBorder: Bool {
         didSet { persistRuntimeChange() }
     }
+    // the window border tints the window briefly when focus lands on it
+    @Published var focusBorderFlash: Bool {
+        didSet { persistRuntimeChange() }
+    }
     // hex string like "007AFF" — nil means brand cyan
     @Published var focusBorderColorHex: String? {
         didSet { persistRuntimeChange() }
@@ -262,6 +266,7 @@ class UserConfig: ObservableObject {
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
             self.showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
+            self.focusBorderFlash = saved.focusBorderFlash ?? UserConfigDefaults.focusBorderFlash
             self.focusBorderColorHex = saved.focusBorderColorHex
             self.floatingBorderColorHex = saved.floatingBorderColorHex
             self.focusBracketStyle = saved.focusBracketStyle ?? UserConfigDefaults.focusBracketStyle
@@ -295,6 +300,7 @@ class UserConfig: ObservableObject {
             self.showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
             self.overlayAppearance = UserConfigDefaults.overlayAppearance
             self.showFocusBorder = UserConfigDefaults.showFocusBorder
+            self.focusBorderFlash = UserConfigDefaults.focusBorderFlash
             self.focusBorderColorHex = nil
             self.floatingBorderColorHex = nil
             self.focusBracketStyle = UserConfigDefaults.focusBracketStyle
@@ -442,7 +448,8 @@ class UserConfig: ObservableObject {
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
             overlayAccentHex: overlayAccentHex,
             keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch,
-            animateFocusIndicator: animateFocusIndicator)
+            animateFocusIndicator: animateFocusIndicator,
+            focusBorderFlash: focusBorderFlash)
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
@@ -467,6 +474,7 @@ class UserConfig: ObservableObject {
         outerPaddingPerMonitor = [:]
         workspaceMonitors = [:]
         showFocusBorder = UserConfigDefaults.showFocusBorder
+        focusBorderFlash = UserConfigDefaults.focusBorderFlash
         focusBorderColorHex = nil
         floatingBorderColorHex = nil
         overlayAccentHex = nil
@@ -505,6 +513,7 @@ class UserConfig: ObservableObject {
         focusBracketLengthOverride = nil
         windowCornerRadiusOverride = nil
         showFocusBorder = UserConfigDefaults.showFocusBorder
+        focusBorderFlash = UserConfigDefaults.focusBorderFlash
         focusBorderColorHex = nil
         floatingBorderColorHex = nil
         overlayAccentHex = nil
@@ -574,6 +583,7 @@ class UserConfig: ObservableObject {
         showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
         overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
         showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
+        focusBorderFlash = saved.focusBorderFlash ?? UserConfigDefaults.focusBorderFlash
         focusBorderColorHex = saved.focusBorderColorHex
         floatingBorderColorHex = saved.floatingBorderColorHex
         focusBracketStyle = saved.focusBracketStyle ?? UserConfigDefaults.focusBracketStyle

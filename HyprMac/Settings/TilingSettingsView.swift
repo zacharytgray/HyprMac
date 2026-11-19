@@ -176,6 +176,15 @@ struct TilingSettingsView: View {
                 .labelsHidden()
                 .frame(width: 170)
             }
+            if config.showFocusBorder {
+                HyprRow("Flash on focus change", icon: "sparkle",
+                        subtitle: "Briefly tints the window the border moves to. Off keeps only the border.",
+                        divider: true) {
+                    Toggle("", isOn: $config.focusBorderFlash)
+                        .toggleStyle(HyprToggleStyle())
+                        .labelsHidden()
+                }
+            }
             HyprRow("Animate focus moves", icon: "arrow.up.and.down.and.arrow.left.and.right",
                     subtitle: "The indicator glides to the window you focus, swap or split from the keyboard.",
                     divider: true) {

@@ -37,6 +37,10 @@ Window shape and key-press marks have separate controls. **Window corner radius*
 
 Explicit saved dimming, border, color, radius, and fade preferences remain authoritative. Missing fields, fresh configurations, and Reset to Defaults use the new baseline. Error feedback still shows a red overlay shake and message after rejection even when persistent borders or corner cues are off. It does not shake application windows.
 
+### Focus flash
+
+When window borders are on and focus lands on a window, the border first tints the window with its color at 8% for 0.5 seconds, then settles to an outline. **Flash on focus change** (`focusBorderFlash`, on by default) turns off just that tint. The border still draws at 2 points and settles to 1.5 points. The red error feedback keeps its fill either way. A missing or unreadable value reads as on, so no migration is needed. As with the other newer fields, an older build that rewrites a shared `config.json` drops the key, and the flash comes back on. Changing it applies live, through its own chrome flag, without retiling; a border still in its tint repaints at once.
+
 ### Floater marks
 
 Every visible floating window carries a solid outline in the **Floating window color** (brand magenta by default, light and dark aware), so a floater sitting flush in a tile slot does not pass for tiled. The outline is the same in every mode: 1.5 points, with the same panels, occlusion masking, scratchpad filter, fullscreen hiding and fade out.

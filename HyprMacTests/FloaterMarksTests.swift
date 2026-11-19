@@ -237,3 +237,35 @@ final class FloaterOutlinePanelTests: XCTestCase {
         XCTAssertNil(border.currentFloaterOutlineWidth(for: 42))
     }
 }
+
+// the window border's focus flash: on by default, and off clears only the
+// tint, never the border
+final class FocusBorderFlashTests: XCTestCase {
+    private let color = NSColor.systemBlue.cgColor
+
+    func testFlashIsOnByDefault() {
+        XCTAssertTrue(UserConfigDefaults.focusBorderFlash)
+        XCTAssertTrue(FocusBorder().flashesOnFocus)
+    }
+
+    func testFlashOnTintsTheWindowFaintly() {
+        let fill = FocusBorder.activeFill(for: color, flashesOnFocus: true)
+        XCTAssertGreaterThan(fill.alpha, 0)
+        XCTAssertLessThan(fill.alpha, 0.2)
+    }
+
+    func testFlashOffLeavesTheWindowUntinted() {
+        XCTAssertEqual(FocusBorder.activeFill(for: color, flashesOnFocus: false).alpha, 0)
+    }
+
+    func testFocusBorderFlashDecodesTolerantly() throws {
+        func decode(_ value: String?) throws -> SavedConfig {
+            let extra = value.map { #","focusBorderFlash":\#($0)"# } ?? ""
+            let json = #"{"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true\#(extra)}"#
+            return try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        }
+        XCTAssertNil(try decode(nil).focusBorderFlash)
+        XCTAssertEqual(try decode("false").focusBorderFlash, false)
+        XCTAssertNil(try decode(#""yes""#).focusBorderFlash)
+    }
+}

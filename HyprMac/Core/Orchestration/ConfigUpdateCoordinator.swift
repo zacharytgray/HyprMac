@@ -14,6 +14,7 @@ struct RuntimeConfigState: Equatable {
     let workspaceMonitors: [String: [Int]]
     let overlayAppearance: OverlayAppearance
     let showFocusBorder: Bool
+    let focusBorderFlash: Bool
     let focusBorderColorHex: String?
     let floatingBorderColorHex: String?
     let focusBracketStyle: FocusBracketStyle
@@ -35,7 +36,9 @@ struct RuntimeConfigState: Equatable {
         outerPaddingPerMonitor: [String: EdgePadding] = [:],
         workspaceMonitors: [String: [Int]] = [:],
         overlayAppearance: OverlayAppearance = UserConfigDefaults.overlayAppearance,
-        showFocusBorder: Bool, focusBorderColorHex: String?, floatingBorderColorHex: String?,
+        showFocusBorder: Bool,
+        focusBorderFlash: Bool = UserConfigDefaults.focusBorderFlash,
+        focusBorderColorHex: String?, floatingBorderColorHex: String?,
         focusBracketStyle: FocusBracketStyle, focusBracketColorHex: String?,
         focusBracketRadius: CGFloat,
         focusBracketThickness: CGFloat,
@@ -55,6 +58,7 @@ struct RuntimeConfigState: Equatable {
         self.workspaceMonitors = workspaceMonitors
         self.overlayAppearance = overlayAppearance
         self.showFocusBorder = showFocusBorder
+        self.focusBorderFlash = focusBorderFlash
         self.focusBorderColorHex = focusBorderColorHex
         self.floatingBorderColorHex = floatingBorderColorHex
         self.focusBracketStyle = focusBracketStyle
@@ -80,6 +84,7 @@ struct RuntimeConfigState: Equatable {
             workspaceMonitors: config.workspaceMonitors,
             overlayAppearance: config.overlayAppearance,
             showFocusBorder: config.showFocusBorder,
+            focusBorderFlash: config.focusBorderFlash,
             focusBorderColorHex: config.focusBorderColorHex,
             floatingBorderColorHex: config.floatingBorderColorHex,
             focusBracketStyle: config.focusBracketStyle,
@@ -106,6 +111,7 @@ struct ChromeConfigChanges: OptionSet, Equatable {
     static let windowCornerRadius = Self(rawValue: 1 << 4)
     static let bracketAppearance = Self(rawValue: 1 << 5)
     static let overlayAppearance = Self(rawValue: 1 << 6)
+    static let focusFlash = Self(rawValue: 1 << 7)
 }
 
 enum FocusBracketAppearanceUpdate {
@@ -175,6 +181,7 @@ final class ConfigUpdateCoordinator {
 
         var chrome: ChromeConfigChanges = []
         if next.showFocusBorder != previous.showFocusBorder { chrome.insert(.visibility) }
+        if next.focusBorderFlash != previous.focusBorderFlash { chrome.insert(.focusFlash) }
         if next.focusBorderColorHex != previous.focusBorderColorHex
             || next.floatingBorderColorHex != previous.floatingBorderColorHex {
             chrome.insert(.colors)

@@ -73,7 +73,8 @@ struct FocusBorderFeedbackLifecycle {
 ///
 /// State machine on the focused-window panel:
 /// ```
-/// hidden  --show()-->        active   (tint fill + border)
+/// hidden  --show()-->        active   (tint fill + border; no fill when
+///                                      `flashesOnFocus` is off)
 /// active  --settle()-->      settled  (outline only, no fill)
 /// any     --hide()-->        hidden   (fade out + orderOut + nil-out)
 /// any     --flashError()-->  active   (red shake; hides itself afterward)
@@ -103,6 +104,26 @@ class FocusBorder {
             guard !isEnabled else { return }
             disableImmediately()
         }
+    }
+
+    /// Whether `show` tints the window while the border is active, pushed
+    /// from `UserConfig.focusBorderFlash`. Off keeps the border and its
+    /// settle but drops the fill. A change repaints an active border at once,
+    /// either way. Error feedback keeps its red fill.
+    var flashesOnFocus = true {
+        didSet {
+            guard flashesOnFocus != oldValue, state == .active, !errorFeedback.isActive else { return }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            glowView?.layer?.backgroundColor = Self.activeFill(for: accentCGColor, flashesOnFocus: flashesOnFocus)
+            CATransaction.commit()
+        }
+    }
+
+    /// The active-state fill for `color`: a faint tint, or clear when the
+    /// focus flash is off. Pure, so the rule is testable without panels.
+    static func activeFill(for color: CGColor, flashesOnFocus: Bool) -> CGColor {
+        flashesOnFocus ? color.copy(alpha: Tuning.activeFillAlpha) ?? CGColor.clear : CGColor.clear
     }
 
     private var panel: NSPanel?
@@ -216,7 +237,7 @@ class FocusBorder {
         if let layer = glowView?.layer {
             layer.borderColor = focusedColor
             layer.backgroundColor = state == .active
-                ? focusedColor.copy(alpha: Tuning.activeFillAlpha)
+                ? Self.activeFill(for: focusedColor, flashesOnFocus: flashesOnFocus)
                 : CGColor.clear
         }
         for (_, border) in floatingPanels {
@@ -298,14 +319,15 @@ class FocusBorder {
             panel = p
         }
 
-        // active state: tint fill + border, centered on window edge
+        // active state: tint fill (unless the focus flash is off) + border,
+        // centered on window edge
         if let layer = glowView?.layer {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             layer.borderColor = accentCGColor
             layer.borderWidth = Tuning.activeBorderWidth
             layer.cornerRadius = windowRadius + expansion
-            layer.backgroundColor = accentCGColor.copy(alpha: Tuning.activeFillAlpha)
+            layer.backgroundColor = Self.activeFill(for: accentCGColor, flashesOnFocus: flashesOnFocus)
             CATransaction.commit()
         }
 
