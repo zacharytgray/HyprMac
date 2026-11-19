@@ -5,7 +5,6 @@ let
     filterAttrs
     isAttrs
     isList
-    isString
     mapAttrs
     mkOption
     optionalAttrs
@@ -23,11 +22,15 @@ let
     else
       value;
 
-  # `SavedConfig.init(from:)` strictly requires these four top-level keys on
-  # every load (`HyprMac/Persistence/ConfigStore.swift`); missing optional keys
-  # fall back to `UserConfigDefaults`, and missing built-in keybinds are
-  # injected at load time by `UserConfig.mergeNewDefaults`.
+  # `SavedConfig.init(from:)` strictly requires the four keys after `version`
+  # on every load (`HyprMac/Persistence/ConfigStore.swift`); missing optional
+  # keys fall back to `UserConfigDefaults`, and missing built-in keybinds are
+  # injected at load time by `UserConfig.mergeNewDefaults`. `version` is the
+  # current schema (`ConfigMigration.currentVersion`). Without it the file
+  # reads as version 1, and the v1 keybind migrations run on every load.
+  # Set `settings.version` to override it.
   coreConfigDefaults = {
+    version = 2;
     keybinds = [ ];
     gapSize = 8;
     outerPadding = 8;
@@ -49,32 +52,13 @@ let
     if cleaned == { } then null else cleaned;
 
   buildUserDefaults =
-    {
-      cfg,
-      managesConfigJson,
-    }:
-    optionalAttrs cfg.disableUpdateCheck {
-      SUEnableAutomaticChecks = false;
-    }
-    // optionalAttrs managesConfigJson {
-      # Keep iCloud sync off while Nix owns `config.json`, otherwise
-      # `ConfigStore.ensureICloudSymlinkIntegrity` would replace the store
-      # symlink with an iCloud Drive symlink on launch.
-      iCloudSyncEnabled = false;
-    }
-    // optionalAttrs (cfg.showDockIcon != null) {
+    cfg:
+    optionalAttrs (cfg.showDockIcon != null) {
       inherit (cfg) showDockIcon;
     }
     // optionalAttrs (cfg.showMenuBarIcon != null) {
       inherit (cfg) showMenuBarIcon;
     };
-
-  effectiveHyprKey =
-    settings:
-    if isAttrs settings && (settings.hyprKey or null) != null && isString settings.hyprKey then
-      settings.hyprKey
-    else
-      "capsLock";
 
   standardSystemPaths = [
     "/opt/homebrew/bin"
@@ -89,7 +73,7 @@ let
     { jsonFormat }:
     {
       settings = mkOption {
-        inherit (jsonFormat) type;
+        type = types.attrsOf jsonFormat.type;
         default = { };
         example = lib.literalExpression ''
           {
@@ -130,7 +114,7 @@ let
       };
 
       monitorSettings = mkOption {
-        inherit (jsonFormat) type;
+        type = types.attrsOf jsonFormat.type;
         default = { };
         example = lib.literalExpression ''
           {
@@ -177,16 +161,6 @@ let
           `showMenuBarIcon` preference). `null` leaves the preference unmanaged.
         '';
       };
-
-      disableUpdateCheck = mkOption {
-        type = types.bool;
-        default = true;
-        description = ''
-          Disable Sparkle's automatic background update checks
-          (`SUEnableAutomaticChecks = false` in `com.zachgray.HyprMac`
-          UserDefaults) since upgrades are managed declaratively through Nix.
-        '';
-      };
     };
 in
 {
@@ -195,7 +169,6 @@ in
     buildMonitorConfigJson
     buildUserDefaults
     coreConfigDefaults
-    effectiveHyprKey
     filterNullsRecursive
     mkSharedOptions
     standardSystemPaths

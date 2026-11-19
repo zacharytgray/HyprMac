@@ -24,17 +24,20 @@ let
 
   configJsonData = hyprmacLib.buildConfigJson cfg.settings;
   monitorConfigJsonData = hyprmacLib.buildMonitorConfigJson cfg.monitorSettings;
+  userDefaults = hyprmacLib.buildUserDefaults cfg;
 
-  managesConfigJson = configJsonData != null;
-  managesMonitorConfigJson = monitorConfigJsonData != null;
+  # With `targets.darwin.copyApps`, Home Manager keeps a real copy of the app
+  # under ~/Applications, and that copy is the one macOS grants Accessibility
+  # to. Older Home Manager releases have no such option.
+  copiesApps =
+    lib.hasAttrByPath [ "targets" "darwin" "copyApps" ] options
+    && config.targets.darwin.copyApps.enable;
 
-  userDefaults = hyprmacLib.buildUserDefaults {
-    inherit cfg managesConfigJson;
-  };
-
-  hasDomainOption = options.launchd.agents.type.getSubOptions [ ] ? domain;
-  agentDomain = if hasDomainOption then config.launchd.agents.hyprmac.domain else "gui";
-  agentLabel = config.launchd.agents.hyprmac.config.Label;
+  appPath =
+    if copiesApps then
+      "${config.home.homeDirectory}/${config.targets.darwin.copyApps.directory}/HyprMac.app"
+    else
+      "${cfg.package}/Applications/HyprMac.app";
 
   agentPath = concatStringsSep ":" (
     optional (cfg.extraPackages != [ ]) (makeBinPath cfg.extraPackages)
@@ -46,10 +49,6 @@ let
     ]
     ++ hyprmacLib.standardSystemPaths
   );
-
-  restartAgentHook = mkIf cfg.launchd.enable ''
-    /bin/launchctl kickstart -k "${agentDomain}/$(id -u)/${agentLabel}" >/dev/null 2>&1 || true
-  '';
 in
 {
   options.programs.hyprmac = {
@@ -76,24 +75,16 @@ in
       '';
     };
 
-    launchd = {
-      enable = mkOption {
-        type = types.bool;
-        default = false;
-        description = ''
-          Configure a launchd LaunchAgent in the `gui` domain to start HyprMac
-          at login.
+    launchd.enable = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Start HyprMac at login with a launchd agent. launchd restarts it
+        after a crash, but not after you quit it from the menu.
 
-          When enabled, prefer this over HyprMac's in-app "Launch at login"
-          toggle so startup is managed from a single place.
-        '';
-      };
-
-      keepAlive = mkOption {
-        type = types.bool;
-        default = true;
-        description = "Whether launchd should keep the HyprMac process alive.";
-      };
+        When enabled, leave HyprMac's in-app "Launch at login" off so
+        startup is managed from one place.
+      '';
     };
   }
   // hyprmacLib.mkSharedOptions { inherit jsonFormat; };
@@ -110,17 +101,22 @@ in
     home = {
       packages = mkIf (cfg.package != null) [ cfg.package ];
 
+      # HyprMac watches both files and reloads them when a switch re-points
+      # the links, so no restart is needed
       file = {
-        "Library/Application Support/HyprMac/config.json" = mkIf managesConfigJson {
+        "Library/Application Support/HyprMac/config.json" = mkIf (configJsonData != null) {
           source = jsonFormat.generate "hyprmac-config.json" configJsonData;
-          onChange = restartAgentHook;
         };
 
-        "Library/Application Support/HyprMac/monitor-config.json" = mkIf managesMonitorConfigJson {
+        "Library/Application Support/HyprMac/monitor-config.json" = mkIf (monitorConfigJsonData != null) {
           source = jsonFormat.generate "hyprmac-monitor-config.json" monitorConfigJsonData;
-          onChange = restartAgentHook;
         };
       };
+
+      # load the agent only once the copied app is in place
+      activation.hyprmacAfterCopyApps = mkIf (cfg.launchd.enable && copiesApps) (
+        lib.hm.dag.entryBetween [ "setupLaunchAgents" ] [ "copyApps" ] ""
+      );
     };
 
     targets.darwin.defaults."com.zachgray.HyprMac" = mkIf (userDefaults != { }) userDefaults;
@@ -128,17 +124,15 @@ in
     launchd.agents.hyprmac = mkIf (cfg.launchd.enable && cfg.package != null) {
       enable = true;
       config = {
-        ProgramArguments = [
-          "${cfg.package}/Applications/HyprMac.app/Contents/MacOS/HyprMac"
-        ];
+        ProgramArguments = [ "${appPath}/Contents/MacOS/HyprMac" ];
         ProcessType = "Interactive";
-        KeepAlive = cfg.launchd.keepAlive;
+        KeepAlive = {
+          SuccessfulExit = false;
+        };
         RunAtLoad = true;
         EnvironmentVariables = {
           PATH = agentPath;
         };
-        StandardOutPath = "/tmp/hyprmac.log";
-        StandardErrorPath = "/tmp/hyprmac.err.log";
       };
     };
   };
