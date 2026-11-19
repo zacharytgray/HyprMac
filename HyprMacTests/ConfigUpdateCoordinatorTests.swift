@@ -34,6 +34,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         workspaceMonitors: [String: [Int]] = [:],
         overlayAppearance: OverlayAppearance = .system,
         showBorder: Bool = true,
+        focusFlash: Bool = true,
         focusColor: String? = nil,
         floatingColor: String? = nil,
         bracketStyle: FocusBracketStyle = .rounded,
@@ -53,7 +54,8 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
             outerPaddingPerMonitor: paddingOverrides,
             workspaceMonitors: workspaceMonitors,
             overlayAppearance: overlayAppearance,
-            showFocusBorder: showBorder, focusBorderColorHex: focusColor,
+            showFocusBorder: showBorder, focusBorderFlash: focusFlash,
+            focusBorderColorHex: focusColor,
             floatingBorderColorHex: floatingColor,
             focusBracketStyle: bracketStyle, focusBracketColorHex: bracketColor,
             focusBracketRadius: bracketRadius,
@@ -166,6 +168,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         let original = state()
         let variants = [
             state(showBorder: false),
+            state(focusFlash: false),
             state(focusColor: "112233"),
             state(floatingColor: "445566"),
             state(bracketStyle: .off),
@@ -254,6 +257,19 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
             .visibility, .colors, .bracketAppearance, .dimming,
             .fadeDuration, .windowCornerRadius,
         ]])
+    }
+
+    // the focus flash toggle repaints chrome only, under its own flag
+    func testFocusFlashToggleReportsOnlyItsChromeFlag() {
+        let coordinator = ConfigUpdateCoordinator(initial: state())
+        var received: [ChromeConfigChanges] = []
+        coordinator.onChrome = { _, changes in received.append(changes) }
+
+        coordinator.receive(state(focusFlash: false))
+        coordinator.receive(state(focusFlash: false))
+        coordinator.receive(state(focusFlash: true))
+
+        XCTAssertEqual(received, [[.focusFlash], [.focusFlash]])
     }
 
     func testEnabledKeybindHyprAndScratchpadRoutesHavePositiveCoverage() {
@@ -475,6 +491,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.focusBracketLengthOverride = 25
         config.focusBracketRadiusOverride = 2
         config.showFocusBorder = true
+        config.focusBorderFlash = false
         config.dimInactiveWindows = false
 
         var notifications = 0
@@ -490,6 +507,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(config.resolvedFocusBracketRadius, 20)
         XCTAssertEqual(config.focusBracketStyle, .rounded)
         XCTAssertFalse(config.showFocusBorder)
+        XCTAssertTrue(config.focusBorderFlash)
         XCTAssertTrue(config.dimInactiveWindows)
     }
 
@@ -517,6 +535,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.outerPaddingPerMonitor = ["Screen": EdgePadding(top: 1, left: 2, bottom: 3, right: 4)]
         config.workspaceMonitors = ["Screen": [1]]
         config.showFocusBorder = true
+        config.focusBorderFlash = false
         config.focusBorderColorHex = "111111"
         config.floatingBorderColorHex = "222222"
         config.focusBracketStyle = .off
@@ -554,6 +573,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(config.outerPaddingPerMonitor, [:])
         XCTAssertEqual(config.workspaceMonitors, [:])
         XCTAssertEqual(config.showFocusBorder, UserConfigDefaults.showFocusBorder)
+        XCTAssertEqual(config.focusBorderFlash, UserConfigDefaults.focusBorderFlash)
         XCTAssertNil(config.focusBorderColorHex)
         XCTAssertNil(config.floatingBorderColorHex)
         XCTAssertEqual(config.focusBracketStyle, UserConfigDefaults.focusBracketStyle)

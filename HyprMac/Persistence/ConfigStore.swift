@@ -900,6 +900,7 @@ struct SavedConfig: Codable {
     var overlayAccentHex: String? = nil
     var keepCursorOnWorkspaceSwitch: Bool? = nil
     var animateFocusIndicator: Bool? = nil
+    var focusBorderFlash: Bool? = nil
 }
 
 // MARK: - per-keybind decode tolerance
@@ -932,6 +933,7 @@ extension SavedConfig {
         case overlayAccentHex
         case keepCursorOnWorkspaceSwitch
         case animateFocusIndicator
+        case focusBorderFlash
     }
 
     init(from decoder: Decoder) throws {
@@ -1004,6 +1006,7 @@ extension SavedConfig {
         self.overlayAccentHex = Self.tolerant(c, .overlayAccentHex)
         self.keepCursorOnWorkspaceSwitch = Self.tolerant(c, .keepCursorOnWorkspaceSwitch)
         self.animateFocusIndicator = Self.tolerant(c, .animateFocusIndicator)
+        self.focusBorderFlash = Self.tolerant(c, .focusBorderFlash)
     }
 
     // keys "1"…"10" with a non-empty name; anything else is dropped, so a

@@ -44,6 +44,8 @@ enum UserConfigDefaults {
     static let showMenuBarIndicator: Bool = true
     static let overlayAppearance: OverlayAppearance = .system
     static let showFocusBorder: Bool = false
+    // the window border's brief tint fill when focus lands on a window
+    static let focusBorderFlash: Bool = true
     static let focusBracketStyle: FocusBracketStyle = .rounded
     static let focusBracketColor: NSColor = .black
     static let focusBracketRadius: CGFloat = 20
