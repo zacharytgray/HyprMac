@@ -99,12 +99,8 @@ and you can point keys at your own scripts.
 ## Install
 
 ```sh
-brew trust --cask zacharytgray/hyprmac/hyprmac
-brew install --cask zacharytgray/hyprmac/hyprmac
+brew install --cask hyprmac
 ```
-
-Homebrew refuses to load casks from third-party taps until you trust them. The first line trusts
-only the HyprMac cask, which also lets `brew upgrade --cask hyprmac` work later.
 
 No Homebrew? Download **[HyprMac.dmg][dmg]**, open it, and drag HyprMac to Applications. Older
 versions are on the [releases page][releases].
