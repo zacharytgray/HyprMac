@@ -82,7 +82,7 @@ extension Keybind {
         }
     }
 
-    // actions whose semantics touch the floating layer get the magenta ◇ suffix
+    // actions whose semantics touch the floating layer get the magenta ○ suffix
     var touchesFloatingLayer: Bool {
         switch action {
         case .toggleFloating, .focusFloating, .toggleScratchpad, .moveToScratchpad:

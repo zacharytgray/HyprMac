@@ -57,6 +57,21 @@ extension NSColor {
     }
 }
 
+// MARK: - glyphs
+
+/// The workspace strip and floating-layer glyphs. One list, so the menu bar,
+/// the keybind lists and the tour can't drift apart. Squares are tiled-only
+/// workspaces, circles hold floating windows, filled means shown now.
+enum HyprGlyph {
+    static let workspaceShown = "■"
+    static let workspaceShownFloating = "●"
+    static let workspaceWaiting = "□"
+    static let workspaceWaitingFloating = "○"
+    static let workspaceEmpty = "·"
+    /// suffix on rows that act on the floating layer
+    static let floatingMarker = "○"
+}
+
 // MARK: - typography
 
 extension Font {

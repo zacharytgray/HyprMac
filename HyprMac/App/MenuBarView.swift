@@ -304,12 +304,14 @@ enum MenuBarPresentation {
         let lastWorkspace = max(active.max() ?? 1, occupied.max() ?? 1)
         return (1...lastWorkspace).map { workspace in
             if active.contains(workspace) {
-                return floating.contains(workspace) ? "◆" : "■"
+                return floating.contains(workspace)
+                    ? HyprGlyph.workspaceShownFloating : HyprGlyph.workspaceShown
             }
             if occupied.contains(workspace) {
-                return floating.contains(workspace) ? "◇" : "□"
+                return floating.contains(workspace)
+                    ? HyprGlyph.workspaceWaitingFloating : HyprGlyph.workspaceWaiting
             }
-            return "·"
+            return HyprGlyph.workspaceEmpty
         }.joined(separator: " ")
     }
 

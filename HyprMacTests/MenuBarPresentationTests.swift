@@ -5,7 +5,23 @@ final class MenuBarPresentationTests: XCTestCase {
     func testWorkspaceGlyphsPreserveActiveOccupiedAndFloatingSemantics() {
         XCTAssertEqual(MenuBarPresentation.workspaceGlyphs(
             active: [1, 4], occupied: [1, 2, 3, 4], floating: [2, 4]),
-                       "■ ◇ □ ◆")
+                       "■ ○ □ ●")
+    }
+
+    // circles mark floating windows; the diamonds are gone everywhere
+    func testFloatingGlyphsAreCirclesNotDiamonds() {
+        XCTAssertEqual(HyprGlyph.workspaceShown, "■")
+        XCTAssertEqual(HyprGlyph.workspaceShownFloating, "●")
+        XCTAssertEqual(HyprGlyph.workspaceWaiting, "□")
+        XCTAssertEqual(HyprGlyph.workspaceWaitingFloating, "○")
+        XCTAssertEqual(HyprGlyph.workspaceEmpty, "·")
+        XCTAssertEqual(HyprGlyph.floatingMarker, "○")
+
+        let all = MenuBarPresentation.workspaceGlyphs(
+            active: [1, 2], occupied: [1, 2, 3, 4], floating: [2, 4])
+        XCTAssertEqual(all, "■ ● □ ○")
+        XCTAssertFalse(all.contains("◆"))
+        XCTAssertFalse(all.contains("◇"))
     }
 
     func testWorkspaceGlyphsKeepEmptySlotsThroughLastRelevantWorkspace() {
@@ -17,7 +33,7 @@ final class MenuBarPresentationTests: XCTestCase {
 
     func testWorkspaceGlyphsRepresentBothActiveMonitors() {
         XCTAssertEqual(MenuBarPresentation.workspaceGlyphs(
-            active: [2, 5], occupied: [], floating: [5]), "· ■ · · ◆")
+            active: [2, 5], occupied: [], floating: [5]), "· ■ · · ●")
     }
 
     func testTooltipNamesEachMonitorAndCurrentWorkspace() {
@@ -57,7 +73,7 @@ final class MenuBarPresentationTests: XCTestCase {
     func testCompactIndicatorUsesGlyphDataWithoutManagerEnabledState() {
         XCTAssertTrue(MenuBarPresentation.showsIndicator(
             indicatorEnabled: true, hasData: true,
-            labelText: "■ · ◇", scratchpadCount: 0))
+            labelText: "■ · ○", scratchpadCount: 0))
         XCTAssertFalse(MenuBarPresentation.showsIndicator(
             indicatorEnabled: false, hasData: true,
             labelText: "■", scratchpadCount: 0))
