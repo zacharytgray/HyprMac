@@ -95,10 +95,14 @@ running HyprMac, copy both folders over, and run the test app from a folder
 outside `/Applications`:
 
 ```bash
-python3 feed/serve.py &                       # 127.0.0.1:18765
+/usr/bin/python3 feed/serve.py &              # 127.0.0.1:18765
 defaults write com.zachgray.HyprMac.debug updateIdleInstallSeconds 20
 /usr/bin/open 'old/HyprMac Debug.app'
 ```
+
+Use the system Python for the feed. On macOS 27 a Homebrew Python opens the
+Local Network permission dialog and its listener times out until someone
+answers it.
 
 - With the defaults as shipped, the app downloads 99.0.0 at launch, the
   menu bar shows the dot, and the install runs once the Mac has been idle
