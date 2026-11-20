@@ -92,8 +92,10 @@ final class SingleInstanceTests: XCTestCase {
 
     func testNewCopyTakesOverWhenTheOldOneFinishesQuitting() {
         let old = SingleInstance.tryClaim(at: lockURL)
+        var now: TimeInterval = 100
         var pauses = 0
-        let new = SingleInstance.claim(at: lockURL, grace: 3, interval: 0.1) { _ in
+        let new = SingleInstance.claim(at: lockURL, grace: 3, interval: 0.1, clock: { now }) {
+            now += $0
             pauses += 1
             if pauses == 4 { SingleInstance.release(old) }
         }
@@ -103,10 +105,36 @@ final class SingleInstanceTests: XCTestCase {
 
     func testNewCopyGivesUpWhenTheOldOneStays() {
         keep(SingleInstance.tryClaim(at: lockURL))
-        var waited: TimeInterval = 0
-        let new = SingleInstance.claim(at: lockURL, grace: 3, interval: 0.5) { waited += $0 }
+        var now: TimeInterval = 100
+        let new = SingleInstance.claim(at: lockURL, grace: 3, interval: 0.5, clock: { now }) { now += $0 }
         XCTAssertEqual(new, .taken)
-        XCTAssertEqual(waited, 3, accuracy: 0.001)
+        XCTAssertEqual(now, 103, accuracy: 0.001)
+    }
+
+    // a pause that runs long must not stretch the wait past the grace
+    func testSlowPausesDoNotStretchTheWait() {
+        keep(SingleInstance.tryClaim(at: lockURL))
+        var now: TimeInterval = 100
+        var pauses = 0
+        let new = SingleInstance.claim(at: lockURL, grace: 3, interval: 0.1, clock: { now }) {
+            now += $0 * 2
+            pauses += 1
+        }
+        XCTAssertEqual(new, .taken)
+        XCTAssertEqual(pauses, 15)
+        XCTAssertEqual(now, 103, accuracy: 0.2)
+    }
+
+    func testLastPauseStopsAtTheDeadline() {
+        keep(SingleInstance.tryClaim(at: lockURL))
+        var now: TimeInterval = 100
+        var asked: [TimeInterval] = []
+        _ = SingleInstance.claim(at: lockURL, grace: 0.25, interval: 0.1, clock: { now }) {
+            asked.append($0)
+            now += $0
+        }
+        XCTAssertEqual(asked.count, 3)
+        XCTAssertEqual(asked.last ?? 0, 0.05, accuracy: 0.001)
     }
 
     func testNoGraceMeansOneTry() {

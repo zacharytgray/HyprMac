@@ -93,17 +93,21 @@ enum SingleInstance {
     }
 
     /// Tries for the lock, then keeps trying every `interval` until
-    /// `grace` has passed. `pause` is the wait between tries.
+    /// `grace` has passed on `clock`. `pause` is the wait between tries.
+    /// The limit is a deadline, not a count of tries: a pause can run
+    /// long, and the wait must not stretch with it.
     static func claim(at url: URL,
                       grace: TimeInterval = quitGrace,
                       interval: TimeInterval = pollInterval,
+                      clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
                       pause: (TimeInterval) -> Void = { Thread.sleep(forTimeInterval: $0) }) -> Claim {
-        var waited: TimeInterval = 0
+        let deadline = clock() + grace
         while true {
             let attempt = tryClaim(at: url)
-            guard attempt == .taken, interval > 0, waited + interval <= grace else { return attempt }
-            pause(interval)
-            waited += interval
+            guard attempt == .taken, interval > 0 else { return attempt }
+            let left = deadline - clock()
+            guard left > 0 else { return attempt }
+            pause(min(interval, left))
         }
     }
 
