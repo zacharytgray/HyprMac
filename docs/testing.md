@@ -20,7 +20,7 @@ otherwise inherit the release app's real preference.
 ## Supported environments
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
-through `./scripts/test-isolated.sh --debug-variant`. That run gives 2315
+through `./scripts/test-isolated.sh --debug-variant`. That run gives 2339
 tests, 35 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 
@@ -92,7 +92,11 @@ appcast, the real EdDSA key or a GitHub release.
 
 On the MacBook, back up `~/Library/Application Support/HyprMac/`, quit the
 running HyprMac, copy both folders over, and run the test app from a folder
-outside `/Applications`:
+outside `/Applications`. Quit every copy first, release or Debug: the test
+app shares the single-instance lock (`instance.lock`), so beside another
+copy it exits at launch with one log line and nothing on screen. Check
+`ps` for a lone HyprMac and `hidutil property --get UserKeyMapping` after
+each launch.
 
 ```bash
 /usr/bin/python3 feed/serve.py &              # 127.0.0.1:18765

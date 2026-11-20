@@ -510,6 +510,11 @@ of the trees the launch tile put them in and moves them through
 id-based refs for the tiled windows. A scratchpad member comes back by
 the tile-by-default rule, not with its old slot.
 
+The updater starts in `HyprMacApp.init`, right after the single-instance
+guard: `UpdateController.shared` is first touched there, never as a
+property default. Sparkle starts the new version only once the old
+process is gone, so the relaunch takes the lock without waiting.
+
 Quitting still brings hidden workspaces' windows on screen first
 (`restoreAllWindows`), so a relaunch that never comes back strands
 nothing. The cost is a visible shuffle of a second or two at relaunch.
