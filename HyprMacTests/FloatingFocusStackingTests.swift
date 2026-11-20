@@ -645,3 +645,127 @@ final class FloatingFramePlacementTests: XCTestCase {
         XCTAssertTrue(line.contains("clamped from"), line)
     }
 }
+
+// the 2026-11-20 focus loop: focus bounced between two tiles on every click.
+// both tests fail on purpose until it is fixed; XCTExpectFailure keeps the
+// suite green and trips when a fix lands.
+final class FocusLoopReproTests: XCTestCase {
+    /// frames by window id, as the apps hold them
+    private final class Desktop {
+        var positions: [CGWindowID: CGPoint] = [:]
+        var sizes: [CGWindowID: CGSize] = [:]
+
+        func frame(_ id: CGWindowID) -> CGRect? {
+            guard let position = positions[id], let size = sizes[id] else { return nil }
+            return CGRect(origin: position, size: size)
+        }
+
+        func move(_ id: CGWindowID, to rect: CGRect) {
+            positions[id] = rect.origin
+            sizes[id] = rect.size
+        }
+
+        func io(_ generation: @escaping () -> UInt64) -> FrameSizingIO {
+            FrameSizingIO(
+                setMessagingTimeout: { _, _ in .success },
+                writeSize: { [unowned self] id, size, _ in self.sizes[id] = size; return .success },
+                writePosition: { [unowned self] id, position, _ in self.positions[id] = position; return .success },
+                readPosition: { [unowned self] id, _ in (.success, self.positions[id] ?? .zero) },
+                readSize: { [unowned self] id, _ in (.success, self.sizes[id] ?? CGSize(width: 100, height: 100)) },
+                now: { 0 }, sleep: { _ in }, currentGeneration: generation)
+        }
+
+        /// what `AccessibilityManager.getAllWindows` hands back: new objects,
+        /// each stamped with the frame on screen at that moment
+        func walk(_ ids: [CGWindowID]) -> [HyprWindow] {
+            ids.map { id in
+                let window = makeWindow(id: id)
+                window.cachedFrame = frame(id)
+                return window
+            }
+        }
+    }
+
+    private final class Screen: SyntheticScreen {
+        override var frame: NSRect { NSRect(x: 0, y: 0, width: 1600, height: 1000) }
+        override var visibleFrame: NSRect { frame }
+    }
+
+    private struct Scene {
+        /// where the windows really are after the re-apply
+        let actual: [CGWindowID: CGRect]
+        /// what `updatePositionCache(windows:)` stores from the re-apply's walk
+        let cached: [CGWindowID: CGRect]
+    }
+
+    /// Two tiles, something else swaps them (the second HyprMac copy did on
+    /// 2026-11-20), and the drift re-apply puts them back. Mirrors
+    /// `WindowManager.reapplyLayout`: walk, tile pass, cache from the walk.
+    private func sceneAfterADriftReapply() throws -> Scene {
+        let desktop = Desktop()
+        let screen = Screen()
+        let engine = TilingEngine(displayManager: DisplayManager(),
+                                  frameSizingIOFactory: { [desktop] _, generation in desktop.io(generation) })
+
+        XCTAssertNil(engine.tileWindows(desktop.walk([11, 13]), onWorkspace: 1, screen: screen).failure)
+        let slot11 = try XCTUnwrap(desktop.frame(11)), slot13 = try XCTUnwrap(desktop.frame(13))
+        XCTAssertFalse(slot11.intersects(slot13))
+
+        // moved from outside, each onto the other's slot
+        desktop.move(11, to: slot13)
+        desktop.move(13, to: slot11)
+
+        let walk = desktop.walk([11, 13])
+        XCTAssertNil(engine.tileWindows(walk, onWorkspace: 1, screen: screen).failure)
+        XCTAssertEqual(desktop.frame(11), slot11, "the re-apply put 11 back")
+        XCTAssertEqual(desktop.frame(13), slot13, "the re-apply put 13 back")
+
+        // updatePositionCache's rule: `w.cachedFrame ?? w.frame` over the walk
+        var cached: [CGWindowID: CGRect] = [:]
+        for window in walk { cached[window.windowID] = try XCTUnwrap(window.cachedFrame) }
+        return Scene(actual: [11: slot11, 13: slot13], cached: cached)
+    }
+
+    func testALayoutPassLeavesTheWalkOnThePreWriteFrames() throws {
+        let scene = try sceneAfterADriftReapply()
+
+        XCTExpectFailure("the pass writes through the tree's window objects, so the walk keeps the frames it read before the write")
+        XCTAssertEqual(scene.cached, scene.actual)
+    }
+
+    func testAStaleLayoutCacheFlipsFocusOnEveryClickAndMove() throws {
+        let scene = try sceneAfterADriftReapply()
+        let actual11 = try XCTUnwrap(scene.actual[11]), actual13 = try XCTUnwrap(scene.actual[13])
+        let tiles: [CGWindowID: HyprWindow] = [11: makeWindow(id: 11, pid: frontPID),
+                                               13: makeWindow(id: 13, pid: otherPID)]
+        var last: CGWindowID = 11
+        var focused: [String] = []
+        let cursor = CGPoint(x: actual11.midX, y: actual11.midY)
+
+        let tracker = MouseTrackingManager()
+        tracker.isFocusFollowsMouseEnabled = { true }
+        tracker.primaryScreenHeight = { 1000 }
+        tracker.mouseLocationNS = { CGPoint(x: cursor.x, y: 1000 - cursor.y) }
+        tracker.hoverThrottleInterval = { 0 }
+        tracker.readWindowList = { [win(11, actual11), win(13, pid: otherPID, actual13)] }
+        tracker.frontmostPID = { frontPID }
+        tracker.ownPID = ownPID
+        tracker.cachedWindow = { tiles[$0] }
+        tracker.tiledPositions = { scene.cached }
+        tracker.lastFocusedID = { last }
+        tracker.recordFocus = { id, reason in
+            last = id
+            focused.append("\(id) \(reason)")
+        }
+
+        // the pointer rests on 11, which has focus. three clicks, each
+        // followed by its 200 ms refocus and then a mouse move
+        for _ in 0..<3 {
+            tracker.refocusUnderCursor(afterMouseUp: true)
+            tracker.handleMouseMove()
+        }
+
+        XCTExpectFailure("the refocus reads the stale layout cache and the hover reads the real stack")
+        XCTAssertEqual(focused, [], "a click on the focused window under the pointer moves no focus")
+    }
+}
