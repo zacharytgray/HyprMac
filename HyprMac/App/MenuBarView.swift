@@ -1,4 +1,4 @@
-// Menu bar dropdown contents and compact workspace label.
+// Menu bar dropdown contents and workspace label.
 
 import SwiftUI
 
@@ -280,14 +280,20 @@ struct MenuBarMonitorSnapshot: Equatable, Identifiable {
     let currentWorkspace: Int
     let isPortrait: Bool
     let workspaces: [MenuBarWorkspaceBadge]
+    // the visible workspace, which may not be in `workspaces`
+    let currentHasFloating: Bool
+    let currentIsMaximized: Bool
 
     init(id: Int, name: String, currentWorkspace: Int, isPortrait: Bool,
-         workspaces: [MenuBarWorkspaceBadge] = []) {
+         workspaces: [MenuBarWorkspaceBadge] = [],
+         currentHasFloating: Bool = false, currentIsMaximized: Bool = false) {
         self.id = id
         self.name = name
         self.currentWorkspace = currentWorkspace
         self.isPortrait = isPortrait
         self.workspaces = workspaces
+        self.currentHasFloating = currentHasFloating
+        self.currentIsMaximized = currentIsMaximized
     }
 }
 
@@ -296,6 +302,29 @@ struct MenuBarWorkspaceBadge: Equatable, Identifiable {
     let isActive: Bool
     let isOccupied: Bool
     let hasFloatingWindows: Bool
+}
+
+/// What the menu bar item shows. Per Mac, kept in UserDefaults.
+enum MenuBarStyle: String, CaseIterable, Identifiable {
+    case full
+    case compact
+    case hidden
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .full: return "Full"
+        case .compact: return "Compact"
+        case .hidden: return "Hidden"
+        }
+    }
+
+    /// Style for a Mac that still has the two old settings.
+    static func migrated(showIcon: Bool, showIndicator: Bool) -> MenuBarStyle {
+        if !showIcon { return .hidden }
+        return showIndicator ? .full : .compact
+    }
 }
 
 enum MenuBarPresentation {
@@ -364,16 +393,29 @@ enum MenuBarPresentation {
         }
     }
 
-    static func showsIndicator(indicatorEnabled: Bool, hasData: Bool,
-                               labelText: String, scratchpadCount: Int) -> Bool {
-        indicatorEnabled && hasData && (!labelText.isEmpty || scratchpadCount > 0)
+    static func showsIndicator(hasData: Bool, labelText: String, scratchpadCount: Int) -> Bool {
+        hasData && (!labelText.isEmpty || scratchpadCount > 0)
+    }
+
+    // square, circle with floaters, filled when maximized
+    static func compactSymbolName(workspace: Int, floating: Bool, maximized: Bool) -> String {
+        "\(workspace).\(floating ? "circle" : "square")\(maximized ? ".fill" : "")"
+    }
+
+    static func compactSymbolNames(_ monitors: [MenuBarMonitorSnapshot]) -> [String] {
+        monitors.map {
+            compactSymbolName(workspace: $0.currentWorkspace,
+                              floating: $0.currentHasFloating,
+                              maximized: $0.currentIsMaximized)
+        }
     }
 }
 
-// Compact workspace glyphs remain visible while tiling is paused.
+// the label stays visible while tiling is paused
 struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared
+    @AppStorage(UserConfig.menuBarStyleKey) private var style: MenuBarStyle = .full
     @Environment(\.openWindow) private var openWindow
 
     @ObservedObject private var updateState = UpdateState.shared
@@ -390,8 +432,15 @@ struct WorkspaceIndicatorLabel: View {
     }
 
     @ViewBuilder private var content: some View {
-        if MenuBarPresentation.showsIndicator(
-            indicatorEnabled: config.showMenuBarIndicator,
+        if style == .compact, state.hasData, !state.monitors.isEmpty {
+            HStack(spacing: 3) {
+                ForEach(Array(MenuBarPresentation.compactSymbolNames(state.monitors).enumerated()),
+                        id: \.offset) { _, symbol in
+                    Image(systemName: symbol)
+                }
+            }
+            .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
+        } else if style != .compact, MenuBarPresentation.showsIndicator(
             hasData: state.hasData,
             labelText: state.labelText,
             scratchpadCount: state.scratchpadCount) {

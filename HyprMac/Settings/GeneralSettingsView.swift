@@ -4,12 +4,12 @@ import SwiftUI
 
 /// "General" tab. Enable toggle, accessibility status,
 /// focus-follows-mouse, never-tile list, workspace names, workspace pins, System panel
-/// (menu bar indicator, iCloud sync, launch-at-login), Updates, and a footer with
+/// (menu bar style, iCloud sync, launch-at-login), Updates, and a footer with
 /// replay-the-tour + reset.
 struct GeneralSettingsView: View {
     let showTutorial: () -> Void
     @ObservedObject var config = UserConfig.shared
-    @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
+    @AppStorage(UserConfig.menuBarStyleKey) private var menuBarStyle: MenuBarStyle = .full
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
     @StateObject private var loginItem = LoginItemController()
     @State private var showingWorkspaceNames = false
@@ -285,19 +285,16 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
             }
 
-            HyprRow("Show in menu bar", icon: "menubar.rectangle",
-                    subtitle: "Off hides the menu bar icon. Open HyprMac again from Spotlight or Finder to get back to Settings.") {
-                Toggle("", isOn: $showMenuBarIcon)
-                    .toggleStyle(HyprToggleStyle())
-                    .labelsHidden()
+            HyprRow("Menu bar", icon: "menubar.rectangle",
+                    subtitle: "Full shows every workspace in use. Compact shows each monitor's workspace in a fixed space. Hidden removes the item; open HyprMac again from Spotlight or Finder to get back to Settings.") {
+                Picker("", selection: $menuBarStyle) {
+                    ForEach(MenuBarStyle.allCases) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
             }
-
-            HyprRow("Menu bar workspace indicator", icon: "rectangle.fill.on.rectangle.fill") {
-                Toggle("", isOn: $config.showMenuBarIndicator)
-                    .toggleStyle(HyprToggleStyle())
-                    .labelsHidden()
-            }
-            .disabled(!showMenuBarIcon)
 
             HyprRow("Allow other apps to control HyprMac", icon: "link",
                     subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.") {

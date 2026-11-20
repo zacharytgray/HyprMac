@@ -1437,8 +1437,9 @@ A floating window has no tree, so `FloatingWindowController` keeps its frame and
 puts it back on the second press. Moved to another display in between, it fills
 that display instead. The state is not saved: a restart re-tiles.
 
-While a display showing now has a maximized window, the menu bar label shows one
-icon in place of the workspace glyphs. Every start and end shows the switch HUD
+While a display showing now has a maximized window, the Full menu bar label shows one
+icon in place of the workspace glyphs. Compact fills that monitor's badge instead
+(`3.square.fill`). Every start and end shows the switch HUD
 with `FULLSCREEN` and On or Off, whatever caused it (`TilingEngine.onMaximizeChanged`).
 Workspaces that aren't showing stay quiet.
 

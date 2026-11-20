@@ -70,16 +70,53 @@ final class MenuBarPresentationTests: XCTestCase {
             monitors: [], scratchpadCount: 2))
     }
 
-    func testCompactIndicatorUsesGlyphDataWithoutManagerEnabledState() {
+    func testFullIndicatorUsesGlyphDataWithoutManagerEnabledState() {
         XCTAssertTrue(MenuBarPresentation.showsIndicator(
-            indicatorEnabled: true, hasData: true,
-            labelText: "■ · ○", scratchpadCount: 0))
+            hasData: true, labelText: "■ · ○", scratchpadCount: 0))
+        XCTAssertTrue(MenuBarPresentation.showsIndicator(
+            hasData: true, labelText: "", scratchpadCount: 1))
         XCTAssertFalse(MenuBarPresentation.showsIndicator(
-            indicatorEnabled: false, hasData: true,
-            labelText: "■", scratchpadCount: 0))
-        XCTAssertFalse(MenuBarPresentation.showsIndicator(
-            indicatorEnabled: true, hasData: false,
-            labelText: "■", scratchpadCount: 0))
+            hasData: false, labelText: "■", scratchpadCount: 0))
+    }
+
+    func testCompactSymbolCoversWorkspaceOneAndTen() {
+        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
+            workspace: 1, floating: false, maximized: false), "1.square")
+        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
+            workspace: 10, floating: false, maximized: false), "10.square")
+    }
+
+    func testCompactSymbolShowsFloatingAndMaximizedStates() {
+        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
+            workspace: 3, floating: false, maximized: false), "3.square")
+        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
+            workspace: 3, floating: true, maximized: false), "3.circle")
+        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
+            workspace: 3, floating: false, maximized: true), "3.square.fill")
+        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
+            workspace: 3, floating: true, maximized: true), "3.circle.fill")
+    }
+
+    func testCompactSymbolsFollowMonitorOrder() {
+        let monitors = [
+            MenuBarMonitorSnapshot(id: 0, name: "Studio Display", currentWorkspace: 7,
+                                   isPortrait: false, currentHasFloating: true),
+            MenuBarMonitorSnapshot(id: 1, name: "Built-in Display", currentWorkspace: 2,
+                                   isPortrait: false, currentIsMaximized: true)
+        ]
+        XCTAssertEqual(MenuBarPresentation.compactSymbolNames(monitors),
+                       ["7.circle", "2.square.fill"])
+        XCTAssertEqual(MenuBarPresentation.compactSymbolNames([]), [])
+    }
+
+    func testMenuBarStyleMigratesFromOldToggles() {
+        XCTAssertEqual(MenuBarStyle.migrated(showIcon: false, showIndicator: true), .hidden)
+        XCTAssertEqual(MenuBarStyle.migrated(showIcon: true, showIndicator: false), .compact)
+        XCTAssertEqual(MenuBarStyle.migrated(showIcon: true, showIndicator: true), .full)
+    }
+
+    func testMenuBarStyleMigrationIgnoresIndicatorWhenIconIsOff() {
+        XCTAssertEqual(MenuBarStyle.migrated(showIcon: false, showIndicator: false), .hidden)
     }
 
     func testMonitorSnapshotCarriesActionableWorkspaceBadgeState() {

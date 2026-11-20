@@ -77,7 +77,8 @@ final class WorkspaceStatusPresenter {
     /// Publish workspace glyphs and monitor snapshots for the menu.
     func updateMenuBarState() {
         let active = Set(activeWorkspaces())
-        let isFullscreen = !active.isDisjoint(with: workspacesWithMaximizedWindow())
+        let maximized = workspacesWithMaximizedWindow()
+        let isFullscreen = !active.isDisjoint(with: maximized)
         let occupied = occupiedWorkspaces()
         let floating = workspacesWithFloatingWindows()
         let labelText = MenuBarPresentation.workspaceGlyphs(
@@ -86,10 +87,11 @@ final class WorkspaceStatusPresenter {
         let monitors = enabledScreens.enumerated().map {
             index, screen in
                 let anchored = workspaceManager.workspacesAnchoredTo(screen)
+                let current = workspaceManager.workspaceForScreen(screen)
                 return MenuBarMonitorSnapshot(
                     id: index,
                     name: screen.localizedName,
-                    currentWorkspace: workspaceManager.workspaceForScreen(screen),
+                    currentWorkspace: current,
                     isPortrait: screen.frame.height > screen.frame.width,
                     workspaces: anchored.map { workspace in
                         MenuBarWorkspaceBadge(
@@ -97,7 +99,9 @@ final class WorkspaceStatusPresenter {
                             isActive: active.contains(workspace),
                             isOccupied: occupied.contains(workspace),
                             hasFloatingWindows: floating.contains(workspace))
-                    })
+                    },
+                    currentHasFloating: floating.contains(current),
+                    currentIsMaximized: maximized.contains(current))
             }
         let scratchpadCount = scratchpad.members.count
         let scratchpadVisible = scratchpad.isVisible
