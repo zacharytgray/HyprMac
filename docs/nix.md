@@ -54,10 +54,12 @@ agent hasn't been tested by the HyprMac maintainers.
 
 Only one copy of HyprMac runs at a time: a second copy quits as it starts. So
 you can turn on `launchd.enable` while HyprMac is open, and the agent can't
-double up with the in-app "Launch at login". One of the two is enough. This
-needs a HyprMac version after 0.25.1. On 0.25.1 and earlier, keep "Launch at
-login" off, and quit HyprMac before the switch that first turns on
-`launchd.enable`.
+double up with the in-app "Launch at login". One of the two is enough. With
+both on, the Settings window may open at login, because the login item's launch
+reaches the copy the agent already started; this hasn't been checked on a real
+login. The single copy needs a HyprMac version after 0.25.1. On 0.25.1 and
+earlier, keep "Launch at login" off, and quit HyprMac before the switch that
+first turns on `launchd.enable`.
 
 After a switch that updates HyprMac, quit it and open it again. With `copyApps`
 the agent isn't restarted, so the old version keeps running.
