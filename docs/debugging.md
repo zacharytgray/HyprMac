@@ -840,6 +840,40 @@ admission recovery: it is drawn over the tiles like a floater but it is
 not floating, so it gets its own tag rather than borrowing
 `syncTracker-floating`.
 
+### Focus bounces between two tiles on every click
+
+Look for `focus A → B (refocus-under-cursor)` about 200 ms after a mouse-up,
+followed by `focus B → A (ffm-topmost)` on the next mouse move. Hover reads the
+window list. The refocus after a click used to read only `tiledPositions`, so a
+stale cache made the two name different windows for one pointer position.
+
+The cache went stale because a layout pass writes and reads back through the
+trees' own `HyprWindow` objects, while `updatePositionCache(windows:)` was handed
+the walk taken before the pass. On 2026-11-20 a second HyprMac copy had swapped
+two tiles, the drift re-apply put them back, and the cache kept the swapped
+frames until the app quit.
+
+Two things prevent it now:
+
+- `updatePositionCache` takes, per window, the `cachedFrame` that was set last:
+  the walk's or the tree object's (`HyprWindow.adoptNewerCachedFrame`).
+- `refocusUnderCursor` asks the window list first, like hover. The cached rects
+  decide only when the list has no tile there.
+
+If the cache is stale again, the refocus still follows the window list and one
+notice line names it:
+
+```
+refocus under cursor: window list has tile <id> at (x,y), cached rect <rect> does not hold the point, cache names [<ids>] — stale layout cache, following the window list
+```
+
+It logs once per disagreement. Find what moved the window without a cache
+refresh: the last `frame attempt`, `tiled drift` or drag line before it.
+
+To reproduce the old loop, swap two tiles from outside HyprMac (System Events
+`set position` and `set size` on both), wait for `tiled drift: … re-applying the
+layout once`, then click inside one of them and move the mouse.
+
 ### Same-app tiled/floating focus flicker
 
 `raiseBehind` skips floaters of the focused tile's own app. Safari can reorder
@@ -926,6 +960,7 @@ Log lines, all at notice level:
 | `press state stuck with no button held — clearing` | mouse | a mouse-up never arrived. Hover and window polling would have stood down until the next real click |
 | `ignoring popup <id> pid=<pid> layer=<n>: open 30s, treated as part of the app` | mouse | a menu-level window that never closes no longer counts for any guard |
 | `refocus under cursor skipped: popup …` | mouse | post-click refocus held off |
+| `refocus under cursor: window list has tile <id> at (x,y) … stale layout cache, following the window list` | mouse | `tiledPositions` has that tile somewhere else. See "Focus bounces between two tiles on every click" |
 | `raise before focus: wids=[…] under=[…] focus=<id>` | floating | floaters raised from under the old tile before the new one lifts |
 | `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised by the backstop, and the tiles that covered them |
 | `raise behind deferred: popup wid=<id> pid=<pid> layer=<n>` | floating | raise held until the menu closes |
@@ -1092,7 +1127,7 @@ subsystem:com.zachgray.HyprMac (category:focus || category:lifecycle)
 
 The dim mask reacts to focus changes; mismatches usually trace back
 to `WindowStateCache.tiledPositions` going stale between
-poll/retile cycles. `WindowManager.currentTiledRects` re-reads live
+poll/retile cycles. A poll that changes nothing does not refresh it. `WindowManager.currentTiledRects` re-reads live
 AX before `refreshDimming` and `refreshBorderOcclusion` to avoid
 the "half-dim" artifact — if you see stale-rect dimming, that read
 path is the place to look first.

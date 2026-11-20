@@ -47,7 +47,9 @@ struct StalePressCheck {
 ///
 /// `refocusUnderCursor` is a separate path used when the previously
 /// focused window vanishes mid-flight — it re-derives focus from the
-/// current cursor position without going through the FFM gates.
+/// current cursor position without going through the FFM gates. It asks
+/// the same window-list hit test as hover, so the two cannot name
+/// different windows for one pointer position.
 ///
 /// Threading: main-thread only.
 class MouseTrackingManager {
@@ -138,6 +140,16 @@ class MouseTrackingManager {
     private var blocked: (reason: String, since: CFAbsoluteTime, logged: Bool)?
     private var blockedThisMove = false
     var blockedReason: String? { blocked?.reason }
+
+    /// The window list put one tile under the pointer and `tiledPositions`
+    /// put its rect somewhere else: the cache is stale.
+    struct CacheDisagreement: Equatable {
+        let stackID: CGWindowID
+        /// the tiles whose cached rect holds the pointer
+        let cachedIDs: [CGWindowID]
+    }
+    /// the last one `refocusUnderCursor` saw, so it logs once while it lasts
+    private(set) var cacheDisagreement: CacheDisagreement?
 
     /// Entry point for FFM. Called from the global `NSMouseMoved`
     /// monitor on every event; gates and throttles before doing real
@@ -361,16 +373,37 @@ class MouseTrackingManager {
         let mouseNS = mouseLocationNS()
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
+        let lastID = lastFocusedID()
+
+        // the window list first, as hover does. the cached rects below can
+        // be stale, and a refocus from them fought hover over two tiles on
+        // every click (the 2026-11-20 focus loop)
+        switch stackHit(at: cgPoint) {
+        case .blocked:
+            // a panel of the frontmost app. the window below is not the target
+            return
+        case .window(let topmostID):
+            // a floater on top: refocusing the tile below would pull it above
+            if floatingWindowIDs().contains(topmostID), isWindowVisible(topmostID) { return }
+            let cached = tiledPositions()
+            if let rect = cached[topmostID] {
+                noteCacheAgreement(stackID: topmostID, rect: rect, cached: cached, at: cgPoint)
+                // already focused: a refocus would re-fire the synthetic
+                // click and flash the border on every click in the window
+                guard topmostID != lastID, let target = cachedWindow(topmostID) else { return }
+                refocus(target)
+                return
+            }
+            // not a window HyprMac tiles: a popover, or a closing window
+            // still in the list. the cached rects decide
+        case .none:
+            break
+        }
 
         // already-focused fast path: cursor is still over the last-focused
-        // tile and that tile still exists — no refocus needed. without this,
-        // every click inside the focused window would re-fire the synthetic
-        // click and re-show the focus border (visible "re-highlight" flash).
-        // matches the same guard determineFocusTarget uses on the live FFM
-        // path. when the previously-focused window is gone, tiledPositions
-        // won't contain its ID, the guard falls through, and a fallback is
-        // picked below.
-        let lastID = lastFocusedID()
+        // tile and that tile still exists — no refocus needed. when the
+        // previously-focused window is gone, tiledPositions won't contain
+        // its ID, the guard falls through, and a fallback is picked below.
         if lastID != 0, let lastRect = tiledPositions()[lastID], lastRect.contains(cgPoint) {
             return
         }
@@ -385,12 +418,7 @@ class MouseTrackingManager {
 
         for (wid, rect) in tiledPositions() {
             if rect.contains(cgPoint), let target = cachedWindow(wid) {
-                recordFocus(wid, "refocus-under-cursor")
-                if isFocusFollowsMouseEnabled() {
-                    onFocusForFFM(target)
-                } else {
-                    onUpdateFocusBorder(target)
-                }
+                refocus(target)
                 return
             }
         }
@@ -399,6 +427,34 @@ class MouseTrackingManager {
         // was. clearing it here blanked the dim for a moment and sent the
         // next hover over the old tile through the slow path with a
         // synthetic click
+    }
+
+    private func refocus(_ target: HyprWindow) {
+        recordFocus(target.windowID, "refocus-under-cursor")
+        if isFocusFollowsMouseEnabled() {
+            onFocusForFFM(target)
+        } else {
+            onUpdateFocusBorder(target)
+        }
+    }
+
+    /// Says once when the tile the window list has under the pointer is not
+    /// where `tiledPositions` has it. The refocus follows the list either
+    /// way; the line names a stale cache while it lasts.
+    private func noteCacheAgreement(stackID: CGWindowID, rect: CGRect,
+                                    cached: [CGWindowID: CGRect], at point: CGPoint) {
+        guard !rect.contains(point) else {
+            cacheDisagreement = nil
+            return
+        }
+        let found = CacheDisagreement(
+            stackID: stackID,
+            cachedIDs: cached.filter { $0.value.contains(point) }.keys.sorted())
+        guard found != cacheDisagreement else { return }
+        cacheDisagreement = found
+        hyprLog(.notice, .mouse, "refocus under cursor: window list has tile \(stackID) at "
+                + "(\(Int(point.x)),\(Int(point.y))), cached rect \(rect) does not hold the point, "
+                + "cache names \(found.cachedIDs) — stale layout cache, following the window list")
     }
 
     /// Short-TTL cache of the window list. `CGWindowListCopyWindowInfo` is
@@ -453,6 +509,15 @@ class MouseTrackingManager {
         guard let windows = stackedWindows(maxAge: maxAge) else { return .none }
         return WindowStacking.hitTest(point, in: windows, frontmostPID: frontmostPID(), ownPID: ownPID,
                                       managedFloaters: floatingWindowIDs(), mouseTarget: mouseTargetAt)
+    }
+
+    /// The hit test `refocusUnderCursor` shares with hover, through the
+    /// same test seam. Its caller has already ruled out an open popup.
+    private func stackHit(at point: CGPoint) -> WindowStacking.Hit {
+        if let resolve = resolveTopmostWindowID {
+            return resolve(point).map { .window($0) } ?? .none
+        }
+        return hitTest(at: point)
     }
 
     /// What hover focus should see at `point`. An open popup of the

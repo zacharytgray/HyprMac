@@ -457,6 +457,21 @@ class TilingEngine {
         trees[TilingKey(workspace: workspace, screen: screen)]
     }
 
+    /// The object each live tree holds for its windows. A layout pass writes
+    /// and reads back through these, not through the walk it was handed, so
+    /// their `cachedFrame` is the newest after a pass. A window in two trees
+    /// gives the object stamped last.
+    func treeWindowObjects() -> [CGWindowID: HyprWindow] {
+        var out: [CGWindowID: HyprWindow] = [:]
+        for tree in trees.values {
+            for window in tree.allWindows {
+                if let seen = out[window.windowID], seen.cachedFrameStamp >= window.cachedFrameStamp { continue }
+                out[window.windowID] = window
+            }
+        }
+        return out
+    }
+
     /// Leaf window ids of the live tree for `(workspace, screen)`, in
     /// tree order. Read-only — never creates a tree. Used by the state
     /// dump to show tree membership without exposing the tree itself.

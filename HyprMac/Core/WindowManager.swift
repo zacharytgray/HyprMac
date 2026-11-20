@@ -2288,14 +2288,22 @@ class WindowManager {
     /// downstream visual layer (border, dim, menu bar dots) in sync with
     /// the live tile state without re-running the tiling algorithm.
     /// `cachedWindows` holds only visible windows after this.
+    ///
+    /// `windows` may be a walk taken before a layout pass. Each window then
+    /// takes the frame the pass read back (`adoptNewerCachedFrame`); the
+    /// walk's own frame is the one the pass replaced.
     private func updatePositionCache(windows: [HyprWindow]? = nil) {
         tiledRectsMemo = nil // geometry may have changed — force live re-reads
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
         stateCache.tiledPositions.removeAll()
         stateCache.cachedWindows.removeAll()
+        // a pass that ran after this walk moved windows through the trees'
+        // own objects. the walk still says where they were before it
+        let treeObjects = tilingEngine.treeWindowObjects()
         for w in allWindows {
             guard workspaceManager.isWindowVisible(w.windowID) else { continue }
+            w.adoptNewerCachedFrame(from: treeObjects[w.windowID])
             stateCache.cachedWindows[w.windowID] = w
             guard let frame = w.cachedFrame ?? w.frame else { continue }
             if stateCache.floatingWindowIDs.contains(w.windowID)

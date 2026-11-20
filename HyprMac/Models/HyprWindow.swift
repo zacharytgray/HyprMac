@@ -27,10 +27,32 @@ class HyprWindow: Equatable, Hashable {
     /// A fresh walk object says `false` until stamped.
     var isFloating: Bool = false
 
-    /// Most recent AX frame read by `getAllWindows`. Lets
-    /// `updatePositionCache` skip redundant AX reads. Cleared by writes on
-    /// this instance; other instances of the window keep theirs.
-    var cachedFrame: CGRect?
+    /// Most recent AX frame read by `getAllWindows`, or the frame a layout
+    /// pass read back. Lets `updatePositionCache` skip redundant AX reads.
+    /// Cleared by writes on this instance; other instances of the window
+    /// keep theirs, so `adoptNewerCachedFrame` settles which one is current.
+    var cachedFrame: CGRect? {
+        didSet {
+            Self.frameStampCounter &+= 1
+            cachedFrameStamp = Self.frameStampCounter
+        }
+    }
+
+    /// Order of the last `cachedFrame` set or clear across every instance.
+    /// 0 means never set.
+    private(set) var cachedFrameStamp: UInt64 = 0
+    private static var frameStampCounter: UInt64 = 0
+
+    /// Take `other`'s cached frame when it was set after this one's.
+    ///
+    /// A walk stamps its own objects, and a layout pass that follows writes
+    /// and reads back through the tree's objects. The walk's frame is then
+    /// the one from before the write. A cleared frame is taken too, so the
+    /// next reader asks AX instead of trusting the old one.
+    func adoptNewerCachedFrame(from other: HyprWindow?) {
+        guard let other, other !== self, other.cachedFrameStamp > cachedFrameStamp else { return }
+        cachedFrame = other.cachedFrame
+    }
 
     /// Known lower bound on the window's resizable size. Seeded from
     /// `AXMinimumSize` (or a per-bundle-id heuristic when AX does not
