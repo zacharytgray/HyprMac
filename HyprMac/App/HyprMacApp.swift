@@ -11,12 +11,20 @@ import Sparkle
 struct HyprMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     #if !HYPRMAC_DEBUG_VARIANT
-    // Nix replaces the bundle on its own; Sparkle must not
-    private let updaterController = SPUStandardUpdaterController(
-        startingUpdater: !RuntimeVariant.updatesManagedByNix, updaterDelegate: nil, userDriverDelegate: nil)
+    private let updaterController: SPUStandardUpdaterController
     #endif
     // per Mac, off removes the menu bar item. reopening the app shows Settings
     @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
+
+    init() {
+        // a second copy leaves here, before Sparkle or the menu bar item start
+        SingleInstance.claimOrExit()
+        #if !HYPRMAC_DEBUG_VARIANT
+        // Nix replaces the bundle on its own; Sparkle must not
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: !RuntimeVariant.updatesManagedByNix, updaterDelegate: nil, userDriverDelegate: nil)
+        #endif
+    }
 
     var body: some Scene {
         MenuBarExtra(isInserted: $showMenuBarIcon) {

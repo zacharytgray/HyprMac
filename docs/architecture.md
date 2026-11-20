@@ -205,6 +205,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `DestroyRecheck` | Bounded re-poll after a destroy notification whose poll saw nothing gone: up to 2 more polls, 0.35 s apart. |
 | `ExternalCommand` | Parses `hyprmac://` links (`docs/external-control.md`). `WindowManager.handleExternalURL` runs them. |
 | `LoginItemController` | Launch at login through `SMAppService.mainApp`. |
+| `SingleInstance` | Lets one copy run per bundle id. A second copy quits in `HyprMacApp.init` (see "Single instance"). |
 | `FrameReadbackPoller` | Runs candidate, adjusted and restoration passes over `FrameSizingAttempt` and classifies the readback into conflicts and min-size evidence. |
 
 Tiled drags use `TiledDragHandler`. `ProbeFrame` is a Debug-only `--probe-frame` diagnostic.
@@ -976,6 +977,49 @@ drive it with a fake.
   its hold; revoked access (Accessibility turned off) stops the monitor
   and ends a press whose F18 release was ignored. If an up is missed
   anyway, the next Caps Lock press ends it.
+
+## Single instance
+
+Two copies of HyprMac must never run together. Each has its own event tap
+and tiling engine, so they move the same windows against each other, and
+the first to quit takes the Hypr key remap away from the other.
+
+macOS does not prevent it. LaunchServices folds a second launch into the
+running app only when the launch goes through it and names the same bundle
+path. Then the running app gets a reopen, which shows Settings. These all
+start a second process instead:
+
+- a launchd agent that runs `Contents/MacOS/HyprMac` directly, as the Home
+  Manager module's does (`docs/nix.md`), while a login item or a hand
+  launch has already started the app
+- a copy at another path with the same bundle id
+- `open -n`, or the binary run from a shell
+
+`LSMultipleInstancesProhibited` does not stop a directly run binary, so
+`Info.plist` does not set it.
+
+`SingleInstance.claimOrExit()` is the first thing `HyprMacApp.init` does,
+before Sparkle, the menu bar item or `AppDelegate` exist. It takes an
+exclusive, non-blocking `flock` on
+`~/Library/Application Support/HyprMac/instance-<bundle id>.lock` and keeps
+the descriptor open for the life of the process. A copy that can't get the
+lock logs one `.notice` under `lifecycle` and calls `exit(0)`. Nothing is
+shown, and the running copy is not told.
+
+| Case | What happens |
+|---|---|
+| Two copies start at the same moment (a login item and a launchd agent at login) | The kernel gives the lock to one. No start times or pids are compared |
+| The old copy is still quitting (a quit followed at once by a reopen) | The new copy retries every 0.1 s for up to 3 s (`quitGrace`), then takes over. Sparkle starts the new version only after the old process is gone, so an update does not normally wait at all |
+| The holder crashed or was killed | The kernel freed the lock with the process. There is no stale lock and nothing to clean up |
+| A launchd agent started the second copy | Exit code 0 is a successful exit, so `KeepAlive = { SuccessfulExit = false; }` does not start it again |
+| The Debug app beside the release | They don't shut each other out: the file is named for the bundle id, and `com.zachgray.HyprMac.debug` is a different one. They share the folder, not the lock |
+| An XCTest host (any `XCTest…` environment variable) | Not guarded, so hosted tests run while HyprMac is open. The isolated harness never runs `HyprMacApp.init` |
+| `--check-accessibility`, `--request-accessibility`, `--check-input-monitoring` (Debug app), `--preview-overlays`, `--probe-frame` (`DEBUG` builds) | Not guarded and no lock taken. They answer and quit without starting the window manager, and are meant to run beside it. A new one-shot flag must be added to `SingleInstance.isOneShotDiagnostic` |
+| The lock file can't be opened or locked (a read-only folder, a file system without `flock`) | The copy runs unguarded and logs a `.notice`. A broken lock must never keep HyprMac from starting |
+| A command HyprMac starts (`runCommand`, the status hook, `hidutil`) | The descriptor is opened `O_CLOEXEC`, so a child can't inherit the lock and hold it after HyprMac quits |
+
+The lock is per user, since the folder is in the home directory. Two users
+on one Mac each run their own copy.
 
 ## Permissions
 
