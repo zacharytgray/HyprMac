@@ -40,7 +40,10 @@ final class WindowStateCache {
     /// Not the layout's intent, and it can include newcomers not yet in a
     /// tree. FFM and focus resolving
     /// use them as hit rects to match windows without an AX poll; a
-    /// finished tiled drag rewrites them.
+    /// finished tiled drag rewrites them. After a layout pass they are the
+    /// frames the pass read back. A poll that changes nothing leaves them
+    /// alone, so a window moved from outside is stale here until the next
+    /// refresh; hover and the refocus after a click ask the window list first.
     var tiledPositions: [CGWindowID: CGRect] = [:]
 
     /// Windows whose owning app is alive but whose `AXUIElement` is gone
