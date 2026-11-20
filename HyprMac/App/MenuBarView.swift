@@ -320,6 +320,11 @@ enum MenuBarStyle: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The stored style. Read only; `@AppStorage` does the writing.
+    static var stored: MenuBarStyle {
+        UserDefaults.standard.string(forKey: UserConfig.menuBarStyleKey).flatMap(MenuBarStyle.init) ?? .full
+    }
+
     /// Style for a Mac that still has the two old settings.
     static func migrated(showIcon: Bool, showIndicator: Bool) -> MenuBarStyle {
         if !showIcon { return .hidden }
