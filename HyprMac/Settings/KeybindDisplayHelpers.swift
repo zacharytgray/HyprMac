@@ -4,6 +4,23 @@
 
 import SwiftUI
 
+extension Action {
+    /// Whether a keybind row for this action gets the ○ floating marker, in
+    /// the Hypr+K list and in Settings. Sending a window to the scratchpad
+    /// floats it only while "Tile sent windows" is off, so that row follows
+    /// the setting (`UserConfig.scratchpadTileByDefault`).
+    func showsFloatingMarker(scratchpadTilesSentWindows: Bool) -> Bool {
+        switch self {
+        case .toggleFloating, .focusFloating, .toggleScratchpad:
+            return true
+        case .moveToScratchpad:
+            return !scratchpadTilesSentWindows
+        default:
+            return false
+        }
+    }
+}
+
 extension Keybind {
     var keyCodeName: String { keyCodeToName(keyCode) }
 
@@ -82,14 +99,9 @@ extension Keybind {
         }
     }
 
-    // actions whose semantics touch the floating layer get the magenta ○ suffix
-    var touchesFloatingLayer: Bool {
-        switch action {
-        case .toggleFloating, .focusFloating, .toggleScratchpad, .moveToScratchpad:
-            return true
-        default:
-            return false
-        }
+    // the magenta ○ suffix. see Action.showsFloatingMarker
+    func showsFloatingMarker(scratchpadTilesSentWindows: Bool) -> Bool {
+        action.showsFloatingMarker(scratchpadTilesSentWindows: scratchpadTilesSentWindows)
     }
 
     var actionDescription: String {

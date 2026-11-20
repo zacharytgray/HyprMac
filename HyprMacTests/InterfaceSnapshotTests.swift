@@ -134,7 +134,9 @@ final class InterfaceSnapshotTests: XCTestCase {
 
         // the longest section's third row plus half a row, so a row sits half
         // under its pinned header
-        let sections = KeybindOverlayContent.sections(for: Keybind.defaults, filter: "")
+        let sections = KeybindOverlayContent.sections(
+            for: Keybind.defaults, filter: "",
+            scratchpadTilesSentWindows: UserConfig.shared.scratchpadTileByDefault)
         let longest = try XCTUnwrap(sections.indices.max { sections[$0].rows.count < sections[$1].rows.count })
         let firstRow = sections[..<longest].reduce(0) { $0 + $1.rows.count }
         let midRow = OverlayListLayout.scrollStops(for: sections)[firstRow + 2] + 17

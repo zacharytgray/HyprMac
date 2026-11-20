@@ -320,11 +320,15 @@ enum KeybindOverlayGrouping {
 /// Builds the overlay's sections from the live keybinds: one section per
 /// category in `KeybindCategory` order, direction and workspace runs folded
 /// into single rows, then filtered by the typed query.
+/// `scratchpadTilesSentWindows` is the "Tile sent windows" setting; it decides
+/// the ○ marker on Send to Scratchpad.
 enum KeybindOverlayContent {
-    static func sections(for keybinds: [Keybind], filter: String) -> [OverlaySection] {
+    static func sections(for keybinds: [Keybind], filter: String,
+                         scratchpadTilesSentWindows: Bool) -> [OverlaySection] {
         let query = filter.trimmingCharacters(in: .whitespaces)
         return KeybindCategory.allCases.compactMap { category in
-            let rows = rows(for: category, in: keybinds).filter { matches($0.description, query: query) }
+            let rows = rows(for: category, in: keybinds, scratchpadTilesSentWindows: scratchpadTilesSentWindows)
+                .filter { matches($0.description, query: query) }
             return rows.isEmpty ? nil : OverlaySection(category: category, rows: rows)
         }
     }
@@ -338,9 +342,10 @@ enum KeybindOverlayContent {
     }
 
     // ids come from the unfiltered position so they stay put while typing
-    private static func rows(for category: KeybindCategory, in keybinds: [Keybind]) -> [OverlayRow] {
+    private static func rows(for category: KeybindCategory, in keybinds: [Keybind],
+                             scratchpadTilesSentWindows: Bool) -> [OverlayRow] {
         let binds = keybinds.filter { KeybindCategory.from($0.action) == category }
-        var rows = coalesce(binds)
+        var rows = coalesce(binds, scratchpadTilesSentWindows: scratchpadTilesSentWindows)
         if category == .windowManagement {
             rows.append(("Swap tiles by dragging", ["HYPR", "drag"], false))
         }
@@ -354,7 +359,7 @@ enum KeybindOverlayContent {
 
     // fold direction binds and workspace-number binds into single rows
     // when the whole run shares modifiers; otherwise emit them plainly.
-    private static func coalesce(_ binds: [Keybind]) -> [RowParts] {
+    private static func coalesce(_ binds: [Keybind], scratchpadTilesSentWindows: Bool) -> [RowParts] {
         var rows: [RowParts] = []
         var consumed = Set<Int>()
 
@@ -365,7 +370,8 @@ enum KeybindOverlayContent {
                 rows.append(coalesced)
             } else {
                 consumed.insert(i)
-                rows.append((bind.actionDescription, bind.badgeLabels(), isFloatingAction(bind.action)))
+                rows.append((bind.actionDescription, bind.badgeLabels(),
+                             bind.showsFloatingMarker(scratchpadTilesSentWindows: scratchpadTilesSentWindows)))
             }
         }
         return rows
@@ -450,16 +456,6 @@ enum KeybindOverlayContent {
             case .right: return "→"
             }
         }.joined()
-    }
-
-    // actions whose semantics touch the floating layer get the ○ suffix
-    private static func isFloatingAction(_ action: Action) -> Bool {
-        switch action {
-        case .toggleFloating, .focusFloating, .toggleScratchpad, .moveToScratchpad:
-            return true
-        default:
-            return false
-        }
     }
 }
 
@@ -644,7 +640,10 @@ struct KeybindOverlayView: View {
 
     @ViewBuilder
     private var list: some View {
-        let sections = KeybindOverlayContent.sections(for: keybinds, filter: input.text)
+        // reads the observed config, so the ○ follows the toggle while open
+        let sections = KeybindOverlayContent.sections(
+            for: keybinds, filter: input.text,
+            scratchpadTilesSentWindows: config.scratchpadTileByDefault)
         if sections.isEmpty {
             Text("No keybinds match \u{201C}\(input.query)\u{201D}")
                 .font(.system(size: 14))

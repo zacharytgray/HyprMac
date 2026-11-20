@@ -3,8 +3,41 @@ import Carbon
 @testable import HyprMac
 
 final class KeybindOverlayContentTests: XCTestCase {
-    private func sections(_ binds: [Keybind] = Keybind.defaults, filter: String = "") -> [OverlaySection] {
-        KeybindOverlayContent.sections(for: binds, filter: filter)
+    private func sections(_ binds: [Keybind] = Keybind.defaults, filter: String = "",
+                          scratchpadTiles: Bool = UserConfigDefaults.scratchpadTileByDefault) -> [OverlaySection] {
+        KeybindOverlayContent.sections(for: binds, filter: filter, scratchpadTilesSentWindows: scratchpadTiles)
+    }
+
+    private func floatingRows(scratchpadTiles: Bool) -> [String] {
+        sections(scratchpadTiles: scratchpadTiles).flatMap(\.rows).filter(\.isFloating).map(\.description)
+    }
+
+    // sent windows tile by default, so Send to Scratchpad is not a floating row
+    func testSendToScratchpadHasNoFloatingMarkerWhileSentWindowsTile() {
+        XCTAssertTrue(UserConfigDefaults.scratchpadTileByDefault)
+        XCTAssertEqual(floatingRows(scratchpadTiles: true),
+                       ["Cycle Floating Windows", "Toggle Floating", "Toggle Scratchpad"])
+    }
+
+    func testSendToScratchpadGetsTheFloatingMarkerWhenSentWindowsFloat() {
+        XCTAssertEqual(floatingRows(scratchpadTiles: false),
+                       ["Cycle Floating Windows", "Toggle Floating", "Toggle Scratchpad", "Send to Scratchpad"])
+    }
+
+    // the settings list and the overlay ask the same helper
+    func testFloatingMarkerRuleIsSharedByActionAndKeybind() {
+        for tiles in [true, false] {
+            XCTAssertTrue(Action.toggleFloating.showsFloatingMarker(scratchpadTilesSentWindows: tiles))
+            XCTAssertTrue(Action.focusFloating.showsFloatingMarker(scratchpadTilesSentWindows: tiles))
+            XCTAssertTrue(Action.toggleScratchpad.showsFloatingMarker(scratchpadTilesSentWindows: tiles))
+            XCTAssertFalse(Action.toggleMaximize.showsFloatingMarker(scratchpadTilesSentWindows: tiles))
+            XCTAssertFalse(Action.closeWindow.showsFloatingMarker(scratchpadTilesSentWindows: tiles))
+            XCTAssertEqual(Action.moveToScratchpad.showsFloatingMarker(scratchpadTilesSentWindows: tiles), !tiles)
+            for bind in Keybind.defaults {
+                XCTAssertEqual(bind.showsFloatingMarker(scratchpadTilesSentWindows: tiles),
+                               bind.action.showsFloatingMarker(scratchpadTilesSentWindows: tiles))
+            }
+        }
     }
 
     private func rows(_ category: KeybindCategory, in sections: [OverlaySection]) -> [OverlayRow] {
