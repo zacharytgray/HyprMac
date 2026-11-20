@@ -480,8 +480,9 @@ a new install; a choice already stored in the user's defaults wins.
 
 `IdleInstallPolicy` installs after five minutes with no keyboard or
 pointer input, and only when the screen is unlocked, the display is
-awake, no app holds a display-sleep assertion (a video, a call, slides,
-or a keep-awake tool), and no native fullscreen window is in front. The
+awake and no native fullscreen window is in front. Display-sleep
+assertions are not read: a keep-awake tool holds one all day and must
+not hold updates back. The
 wait is under macOS's default ten-minute display sleep on purpose: a
 launch behind a lock or a sleeping display gets a partial window list
 from AX and would lay out only what it saw.

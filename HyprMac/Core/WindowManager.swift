@@ -1997,11 +1997,14 @@ class WindowManager {
         }
 
         // scratchpad members rejoin the layer, parked
+        // (a pinned app's window is already there from the launch tile)
         var stashed = 0
         for key in handoff.scratchpad {
-            guard let w = window(key), !scratchpad.contains(w.windowID) else { continue }
-            scratchpad.adoptPinned(w, summon: false, reason: "update relaunch")
-            stashed += 1
+            guard let w = window(key) else { continue }
+            if !scratchpad.contains(w.windowID) {
+                scratchpad.adoptPinned(w, summon: false, reason: "update relaunch")
+            }
+            if scratchpad.contains(w.windowID) { stashed += 1 }
         }
 
         // the launch tile put every floater in a tree. take them out again

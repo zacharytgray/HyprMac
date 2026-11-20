@@ -5,9 +5,9 @@ import XCTest
 final class UpdateIdleInstallTests: XCTestCase {
 
     private func conditions(idle: TimeInterval = 3600, locked: Bool = false, asleep: Bool = false,
-                            heldAwake: Bool = false, fullscreen: Bool = false) -> IdleInstallConditions {
+                            fullscreen: Bool = false) -> IdleInstallConditions {
         IdleInstallConditions(idleSeconds: idle, screenLocked: locked, displayAsleep: asleep,
-                              displayHeldAwake: heldAwake, fullscreenInFront: fullscreen)
+                              fullscreenInFront: fullscreen)
     }
 
     func testInstallsOnceTheMacHasBeenIdleForTheThreshold() {
@@ -26,9 +26,10 @@ final class UpdateIdleInstallTests: XCTestCase {
         XCTAssertEqual(IdleInstallPolicy.wait(conditions(fullscreen: true)), .fullscreen)
     }
 
-    // a video, a call or slides: no input for a long time, but someone is watching
-    func testAnAppKeepingTheDisplayAwakeHoldsTheInstall() {
-        XCTAssertEqual(IdleInstallPolicy.wait(conditions(heldAwake: true)), .displayHeldAwake)
+    // a keep-awake tool must not hold updates back, so the display-sleep
+    // assertion it sets is not part of the decision at all
+    func testNoInputIsTheOnlyIdleSignal() {
+        XCTAssertEqual(IdleInstallPolicy.Wait.allCases, [.inUse, .locked, .displayAsleep, .fullscreen])
     }
 
     // AX lists only part of the desk behind a lock or a sleeping display
@@ -40,7 +41,8 @@ final class UpdateIdleInstallTests: XCTestCase {
 
     func testEveryGuardMustClearBeforeAnInstall() {
         XCTAssertNotNil(IdleInstallPolicy.wait(conditions(idle: 0, fullscreen: true)))
-        XCTAssertNotNil(IdleInstallPolicy.wait(conditions(idle: 3600, heldAwake: true, fullscreen: true)))
+        XCTAssertNotNil(IdleInstallPolicy.wait(conditions(idle: 3600, locked: true, fullscreen: true)))
+        XCTAssertEqual(IdleInstallPolicy.wait(conditions(idle: 0, fullscreen: true)), .fullscreen)
         XCTAssertNil(IdleInstallPolicy.wait(conditions(idle: 3600)))
     }
 
@@ -59,15 +61,6 @@ final class UpdateIdleInstallTests: XCTestCase {
         XCTAssertEqual(IdleInstallPolicy.threshold(defaults: defaults), 20)
         defaults.set(-5, forKey: IdleInstallPolicy.thresholdDefaultsKey)
         XCTAssertEqual(IdleInstallPolicy.threshold(defaults: defaults), IdleInstallPolicy.idleThreshold)
-    }
-
-    func testDisplayAssertionsCountAsHeldAwake() {
-        XCTAssertFalse(IdleInstallConditions.heldAwake(assertionStatus: [:]))
-        XCTAssertFalse(IdleInstallConditions.heldAwake(assertionStatus: [
-            "PreventUserIdleDisplaySleep": 0, "PreventUserIdleSystemSleep": 3,
-        ]))
-        XCTAssertTrue(IdleInstallConditions.heldAwake(assertionStatus: ["PreventUserIdleDisplaySleep": 1]))
-        XCTAssertTrue(IdleInstallConditions.heldAwake(assertionStatus: ["NoDisplaySleepAssertion": 2]))
     }
 
     func testTheLiveReadAnswersWithoutCrashing() {

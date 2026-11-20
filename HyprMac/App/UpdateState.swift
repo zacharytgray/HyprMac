@@ -3,7 +3,6 @@
 // tiles. No Sparkle here, so the debug variant and the tests build it.
 
 import Cocoa
-import IOKit.pwr_mgt
 
 /// An update the menu bar should point at.
 enum UpdateNotice: Equatable {
@@ -34,27 +33,28 @@ struct IdleInstallConditions: Equatable {
     /// locked, at the login window, or switched to another user
     var screenLocked: Bool
     var displayAsleep: Bool
-    /// something asked macOS to keep the display on: a video, a call, slides
-    var displayHeldAwake: Bool
     var fullscreenInFront: Bool
 }
 
 /// Decides when a downloaded update may relaunch HyprMac with nobody watching.
 ///
+/// Idle means no keyboard or pointer input for five minutes. A keep-awake
+/// tool does not count as someone watching, so display-sleep assertions are
+/// not read: they would hold updates back for everyone who runs one.
+///
 /// The relaunch must run before the display sleeps or the screen locks:
 /// behind either one AX lists only part of the desk, and a launch would
 /// lay out what it could see. macOS turns the display off after ten
-/// minutes on power by default, so the wait is five.
+/// minutes on power by default, which is why the wait is five.
 enum IdleInstallPolicy {
     static let idleThreshold: TimeInterval = 5 * 60
     /// `defaults write` this many seconds to test with a shorter wait
     static let thresholdDefaultsKey = "updateIdleInstallSeconds"
 
-    enum Wait: String, Equatable {
+    enum Wait: String, Equatable, CaseIterable {
         case inUse = "the Mac is in use"
         case locked = "the screen is locked"
         case displayAsleep = "the display is asleep"
-        case displayHeldAwake = "an app is keeping the display awake"
         case fullscreen = "a fullscreen app is in front"
     }
 
@@ -64,7 +64,6 @@ enum IdleInstallPolicy {
         if conditions.screenLocked { return .locked }
         if conditions.displayAsleep { return .displayAsleep }
         if conditions.fullscreenInFront { return .fullscreen }
-        if conditions.displayHeldAwake { return .displayHeldAwake }
         if conditions.idleSeconds < threshold { return .inUse }
         return nil
     }
@@ -89,22 +88,7 @@ extension IdleInstallConditions {
             idleSeconds: idle,
             screenLocked: locked,
             displayAsleep: CGDisplayIsAsleep(CGMainDisplayID()) != 0,
-            displayHeldAwake: displayHeldAwake(),
             fullscreenInFront: fullscreenInFront)
-    }
-
-    private static func displayHeldAwake() -> Bool {
-        var raw: Unmanaged<CFDictionary>?
-        guard IOPMCopyAssertionsStatus(&raw) == kIOReturnSuccess,
-              let status = raw?.takeRetainedValue() as? [String: Any] else { return false }
-        return heldAwake(assertionStatus: status)
-    }
-
-    /// `IOPMCopyAssertionsStatus` counts the live assertions of each type.
-    static func heldAwake(assertionStatus status: [String: Any]) -> Bool {
-        ["PreventUserIdleDisplaySleep", "NoDisplaySleepAssertion"].contains {
-            (status[$0] as? NSNumber)?.intValue ?? 0 > 0
-        }
     }
 }
 
