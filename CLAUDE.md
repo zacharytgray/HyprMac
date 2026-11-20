@@ -54,7 +54,8 @@ Tests do not prove window behavior; say so if you did not check it live.
 
 ## Doc map
 
-- `docs/testing.md`: test harness traps, headless tests, Release build, analyzer.
+- `docs/testing.md`: test harness traps, headless tests, Release build, analyzer, testing the
+  update flow against a fake feed.
 - `docs/laptop-debug-deployment.md`: `build-debug.sh` and the MacBook redeploy recipe.
 - `docs/debugging.md`: log subsystems, `/usr/bin/log`, file log, debug recipes.
 - `docs/release.md`: What's New step, `scripts/release.sh`, failure recovery.

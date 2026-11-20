@@ -7,6 +7,7 @@ cask "hyprmac" do
   desc "Tiling window manager for macOS inspired by Hyprland"
   homepage "https://hyprmac.app"
 
+  auto_updates true
   depends_on macos: :ventura
 
   app "HyprMac.app"

@@ -4,7 +4,7 @@ import SwiftUI
 
 /// "General" tab. Enable toggle, accessibility status,
 /// focus-follows-mouse, never-tile list, workspace names, workspace pins, System panel
-/// (menu bar indicator, iCloud sync, launch-at-login), and a footer with
+/// (menu bar indicator, iCloud sync, launch-at-login), Updates, and a footer with
 /// replay-the-tour + reset.
 struct GeneralSettingsView: View {
     let showTutorial: () -> Void
@@ -14,6 +14,9 @@ struct GeneralSettingsView: View {
     @StateObject private var loginItem = LoginItemController()
     @State private var showingWorkspaceNames = false
     @State private var choosingSyncSide = false
+    #if !HYPRMAC_DEBUG_VARIANT
+    @Environment(\.updateController) private var updates
+    #endif
 
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
@@ -23,6 +26,7 @@ struct GeneralSettingsView: View {
             workspaceNamesPanel
             workspacePinsPanel
             systemPanel
+            updatesPanel
             layoutsPanel
             footerPanel
         }
@@ -362,6 +366,17 @@ struct GeneralSettingsView: View {
         return "Start \(loginItem.appName) automatically when you sign in."
     }
 
+    // MARK: updates
+
+    /// Nix replaces the app itself, and the debug variant has no updater.
+    @ViewBuilder private var updatesPanel: some View {
+        #if !HYPRMAC_DEBUG_VARIANT
+        if let updates, !RuntimeVariant.updatesManagedByNix {
+            UpdateSettingsPanel(updates: updates)
+        }
+        #endif
+    }
+
     // MARK: layouts
 
     private var layoutsPanel: some View {
@@ -433,3 +448,32 @@ struct GeneralSettingsView: View {
         if !added.isEmpty { config.windowRules.append(contentsOf: added) }
     }
 }
+
+#if !HYPRMAC_DEBUG_VARIANT
+/// The two updater switches. They write Sparkle's own settings, so a
+/// choice made in an update window shows here too.
+private struct UpdateSettingsPanel: View {
+    @ObservedObject var updates: UpdateController
+
+    var body: some View {
+        HyprPanel("Updates",
+                  footer: "A downloaded update installs when you quit HyprMac, or once the Mac has been idle for five minutes. HyprMac restarts and puts your workspaces back.") {
+            HyprRow("Check for updates automatically", icon: "arrow.triangle.2.circlepath",
+                    subtitle: "Once a day.") {
+                Toggle("", isOn: Binding(get: { updates.checksAutomatically },
+                                         set: { updates.checksAutomatically = $0 }))
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+            HyprRow("Install updates automatically", icon: "arrow.down.circle",
+                    subtitle: "Off shows a dot in the menu bar and waits for you.", divider: false) {
+                Toggle("", isOn: Binding(get: { updates.installsAutomatically },
+                                         set: { updates.installsAutomatically = $0 }))
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+            .disabled(!updates.checksAutomatically)
+        }
+    }
+}
+#endif

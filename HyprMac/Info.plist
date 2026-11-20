@@ -41,6 +41,10 @@
     <string>HyprMac needs accessibility access for window management and keyboard shortcuts.</string>
     <key>NSMainStoryboardFile</key>
     <string></string>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
     <key>SUFeedURL</key>
     <string>https://zacharytgray.github.io/HyprMac/appcast.xml</string>
     <key>SUPublicEDKey</key>

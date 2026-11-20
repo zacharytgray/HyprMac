@@ -2,16 +2,15 @@
 // Real lifecycle work lives in `AppDelegate`.
 
 import SwiftUI
-#if !HYPRMAC_DEBUG_VARIANT
-import Sparkle
-#endif
 
 /// SwiftUI app shell.
 @main
 struct HyprMacApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     #if !HYPRMAC_DEBUG_VARIANT
-    private let updaterController: SPUStandardUpdaterController
+    // set in init, after the single-instance guard: a default value here
+    // would start Sparkle before the guard runs
+    private let updates: UpdateController
     #endif
     // per Mac, off removes the menu bar item. reopening the app shows Settings
     @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
@@ -20,9 +19,8 @@ struct HyprMacApp: App {
         // a second copy leaves here, before Sparkle or the menu bar item start
         SingleInstance.claimOrExit()
         #if !HYPRMAC_DEBUG_VARIANT
-        // Nix replaces the bundle on its own; Sparkle must not
-        updaterController = SPUStandardUpdaterController(
-            startingUpdater: !RuntimeVariant.updatesManagedByNix, updaterDelegate: nil, userDriverDelegate: nil)
+        // the first touch of the shared controller starts the updater
+        updates = UpdateController.shared
         #endif
     }
 
@@ -31,7 +29,7 @@ struct HyprMacApp: App {
             #if HYPRMAC_DEBUG_VARIANT
             MenuBarView(appDelegate: appDelegate)
             #else
-            MenuBarView(appDelegate: appDelegate, updater: updaterController.updater)
+            MenuBarView(appDelegate: appDelegate, updates: updates)
             #endif
         } label: {
             WorkspaceIndicatorLabel()
@@ -39,7 +37,12 @@ struct HyprMacApp: App {
         .menuBarExtraStyle(.window)
 
         Window("HyprMac Settings", id: "settings") {
+            #if HYPRMAC_DEBUG_VARIANT
             SettingsView(showTutorial: { appDelegate.showTour() })
+            #else
+            SettingsView(showTutorial: { appDelegate.showTour() })
+                .environment(\.updateController, updates)
+            #endif
         }
         .defaultSize(width: 760, height: 600)
     }

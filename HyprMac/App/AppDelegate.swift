@@ -196,6 +196,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func startWindowManager() {
         let config = UserConfig.shared
         windowManager = WindowManager(config: config)
+        #if !HYPRMAC_DEBUG_VARIANT
+        // the updater saves the desk before a relaunch and asks about fullscreen
+        UpdateController.shared.windowManager = { [weak self] in self?.windowManager }
+        #endif
         windowManager?.keybindOverlay.onShowTutorial = { [weak self] in
             self?.showTour()
         }

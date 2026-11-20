@@ -318,10 +318,15 @@ HyprMac lives in the menu bar and stays out of the Dock. Settings → General �
 Dock icon or hide the menu bar icon. Opening HyprMac again from Spotlight or Finder, or clicking
 its Dock icon, opens Settings.
 
-HyprMac checks for updates on its own through Sparkle and offers to install them, or use the
-menu bar icon → "Check for updates…". Homebrew installs can run `brew upgrade --cask hyprmac`.
-After any update, macOS may ask you to re-grant Accessibility permission, because the signature
-changes with each release.
+HyprMac keeps itself up to date through Sparkle. It checks once a day and downloads a new
+version in the background. A dot on the menu bar icon says one is ready, and the menu has
+"Restart to update". If you don't click it, the update installs when you quit HyprMac, or once
+the Mac has been idle for five minutes: HyprMac restarts and puts your workspaces back. Both
+are on for a new install. Settings → General → Updates turns either one off, and a choice you
+made in an older version is kept. The Accessibility permission carries over.
+
+Homebrew installs update the same way, so `brew upgrade` leaves HyprMac alone unless you pass
+`--greedy`. A copy installed by Nix is updated by Nix.
 
 </details>
 

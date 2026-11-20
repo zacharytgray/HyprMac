@@ -104,6 +104,36 @@ final class MenuBarPresentationTests: XCTestCase {
         ])
     }
 
+    func testTheUpdateRowIsAPlainCheckUntilAnUpdateIsPending() {
+        XCTAssertEqual(MenuBarPresentation.updateRow(for: nil, currentVersion: "0.25.1"),
+                       .init(title: "Check for updates…", icon: "arrow.down.circle",
+                             version: "v0.25.1", highlighted: false))
+    }
+
+    // a pending update takes over the row and shows the version it brings
+    func testTheUpdateRowNamesThePendingUpdate() {
+        XCTAssertEqual(MenuBarPresentation.updateRow(for: .available(version: "0.26.0"), currentVersion: "0.25.1"),
+                       .init(title: "Update available", icon: "arrow.down.circle.fill",
+                             version: "v0.26.0", highlighted: true))
+        XCTAssertEqual(MenuBarPresentation.updateRow(for: .ready(version: "0.26.0"), currentVersion: "0.25.1"),
+                       .init(title: "Restart to update", icon: "arrow.clockwise.circle.fill",
+                             version: "v0.26.0", highlighted: true))
+    }
+
+    func testTheMenuBarDotSaysWhatIsPending() {
+        XCTAssertEqual(MenuBarPresentation.updateHelp(for: .available(version: "0.26.0")),
+                       "HyprMac 0.26.0 is available")
+        XCTAssertEqual(MenuBarPresentation.updateHelp(for: .ready(version: "0.26.0")),
+                       "HyprMac 0.26.0 is ready to install")
+        XCTAssertEqual(UpdateNotice.ready(version: "0.26.0").version, "0.26.0")
+    }
+
+    // the menu bar draws label text at its own size, so the mark is a
+    // glyph that is small at any size
+    func testTheMenuBarDotIsABullet() {
+        XCTAssertEqual(MenuBarUpdateDot.glyph, "•")
+    }
+
     private func monitor(_ id: Int, _ name: String, workspace: Int,
                          portrait: Bool = false) -> MenuBarMonitorSnapshot {
         MenuBarMonitorSnapshot(id: id, name: name, currentWorkspace: workspace,

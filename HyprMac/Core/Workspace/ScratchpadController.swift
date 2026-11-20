@@ -161,13 +161,15 @@ final class ScratchpadController {
     /// layer up with it, the way a workspace pin switches there. An open one,
     /// at launch or on Retile All, parks with the layer down. Taking it out of
     /// the workspace's tree is enough: the caller's retile closes the gap.
-    func adoptPinned(_ window: HyprWindow, summon: Bool) {
+    ///
+    /// An update relaunch puts the last run's members back the same way.
+    func adoptPinned(_ window: HyprWindow, summon: Bool, reason: String = "window rule") {
         let id = window.windowID
         guard !window.isQuickLookPanel, !contains(id) else { return }
         if let workspace = workspaceManager.workspaceFor(id), !stateCache.floatingWindowIDs.contains(id) {
             tilingEngine.removeWindow(window, fromWorkspace: workspace)
         }
-        hyprLog(.notice, .lifecycle, "window rule: \(window.bundleID ?? "?") (\(id)) pinned to the scratchpad")
+        hyprLog(.notice, .lifecycle, "\(reason): \(window.bundleID ?? "?") (\(id)) pinned to the scratchpad")
         if isVisible {
             joinVisibleLayer(window)
             return
