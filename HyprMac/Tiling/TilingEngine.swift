@@ -472,6 +472,33 @@ class TilingEngine {
         return out
     }
 
+    /// Replace the object a tree holds for every window in `walk` whose app
+    /// re-created its AX element since (`HyprWindow.wasRecreated`). The
+    /// trees keep an object across walks, and every layout, frame read and
+    /// drag capture goes through it, so a dead one fails them all with
+    /// `windowUnavailable`. Topology, ratios and membership are untouched.
+    ///
+    /// - Returns: the ids replaced.
+    @discardableResult
+    func adoptRecreatedWindows(from walk: [HyprWindow]) -> Set<CGWindowID> {
+        var replaced: Set<CGWindowID> = []
+        for tree in trees.values {
+            replaced.formUnion(Self.adoptRecreatedWindows(in: tree, from: walk))
+        }
+        return replaced
+    }
+
+    private static func adoptRecreatedWindows(in tree: BSPTree, from walk: [HyprWindow]) -> Set<CGWindowID> {
+        let members = Dictionary(tree.allWindows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        var replaced: Set<CGWindowID> = []
+        for window in walk {
+            guard let old = members[window.windowID], old.wasRecreated(as: window) else { continue }
+            window.inheritMirrors(from: old)
+            if tree.replaceWindowObject(with: window) { replaced.insert(window.windowID) }
+        }
+        return replaced
+    }
+
     /// Leaf window ids of the live tree for `(workspace, screen)`, in
     /// tree order. Read-only — never creates a tree. Used by the state
     /// dump to show tree membership without exposing the tree itself.
@@ -2254,6 +2281,9 @@ class TilingEngine {
         t.dropAutomaticSplitOverrides(ifTurnedTo: rect)
 
         let tileWindows = windows.filter { !$0.isFloating }
+        // a member whose app re-created its AX element since: this pass
+        // must write through the live one, whether or not a poll got there
+        Self.adoptRecreatedWindows(in: t, from: tileWindows)
         let treeWindows = t.allWindows
         let currentIDs = Set(tileWindows.map { $0.windowID })
         let treeIDs = Set(treeWindows.map { $0.windowID })

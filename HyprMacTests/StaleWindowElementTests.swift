@@ -71,7 +71,7 @@ final class StaleWindowElementTests: XCTestCase {
     private let app = App()
     private let screen = Screen()
     private lazy var engine = TilingEngine(
-        displayManager: DisplayManager(),
+        displayManager: DisplayManager(screenSource: { [screen] in [screen] }),
         frameSizingIOFactory: { [app] windows, generation in app.io(windows, generation) })
 
     /// two tiles, then the app re-creates 11's element
@@ -79,6 +79,10 @@ final class StaleWindowElementTests: XCTestCase {
         let a = app.window(11), b = app.window(13)
         XCTAssertNil(engine.tileWindows([a, b], onWorkspace: 1, screen: screen).failure)
         return ([app.recreated(a), app.walked(b)], a)
+    }
+
+    private func leaf(_ id: CGWindowID) -> HyprWindow? {
+        engine.existingTree(forWorkspace: 1, screen: screen)?.allWindows.first { $0.windowID == id }
     }
 
     /// the tree kept the object from the first pass, on the dead element.
@@ -90,7 +94,76 @@ final class StaleWindowElementTests: XCTestCase {
 
         let result = engine.tileWindows(walk, onWorkspace: 1, screen: screen)
 
-        XCTExpectFailure("the pass writes through the tree's object, which is on the dead element")
         XCTAssertNil(result.failure)
+        XCTAssertTrue(leaf(11) === walk[0], "the tree now holds the object on the live element")
+    }
+
+    /// a tiled drag reads every tile through the tree. one dead element
+    /// refused every drag on the workspace, with the red shake
+    func testADragIsCapturedOnceThePollAdoptsTheNewElement() {
+        let (walk, _) = tileThenRecreate()
+        let stale = engine.captureTiledDrag(draggedID: 13, workspace: 1, screen: screen, floatingIDs: [])
+        guard case .unknown(.windowUnavailable(11)) = stale else {
+            return XCTFail("the dead element should still fail the capture here, got \(stale)")
+        }
+
+        XCTAssertEqual(engine.adoptRecreatedWindows(from: walk), [11])
+
+        let live = engine.captureTiledDrag(draggedID: 13, workspace: 1, screen: screen, floatingIDs: [])
+        guard case .captured = live else {
+            return XCTFail("the capture should read 11 through its new element, got \(live)")
+        }
+    }
+
+    func testAdoptingKeepsTheTreeAndWhatWasStampedOnTheOldObject() {
+        let (walk, old) = tileThenRecreate()
+        let before = engine.existingTree(forWorkspace: 1, screen: screen)?.allWindows.map(\.windowID)
+        old.observedMinSize = CGSize(width: 640, height: 480)
+        old.minSizeProvenance = .observed
+
+        engine.adoptRecreatedWindows(from: walk)
+
+        XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: screen)?.allWindows.map(\.windowID), before)
+        XCTAssertTrue(leaf(11) === walk[0])
+        XCTAssertEqual(leaf(11)?.observedMinSize, CGSize(width: 640, height: 480))
+        XCTAssertEqual(leaf(11)?.minSizeProvenance, .observed)
+    }
+
+    func testAWindowThatKeptItsElementKeepsItsObject() {
+        let a = app.window(11), b = app.window(13)
+        XCTAssertNil(engine.tileWindows([a, b], onWorkspace: 1, screen: screen).failure)
+
+        XCTAssertEqual(engine.adoptRecreatedWindows(from: [app.walked(a), app.walked(b)]), [])
+
+        XCTAssertTrue(leaf(11) === a)
+        XCTAssertTrue(leaf(13) === b)
+    }
+
+    /// a window id handed to another app is a different window, not a
+    /// re-created element. discovery deals with that one
+    func testAnotherAppsWindowUnderTheSameIDIsNotAdopted() {
+        let a = app.window(11)
+        let other = HyprWindow(element: AXUIElementCreateApplication(7001), windowID: 11, ownerPID: 200)
+
+        XCTAssertFalse(a.wasRecreated(as: other))
+        XCTAssertFalse(a.wasRecreated(as: a))
+        XCTAssertFalse(a.wasRecreated(as: app.walked(a)))
+        XCTAssertTrue(a.wasRecreated(as: app.recreated(a)))
+    }
+
+    /// hover focus and its synthetic click go through `cachedWindows`
+    func testTheWindowCacheSwapsInTheNewElement() {
+        let cache = WindowStateCache()
+        let a = app.window(11), b = app.window(13)
+        a.isFloating = true
+        cache.cachedWindows = [11: a, 13: b]
+        let a2 = app.recreated(a), c = app.window(17)
+
+        XCTAssertEqual(cache.adoptRecreatedWindows(from: [a2, app.walked(b), c]), [11])
+
+        XCTAssertTrue(cache.cachedWindows[11] === a2)
+        XCTAssertTrue(a2.isFloating, "the floating stamp carries over")
+        XCTAssertTrue(cache.cachedWindows[13] === b, "same element, same object")
+        XCTAssertNil(cache.cachedWindows[17], "a window the cache did not hold is not added")
     }
 }

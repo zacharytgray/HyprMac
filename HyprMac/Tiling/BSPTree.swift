@@ -166,6 +166,16 @@ class BSPTree {
         return candidate
     }
 
+    /// Put `replacement` in the leaf that holds the window with its id.
+    /// Topology and ratios untouched. For a window whose app re-created
+    /// its AX element; the object the leaf held is dead.
+    @discardableResult
+    func replaceWindowObject(with replacement: HyprWindow) -> Bool {
+        guard let leaf = root.find(replacement) else { return false }
+        leaf.window = replacement
+        return true
+    }
+
     /// A clone with `replacement` in `windowID`'s leaf, topology and ratios
     /// untouched, for a swap across trees. nil when the window is not here
     /// or the replacement already is.

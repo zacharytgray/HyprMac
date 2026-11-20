@@ -14,7 +14,9 @@ private let kCPSUserGenerated: UInt32 = 0x200
 /// Owns the resize-move-resize pattern (`setFrame`), the focus operations (`focus`,
 /// `focusWithoutRaise`), and `observedMinSize`, this instance's mirror of
 /// `MinSizeMemory`. A live handle, not a value: `frame`, `size`, `position` and
-/// `title` are AX calls, and every walk builds new instances.
+/// `title` are AX calls, and every walk builds new instances. The trees and
+/// `cachedWindows` keep an instance across walks; `wasRecreated(as:)` says
+/// when one of those has gone dead and must be replaced.
 ///
 /// Threading: main-thread only. AX calls block briefly while the OS
 /// round-trips to the owning app.
@@ -79,6 +81,28 @@ class HyprWindow: Equatable, Hashable {
         self.element = element
         self.windowID = windowID
         self.ownerPID = ownerPID
+    }
+
+    /// `true` when `walked` is this window on a different AX element: the
+    /// app re-created the element and kept the window id. Ordering a window
+    /// out and straight back in does it. The old element answers
+    /// `invalidUIElement` from then on, so an object built on it can no
+    /// longer focus, read or move the window.
+    func wasRecreated(as walked: HyprWindow) -> Bool {
+        walked !== self && walked.windowID == windowID && walked.ownerPID == ownerPID
+            && !CFEqual(element, walked.element)
+    }
+
+    /// Take over what was stamped on `old`, the object this one replaces.
+    /// Minima and the bundle id are only filled in: a fresh walk has
+    /// usually set them already.
+    func inheritMirrors(from old: HyprWindow) {
+        isFloating = old.isFloating
+        if observedMinSize == nil {
+            observedMinSize = old.observedMinSize
+            minSizeProvenance = old.minSizeProvenance
+        }
+        if bundleID == nil { bundleID = old.bundleID }
     }
 
     var title: String? {

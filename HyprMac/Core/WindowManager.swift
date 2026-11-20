@@ -2578,6 +2578,7 @@ class WindowManager {
         // re-apply or a recovery attempt from it would lay the trees out
         // without the windows it is missing
         if changes.heldForInterruption { return }
+        adoptRecreatedElements(allWindows)
         // an off-screen hold ends on its own; the poll that hides the
         // window, or finds it back, is asked for then, not at the next
         // ten-second reconcile
@@ -2839,7 +2840,24 @@ class WindowManager {
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
         stateCache.stampFloating(allWindows)
+        adoptRecreatedElements(allWindows)
         return allWindows
+    }
+
+    /// Swap in the walk's object for every window whose app re-created its
+    /// AX element and kept the window id. The trees and `cachedWindows` are
+    /// the two places that keep an object across walks. Left alone, hover
+    /// focus on that window failed with -25202, its synthetic click had no
+    /// frame, and every tiled drag on its workspace was refused with the
+    /// red shake, because the capture reads each tile through the tree.
+    private func adoptRecreatedElements(_ walk: [HyprWindow]) {
+        let inTrees = tilingEngine.adoptRecreatedWindows(from: walk)
+        let inCache = stateCache.adoptRecreatedWindows(from: walk)
+        for id in inTrees.union(inCache).sorted() {
+            let bundle = walk.first { $0.windowID == id }?.bundleID ?? "none"
+            hyprLog(.notice, .discovery, "AX element re-created: wid=\(id) bundle=\(bundle)"
+                    + " — window object replaced (tree=\(inTrees.contains(id)) cache=\(inCache.contains(id)))")
+        }
     }
 
     /// One ordinary verified layout pass for a key whose windows drifted.
