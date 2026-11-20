@@ -31,6 +31,8 @@ workspaces with home monitors, a floating scratchpad layer, and multi-monitor su
 - Intermittent bugs: no repro, no guess fix. Add `.notice` logs and confirm the cause first.
 - Debug and release share `~/Library/Application Support/HyprMac/`. Back it up before any
   migration test.
+- Only one HyprMac runs per user, Debug or release. Quit the running copy before launching
+  another; a second copy waits 3 s and quits with one log line (`docs/debugging.md`).
 
 ## How to verify
 

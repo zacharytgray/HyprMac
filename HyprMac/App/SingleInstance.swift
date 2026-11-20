@@ -1,5 +1,5 @@
-// One running copy of HyprMac per bundle id. The copy that holds the lock
-// file runs; any other copy quits before it starts anything.
+// One running copy of HyprMac per user, whatever the build. The copy that
+// holds the lock file runs; any other copy quits before it starts anything.
 
 import Foundation
 
@@ -13,11 +13,21 @@ import Foundation
 /// engines over the same windows, and the first to quit takes the Hypr key
 /// remap away from the other.
 ///
-/// So each copy takes an exclusive `flock` on a file named for its bundle
-/// id. The kernel gives the lock to exactly one process, which settles two
-/// copies starting at the same moment, and frees it when that process
-/// ends, a crash included, so there is never a stale lock to clear.
+/// So each copy takes an exclusive `flock` on one file. The kernel gives
+/// the lock to exactly one process, which settles two copies starting at
+/// the same moment, and frees it when that process ends, a crash included,
+/// so there is never a stale lock to clear.
+///
+/// The release and the Debug app share the file. They are the same window
+/// manager under two bundle ids, and they fight over the windows and the
+/// remap like any other two copies.
 enum SingleInstance {
+    /// The copy holding the lock, as it wrote itself into the lock file.
+    struct Owner: Equatable {
+        let bundleID: String
+        let pid: Int32
+    }
+
     enum Claim: Equatable {
         /// This copy runs. The descriptor stays open for the life of the process.
         case held(descriptor: Int32)
@@ -50,12 +60,15 @@ enum SingleInstance {
                             environment: [String: String] = ProcessInfo.processInfo.environment) {
         guard guards(arguments: arguments, environment: environment) else { return }
         let bundleID = Bundle.main.bundleIdentifier ?? RuntimeVariant.releaseBundleIdentifier
-        let url = lockURL(bundleID: bundleID, directory: ConfigStore.configDir)
+        let url = lockURL(directory: ConfigStore.configDir)
         switch claim(at: url) {
         case let .held(descriptor):
             heldDescriptor = descriptor
+            writeOwner(Owner(bundleID: bundleID, pid: getpid()), to: descriptor)
         case .taken:
-            hyprLog(.notice, .lifecycle, "another copy of HyprMac is running; this one is quitting")
+            hyprLog(.notice, .lifecycle, takenMessage(owner: readOwner(at: url), bundleID: bundleID))
+            // the file log writes on its own queue, and exit would beat it
+            if LogConfig.persistentFileLog { DebugLogFile.shared.flush() }
             exit(0)
         case .unavailable:
             hyprLog(.notice, .lifecycle, "single-instance lock unavailable at \(url.path); running without it")
@@ -86,10 +99,37 @@ enum SingleInstance {
         return arguments.contains(where: flags.contains)
     }
 
-    /// One file per bundle id, so the Debug app and the release, which
-    /// share this folder, never shut each other out.
-    static func lockURL(bundleID: String, directory: URL) -> URL {
-        directory.appendingPathComponent("instance-\(bundleID).lock")
+    /// One file for every build. The Debug app and the release are both
+    /// unsandboxed, so both resolve the same Application Support folder.
+    static func lockURL(directory: URL) -> URL {
+        directory.appendingPathComponent("instance.lock")
+    }
+
+    /// The holder writes who it is into the lock file, so a copy that is
+    /// turned away can name it. The lock is the `flock`, not this text.
+    static func writeOwner(_ owner: Owner, to descriptor: Int32) {
+        // empty first: a failed write must not leave the last holder's name
+        guard ftruncate(descriptor, 0) == 0 else { return }
+        let line = Array("\(owner.bundleID) \(owner.pid)\n".utf8)
+        _ = pwrite(descriptor, line, line.count, 0)
+    }
+
+    /// Nil when the file is empty or unreadable, as it is for the moment
+    /// between a copy taking the lock and writing its name.
+    static func readOwner(at url: URL) -> Owner? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        let parts = text.split(whereSeparator: \.isWhitespace)
+        guard parts.count == 2, let pid = Int32(parts[1]) else { return nil }
+        return Owner(bundleID: String(parts[0]), pid: pid)
+    }
+
+    /// The one line a copy logs when it is turned away.
+    static func takenMessage(owner: Owner?, bundleID: String) -> String {
+        guard let owner else {
+            return "another copy of HyprMac is running; this copy (\(bundleID)) is quitting"
+        }
+        return "HyprMac is already running (\(owner.bundleID), pid \(owner.pid)); "
+            + "this copy (\(bundleID)) is quitting"
     }
 
     /// Tries for the lock, then keeps trying every `interval` until

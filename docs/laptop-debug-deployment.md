@@ -23,22 +23,29 @@ The Debug app lives at `/Applications/HyprMac Debug.app`.
 1. Build on the hub. Note the executable sha256 and `HyprMacSourceRevision`.
 2. Tar only the one app, scp it to the MacBook, extract into a staging
    directory, and run `codesign --verify --deep --strict` on it.
-3. Find the exact running pid with `pgrep -f` on the full executable path of
-   whichever HyprMac is running (Debug or release). Send `kill -TERM` to that
-   pid only. Wait until `ps -p` shows it gone.
+3. Stop every running HyprMac, Debug and release. Only one copy runs per
+   user, so a copy left running makes the new one quit at launch. Find each
+   exact pid with `pgrep -f` on the full executable path
+   (`/Applications/HyprMac Debug.app/Contents/MacOS/HyprMac Debug` and
+   `/Applications/HyprMac.app/Contents/MacOS/HyprMac`). Send `kill -TERM` to
+   those pids only. Wait until `ps -p` shows each one gone.
 4. Move the old bundle to `/Applications/.hyprmac-debug-previous` for rollback.
    Move the new one into place.
    Launch it with `/usr/bin/open`.
 5. Verify the new pid's executable path, `HyprMacSourceRevision`, and the
    executable sha256. Check that the file log shows `AXIsProcessTrusted=true`
    and `started`. Both are `.debug` lines, so `log show` does not have them
-   (see [debugging.md](debugging.md)).
+   (see [debugging.md](debugging.md)). If there is no new pid, another copy
+   was still running: the file log and `log show` have
+   `HyprMac is already running (<bundle id>, pid <pid>)`
+   ([debugging.md](debugging.md#hyprmac-quit-right-after-launch)).
 
 Accessibility trust carries over because the signing identity and bundle id
 do not change. Launch through Launch Services (`/usr/bin/open`); a binary
 started directly from SSH reports untrusted.
 
-Debug and release share `~/Library/Application Support/HyprMac/`.
+Debug and release share `~/Library/Application Support/HyprMac/`, the
+single-instance lock (`instance.lock`) included.
 `config.json` there can be a symlink into iCloud Drive. Back up those files
 before any migration test.
 
@@ -74,8 +81,9 @@ see [debugging.md](debugging.md#hypr-ended-early-after-a-control-shortcut-81).
 real panel: the switch HUD (a number and a custom name), the fullscreen HUD, a
 saved and a failed status HUD, Hypr+K scrolled under a header, and the
 workspace overview. It quits after 90 seconds. It starts no window manager,
-event tap, AX or tiling, and it only reads the config. Quit the running
-HyprMac first, or both menu bar items show. `--glass-fallback` forces the
+event tap, AX or tiling, and it only reads the config. It is not shut out by
+a running HyprMac. Quit the running HyprMac first anyway, or both menu bar
+items show. `--glass-fallback` forces the
 pre-macOS 26 blur on macOS 26 and later, with or without the preview. Both
 flags exist only in builds that define `DEBUG`.
 

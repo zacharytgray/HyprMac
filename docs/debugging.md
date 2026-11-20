@@ -1496,7 +1496,17 @@ A copy that starts while another is running quits before it starts anything,
 with exit code 0 and one `.notice` under `lifecycle`:
 
 ```
-another copy of HyprMac is running; this one is quitting
+HyprMac is already running (com.zachgray.HyprMac, pid 4321); this copy (com.zachgray.HyprMac.debug) is quitting
+```
+
+The release and the Debug app count as the same app here, so a Debug launch
+quits this way while the release is running, and the other way round. Quit
+the running copy first. `/usr/bin/open` still exits 0 and prints nothing, so
+check the log, or that the new pid is still there after 3 s:
+
+```sh
+/usr/bin/log show --last 1m --predicate \
+  'subsystem BEGINSWITH "com.zachgray.HyprMac" AND eventMessage CONTAINS "already running"'
 ```
 
 It first waits up to 3 s for the other copy to finish quitting, so the process
@@ -1505,11 +1515,14 @@ running without it` means the lock file could not be used and the copy runs
 unguarded. To see who holds the lock:
 
 ```sh
-lsof ~/Library/Application\ Support/HyprMac/instance-com.zachgray.HyprMac.lock
+cat ~/Library/Application\ Support/HyprMac/instance.lock     # bundle id and pid
+lsof ~/Library/Application\ Support/HyprMac/instance.lock    # the process itself
 ```
 
-The Debug app's file is `instance-com.zachgray.HyprMac.debug.lock`. See
-"Single instance" in `docs/architecture.md`.
+The text in the file is what the holder wrote when it started. It stays after
+the holder quits, so trust it only while `lsof` shows a process. If the line
+says `another copy of HyprMac is running` with no name, the holder had not
+written it yet. See "Single instance" in `docs/architecture.md`.
 
 ## Retile churn / full-screen flicker
 
