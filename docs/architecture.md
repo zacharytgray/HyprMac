@@ -146,7 +146,8 @@ Update this map when wiring changes. Its edges were checked against the code at
 `WindowManager` constructs the dependency graph at app launch and
 holds the only strong reference to most subsystems. The graph stays
 live for the entire app lifetime. The process-wide singletons are
-`UserConfig.shared`, `MenuBarState.shared`, `LayoutSnapshotStore.shared` and
+`UserConfig.shared`, `MenuBarState.shared`, `UpdateState.shared`,
+`UpdateController.shared`, `LayoutSnapshotStore.shared` and
 `DebugLogFile.shared`.
 
 | Service | Responsibility |
@@ -206,6 +207,9 @@ live for the entire app lifetime. The process-wide singletons are
 | `ExternalCommand` | Parses `hyprmac://` links (`docs/external-control.md`). `WindowManager.handleExternalURL` runs them. |
 | `LoginItemController` | Launch at login through `SMAppService.mainApp`. |
 | `SingleInstance` | Lets one copy run per user, release or Debug. A second copy quits in `HyprMacApp.init` (see "Single instance"). |
+| `UpdateController` | Owns the Sparkle updater and is its delegate (see "Updates"). Not in the debug variant. |
+| `UpdateState` | The pending-update notice the menu bar shows, plus `IdleInstallPolicy` and `UpdateWindows`. No Sparkle, so every variant builds it. |
+| `RelaunchHandoffStore` | Owns `relaunch-handoff.json`: where every window was when an update quit HyprMac. Read once at the next launch. |
 | `FrameReadbackPoller` | Runs candidate, adjusted and restoration passes over `FrameSizingAttempt` and classifies the readback into conflicts and min-size evidence. |
 
 Tiled drags use `TiledDragHandler`. `ProbeFrame` is a Debug-only `--probe-frame` diagnostic.
@@ -442,6 +446,72 @@ comes back.
 - **`LayoutSnapshotStore`** owns `layout-snapshots.json`. It never
   sees a tree — `LayoutRestorer.capture` asks `TilingEngine.layoutTree`
   to serialise one and `WindowManager` hands the result across.
+
+## Updates
+
+Sparkle does the checking, downloading and installing. `UpdateController`
+(`App/UpdateController.swift`) adds four things a menu bar window manager
+needs. `Info.plist` turns automatic checks and automatic installs on for
+a new install; a choice already stored in the user's defaults wins.
+
+- **The updater's windows float.** Sparkle opens its windows at the
+  normal level, and a scheduled check opens them without making HyprMac
+  active. Among tiles that put the window behind the focused tile, and
+  every later raise buried it further. `UpdateWindows` lifts each one to
+  `Constants.interfaceWindowLevel`, the level Settings and the overlays
+  use, and orders it front. That level is above every tile and floater
+  and outside the two layers discovery reads.
+- **Discovery never walks HyprMac itself**
+  (`AccessibilityManager.isWalked`). With Show in Dock on HyprMac is a
+  regular app, and a normal-level updater window would otherwise be
+  tiled like any other.
+- **A scheduled find is a notice, not a window.** HyprMac implements
+  Sparkle's gentle reminders: `UpdateState.shared.notice` becomes
+  `.available`, the menu bar item shows `MenuBarUpdateDot` (a bullet;
+  a menu bar label takes one image and one line of text, nothing
+  else), and the menu's update row opens the window. Sparkle still shows the window
+  itself right after launch.
+- **A downloaded update installs while the Mac is idle.** Sparkle
+  normally waits for a quit, and a window manager is rarely quit.
+  `updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)` keeps
+  Sparkle's install block and sets the notice to `.ready`. A 30-second
+  timer asks `IdleInstallPolicy`, and the menu row calls the same block.
+  Quitting still installs, as before.
+
+`IdleInstallPolicy` installs after five minutes with no keyboard or
+pointer input, and only when the screen is unlocked, the display is
+awake, no app holds a display-sleep assertion (a video, a call, slides,
+or a keep-awake tool), and no native fullscreen window is in front. The
+wait is under macOS's default ten-minute display sleep on purpose: a
+launch behind a lock or a sleeping display gets a partial window list
+from AX and would lay out only what it saw.
+
+### Relaunch handoff
+
+A normal launch spreads the open windows across workspaces from scratch.
+After an update the user should find the desk as it was, so every
+Sparkle relaunch (`updaterWillRelaunchApplication`) first calls
+`WindowManager.saveRelaunchHandoff`. It writes `relaunch-handoff.json`:
+each monitor's visible workspace, the focused window, every regular
+workspace's tree, every floater with its workspace and frame, and the
+scratchpad's members. Windows are saved by window id and owning pid.
+The other apps keep running across HyprMac's relaunch, so the ids stay
+valid, and they are exact where a layout snapshot's bundle id and title
+are a best guess.
+
+The next `start()` takes the file after its launch tile, whatever
+`restoreLayoutOnLaunch` says, and deletes it. It is used only when it is
+under ten minutes old and names the current display key. The restore
+switches each monitor to its saved workspace, puts scratchpad members
+back through `ScratchpadController.adoptPinned`, takes the floaters out
+of the trees the launch tile put them in and moves them through
+`WorkspaceOrchestrator.moveWindows`, then runs `LayoutRestorer` with
+id-based refs for the tiled windows. A scratchpad member comes back by
+the tile-by-default rule, not with its old slot.
+
+Quitting still brings hidden workspaces' windows on screen first
+(`restoreAllWindows`), so a relaunch that never comes back strands
+nothing. The cost is a visible shuffle of a second or two at relaunch.
 
 ## Layout persistence
 

@@ -376,6 +376,15 @@ class AccessibilityManager {
     /// first on the next walk.
     ///
     /// Returns an empty array when AX permission has not been granted.
+    /// Whether discovery asks an app for its windows: a regular app that is
+    /// not a Quick Look helper and not HyprMac. With Show in Dock on HyprMac
+    /// is a regular app too, and its normal-level windows (the updater's)
+    /// would be tiled like anyone else's.
+    static func isWalked(policy: NSApplication.ActivationPolicy, pid: pid_t, bundleID: String?,
+                         excludedBundleIDs: Set<String>, ownPID: pid_t = getpid()) -> Bool {
+        policy == .regular && pid != ownPID && !excludedBundleIDs.contains(bundleID ?? "")
+    }
+
     func getAllWindows() -> [HyprWindow] {
         guard AXIsProcessTrusted() else { return [] }
 
@@ -396,8 +405,8 @@ class AccessibilityManager {
         ]
 
         let running = NSWorkspace.shared.runningApplications.filter {
-            $0.activationPolicy == .regular &&
-            !excludedBundleIDs.contains($0.bundleIdentifier ?? "")
+            Self.isWalked(policy: $0.activationPolicy, pid: $0.processIdentifier,
+                          bundleID: $0.bundleIdentifier, excludedBundleIDs: excludedBundleIDs)
         }
         // apps the last walk's budget left out go first
         let byPID = Dictionary(running.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
@@ -709,7 +718,8 @@ class AccessibilityManager {
     func getActualFocusedStandardWindow() -> HyprWindow? {
         guard AXIsProcessTrusted(),
               let app = NSWorkspace.shared.frontmostApplication,
-              app.activationPolicy == .regular else { return nil }
+              app.activationPolicy == .regular,
+              app.processIdentifier != getpid() else { return nil }
         let appElement = AXUIElementCreateApplication(app.processIdentifier)
         var raw: AnyObject?
         guard AXUIElementCopyAttributeValue(

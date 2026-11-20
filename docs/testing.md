@@ -20,8 +20,8 @@ otherwise inherit the release app's real preference.
 ## Supported environments
 
 The suite is maintained and verified on the hub: macOS 15.8 with Xcode 26.3,
-through `./scripts/test-isolated.sh --debug-variant`. That run gives 1926
-tests, 29 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
+through `./scripts/test-isolated.sh --debug-variant`. That run gives 2315
+tests, 35 skipped, 0 failures. macOS 26 or 27 and Xcode 27 are
 welcome, but the maintainer has not verified them.
 
 The harness loads the test library through rpaths. It runs `xctest` directly
@@ -75,6 +75,45 @@ the last recorded baseline already had errors. Do not claim a lint pass.
 
 Tests do not prove window behavior. For behavior changes, run the Debug app on
 the MacBook ([laptop-debug-deployment.md](laptop-debug-deployment.md)).
+
+## Testing the update flow
+
+The updater can be tested end to end on the MacBook without the real
+appcast, the real EdDSA key or a GitHub release.
+
+`./scripts/build-update-test.sh /path/to/Sparkle.xcframework` builds into
+`build/update-test/`:
+
+- `old/HyprMac Debug.app`, version 0.0.1. It has the debug bundle id, so it
+  uses the Debug app's Accessibility grant and its own defaults domain, but
+  it is built with Sparkle and without `HYPRMAC_DEBUG_VARIANT`.
+- `feed/`, a fake appcast offering version 99.0.0, the signed archive, and
+  `serve.py`. The key is made for that run and thrown away.
+
+On the MacBook, back up `~/Library/Application Support/HyprMac/`, quit the
+running HyprMac, copy both folders over, and run the test app from a folder
+outside `/Applications`:
+
+```bash
+python3 feed/serve.py &                       # 127.0.0.1:18765
+defaults write com.zachgray.HyprMac.debug updateIdleInstallSeconds 20
+/usr/bin/open 'old/HyprMac Debug.app'
+```
+
+- With the defaults as shipped, the app downloads 99.0.0 at launch, the
+  menu bar shows the dot, and the install runs once the Mac has been idle
+  for 20 seconds. The file log has `update:` and `relaunch handoff` lines.
+- `defaults write com.zachgray.HyprMac.debug SUAutomaticallyUpdate -bool false`
+  gives the window path instead. `serve.py --appcast-delay 8` makes the
+  launch check finish late, so the find takes the scheduled path: a dot and
+  no window.
+- A `DEBUG` build runs the menu's update row on the distributed
+  notification `com.zachgray.HyprMac.test.activateUpdate`, for driving it
+  over SSH.
+
+Afterwards delete the test folders and the `SU*` and
+`updateIdleInstallSeconds` keys from the debug domain, and start the usual
+app again.
 
 ## Live acceptance checklist
 

@@ -1,9 +1,6 @@
 // Menu bar dropdown contents and compact workspace label.
 
 import SwiftUI
-#if !HYPRMAC_DEBUG_VARIANT
-import Sparkle
-#endif
 
 /// `MenuBarExtra` dropdown contents: status header, per-monitor
 /// workspace state, and standard actions (Settings, Retile, Check
@@ -15,9 +12,10 @@ struct MenuBarView: View {
     let appDelegate: AppDelegate
     @ObservedObject var config = UserConfig.shared
     @ObservedObject private var menuBarState = MenuBarState.shared
+    @ObservedObject private var updateState = UpdateState.shared
     @Environment(\.openWindow) private var openWindow
     #if !HYPRMAC_DEBUG_VARIANT
-    let updater: SPUUpdater
+    let updates: UpdateController
     #endif
 
     var body: some View {
@@ -154,10 +152,13 @@ struct MenuBarView: View {
                 }
                 .disabled(true)
             } else {
-                MenuBarRow("Check for updates…", icon: "arrow.down.circle") {
-                    updater.checkForUpdates()
+                let row = MenuBarPresentation.updateRow(for: updateState.notice, currentVersion: appVersion)
+                MenuBarRow(row.title, icon: row.icon, accent: row.highlighted) {
+                    updates.activate()
                 } trailing: {
-                    versionLabel
+                    Text(row.version)
+                        .font(.hyprMonoXs)
+                        .foregroundStyle(row.highlighted ? Color.hyprCyan : Color.hyprTextTertiary)
                 }
             }
             #endif
@@ -188,6 +189,8 @@ private struct MenuBarRow<Trailing: View>: View {
     let label: String
     let icon: String
     let destructive: Bool
+    /// colored icon and heavier label, for the one row that wants attention
+    let accent: Bool
     let action: () -> Void
     let trailing: () -> Trailing
 
@@ -196,11 +199,13 @@ private struct MenuBarRow<Trailing: View>: View {
     init(_ label: String,
          icon: String,
          destructive: Bool = false,
+         accent: Bool = false,
          action: @escaping () -> Void,
          @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) {
         self.label = label
         self.icon = icon
         self.destructive = destructive
+        self.accent = accent
         self.action = action
         self.trailing = trailing
     }
@@ -210,10 +215,11 @@ private struct MenuBarRow<Trailing: View>: View {
             HStack(spacing: HyprSpacing.md) {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(destructive ? Color.red.opacity(0.85) : Color.hyprTextSecondary)
+                    .foregroundStyle(destructive ? Color.red.opacity(0.85)
+                                     : (accent ? Color.hyprCyan : Color.hyprTextSecondary))
                     .frame(width: 16)
                 Text(label)
-                    .font(.hyprBody)
+                    .font(accent ? .hyprBody.weight(.semibold) : .hyprBody)
                     .foregroundStyle(destructive ? Color.red.opacity(0.95) : Color.hyprTextPrimary)
                     .lineLimit(1)
                     .layoutPriority(1)
@@ -327,6 +333,37 @@ enum MenuBarPresentation {
             && (!monitors.isEmpty || scratchpadCount > 0)
     }
 
+    /// The menu's update row: a plain check, or the pending update.
+    struct UpdateRow: Equatable {
+        let title: String
+        let icon: String
+        /// the version on the right: the pending one, else the running one
+        let version: String
+        let highlighted: Bool
+    }
+
+    static func updateRow(for notice: UpdateNotice?, currentVersion: String) -> UpdateRow {
+        switch notice {
+        case nil:
+            return UpdateRow(title: "Check for updates…", icon: "arrow.down.circle",
+                             version: "v\(currentVersion)", highlighted: false)
+        case .available(let version):
+            return UpdateRow(title: "Update available", icon: "arrow.down.circle.fill",
+                             version: "v\(version)", highlighted: true)
+        case .ready(let version):
+            return UpdateRow(title: "Restart to update", icon: "arrow.clockwise.circle.fill",
+                             version: "v\(version)", highlighted: true)
+        }
+    }
+
+    /// Tooltip for the menu bar item's update dot.
+    static func updateHelp(for notice: UpdateNotice) -> String {
+        switch notice {
+        case .available(let version): return "HyprMac \(version) is available"
+        case .ready(let version): return "HyprMac \(version) is ready to install"
+        }
+    }
+
     static func showsIndicator(indicatorEnabled: Bool, hasData: Bool,
                                labelText: String, scratchpadCount: Int) -> Bool {
         indicatorEnabled && hasData && (!labelText.isEmpty || scratchpadCount > 0)
@@ -339,8 +376,17 @@ struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var state = MenuBarState.shared
     @Environment(\.openWindow) private var openWindow
 
+    @ObservedObject private var updateState = UpdateState.shared
+
     var body: some View {
-        content.onAppear { SettingsWindow.openWindow = openWindow }
+        HStack(spacing: 4) {
+            content
+            if let notice = updateState.notice {
+                MenuBarUpdateDot()
+                    .help(MenuBarPresentation.updateHelp(for: notice))
+            }
+        }
+        .onAppear { SettingsWindow.openWindow = openWindow }
     }
 
     @ViewBuilder private var content: some View {
@@ -368,5 +414,20 @@ struct WorkspaceIndicatorLabel: View {
         } else {
             Image(systemName: "rectangle.split.2x2")
         }
+    }
+}
+
+/// The "update pending" mark for the menu bar item: one bullet after the
+/// label. A menu bar label is drawn as one image and one line of text in
+/// the menu bar's own font, so a second image is dropped and a font size is
+/// ignored; the mark has to be a small glyph. A compact fixed-width item
+/// can append the same glyph, or draw its own dot when
+/// `UpdateState.shared.notice` is set.
+struct MenuBarUpdateDot: View {
+    static let glyph = "•"
+
+    var body: some View {
+        Text(Self.glyph)
+            .accessibilityLabel("Update available")
     }
 }

@@ -216,6 +216,7 @@ class WindowManager {
     /// restarts the manager but is not a launch
     private var didRunLaunchRestore = false
     private let layoutStore = LayoutSnapshotStore.shared
+    private let relaunchHandoffStore = RelaunchHandoffStore.shared
 
     /// Wire the dependency graph and configure every subsystem callback.
     ///
@@ -928,7 +929,12 @@ class WindowManager {
             let initialWindows = self.snapshotAndTile()
             if !self.didRunLaunchRestore {
                 self.didRunLaunchRestore = true
-                if self.config.restoreLayoutOnLaunch {
+                // an update relaunch puts the desk back as it was. any
+                // other launch follows the Restore at launch setting
+                let key = LayoutSnapshotStore.displayKey(screens: self.displayManager.screens)
+                if let handoff = self.relaunchHandoffStore.take(displayKey: key) {
+                    self.restoreRelaunchHandoff(handoff, windows: initialWindows)
+                } else if self.config.restoreLayoutOnLaunch {
                     self.restoreLayoutSnapshot(manual: false, windows: initialWindows)
                 }
             }
@@ -1917,12 +1923,127 @@ class WindowManager {
     }
 
     private var layoutRestorer: LayoutRestorer {
+        layoutRestorer(ref: { [weak self] in self?.windowRef(for: $0) })
+    }
+
+    private func layoutRestorer(ref: @escaping (HyprWindow) -> SavedWindowRef?) -> LayoutRestorer {
         LayoutRestorer(
             engine: tilingEngine, orchestrator: workspaceOrchestrator,
             workspaceManager: workspaceManager, stateCache: stateCache,
             recovery: admissionRecovery,
             isScratchpad: { [scratchpad = scratchpad!] in scratchpad.contains($0) },
-            ref: { [weak self] in self?.windowRef(for: $0) })
+            ref: ref)
+    }
+
+    // MARK: - update relaunch
+
+    /// Whether a native fullscreen window is in front: a movie, a game, slides.
+    func isFullscreenAppInFront() -> Bool {
+        isFullscreenSuppressed(focused: nil)
+    }
+
+    /// Write down where every window is, for the launch that follows an
+    /// update. Called just before the updater quits HyprMac, while the
+    /// workspaces and trees are still live.
+    func saveRelaunchHandoff() {
+        guard isRunning else { return }
+        let ghosts = stateCache.hiddenWindowIDs
+        let exact = layoutRestorer(ref: { RelaunchHandoff.ref(id: $0.windowID, pid: $0.ownerPID) })
+        func key(_ id: CGWindowID) -> RelaunchHandoff.WindowKey? {
+            stateCache.windowOwners[id].map { RelaunchHandoff.WindowKey(id: id, pid: $0) }
+        }
+        let floaters = stateCache.floatingWindowIDs.sorted().compactMap { id -> RelaunchHandoff.Floater? in
+            guard !ghosts.contains(id), !scratchpad.contains(id), let key = key(id),
+                  let workspace = workspaceManager.workspaceFor(id) else { return nil }
+            // a parked floater's real frame is the one saved when it was hidden
+            let frame = workspaceManager.isWorkspaceVisible(workspace)
+                ? stateCache.cachedWindows[id]?.frame
+                : workspaceManager.savedFloatingFrame(for: id)
+            return RelaunchHandoff.Floater(window: key, workspace: workspace, frame: frame)
+        }
+        let handoff = RelaunchHandoff(
+            savedAt: Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)),
+            displayKey: LayoutSnapshotStore.displayKey(screens: displayManager.screens),
+            visibleWorkspaces: workspaceManager.enabledScreensLeftToRight()
+                .map(workspaceManager.workspaceForScreen),
+            focused: key(focusController.lastFocusedID),
+            workspaces: exact.capture(),
+            floaters: floaters,
+            scratchpad: scratchpad.members.subtracting(ghosts).sorted().compactMap(key))
+        do {
+            try relaunchHandoffStore.write(handoff)
+            let tiled = handoff.workspaces.reduce(0) { $0 + $1.refs.count }
+            hyprLog(.notice, .lifecycle, "relaunch handoff saved: \(tiled) tiled on \(handoff.workspaces.count) workspaces,"
+                    + " \(floaters.count) floating, \(handoff.scratchpad.count) in the scratchpad,"
+                    + " showing \(handoff.visibleWorkspaces)")
+        } catch {
+            hyprLog(.warning, .lifecycle, "relaunch handoff not written: \(error)")
+        }
+    }
+
+    /// Put the desk back the way `saveRelaunchHandoff` found it. Runs once,
+    /// right after the launch tile has spread the windows out on its own.
+    private func restoreRelaunchHandoff(_ handoff: RelaunchHandoff, windows allWindows: [HyprWindow]) {
+        let live = Dictionary(allWindows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        // a window counts only if the same process still owns that id
+        func window(_ key: RelaunchHandoff.WindowKey) -> HyprWindow? {
+            live[key.id].flatMap { $0.ownerPID == key.pid ? $0 : nil }
+        }
+
+        // each monitor back on the workspace it was showing, before any
+        // window moves, so the moves know which destinations are on screen
+        for workspace in handoff.visibleWorkspaces where !workspaceManager.isWorkspaceVisible(workspace) {
+            workspaceOrchestrator.switchWorkspace(workspace)
+        }
+
+        // scratchpad members rejoin the layer, parked
+        var stashed = 0
+        for key in handoff.scratchpad {
+            guard let w = window(key), !scratchpad.contains(w.windowID) else { continue }
+            scratchpad.adoptPinned(w, summon: false, reason: "update relaunch")
+            stashed += 1
+        }
+
+        // the launch tile put every floater in a tree. take them out again
+        // before the trees are rebuilt, then send each to its workspace
+        var floated: [(floater: RelaunchHandoff.Floater, window: HyprWindow)] = []
+        for floater in handoff.floaters {
+            guard let w = window(floater.window), !scratchpad.contains(w.windowID) else { continue }
+            if !stateCache.floatingWindowIDs.contains(w.windowID) {
+                if let workspace = workspaceManager.workspaceFor(w.windowID) {
+                    tilingEngine.removeWindow(w, fromWorkspace: workspace)
+                }
+                stateCache.setFloating(true, window: w)
+            }
+            floated.append((floater, w))
+        }
+        workspaceOrchestrator.moveWindows(floated.map { ($0.window, $0.floater.workspace) })
+        for (floater, w) in floated {
+            guard workspaceManager.workspaceFor(w.windowID) == floater.workspace,
+                  let frame = floater.frame else { continue }
+            if workspaceManager.isWorkspaceVisible(floater.workspace) {
+                w.placeFloating(frame, reason: "update relaunch, saved frame", displayManager: displayManager)
+            } else {
+                // parked. it takes this frame when its workspace is shown
+                workspaceManager.setSavedFloatingFrame(frame, for: w.windowID)
+            }
+        }
+
+        // tiled windows: back to their workspaces, in the saved tree shapes
+        let exact = layoutRestorer(ref: { RelaunchHandoff.ref(id: $0.windowID, pid: $0.ownerPID) })
+        let outcome = exact.restore(handoff.layoutSnapshot, windows: allWindows)
+        tileAllVisibleSpaces()
+        updatePositionCache()
+
+        if let focused = handoff.focused.flatMap(window),
+           workspaceManager.isWindowVisible(focused.windowID) {
+            tiledFocusRouter.focus(focused, reason: "update relaunch", fallback: .activate)
+            focusController.recordFocus(focused.windowID, reason: "update relaunch")
+        }
+        hyprLog(.notice, .lifecycle, "relaunch handoff restored: \(outcome.logSummary);"
+                + " \(floated.count) of \(handoff.floaters.count) floating,"
+                + " \(stashed) of \(handoff.scratchpad.count) in the scratchpad,"
+                + " showing \(handoff.visibleWorkspaces)")
     }
 
     private func windowRef(for window: HyprWindow) -> SavedWindowRef? {
