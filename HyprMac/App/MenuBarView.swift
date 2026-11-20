@@ -436,7 +436,8 @@ struct WorkspaceIndicatorLabel: View {
             HStack(spacing: 3) {
                 ForEach(Array(MenuBarPresentation.compactSymbolNames(state.monitors).enumerated()),
                         id: \.offset) { _, symbol in
-                    Image(systemName: symbol)
+                    // the circle is 15 pt wide and the square 16, so pin it
+                    Image(systemName: symbol).frame(width: 16)
                 }
             }
             .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
