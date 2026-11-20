@@ -1490,6 +1490,27 @@ To see the monitor follow Accessibility, turn Accessibility off for the app
 and run the check (denied), then turn it back on (granted, and
 "physical key monitor started" within 5 s).
 
+### HyprMac quit right after launch
+
+A copy that starts while another is running quits before it starts anything,
+with exit code 0 and one `.notice` under `lifecycle`:
+
+```
+another copy of HyprMac is running; this one is quitting
+```
+
+It first waits up to 3 s for the other copy to finish quitting, so the process
+can be seen for that long. `single-instance lock unavailable at <path>;
+running without it` means the lock file could not be used and the copy runs
+unguarded. To see who holds the lock:
+
+```sh
+lsof ~/Library/Application\ Support/HyprMac/instance-com.zachgray.HyprMac.lock
+```
+
+The Debug app's file is `instance-com.zachgray.HyprMac.debug.lock`. See
+"Single instance" in `docs/architecture.md`.
+
 ## Retile churn / full-screen flicker
 
 Symptom: two tiled windows, one keeps snapping full-screen and back
