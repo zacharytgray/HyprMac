@@ -452,7 +452,7 @@ enum KeybindOverlayContent {
         }.joined()
     }
 
-    // actions whose semantics touch the floating layer get the ◇ suffix
+    // actions whose semantics touch the floating layer get the ○ suffix
     private static func isFloatingAction(_ action: Action) -> Bool {
         switch action {
         case .toggleFloating, .focusFloating, .toggleScratchpad, .moveToScratchpad:
@@ -734,7 +734,7 @@ private struct OverlayList: View {
                     .font(.system(size: 14))
                     .foregroundColor(Color.hudPrimary.opacity(0.88))
                 if row.isFloating {
-                    Text("◇")
+                    Text(HyprGlyph.floatingMarker)
                         .font(.system(size: 11))
                         .foregroundStyle(config.resolvedFloatingColor)
                 }

@@ -427,7 +427,7 @@ private struct KeybindRow: View {
                         .lineLimit(1)
                         .foregroundStyle(Color.hyprTextPrimary)
                     if bind.touchesFloatingLayer {
-                        Text("◇")
+                        Text(HyprGlyph.floatingMarker)
                             .font(.system(size: 10))
                             .foregroundStyle(Color.hyprMagenta)
                     }

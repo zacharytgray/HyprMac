@@ -13,9 +13,16 @@ struct TourView: View {
     let mode: WelcomeMode
     let onDismiss: () -> Void
 
-    @State private var page = 0
+    @State private var page: Int
     @ObservedObject private var config = UserConfig.shared
     @StateObject private var loginItem = LoginItemController()
+
+    // startPage lets the snapshot tests render a later page
+    init(mode: WelcomeMode, startPage: Int = 0, onDismiss: @escaping () -> Void) {
+        self.mode = mode
+        self.onDismiss = onDismiss
+        _page = State(initialValue: startPage)
+    }
 
     private var pageCount: Int { mode == .firstRun ? 7 : 1 }
 
@@ -437,7 +444,7 @@ private struct TourWindowPage: View {
             copy: Text("New windows join the tiling layout automatically. A floating window stays above the tiles and moves freely."),
             bullets: [
                 ("hand.draw", "Drag a tile by its title bar to insert it. Hold HYPR during the drag to swap with another tile in the same workspace."),
-                ("diamond", floatingInstruction),
+                ("circle", floatingInstruction),
                 ("arrow.up.left.and.arrow.down.right", "Drag or resize a floating window with the app's normal title bar and edges."),
             ],
             magentaBulletIndex: 1
@@ -575,15 +582,18 @@ private struct TourWorkspacesPage: View {
 
 private struct TourWorkspaceGlyphsPage: View {
     private let examples: [(number: Int, glyph: String, color: Color)] = [
-        (1, "●", .hyprCyan), (2, "◆", .hyprMagenta), (3, "○", .hyprCyan),
-        (4, "◇", .hyprMagenta), (5, "·", .hyprTextPrimary.opacity(0.3)),
+        (1, HyprGlyph.workspaceShown, .hyprCyan),
+        (2, HyprGlyph.workspaceShownFloating, .hyprMagenta),
+        (3, HyprGlyph.workspaceWaiting, .hyprCyan),
+        (4, HyprGlyph.workspaceWaitingFloating, .hyprMagenta),
+        (5, HyprGlyph.workspaceEmpty, .hyprTextPrimary.opacity(0.3)),
     ]
     private let legend: [(glyph: String, label: String, color: Color)] = [
-        ("●", "Shown now", .hyprCyan),
-        ("◆", "Shown now · has floating windows", .hyprMagenta),
-        ("○", "Windows waiting", .hyprCyan),
-        ("◇", "Windows waiting · has floating windows", .hyprMagenta),
-        ("·", "Empty workspace", .hyprTextPrimary.opacity(0.3)),
+        (HyprGlyph.workspaceShown, "Shown now", .hyprCyan),
+        (HyprGlyph.workspaceShownFloating, "Shown now · has floating windows", .hyprMagenta),
+        (HyprGlyph.workspaceWaiting, "Windows waiting", .hyprCyan),
+        (HyprGlyph.workspaceWaitingFloating, "Windows waiting · has floating windows", .hyprMagenta),
+        (HyprGlyph.workspaceEmpty, "Empty workspace", .hyprTextPrimary.opacity(0.3)),
     ]
 
     var body: some View {

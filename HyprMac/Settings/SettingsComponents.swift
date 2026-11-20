@@ -66,7 +66,7 @@ struct HyprRow<Trailing: View>: View {
     let title: String
     let subtitle: String?
     let divider: Bool
-    /// appends the magenta ◇ floating-layer marker after the title
+    /// appends the magenta ○ floating-layer marker after the title
     let floatingMarker: Bool
     @ViewBuilder let trailing: () -> Trailing
 
@@ -96,7 +96,7 @@ struct HyprRow<Trailing: View>: View {
                 VStack(alignment: .leading, spacing: 2) {
                     (Text(title)
                         + (floatingMarker
-                            ? Text("  ◇").font(.system(size: 10)).foregroundColor(.hyprMagenta)
+                            ? Text("  " + HyprGlyph.floatingMarker).font(.system(size: 10)).foregroundColor(.hyprMagenta)
                             : Text("")))
                         .font(.hyprBody)
                     if let subtitle {
