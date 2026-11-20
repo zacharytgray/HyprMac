@@ -155,7 +155,9 @@ final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate, SP
     }
 
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
-        // a failed install leaves nothing to click
+        // an install that failed after the handoff was written never relaunches
+        RelaunchHandoffStore.shared.discard()
+        // and it leaves nothing to click
         guard installNow != nil else { return }
         hyprLog(.notice, .lifecycle, "update: aborted with the download pending: \(error.localizedDescription)")
         installNow = nil

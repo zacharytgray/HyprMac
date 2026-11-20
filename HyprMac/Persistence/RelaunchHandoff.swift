@@ -75,6 +75,11 @@ struct RelaunchHandoffStore {
         try encoder.encode(handoff).write(to: fileURL, options: .atomic)
     }
 
+    /// Drop a handoff whose relaunch never happened.
+    func discard() {
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
     /// Read the handoff and delete the file, so it applies to one launch
     /// only. Returns nil when there is none or it no longer fits.
     func take(now: Date = Date(), displayKey: String) -> RelaunchHandoff? {

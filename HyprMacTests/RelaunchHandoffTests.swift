@@ -77,6 +77,14 @@ final class RelaunchHandoffTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
     }
 
+    // the install failed after the desk was written down
+    func testADiscardedHandoffIsGone() throws {
+        try store.write(handoff())
+        store.discard()
+        XCTAssertNil(store.take(now: saved.addingTimeInterval(8), displayKey: "Built-in:1512x982"))
+        store.discard()
+    }
+
     func testNoFileMeansNoHandoff() {
         XCTAssertNil(store.take(now: saved, displayKey: "Built-in:1512x982"))
     }
