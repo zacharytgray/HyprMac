@@ -22,7 +22,7 @@ final class SingleInstanceTests: XCTestCase {
     }
 
     private var lockURL: URL {
-        SingleInstance.lockURL(bundleID: "com.zachgray.HyprMac", directory: directory)
+        SingleInstance.lockURL(directory: directory)
     }
 
     @discardableResult
@@ -50,12 +50,56 @@ final class SingleInstanceTests: XCTestCase {
         XCTAssertTrue(isHeld(keep(SingleInstance.tryClaim(at: lockURL))))
     }
 
-    func testDebugAndReleaseDoNotShutEachOtherOut() {
-        let release = SingleInstance.lockURL(bundleID: "com.zachgray.HyprMac", directory: directory)
-        let debug = SingleInstance.lockURL(bundleID: "com.zachgray.HyprMac.debug", directory: directory)
-        XCTAssertNotEqual(release, debug)
-        XCTAssertTrue(isHeld(keep(SingleInstance.tryClaim(at: release))))
-        XCTAssertTrue(isHeld(keep(SingleInstance.tryClaim(at: debug))))
+    // the release and the Debug app use one file: no bundle id in its name
+    func testEveryBuildUsesTheSameLockFile() {
+        XCTAssertEqual(lockURL, directory.appendingPathComponent("instance.lock"))
+    }
+
+    // MARK: naming the running copy
+
+    func testTurnedAwayCopyCanNameTheHolder() {
+        guard case let .held(descriptor) = keep(SingleInstance.tryClaim(at: lockURL)) else {
+            return XCTFail("expected the lock")
+        }
+        let release = SingleInstance.Owner(bundleID: "com.zachgray.HyprMac", pid: 4321)
+        SingleInstance.writeOwner(release, to: descriptor)
+
+        XCTAssertEqual(SingleInstance.tryClaim(at: lockURL), .taken)
+        XCTAssertEqual(SingleInstance.readOwner(at: lockURL), release)
+        XCTAssertEqual(
+            SingleInstance.takenMessage(owner: release, bundleID: "com.zachgray.HyprMac.debug"),
+            "HyprMac is already running (com.zachgray.HyprMac, pid 4321); "
+                + "this copy (com.zachgray.HyprMac.debug) is quitting")
+    }
+
+    // the next holder's shorter name must not keep the tail of the last one
+    func testNewHolderReplacesTheLastHoldersName() {
+        let debug = SingleInstance.tryClaim(at: lockURL)
+        guard case let .held(first) = debug else { return XCTFail("expected the lock") }
+        SingleInstance.writeOwner(.init(bundleID: "com.zachgray.HyprMac.debug", pid: 98765), to: first)
+        SingleInstance.release(debug)
+
+        guard case let .held(second) = keep(SingleInstance.tryClaim(at: lockURL)) else {
+            return XCTFail("expected the lock")
+        }
+        let release = SingleInstance.Owner(bundleID: "com.zachgray.HyprMac", pid: 12)
+        SingleInstance.writeOwner(release, to: second)
+        XCTAssertEqual(SingleInstance.readOwner(at: lockURL), release)
+    }
+
+    func testHolderThatHasNotWrittenItsNameYetStillTurnsCopiesAway() {
+        keep(SingleInstance.tryClaim(at: lockURL))
+        XCTAssertEqual(SingleInstance.tryClaim(at: lockURL), .taken)
+        XCTAssertNil(SingleInstance.readOwner(at: lockURL))
+        XCTAssertEqual(SingleInstance.takenMessage(owner: nil, bundleID: "com.zachgray.HyprMac"),
+                       "another copy of HyprMac is running; this copy (com.zachgray.HyprMac) is quitting")
+    }
+
+    func testUnreadableOwnerTextIsIgnored() throws {
+        for text in ["", "com.zachgray.HyprMac", "com.zachgray.HyprMac notapid", "a b c"] {
+            try Data(text.utf8).write(to: lockURL)
+            XCTAssertNil(SingleInstance.readOwner(at: lockURL), text)
+        }
     }
 
     func testTwoCopiesStartingTogetherLeaveExactlyOne() {
@@ -84,7 +128,7 @@ final class SingleInstanceTests: XCTestCase {
         // a regular file where the folder should be: the lock can't be created
         let blocker = directory.appendingPathComponent("not-a-folder")
         try Data().write(to: blocker)
-        let url = SingleInstance.lockURL(bundleID: "com.zachgray.HyprMac", directory: blocker)
+        let url = SingleInstance.lockURL(directory: blocker)
         XCTAssertEqual(SingleInstance.claim(at: url, pause: { _ in XCTFail("must not wait") }), .unavailable)
     }
 

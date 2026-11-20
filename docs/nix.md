@@ -57,7 +57,8 @@ you can turn on `launchd.enable` while HyprMac is open, and the agent can't
 double up with the in-app "Launch at login". One of the two is enough. With
 both on, the Settings window may open at login, because the login item's launch
 reaches the copy the agent already started; this hasn't been checked on a real
-login. The single copy needs a HyprMac version after 0.25.1. On 0.25.1 and
+login. A Debug build you made yourself counts as a copy too, so quit the Nix
+one before you run it. The single copy needs a HyprMac version after 0.25.1. On 0.25.1 and
 earlier, keep "Launch at login" off, and quit HyprMac before the switch that
 first turns on `launchd.enable`.
 
