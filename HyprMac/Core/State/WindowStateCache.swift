@@ -97,6 +97,24 @@ final class WindowStateCache {
     /// window before the new pass looks, so it does not re-enter as "new".
     var knownWindowIDs: Set<CGWindowID> = []
 
+    /// Replace each cached object whose app re-created its AX element with
+    /// the one from `walk` (`HyprWindow.wasRecreated`). Focus, the synthetic
+    /// click and frame reads go through these objects. Only ids already
+    /// cached are touched.
+    ///
+    /// - Returns: the ids replaced.
+    @discardableResult
+    func adoptRecreatedWindows(from walk: [HyprWindow]) -> Set<CGWindowID> {
+        var replaced: Set<CGWindowID> = []
+        for window in walk {
+            guard let old = cachedWindows[window.windowID], old.wasRecreated(as: window) else { continue }
+            window.inheritMirrors(from: old)
+            cachedWindows[window.windowID] = window
+            replaced.insert(window.windowID)
+        }
+        return replaced
+    }
+
     /// Remove `id` from every tracked dict. Used when a window is
     /// permanently gone (closed, app exited).
     func forget(_ id: CGWindowID) {

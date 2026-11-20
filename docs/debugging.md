@@ -874,6 +874,45 @@ To reproduce the old loop, swap two tiles from outside HyprMac (System Events
 `set position` and `set size` on both), wait for `tiled drift: … re-applying the
 layout once`, then click inside one of them and move the mouse.
 
+### A window stopped taking hover focus, and drags get the red shake
+
+An app can re-create a window's AX element and keep the window id. Ordering
+the window out and straight back in does it, and so does an app that hides its
+window on close and shows it again within the off-screen hold. The old element
+answers -25202 (`kAXErrorInvalidUIElement`) from then on.
+
+The log shows the re-creation as one burst:
+
+```
+ax event: windowDestroyed pid=<pid>
+ax event: windowCreated pid=<pid>
+AX window unbound: bundle=<id> pid=<pid> wid=<id> reason=idOffScreen frame=(…)
+holding 1 window(s) off the screen in place: [<id>] — …
+off-screen hold ended: [<id>]
+```
+
+The window was never gone for discovery, so nothing re-inserted it. The trees
+and `cachedWindows` are the two places that keep a `HyprWindow` across walks, and
+before the fix they kept the one on the dead element:
+
+- `focusWithoutRaise(<id>) ax main=-25202 focused=-25202` and
+  `focusViaSyntheticClick(<id>) no frame` on every hover of that window.
+- `tiled drag capture failed: reason=windowUnavailable(<id>)` and the red shake on
+  a drag of any tile on its workspace, since the capture reads each tile
+  through the tree.
+- `frame attempt` verdicts of `windowUnavailable(<id>)` on the next layout.
+
+Now the poll that sees the new element swaps the object in both places
+(`WindowManager.adoptRecreatedElements`), and a tile pass does the same for the
+walk it is handed. One notice line per window:
+
+```
+AX element re-created: wid=<id> bundle=<id> — window object replaced (tree=true cache=true)
+```
+
+If the symptoms show without that line, the walk never returned the new
+element: look for `AX window unbound` lines that keep repeating for the id.
+
 ### Same-app tiled/floating focus flicker
 
 `raiseBehind` skips floaters of the focused tile's own app. Safari can reorder
@@ -960,6 +999,7 @@ Log lines, all at notice level:
 | `press state stuck with no button held — clearing` | mouse | a mouse-up never arrived. Hover and window polling would have stood down until the next real click |
 | `ignoring popup <id> pid=<pid> layer=<n>: open 30s, treated as part of the app` | mouse | a menu-level window that never closes no longer counts for any guard |
 | `refocus under cursor skipped: popup …` | mouse | post-click refocus held off |
+| `AX element re-created: wid=<id> bundle=<id> — window object replaced (tree=… cache=…)` | discovery | the app re-created the window's AX element under the same id; the tree and the window cache now hold the live one |
 | `refocus under cursor: window list has tile <id> at (x,y) … stale layout cache, following the window list` | mouse | `tiledPositions` has that tile somewhere else. See "Focus bounces between two tiles on every click" |
 | `raise before focus: wids=[…] under=[…] focus=<id>` | floating | floaters raised from under the old tile before the new one lifts |
 | `raise behind: wids=[…] under=[…] focus=<id> front=<pid>` | floating | floaters raised by the backstop, and the tiles that covered them |
