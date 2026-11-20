@@ -106,6 +106,8 @@ struct KeybindsSettingsView: View {
         ForEach(Array(binds.enumerated()), id: \.offset) { idx, bind in
             KeybindRow(
                 bind: bind,
+                showsFloatingMarker: bind.showsFloatingMarker(
+                    scratchpadTilesSentWindows: config.scratchpadTileByDefault),
                 isSelected: selectedBindID == bind.id,
                 divider: idx < binds.count - 1,
                 onTap: { selectedBindID = bind.id },
@@ -400,6 +402,7 @@ private struct GuidanceInfoButton: View {
 
 private struct KeybindRow: View {
     let bind: Keybind
+    let showsFloatingMarker: Bool
     let isSelected: Bool
     let divider: Bool
     let onTap: () -> Void
@@ -426,7 +429,7 @@ private struct KeybindRow: View {
                         .font(.hyprBody)
                         .lineLimit(1)
                         .foregroundStyle(Color.hyprTextPrimary)
-                    if bind.touchesFloatingLayer {
+                    if showsFloatingMarker {
                         Text(HyprGlyph.floatingMarker)
                             .font(.system(size: 10))
                             .foregroundStyle(Color.hyprMagenta)

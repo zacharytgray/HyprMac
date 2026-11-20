@@ -49,7 +49,8 @@ final class DefaultKeybindsTests: XCTestCase {
         XCTAssertEqual(empty.badgeLabels(), ["HYPR", "F"])
         XCTAssertEqual(empty.actionDescription, "Maximize window")
         XCTAssertEqual(KeybindCategory.from(empty.action), .windowManagement)
-        XCTAssertFalse(empty.touchesFloatingLayer)
+        XCTAssertFalse(empty.showsFloatingMarker(scratchpadTilesSentWindows: true))
+        XCTAssertFalse(empty.showsFloatingMarker(scratchpadTilesSentWindows: false))
 
         let floating = try XCTUnwrap(Keybind.defaults.first { $0.action == .focusFloating })
         XCTAssertEqual(floating.keyCode, UInt16(kVK_ANSI_T))
