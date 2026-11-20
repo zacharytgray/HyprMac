@@ -97,16 +97,88 @@ final class MenuBarPresentationTests: XCTestCase {
             workspace: 3, floating: true, maximized: true), "3.circle.fill")
     }
 
-    func testCompactSymbolsFollowMonitorOrder() {
-        let monitors = [
-            MenuBarMonitorSnapshot(id: 0, name: "Studio Display", currentWorkspace: 7,
-                                   isPortrait: false, currentHasFloating: true),
-            MenuBarMonitorSnapshot(id: 1, name: "Built-in Display", currentWorkspace: 2,
-                                   isPortrait: false, currentIsMaximized: true)
-        ]
-        XCTAssertEqual(MenuBarPresentation.compactSymbolNames(monitors),
-                       ["7.circle", "2.square.fill"])
-        XCTAssertEqual(MenuBarPresentation.compactSymbolNames([]), [])
+    // two screens: the left shows 4 (windows 11, 12), the right shows 2
+    // (window 20). 7 is hidden and holds 70.
+    private func focusedScreen(focused: CGWindowID, cursor: Int?,
+                               visible: [Int] = [4, 2]) -> Int? {
+        StatusSnapshot.focusedScreenIndex(
+            visibleWorkspaces: visible,
+            assigned: [4: [11, 12], 2: [20], 7: [70]],
+            hidden: [],
+            focusedWindowID: focused,
+            cursorScreenIndex: cursor)
+    }
+
+    func testFocusedWindowOnAShowingWorkspaceWins() {
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 0), 1)
+        XCTAssertEqual(focusedScreen(focused: 12, cursor: 1), 0)
+    }
+
+    func testFocusedWindowOnAHiddenWorkspaceFallsBackToTheCursorScreen() {
+        XCTAssertEqual(focusedScreen(focused: 70, cursor: 1), 1)
+    }
+
+    func testNoFocusedWindowUsesTheCursorScreen() {
+        XCTAssertEqual(focusedScreen(focused: 0, cursor: 1), 1)
+        XCTAssertEqual(focusedScreen(focused: 999, cursor: 0), 0)
+    }
+
+    func testNoCursorScreenUsesTheFirst() {
+        XCTAssertEqual(focusedScreen(focused: 0, cursor: nil), 0)
+        XCTAssertEqual(focusedScreen(focused: 0, cursor: 5), 0)
+        XCTAssertNil(focusedScreen(focused: 0, cursor: nil, visible: []))
+    }
+
+    // a hidden window still assigned to a showing workspace is not focus
+    func testHiddenFocusedWindowIsNotFocus() {
+        let index = StatusSnapshot.focusedScreenIndex(
+            visibleWorkspaces: [4, 2], assigned: [4: [11], 2: [20]], hidden: [11],
+            focusedWindowID: 11, cursorScreenIndex: 1)
+        XCTAssertEqual(index, 1)
+    }
+
+    // index based: two monitors of one model with the same name stay apart
+    func testSameNamedScreensAreToldApartByIndex() {
+        let input = StatusSnapshot.Input(
+            screens: [.init(name: "DELL", visibleWorkspace: 4), .init(name: "DELL", visibleWorkspace: 2)],
+            homeScreens: [:], assigned: [4: [11], 2: [20]], scratchpad: [], scratchpadVisible: false,
+            hidden: [], floating: [], focusedWindowID: 20, cursorScreen: "DELL", apps: [:], names: [:])
+        XCTAssertEqual(StatusSnapshot.build(input).focusedWorkspace, 2)
+        XCTAssertEqual(focusedScreen(focused: 0, cursor: 1), 1)
+    }
+
+    func testCompactSymbolForTheChosenWorkspace() {
+        let floating: Set<Int> = [2]
+        let maximized: Set<Int> = [4]
+        let symbols = [4, 2].map {
+            MenuBarPresentation.compactSymbolName(workspace: $0, floating: floating.contains($0),
+                                                  maximized: maximized.contains($0))
+        }
+        XCTAssertEqual(symbols, ["4.square.fill", "2.circle"])
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 0).map { symbols[$0] }, "2.circle")
+        XCTAssertEqual(focusedScreen(focused: 0, cursor: 0).map { symbols[$0] }, "4.square.fill")
+    }
+
+    // a burst of moves schedules one check; the next move after it schedules another
+    func testCursorScreenWatchSchedulesOneCheckPerBurst() {
+        var watch = CursorScreenWatch()
+        XCTAssertEqual(CursorScreenWatch.delay, 0.25)
+        XCTAssertTrue(watch.noteMove())
+        XCTAssertFalse(watch.noteMove())
+        XCTAssertFalse(watch.noteMove())
+        XCTAssertTrue(watch.checkScheduled)
+        _ = watch.check(screen: 1)
+        XCTAssertFalse(watch.checkScheduled)
+        XCTAssertTrue(watch.noteMove())
+    }
+
+    func testCursorScreenWatchReportsOnlyAChange() {
+        var watch = CursorScreenWatch()
+        XCTAssertTrue(watch.check(screen: 1))
+        XCTAssertFalse(watch.check(screen: 1))
+        XCTAssertTrue(watch.check(screen: 2))
+        XCTAssertFalse(watch.check(screen: 2))
+        XCTAssertTrue(watch.check(screen: 1))
     }
 
     func testMenuBarStyleMigratesFromOldToggles() {

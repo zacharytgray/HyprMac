@@ -132,6 +132,8 @@ class WindowManager {
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
     private var mouseDragMonitor: Any?
+    // the compact menu bar badge follows the cursor's screen when nothing has focus
+    private var cursorScreenWatch = CursorScreenWatch()
     private var mouseDragLifecycle = MouseDragLifecycleState()
     private var mouseButtonDown: Bool { mouseDragLifecycle.buttonDown }
     private var mouseDraggedSinceDown: Bool { mouseDragLifecycle.sawDragEvent }
@@ -681,6 +683,8 @@ class WindowManager {
         focusController.onChange = { [weak self] in
             self?.statusExporter.noteChange()
             self?.endMaximizeIfFocusLeft()
+            // the compact badge shows the focused window's workspace
+            self?.statusPresenter.updateMenuBarState()
         }
         tilingEngine.onMaximizeChanged = { [weak self] workspace, screen, isOn in
             guard let self, self.isRunning, !self.displayTransitionPending else { return }
@@ -1153,9 +1157,12 @@ class WindowManager {
     /// for floating windows because the border only repositions on the
     /// discovery poll and would otherwise lag the live drag at 60Hz; mouseUp restores
     /// it after a short settle delay.
+    /// The move monitor also feeds `noteCursorScreen`, with or without
+    /// focus-follows-mouse.
     private func startMouseTracking() {
         mouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             self?.mouseTracker.handleMouseMove()
+            self?.noteCursorScreen()
         }
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self else { return }
@@ -1305,6 +1312,21 @@ class WindowManager {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 self?.mouseTracker.refocusUnderCursor(afterMouseUp: true)
             }
+        }
+    }
+
+    /// The compact badge falls back to the cursor's screen, so a move to
+    /// another screen redraws it. Throttled; nothing with one screen or
+    /// another style.
+    private func noteCursorScreen() {
+        guard displayManager.screens.count > 1, cursorScreenWatch.noteMove() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + CursorScreenWatch.delay) { [weak self] in
+            guard let self else { return }
+            let screen = self.workspaceManager.screenID(for: self.displayManager.screenUnderCursor())
+            // the style is read here, not on every move
+            guard self.cursorScreenWatch.check(screen: screen), self.isRunning,
+                  MenuBarStyle.stored == .compact else { return }
+            self.statusPresenter.updateMenuBarState()
         }
     }
 

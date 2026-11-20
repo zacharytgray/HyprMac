@@ -171,7 +171,7 @@ Hypr+F (maximize):
 - Hover and click stay on the maximized window. Dim and the focus border follow it.
 - Each start and end shows the FULLSCREEN HUD. The Full menu bar shows the icon while a
   showing workspace has a maximized window, and the glyphs again otherwise. Compact
-  fills that monitor's badge.
+  fills its badge while the workspace it shows has one.
 - Try Screen Sharing or another fixed-size window: red flash, nothing moves.
 
 Move to dedicated workspace (no default chord; bind it in Settings → Keys):

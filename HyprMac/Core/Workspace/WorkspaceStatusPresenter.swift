@@ -99,21 +99,35 @@ final class WorkspaceStatusPresenter {
                             isActive: active.contains(workspace),
                             isOccupied: occupied.contains(workspace),
                             hasFloatingWindows: floating.contains(workspace))
-                    },
-                    currentHasFloating: floating.contains(current),
-                    currentIsMaximized: maximized.contains(current))
+                    })
             }
+        let cursorID = workspaceManager.screenID(for: displayManager.screenUnderCursor())
+        let compactSymbol = StatusSnapshot.focusedScreenIndex(
+            visibleWorkspaces: monitors.map(\.currentWorkspace),
+            assigned: workspaceManager.regularWorkspaceWindowIDs(),
+            hidden: stateCache.hiddenWindowIDs,
+            focusedWindowID: focusController.lastFocusedID,
+            cursorScreenIndex: enabledScreens.firstIndex { workspaceManager.screenID(for: $0) == cursorID }
+        ).map { index -> String in
+            let workspace = monitors[index].currentWorkspace
+            return MenuBarPresentation.compactSymbolName(
+                workspace: workspace,
+                floating: floating.contains(workspace),
+                maximized: maximized.contains(workspace))
+        }
         let scratchpadCount = scratchpad.members.count
         let scratchpadVisible = scratchpad.isVisible
 
+        // focus changes call this in bursts; an unchanged value must not redraw the label
         DispatchQueue.main.async {
             let state = MenuBarState.shared
-            state.labelText = labelText
-            state.isFullscreen = isFullscreen
-            state.monitors = monitors
-            state.scratchpadCount = scratchpadCount
-            state.scratchpadVisible = scratchpadVisible
-            state.hasData = true
+            if state.labelText != labelText { state.labelText = labelText }
+            if state.isFullscreen != isFullscreen { state.isFullscreen = isFullscreen }
+            if state.monitors != monitors { state.monitors = monitors }
+            if state.compactSymbol != compactSymbol { state.compactSymbol = compactSymbol }
+            if state.scratchpadCount != scratchpadCount { state.scratchpadCount = scratchpadCount }
+            if state.scratchpadVisible != scratchpadVisible { state.scratchpadVisible = scratchpadVisible }
+            if !state.hasData { state.hasData = true }
         }
     }
 

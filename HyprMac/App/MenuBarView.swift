@@ -267,6 +267,9 @@ class MenuBarState: ObservableObject {
     /// A window fills a display showing now. The label swaps the glyphs for one icon.
     @Published var isFullscreen = false
     @Published var monitors: [MenuBarMonitorSnapshot] = []
+    /// The compact style's one badge: the focused workspace, else the one
+    /// on the cursor's screen. nil with no screens.
+    @Published var compactSymbol: String?
     @Published var hasData = false
     /// Number of windows in the scratchpad (0 = hide the tray glyph).
     @Published var scratchpadCount = 0
@@ -280,20 +283,14 @@ struct MenuBarMonitorSnapshot: Equatable, Identifiable {
     let currentWorkspace: Int
     let isPortrait: Bool
     let workspaces: [MenuBarWorkspaceBadge]
-    // the visible workspace, which may not be in `workspaces`
-    let currentHasFloating: Bool
-    let currentIsMaximized: Bool
 
     init(id: Int, name: String, currentWorkspace: Int, isPortrait: Bool,
-         workspaces: [MenuBarWorkspaceBadge] = [],
-         currentHasFloating: Bool = false, currentIsMaximized: Bool = false) {
+         workspaces: [MenuBarWorkspaceBadge] = []) {
         self.id = id
         self.name = name
         self.currentWorkspace = currentWorkspace
         self.isPortrait = isPortrait
         self.workspaces = workspaces
-        self.currentHasFloating = currentHasFloating
-        self.currentIsMaximized = currentIsMaximized
     }
 }
 
@@ -406,14 +403,6 @@ enum MenuBarPresentation {
     static func compactSymbolName(workspace: Int, floating: Bool, maximized: Bool) -> String {
         "\(workspace).\(floating ? "circle" : "square")\(maximized ? ".fill" : "")"
     }
-
-    static func compactSymbolNames(_ monitors: [MenuBarMonitorSnapshot]) -> [String] {
-        monitors.map {
-            compactSymbolName(workspace: $0.currentWorkspace,
-                              floating: $0.currentHasFloating,
-                              maximized: $0.currentIsMaximized)
-        }
-    }
 }
 
 // the label stays visible while tiling is paused
@@ -437,15 +426,10 @@ struct WorkspaceIndicatorLabel: View {
     }
 
     @ViewBuilder private var content: some View {
-        if style == .compact, state.hasData, !state.monitors.isEmpty {
-            HStack(spacing: 3) {
-                ForEach(Array(MenuBarPresentation.compactSymbolNames(state.monitors).enumerated()),
-                        id: \.offset) { _, symbol in
-                    // the circle is 15 pt wide and the square 16, so pin it
-                    Image(systemName: symbol).frame(width: 16)
-                }
-            }
-            .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
+        if style == .compact, state.hasData, let symbol = state.compactSymbol {
+            // the circle is 15 pt wide and the square 16, so pin it
+            Image(systemName: symbol).frame(width: 16)
+                .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
         } else if style != .compact, MenuBarPresentation.showsIndicator(
             hasData: state.hasData,
             labelText: state.labelText,

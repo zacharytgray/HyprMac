@@ -77,7 +77,8 @@ comes back with the next write after tiling resumes.
   windows are left out, as in the menu bar.
 - `focusedWorkspace` is the workspace of the focused window. With no focused
   window (an empty workspace was just switched to), it is the one showing on
-  the monitor under the cursor.
+  the monitor under the cursor. The Compact menu bar badge shows the same
+  workspace (`StatusSnapshot.focusedScreenIndex`).
 - Window titles are never written. Monitors are named as macOS names them, so
   two monitors of one model share a name.
 - Keys are written sorted. A reader should ignore keys it does not know.

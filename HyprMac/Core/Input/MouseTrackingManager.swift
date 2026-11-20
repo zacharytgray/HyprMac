@@ -30,6 +30,32 @@ struct StalePressCheck {
     }
 }
 
+/// Which screen the cursor is on, for the mouse-move monitor. The compact
+/// menu bar badge follows the cursor's screen while nothing has focus. A
+/// move schedules one check `delay` later and later moves ride on it, so
+/// the screen is read at most four times a second and the check always
+/// sees where the cursor stopped.
+struct CursorScreenWatch {
+    static let delay: TimeInterval = 0.25
+    private(set) var checkScheduled = false
+    private var lastScreen: Int?
+
+    /// a move: true when the caller should schedule the check
+    mutating func noteMove() -> Bool {
+        guard !checkScheduled else { return false }
+        checkScheduled = true
+        return true
+    }
+
+    /// the scheduled check found `screen`: true when it changed
+    mutating func check(screen: Int) -> Bool {
+        checkScheduled = false
+        guard screen != lastScreen else { return false }
+        lastScreen = screen
+        return true
+    }
+}
+
 /// Mouse-driven focus controller for focus-follows-mouse (FFM).
 ///
 /// `handleMouseMove` fires on every `NSMouseMoved` event, so the hot

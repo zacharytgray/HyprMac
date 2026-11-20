@@ -75,9 +75,13 @@ struct StatusSnapshot: Codable, Equatable {
         }?.key
         let focusInScratchpad = input.scratchpadVisible && live(input.scratchpad).contains(focusID)
         let focusedWindow: CGWindowID? = focusWorkspace != nil || focusInScratchpad ? focusID : nil
-        let focusScreen = focusWorkspace.flatMap { ws in input.screens.first { $0.visibleWorkspace == ws } }
-            ?? input.screens.first { $0.name == input.cursorScreen }
-            ?? input.screens.first
+        let focusScreen = focusedScreenIndex(
+            visibleWorkspaces: input.screens.map(\.visibleWorkspace),
+            assigned: input.assigned,
+            hidden: input.hidden,
+            focusedWindowID: focusID,
+            cursorScreenIndex: input.screens.firstIndex { $0.name == input.cursorScreen }
+        ).map { input.screens[$0] }
 
         func window(_ id: CGWindowID, detailed: Bool) -> Window {
             let app = input.apps[id]
@@ -107,6 +111,27 @@ struct StatusSnapshot: Codable, Equatable {
             workspaces: workspaces,
             scratchpad: live(input.scratchpad).map { window($0, detailed: false) },
             scratchpadVisible: input.scratchpadVisible)
+    }
+
+    /// Which screen has focus, as an index into `visibleWorkspaces` (one
+    /// entry per enabled screen, left to right). The screen showing the
+    /// focused window's workspace, else the one under the cursor, else the
+    /// first. Hidden windows don't count. The menu bar's compact badge uses
+    /// the same rule. nil only with no screens.
+    static func focusedScreenIndex(visibleWorkspaces: [Int],
+                                   assigned: [Int: Set<CGWindowID>],
+                                   hidden: Set<CGWindowID>,
+                                   focusedWindowID: CGWindowID,
+                                   cursorScreenIndex: Int?) -> Int? {
+        if let index = visibleWorkspaces.firstIndex(where: {
+            assigned[$0, default: []].subtracting(hidden).contains(focusedWindowID)
+        }) {
+            return index
+        }
+        if let cursorScreenIndex, visibleWorkspaces.indices.contains(cursorScreenIndex) {
+            return cursorScreenIndex
+        }
+        return visibleWorkspaces.isEmpty ? nil : 0
     }
 
     /// The hook's environment.
