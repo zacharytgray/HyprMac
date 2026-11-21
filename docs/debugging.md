@@ -1383,6 +1383,8 @@ When the walk has not read the shown tab yet, the tab that left is held:
 [discovery] tab hold ran out: 30535 (orderedOut) — handled as a close
 ```
 
+`holding` is `.notice` when a hold begins and `.debug` when its reason
+changes, which a held key does several times a second.
 The reason is `standIn(<id>)` (a window of the app is on screen in the
 frame, unread), `unsized(<id>)` (a new tab still 0×0) or `orderedOut`
 (nothing in the frame yet, and the window server still has the tab off

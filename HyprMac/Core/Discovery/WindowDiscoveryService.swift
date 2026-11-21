@@ -352,8 +352,11 @@ final class WindowDiscoveryService {
             case .unsized(let id): deferred.insert(id); looks.insert(id)
             case .orderedOut: looks.insert(leaver.windowID)
             }
+            // notice when the hold begins. a held key puts another window in
+            // the frame several times a second
             if previous?.reason != reason {
-                hyprLog(.notice, .discovery, "holding \(leaver.windowID) in place for a tab switch (\(reason))")
+                hyprLog(previous == nil ? .notice : .debug, .discovery,
+                        "holding \(leaver.windowID) in place for a tab switch (\(reason))")
             }
         }
         for id in tabHolds.keys.sorted() where kept[id] == nil {
