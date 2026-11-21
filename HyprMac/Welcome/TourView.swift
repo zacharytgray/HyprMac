@@ -709,7 +709,7 @@ private struct TourFinishPage: View {
             if case .toggleTiling = $0 { return true }
             return false
         }) else { return "Add Pause / Resume Tiling in Settings → Keys when you want a break." }
-        return "If things get in your way, press \(chord) to pause tiling. Press it again when you’re ready."
+        return WelcomeContent.pauseInstruction(chord: chord, hyprKey: config.hyprKey)
     }
 }
 

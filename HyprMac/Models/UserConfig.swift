@@ -47,6 +47,10 @@ class UserConfig: ObservableObject {
     @Published var keepCursorOnWorkspaceSwitch: Bool {
         didSet { persistRuntimeChange() }
     }
+    /// Two quick taps of the Hypr key alone toggle Caps Lock. Off by default.
+    @Published var doubleTapHyprTogglesCapsLock: Bool {
+        didSet { persistRuntimeChange() }
+    }
     @Published var animateFocusIndicator: Bool {
         didSet { persistRuntimeChange() }
     }
@@ -303,6 +307,7 @@ class UserConfig: ObservableObject {
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
+            self.doubleTapHyprTogglesCapsLock = saved.doubleTapHyprTogglesCapsLock ?? UserConfigDefaults.doubleTapHyprTogglesCapsLock
             self.animateFocusIndicator = saved.animateFocusIndicator ?? UserConfigDefaults.animateFocusIndicator
             self.mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
@@ -337,6 +342,7 @@ class UserConfig: ObservableObject {
             self.enabled = UserConfigDefaults.enabled
             self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
+            self.doubleTapHyprTogglesCapsLock = UserConfigDefaults.doubleTapHyprTogglesCapsLock
             self.animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
             self.mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = UserConfigDefaults.hyprKey
@@ -496,7 +502,8 @@ class UserConfig: ObservableObject {
             overlayAccentHex: overlayAccentHex,
             keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch,
             animateFocusIndicator: animateFocusIndicator,
-            focusBorderFlash: focusBorderFlash)
+            focusBorderFlash: focusBorderFlash,
+            doubleTapHyprTogglesCapsLock: doubleTapHyprTogglesCapsLock)
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
@@ -510,6 +517,7 @@ class UserConfig: ObservableObject {
         enabled = UserConfigDefaults.enabled
         focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
         keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
+        doubleTapHyprTogglesCapsLock = UserConfigDefaults.doubleTapHyprTogglesCapsLock
         animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
         mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
         hyprKey = UserConfigDefaults.hyprKey
@@ -632,6 +640,7 @@ class UserConfig: ObservableObject {
         enabled = saved.enabled
         focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
         keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
+        doubleTapHyprTogglesCapsLock = saved.doubleTapHyprTogglesCapsLock ?? UserConfigDefaults.doubleTapHyprTogglesCapsLock
         animateFocusIndicator = saved.animateFocusIndicator ?? UserConfigDefaults.animateFocusIndicator
         mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
         hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey

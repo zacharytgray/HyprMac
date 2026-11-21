@@ -90,7 +90,8 @@ back at the path, which you can then move aside as above.
 
 ## Caps Lock
 
-HyprMac remaps Caps Lock to F18 itself through `hidutil`. With nix-darwin's
+HyprMac remaps Caps Lock to F18 itself through `hidutil`, and takes the
+mapping out again while tiling is paused. With nix-darwin's
 `system.keyboard.enableKeyMapping`, don't turn on `remapCapsLockToControl`,
 `remapCapsLockToEscape` or `swapCapsLockAndEscape` while `hyprKey` is
 `"capsLock"`. Each `darwin-rebuild switch` overwrites that mapping. In System

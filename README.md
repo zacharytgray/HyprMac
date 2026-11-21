@@ -128,6 +128,9 @@ the keys.
 Settings → Keys offers 14 choices: Caps Lock, backslash, F13–F20, and Option or Command on
 either side.
 
+- Still want Caps Lock now and then? Turn on **Double-tap Hypr to toggle Caps Lock** in
+  Settings → Keys, then tap the Hypr key twice quickly. It does not work in password fields,
+  where macOS hides keys from HyprMac. Pausing tiling also gives Caps Lock back.
 - If Option or Command is your Hypr key, leave it on its default in the Modifier Keys pane too.
   Backslash and F13–F20 are not in that pane and need nothing.
 - If you pick the left Option or Command key, that key plus a key HyprMac uses goes to HyprMac.
@@ -259,7 +262,7 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 | `Hypr + J` | Toggle split direction |
 | `Hypr + S` / `Hypr + Shift + S` | Toggle scratchpad / send window to scratchpad |
 | `Hypr + W` | Close window |
-| `Hypr + P` | Pause or resume tiling |
+| `Hypr + P` | Pause tiling. While paused, Caps Lock is a normal Caps Lock again, so resume from the menu bar. With F13 to F20 or a modifier as the Hypr key, `Hypr + P` also resumes |
 | `Hypr + K` | Show the keybind overlay |
 | `Hypr + O` | Show workspace overview |
 | `Hypr + Ctrl + S` / `Hypr + Ctrl + R` | Save / restore the layout for this display setup |

@@ -28,6 +28,7 @@ struct RuntimeConfigState: Equatable {
     let windowCornerRadius: CGFloat
     let scratchpadTileByDefault: Bool
     let scratchpadRegionInset: CGFloat
+    let doubleTapHyprTogglesCapsLock: Bool
 
     init(
         enabled: Bool, keybinds: [Keybind], hyprKey: HyprKey,
@@ -45,7 +46,8 @@ struct RuntimeConfigState: Equatable {
         focusBracketLength: CGFloat = UserConfigDefaults.focusBracketLength,
         dimInactiveWindows: Bool, dimIntensity: Double, chromeFadeDurationSec: Double,
         windowCornerRadius: CGFloat, scratchpadTileByDefault: Bool,
-        scratchpadRegionInset: CGFloat
+        scratchpadRegionInset: CGFloat,
+        doubleTapHyprTogglesCapsLock: Bool = UserConfigDefaults.doubleTapHyprTogglesCapsLock
     ) {
         self.enabled = enabled
         self.keybinds = keybinds
@@ -72,6 +74,7 @@ struct RuntimeConfigState: Equatable {
         self.windowCornerRadius = windowCornerRadius
         self.scratchpadTileByDefault = scratchpadTileByDefault
         self.scratchpadRegionInset = scratchpadRegionInset
+        self.doubleTapHyprTogglesCapsLock = doubleTapHyprTogglesCapsLock
     }
 
     init(_ config: UserConfig) {
@@ -97,7 +100,8 @@ struct RuntimeConfigState: Equatable {
             chromeFadeDurationSec: config.chromeFadeDurationSec,
             windowCornerRadius: config.windowCornerRadius,
             scratchpadTileByDefault: config.scratchpadTileByDefault,
-            scratchpadRegionInset: config.scratchpadRegionInset)
+            scratchpadRegionInset: config.scratchpadRegionInset,
+            doubleTapHyprTogglesCapsLock: config.doubleTapHyprTogglesCapsLock)
     }
 }
 
@@ -139,6 +143,7 @@ final class ConfigUpdateCoordinator {
     var onChrome: (RuntimeConfigState, ChromeConfigChanges) -> Void = { _, _ in }
     var onScratchpadRegion: (CGFloat) -> Void = { _ in }
     var onScratchpadEntryMode: (Bool) -> Void = { _ in }
+    var onDoubleTapCapsLock: (Bool) -> Void = { _ in }
 
     private var current: RuntimeConfigState
     private var observation: AnyCancellable?
@@ -213,6 +218,9 @@ final class ConfigUpdateCoordinator {
         }
         if next.scratchpadTileByDefault != previous.scratchpadTileByDefault {
             onScratchpadEntryMode(next.scratchpadTileByDefault)
+        }
+        if next.doubleTapHyprTogglesCapsLock != previous.doubleTapHyprTogglesCapsLock {
+            onDoubleTapCapsLock(next.doubleTapHyprTogglesCapsLock)
         }
     }
 }

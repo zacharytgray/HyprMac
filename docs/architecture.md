@@ -982,9 +982,9 @@ The rules are the pure `KeyMappingMerge`, pinned by `KeyRemapperTests`:
 - Install adds the entry once. Every other entry keeps its place.
   Repeated launches never add a second copy, and a list that already
   matches is not written.
-- Remove (at quit, when the Hypr key changes away from Caps Lock, and
-  at launch when it is not Caps Lock) takes out only that entry. It never
-  writes `[]` over other entries.
+- Remove (at quit, on pause, when the Hypr key changes away from Caps
+  Lock, and at launch when it is not Caps Lock or HyprMac starts paused)
+  takes out only that entry. It never writes `[]` over other entries.
 - A user entry whose source is Caps Lock (Caps Lock → Escape, say)
   cannot coexist with ours. While Caps Lock is the Hypr key, ours takes
   its place in the list, and the user's entry is held in the
@@ -1005,6 +1005,40 @@ the `--get` output is a CoreFoundation description string with no stable
 format. A missing property (nothing set since boot) reads as an empty
 list. If that read ever came back empty while our entry was set, remove
 would write nothing and leave F18 in place.
+
+The entry is in the list only while Caps Lock is the Hypr key and HyprMac
+is active (`KeyRemapper.wantsRemap`). Pausing, from the menu bar, Settings,
+Hypr+P, a `hyprmac://action/toggleTiling` link or a config file change,
+removes it, so Caps Lock is a plain Caps Lock while paused (#94) and a held
+user mapping such as Caps Lock → Escape is back in place. Resuming installs
+it again. All of these go through `ConfigUpdateCoordinator.onEnabled`.
+
+Right after an install is written, `KeyRemapper.turnCapsLockOff` turns the
+Caps Lock state off if it is on (`IOHIDSetModifierLockState`). The key has
+just stopped being Caps Lock, so a lock left on while paused or before
+launch could not be turned off otherwise. An install that writes nothing
+leaves the lock alone.
+
+While HyprMac is active the only way to Caps Lock is the optional double
+tap of the Hypr key (`doubleTapHyprTogglesCapsLock`, off by default; see
+"Hypr key" in `keybinds-and-actions.md`).
+
+While paused the event tap also stops swallowing the Hypr key.
+`HyprKey.keepsShortcutsWhilePaused` splits the choices:
+
+- Caps Lock, Tab, backtick and backslash are not Hypr at all while paused.
+  They type or toggle again, and Hypr+P, Hypr+K and Hypr+O do not run.
+  Resume from the menu bar, Settings or a link.
+- F13 to F20 and the modifier keys pass through to macOS and are still
+  watched, so Hypr+P, Hypr+K and Hypr+O keep working.
+
+Exit paths:
+
+| Exit | Remap |
+|---|---|
+| Quit (menu, Sparkle relaunch, logout) | Removed in `applicationWillTerminate` |
+| SIGTERM (`kill`, launchd, the deploy recipe) | `AppDelegate.quitCleanlyOnSIGTERM` turns it into a normal quit, so it is removed and hidden windows come back on screen. A hung main thread no longer dies on SIGTERM |
+| SIGKILL, a crash | Left in place. The next launch removes it if Caps Lock is no longer the Hypr key or HyprMac starts paused, and the next quit or pause removes it otherwise. A restart of the Mac clears the whole list. By hand: quit HyprMac, then `hidutil property --set '{"UserKeyMapping":[]}'` (this clears every mapping in the list) |
 
 The Debug and Release apps have separate defaults domains, so each holds
 its own displaced entry. Running one after the other while an entry is

@@ -43,10 +43,20 @@ class HotkeyManager {
     // main thread only: last open failure logged, so retries stay quiet
     private var lastPhysicalOpenFailure: IOReturn?
 
+    // "Double-tap Hypr to toggle Caps Lock". guarded by stateLock
+    private var doubleTapCapsLock = false
+    private var doubleTap = HyprDoubleTap()
+    private let now: () -> TimeInterval
+    private let toggleCapsLock: () -> Void
+
     init(physicalKeys: PhysicalCapsLockReading = PhysicalKeyMonitor(),
-         hasKeyboardAccess: @escaping () -> Bool = { PhysicalKeyMonitor.hasAccess }) {
+         hasKeyboardAccess: @escaping () -> Bool = { PhysicalKeyMonitor.hasAccess },
+         now: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime },
+         toggleCapsLock: @escaping () -> Void = { DispatchQueue.main.async { KeyRemapper.toggleCapsLock() } }) {
         self.physicalKeys = physicalKeys
         self.hasKeyboardAccess = hasKeyboardAccess
+        self.now = now
+        self.toggleCapsLock = toggleCapsLock
         physicalKeys.onRelease = { [weak self] in self?.physicalCapsLockReleased() }
     }
 
@@ -94,9 +104,25 @@ class HotkeyManager {
         }
     }
 
+    /// Paused, the Hypr key is no longer swallowed (see `handleEvent`).
+    /// A key that stops being Hypr while paused also drops a press in
+    /// progress: its release may never arrive (Caps Lock's remap is being
+    /// removed), and a stuck Hypr would turn a typed P into a resume.
     func updateTilingEnabled(_ enabled: Bool) {
         stateLock.lock()
         tilingEnabled = enabled
+        if !enabled, !hyprKey.keepsShortcutsWhilePaused {
+            setHyprKeyDown(false)
+            ignoredHyprRelease = false
+        }
+        stateLock.unlock()
+    }
+
+    /// The "Double-tap Hypr to toggle Caps Lock" setting.
+    func updateDoubleTapCapsLock(_ on: Bool) {
+        stateLock.lock()
+        doubleTapCapsLock = on
+        doubleTap.reset()
         stateLock.unlock()
     }
 
@@ -135,6 +161,7 @@ class HotkeyManager {
         hyprKeyDown = false
         ignoredHyprRelease = false
         pressedModifierKeyCodes.removeAll()
+        doubleTap.reset()
         stateLock.unlock()
         hyprLog(.debug, .lifecycle, "hypr key set to \(key.displayName)")
         refreshPhysicalKeyMonitor()
@@ -351,7 +378,7 @@ class HotkeyManager {
         if wasIgnored {
             hyprLog(.notice, .hotkey, "Caps Lock physically released — ending Hypr")
         }
-        setHyprKeyDown(false)
+        setHyprKeyDown(false, released: true)
     }
 
     /// `true` when the HID layer currently reports the Hypr key as down.
@@ -388,6 +415,9 @@ class HotkeyManager {
 
         // track the configured physical key as our logical Hypr modifier
         if keyCode == hyprKey.keyCode {
+            // paused: the key belongs to macOS again (#94). one that types
+            // is not Hypr at all until tiling resumes
+            if !tilingEnabled, !hyprKey.keepsShortcutsWhilePaused { return event }
             if type == .keyDown {
                 setHyprKeyDown(true)
             } else if type == .keyUp {
@@ -400,13 +430,19 @@ class HotkeyManager {
                     ignoredHyprRelease = hyprKeyDown
                 } else {
                     ignoredHyprRelease = false
-                    setHyprKeyDown(false)
+                    setHyprKeyDown(false, released: true)
                 }
             } else if type == .flagsChanged, hyprKey.isNativeModifier {
-                setHyprKeyDown(pressedModifierKeyCodes.contains(keyCode))
+                setHyprKeyDown(pressedModifierKeyCodes.contains(keyCode), released: true)
             }
-            return nil // always swallow the Hypr key — it's our internal modifier
+            // swallowed while tiling is on: it's our internal modifier.
+            // paused it passes through and is only watched, so Hypr+P can resume
+            return tilingEnabled ? nil : event
         }
+
+        // another key or modifier going down makes this Hypr press a chord,
+        // and breaks up a double tap
+        if type != .keyUp { doubleTap.otherKeyDown() }
 
         // sanity check on every non-Hypr keyDown: if we think Hypr is held
         // but the HID layer says it isn't, our state is stale (dropped keyUp
@@ -463,10 +499,24 @@ class HotkeyManager {
     }
 
     // assumes stateLock held. the onHyprKeyDown/Up callbacks fire async
-    // on main, outside the lock.
-    private func setHyprKeyDown(_ isDown: Bool) {
+    // on main, outside the lock. `released` marks the key really coming up;
+    // every other false is a reset and can't finish a double tap.
+    private func setHyprKeyDown(_ isDown: Bool, released: Bool = false) {
         let wasDown = hyprKeyDown
         hyprKeyDown = isDown
+        if isDown && !wasDown {
+            doubleTap.hyprDown(at: now())
+        } else if !isDown && wasDown {
+            if released {
+                // paused, Hypr shortcuts are all that is left of the key
+                if doubleTap.hyprUp(at: now()), doubleTapCapsLock, tilingEnabled {
+                    hyprLog(.notice, .hotkey, "double tap — toggling Caps Lock")
+                    toggleCapsLock()
+                }
+            } else {
+                doubleTap.reset()
+            }
+        }
         if isDown && !wasDown {
             hyprLog(.notice, .hotkey, "hypr ↓")
             DispatchQueue.main.async { [weak self] in
@@ -502,6 +552,51 @@ class HotkeyManager {
         } else {
             pressedModifierKeyCodes.insert(keyCode)
         }
+    }
+}
+
+/// Spots two lone taps of the Hypr key for "Double-tap Hypr to toggle
+/// Caps Lock". A tap is a press and release within `window` with no other
+/// key or modifier going down. Two taps count when the second press starts
+/// within `window` of the first release. A chord, a hold or a key in
+/// between starts over. Mouse buttons are not seen.
+struct HyprDoubleTap {
+    static let window: TimeInterval = 0.3
+
+    private var pressStart: TimeInterval?
+    private var used = false
+    private var lastTapEnd: TimeInterval?
+
+    mutating func hyprDown(at time: TimeInterval) {
+        pressStart = time
+        used = false
+    }
+
+    mutating func otherKeyDown() {
+        used = true
+        lastTapEnd = nil
+    }
+
+    /// true when this release completes a double tap
+    mutating func hyprUp(at time: TimeInterval) -> Bool {
+        guard let start = pressStart else { return false }
+        pressStart = nil
+        guard !used, time - start <= Self.window else {
+            lastTapEnd = nil
+            return false
+        }
+        if let last = lastTapEnd, start - last <= Self.window {
+            lastTapEnd = nil
+            return true
+        }
+        lastTapEnd = time
+        return false
+    }
+
+    mutating func reset() {
+        pressStart = nil
+        used = false
+        lastTapEnd = nil
     }
 }
 

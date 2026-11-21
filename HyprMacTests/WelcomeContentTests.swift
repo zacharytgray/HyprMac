@@ -39,6 +39,17 @@ final class WelcomeContentTests: XCTestCase {
         XCTAssertEqual(chord, "HYPR ⌃ ⇧ K")
     }
 
+    func testPauseLineSendsATypingHyprKeyToTheMenuBar() {
+        // paused, Caps Lock is Caps Lock again and can't press the shortcut (#94)
+        let caps = WelcomeContent.pauseInstruction(chord: "HYPR P", hyprKey: .capsLock)
+        XCTAssertTrue(caps.contains("press HYPR P to pause tiling"))
+        XCTAssertTrue(caps.contains("resume from the menu bar"))
+        XCTAssertFalse(caps.contains("Press it again"))
+
+        let f13 = WelcomeContent.pauseInstruction(chord: "HYPR P", hyprKey: .f13)
+        XCTAssertTrue(f13.contains("Press it again"))
+    }
+
     func testTutorialChordReturnsNilWhenActionWasRemoved() {
         XCTAssertNil(WelcomeContent.chord(in: [], hyprKey: .capsLock) { _ in true })
     }
