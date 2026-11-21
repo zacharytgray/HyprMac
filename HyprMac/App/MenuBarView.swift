@@ -1,4 +1,4 @@
-// Menu bar dropdown contents and compact workspace label.
+// Menu bar dropdown contents and workspace label.
 
 import SwiftUI
 
@@ -267,6 +267,9 @@ class MenuBarState: ObservableObject {
     /// A window fills a display showing now. The label swaps the glyphs for one icon.
     @Published var isFullscreen = false
     @Published var monitors: [MenuBarMonitorSnapshot] = []
+    /// The compact style's one badge: the focused workspace, else the one
+    /// on the cursor's screen. nil with no screens.
+    @Published var compactSymbol: String?
     @Published var hasData = false
     /// Number of windows in the scratchpad (0 = hide the tray glyph).
     @Published var scratchpadCount = 0
@@ -296,6 +299,34 @@ struct MenuBarWorkspaceBadge: Equatable, Identifiable {
     let isActive: Bool
     let isOccupied: Bool
     let hasFloatingWindows: Bool
+}
+
+/// What the menu bar item shows. Per Mac, kept in UserDefaults.
+enum MenuBarStyle: String, CaseIterable, Identifiable {
+    case full
+    case compact
+    case hidden
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .full: return "Full"
+        case .compact: return "Compact"
+        case .hidden: return "Hidden"
+        }
+    }
+
+    /// The stored style. Read only; `@AppStorage` does the writing.
+    static var stored: MenuBarStyle {
+        UserDefaults.standard.string(forKey: UserConfig.menuBarStyleKey).flatMap(MenuBarStyle.init) ?? .full
+    }
+
+    /// Style for a Mac that still has the two old settings.
+    static func migrated(showIcon: Bool, showIndicator: Bool) -> MenuBarStyle {
+        if !showIcon { return .hidden }
+        return showIndicator ? .full : .compact
+    }
 }
 
 enum MenuBarPresentation {
@@ -364,16 +395,41 @@ enum MenuBarPresentation {
         }
     }
 
-    static func showsIndicator(indicatorEnabled: Bool, hasData: Bool,
-                               labelText: String, scratchpadCount: Int) -> Bool {
-        indicatorEnabled && hasData && (!labelText.isEmpty || scratchpadCount > 0)
+    static func showsIndicator(hasData: Bool, labelText: String, scratchpadCount: Int) -> Bool {
+        hasData && (!labelText.isEmpty || scratchpadCount > 0)
+    }
+
+    // square, circle with floaters, filled when maximized
+    static func compactSymbolName(workspace: Int, floating: Bool, maximized: Bool) -> String {
+        "\(workspace).\(floating ? "circle" : "square")\(maximized ? ".fill" : "")"
+    }
+
+    // 17 pt medium is about the size of the icons next to it
+    static let compactPointSize: CGFloat = 17
+    // square is 20x18 and circle 20x20 at that size, so draw both into one box
+    static let compactCanvasSize = NSSize(width: 20, height: 20)
+
+    // swiftui sizing is ignored in a menu bar label, so size the image itself
+    static func compactImage(symbol: String) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: compactPointSize, weight: .medium)
+        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return nil }
+        let canvas = NSImage(size: compactCanvasSize, flipped: false) { rect in
+            let origin = NSPoint(x: rect.midX - glyph.size.width / 2,
+                                 y: rect.midY - glyph.size.height / 2)
+            glyph.draw(in: NSRect(origin: origin, size: glyph.size))
+            return true
+        }
+        canvas.isTemplate = true
+        return canvas
     }
 }
 
-// Compact workspace glyphs remain visible while tiling is paused.
+// the label stays visible while tiling is paused
 struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared
+    @AppStorage(UserConfig.menuBarStyleKey) private var style: MenuBarStyle = .full
     @Environment(\.openWindow) private var openWindow
 
     @ObservedObject private var updateState = UpdateState.shared
@@ -390,8 +446,16 @@ struct WorkspaceIndicatorLabel: View {
     }
 
     @ViewBuilder private var content: some View {
-        if MenuBarPresentation.showsIndicator(
-            indicatorEnabled: config.showMenuBarIndicator,
+        if style == .compact, state.hasData, let symbol = state.compactSymbol {
+            Group {
+                if let image = MenuBarPresentation.compactImage(symbol: symbol) {
+                    Image(nsImage: image)
+                } else {
+                    Image(systemName: symbol)
+                }
+            }
+            .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
+        } else if style != .compact, MenuBarPresentation.showsIndicator(
             hasData: state.hasData,
             labelText: state.labelText,
             scratchpadCount: state.scratchpadCount) {

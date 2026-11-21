@@ -132,6 +132,8 @@ class WindowManager {
     private var mouseDownMonitor: Any?
     private var mouseUpMonitor: Any?
     private var mouseDragMonitor: Any?
+    // the compact menu bar badge follows the cursor's screen when nothing has focus
+    private var cursorScreenWatch = CursorScreenWatch()
     private var mouseDragLifecycle = MouseDragLifecycleState()
     private var mouseButtonDown: Bool { mouseDragLifecycle.buttonDown }
     private var mouseDraggedSinceDown: Bool { mouseDragLifecycle.sawDragEvent }
@@ -288,7 +290,9 @@ class WindowManager {
         }
         self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
         self.workspaceOrchestrator.onFloatersRevealed = { [weak self] windows in self?.markRevealedFloaters(windows) }
-        self.workspaceOrchestrator.onDidSwitch = { [weak self] _, _ in
+        self.workspaceOrchestrator.onDidSwitch = { [weak self] workspace, _ in
+            // the switch's recordFocus already ran, so this sticks
+            self?.statusPresenter.lastSwitchedWorkspace = workspace
             self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()
         }
@@ -679,8 +683,11 @@ class WindowManager {
         statusExporter.hookCommand = { [weak self] in self?.config.statusHookCommand }
         statusExporter.snapshot = { [weak self] in self?.statusPresenter.statusSnapshot() }
         focusController.onChange = { [weak self] in
+            // the badge and state.json show the focused window's workspace again
+            self?.statusPresenter.lastSwitchedWorkspace = nil
             self?.statusExporter.noteChange()
             self?.endMaximizeIfFocusLeft()
+            self?.statusPresenter.updateMenuBarState()
         }
         tilingEngine.onMaximizeChanged = { [weak self] workspace, screen, isOn in
             guard let self, self.isRunning, !self.displayTransitionPending else { return }
@@ -1153,9 +1160,12 @@ class WindowManager {
     /// for floating windows because the border only repositions on the
     /// discovery poll and would otherwise lag the live drag at 60Hz; mouseUp restores
     /// it after a short settle delay.
+    /// The move monitor also feeds `noteCursorScreen`, with or without
+    /// focus-follows-mouse.
     private func startMouseTracking() {
         mouseMoveMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             self?.mouseTracker.handleMouseMove()
+            self?.noteCursorScreen()
         }
         mouseDownMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self else { return }
@@ -1305,6 +1315,29 @@ class WindowManager {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
                 self?.mouseTracker.refocusUnderCursor(afterMouseUp: true)
             }
+        }
+    }
+
+    /// The compact badge and state.json fall back to the cursor's screen,
+    /// so a move to another screen redraws the badge and notes an export
+    /// change. Throttled; nothing with one screen. A screen change also
+    /// ends a switch's hold, in any style.
+    private func noteCursorScreen() {
+        guard displayManager.screens.count > 1, cursorScreenWatch.noteMove() else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + CursorScreenWatch.delay) { [weak self] in
+            guard let self else { return }
+            let cursorScreen = self.displayManager.screenUnderCursor()
+            let screen = self.workspaceManager.screenID(for: cursorScreen)
+            guard self.cursorScreenWatch.check(screen: screen) else { return }
+            // the switch's own warp lands on the switched-to screen, so that one doesn't count
+            if self.workspaceManager.workspaceForScreen(cursorScreen) != self.statusPresenter.lastSwitchedWorkspace {
+                self.statusPresenter.lastSwitchedWorkspace = nil
+            }
+            // no-op with the export off
+            self.statusExporter.noteChange()
+            // the style is read here, not on every move
+            guard self.isRunning, MenuBarStyle.stored == .compact else { return }
+            self.statusPresenter.updateMenuBarState()
         }
     }
 

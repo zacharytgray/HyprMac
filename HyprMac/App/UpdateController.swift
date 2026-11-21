@@ -113,7 +113,7 @@ final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate, SP
     /// notice, so the window is shown.
     func standardUserDriverShouldHandleShowingScheduledUpdate(_ update: SUAppcastItem,
                                                               andInImmediateFocus immediateFocus: Bool) -> Bool {
-        let iconShown = UserDefaults.standard.object(forKey: UserConfig.showMenuBarIconKey) as? Bool ?? true
+        let iconShown = MenuBarStyle.stored != .hidden
         return immediateFocus || !iconShown
     }
 

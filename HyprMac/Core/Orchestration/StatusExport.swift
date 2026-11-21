@@ -61,6 +61,8 @@ struct StatusSnapshot: Codable, Equatable {
         var cursorScreen: String?
         var apps: [CGWindowID: App]
         var names: [String: String]
+        /// the workspace just switched to, held until focus or the pointer moves
+        var switchedTo: Int? = nil
     }
 
     /// Hidden windows are left out everywhere, as in the menu bar: a ghost
@@ -74,10 +76,17 @@ struct StatusSnapshot: Codable, Equatable {
             visible.contains($0.key) && live($0.value).contains(focusID)
         }?.key
         let focusInScratchpad = input.scratchpadVisible && live(input.scratchpad).contains(focusID)
-        let focusedWindow: CGWindowID? = focusWorkspace != nil || focusInScratchpad ? focusID : nil
-        let focusScreen = focusWorkspace.flatMap { ws in input.screens.first { $0.visibleWorkspace == ws } }
-            ?? input.screens.first { $0.name == input.cursorScreen }
-            ?? input.screens.first
+        // a hold on a workspace without the focused window leaves no window focused
+        let heldElsewhere = input.switchedTo.map { visible.contains($0) && $0 != focusWorkspace } ?? false
+        let focusedWindow: CGWindowID? = !heldElsewhere && (focusWorkspace != nil || focusInScratchpad) ? focusID : nil
+        let focusScreen = focusedScreenIndex(
+            visibleWorkspaces: input.screens.map(\.visibleWorkspace),
+            assigned: input.assigned,
+            hidden: input.hidden,
+            focusedWindowID: focusID,
+            cursorScreenIndex: input.screens.firstIndex { $0.name == input.cursorScreen },
+            switchedTo: input.switchedTo
+        ).map { input.screens[$0] }
 
         func window(_ id: CGWindowID, detailed: Bool) -> Window {
             let app = input.apps[id]
@@ -107,6 +116,33 @@ struct StatusSnapshot: Codable, Equatable {
             workspaces: workspaces,
             scratchpad: live(input.scratchpad).map { window($0, detailed: false) },
             scratchpadVisible: input.scratchpadVisible)
+    }
+
+    /// Which screen has focus, as an index into `visibleWorkspaces` (one
+    /// entry per enabled screen, left to right). The screen showing
+    /// `switchedTo`, the workspace just switched to, while it still shows;
+    /// else the screen showing the focused window's workspace, else the one
+    /// under the cursor, else the first. The hold matters for a switch to an
+    /// empty workspace, which records no focus. Hidden windows don't count.
+    /// The menu bar's compact badge uses the same rule. nil only with no screens.
+    static func focusedScreenIndex(visibleWorkspaces: [Int],
+                                   assigned: [Int: Set<CGWindowID>],
+                                   hidden: Set<CGWindowID>,
+                                   focusedWindowID: CGWindowID,
+                                   cursorScreenIndex: Int?,
+                                   switchedTo: Int? = nil) -> Int? {
+        if let switchedTo, let index = visibleWorkspaces.firstIndex(of: switchedTo) {
+            return index
+        }
+        if let index = visibleWorkspaces.firstIndex(where: {
+            assigned[$0, default: []].subtracting(hidden).contains(focusedWindowID)
+        }) {
+            return index
+        }
+        if let cursorScreenIndex, visibleWorkspaces.indices.contains(cursorScreenIndex) {
+            return cursorScreenIndex
+        }
+        return visibleWorkspaces.isEmpty ? nil : 0
     }
 
     /// The hook's environment.

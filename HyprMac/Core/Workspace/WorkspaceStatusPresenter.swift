@@ -13,6 +13,10 @@ final class WorkspaceStatusPresenter {
     private let scratchpad: ScratchpadController
     private let focusController: FocusStateController
     var maximizedFloaterIDs: () -> Set<CGWindowID> = { [] }
+    /// The compact badge and state.json treat this as focused until focus
+    /// moves or the pointer leaves its monitor; an empty workspace switch
+    /// records no focus. Main thread.
+    var lastSwitchedWorkspace: Int?
 
     init(config: UserConfig,
          accessibility: AccessibilityManager,
@@ -77,7 +81,8 @@ final class WorkspaceStatusPresenter {
     /// Publish workspace glyphs and monitor snapshots for the menu.
     func updateMenuBarState() {
         let active = Set(activeWorkspaces())
-        let isFullscreen = !active.isDisjoint(with: workspacesWithMaximizedWindow())
+        let maximized = workspacesWithMaximizedWindow()
+        let isFullscreen = !active.isDisjoint(with: maximized)
         let occupied = occupiedWorkspaces()
         let floating = workspacesWithFloatingWindows()
         let labelText = MenuBarPresentation.workspaceGlyphs(
@@ -86,10 +91,11 @@ final class WorkspaceStatusPresenter {
         let monitors = enabledScreens.enumerated().map {
             index, screen in
                 let anchored = workspaceManager.workspacesAnchoredTo(screen)
+                let current = workspaceManager.workspaceForScreen(screen)
                 return MenuBarMonitorSnapshot(
                     id: index,
                     name: screen.localizedName,
-                    currentWorkspace: workspaceManager.workspaceForScreen(screen),
+                    currentWorkspace: current,
                     isPortrait: screen.frame.height > screen.frame.width,
                     workspaces: anchored.map { workspace in
                         MenuBarWorkspaceBadge(
@@ -99,17 +105,34 @@ final class WorkspaceStatusPresenter {
                             hasFloatingWindows: floating.contains(workspace))
                     })
             }
+        let cursorID = workspaceManager.screenID(for: displayManager.screenUnderCursor())
+        let visible = monitors.map(\.currentWorkspace)
+        let focusedIndex = StatusSnapshot.focusedScreenIndex(
+            visibleWorkspaces: visible,
+            assigned: workspaceManager.regularWorkspaceWindowIDs(),
+            hidden: stateCache.hiddenWindowIDs,
+            focusedWindowID: focusController.lastFocusedID,
+            cursorScreenIndex: enabledScreens.firstIndex { workspaceManager.screenID(for: $0) == cursorID },
+            switchedTo: lastSwitchedWorkspace)
+        let compactSymbol = focusedIndex.map { visible[$0] }.map { workspace -> String in
+            MenuBarPresentation.compactSymbolName(
+                workspace: workspace,
+                floating: floating.contains(workspace),
+                maximized: maximized.contains(workspace))
+        }
         let scratchpadCount = scratchpad.members.count
         let scratchpadVisible = scratchpad.isVisible
 
+        // focus changes call this in bursts; an unchanged value must not redraw the label
         DispatchQueue.main.async {
             let state = MenuBarState.shared
-            state.labelText = labelText
-            state.isFullscreen = isFullscreen
-            state.monitors = monitors
-            state.scratchpadCount = scratchpadCount
-            state.scratchpadVisible = scratchpadVisible
-            state.hasData = true
+            if state.labelText != labelText { state.labelText = labelText }
+            if state.isFullscreen != isFullscreen { state.isFullscreen = isFullscreen }
+            if state.monitors != monitors { state.monitors = monitors }
+            if state.compactSymbol != compactSymbol { state.compactSymbol = compactSymbol }
+            if state.scratchpadCount != scratchpadCount { state.scratchpadCount = scratchpadCount }
+            if state.scratchpadVisible != scratchpadVisible { state.scratchpadVisible = scratchpadVisible }
+            if !state.hasData { state.hasData = true }
         }
     }
 
@@ -201,7 +224,8 @@ final class WorkspaceStatusPresenter {
             focusedWindowID: focusController.lastFocusedID,
             cursorScreen: screens.isEmpty ? nil : displayManager.screenUnderCursor().localizedName,
             apps: apps,
-            names: config.workspaceNames))
+            names: config.workspaceNames,
+            switchedTo: lastSwitchedWorkspace))
     }
 
     /// Log a snapshot of workspace, cache and tree state at `.notice`

@@ -162,6 +162,30 @@ final class StatusExportTests: XCTestCase {
         }
     }
 
+    // LG switched to empty 6 while Ghostty on 4 keeps focus
+    func testHoldOnEmptyWorkspaceWinsAndLeavesNoWindowFocused() {
+        var held = input()
+        held.screens = [.init(name: "DELL", visibleWorkspace: 4), .init(name: "LG", visibleWorkspace: 6)]
+        held.switchedTo = 6
+        let snapshot = StatusSnapshot.build(held)
+        XCTAssertEqual(snapshot.focusedWorkspace, 6)
+        XCTAssertEqual(snapshot.focusedMonitor, "LG")
+        XCTAssertEqual(snapshot.monitors.map(\.focused), [false, true])
+        XCTAssertFalse(snapshot.workspaces.flatMap(\.windows).contains { $0.focused == true })
+    }
+
+    func testHoldOnTheFocusedWindowsWorkspaceChangesNothing() {
+        var held = input()
+        held.switchedTo = 4
+        XCTAssertEqual(StatusSnapshot.build(held), StatusSnapshot.build(input()))
+    }
+
+    func testHoldOnAWorkspaceNotShowingChangesNothing() {
+        var held = input()
+        held.switchedTo = 7
+        XCTAssertEqual(StatusSnapshot.build(held), StatusSnapshot.build(input()))
+    }
+
     func testHookEnvironment() {
         let url = URL(fileURLWithPath: "/tmp/state.json")
         XCTAssertEqual(StatusSnapshot.build(input()).hookEnvironment(stateFile: url), [

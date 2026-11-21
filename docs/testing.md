@@ -169,8 +169,9 @@ Hypr+F (maximize):
   Cmd-Tab to another window on the workspace, or a drag of the window: each puts
   the layout back. Open a new window or close the maximized one: same.
 - Hover and click stay on the maximized window. Dim and the focus border follow it.
-- Each start and end shows the FULLSCREEN HUD. The menu bar shows the icon while a
-  showing workspace has a maximized window, and the glyphs again otherwise.
+- Each start and end shows the FULLSCREEN HUD. The Full menu bar shows the icon while a
+  showing workspace has a maximized window, and the glyphs again otherwise. Compact
+  fills its badge while the workspace it shows has one.
 - Try Screen Sharing or another fixed-size window: red flash, nothing moves.
 
 Move to dedicated workspace (no default chord; bind it in Settings → Keys):

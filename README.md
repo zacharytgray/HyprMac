@@ -315,8 +315,10 @@ Everything, including the Hypr key itself, lives in Settings and is saved as JSO
 copied to `config.json.unreadable` before a save overwrites it.
 
 HyprMac lives in the menu bar and stays out of the Dock. Settings → General → System can add a
-Dock icon or hide the menu bar icon. Opening HyprMac again from Spotlight or Finder, or clicking
-its Dock icon, opens Settings.
+Dock icon and pick the menu bar style. Full shows every workspace in use. Compact shows one
+numbered badge: the workspace you just switched to, then the focused window's workspace. With
+nothing focused, it shows the workspace on the monitor under the pointer. Hidden removes the
+item. Opening HyprMac again from Spotlight or Finder, or clicking its Dock icon, opens Settings.
 
 HyprMac keeps itself up to date through Sparkle. It checks once a day and downloads a new
 version in the background. A dot on the menu bar icon says one is ready, and the menu has
