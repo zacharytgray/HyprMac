@@ -17,6 +17,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
     private var dockIconObserver: NSObjectProtocol?
+    private var terminateSignalSource: DispatchSourceSignal?
 
     /// `hyprmac://` links from a status bar or another app. A raw Apple
     /// Event handler, so SwiftUI never sees the URL and opens no window for it.
@@ -148,11 +149,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #endif
 
+        quitCleanlyOnSIGTERM()
+
         if AXIsProcessTrusted() {
             startAfterPermissionGranted()
         } else {
             showPermissionsGate()
         }
+    }
+
+    /// `kill`, launchd and a deploy script all stop HyprMac with SIGTERM.
+    /// The default handler ends the process on the spot, so
+    /// `applicationWillTerminate` never ran: Caps Lock stayed mapped to F18
+    /// and hidden windows stayed parked. Route it through the normal quit.
+    /// SIGKILL and a crash still skip it; the next launch or quit removes a
+    /// remap they leave behind.
+    private func quitCleanlyOnSIGTERM() {
+        signal(SIGTERM, SIG_IGN)
+        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
+        source.setEventHandler {
+            hyprLog(.notice, .lifecycle, "SIGTERM — quitting")
+            NSApp.terminate(nil)
+        }
+        source.resume()
+        terminateSignalSource = source
     }
 
     private func startAfterPermissionGranted() {

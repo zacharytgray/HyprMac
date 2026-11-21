@@ -1028,6 +1028,14 @@ While paused the event tap also stops swallowing the Hypr key.
 - F13 to F20 and the modifier keys pass through to macOS and are still
   watched, so Hypr+P, Hypr+K and Hypr+O keep working.
 
+Exit paths:
+
+| Exit | Remap |
+|---|---|
+| Quit (menu, Sparkle relaunch, logout) | Removed in `applicationWillTerminate` |
+| SIGTERM (`kill`, launchd, the deploy recipe) | `AppDelegate.quitCleanlyOnSIGTERM` turns it into a normal quit, so it is removed and hidden windows come back on screen. A hung main thread no longer dies on SIGTERM |
+| SIGKILL, a crash | Left in place. The next launch removes it if Caps Lock is no longer the Hypr key or HyprMac starts paused, and the next quit or pause removes it otherwise. A restart of the Mac clears the whole list. By hand: quit HyprMac, then `hidutil property --set '{"UserKeyMapping":[]}'` (this clears every mapping in the list) |
+
 The Debug and Release apps have separate defaults domains, so each holds
 its own displaced entry. Running one after the other while an entry is
 held can put back a mapping the user no longer has. Quit one variant

@@ -28,7 +28,10 @@ The Debug app lives at `/Applications/HyprMac Debug.app`.
    exact pid with `pgrep -f` on the full executable path
    (`/Applications/HyprMac Debug.app/Contents/MacOS/HyprMac Debug` and
    `/Applications/HyprMac.app/Contents/MacOS/HyprMac`). Send `kill -TERM` to
-   those pids only. Wait until `ps -p` shows each one gone.
+   those pids only. Wait until `ps -p` shows each one gone. From the build
+   that handles SIGTERM on, this is a normal quit: the copy puts hidden
+   windows back and removes the Caps Lock remap before it exits. An older
+   build dies at once and leaves the remap for the next launch.
 4. Move the old bundle to `/Applications/.hyprmac-debug-previous` for rollback.
    Move the new one into place.
    Launch it with `/usr/bin/open`.
