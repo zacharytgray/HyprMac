@@ -13,9 +13,7 @@ import XCTest
 // on main every case stops at the first tile check, so the focus checks only
 // run once the layout holds.
 //
-// the five switch tests fail on purpose until a fix lands; XCTExpectFailure
-// keeps the suite green and trips when one passes. live behavior isn't checked
-// here.
+// live behavior isn't checked here.
 
 final class NativeTabRegressionTests: XCTestCase {
 
@@ -284,14 +282,6 @@ final class NativeTabRegressionTests: XCTestCase {
         runPoll(h, walk: walk, unreadable: unreadable)
     }
 
-    /// The failure a test shows today, at `step` only. Any other issue, a
-    /// harness break or a later step failing, is an unexpected failure.
-    private func expectFailure(at step: String, _ reason: String) {
-        let options = XCTExpectedFailure.Options()
-        options.issueMatcher = { $0.compactDescription.contains(" - \(step): ") }
-        XCTExpectFailure(reason, options: options)
-    }
-
     /// The layout and focus are what they were before the first switch, with
     /// one tab of the group holding the slot.
     private func assertKept(_ h: Harness, _ layout: Layout, group: [CGWindowID], _ step: String,
@@ -317,7 +307,6 @@ final class NativeTabRegressionTests: XCTestCase {
     func testASwitchInOnePollKeepsTheLayoutAndFocus() throws {
         let h = try makeHarness()
         let s = tileThree(h)
-        expectFailure(at: "same poll", "a tab switch reads as a close plus an open, so the shown tab is inserted as a new window and the tiles move")
         let group: [CGWindowID] = [102, 202]
 
         poll(h, s, group: group, shown: 202)
@@ -332,7 +321,6 @@ final class NativeTabRegressionTests: XCTestCase {
     func testASwitchSplitAcrossPollsKeepsTheLayoutAndFocus() throws {
         let h = try makeHarness()
         let s = tileThree(h)
-        expectFailure(at: "busy poll", "the hidden tab's leaf goes while the shown tab is unread, so a neighbour stretches over its tile")
         let group: [CGWindowID] = [102, 202]
 
         poll(h, s, group: group, shown: 202, readable: false)
@@ -350,7 +338,6 @@ final class NativeTabRegressionTests: XCTestCase {
     func testAShownTabAPollLateKeepsTheLayoutAndFocus() throws {
         let h = try makeHarness()
         let s = tileThree(h)
-        expectFailure(at: "between hide and show", "the hidden tab's leaf goes before the shown tab is published, so a neighbour stretches over its tile")
         let group: [CGWindowID] = [102, 202]
 
         poll(h, s, group: group, shown: nil)
@@ -367,7 +354,6 @@ final class NativeTabRegressionTests: XCTestCase {
     func testReturningToTheFirstTabKeepsItsSlot() throws {
         let h = try makeHarness()
         let s = tileThree(h)
-        expectFailure(at: "first switch", "the first switch reads as a close plus an open, so the tiles move before the way back")
         let group: [CGWindowID] = [102, 202]
 
         poll(h, s, group: group, shown: 202)
@@ -390,7 +376,6 @@ final class NativeTabRegressionTests: XCTestCase {
     func testAHeldKeyThroughTheGroupKeepsTheLayoutAndFocus() throws {
         let h = try makeHarness()
         let s = tileThree(h)
-        expectFailure(at: "step 1", "every switch the poll catches retiles")
         let group: [CGWindowID] = [102, 202, 203, 204]
 
         for step in 1...12 {
@@ -451,13 +436,20 @@ private final class RegressionTestScreen: SyntheticScreen {
 // session interruption, the tree half of the re-created element adoption, the
 // dispatcher and the held-window release, in that order. it leaves out the
 // drift re-apply, the destroy recheck, admission recovery, the hold and retry
-// re-polls and the cache half of the adoption. a fix that reads more of the
-// scene wires it in here.
+// re-polls and the cache half of the adoption. `wireFix` gives discovery the
+// scene's window server.
 
 extension NativeTabRegressionTests {
 
     /// Wire the fix's window-server sources to `h.windowServer`.
-    func wireFix(_ h: Harness) {}
+    func wireFix(_ h: Harness) {
+        h.discovery.onScreenWindows = { [unowned h] in h.windowServer.onScreen }
+        h.discovery.isOrderedOutBesideAnother = { [unowned h] id, _ in
+            h.windowServer.backgroundTabs.contains(id)
+                && !h.windowServer.backgroundTabs.subtracting([id]).isEmpty
+        }
+        h.dispatcher.refreshPositionCache = { [unowned h] in h.refreshCache($0) }
+    }
 
     /// One discovery poll over the walk `walk`.
     @discardableResult

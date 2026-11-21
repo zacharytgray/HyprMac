@@ -203,6 +203,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `WindowCornerRadius` | The one global window corner radius for borders and dim cutouts. |
 | `StatusExporter` | Off by default. Writes `state.json` and runs the optional hook (`docs/status-bar.md`). |
 | `WindowAdmissionFilter` | Decides which AX windows discovery keeps (see "Quick Look previews"). |
+| `TabSwitchPairing` | Pairs a window that left with one of the same app that took its frame: a native tab switch. Discovery reports it in `WindowChanges.tabSwitches`, and `TilingEngine.handOverLeaf` hands the leaf over (`docs/tiling-algorithm.md`, "Native tabs"). |
 | `DestroyRecheck` | Bounded re-poll after a destroy notification whose poll saw nothing gone: up to 2 more polls, 0.35 s apart. |
 | `ExternalCommand` | Parses `hyprmac://` links (`docs/external-control.md`). `WindowManager.handleExternalURL` runs them. |
 | `LoginItemController` | Launch at login through `SMAppService.mainApp`. |

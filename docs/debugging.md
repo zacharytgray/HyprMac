@@ -1361,6 +1361,46 @@ both holds in place it should be rare. Every tile pass logs
 `retile: ws<N> holds […] — leaves kept, no frame written` for the members
 it kept out of the pass.
 
+### A native tab switch moved tiles or focus
+
+Switching tabs in an app with native window tabs is one window leaving and
+another of the same app taking its frame (`docs/tiling-algorithm.md`,
+"Native tabs"). A recognised switch logs one `.notice` line and no
+`discovery retile`. A held key makes about ten a second, so the two lines
+around it are `.debug`:
+
+```
+[debug]  [discovery] native tab switch: 30535 → 32188 — the shown tab takes its place
+[debug]  [tiling] tab switch: 32188 takes the leaf of 30535 on ws2 — tree and ratios kept, nothing written
+[notice] [discovery] tab switch: 30535 → 32188 (com.apple.Terminal) ws2, leaf handed over
+```
+
+When the walk has not read the shown tab yet, the tab that left is held:
+
+```
+[discovery] holding 30535 in place for a tab switch (standIn(32188))
+[discovery] tab hold ended: 30535
+[discovery] tab hold ran out: 30535 (orderedOut) — handled as a close
+```
+
+`holding` is `.notice` when a hold begins and `.debug` when its reason
+changes, which a held key does several times a second.
+The reason is `standIn(<id>)` (a window of the app is on screen in the
+frame, unread), `unsized(<id>)` (a new tab still 0×0) or `orderedOut`
+(nothing in the frame yet, and the window server still has the tab off
+screen). `tab hold ended` follows a pair or a hold that ran out.
+
+A switch that still logs `window hidden` plus `assignNewWindow` or
+`window returned` for the same app was not paired. The shown tab stood
+more than 4 points off the tile's last read frame, two windows left or
+appeared in that frame, the app called the window that left minimized, or
+the hold ran out before the app answered. `tab switch: … frame off the
+tile` is a pair whose shown tab had another size, and one
+`discovery retile: tab=[…]` follows it.
+
+To count a held key: `discovery retile`, `assignNewWindow` and `FLAP`
+should all stay at zero for the app while the tabs cycle.
+
 ### A window stayed parked after a workspace switch
 
 The switch's walk found its app busy, so the switch could not reveal it.

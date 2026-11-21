@@ -99,6 +99,30 @@ enum WindowStacking {
         raw.compactMap(StackedWindow.init(info:))
     }
 
+    /// Whether the window server still has `id`, off screen, while `pid`
+    /// has another ordinary window off screen. That is how the background
+    /// tabs of a native tab group look: ordered out, not destroyed. A
+    /// minimized window or one on another Space counts as the other one
+    /// too, so this is a hint that a tab switch may be under way, no proof.
+    static func isOrderedOut(_ id: CGWindowID, besideAnotherOf pid: pid_t) -> Bool {
+        guard let raw = CGWindowListCopyWindowInfo([.optionAll, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+        return isOrderedOut(id, besideAnotherOf: pid, in: raw)
+    }
+
+    static func isOrderedOut(_ id: CGWindowID, besideAnotherOf pid: pid_t, in raw: [[String: Any]]) -> Bool {
+        var found = false, another = false
+        for info in raw where (info[kCGWindowIsOnscreen as String] as? Bool) != true {
+            guard let window = StackedWindow(info: info), window.ownerPID == pid, window.layer == 0 else { continue }
+            if window.windowID == id {
+                found = true
+            } else if let bounds = window.bounds, bounds.width >= 100, bounds.height >= 100 {
+                another = true
+            }
+        }
+        return found && another
+    }
+
     /// The frontmost app's popup-level window, when one is on screen.
     ///
     /// Only the frontmost app counts. Other apps' high windows (notification

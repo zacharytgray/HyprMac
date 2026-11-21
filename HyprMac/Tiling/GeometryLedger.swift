@@ -67,6 +67,15 @@ struct GeometryLedger<Key: Hashable> {
         return true
     }
 
+    /// A leaf changed hands without moving (a native tab switch): the marks
+    /// that named the old window name the new one.
+    mutating func replaceWindowID(_ old: CGWindowID, with new: CGWindowID, in key: Key) {
+        guard var record = unverified[key] else { return }
+        if record.windowIDs.remove(old) != nil { record.windowIDs.insert(new) }
+        if record.insertedIDs.remove(old) != nil { record.insertedIDs.insert(new) }
+        unverified[key] = record
+    }
+
     /// The marks belong to the tree, so they follow it to a new key, folding
     /// into any the new key already has.
     mutating func carry(from old: Key, to new: Key) {
