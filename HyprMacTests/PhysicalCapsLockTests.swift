@@ -233,6 +233,50 @@ final class HotkeyManagerPhysicalCapsLockTests: XCTestCase {
         XCTAssertTrue(chordWithCommand())
     }
 
+    // MARK: plain Hypr keys (#95)
+
+    /// Hypr down, two chords, Hypr up, with a key the tap sees as plain
+    /// keyDown and keyUp. Nothing holds the real key during a test, so the
+    /// system reports it up, as it does once the tap swallows a real press.
+    private func assertChordsWhileHeld(_ plain: HyprKey, file: StaticString = #filePath, line: UInt = #line) {
+        manager.updateHyprKey(plain)
+        var fired: [Action] = []
+        manager.onAction = { fired.append($0) }
+
+        hypr(plain, down: true)
+        XCTAssertTrue(chordFires(), "\(plain.rawValue)+H must be swallowed as a chord", file: file, line: line)
+        XCTAssertTrue(chordFires(), "\(plain.rawValue) is still held", file: file, line: line)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(fired, [.toggleFloating, .toggleFloating], file: file, line: line)
+
+        hypr(plain, down: false)
+        XCTAssertFalse(chordFires(), "the keyUp ends \(plain.rawValue) as Hypr", file: file, line: line)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        XCTAssertEqual(fired.count, 2, "a plain H runs nothing", file: file, line: line)
+    }
+
+    func testF13HyprKeyChordFiresAndKeyUpEndsIt() {
+        assertChordsWhileHeld(.f13)
+    }
+
+    func testBackslashHyprKeyChordFiresAndKeyUpEndsIt() {
+        assertChordsWhileHeld(.backslash)
+    }
+
+    func testEveryOtherPlainHyprKeyChordFires() {
+        for plain in [HyprKey.f14, .f15, .f16, .f17, .f18, .f19, .f20, .tab, .grave] {
+            assertChordsWhileHeld(plain)
+        }
+    }
+
+    func testTapInterruptionResetEndsAPlainHyprKeyPress() {
+        manager.updateHyprKey(.f13)
+        hypr(.f13, down: true)
+        // the keyUp was lost to sleep, a lock or a disabled tap
+        manager.resetTrackingAfterTapInterruption()
+        XCTAssertFalse(chordFires())
+    }
+
     // MARK: safety
 
     func testTapInterruptionResetClearsHeldState() {

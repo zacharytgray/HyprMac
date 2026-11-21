@@ -381,27 +381,25 @@ class HotkeyManager {
         setHyprKeyDown(false, released: true)
     }
 
-    /// `true` when the HID layer currently reports the Hypr key as down.
-    /// Cheap syscall — one IOKit query.
+    /// `true` when the Hypr key is known to be down, `false` when it is
+    /// known to be up, `nil` when nothing trustworthy can say.
     ///
-    /// Returns `nil` when the answer can't be trusted — specifically when
-    /// the Caps Lock → F18 hidutil remap is active. The remap happens at
-    /// the IOKit layer, so the event tap sees F18 events while the session
-    /// state still reports F18 as up (no physical F18 is held). Querying
-    /// Caps Lock instead doesn't help — `kVK_CapsLock`'s session state
-    /// tracks the lock toggle, not the press state.
+    /// Only native modifier Hypr keys get an answer, read from the keyDown's
+    /// own flags. The tap swallows their flagsChanged, and
+    /// `combinedSessionState` then often reports them up mid-chord (54 of
+    /// 151 Left Control chords were dropped on 0.18.0). The keyDown flags
+    /// come from the HID layer, so a dropped keyUp still shows as the flag
+    /// missing.
     ///
-    /// Native modifier Hypr keys answer from the keyDown's own flags. The
-    /// tap swallows their flagsChanged, and `combinedSessionState` then
-    /// often reports them up mid-chord (54 of 151 Left Control chords were
-    /// dropped on 0.18.0). The keyDown flags come from the HID layer, so a
-    /// dropped keyUp still shows as the flag missing.
+    /// Every other Hypr key returns `nil`. `combinedSessionState` reports a
+    /// key as up once the tap swallows its keyDown, so asking it about F13–
+    /// F20, `\`, Tab or ` cleared every chord (#95). Under the Caps Lock →
+    /// F18 hidutil remap no physical F18 is held either, and `kVK_CapsLock`'s
+    /// session state tracks the lock toggle, not the press. These keys end
+    /// on their keyUp, with the sleep/wake/tap-disabled resets as backstop.
     private func isHyprKeyActuallyDown(eventFlags: CGEventFlags) -> Bool? {
-        if hyprKey.usesCapsLockRemap { return nil }
-        if let nativeFlag = hyprKey.nativeModifierFlag {
-            return eventFlags.contains(nativeFlag)
-        }
-        return CGEventSource.keyState(.combinedSessionState, key: CGKeyCode(hyprKey.keyCode))
+        guard let nativeFlag = hyprKey.nativeModifierFlag else { return nil }
+        return eventFlags.contains(nativeFlag)
     }
 
     /// Runs on the tap thread, per keystroke. Holds `stateLock` for the
@@ -445,11 +443,11 @@ class HotkeyManager {
         if type != .keyUp { doubleTap.otherKeyDown() }
 
         // sanity check on every non-Hypr keyDown: if we think Hypr is held
-        // but the HID layer says it isn't, our state is stale (dropped keyUp
-        // from sleep, lock, modal sheet, etc.). clear before packing flags
-        // so this stroke doesn't get routed as a chord. only runs when the
-        // HID query is trustworthy — under the Caps→F18 remap it lies, so
-        // we fall back to the sleep/wake/tap-disabled paths there.
+        // but the keyDown's flags say it isn't, our state is stale (dropped
+        // keyUp from sleep, lock, modal sheet, etc.). clear before packing
+        // flags so this stroke doesn't get routed as a chord. only native
+        // modifier Hypr keys can answer; the rest fall back to their keyUp
+        // and the sleep/wake/tap-disabled paths.
         if type == .keyDown, hyprKeyDown, isHyprKeyActuallyDown(eventFlags: event.flags) == false {
             hyprLog(.notice, .hotkey, "stale hyprKeyDown detected on keyCode=\(keyCode) — HID says \(hyprKey.displayName) is up; clearing")
             setHyprKeyDown(false)
