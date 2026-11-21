@@ -205,7 +205,10 @@ tree, nothing written to it) for one of three reasons
 | `unsized` | The walk read a new window of the app at 0×0: a new tab not sized yet. It is kept out of `newWindows` meanwhile. | 1 s |
 | `orderedOut` | Nothing stands in the frame, the app does not list the leaver, and the window server still has it off screen beside another off-screen window of the app (`WindowStacking.isOrderedOut`). | 0.5 s |
 
-The window a hold waits on gets the quick re-polls, and
+Selecting a background tab sends only a main-window change. That event
+polls when the app's focused window is one discovery holds as hidden, so
+the tile takes the shown tab within a poll instead of at the next
+reconcile. The window a hold waits on gets the quick re-polls, and
 `secondsUntilAHoldEnds` asks for the poll that ends it. A hold that runs
 out is a close.
 

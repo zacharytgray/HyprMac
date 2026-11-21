@@ -902,8 +902,16 @@ class WindowManager {
                 self.scheduleRestackRefresh(after: 0.05)
             case .mainWindowChanged:
                 // a new main window usually came forward. it needs a poll
-                // only if the app has a window on screen no poll has seen
-                self.pollIfUnseenWindow(pid: pid, via: "axMain", after: 0.15)
+                // only if the app has a window on screen no poll has seen,
+                // or the window is one discovery holds as hidden: a
+                // background tab selected again sends nothing else, and its
+                // tile kept the tab that left until the next reconcile
+                if let main = self.accessibility.focusedWindowID(ofPID: pid),
+                   self.stateCache.hiddenWindowIDs.contains(main) {
+                    self.pollingScheduler.schedule(after: 0.15, trigger: .focus)
+                } else {
+                    self.pollIfUnseenWindow(pid: pid, via: "axMain", after: 0.15)
+                }
                 self.scheduleRestackRefresh(after: 0.05)
             }
         }
