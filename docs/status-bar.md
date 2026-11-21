@@ -78,7 +78,11 @@ comes back with the next write after tiling resumes.
 - `focusedWorkspace` is the workspace of the focused window. With no focused
   window (an empty workspace was just switched to), it is the one showing on
   the monitor under the cursor. The Compact menu bar badge shows the same
-  workspace (`StatusSnapshot.focusedScreenIndex`).
+  workspace (`StatusSnapshot.focusedScreenIndex`), except after a workspace
+  switch: then it shows the switched-to workspace until focus moves to
+  another window or the pointer moves to another monitor
+  (`MenuBarPresentation.compactWorkspace`). This only changes the badge;
+  `state.json` is unchanged.
 - Window titles are never written. Monitors are named as macOS names them, so
   two monitors of one model share a name.
 - Keys are written sorted. A reader should ignore keys it does not know.

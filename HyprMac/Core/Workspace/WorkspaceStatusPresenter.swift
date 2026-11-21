@@ -13,6 +13,9 @@ final class WorkspaceStatusPresenter {
     private let scratchpad: ScratchpadController
     private let focusController: FocusStateController
     var maximizedFloaterIDs: () -> Set<CGWindowID> = { [] }
+    /// The compact badge shows this until focus moves or the pointer leaves
+    /// its monitor; an empty workspace switch records no focus. Main thread.
+    var lastSwitchedWorkspace: Int?
 
     init(config: UserConfig,
          accessibility: AccessibilityManager,
@@ -102,15 +105,17 @@ final class WorkspaceStatusPresenter {
                     })
             }
         let cursorID = workspaceManager.screenID(for: displayManager.screenUnderCursor())
-        let compactSymbol = StatusSnapshot.focusedScreenIndex(
-            visibleWorkspaces: monitors.map(\.currentWorkspace),
+        let visible = monitors.map(\.currentWorkspace)
+        let focusedIndex = StatusSnapshot.focusedScreenIndex(
+            visibleWorkspaces: visible,
             assigned: workspaceManager.regularWorkspaceWindowIDs(),
             hidden: stateCache.hiddenWindowIDs,
             focusedWindowID: focusController.lastFocusedID,
-            cursorScreenIndex: enabledScreens.firstIndex { workspaceManager.screenID(for: $0) == cursorID }
-        ).map { index -> String in
-            let workspace = monitors[index].currentWorkspace
-            return MenuBarPresentation.compactSymbolName(
+            cursorScreenIndex: enabledScreens.firstIndex { workspaceManager.screenID(for: $0) == cursorID })
+        let compactSymbol = MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: visible, focusedIndex: focusedIndex, switchedTo: lastSwitchedWorkspace
+        ).map { workspace -> String in
+            MenuBarPresentation.compactSymbolName(
                 workspace: workspace,
                 floating: floating.contains(workspace),
                 maximized: maximized.contains(workspace))

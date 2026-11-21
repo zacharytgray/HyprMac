@@ -290,7 +290,9 @@ class WindowManager {
         }
         self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
         self.workspaceOrchestrator.onFloatersRevealed = { [weak self] windows in self?.markRevealedFloaters(windows) }
-        self.workspaceOrchestrator.onDidSwitch = { [weak self] _, _ in
+        self.workspaceOrchestrator.onDidSwitch = { [weak self] workspace, _ in
+            // the switch's recordFocus already ran, so this sticks
+            self?.statusPresenter.lastSwitchedWorkspace = workspace
             self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()
         }
@@ -684,6 +686,7 @@ class WindowManager {
             self?.statusExporter.noteChange()
             self?.endMaximizeIfFocusLeft()
             // the compact badge shows the focused window's workspace
+            self?.statusPresenter.lastSwitchedWorkspace = nil
             self?.statusPresenter.updateMenuBarState()
         }
         tilingEngine.onMaximizeChanged = { [weak self] workspace, screen, isOn in
@@ -1316,16 +1319,21 @@ class WindowManager {
     }
 
     /// The compact badge falls back to the cursor's screen, so a move to
-    /// another screen redraws it. Throttled; nothing with one screen or
-    /// another style.
+    /// another screen redraws it. Throttled; nothing with one screen. A
+    /// screen change also ends a switch's hold on the badge, in any style.
     private func noteCursorScreen() {
         guard displayManager.screens.count > 1, cursorScreenWatch.noteMove() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + CursorScreenWatch.delay) { [weak self] in
             guard let self else { return }
-            let screen = self.workspaceManager.screenID(for: self.displayManager.screenUnderCursor())
+            let cursorScreen = self.displayManager.screenUnderCursor()
+            let screen = self.workspaceManager.screenID(for: cursorScreen)
+            guard self.cursorScreenWatch.check(screen: screen) else { return }
+            // the switch's own warp lands on the switched-to screen, so that one doesn't count
+            if self.workspaceManager.workspaceForScreen(cursorScreen) != self.statusPresenter.lastSwitchedWorkspace {
+                self.statusPresenter.lastSwitchedWorkspace = nil
+            }
             // the style is read here, not on every move
-            guard self.cursorScreenWatch.check(screen: screen), self.isRunning,
-                  MenuBarStyle.stored == .compact else { return }
+            guard self.isRunning, MenuBarStyle.stored == .compact else { return }
             self.statusPresenter.updateMenuBarState()
         }
     }
