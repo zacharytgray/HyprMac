@@ -120,6 +120,21 @@ enum HyprKey: String, Codable, CaseIterable, Identifiable {
         self == .capsLock
     }
 
+    /// Whether Hypr shortcuts (pause/resume, the keybind list, the
+    /// overview) still work while tiling is paused.
+    ///
+    /// Paused, the Hypr key goes back to macOS. Caps Lock loses its F18
+    /// remap, so it never reaches the event tap. Tab, backtick and
+    /// backslash type again, and reading them as Hypr too would resume
+    /// tiling in the middle of typing `\p`. The F keys and the modifier
+    /// keys do nothing on their own, so they keep working as Hypr.
+    var keepsShortcutsWhilePaused: Bool {
+        switch self {
+        case .capsLock, .tab, .grave, .backslash: return false
+        default: return true
+        }
+    }
+
     var nativeModifierFlag: CGEventFlags? {
         switch self {
         case .leftShift, .rightShift: return .maskShift

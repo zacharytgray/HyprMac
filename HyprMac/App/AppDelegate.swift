@@ -161,7 +161,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // hung Electron) parks our main thread that long per call.
         // yabai and AeroSpace both run at 1s.
         AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.0)
-        KeyRemapper.applyHyprKey(UserConfig.shared.hyprKey)
+        // a launch while paused removes the remap, which also clears one a
+        // killed copy left behind
+        KeyRemapper.applyHyprKey(UserConfig.shared.hyprKey, enabled: UserConfig.shared.enabled)
         startWindowManager()
     }
 

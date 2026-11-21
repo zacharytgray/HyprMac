@@ -21,6 +21,8 @@ struct HIDKeyMapping: Codable, Equatable {
 }
 
 /// Static helpers for applying and clearing the Caps Lock → F18 remap.
+/// The remap is in place only while Caps Lock is the Hypr key and HyprMac
+/// is active. Pausing removes it and resuming puts it back.
 ///
 /// Reads the current `UserKeyMapping` through the public IOKit event
 /// system client and writes the merged list with `hidutil property --set`.
@@ -36,20 +38,25 @@ class KeyRemapper {
     // a crash doesn't lose them
     static let heldDefaultsKey = "heldCapsLockKeyMappings"
 
-    /// Apply or restore the remap based on the configured Hypr key.
-    /// `hyprKey.usesCapsLockRemap` controls which path runs.
-    static func applyHyprKey(_ key: HyprKey) {
-        if key.usesCapsLockRemap {
-            remapCapsLockToF18()
-        } else {
-            restoreCapsLock()
-        }
+    /// Whether Caps Lock should be mapped to F18 right now: only while it
+    /// is the Hypr key and HyprMac is active. Paused, the key goes back to
+    /// macOS so Caps Lock works as Caps Lock (#94).
+    static func wantsRemap(_ key: HyprKey, enabled: Bool) -> Bool {
+        key.usesCapsLockRemap && enabled
     }
 
-    static func remapCapsLockToF18() {
-        // assumes Modifier Keys still has Caps Lock on "⇪ Caps Lock";
+    /// Install or remove the remap for the configured Hypr key and the
+    /// paused state. Called at launch, on pause and resume, and when the
+    /// Hypr key changes. The closures and the defaults are the test seam.
+    static func applyHyprKey(_ key: HyprKey, enabled: Bool,
+                             read: () -> Any? = KeyRemapper.readUserKeyMapping,
+                             write: ([HIDKeyMapping]) -> Bool = KeyRemapper.writeUserKeyMapping,
+                             defaults: UserDefaults = .standard,
+                             capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff) {
+        // install assumes Modifier Keys still has Caps Lock on "⇪ Caps Lock";
         // we can't read that, so the UI asks the user instead
-        update(.install)
+        update(wantsRemap(key, enabled: enabled) ? .install : .remove,
+               read: read, write: write, defaults: defaults, capsLockOff: capsLockOff)
     }
 
     static func restoreCapsLock() {
@@ -65,11 +72,12 @@ class KeyRemapper {
     /// the entry is missing.
     /// - Returns: whether the mapping was written.
     @discardableResult
-    static func reassertHyprKey(_ key: HyprKey,
+    static func reassertHyprKey(_ key: HyprKey, enabled: Bool,
                                 read: () -> Any? = KeyRemapper.readUserKeyMapping,
                                 write: ([HIDKeyMapping]) -> Bool = KeyRemapper.writeUserKeyMapping,
-                                defaults: UserDefaults = .standard) -> Bool {
-        guard key.usesCapsLockRemap else { return false }
+                                defaults: UserDefaults = .standard,
+                                capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff) -> Bool {
+        guard wantsRemap(key, enabled: enabled) else { return false }
         let raw = read()
         guard let present = KeyMappingMerge.hasOurs(raw) else {
             hyprLog(.error, .lifecycle, "UserKeyMapping check: the list has an entry HyprMac can't read, so it was left unchanged")
@@ -77,7 +85,7 @@ class KeyRemapper {
         }
         guard !present else { return false }
         hyprLog(.notice, .lifecycle, "Caps Lock → F18 mapping is gone (another HyprMac quit, or the list was reset) — putting it back")
-        update(.install, read: { raw }, write: write, defaults: defaults)
+        update(.install, read: { raw }, write: write, defaults: defaults, capsLockOff: capsLockOff)
         return true
     }
 
@@ -86,7 +94,8 @@ class KeyRemapper {
     static func update(_ operation: KeyMappingMerge.Operation,
                        read: () -> Any? = KeyRemapper.readUserKeyMapping,
                        write: ([HIDKeyMapping]) -> Bool = KeyRemapper.writeUserKeyMapping,
-                       defaults: UserDefaults = .standard) {
+                       defaults: UserDefaults = .standard,
+                       capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff) {
         let raw = read()
         let held = loadHeld(from: defaults)
         guard let plan = KeyMappingMerge.plan(operation, read: raw, held: held) else {
@@ -107,6 +116,9 @@ class KeyRemapper {
                         "UserKeyMapping \(operation.rawValue): hidutil failed, the mapping is unchanged")
                 return
             }
+            // the key just stopped being Caps Lock, so it can't turn a lock
+            // off: one left on while paused or before launch would stay on
+            if operation == .install { capsLockOff() }
         }
         saveHeld(plan.held, to: defaults)
 
@@ -119,7 +131,7 @@ class KeyRemapper {
             hyprLog(.notice, .lifecycle,
                     "Caps Lock had a user mapping to \(hex(entry.dst)). HyprMac's Caps Lock → F18 "
                     + "replaces it while Caps Lock is the Hypr key. It comes back when HyprMac quits "
-                    + "or the Hypr key changes")
+                    + "or pauses, or the Hypr key changes")
         }
         for entry in plan.restored {
             hyprLog(.notice, .lifecycle, "put back the user's Caps Lock mapping to \(hex(entry.dst))")
@@ -169,6 +181,27 @@ class KeyRemapper {
             return false
         }
         return true
+    }
+
+    /// Turn the Caps Lock state off if it is on. Runs after the remap is
+    /// installed, when the key itself no longer can.
+    static func turnCapsLockOff() {
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(kIOHIDSystemClass))
+        guard service != 0 else { return }
+        defer { IOObjectRelease(service) }
+        var connect: io_connect_t = 0
+        guard IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType), &connect) == KERN_SUCCESS else {
+            hyprLog(.notice, .lifecycle, "could not open the HID system to check the Caps Lock state")
+            return
+        }
+        defer { IOServiceClose(connect) }
+        var isOn = false
+        guard IOHIDGetModifierLockState(connect, Int32(kIOHIDCapsLockState), &isOn) == KERN_SUCCESS, isOn else { return }
+        let result = IOHIDSetModifierLockState(connect, Int32(kIOHIDCapsLockState), false)
+        hyprLog(.notice, .lifecycle,
+                result == KERN_SUCCESS
+                    ? "Caps Lock was on when the remap went in — turned it off"
+                    : "Caps Lock is on and could not be turned off (\(result))")
     }
 
     static func loadHeld(from defaults: UserDefaults) -> [HIDKeyMapping] {

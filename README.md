@@ -259,7 +259,7 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 | `Hypr + J` | Toggle split direction |
 | `Hypr + S` / `Hypr + Shift + S` | Toggle scratchpad / send window to scratchpad |
 | `Hypr + W` | Close window |
-| `Hypr + P` | Pause or resume tiling |
+| `Hypr + P` | Pause tiling. While paused, Caps Lock is a normal Caps Lock again, so resume from the menu bar. With F13 to F20 or a modifier as the Hypr key, `Hypr + P` also resumes |
 | `Hypr + K` | Show the keybind overlay |
 | `Hypr + O` | Show workspace overview |
 | `Hypr + Ctrl + S` / `Hypr + Ctrl + R` | Save / restore the layout for this display setup |

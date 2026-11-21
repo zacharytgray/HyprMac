@@ -721,6 +721,8 @@ class WindowManager {
         coordinator.onEnabled = { [weak self] enabled in
             guard let self else { return }
             self.hotkeyManager.updateTilingEnabled(enabled)
+            // paused, Caps Lock goes back to being Caps Lock (#94)
+            KeyRemapper.applyHyprKey(self.config.hyprKey, enabled: enabled)
             if enabled && !self.isRunning {
                 hyprLog(.debug, .lifecycle, "config re-enabled, starting")
                 self.start()
@@ -734,7 +736,8 @@ class WindowManager {
             hyprLog(.debug, .lifecycle, "keybinds reloaded (\(binds.count) binds)")
         }
         coordinator.onHyprKey = { [weak self] key in
-            KeyRemapper.applyHyprKey(key)
+            // no remap for a key picked while paused; resume installs it
+            KeyRemapper.applyHyprKey(key, enabled: self?.config.enabled ?? true)
             self?.hotkeyManager.updateHyprKey(key)
         }
         coordinator.onLayoutGeometry = { [weak self] gap, padding in
@@ -3106,7 +3109,7 @@ class WindowManager {
         // plain Caps Lock until the next launch. asked when the user comes
         // back, not when the session goes away
         if Self.remapRecheckNotifications.contains(notification.name.rawValue) {
-            KeyRemapper.reassertHyprKey(UserConfig.shared.hyprKey)
+            KeyRemapper.reassertHyprKey(UserConfig.shared.hyprKey, enabled: UserConfig.shared.enabled)
         }
         // also clear stuck dock flag and menu-tracking flag — sleep dialogs
         // and screen lock can leave either stale.

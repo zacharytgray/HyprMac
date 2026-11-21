@@ -103,7 +103,7 @@ Gap/padding, split limits, monitor enablement, and scratchpad region size still 
 
 ## Pause shortcut
 
-**Caps + P** is the default pause/resume shortcut. The keyboard event tap stays alive while tiling is paused, including when the app starts paused. Layout and mouse tracking stop; pause/resume and keyboard help remain available. Repeated key-down events do not toggle tiling repeatedly. Existing custom bindings remain authoritative: if Caps + P is already occupied, the new action is not injected over it and can be assigned in Settings. The default-merge rules also apply to configuration reloads.
+**Caps + P** is the default pause shortcut. While paused, the Hypr key goes back to macOS: Caps Lock loses its F18 remap and toggles Caps Lock again, and Tab, backtick and backslash type again (#94). With one of those as the Hypr key the shortcut cannot resume; resume from the menu bar, Settings or a `hyprmac://action/toggleTiling` link. With F13 to F20 or a modifier key as the Hypr key, the event tap still watches the key while paused, including when the app starts paused, so pause/resume and keyboard help remain available. Layout and mouse tracking stop. Repeated key-down events do not toggle tiling repeatedly. Existing custom bindings remain authoritative: if Caps + P is already occupied, the new action is not injected over it and can be assigned in Settings. The default-merge rules also apply to configuration reloads.
 
 ## Control groups
 

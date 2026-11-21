@@ -165,6 +165,15 @@ final class HyprKeyPickerTests: XCTestCase {
         }
     }
 
+    // paused, a key that types or toggles goes back to macOS (#94); the
+    // rest have no other job and keep Hypr+P working
+    func testOnlyKeysWithNoOtherJobKeepShortcutsWhilePaused() {
+        let givenBack: Set<HyprKey> = [.capsLock, .tab, .grave, .backslash]
+        for key in HyprKey.allCases {
+            XCTAssertEqual(key.keepsShortcutsWhilePaused, !givenBack.contains(key), key.rawValue)
+        }
+    }
+
     // why the cases stay: an unknown value falls back to the default Hypr
     // key, so removing a case would quietly move its users to Caps Lock
     func testUnknownHyprKeyFallsBackToTheDefaultKey() throws {

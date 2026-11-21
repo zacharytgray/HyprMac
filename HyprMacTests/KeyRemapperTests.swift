@@ -56,20 +56,20 @@ final class KeyRemapperTests: XCTestCase {
         var written: [[HIDKeyMapping]] = []
         let present: Any = KeyMappingMerge.propertyList([KeyMappingMerge.ours])
 
-        XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, read: { present },
+        XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: { present },
                                                    write: { written.append($0); return true },
-                                                   defaults: defaults))
+                                                   defaults: defaults, capsLockOff: {}))
         XCTAssertTrue(written.isEmpty, "present: nothing to write")
 
-        XCTAssertTrue(KeyRemapper.reassertHyprKey(.capsLock, read: { nil },
+        XCTAssertTrue(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: { nil },
                                                   write: { written.append($0); return true },
-                                                  defaults: defaults))
+                                                  defaults: defaults, capsLockOff: {}))
         XCTAssertEqual(written, [[KeyMappingMerge.ours]], "gone: put back")
 
         written = []
-        XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, read: { [["bogus": 1]] },
+        XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: { [["bogus": 1]] },
                                                    write: { written.append($0); return true },
-                                                   defaults: defaults))
+                                                   defaults: defaults, capsLockOff: {}))
         XCTAssertTrue(written.isEmpty, "unreadable: untouched")
     }
 
@@ -77,8 +77,18 @@ final class KeyRemapperTests: XCTestCase {
         var written = 0
         let other = HyprKey.allCases.first { !$0.usesCapsLockRemap }
         guard let other else { return }
-        XCTAssertFalse(KeyRemapper.reassertHyprKey(other, read: { nil },
-                                                   write: { _ in written += 1; return true }))
+        XCTAssertFalse(KeyRemapper.reassertHyprKey(other, enabled: true, read: { nil },
+                                                   write: { _ in written += 1; return true },
+                                                   capsLockOff: {}))
+        XCTAssertEqual(written, 0)
+    }
+
+    /// paused, the remap is gone on purpose (#94); a wake must not put it back
+    func testReassertDoesNothingWhilePaused() {
+        var written = 0
+        XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, enabled: false, read: { nil },
+                                                   write: { _ in written += 1; return true },
+                                                   capsLockOff: {}))
         XCTAssertEqual(written, 0)
     }
 
@@ -288,6 +298,7 @@ final class KeyRemapperTests: XCTestCase {
         var current: Any?
         var writes: [[HIDKeyMapping]] = []
         var writeSucceeds = true
+        var capsLockOffCalls = 0
 
         func read() -> Any? { current }
 
@@ -300,7 +311,89 @@ final class KeyRemapperTests: XCTestCase {
     }
 
     private func update(_ op: KeyMappingMerge.Operation, _ hid: FakeHID) {
-        KeyRemapper.update(op, read: hid.read, write: hid.write, defaults: defaults)
+        KeyRemapper.update(op, read: hid.read, write: hid.write, defaults: defaults,
+                           capsLockOff: { hid.capsLockOffCalls += 1 })
+    }
+
+    private func apply(_ key: HyprKey, enabled: Bool, _ hid: FakeHID) {
+        KeyRemapper.applyHyprKey(key, enabled: enabled, read: hid.read, write: hid.write,
+                                 defaults: defaults, capsLockOff: { hid.capsLockOffCalls += 1 })
+    }
+
+    // MARK: - paused (#94)
+
+    func testOnlyAnActiveCapsLockHyprKeyWantsTheRemap() {
+        for key in HyprKey.allCases {
+            XCTAssertEqual(KeyRemapper.wantsRemap(key, enabled: true), key == .capsLock, key.rawValue)
+            XCTAssertFalse(KeyRemapper.wantsRemap(key, enabled: false), key.rawValue)
+        }
+    }
+
+    func testPausingRemovesTheRemapAndResumingPutsItBack() {
+        let hid = FakeHID()
+        hid.current = raw([f20])
+
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20, ours])
+
+        apply(.capsLock, enabled: false, hid)
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20], "paused: Caps Lock is Caps Lock again")
+
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20, ours])
+        XCTAssertEqual(hid.writes.count, 3)
+    }
+
+    func testPausingGivesBackTheUsersOwnCapsLockMapping() {
+        let hid = FakeHID()
+        hid.current = raw([f20, capsToEscape, f19])
+
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20, ours, f19])
+
+        apply(.capsLock, enabled: false, hid)
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20, capsToEscape, f19])
+        XCTAssertEqual(KeyRemapper.loadHeld(from: defaults), [])
+
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20, ours, f19])
+        XCTAssertEqual(KeyRemapper.loadHeld(from: defaults), [capsToEscape])
+    }
+
+    func testLaunchingPausedClearsARemapLeftByAKilledCopy() {
+        let hid = FakeHID()
+        hid.current = raw([f20, ours])
+        apply(.capsLock, enabled: false, hid)
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20])
+    }
+
+    func testAnotherHyprKeyNeverInstallsTheRemap() {
+        let hid = FakeHID()
+        hid.current = raw([f20])
+        apply(.f13, enabled: true, hid)
+        apply(.f13, enabled: false, hid)
+        apply(.rightCommand, enabled: true, hid)
+        XCTAssertEqual(hid.writes, [])
+        XCTAssertEqual(hid.capsLockOffCalls, 0)
+    }
+
+    /// with the remap in, the key can't turn a lock off any more, so one
+    /// left on while paused is turned off as the remap goes back
+    func testCapsLockIsTurnedOffOnlyWhenTheRemapIsWritten() {
+        let hid = FakeHID()
+
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(hid.capsLockOffCalls, 1, "installed")
+
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(hid.capsLockOffCalls, 1, "already current: the lock is left alone")
+
+        apply(.capsLock, enabled: false, hid)
+        XCTAssertEqual(hid.capsLockOffCalls, 1, "removed: the key is the user's again")
+
+        hid.writeSucceeds = false
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(hid.capsLockOffCalls, 1, "a failed write leaves Caps Lock working, so the lock stays")
     }
 
     func testUpdateWritesNothingWhenTheReadIsUnreadable() {

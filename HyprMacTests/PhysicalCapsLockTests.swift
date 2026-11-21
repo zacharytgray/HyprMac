@@ -292,4 +292,72 @@ final class HotkeyManagerPhysicalCapsLockTests: XCTestCase {
         XCTAssertTrue(physical.isActive)
         XCTAssertEqual(physical.startCount, 2)
     }
+
+    // MARK: paused (#94)
+
+    /// the event came back out of the tap instead of being swallowed
+    private func passes(_ type: CGEventType, _ code: UInt16, flags: CGEventFlags = []) -> Bool {
+        let event = key(code, down: type != .keyUp)
+        event.flags = flags
+        return manager.handleEvent(type, event) != nil
+    }
+
+    private func bindPause() {
+        manager.updateKeybinds([Keybind(keyCode: chordKey, modifiers: .hypr, action: .toggleTiling)])
+    }
+
+    func testPausedCapsLockHyprKeyIsNotHypr() {
+        bindPause()
+        manager.updateTilingEnabled(false)
+        // the remap is gone, so F18 here is a real F18 key
+        XCTAssertTrue(passes(.keyDown, HyprKey.capsLock.keyCode))
+        XCTAssertFalse(chordFires(), "nothing may resume tiling behind a plain key")
+        XCTAssertTrue(passes(.keyUp, HyprKey.capsLock.keyCode))
+    }
+
+    func testPausingMidPressDropsTheHeldHypr() {
+        bindPause()
+        hypr(down: true)
+        // Caps+P paused tiling; the remap goes away and the F18 release never comes
+        manager.updateTilingEnabled(false)
+        XCTAssertFalse(chordFires(), "a stuck Hypr would turn a typed key into a resume")
+    }
+
+    func testPausedTypingHyprKeyTypesAgain() {
+        bindPause()
+        for typing in [HyprKey.backslash, .tab, .grave] {
+            manager.updateHyprKey(typing)
+            manager.updateTilingEnabled(true)
+            XCTAssertFalse(passes(.keyDown, typing.keyCode), "\(typing.rawValue) is swallowed while tiling is on")
+            XCTAssertFalse(passes(.keyUp, typing.keyCode))
+
+            manager.updateTilingEnabled(false)
+            XCTAssertTrue(passes(.keyDown, typing.keyCode), "\(typing.rawValue) types while paused")
+            XCTAssertFalse(chordFires(), "\(typing.rawValue) is not Hypr while paused")
+            XCTAssertTrue(passes(.keyUp, typing.keyCode))
+        }
+    }
+
+    func testPausedModifierHyprKeyPassesThroughAndStillResumes() {
+        bindPause()
+        manager.updateHyprKey(.rightCommand)
+        let command = UInt16(kVK_RightCommand)
+
+        XCTAssertFalse(passes(.flagsChanged, command), "swallowed while tiling is on")
+        XCTAssertFalse(passes(.flagsChanged, command))
+
+        manager.updateTilingEnabled(false)
+        XCTAssertTrue(passes(.flagsChanged, command), "paused: macOS gets the key back")
+        XCTAssertFalse(passes(.keyDown, chordKey, flags: .maskCommand), "Hypr+P still resumes")
+        XCTAssertTrue(passes(.flagsChanged, command))
+        XCTAssertTrue(passes(.keyDown, chordKey), "released: a plain key again")
+    }
+
+    func testResumingMakesTheHyprKeyHyprAgain() {
+        manager.updateTilingEnabled(false)
+        manager.updateTilingEnabled(true)
+        hypr(down: true)
+        XCTAssertTrue(chordFires())
+        hypr(down: false)
+    }
 }

@@ -94,9 +94,17 @@ class HotkeyManager {
         }
     }
 
+    /// Paused, the Hypr key is no longer swallowed (see `handleEvent`).
+    /// A key that stops being Hypr while paused also drops a press in
+    /// progress: its release may never arrive (Caps Lock's remap is being
+    /// removed), and a stuck Hypr would turn a typed P into a resume.
     func updateTilingEnabled(_ enabled: Bool) {
         stateLock.lock()
         tilingEnabled = enabled
+        if !enabled, !hyprKey.keepsShortcutsWhilePaused {
+            setHyprKeyDown(false)
+            ignoredHyprRelease = false
+        }
         stateLock.unlock()
     }
 
@@ -388,6 +396,9 @@ class HotkeyManager {
 
         // track the configured physical key as our logical Hypr modifier
         if keyCode == hyprKey.keyCode {
+            // paused: the key belongs to macOS again (#94). one that types
+            // is not Hypr at all until tiling resumes
+            if !tilingEnabled, !hyprKey.keepsShortcutsWhilePaused { return event }
             if type == .keyDown {
                 setHyprKeyDown(true)
             } else if type == .keyUp {
@@ -405,7 +416,9 @@ class HotkeyManager {
             } else if type == .flagsChanged, hyprKey.isNativeModifier {
                 setHyprKeyDown(pressedModifierKeyCodes.contains(keyCode))
             }
-            return nil // always swallow the Hypr key — it's our internal modifier
+            // swallowed while tiling is on: it's our internal modifier.
+            // paused it passes through and is only watched, so Hypr+P can resume
+            return tilingEnabled ? nil : event
         }
 
         // sanity check on every non-Hypr keyDown: if we think Hypr is held

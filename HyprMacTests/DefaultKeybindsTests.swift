@@ -354,9 +354,13 @@ final class DefaultKeybindsTests: XCTestCase {
         XCTAssertFalse(Keybind.defaults.contains { if case .runCommand = $0.action { return true }; return false })
     }
 
+    // a Hypr key with no other job keeps pause and help while paused.
+    // Caps Lock and the typing keys don't (#94); see the paused tests in
+    // PhysicalCapsLockTests
     func testPausedEventPathPassesOrdinaryChordAndDispatchesPauseAndHelp() {
         let manager = HotkeyManager()
         manager.updateKeybinds(Keybind.defaults)
+        manager.updateHyprKey(.rightCommand)
         manager.updateTilingEnabled(false)
         let dispatched = expectation(description: "pause and help dispatched")
         dispatched.expectedFulfillmentCount = 2
@@ -366,29 +370,24 @@ final class DefaultKeybindsTests: XCTestCase {
             dispatched.fulfill()
         }
 
+        func chord(_ code: Int, isRepeat: Bool = false) -> CGEvent {
+            let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: true)!
+            event.flags = .maskCommand
+            if isRepeat { event.setIntegerValueField(.keyboardEventAutorepeat, value: 1) }
+            return event
+        }
+
         let hyprDown = CGEvent(
             keyboardEventSource: nil,
-            virtualKey: CGKeyCode(HyprKey.capsLock.keyCode),
+            virtualKey: CGKeyCode(HyprKey.rightCommand.keyCode),
             keyDown: true)!
-        XCTAssertNil(manager.handleEvent(.keyDown, hyprDown))
+        XCTAssertNotNil(manager.handleEvent(.flagsChanged, hyprDown), "paused: macOS sees the key too")
 
-        let pause = CGEvent(
-            keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_P), keyDown: true)!
-        XCTAssertNil(manager.handleEvent(.keyDown, pause))
-        let pauseRepeat = CGEvent(
-            keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_P), keyDown: true)!
-        pauseRepeat.setIntegerValueField(.keyboardEventAutorepeat, value: 1)
-        XCTAssertNil(manager.handleEvent(.keyDown, pauseRepeat))
-
-        let help = CGEvent(
-            keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_K), keyDown: true)!
-        XCTAssertNil(manager.handleEvent(.keyDown, help))
-        let close = CGEvent(
-            keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_W), keyDown: true)!
-        XCTAssertNotNil(manager.handleEvent(.keyDown, close))
-        let emptyWorkspace = CGEvent(
-            keyboardEventSource: nil, virtualKey: CGKeyCode(kVK_ANSI_F), keyDown: true)!
-        XCTAssertNotNil(manager.handleEvent(.keyDown, emptyWorkspace))
+        XCTAssertNil(manager.handleEvent(.keyDown, chord(kVK_ANSI_P)))
+        XCTAssertNil(manager.handleEvent(.keyDown, chord(kVK_ANSI_P, isRepeat: true)))
+        XCTAssertNil(manager.handleEvent(.keyDown, chord(kVK_ANSI_K)))
+        XCTAssertNotNil(manager.handleEvent(.keyDown, chord(kVK_ANSI_W)))
+        XCTAssertNotNil(manager.handleEvent(.keyDown, chord(kVK_ANSI_F)))
 
         wait(for: [dispatched], timeout: 1)
         XCTAssertEqual(actions, [.toggleTiling, .showKeybinds])
