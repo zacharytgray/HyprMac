@@ -10,6 +10,8 @@ struct GeneralSettingsView: View {
     let showTutorial: () -> Void
     @ObservedObject var config = UserConfig.shared
     @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
+    @AppStorage(UserConfig.menuBarIndicatorStyleKey)
+    private var menuBarIndicatorStyle: MenuBarIndicatorStyle = .allWorkspaces
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
     @StateObject private var loginItem = LoginItemController()
     @State private var showingWorkspaceNames = false
@@ -298,6 +300,18 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
             }
             .disabled(!showMenuBarIcon)
+
+            HyprRow("Menu bar indicator shows", icon: "number.square",
+                    subtitle: "Current shows only the workspace on screen: its name, else its number.") {
+                Picker("", selection: $menuBarIndicatorStyle) {
+                    ForEach(MenuBarIndicatorStyle.allCases) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
+            }
+            .disabled(!showMenuBarIcon || !config.showMenuBarIndicator)
 
             HyprRow("Allow other apps to control HyprMac", icon: "link",
                     subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.") {

@@ -134,6 +134,33 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertEqual(MenuBarUpdateDot.glyph, "•")
     }
 
+    func testCurrentStyleShowsOnlyTheWorkspaceOnScreen() {
+        let monitors = [monitor(0, "Studio Display", workspace: 3)]
+        XCTAssertEqual(MenuBarPresentation.indicatorText(
+            style: .currentWorkspace, glyphs: "· · ■ □",
+            monitors: monitors, names: [:]), "3")
+        XCTAssertEqual(MenuBarPresentation.indicatorText(
+            style: .allWorkspaces, glyphs: "· · ■ □",
+            monitors: monitors, names: [:]), "· · ■ □")
+    }
+
+    func testCurrentStyleUsesTheSetNameAndEveryMonitorLeftToRight() {
+        let monitors = [
+            monitor(0, "Built-in Display", workspace: 10),
+            monitor(1, "Studio Display", workspace: 2)
+        ]
+        XCTAssertEqual(MenuBarPresentation.currentWorkspaceLabel(monitors, names: [:]), "10 2")
+        XCTAssertEqual(MenuBarPresentation.currentWorkspaceLabel(
+            monitors, names: ["2": "W", "10": "  "]), "10 W")
+        XCTAssertEqual(MenuBarPresentation.currentWorkspaceLabel([], names: [:]), "")
+    }
+
+    func testTheIndicatorStyleRawValuesAreStable() {
+        XCTAssertEqual(MenuBarIndicatorStyle.allWorkspaces.rawValue, "allWorkspaces")
+        XCTAssertEqual(MenuBarIndicatorStyle.currentWorkspace.rawValue, "currentWorkspace")
+        XCTAssertEqual(UserConfig.menuBarIndicatorStyleKey, "menuBarIndicatorStyle")
+    }
+
     private func monitor(_ id: Int, _ name: String, workspace: Int,
                          portrait: Bool = false) -> MenuBarMonitorSnapshot {
         MenuBarMonitorSnapshot(id: id, name: name, currentWorkspace: workspace,

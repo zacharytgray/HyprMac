@@ -368,6 +368,43 @@ enum MenuBarPresentation {
                                labelText: String, scratchpadCount: Int) -> Bool {
         indicatorEnabled && hasData && (!labelText.isEmpty || scratchpadCount > 0)
     }
+
+    /// The workspace each enabled monitor shows, left to right: its set
+    /// name, else its number.
+    static func currentWorkspaceLabel(_ monitors: [MenuBarMonitorSnapshot],
+                                      names: [String: String]) -> String {
+        monitors.map {
+            UserConfig.workspaceDisplayName($0.currentWorkspace, names: names,
+                                            fallback: String($0.currentWorkspace))
+        }.joined(separator: " ")
+    }
+
+    /// The text the menu bar item shows for the chosen style.
+    static func indicatorText(style: MenuBarIndicatorStyle, glyphs: String,
+                              monitors: [MenuBarMonitorSnapshot],
+                              names: [String: String]) -> String {
+        switch style {
+        case .allWorkspaces: return glyphs
+        case .currentWorkspace: return currentWorkspaceLabel(monitors, names: names)
+        }
+    }
+}
+
+/// What the menu bar item shows when the workspace indicator is on.
+enum MenuBarIndicatorStyle: String, CaseIterable, Identifiable {
+    /// one glyph per workspace: shown, waiting, empty
+    case allWorkspaces
+    /// only the number (or set name) of the workspace on screen
+    case currentWorkspace
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .allWorkspaces: return "All"
+        case .currentWorkspace: return "Current"
+        }
+    }
 }
 
 // Compact workspace glyphs remain visible while tiling is paused.
@@ -375,8 +412,16 @@ struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared
     @Environment(\.openWindow) private var openWindow
+    @AppStorage(UserConfig.menuBarIndicatorStyleKey)
+    private var style: MenuBarIndicatorStyle = .allWorkspaces
 
     @ObservedObject private var updateState = UpdateState.shared
+
+    private var labelText: String {
+        MenuBarPresentation.indicatorText(style: style, glyphs: state.labelText,
+                                          monitors: state.monitors,
+                                          names: config.workspaceNames)
+    }
 
     var body: some View {
         HStack(spacing: 4) {
@@ -393,13 +438,13 @@ struct WorkspaceIndicatorLabel: View {
         if MenuBarPresentation.showsIndicator(
             indicatorEnabled: config.showMenuBarIndicator,
             hasData: state.hasData,
-            labelText: state.labelText,
+            labelText: labelText,
             scratchpadCount: state.scratchpadCount) {
             HStack(spacing: 5) {
                 if state.isFullscreen {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
-                } else if !state.labelText.isEmpty {
-                    Text(state.labelText)
+                } else if !labelText.isEmpty {
+                    Text(labelText)
                         .font(.system(size: 12, weight: .regular))
                 }
                 if state.scratchpadCount > 0 {
