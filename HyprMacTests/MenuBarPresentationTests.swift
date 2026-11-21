@@ -96,34 +96,24 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertNil(MenuBarPresentation.compactImage(symbol: "not.a.real.symbol"))
     }
 
-    func testCompactWorkspaceSwitchWinsWhileShowing() {
-        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: [1, 6], focusedIndex: 0, switchedTo: 6), 6)
+    func testSwitchedToWinsWhileShowing() {
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 1, switchedTo: 4), 0)
     }
 
-    func testCompactWorkspaceIgnoresSwitchNoLongerShowing() {
-        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: [1, 6], focusedIndex: 1, switchedTo: 3), 6)
+    func testSwitchedToNoLongerShowingIsIgnored() {
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 0, switchedTo: 7), 1)
+        XCTAssertNil(focusedScreen(focused: 0, cursor: nil, visible: [], switchedTo: 3))
     }
 
-    func testCompactWorkspaceFallsBackToFocusedIndex() {
-        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: [1, 6], focusedIndex: 0, switchedTo: nil), 1)
-    }
-
-    func testCompactWorkspaceOutOfRangeIndexIsNil() {
-        XCTAssertNil(MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: [1, 6], focusedIndex: 2, switchedTo: nil))
-        XCTAssertNil(MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: [], focusedIndex: nil, switchedTo: 3))
+    func testNoSwitchedToKeepsTheFocusRule() {
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 0, switchedTo: nil), 1)
+        XCTAssertEqual(focusedScreen(focused: 0, cursor: 1, switchedTo: nil), 1)
     }
 
     // the live log: monitor A switched to empty 3, focus still on a window on 2
-    func testCompactWorkspaceEmptySwitchBeatsFocusOnOtherMonitor() {
-        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: [3, 2], focusedIndex: 1, switchedTo: 3), 3)
-        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: [3, 2], focusedIndex: 1, switchedTo: nil), 2)
+    func testEmptySwitchBeatsFocusOnOtherMonitor() {
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 1, visible: [3, 2], switchedTo: 3), 0)
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 0, visible: [3, 2], switchedTo: nil), 1)
     }
 
     func testCompactSymbolShowsFloatingAndMaximizedStates() {
@@ -140,13 +130,14 @@ final class MenuBarPresentationTests: XCTestCase {
     // two screens: the left shows 4 (windows 11, 12), the right shows 2
     // (window 20). 7 is hidden and holds 70.
     private func focusedScreen(focused: CGWindowID, cursor: Int?,
-                               visible: [Int] = [4, 2]) -> Int? {
+                               visible: [Int] = [4, 2], switchedTo: Int? = nil) -> Int? {
         StatusSnapshot.focusedScreenIndex(
             visibleWorkspaces: visible,
             assigned: [4: [11, 12], 2: [20], 7: [70]],
             hidden: [],
             focusedWindowID: focused,
-            cursorScreenIndex: cursor)
+            cursorScreenIndex: cursor,
+            switchedTo: switchedTo)
     }
 
     func testFocusedWindowOnAShowingWorkspaceWins() {

@@ -404,13 +404,6 @@ enum MenuBarPresentation {
         "\(workspace).\(floating ? "circle" : "square")\(maximized ? ".fill" : "")"
     }
 
-    // a switch wins while that workspace is still showing, else the focused screen's
-    static func compactWorkspace(visibleWorkspaces: [Int], focusedIndex: Int?, switchedTo: Int?) -> Int? {
-        if let switchedTo, visibleWorkspaces.contains(switchedTo) { return switchedTo }
-        guard let focusedIndex, visibleWorkspaces.indices.contains(focusedIndex) else { return nil }
-        return visibleWorkspaces[focusedIndex]
-    }
-
     // 17 pt medium is about the size of the icons next to it
     static let compactPointSize: CGFloat = 17
     // square is 20x18 and circle 20x20 at that size, so draw both into one box

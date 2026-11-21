@@ -683,10 +683,10 @@ class WindowManager {
         statusExporter.hookCommand = { [weak self] in self?.config.statusHookCommand }
         statusExporter.snapshot = { [weak self] in self?.statusPresenter.statusSnapshot() }
         focusController.onChange = { [weak self] in
+            // the badge and state.json show the focused window's workspace again
+            self?.statusPresenter.lastSwitchedWorkspace = nil
             self?.statusExporter.noteChange()
             self?.endMaximizeIfFocusLeft()
-            // the compact badge shows the focused window's workspace
-            self?.statusPresenter.lastSwitchedWorkspace = nil
             self?.statusPresenter.updateMenuBarState()
         }
         tilingEngine.onMaximizeChanged = { [weak self] workspace, screen, isOn in
@@ -1318,9 +1318,10 @@ class WindowManager {
         }
     }
 
-    /// The compact badge falls back to the cursor's screen, so a move to
-    /// another screen redraws it. Throttled; nothing with one screen. A
-    /// screen change also ends a switch's hold on the badge, in any style.
+    /// The compact badge and state.json fall back to the cursor's screen,
+    /// so a move to another screen redraws the badge and notes an export
+    /// change. Throttled; nothing with one screen. A screen change also
+    /// ends a switch's hold, in any style.
     private func noteCursorScreen() {
         guard displayManager.screens.count > 1, cursorScreenWatch.noteMove() else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + CursorScreenWatch.delay) { [weak self] in
@@ -1332,6 +1333,8 @@ class WindowManager {
             if self.workspaceManager.workspaceForScreen(cursorScreen) != self.statusPresenter.lastSwitchedWorkspace {
                 self.statusPresenter.lastSwitchedWorkspace = nil
             }
+            // no-op with the export off
+            self.statusExporter.noteChange()
             // the style is read here, not on every move
             guard self.isRunning, MenuBarStyle.stored == .compact else { return }
             self.statusPresenter.updateMenuBarState()

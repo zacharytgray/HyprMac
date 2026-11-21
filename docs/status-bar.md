@@ -75,14 +75,13 @@ comes back with the next write after tiling resumes.
 - Windows are those on screen or parked on a hidden workspace. A window that
   closed while its app keeps running, a minimized window and a hidden app's
   windows are left out, as in the menu bar.
-- `focusedWorkspace` is the workspace of the focused window. With no focused
-  window (an empty workspace was just switched to), it is the one showing on
-  the monitor under the cursor. The Compact menu bar badge shows the same
-  workspace (`StatusSnapshot.focusedScreenIndex`), except after a workspace
-  switch: then it shows the switched-to workspace until focus moves to
-  another window or the pointer moves to another monitor
-  (`MenuBarPresentation.compactWorkspace`). This only changes the badge;
-  `state.json` is unchanged.
+- `focusedWorkspace` is the workspace just switched to, until focus moves to
+  another window or the pointer moves to another monitor. After that it is
+  the workspace of the focused window. With no focused window, it is the one
+  showing on the monitor under the pointer. While the switched-to workspace
+  does not hold the focused window (say an empty one), no window is marked
+  `focused`. The Compact menu bar badge uses the same rule
+  (`StatusSnapshot.focusedScreenIndex`).
 - Window titles are never written. Monitors are named as macOS names them, so
   two monitors of one model share a name.
 - Keys are written sorted. A reader should ignore keys it does not know.
@@ -113,7 +112,8 @@ Opened with `open -g` so the bar keeps focus. Each takes a whole number
 - `hyprmac://workspace?n=4` switches to workspace 4, as Hypr+4 does.
 - `hyprmac://focus?workspace=4` switches to workspace 4 and focuses a window
   there. Opened again while a window of workspace 4 has focus, it focuses the
-  next window of that workspace, wrapping.
+  next window of that workspace, wrapping. Right after a switch to another
+  workspace, it does an ordinary switch instead.
 
 Both also run with "Allow other apps to control HyprMac" on, which adds
 `hyprmac://action/…` links for every other action (`docs/external-control.md`).

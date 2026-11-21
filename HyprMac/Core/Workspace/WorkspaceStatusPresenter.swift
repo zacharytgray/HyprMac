@@ -13,8 +13,9 @@ final class WorkspaceStatusPresenter {
     private let scratchpad: ScratchpadController
     private let focusController: FocusStateController
     var maximizedFloaterIDs: () -> Set<CGWindowID> = { [] }
-    /// The compact badge shows this until focus moves or the pointer leaves
-    /// its monitor; an empty workspace switch records no focus. Main thread.
+    /// The compact badge and state.json treat this as focused until focus
+    /// moves or the pointer leaves its monitor; an empty workspace switch
+    /// records no focus. Main thread.
     var lastSwitchedWorkspace: Int?
 
     init(config: UserConfig,
@@ -111,10 +112,9 @@ final class WorkspaceStatusPresenter {
             assigned: workspaceManager.regularWorkspaceWindowIDs(),
             hidden: stateCache.hiddenWindowIDs,
             focusedWindowID: focusController.lastFocusedID,
-            cursorScreenIndex: enabledScreens.firstIndex { workspaceManager.screenID(for: $0) == cursorID })
-        let compactSymbol = MenuBarPresentation.compactWorkspace(
-            visibleWorkspaces: visible, focusedIndex: focusedIndex, switchedTo: lastSwitchedWorkspace
-        ).map { workspace -> String in
+            cursorScreenIndex: enabledScreens.firstIndex { workspaceManager.screenID(for: $0) == cursorID },
+            switchedTo: lastSwitchedWorkspace)
+        let compactSymbol = focusedIndex.map { visible[$0] }.map { workspace -> String in
             MenuBarPresentation.compactSymbolName(
                 workspace: workspace,
                 floating: floating.contains(workspace),
@@ -224,7 +224,8 @@ final class WorkspaceStatusPresenter {
             focusedWindowID: focusController.lastFocusedID,
             cursorScreen: screens.isEmpty ? nil : displayManager.screenUnderCursor().localizedName,
             apps: apps,
-            names: config.workspaceNames))
+            names: config.workspaceNames,
+            switchedTo: lastSwitchedWorkspace))
     }
 
     /// Log a snapshot of workspace, cache and tree state at `.notice`
