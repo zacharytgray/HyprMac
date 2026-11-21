@@ -403,6 +403,33 @@ enum MenuBarPresentation {
     static func compactSymbolName(workspace: Int, floating: Bool, maximized: Bool) -> String {
         "\(workspace).\(floating ? "circle" : "square")\(maximized ? ".fill" : "")"
     }
+
+    // a switch wins while that workspace is still showing, else the focused screen's
+    static func compactWorkspace(visibleWorkspaces: [Int], focusedIndex: Int?, switchedTo: Int?) -> Int? {
+        if let switchedTo, visibleWorkspaces.contains(switchedTo) { return switchedTo }
+        guard let focusedIndex, visibleWorkspaces.indices.contains(focusedIndex) else { return nil }
+        return visibleWorkspaces[focusedIndex]
+    }
+
+    // 17 pt medium is about the size of the icons next to it
+    static let compactPointSize: CGFloat = 17
+    // square is 20x18 and circle 20x20 at that size, so draw both into one box
+    static let compactCanvasSize = NSSize(width: 20, height: 20)
+
+    // swiftui sizing is ignored in a menu bar label, so size the image itself
+    static func compactImage(symbol: String) -> NSImage? {
+        let config = NSImage.SymbolConfiguration(pointSize: compactPointSize, weight: .medium)
+        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(config) else { return nil }
+        let canvas = NSImage(size: compactCanvasSize, flipped: false) { rect in
+            let origin = NSPoint(x: rect.midX - glyph.size.width / 2,
+                                 y: rect.midY - glyph.size.height / 2)
+            glyph.draw(in: NSRect(origin: origin, size: glyph.size))
+            return true
+        }
+        canvas.isTemplate = true
+        return canvas
+    }
 }
 
 // the label stays visible while tiling is paused
@@ -427,9 +454,14 @@ struct WorkspaceIndicatorLabel: View {
 
     @ViewBuilder private var content: some View {
         if style == .compact, state.hasData, let symbol = state.compactSymbol {
-            // the circle is 15 pt wide and the square 16, so pin it
-            Image(systemName: symbol).frame(width: 16)
-                .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
+            Group {
+                if let image = MenuBarPresentation.compactImage(symbol: symbol) {
+                    Image(nsImage: image)
+                } else {
+                    Image(systemName: symbol)
+                }
+            }
+            .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
         } else if style != .compact, MenuBarPresentation.showsIndicator(
             hasData: state.hasData,
             labelText: state.labelText,

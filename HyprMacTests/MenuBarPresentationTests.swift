@@ -86,6 +86,46 @@ final class MenuBarPresentationTests: XCTestCase {
             workspace: 10, floating: false, maximized: false), "10.square")
     }
 
+    // every badge is one 20x20 template image so the item never changes width
+    func testCompactImageIsOneFixedSizeTemplate() {
+        for symbol in ["3.square", "3.circle", "10.square.fill", "10.circle.fill"] {
+            let image = MenuBarPresentation.compactImage(symbol: symbol)
+            XCTAssertEqual(image?.size, NSSize(width: 20, height: 20), symbol)
+            XCTAssertEqual(image?.isTemplate, true, symbol)
+        }
+        XCTAssertNil(MenuBarPresentation.compactImage(symbol: "not.a.real.symbol"))
+    }
+
+    func testCompactWorkspaceSwitchWinsWhileShowing() {
+        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: [1, 6], focusedIndex: 0, switchedTo: 6), 6)
+    }
+
+    func testCompactWorkspaceIgnoresSwitchNoLongerShowing() {
+        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: [1, 6], focusedIndex: 1, switchedTo: 3), 6)
+    }
+
+    func testCompactWorkspaceFallsBackToFocusedIndex() {
+        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: [1, 6], focusedIndex: 0, switchedTo: nil), 1)
+    }
+
+    func testCompactWorkspaceOutOfRangeIndexIsNil() {
+        XCTAssertNil(MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: [1, 6], focusedIndex: 2, switchedTo: nil))
+        XCTAssertNil(MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: [], focusedIndex: nil, switchedTo: 3))
+    }
+
+    // the live log: monitor A switched to empty 3, focus still on a window on 2
+    func testCompactWorkspaceEmptySwitchBeatsFocusOnOtherMonitor() {
+        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: [3, 2], focusedIndex: 1, switchedTo: 3), 3)
+        XCTAssertEqual(MenuBarPresentation.compactWorkspace(
+            visibleWorkspaces: [3, 2], focusedIndex: 1, switchedTo: nil), 2)
+    }
+
     func testCompactSymbolShowsFloatingAndMaximizedStates() {
         XCTAssertEqual(MenuBarPresentation.compactSymbolName(
             workspace: 3, floating: false, maximized: false), "3.square")
