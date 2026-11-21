@@ -100,12 +100,19 @@ final class HotkeyManagerPhysicalCapsLockTests: XCTestCase {
     private var granted = true
     private var manager: HotkeyManager!
     private let chordKey = UInt16(kVK_ANSI_H)
+    // the double tap's clock and its Caps Lock toggle, both faked
+    private var clock: TimeInterval = 100
+    private var toggles = 0
 
     override func setUp() {
         super.setUp()
         physical = FakePhysicalCapsLock()
         granted = true
-        manager = HotkeyManager(physicalKeys: physical, hasKeyboardAccess: { [unowned self] in self.granted })
+        clock = 100
+        toggles = 0
+        manager = HotkeyManager(physicalKeys: physical, hasKeyboardAccess: { [unowned self] in self.granted },
+                                now: { [unowned self] in self.clock },
+                                toggleCapsLock: { [unowned self] in self.toggles += 1 })
         manager.updateKeybinds([Keybind(keyCode: chordKey, modifiers: .hypr, action: .toggleFloating)])
         manager.updateHyprKey(.capsLock)
     }
@@ -351,6 +358,130 @@ final class HotkeyManagerPhysicalCapsLockTests: XCTestCase {
         XCTAssertFalse(passes(.keyDown, chordKey, flags: .maskCommand), "Hypr+P still resumes")
         XCTAssertTrue(passes(.flagsChanged, command))
         XCTAssertTrue(passes(.keyDown, chordKey), "released: a plain key again")
+    }
+
+    // MARK: double tap toggles Caps Lock
+
+    /// one Hypr tap: down, held for `hold`, up, then `gap` before the next event
+    private func tap(_ hyprKey: HyprKey = .capsLock, hold: TimeInterval = 0.05, gap: TimeInterval = 0.1) {
+        hypr(hyprKey, down: true)
+        clock += hold
+        hypr(hyprKey, down: false)
+        clock += gap
+    }
+
+    func testDoubleTapTogglesCapsLockOnlyWhenTheSettingIsOn() {
+        tap(); tap()
+        XCTAssertEqual(toggles, 0, "off by default")
+
+        manager.updateDoubleTapCapsLock(true)
+        tap(); tap()
+        XCTAssertEqual(toggles, 1)
+    }
+
+    func testOneTapOrSlowTapsDoNotToggle() {
+        manager.updateDoubleTapCapsLock(true)
+        tap()
+        XCTAssertEqual(toggles, 0)
+        clock += 1
+        tap(gap: 0.31)
+        tap()
+        XCTAssertEqual(toggles, 0, "the second tap came too late; it starts a new pair")
+        tap()
+        XCTAssertEqual(toggles, 1)
+    }
+
+    func testAHoldIsNotATap() {
+        manager.updateDoubleTapCapsLock(true)
+        tap(hold: 0.4); tap()
+        XCTAssertEqual(toggles, 0)
+        clock += 1
+        tap(); tap(hold: 0.4)
+        XCTAssertEqual(toggles, 0)
+    }
+
+    func testFastChordsDoNotToggle() {
+        manager.updateDoubleTapCapsLock(true)
+        // Hypr+H twice in a row
+        for _ in 0..<2 {
+            hypr(down: true)
+            XCTAssertTrue(chordFires())
+            clock += 0.05
+            hypr(down: false)
+            clock += 0.05
+        }
+        // a tap, then a chord
+        tap()
+        hypr(down: true)
+        XCTAssertTrue(chordFires())
+        hypr(down: false)
+        XCTAssertEqual(toggles, 0)
+    }
+
+    func testAKeyBetweenTheTapsStartsOver() {
+        manager.updateDoubleTapCapsLock(true)
+        tap()
+        XCTAssertFalse(chordFires(), "a plain H")
+        tap()
+        XCTAssertEqual(toggles, 0)
+        tap()
+        XCTAssertEqual(toggles, 1, "the tap after the key was the first of a new pair")
+    }
+
+    func testFourTapsToggleTwice() {
+        manager.updateDoubleTapCapsLock(true)
+        tap(); tap(); tap(); tap()
+        XCTAssertEqual(toggles, 2)
+    }
+
+    func testAResetBetweenTheTapsStartsOver() {
+        manager.updateDoubleTapCapsLock(true)
+        tap()
+        hypr(down: true)
+        // a wake or a tap timeout drops the press; that is not a release
+        manager.resetTrackingAfterTapInterruption()
+        XCTAssertEqual(toggles, 0)
+        tap()
+        XCTAssertEqual(toggles, 0)
+    }
+
+    func testThePhysicalReleaseCountsOnce() {
+        manager.updateDoubleTapCapsLock(true)
+        startMonitor()
+        for _ in 0..<2 {
+            physical.isCapsLockDown = true
+            hypr(down: true)
+            clock += 0.05
+            // the keyboard's own release lands first, then the F18 keyUp
+            physical.release()
+            hypr(down: false)
+            clock += 0.05
+        }
+        XCTAssertEqual(toggles, 1)
+    }
+
+    func testDoubleTapWorksForAModifierHyprKey() {
+        manager.updateDoubleTapCapsLock(true)
+        manager.updateHyprKey(.rightCommand)
+        let command = UInt16(kVK_RightCommand)
+        for _ in 0..<4 {
+            XCTAssertNil(manager.handleEvent(.flagsChanged, key(command, down: true)))
+            clock += 0.05
+        }
+        XCTAssertEqual(toggles, 1)
+    }
+
+    func testDoubleTapDoesNothingWhilePaused() {
+        manager.updateDoubleTapCapsLock(true)
+        // right command still runs Hypr shortcuts while paused, but not this
+        manager.updateHyprKey(.rightCommand)
+        manager.updateTilingEnabled(false)
+        let command = UInt16(kVK_RightCommand)
+        for _ in 0..<4 {
+            _ = manager.handleEvent(.flagsChanged, key(command, down: true))
+            clock += 0.05
+        }
+        XCTAssertEqual(toggles, 0)
     }
 
     func testResumingMakesTheHyprKeyHyprAgain() {

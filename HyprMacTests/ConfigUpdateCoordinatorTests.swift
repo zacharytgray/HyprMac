@@ -66,6 +66,34 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
             scratchpadTileByDefault: true, scratchpadRegionInset: 0.06)
     }
 
+    func testDoubleTapCapsLockSettingReachesItsOwnCallbackOnly() {
+        func state(_ on: Bool) -> RuntimeConfigState {
+            RuntimeConfigState(
+                enabled: true, keybinds: [], hyprKey: .capsLock, gapSize: 8, outerPadding: 8,
+                maxSplitsPerMonitor: [:], disabledMonitors: [], showFocusBorder: false,
+                focusBorderColorHex: nil, floatingBorderColorHex: nil,
+                focusBracketStyle: .rounded, focusBracketColorHex: nil,
+                focusBracketRadius: 10, focusBracketThickness: 2,
+                dimInactiveWindows: false, dimIntensity: 0.2, chromeFadeDurationSec: 0.2,
+                windowCornerRadius: 10, scratchpadTileByDefault: true, scratchpadRegionInset: 0.06,
+                doubleTapHyprTogglesCapsLock: on)
+        }
+        let coordinator = ConfigUpdateCoordinator(initial: state(false))
+        var seen: [Bool] = []
+        var others = 0
+        coordinator.onDoubleTapCapsLock = { seen.append($0) }
+        coordinator.onEnabled = { _ in others += 1 }
+        coordinator.onHyprKey = { _ in others += 1 }
+        coordinator.onChrome = { _, _ in others += 1 }
+
+        coordinator.receive(state(true))
+        coordinator.receive(state(true))
+        coordinator.receive(state(false))
+
+        XCTAssertEqual(seen, [true, false])
+        XCTAssertEqual(others, 0)
+    }
+
     func testUnchangedReloadHasNoRuntimeEffects() {
         let original = state()
         let coordinator = ConfigUpdateCoordinator(initial: original)

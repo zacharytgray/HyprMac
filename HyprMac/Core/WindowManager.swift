@@ -679,6 +679,7 @@ class WindowManager {
         hotkeyManager.updateKeybinds(config.keybinds)
         hotkeyManager.start()
         hotkeyManager.updateTilingEnabled(config.enabled)
+        hotkeyManager.updateDoubleTapCapsLock(config.doubleTapHyprTogglesCapsLock)
     }
 
     private func configureStatusExport() {
@@ -780,6 +781,9 @@ class WindowManager {
         }
         coordinator.onScratchpadEntryMode = { [weak self] on in
             self?.scratchpad.tileNewMembers = on
+        }
+        coordinator.onDoubleTapCapsLock = { [weak self] on in
+            self?.hotkeyManager.updateDoubleTapCapsLock(on)
         }
 
         coordinator.observe(config)

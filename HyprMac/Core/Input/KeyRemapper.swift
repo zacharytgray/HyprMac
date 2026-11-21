@@ -186,22 +186,40 @@ class KeyRemapper {
     /// Turn the Caps Lock state off if it is on. Runs after the remap is
     /// installed, when the key itself no longer can.
     static func turnCapsLockOff() {
+        changeCapsLock { isOn in
+            guard isOn else { return nil }
+            hyprLog(.notice, .lifecycle, "Caps Lock was on when the remap went in — turning it off")
+            return false
+        }
+    }
+
+    /// Flip the Caps Lock state, LED included. For the double tap of the
+    /// Hypr key, which is the only way to reach Caps Lock while the key
+    /// itself is remapped.
+    static func toggleCapsLock() {
+        changeCapsLock { !$0 }
+    }
+
+    /// Read the Caps Lock state and set the one `next` returns; nil leaves it.
+    private static func changeCapsLock(_ next: (Bool) -> Bool?) {
         let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching(kIOHIDSystemClass))
         guard service != 0 else { return }
         defer { IOObjectRelease(service) }
         var connect: io_connect_t = 0
         guard IOServiceOpen(service, mach_task_self_, UInt32(kIOHIDParamConnectType), &connect) == KERN_SUCCESS else {
-            hyprLog(.notice, .lifecycle, "could not open the HID system to check the Caps Lock state")
+            hyprLog(.notice, .lifecycle, "could not open the HID system to change the Caps Lock state")
             return
         }
         defer { IOServiceClose(connect) }
         var isOn = false
-        guard IOHIDGetModifierLockState(connect, Int32(kIOHIDCapsLockState), &isOn) == KERN_SUCCESS, isOn else { return }
-        let result = IOHIDSetModifierLockState(connect, Int32(kIOHIDCapsLockState), false)
-        hyprLog(.notice, .lifecycle,
-                result == KERN_SUCCESS
-                    ? "Caps Lock was on when the remap went in — turned it off"
-                    : "Caps Lock is on and could not be turned off (\(result))")
+        guard IOHIDGetModifierLockState(connect, Int32(kIOHIDCapsLockState), &isOn) == KERN_SUCCESS,
+              let wanted = next(isOn) else { return }
+        let result = IOHIDSetModifierLockState(connect, Int32(kIOHIDCapsLockState), wanted)
+        if result == KERN_SUCCESS {
+            hyprLog(.notice, .lifecycle, "Caps Lock turned \(wanted ? "on" : "off")")
+        } else {
+            hyprLog(.error, .lifecycle, "Caps Lock could not be turned \(wanted ? "on" : "off") (\(result))")
+        }
     }
 
     static func loadHeld(from defaults: UserDefaults) -> [HIDKeyMapping] {

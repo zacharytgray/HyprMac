@@ -293,6 +293,34 @@ struct KeybindsSettingsView: View {
             .padding(.horizontal, HyprSpacing.lg)
             .padding(.vertical, HyprSpacing.md)
 
+            HStack(alignment: .center, spacing: HyprSpacing.md) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Double-tap Hypr to toggle Caps Lock")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.hyprTextPrimary)
+                    Text(HyprKey.doubleTapCapsLockNote)
+                        .font(.hyprCaption)
+                        .foregroundStyle(Color.hyprTextSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // the toggle style carries its own spacer; fixedSize keeps
+                // it from taking half the row
+                Toggle("", isOn: $config.doubleTapHyprTogglesCapsLock)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+                    .fixedSize()
+            }
+            .padding(.horizontal, HyprSpacing.lg)
+            .padding(.vertical, HyprSpacing.md)
+            // an overlay, not a row of its own: a second half-point line in
+            // the stack rounds the next divider away
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(Color.hyprCyan.opacity(0.18))
+                    .frame(height: 0.5)
+            }
+
             if let note = config.hyprKey.notRecommendedNote {
                 Rectangle()
                     .fill(Color.hyprCyan.opacity(0.18))

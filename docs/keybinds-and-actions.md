@@ -549,6 +549,33 @@ every dropped value, and the fallback for an unknown one. Modifier Keys guidance
 (`HyprKeySystemGuidance`) covers Caps Lock, Option and Command, plus
 Control for older configs.
 
+### Double-tap Hypr to toggle Caps Lock
+
+`doubleTapHyprTogglesCapsLock` in `config.json`, off by default, is the
+toggle of the same name in Settings → Keys. With Caps Lock as the Hypr key
+there is otherwise no way to turn Caps Lock on while HyprMac is active.
+
+`HyprDoubleTap` (in `HotkeyManager.swift`) decides. A tap is a press and
+release of the Hypr key within 300 ms with no other key or modifier going
+down. Two taps count when the second press starts within 300 ms of the
+first release. Then `KeyRemapper.toggleCapsLock` flips the lock state, LED
+included, through `IOHIDSetModifierLockState`. It works for every Hypr key
+choice.
+
+- A chord (Hypr plus a key), a hold, or a key between the taps starts over,
+  so fast Hypr chords never toggle. Four taps toggle twice.
+- Only a real release counts. A reset after a wake, a tap timeout or a
+  pause is not a release.
+- It is off while tiling is paused. Caps Lock is then a plain Caps Lock
+  anyway (see "Caps Lock remap" in `architecture.md`).
+- It does not work while secure input is on (a password field, or an app
+  that leaves secure input on). macOS delivers no key events to the event
+  tap then, so HyprMac never sees the taps. The Settings text says so.
+- Mouse buttons are not in the tap's event mask, so a click between two
+  taps does not start over.
+
+Pinned by the double tap tests in `PhysicalCapsLockTests`.
+
 ## Hex color storage
 
 `UserConfig.focusBorderColorHex`, `floatingBorderColorHex` and

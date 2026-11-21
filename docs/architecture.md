@@ -1019,6 +1019,10 @@ just stopped being Caps Lock, so a lock left on while paused or before
 launch could not be turned off otherwise. An install that writes nothing
 leaves the lock alone.
 
+While HyprMac is active the only way to Caps Lock is the optional double
+tap of the Hypr key (`doubleTapHyprTogglesCapsLock`, off by default; see
+"Hypr key" in `keybinds-and-actions.md`).
+
 While paused the event tap also stops swallowing the Hypr key.
 `HyprKey.keepsShortcutsWhilePaused` splits the choices:
 

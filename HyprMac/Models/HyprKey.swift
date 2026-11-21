@@ -120,6 +120,11 @@ enum HyprKey: String, Codable, CaseIterable, Identifiable {
         self == .capsLock
     }
 
+    /// Shown under "Double-tap Hypr to toggle Caps Lock" in Settings → Keys.
+    static let doubleTapCapsLockNote =
+        "Tap the Hypr key twice quickly, with no other key, to turn Caps Lock on or off. "
+        + "It does not work in password fields, where macOS hides keys from HyprMac."
+
     /// Whether Hypr shortcuts (pause/resume, the keybind list, the
     /// overview) still work while tiling is paused.
     ///
