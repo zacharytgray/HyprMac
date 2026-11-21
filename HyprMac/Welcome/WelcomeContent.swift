@@ -26,38 +26,48 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "sparkle",
-            title: "Turn Off the Focus Flash",
-            description: "With window borders on, a new setting keeps the border but skips the brief tint when focus moves to a window.",
-            credit: "Ealianis"
+            icon: "capslock",
+            title: "Caps Lock While Paused",
+            description: "With Caps Lock as the Hypr key, it works as a normal Caps Lock while HyprMac is paused. Resume from the menu bar.",
+            credit: "md2perpe"
         ),
         WhatsNewFeature(
-            icon: "cursorarrow.rays",
-            title: "Overview Opens Where You Are",
-            description: "The workspace overview and the keybind list now open on the monitor under your pointer, like every other Hypr action.",
-            credit: "Thiago Goncalves"
+            icon: "hand.tap",
+            title: "Double-Tap Hypr for Caps Lock",
+            description: "A new option in Settings → Keys: tap the Hypr key twice quickly to turn Caps Lock on or off."
         ),
         WhatsNewFeature(
-            icon: "rectangle.split.2x1",
-            title: "Windows Tile Beside Dia",
-            description: "A window moved next to Dia now tiles beside it instead of floating on top. HyprMac no longer believes Dia when it wrongly reports a resize failed.",
-            credit: "cipas"
+            icon: "menubar.rectangle",
+            title: "Menu Bar: Full, Compact or Hidden",
+            description: "Pick a menu bar style in Settings → General. Compact is one badge for the focused workspace."
         ),
         WhatsNewFeature(
-            icon: "lock.doc",
-            title: "Configs Managed by Other Tools",
-            description: "When Nix, a dotfiles tool or a read-only file owns your config, Settings says so and HyprMac never overwrites it.",
+            icon: "arrow.down.circle",
+            title: "Smoother Updates",
+            description: "The update window comes to the front. Updates install after 5 minutes idle, and your windows and workspaces come back after the relaunch."
+        ),
+        WhatsNewFeature(
+            icon: "macwindow.on.rectangle",
+            title: "Native Tabs Stay Put",
+            description: "Switching native tabs in Terminal and other apps no longer retiles the workspace or swaps tiles.",
+            credit: "xiphos991"
+        ),
+        WhatsNewFeature(
+            icon: "circle",
+            title: "Circles Mark Floating Windows",
+            description: "Floating windows show as circles instead of diamonds in the menu bar, the keybind list and Settings.",
+            tint: .magenta
+        ),
+        WhatsNewFeature(
+            icon: "shippingbox",
+            title: "Nix Flake and Home Manager",
+            description: "HyprMac ships a flake and a Home Manager module that package the signed release.",
             credit: "emilnymann"
         ),
         WhatsNewFeature(
-            icon: "arrow.triangle.2.circlepath",
-            title: "Config Edits Load Right Away",
-            description: "Changes to config.json or monitor-config.json from an editor or another tool now apply within a couple of seconds."
-        ),
-        WhatsNewFeature(
-            icon: "icloud",
-            title: "Safer iCloud Sync",
-            description: "Turning on sync now asks which settings to keep when this Mac and iCloud differ. It keeps a backup of the other and keeps private files private."
+            icon: "scope",
+            title: "Steadier Focus",
+            description: "Focus no longer bounces between two apps, and an app that re-creates its window no longer blocks focus or drags."
         ),
     ]
 }
