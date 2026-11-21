@@ -529,6 +529,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.hyprKey = .leftOption
         config.excludedBundleIDs = ["com.example.app"]
         config.showMenuBarIndicator = false
+        config.menuBarIndicatorStyle = .currentWorkspace
         config.overlayAppearance = .dark
         config.maxSplitsPerMonitor = ["Screen": 2]
         config.disabledMonitors = ["Screen"]
@@ -567,6 +568,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(config.hyprKey, UserConfigDefaults.hyprKey)
         XCTAssertEqual(config.excludedBundleIDs, Set(UserConfig.defaultExcludedBundleIDs))
         XCTAssertEqual(config.showMenuBarIndicator, UserConfigDefaults.showMenuBarIndicator)
+        XCTAssertEqual(config.menuBarIndicatorStyle, UserConfigDefaults.menuBarIndicatorStyle)
         XCTAssertEqual(config.overlayAppearance, UserConfigDefaults.overlayAppearance)
         XCTAssertEqual(config.maxSplitsPerMonitor, [:])
         XCTAssertEqual(config.disabledMonitors, [])

@@ -901,6 +901,7 @@ struct SavedConfig: Codable {
     var keepCursorOnWorkspaceSwitch: Bool? = nil
     var animateFocusIndicator: Bool? = nil
     var focusBorderFlash: Bool? = nil
+    var menuBarIndicatorStyle: MenuBarIndicatorStyle? = nil
 }
 
 // MARK: - per-keybind decode tolerance
@@ -934,6 +935,7 @@ extension SavedConfig {
         case keepCursorOnWorkspaceSwitch
         case animateFocusIndicator
         case focusBorderFlash
+        case menuBarIndicatorStyle
     }
 
     init(from decoder: Decoder) throws {
@@ -1007,6 +1009,8 @@ extension SavedConfig {
         self.keepCursorOnWorkspaceSwitch = Self.tolerant(c, .keepCursorOnWorkspaceSwitch)
         self.animateFocusIndicator = Self.tolerant(c, .animateFocusIndicator)
         self.focusBorderFlash = Self.tolerant(c, .focusBorderFlash)
+        // a style a newer build added reads as the default
+        self.menuBarIndicatorStyle = Self.tolerant(c, .menuBarIndicatorStyle)
     }
 
     // keys "1"…"10" with a non-empty name; anything else is dropped, so a

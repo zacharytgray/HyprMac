@@ -26,6 +26,24 @@ enum OverlayAppearance: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// What the menu bar item shows when the workspace indicator is on.
+/// The raw values are written to config.json; never rename one.
+enum MenuBarIndicatorStyle: String, Codable, CaseIterable, Identifiable {
+    /// one glyph per workspace: shown, waiting, empty
+    case allWorkspaces
+    /// only the focused workspace, by its set name or else its number
+    case currentWorkspace
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .allWorkspaces: return "All"
+        case .currentWorkspace: return "Current"
+        }
+    }
+}
+
 /// Scalar defaults for `UserConfig`.
 ///
 /// Keybinds and excluded bundle ids live in their type-specific
@@ -42,6 +60,7 @@ enum UserConfigDefaults {
     static let mouseHoverPollHz: Int = 120
     static let hyprKey: HyprKey = .capsLock
     static let showMenuBarIndicator: Bool = true
+    static let menuBarIndicatorStyle: MenuBarIndicatorStyle = .allWorkspaces
     static let overlayAppearance: OverlayAppearance = .system
     static let showFocusBorder: Bool = false
     // the window border's brief tint fill when focus lands on a window

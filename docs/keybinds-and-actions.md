@@ -242,10 +242,28 @@ Settings → General → "Workspace names" edits it:
 ```
 
 A set name replaces the number in the switch HUD, the menu bar panel
-(buttons, tooltips), the workspace pickers in Settings and the
-"is full" flash. Overview cards show it after the number (the digit
-keys still switch by number) and its search matches it. The menu bar
-glyphs, the keybind list and log lines keep the number. All readers go through
+(buttons, tooltips), the menu bar item in the Current style (below), the
+workspace pickers in Settings and the "is full" flash. Overview cards
+show it after the number (the digit keys still switch by number) and its
+search matches it. The menu bar glyphs, the keybind list and log lines
+keep the number.
+
+`menuBarIndicatorStyle` picks what the menu bar item shows while the
+workspace indicator (`showMenuBarIndicator`) is on. Settings → General →
+System → "Menu bar indicator shows" edits it:
+
+- `"allWorkspaces"` (the default): one glyph per workspace. A window
+  filling a display swaps the glyphs for the fullscreen icon.
+- `"currentWorkspace"`: only the focused workspace, by its set name or
+  else its number. A name of one letter shows that letter. The focused
+  workspace follows the rule of `state.json`'s `focusedWorkspace`
+  ([Status bar](status-bar.md)): the focused window's, else the one under
+  the cursor. The fullscreen icon shows beside the name when a window
+  fills that workspace's display. The scratchpad tray and the update dot
+  are left out; the menu still shows both.
+
+A missing or unknown value reads as `"allWorkspaces"`, so no
+`ConfigMigration` step is involved. All readers go through
 `UserConfig.workspaceDisplayName`; a missing or blank name falls back to
 the number. Keys other than "1"…"10" and empty names are dropped on load,
 and an unreadable value costs only the names. An older build ignores the

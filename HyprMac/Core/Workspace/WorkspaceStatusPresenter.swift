@@ -74,13 +74,18 @@ final class WorkspaceStatusPresenter {
             .union(floaters.compactMap { workspaceManager.workspaceFor($0) })
     }
 
-    /// Publish workspace glyphs and monitor snapshots for the menu.
+    /// Publish workspace glyphs, the focused workspace and monitor
+    /// snapshots for the menu.
     func updateMenuBarState() {
         let active = Set(activeWorkspaces())
-        let isFullscreen = !active.isDisjoint(with: workspacesWithMaximizedWindow())
+        let maximized = workspacesWithMaximizedWindow()
+        let isFullscreen = !active.isDisjoint(with: maximized)
+        // the same rule as state.json's focusedWorkspace
+        let focusedWorkspace = StatusSnapshot.focusedScreen(statusInput())?.visibleWorkspace
+        let isFocusedFullscreen = focusedWorkspace.map(maximized.contains) ?? false
         let occupied = occupiedWorkspaces()
         let floating = workspacesWithFloatingWindows()
-        let labelText = MenuBarPresentation.workspaceGlyphs(
+        let glyphs = MenuBarPresentation.workspaceGlyphs(
             active: active, occupied: occupied, floating: floating)
         let enabledScreens = workspaceManager.enabledScreensLeftToRight()
         let monitors = enabledScreens.enumerated().map {
@@ -104,8 +109,10 @@ final class WorkspaceStatusPresenter {
 
         DispatchQueue.main.async {
             let state = MenuBarState.shared
-            state.labelText = labelText
+            state.workspaceGlyphs = glyphs
             state.isFullscreen = isFullscreen
+            state.focusedWorkspace = focusedWorkspace
+            state.isFocusedFullscreen = isFocusedFullscreen
             state.monitors = monitors
             state.scratchpadCount = scratchpadCount
             state.scratchpadVisible = scratchpadVisible
@@ -176,19 +183,25 @@ final class WorkspaceStatusPresenter {
 
     /// Read-only, no AX walk: workspace state plus app names from the owners.
     func statusSnapshot() -> StatusSnapshot {
-        let assigned = workspaceManager.regularWorkspaceWindowIDs()
-        let members = scratchpad.members
-        let hidden = stateCache.hiddenWindowIDs
-        var apps: [CGWindowID: StatusSnapshot.Input.App] = [:]
-        for id in assigned.values.reduce(members, { $0.union($1) }).subtracting(hidden) {
+        var input = statusInput()
+        for id in input.assigned.values.reduce(input.scratchpad, { $0.union($1) }).subtracting(input.hidden) {
             let window = stateCache.cachedWindows[id]
             let app = (stateCache.windowOwners[id] ?? window?.ownerPID)
                 .flatMap { NSRunningApplication(processIdentifier: $0) }
             let bundleID = window?.bundleID ?? app?.bundleIdentifier
-            apps[id] = .init(name: app?.localizedName ?? bundleID ?? "Unknown app", bundleID: bundleID)
+            input.apps[id] = .init(name: app?.localizedName ?? bundleID ?? "Unknown app", bundleID: bundleID)
         }
+        return StatusSnapshot.build(input)
+    }
+
+    /// The snapshot model without app names, which need a process lookup
+    /// per window.
+    private func statusInput() -> StatusSnapshot.Input {
+        let assigned = workspaceManager.regularWorkspaceWindowIDs()
+        let members = scratchpad.members
+        let hidden = stateCache.hiddenWindowIDs
         let screens = workspaceManager.enabledScreensLeftToRight()
-        return StatusSnapshot.build(.init(
+        return .init(
             screens: screens.map { .init(name: $0.localizedName, visibleWorkspace: workspaceManager.workspaceForScreen($0)) },
             homeScreens: Dictionary(uniqueKeysWithValues: Constants.workspaceRange.compactMap { ws in
                 workspaceManager.homeScreenForWorkspace(ws).map { (ws, $0.localizedName) }
@@ -200,8 +213,8 @@ final class WorkspaceStatusPresenter {
             floating: stateCache.floatingWindowIDs,
             focusedWindowID: focusController.lastFocusedID,
             cursorScreen: screens.isEmpty ? nil : displayManager.screenUnderCursor().localizedName,
-            apps: apps,
-            names: config.workspaceNames))
+            apps: [:],
+            names: config.workspaceNames)
     }
 
     /// Log a snapshot of workspace, cache and tree state at `.notice`

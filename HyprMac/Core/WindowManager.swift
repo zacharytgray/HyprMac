@@ -680,6 +680,8 @@ class WindowManager {
         statusExporter.snapshot = { [weak self] in self?.statusPresenter.statusSnapshot() }
         focusController.onChange = { [weak self] in
             self?.statusExporter.noteChange()
+            // focus on another monitor changes the menu bar's current workspace
+            self?.statusPresenter.updateMenuBarState()
             self?.endMaximizeIfFocusLeft()
         }
         tilingEngine.onMaximizeChanged = { [weak self] workspace, screen, isOn in

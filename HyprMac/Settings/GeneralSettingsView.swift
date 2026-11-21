@@ -10,8 +10,6 @@ struct GeneralSettingsView: View {
     let showTutorial: () -> Void
     @ObservedObject var config = UserConfig.shared
     @AppStorage(UserConfig.showMenuBarIconKey) private var showMenuBarIcon = true
-    @AppStorage(UserConfig.menuBarIndicatorStyleKey)
-    private var menuBarIndicatorStyle: MenuBarIndicatorStyle = .allWorkspaces
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
     @StateObject private var loginItem = LoginItemController()
     @State private var showingWorkspaceNames = false
@@ -302,8 +300,8 @@ struct GeneralSettingsView: View {
             .disabled(!showMenuBarIcon)
 
             HyprRow("Menu bar indicator shows", icon: "number.square",
-                    subtitle: "Current shows only the workspace on screen: its name, else its number.") {
-                Picker("", selection: $menuBarIndicatorStyle) {
+                    subtitle: "Current shows only the focused workspace: its name from Workspace names, such as a letter, else its number.") {
+                Picker("", selection: $config.menuBarIndicatorStyle) {
                     ForEach(MenuBarIndicatorStyle.allCases) { style in
                         Text(style.displayName).tag(style)
                     }
