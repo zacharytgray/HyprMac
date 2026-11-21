@@ -49,8 +49,9 @@ no longer listed it when it went, so discovery never reserved it, and some apps
 `WindowChanges.reopenedAfterClose`. `ActionDispatcher.applyChanges` drops the
 memory with `TilingEngine.forgetRememberedSlot` before the retile, and the
 window is placed like a new window: the focused tile first, then the walk. A
-window back from a minimize, a Cmd-H, another Space, a background tab or an
-app that did not answer still goes back to its slot.
+window back from a minimize, a Cmd-H, another Space or an app that did not
+answer still goes back to its slot. A background tab shown again in its
+group's frame is a tab switch instead (see **Native tabs**).
 
 When such a return is on screen while its recorded workspace is hidden,
 discovery drifts it to the workspace visible on the screen it opened on
@@ -123,9 +124,10 @@ until the next sibling restructure (insert / remove on that node).
 
 ## Ratio memory
 
-A native tab switch or a Cmd-H looks like a close followed by an open
-a poll or two later. Without help, the window comes back at 50/50 and
-the user's manual resize is gone.
+A Cmd-H looks like a close followed by an open a poll or two later.
+Without help, the window comes back at 50/50 and the user's manual
+resize is gone. A native tab switch takes no window out of its tree (see
+**Native tabs**); this memory covers a switch discovery could not pair.
 
 When a leaf leaves a split, `BSPNode.remove` promotes the sibling and,
 if the vanishing split was user-set and the sibling is a leaf, records
@@ -153,6 +155,74 @@ Three limits are deliberate:
 The memory has no expiry, so a Cmd-H and an unhide seconds later both
 work. Whichever window next inserts into that slot takes the boundary (a drag
 drop clears the memory instead), which is the intended trade: the slot is remembered, not the window.
+
+## Native tabs
+
+Every native window tab (Terminal, Finder, any app with "Prefer tabs") is
+its own window, and only the selected one is on screen. A background tab is
+ordered out and missing from its app's AX window list, so it reads as
+closed. macOS gives the selected tab the group's frame. A tab switch is
+therefore one window leaving and another of the same app standing in its
+frame. Treated as a close and an open, it retiled, put the shown tab in
+another slot, and with focus follows mouse on sent focus to whatever tile
+ended up under the pointer (#85).
+
+A tab group is one tile. `WindowDiscoveryService.computeChanges` pairs the
+two sides (`TabSwitchPairing`):
+
+- A **leaver** is a known window missing from the walk, not held as
+  unreadable, whose app runs and does not call it minimized or hidden with
+  the app.
+- An **arrival** is a window the walk read that discovery does not know:
+  new, or a ghost back from hidden.
+- They pair when they belong to one app and the arrival stands where the
+  leaver was last read (`tiledPositions`, or the last walk that read it):
+  origin within 4 points, width within 8, height within 32, since the tab
+  bar comes and goes when the tab count crosses one. A leaver or an arrival
+  with two candidates pairs with none and takes the ordinary path.
+
+A pair is reported in `WindowChanges.tabSwitches`, in neither `goneIDs` nor
+`newWindows` nor `returned`. The hidden tab becomes a ghost that holds no
+slot, and the shown one takes its floating state.
+`ActionDispatcher.applyTabSwitches` gives the shown tab the hidden one's
+workspace and calls `TilingEngine.handOverLeaf`: the leaf gets the shown
+window, with no removal, no insert and no retile. A maximize, the verified
+admission and the slot memories that name the hidden tab move with the
+leaf, as do a floater's maximize and saved frame and the scratchpad's
+member record. The focus record and the border follow when the hidden tab
+had them, and `refocusUnderCursor` does not run. A retile follows only when
+the shown tab's frame is off the one the hidden tab had. Learned minimum
+sizes stay per window. Switching back pairs the other way round.
+
+Under key repeat the two sides often land in different polls. A leaver
+with no arrival is held like an unreadable window (kept known and in its
+tree, nothing written to it) for one of three reasons
+(`TabHoldReason`), and `heldWindowIDs` carries it to the engine:
+
+| Reason | Evidence | Lasts |
+|---|---|---|
+| `standIn` | The window server shows a window of the app in the leaver's frame that discovery does not know and the walk did not read: the app is busy. | 5 s per stand-in. Another window in the frame starts it again, so a held key on a busy app keeps the tile. |
+| `unsized` | The walk read a new window of the app at 0×0: a new tab not sized yet. It is kept out of `newWindows` meanwhile. | 1 s |
+| `orderedOut` | Nothing stands in the frame, the app does not list the leaver, and the window server still has it off screen beside another off-screen window of the app (`WindowStacking.isOrderedOut`). | 0.5 s |
+
+The window a hold waits on gets the quick re-polls, and
+`secondsUntilAHoldEnds` asks for the poll that ends it. A hold that runs
+out is a close.
+
+What stays ordinary: a window its app destroyed with nothing in its frame
+closes in the same poll (the last tab, or any plain close), and so does a
+window its app keeps after a close when the app has nothing else off
+screen. A close of a kept window beside another off-screen window of its
+app (a minimized one counts) frees its space half a second late. Merge All
+Windows is several leavers and one arrival, so nothing pairs. Dragging a
+tab out leaves nothing missing. The admit-only pass during a workspace
+switch leaves a new window in a missing known window's frame to the full
+poll.
+
+Known gap: while a tab is held, the caches still name it. A keyboard focus
+move onto that tile focuses the background tab, and the app selects it
+again. Hover cannot: the shown tab is the window under the pointer, and
+it is not managed until it reads.
 
 ## Smart insert
 

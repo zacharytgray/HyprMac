@@ -271,6 +271,17 @@ final class ScratchpadController {
         workspaceManager.workspaceFor(id) == Self.workspace
     }
     func isSummoned(_ id: CGWindowID) -> Bool { summonedIDs.contains(id) }
+
+    /// A member's native tab switched: the shown tab is the member now, in
+    /// the same place and the same turn. Nothing is re-laid or raised.
+    func noteTabSwitch(from hiddenID: CGWindowID, to shownID: CGWindowID) {
+        if summonedIDs.remove(hiddenID) != nil { summonedIDs.insert(shownID) }
+        if let frame = lastShownFrames.removeValue(forKey: hiddenID) { lastShownFrames[shownID] = frame }
+        if mruOrder.contains(hiddenID) {
+            mruOrder.removeAll { $0 == shownID }
+            mruOrder = mruOrder.map { $0 == hiddenID ? shownID : $0 }
+        }
+    }
     func ownsPID(_ pid: pid_t) -> Bool {
         stateCache.windowOwners.contains { $0.value == pid && contains($0.key) }
     }

@@ -590,6 +590,9 @@ class WindowManager {
             self?.retile(windows: windows) ?? []
         }
         actionDispatcher.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
+        actionDispatcher.refreshPositionCache = { [weak self] windows in
+            self?.updatePositionCache(windows: windows)
+        }
         actionDispatcher.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         actionDispatcher.heldWindowIDs = { [weak self] in
             guard let self else { return [] }
@@ -613,6 +616,9 @@ class WindowManager {
         }
         actionDispatcher.scratchpadDiscovery = { [weak self] gone, returned in
             self?.scratchpad.noteDiscovery(goneIDs: gone, returned: returned)
+        }
+        actionDispatcher.scratchpadTabSwitch = { [weak self] hidden, shown in
+            self?.scratchpad.noteTabSwitch(from: hidden, to: shown)
         }
         actionDispatcher.enforceScratchpadFocus = { [weak self] in self?.scratchpad.enforceFocus() }
         actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }

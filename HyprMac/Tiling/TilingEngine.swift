@@ -404,6 +404,47 @@ class TilingEngine {
         }
     }
 
+    /// A native tab switch: `shown` takes the leaf of `hiddenID`, a tab of
+    /// the same group that went to the background. The tree keeps its shape
+    /// and ratios and nothing is written: the shown tab already stands in
+    /// that frame. What belongs to the place moves with it: a maximize, the
+    /// verified admission, a hold, and the slot memories of other windows
+    /// that name the hidden tab as their neighbour.
+    ///
+    /// - Returns: false, with nothing changed, when no tree holds `hiddenID`
+    ///   or one already holds `shown`.
+    @discardableResult
+    func handOverLeaf(from hiddenID: CGWindowID, to shown: HyprWindow) -> Bool {
+        let shownID = shown.windowID
+        guard hiddenID != shownID,
+              !trees.values.contains(where: { $0.allWindows.contains { $0.windowID == shownID } }) else {
+            return false
+        }
+        for (key, tree) in trees {
+            guard let hidden = tree.allWindows.first(where: { $0.windowID == hiddenID }),
+                  let leaf = tree.root.find(hidden) else { continue }
+            leaf.window = shown
+            forgetHeld(hiddenID)
+            maximized = maximized.mapValues { $0 == hiddenID ? shownID : $0 }
+            // a recycled id's old admission goes first
+            forgetAdmittedIdentity(windowID: shownID)
+            for workspace in Array(admittedWindowIDs.keys)
+            where admittedWindowIDs[workspace]?.remove(hiddenID) != nil {
+                admittedWindowIDs[workspace]?.insert(shownID)
+            }
+            slotMemory.removeValue(forKey: hiddenID)
+            slotMemory.removeValue(forKey: shownID)
+            for (id, memory) in slotMemory where memory.besideIDs.contains(hiddenID) {
+                slotMemory[id] = memory.naming(shownID, insteadOf: hiddenID)
+            }
+            ledger.replaceWindowID(hiddenID, with: shownID, in: key)
+            hyprLog(.debug, .tiling, "tab switch: \(shownID) takes the leaf of \(hiddenID) on ws\(key.workspace)"
+                    + " — tree and ratios kept, nothing written")
+            return true
+        }
+        return false
+    }
+
     /// The bound a fit check should honour for `window`.
     ///
     /// A bypass sets aside an observed bound recorded *before* its own
@@ -3486,6 +3527,12 @@ class TilingEngine {
         let directionIsAutomatic: Bool
         let ratio: CGFloat
         let userSet: Bool
+
+        func naming(_ new: CGWindowID, insteadOf old: CGWindowID) -> SlotMemory {
+            SlotMemory(key: key, besideIDs: besideIDs.subtracting([old]).union([new]), wasLeft: wasLeft,
+                       direction: direction, directionIsAutomatic: directionIsAutomatic,
+                       ratio: ratio, userSet: userSet)
+        }
     }
 
     private var slotMemory: [CGWindowID: SlotMemory] = [:]

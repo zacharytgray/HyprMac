@@ -201,6 +201,10 @@ final class ActionDispatcher {
     var adoptPinnedToScratchpad: (HyprWindow) -> Void = { _ in }
     // members closed, minimized or came back
     var scratchpadDiscovery: (Set<CGWindowID>, [HyprWindow]) -> Void = { _, _ in }
+    // a member's native tab switched: hidden id, shown id
+    var scratchpadTabSwitch: (CGWindowID, CGWindowID) -> Void = { _, _ in }
+    // rebuild the position cache, borders and dim from a walk already taken
+    var refreshPositionCache: ([HyprWindow]) -> Void = { _ in }
     // keystrokes stay on a member while the scratchpad is up
     var enforceScratchpadFocus: () -> Void = {}
     var saveLayout: () -> Void = {}
@@ -280,6 +284,9 @@ final class ActionDispatcher {
         for id in changes.reopenedOntoHiddenWorkspace {
             workspaceManager.clearSavedFloatingFrame(for: id)
         }
+        // a tab switch hands its place over before anything else looks at
+        // the trees or counts a workspace's windows
+        applyTabSwitches(changes.tabSwitches)
         let pinnedReopens = pinnedReopenedWindows(changes)
         let pinFollow = admitNewWindows(changes, allWindows: allWindows, gate: gate,
                                         pinnedReopens: pinnedReopens)
@@ -330,12 +337,20 @@ final class ActionDispatcher {
                 changes.returned.isEmpty ? nil : "returned=\(changes.returned.map(\.windowID).sorted())",
                 changes.screenDrift.isEmpty ? nil : "drift=\(changes.screenDrift.map(\.windowID).sorted())",
                 changes.unfloated.isEmpty ? nil : "unfloated=\(changes.unfloated.sorted())",
+                changes.tabSwitches.allSatisfy(\.keepsFrame) ? nil
+                    : "tab=\(changes.tabSwitches.filter { !$0.keepsFrame }.map(\.shown.windowID).sorted())",
             ].compactMap { $0 }.joined(separator: " ")
             hyprLog(.notice, .discovery, "discovery retile: \(causes)")
             // let surrounding windows fill gaps / make room.
             retileResults = retile(allWindows)
         }
         retileResults += returnRefusedCursorMoves(retileResults, windows: allWindows)
+        // a retile rebuilds the position cache, the borders and the dim. a
+        // tab switch on its own still put a new id in all three
+        if !changes.tabSwitches.isEmpty, !changes.needsRetile {
+            refreshPositionCache(allWindows)
+        }
+        focusShownTabs(changes.tabSwitches)
 
         // if the FFM-tracked window disappeared, refocus to whatever tiled window
         // is under the cursor now. without this, focus gets stuck because
@@ -348,6 +363,49 @@ final class ActionDispatcher {
                             newWindowIDs: Set(changes.newWindows.map(\.windowID)).union(changes.reopenedAfterClose),
                             results: retileResults)
         return retileResults
+    }
+
+    /// Native tab switches (`WindowChanges.tabSwitches`): each shown tab
+    /// takes the hidden one's workspace and leaf, and what else belongs to
+    /// the place: a floater's maximize and saved frame, the scratchpad's
+    /// member record. The hidden tab stays a ghost on its workspace. No
+    /// refocus under the cursor follows: macOS already gave the shown tab
+    /// the keyboard.
+    private func applyTabSwitches(_ switches: [TabSwitch]) {
+        for tab in switches {
+            let hiddenID = tab.hiddenID, shownID = tab.shown.windowID
+            floatingController.handOverMaximize(from: hiddenID, to: shownID)
+            if let saved = workspaceManager.savedFloatingFrame(for: hiddenID) {
+                workspaceManager.clearSavedFloatingFrame(for: hiddenID)
+                workspaceManager.setSavedFloatingFrame(saved, for: shownID)
+            }
+            cancelAdmissionRecovery(hiddenID, "native tab switch")
+            if let workspace = workspaceManager.workspaceFor(hiddenID) {
+                workspaceManager.assignWindow(shownID, toWorkspace: workspace)
+                if workspace == ScratchpadController.workspace { scratchpadTabSwitch(hiddenID, shownID) }
+            } else {
+                // a floater on a disabled monitor has none, and a ghost's
+                // stale one must not come back with the tab
+                workspaceManager.removeWindow(shownID)
+            }
+            let handedOver = tilingEngine.handOverLeaf(from: hiddenID, to: tab.shown)
+            // the one notice line per switch: a held key makes ten a second
+            hyprLog(.notice, .discovery, "tab switch: \(hiddenID) → \(shownID)"
+                    + " (\(tab.shown.bundleID ?? "pid \(tab.shown.ownerPID)"))"
+                    + " ws\(workspaceManager.workspaceFor(shownID).map(String.init) ?? "none")"
+                    + (handedOver ? (tab.keepsFrame ? ", leaf handed over" : ", leaf handed over, frame off the tile")
+                       : stateCache.floatingWindowIDs.contains(shownID) ? ", floating" : ", no leaf"))
+        }
+    }
+
+    /// The focus record and the border follow a tab switch on the focused
+    /// tile. After the cache refresh, so the border reads the shown tab.
+    private func focusShownTabs(_ switches: [TabSwitch]) {
+        for tab in switches where focusController.lastFocusedID == tab.hiddenID
+            || focusBorder.trackedWindowID == tab.hiddenID {
+            focusController.recordFocus(tab.shown.windowID, reason: "tab-switch")
+            updateFocusBorder(tab.shown)
+        }
     }
 
     /// The new-window half of `applyChanges`, for the admit-only pass a

@@ -75,13 +75,20 @@ struct WindowChanges {
     /// as absent from its app's list, so never reserved (Teams keeps the id
     /// across a close and reopen). The caller places it like a new window.
     var reopenedAfterClose: Set<CGWindowID> = []
+    /// Native tab switches: a window that left and the one of its app that
+    /// took its frame. Neither side is in `goneIDs`, `newWindows` or
+    /// `returned`. The cache half is done (the hidden tab is a ghost, the
+    /// shown one known, with the hidden one's floating state); the caller
+    /// hands over the workspace, the leaf and the focus.
+    var tabSwitches: [TabSwitch] = []
 
     /// `true` when at least one observed change warrants a retile.
     /// Stale-state sweeps do not bump this — they are silent state
-    /// hygiene with no visual consequence.
+    /// hygiene with no visual consequence. A tab switch needs one only
+    /// when the shown tab does not stand in the frame the hidden one had.
     var needsRetile: Bool {
         !newWindows.isEmpty || !goneIDs.isEmpty || !returned.isEmpty || !screenDrift.isEmpty
-            || !unfloated.isEmpty
+            || !unfloated.isEmpty || tabSwitches.contains { !$0.keepsFrame }
     }
 }
 
@@ -227,13 +234,158 @@ final class WindowDiscoveryService {
 
     /// Every known window the last cycle held, for whatever reason. A tile
     /// pass between polls keeps their leaves and writes them nothing.
-    var heldWindowIDs: Set<CGWindowID> { heldUnreadableIDs.union(heldListedIDs) }
+    var heldWindowIDs: Set<CGWindowID> { heldUnreadableIDs.union(heldListedIDs).union(tabHolds.keys) }
 
-    /// How long until the earliest off-screen hold runs out, so the caller
-    /// can poll then rather than at the next reconcile. nil without one.
+    /// How long until the earliest off-screen or tab hold runs out, so the
+    /// caller can poll then rather than at the next reconcile. nil without
+    /// one.
     var secondsUntilAHoldEnds: TimeInterval? {
-        guard let earliest = listedSince.values.min() else { return nil }
-        return max(0.1, Self.listedHoldSpan - now().timeIntervalSince(earliest))
+        let now = self.now()
+        let ends = listedSince.values.map { $0.addingTimeInterval(Self.listedHoldSpan) }
+            + tabHolds.values.map { $0.since.addingTimeInterval($0.reason.span) }
+        return ends.min().map { max(0.1, $0.timeIntervalSince(now)) }
+    }
+
+    // MARK: - native tabs
+
+    /// Why a window that left is kept in place for a tab switch still under
+    /// way.
+    enum TabHoldReason: Equatable {
+        /// the window server shows a window of its app in its frame that
+        /// the walk could not read yet
+        case standIn(CGWindowID)
+        /// the walk read a new window of its app that has no size yet
+        case unsized(CGWindowID)
+        /// it is ordered out beside another window of its app, and nothing
+        /// stands in its frame yet
+        case orderedOut
+
+        var span: TimeInterval {
+            switch self {
+            case .standIn: return WindowDiscoveryService.listedHoldSpan
+            case .unsized: return 1
+            case .orderedOut: return 0.5
+            }
+        }
+    }
+
+    /// Windows held for a tab switch, with why and since when. A change of
+    /// reason, another window in the frame included, starts the span again.
+    private var tabHolds: [CGWindowID: (reason: TabHoldReason, since: Date)] = [:]
+    /// Where each known window stood at the last walk that read it. The
+    /// position cache is rebuilt from every walk, so it has nothing for a
+    /// window held through one.
+    private var lastWalkFrames: [CGWindowID: CGRect] = [:]
+
+    /// What the window server shows on screen, front to back. Asked only
+    /// when a window left with nothing read in its frame.
+    var onScreenWindows: () -> [StackedWindow] = { WindowStacking.onScreen() ?? [] }
+    /// Whether the window server still has the window, off screen, while
+    /// its app has another ordinary window off screen: what a background
+    /// tab looks like. A window its app destroyed is a close.
+    var isOrderedOutBesideAnother: (CGWindowID, pid_t) -> Bool = { id, pid in
+        WindowStacking.isOrderedOut(id, besideAnotherOf: pid)
+    }
+
+    /// The pairing's view of a known window missing from the walk. nil for
+    /// one that cannot be a tab that went to the background: its app quit,
+    /// it is a Quick Look panel, or nothing says where it stood.
+    private func leaver(_ id: CGWindowID, runningPIDs: Set<pid_t>) -> TabSwitchPairing.Leaver? {
+        guard let pid = stateCache.windowOwners[id], runningPIDs.contains(pid),
+              !quickLookPanelIDs.contains(id),
+              stateCache.cachedWindows[id]?.isQuickLookPanel != true else { return nil }
+        let frames = [stateCache.tiledPositions[id], lastWalkFrames[id]].compactMap { $0 }
+        return frames.isEmpty ? nil : TabSwitchPairing.Leaver(windowID: id, pid: pid, frames: frames)
+    }
+
+    /// The walk's windows discovery does not know: new, or back from hidden.
+    private func arrivals(in snapshot: [HyprWindow]) -> [TabSwitchPairing.Arrival] {
+        snapshot.filter { !stateCache.knownWindowIDs.contains($0.windowID) && !$0.isQuickLookPanel }
+            .map { TabSwitchPairing.Arrival(windowID: $0.windowID, pid: $0.ownerPID,
+                                            frame: $0.cachedFrame ?? $0.frame) }
+    }
+
+    /// The missing windows kept in place because a tab switch is under way
+    /// and the walk has not read the shown tab. A leaf taken out meanwhile
+    /// expands the neighbour over the tile, and the shown tab is inserted
+    /// somewhere else a poll later.
+    ///
+    /// - Returns: the held windows, the unsized arrivals kept back for them,
+    ///   and the windows that get a quick look.
+    private func tabHolds(for leavers: [TabSwitchPairing.Leaver], arrivals: [TabSwitchPairing.Arrival],
+                          currentIDs: Set<CGWindowID>,
+                          state: (CGWindowID, pid_t) -> AccessibilityManager.HiddenWindowState?)
+        -> (held: Set<CGWindowID>, deferred: Set<CGWindowID>, looks: Set<CGWindowID>) {
+        let now = self.now()
+        var held: Set<CGWindowID> = []
+        var deferred: Set<CGWindowID> = []
+        var looks: Set<CGWindowID> = []
+        var kept: [CGWindowID: (reason: TabHoldReason, since: Date)] = [:]
+        let stack = leavers.isEmpty ? [] : onScreenWindows().filter { $0.layer == 0 && $0.isVisible }
+        for leaver in leavers.sorted(by: { $0.windowID < $1.windowID }) {
+            let reason: TabHoldReason
+            if let standIn = stack.first(where: {
+                $0.ownerPID == leaver.pid && !stateCache.knownWindowIDs.contains($0.windowID)
+                    && !currentIDs.contains($0.windowID) && TabSwitchPairing.stands($0.bounds, inPlaceOf: leaver)
+            }) {
+                reason = .standIn(standIn.windowID)
+            } else if let unsized = arrivals.first(where: {
+                $0.pid == leaver.pid && TabSwitchPairing.isUnsized($0.frame)
+            }) {
+                reason = .unsized(unsized.windowID)
+            } else if state(leaver.windowID, leaver.pid) != .present,
+                      isOrderedOutBesideAnother(leaver.windowID, leaver.pid) {
+                reason = .orderedOut
+            } else {
+                continue
+            }
+            let previous = tabHolds[leaver.windowID]
+            let since = previous?.reason == reason ? previous!.since : now
+            guard now.timeIntervalSince(since) < reason.span else {
+                hyprLog(.notice, .discovery, "tab hold ran out: \(leaver.windowID) (\(reason)) — handled as a close")
+                continue
+            }
+            kept[leaver.windowID] = (reason, since)
+            held.insert(leaver.windowID)
+            switch reason {
+            case .standIn(let id): looks.insert(id)
+            case .unsized(let id): deferred.insert(id); looks.insert(id)
+            case .orderedOut: looks.insert(leaver.windowID)
+            }
+            if previous?.reason != reason {
+                hyprLog(.notice, .discovery, "holding \(leaver.windowID) in place for a tab switch (\(reason))")
+            }
+        }
+        for id in tabHolds.keys.sorted() where kept[id] == nil {
+            hyprLog(.notice, .discovery, "tab hold ended: \(id)")
+        }
+        tabHolds = kept
+        return (held, deferred, looks)
+    }
+
+    /// The cache half of a tab switch: `hiddenID` becomes a ghost that holds
+    /// no slot, and `shown` is known with the floating state of the place it
+    /// takes.
+    private func handOver(_ hiddenID: CGWindowID, to shown: HyprWindow) {
+        let id = shown.windowID
+        stateCache.hiddenWindowIDs.remove(id)
+        stateCache.knownWindowIDs.insert(id)
+        stateCache.windowOwners[id] = shown.ownerPID
+        hiddenAt.removeValue(forKey: id)
+        fixedSizeRechecks[id] = nil
+        stateCache.setFloating(stateCache.floatingWindowIDs.contains(hiddenID), window: shown)
+        if let original = stateCache.originalFrames[hiddenID] { stateCache.originalFrames[id] = original }
+
+        stateCache.knownWindowIDs.remove(hiddenID)
+        stateCache.hiddenWindowIDs.insert(hiddenID)
+        stateCache.reservedHiddenWindowIDs.remove(hiddenID)
+        stateCache.tiledPositions.removeValue(forKey: hiddenID)
+        stateCache.cachedWindows.removeValue(forKey: hiddenID)
+        userHiddenIDs.remove(hiddenID)
+        minimizedOrAppHiddenIDs.remove(hiddenID)
+        unverifiedReservedIDs[hiddenID] = nil
+        hiddenAt.removeValue(forKey: hiddenID)
+        hyprLog(.debug, .discovery, "native tab switch: \(hiddenID) → \(id) — the shown tab takes its place")
     }
 
     /// Windows the walk saw but could not use, and when to look again: on
@@ -427,12 +579,6 @@ final class WindowDiscoveryService {
                         focusedWindowID: CGWindowID,
                         unreadableWindowIDs: Set<CGWindowID> = []) -> WindowChanges {
         let currentIDs = Set(snapshot.map { $0.windowID })
-        // a window the walk saw but could not use gets a few quick looks:
-        // one on screen whose app or frame did not answer, and a new one its
-        // app lists before the window server shows it
-        noteNotReady(unreadableWindowIDs.subtracting(currentIDs)
-            .union(accessibility.unboundWindowIDs.subtracting(currentIDs)
-                .subtracting(stateCache.knownWindowIDs).subtracting(stateCache.hiddenWindowIDs)))
 
         // a known window missing from the snapshot is gone only when AX
         // answered for it. one that is on screen by the window server's
@@ -443,7 +589,7 @@ final class WindowDiscoveryService {
         let missing = stateCache.knownWindowIDs.subtracting(currentIDs)
         let unreadable = missing.intersection(unreadableWindowIDs)
         // one AX question per missing window per cycle, shared between the
-        // hold and the hidden classification below
+        // holds and the hidden classification below
         var states: [CGWindowID: AccessibilityManager.HiddenWindowState?] = [:]
         func hiddenState(_ id: CGWindowID, pid: pid_t) -> AccessibilityManager.HiddenWindowState? {
             if let asked = states[id] { return asked }
@@ -451,16 +597,46 @@ final class WindowDiscoveryService {
             states[id] = state
             return state
         }
-        let listed = listedButOffScreen(missing.subtracting(unreadable), runningPIDs: runningPIDs,
-                                        state: hiddenState)
-        let held = unreadable.union(listed)
+        // native tabs: a window that left, not minimized and not hidden with
+        // its app, and a window of the same app the walk read in its frame
+        // are one tile changing its tab
+        let arrivals = self.arrivals(in: snapshot)
+        let leavers = missing.subtracting(unreadable).sorted().compactMap { id -> TabSwitchPairing.Leaver? in
+            guard let leaver = leaver(id, runningPIDs: runningPIDs) else { return nil }
+            let state = hiddenState(id, pid: leaver.pid)
+            return state == .minimized || state == .appHidden ? nil : leaver
+        }
+        let byID = Dictionary(snapshot.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        let pairs = TabSwitchPairing.pairs(leavers: leavers, arrivals: arrivals)
+            .compactMap { hidden, shown -> TabSwitch? in
+                guard let window = byID[shown], let leaver = leavers.first(where: { $0.windowID == hidden })
+                else { return nil }
+                return TabSwitch(hiddenID: hidden, shown: window, keepsFrame: TabSwitchPairing.keepsFrame(
+                    window.cachedFrame ?? window.frame, of: leaver))
+            }
+            .sorted { $0.hiddenID < $1.hiddenID }
+        let switched = Set(pairs.map(\.hiddenID))
+        let listed = listedButOffScreen(missing.subtracting(unreadable).subtracting(switched),
+                                        runningPIDs: runningPIDs, state: hiddenState)
+        let tabs = tabHolds(for: leavers.filter { !switched.contains($0.windowID) && !listed.contains($0.windowID) },
+                            arrivals: arrivals.filter { arrival in !pairs.contains { $0.shown.windowID == arrival.windowID } },
+                            currentIDs: currentIDs, state: hiddenState)
+        let held = unreadable.union(listed).union(tabs.held)
         noteHeld(unreadable: unreadable, listed: listed)
+        // a window the walk saw but could not use gets a few quick looks:
+        // one on screen whose app or frame did not answer, a new one its
+        // app lists before the window server shows it, and whatever a tab
+        // hold waits on
+        noteNotReady(unreadableWindowIDs.subtracting(currentIDs)
+            .union(accessibility.unboundWindowIDs.subtracting(currentIDs)
+                .subtracting(stateCache.knownWindowIDs).subtracting(stateCache.hiddenWindowIDs))
+            .union(tabs.looks))
 
         // partial AX snapshots (post-wake, unresponsive apps) can report half
         // the desktop gone in one cycle; real user actions never do. skip the
         // whole cycle before mutating any cache state — but only a bounded
         // number of times, so a genuine mass close still processes.
-        let apparentlyGone = missing.subtracting(held)
+        let apparentlyGone = missing.subtracting(held).subtracting(switched)
         // while locked or asleep nothing is marked gone, and nothing else in
         // the cycle is applied either: the snapshot is not the desktop
         if !apparentlyGone.isEmpty, sessionInterruptionActive() {
@@ -492,8 +668,12 @@ final class WindowDiscoveryService {
         var goneIDs: Set<CGWindowID> = []
         var fullyForgotten: Set<CGWindowID> = []
 
+        // before the passes below: a shown tab is neither returned nor new
+        for tab in pairs { handOver(tab.hiddenID, to: tab.shown) }
+
         // returned (hidden → present)
-        for w in snapshot where stateCache.hiddenWindowIDs.contains(w.windowID) {
+        for w in snapshot where stateCache.hiddenWindowIDs.contains(w.windowID)
+            && !tabs.deferred.contains(w.windowID) {
             stateCache.hiddenWindowIDs.remove(w.windowID)
             stateCache.knownWindowIDs.insert(w.windowID)
             stateCache.windowOwners[w.windowID] = w.ownerPID
@@ -511,7 +691,8 @@ final class WindowDiscoveryService {
         }
 
         // new
-        for w in snapshot where !stateCache.knownWindowIDs.contains(w.windowID) {
+        for w in snapshot where !stateCache.knownWindowIDs.contains(w.windowID)
+            && !tabs.deferred.contains(w.windowID) {
             admitNew(w, excludedBundleIDs: excludedBundleIDs, newOnDisabled: &newOnDisabled)
             newWindows.append(w)
         }
@@ -592,9 +773,17 @@ final class WindowDiscoveryService {
         stateCache.reservedHiddenWindowIDs.subtract(returned.map { $0.windowID })
         stateCache.reservedHiddenWindowIDs.formIntersection(stateCache.hiddenWindowIDs)
         unverifiedReservedIDs = unverifiedReservedIDs.filter { stateCache.hiddenWindowIDs.contains($0.key) }
-        let (drift, reopenedOntoHidden) = detectScreenDrift(snapshot, justReturned: reopened)
+        // a shown tab has no workspace of its own until the caller hands it
+        // the hidden one's; a ghost's stale one says nothing
+        let shownTabs = Set(pairs.map(\.shown.windowID))
+        let (drift, reopenedOntoHidden) = detectScreenDrift(
+            snapshot.filter { !shownTabs.contains($0.windowID) }, justReturned: reopened)
 
         quickLookPanelIDs = Set(snapshot.lazy.filter(\.isQuickLookPanel).map(\.windowID))
+        lastWalkFrames = lastWalkFrames.filter { stateCache.knownWindowIDs.contains($0.key) }
+        for w in snapshot where stateCache.knownWindowIDs.contains(w.windowID) {
+            if let frame = w.cachedFrame ?? w.frame { lastWalkFrames[w.windowID] = frame }
+        }
 
         let focusedGone = goneIDs.contains(focusedWindowID)
 
@@ -612,6 +801,7 @@ final class WindowDiscoveryService {
             unfloated: unfloated
         )
         changes.reopenedAfterClose = reopenedAfterClose
+        changes.tabSwitches = pairs
         return changes
     }
 
@@ -682,9 +872,17 @@ final class WindowDiscoveryService {
         var newOnDisabled: Set<CGWindowID> = []
         // a locked or asleep session's walk is not the desktop
         if !sessionInterruptionActive() {
+            // a new window in the frame of a known one of its app that this
+            // walk misses is a tab switch, and the full poll's to pair
+            let running = Set(snapshot.map(\.ownerPID))
+            let leavers = stateCache.knownWindowIDs.subtracting(snapshot.map(\.windowID))
+                .compactMap { leaver($0, runningPIDs: running) }
             for w in snapshot where Self.isBrandNew(
                 w.windowID, known: stateCache.knownWindowIDs, hidden: stateCache.hiddenWindowIDs,
-                unreadable: unreadableWindowIDs, assigned: workspaceManager.workspaceFor(w.windowID) != nil) {
+                unreadable: unreadableWindowIDs, assigned: workspaceManager.workspaceFor(w.windowID) != nil)
+                && !leavers.contains(where: {
+                    $0.pid == w.ownerPID && TabSwitchPairing.stands(w.cachedFrame ?? w.frame, inPlaceOf: $0)
+                }) {
                 admitNew(w, excludedBundleIDs: excludedBundleIDs, newOnDisabled: &newOnDisabled)
                 if w.isQuickLookPanel { quickLookPanelIDs.insert(w.windowID) }
                 newWindows.append(w)

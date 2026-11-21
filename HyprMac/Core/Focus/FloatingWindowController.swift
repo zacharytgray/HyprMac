@@ -443,6 +443,13 @@ final class FloatingWindowController {
 
     func isMaximized(_ id: CGWindowID) -> Bool { maximizedFrames[id] != nil }
 
+    /// A native tab switch: the shown tab fills the display the hidden one
+    /// filled, so it takes the frame to go back to.
+    func handOverMaximize(from hiddenID: CGWindowID, to shownID: CGWindowID) {
+        guard let frames = maximizedFrames.removeValue(forKey: hiddenID) else { return }
+        maximizedFrames[shownID] = frames
+    }
+
     var maximizedIDs: Set<CGWindowID> { Set(maximizedFrames.keys) }
 
     /// Fill the display with a floater, or put it back where it was. Moved
