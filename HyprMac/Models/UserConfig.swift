@@ -62,6 +62,9 @@ class UserConfig: ObservableObject {
     @Published var showMenuBarIndicator: Bool {
         didSet { persistRuntimeChange() }
     }
+    @Published var menuBarIndicatorStyle: MenuBarIndicatorStyle {
+        didSet { persistRuntimeChange() }
+    }
     @Published var overlayAppearance: OverlayAppearance {
         didSet { persistRuntimeChange() }
     }
@@ -306,6 +309,7 @@ class UserConfig: ObservableObject {
             self.hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
+            self.menuBarIndicatorStyle = saved.menuBarIndicatorStyle ?? UserConfigDefaults.menuBarIndicatorStyle
             self.overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
             self.showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
             self.focusBorderFlash = saved.focusBorderFlash ?? UserConfigDefaults.focusBorderFlash
@@ -340,6 +344,7 @@ class UserConfig: ObservableObject {
             self.hyprKey = UserConfigDefaults.hyprKey
             self.excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             self.showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
+            self.menuBarIndicatorStyle = UserConfigDefaults.menuBarIndicatorStyle
             self.overlayAppearance = UserConfigDefaults.overlayAppearance
             self.showFocusBorder = UserConfigDefaults.showFocusBorder
             self.focusBorderFlash = UserConfigDefaults.focusBorderFlash
@@ -494,7 +499,8 @@ class UserConfig: ObservableObject {
             overlayAccentHex: overlayAccentHex,
             keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch,
             animateFocusIndicator: animateFocusIndicator,
-            focusBorderFlash: focusBorderFlash)
+            focusBorderFlash: focusBorderFlash,
+            menuBarIndicatorStyle: menuBarIndicatorStyle)
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
@@ -513,6 +519,7 @@ class UserConfig: ObservableObject {
         hyprKey = UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = UserConfigDefaults.showMenuBarIndicator
+        menuBarIndicatorStyle = UserConfigDefaults.menuBarIndicatorStyle
         overlayAppearance = UserConfigDefaults.overlayAppearance
         maxSplitsPerMonitor = [:]
         disabledMonitors = []
@@ -635,6 +642,7 @@ class UserConfig: ObservableObject {
         hyprKey = saved.hyprKey ?? UserConfigDefaults.hyprKey
         excludedBundleIDs = Set(saved.excludedBundleIDs ?? Self.defaultExcludedBundleIDs)
         showMenuBarIndicator = saved.showMenuBarIndicator ?? UserConfigDefaults.showMenuBarIndicator
+        menuBarIndicatorStyle = saved.menuBarIndicatorStyle ?? UserConfigDefaults.menuBarIndicatorStyle
         overlayAppearance = saved.overlayAppearance ?? UserConfigDefaults.overlayAppearance
         showFocusBorder = saved.showFocusBorder ?? UserConfigDefaults.showFocusBorder
         focusBorderFlash = saved.focusBorderFlash ?? UserConfigDefaults.focusBorderFlash

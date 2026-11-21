@@ -26,6 +26,7 @@ programs.hyprmac = {
   settings = {
     gapSize = 10;
     focusFollowsMouse = true;
+    menuBarIndicatorStyle = "currentWorkspace"; # or "allWorkspaces"
     keybinds = [
       { keyCode = 36; modifiers = 1; action.launchApp.bundleID = "com.mitchellh.ghostty"; }
     ];

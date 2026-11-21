@@ -263,9 +263,14 @@ enum SettingsWindow {
 // WorkspaceIndicatorLabel observes it.
 class MenuBarState: ObservableObject {
     static let shared = MenuBarState()
-    @Published var labelText = ""
+    /// One glyph per workspace, for the `allWorkspaces` style.
+    @Published var workspaceGlyphs = ""
     /// A window fills a display showing now. The label swaps the glyphs for one icon.
     @Published var isFullscreen = false
+    /// The workspace focus is on, as `state.json`'s `focusedWorkspace`.
+    @Published var focusedWorkspace: Int?
+    /// A window fills the focused workspace's display.
+    @Published var isFocusedFullscreen = false
     @Published var monitors: [MenuBarMonitorSnapshot] = []
     @Published var hasData = false
     /// Number of windows in the scratchpad (0 = hide the tray glyph).
@@ -365,8 +370,44 @@ enum MenuBarPresentation {
     }
 
     static func showsIndicator(indicatorEnabled: Bool, hasData: Bool,
-                               labelText: String, scratchpadCount: Int) -> Bool {
-        indicatorEnabled && hasData && (!labelText.isEmpty || scratchpadCount > 0)
+                               indicator: MenuBarIndicator) -> Bool {
+        indicatorEnabled && hasData && !indicator.isEmpty
+    }
+}
+
+/// What the workspace indicator draws in the menu bar item.
+struct MenuBarIndicator: Equatable {
+    var showsFullscreenIcon = false
+    var text = ""
+    /// windows in the scratchpad; 0 hides the tray
+    var scratchpadCount = 0
+    var scratchpadVisible = false
+    /// the pending-update bullet after the indicator
+    var showsUpdateDot = true
+
+    var isEmpty: Bool { !showsFullscreenIcon && text.isEmpty && scratchpadCount == 0 }
+}
+
+extension MenuBarIndicatorStyle {
+    /// What this style draws from the published state.
+    func indicator(for state: MenuBarState, names: [String: String]) -> MenuBarIndicator {
+        switch self {
+        case .allWorkspaces:
+            // the fullscreen icon replaces the glyphs
+            return MenuBarIndicator(
+                showsFullscreenIcon: state.isFullscreen,
+                text: state.isFullscreen ? "" : state.workspaceGlyphs,
+                scratchpadCount: state.scratchpadCount,
+                scratchpadVisible: state.scratchpadVisible)
+        case .currentWorkspace:
+            // the focused workspace alone; the fullscreen icon sits beside it
+            return MenuBarIndicator(
+                showsFullscreenIcon: state.isFocusedFullscreen,
+                text: state.focusedWorkspace.map {
+                    UserConfig.workspaceDisplayName($0, names: names, fallback: String($0))
+                } ?? "",
+                showsUpdateDot: false)
+        }
     }
 }
 
@@ -379,9 +420,18 @@ struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var updateState = UpdateState.shared
 
     var body: some View {
+        let indicator = config.menuBarIndicatorStyle.indicator(for: state, names: config.workspaceNames)
+        let showsIndicator = MenuBarPresentation.showsIndicator(
+            indicatorEnabled: config.showMenuBarIndicator,
+            hasData: state.hasData,
+            indicator: indicator)
         HStack(spacing: 4) {
-            content
-            if let notice = updateState.notice {
+            if showsIndicator {
+                content(indicator)
+            } else {
+                Image(systemName: "rectangle.split.2x2")
+            }
+            if let notice = updateState.notice, !showsIndicator || indicator.showsUpdateDot {
                 MenuBarUpdateDot()
                     .help(MenuBarPresentation.updateHelp(for: notice))
             }
@@ -389,31 +439,24 @@ struct WorkspaceIndicatorLabel: View {
         .onAppear { SettingsWindow.openWindow = openWindow }
     }
 
-    @ViewBuilder private var content: some View {
-        if MenuBarPresentation.showsIndicator(
-            indicatorEnabled: config.showMenuBarIndicator,
-            hasData: state.hasData,
-            labelText: state.labelText,
-            scratchpadCount: state.scratchpadCount) {
-            HStack(spacing: 5) {
-                if state.isFullscreen {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                } else if !state.labelText.isEmpty {
-                    Text(state.labelText)
-                        .font(.system(size: 12, weight: .regular))
-                }
-                if state.scratchpadCount > 0 {
-                    Image(systemName: state.scratchpadVisible ? "tray.fill" : "tray")
-                    if state.scratchpadCount > 1 {
-                        Text("\(state.scratchpadCount)")
-                            .font(.system(size: 11, weight: .medium))
-                    }
+    private func content(_ indicator: MenuBarIndicator) -> some View {
+        HStack(spacing: 5) {
+            if indicator.showsFullscreenIcon {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+            }
+            if !indicator.text.isEmpty {
+                Text(indicator.text)
+                    .font(.system(size: 12, weight: .regular))
+            }
+            if indicator.scratchpadCount > 0 {
+                Image(systemName: indicator.scratchpadVisible ? "tray.fill" : "tray")
+                if indicator.scratchpadCount > 1 {
+                    Text("\(indicator.scratchpadCount)")
+                        .font(.system(size: 11, weight: .medium))
                 }
             }
-            .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
-        } else {
-            Image(systemName: "rectangle.split.2x2")
         }
+        .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
     }
 }
 

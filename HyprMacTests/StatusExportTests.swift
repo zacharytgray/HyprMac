@@ -162,6 +162,21 @@ final class StatusExportTests: XCTestCase {
         }
     }
 
+    // the menu bar reads the focused screen without app names
+    func testFocusedScreenMatchesTheSnapshotWithoutAppNames() {
+        for focused: CGWindowID in [11, 20, 70, 0] {
+            var bare = input(focused: focused)
+            bare.apps = [:]
+            XCTAssertEqual(StatusSnapshot.focusedScreen(bare)?.visibleWorkspace,
+                           StatusSnapshot.build(input(focused: focused)).focusedWorkspace,
+                           "focused \(focused)")
+        }
+        XCTAssertEqual(StatusSnapshot.focusedScreen(input(focused: 20))?.name, "LG")
+        var none = input()
+        none.screens = []
+        XCTAssertNil(StatusSnapshot.focusedScreen(none))
+    }
+
     func testHookEnvironment() {
         let url = URL(fileURLWithPath: "/tmp/state.json")
         XCTAssertEqual(StatusSnapshot.build(input()).hookEnvironment(stateFile: url), [

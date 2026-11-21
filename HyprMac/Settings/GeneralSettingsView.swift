@@ -299,6 +299,18 @@ struct GeneralSettingsView: View {
             }
             .disabled(!showMenuBarIcon)
 
+            HyprRow("Menu bar indicator shows", icon: "number.square",
+                    subtitle: "Current shows only the focused workspace: its name from Workspace names, such as a letter, else its number.") {
+                Picker("", selection: $config.menuBarIndicatorStyle) {
+                    ForEach(MenuBarIndicatorStyle.allCases) { style in
+                        Text(style.displayName).tag(style)
+                    }
+                }
+                .labelsHidden()
+                .frame(width: 120)
+            }
+            .disabled(!showMenuBarIcon || !config.showMenuBarIndicator)
+
             HyprRow("Allow other apps to control HyprMac", icon: "link",
                     subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.") {
                 Toggle("", isOn: $config.externalControlEnabled)

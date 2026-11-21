@@ -70,14 +70,10 @@ struct StatusSnapshot: Codable, Equatable {
         func live(_ ids: Set<CGWindowID>) -> [CGWindowID] { ids.subtracting(input.hidden).sorted() }
 
         let focusID = input.focusedWindowID
-        let focusWorkspace = input.assigned.first {
-            visible.contains($0.key) && live($0.value).contains(focusID)
-        }?.key
+        let focusWorkspace = focusedWindowWorkspace(input)
         let focusInScratchpad = input.scratchpadVisible && live(input.scratchpad).contains(focusID)
         let focusedWindow: CGWindowID? = focusWorkspace != nil || focusInScratchpad ? focusID : nil
-        let focusScreen = focusWorkspace.flatMap { ws in input.screens.first { $0.visibleWorkspace == ws } }
-            ?? input.screens.first { $0.name == input.cursorScreen }
-            ?? input.screens.first
+        let focusScreen = focusedScreen(input)
 
         func window(_ id: CGWindowID, detailed: Bool) -> Window {
             let app = input.apps[id]
@@ -107,6 +103,23 @@ struct StatusSnapshot: Codable, Equatable {
             workspaces: workspaces,
             scratchpad: live(input.scratchpad).map { window($0, detailed: false) },
             scratchpadVisible: input.scratchpadVisible)
+    }
+
+    /// The screen focus is on: the one showing the focused window's
+    /// workspace, else the one under the cursor, else the first. The menu
+    /// bar reads it too; `apps` and `names` are not used.
+    static func focusedScreen(_ input: Input) -> Input.Screen? {
+        focusedWindowWorkspace(input).flatMap { ws in input.screens.first { $0.visibleWorkspace == ws } }
+            ?? input.screens.first { $0.name == input.cursorScreen }
+            ?? input.screens.first
+    }
+
+    /// The visible workspace holding the focused window, if a live one holds it.
+    private static func focusedWindowWorkspace(_ input: Input) -> Int? {
+        let visible = Set(input.screens.map(\.visibleWorkspace))
+        return input.assigned.first {
+            visible.contains($0.key) && $0.value.subtracting(input.hidden).contains(input.focusedWindowID)
+        }?.key
     }
 
     /// The hook's environment.

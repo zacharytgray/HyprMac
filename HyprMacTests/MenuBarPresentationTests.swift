@@ -73,13 +73,19 @@ final class MenuBarPresentationTests: XCTestCase {
     func testCompactIndicatorUsesGlyphDataWithoutManagerEnabledState() {
         XCTAssertTrue(MenuBarPresentation.showsIndicator(
             indicatorEnabled: true, hasData: true,
-            labelText: "■ · ○", scratchpadCount: 0))
+            indicator: MenuBarIndicator(text: "■ · ○")))
         XCTAssertFalse(MenuBarPresentation.showsIndicator(
             indicatorEnabled: false, hasData: true,
-            labelText: "■", scratchpadCount: 0))
+            indicator: MenuBarIndicator(text: "■")))
         XCTAssertFalse(MenuBarPresentation.showsIndicator(
             indicatorEnabled: true, hasData: false,
-            labelText: "■", scratchpadCount: 0))
+            indicator: MenuBarIndicator(text: "■")))
+        XCTAssertFalse(MenuBarPresentation.showsIndicator(
+            indicatorEnabled: true, hasData: true,
+            indicator: MenuBarIndicator()))
+        XCTAssertTrue(MenuBarPresentation.showsIndicator(
+            indicatorEnabled: true, hasData: true,
+            indicator: MenuBarIndicator(showsFullscreenIcon: true)))
     }
 
     func testMonitorSnapshotCarriesActionableWorkspaceBadgeState() {
@@ -132,6 +138,68 @@ final class MenuBarPresentationTests: XCTestCase {
     // glyph that is small at any size
     func testTheMenuBarDotIsABullet() {
         XCTAssertEqual(MenuBarUpdateDot.glyph, "•")
+    }
+
+    /// Two monitors showing 2 and 5; focus on 5, which is fullscreen;
+    /// three windows in the scratchpad.
+    private func menuBarState() -> MenuBarState {
+        let state = MenuBarState()
+        state.workspaceGlyphs = "· ■ · · ●"
+        state.isFullscreen = true
+        state.focusedWorkspace = 5
+        state.isFocusedFullscreen = true
+        state.monitors = [monitor(0, "Built-in Display", workspace: 2),
+                          monitor(1, "Studio Display", workspace: 5)]
+        state.scratchpadCount = 3
+        state.scratchpadVisible = true
+        state.hasData = true
+        return state
+    }
+
+    func testAllStyleKeepsTheGlyphsTrayAndUpdateDot() {
+        let state = menuBarState()
+        state.isFullscreen = false
+        XCTAssertEqual(MenuBarIndicatorStyle.allWorkspaces.indicator(for: state, names: [:]),
+                       MenuBarIndicator(text: "· ■ · · ●", scratchpadCount: 3,
+                                        scratchpadVisible: true, showsUpdateDot: true))
+        // a fullscreen window anywhere swaps the glyphs for the icon
+        state.isFullscreen = true
+        XCTAssertEqual(MenuBarIndicatorStyle.allWorkspaces.indicator(for: state, names: [:]),
+                       MenuBarIndicator(showsFullscreenIcon: true, scratchpadCount: 3,
+                                        scratchpadVisible: true, showsUpdateDot: true))
+    }
+
+    func testCurrentStyleShowsOnlyTheFocusedWorkspaceBesideTheFullscreenIcon() {
+        let state = menuBarState()
+        XCTAssertEqual(MenuBarIndicatorStyle.currentWorkspace.indicator(for: state, names: [:]),
+                       MenuBarIndicator(showsFullscreenIcon: true, text: "5", showsUpdateDot: false))
+        // fullscreen on the other monitor leaves no icon
+        state.isFocusedFullscreen = false
+        XCTAssertEqual(MenuBarIndicatorStyle.currentWorkspace.indicator(for: state, names: [:]),
+                       MenuBarIndicator(text: "5", showsUpdateDot: false))
+    }
+
+    func testCurrentStyleShowsTheSetNameElseTheNumber() {
+        let state = menuBarState()
+        func text(_ names: [String: String]) -> String {
+            MenuBarIndicatorStyle.currentWorkspace.indicator(for: state, names: names).text
+        }
+        XCTAssertEqual(text(["5": "W", "2": "Q"]), "W")
+        XCTAssertEqual(text(["5": "  "]), "5")
+        state.focusedWorkspace = 10
+        XCTAssertEqual(text([:]), "10")
+        state.focusedWorkspace = nil
+        XCTAssertEqual(text(["5": "W"]), "")
+        XCTAssertFalse(MenuBarPresentation.showsIndicator(
+            indicatorEnabled: true, hasData: true,
+            indicator: MenuBarIndicator(text: text([:]), showsUpdateDot: false)))
+    }
+
+    // the raw values are config.json values
+    func testTheIndicatorStyleRawValuesAreStable() {
+        XCTAssertEqual(MenuBarIndicatorStyle.allWorkspaces.rawValue, "allWorkspaces")
+        XCTAssertEqual(MenuBarIndicatorStyle.currentWorkspace.rawValue, "currentWorkspace")
+        XCTAssertEqual(UserConfigDefaults.menuBarIndicatorStyle, .allWorkspaces)
     }
 
     private func monitor(_ id: Int, _ name: String, workspace: Int,
