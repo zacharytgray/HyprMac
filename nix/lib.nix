@@ -75,6 +75,9 @@ let
     }
     // optionalAttrs (menuBarStyle != null) {
       inherit menuBarStyle;
+    }
+    // optionalAttrs (cfg.updatesManagedExternally != null) {
+      HyprMacUpdatesManagedExternally = cfg.updatesManagedExternally;
     };
 
   standardSystemPaths = [
@@ -200,6 +203,18 @@ let
           HyprMac's menu bar item (`com.zachgray.HyprMac` `menuBarStyle`
           preference): `"full"`, `"compact"` or `"hidden"`. `null` leaves the
           preference unmanaged.
+        '';
+      };
+
+      updatesManagedExternally = mkOption {
+        type = types.nullOr types.bool;
+        default = null;
+        description = ''
+          Turn off HyprMac's in-app updater for a copy something else updates,
+          such as Homebrew with `package = null` (`com.zachgray.HyprMac`
+          `HyprMacUpdatesManagedExternally` preference). A copy installed from
+          the Nix store already has it off. Quit and reopen HyprMac after a
+          switch that changes it. `null` leaves the preference unmanaged.
         '';
       };
 

@@ -71,6 +71,7 @@ in
       (hyprmacLib.buildUserDefaults {
         showDockIcon = null;
         menuBarStyle = null;
+        updatesManagedExternally = null;
         showMenuBarIcon = false;
       })
       { menuBarStyle = "hidden"; };
@@ -78,12 +79,21 @@ in
       (hyprmacLib.buildUserDefaults {
         showDockIcon = true;
         menuBarStyle = "compact";
+        updatesManagedExternally = null;
         showMenuBarIcon = false;
       })
       {
         showDockIcon = true;
         menuBarStyle = "compact";
       };
+    assert assertEq "updatesManagedExternally writes the defaults key"
+      (hyprmacLib.buildUserDefaults {
+        showDockIcon = null;
+        menuBarStyle = null;
+        updatesManagedExternally = true;
+        showMenuBarIcon = null;
+      })
+      { HyprMacUpdatesManagedExternally = true; };
     pkgs.runCommand "hyprmac-lib-json-check" { } ''
       touch "$out"
     '';

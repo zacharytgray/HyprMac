@@ -21,6 +21,7 @@ programs.hyprmac = {
   extraPackages = [ pkgs.sketchybar ]; # PATH for runCommand and the status hook
   showDockIcon = false;                # null leaves these preferences alone
   menuBarStyle = "compact";            # "full", "compact" or "hidden"
+  # updatesManagedExternally = true;   # only for a copy Nix didn't install
 
   # becomes ~/Library/Application Support/HyprMac/config.json
   settings = {
@@ -65,9 +66,9 @@ is added at load when your `keybinds` leave that chord free.
 `enabled = true` for any you leave out. Set `settings.version` to override the
 schema version. Missing built-in keybinds are added at load, as for any config.
 
-`showDockIcon` and `menuBarStyle` are per-Mac preferences, not config keys.
-Nix sets them on every switch, so a change in Settings lasts until the next
-one. `showMenuBarIcon` is deprecated: HyprMac reads it only once, on its first
+`showDockIcon`, `menuBarStyle` and `updatesManagedExternally` are per-Mac
+preferences, not config keys. Nix sets them on every switch, so a change in
+Settings lasts until the next one. `showMenuBarIcon` is deprecated: HyprMac reads it only once, on its first
 launch. The module now writes it as `menuBarStyle`, `true` as `"full"` and
 `false` as `"hidden"`, and warns. Use `menuBarStyle` instead.
 
@@ -109,9 +110,9 @@ can still save it. A non-empty one becomes a read-only link into `/nix/store`:
 - The iCloud sync switch stays off.
 - In-app updates are off when HyprMac runs from the store, "Nix Apps" or
   "Home Manager Apps". Update through Nix. A copy elsewhere, for example one
-  from a nix-darwin `homebrew` setup, can turn them off through
-  `targets.darwin.defaults."com.zachgray.HyprMac".HyprMacUpdatesManagedExternally = true;`
-  Quit and reopen HyprMac after the switch.
+  from Homebrew with `package = null`, can turn them off with
+  `updatesManagedExternally = true` (the `HyprMacUpdatesManagedExternally`
+  preference). Quit and reopen HyprMac after the switch.
 
 ## An existing config file
 
