@@ -312,6 +312,7 @@
 		C59F755D984292EB1E5B57CD /* MinSizeMemory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80DEDE87B2D877B2B57C6767 /* MinSizeMemory.swift */; };
 		C5C841CD7B9E0C41D488EF3B /* KeybindsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */; };
 		C612AA1B5C741FA13FC1ABCC /* TiledDragPreviewSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A56E7F84728914582E4BEC0 /* TiledDragPreviewSessionTests.swift */; };
+		C61908E8AA73424E6F101C97 /* OwnPanelTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F37DB07FD01AEF4E18C96706 /* OwnPanelTracker.swift */; };
 		C68E31BC80A89DA855E423A1 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = EC19E9DB53B109940984B5D5 /* Assets.xcassets */; };
 		C6D72EF1AA9C3A89ADF2B62A /* WindowDiscoveryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */; };
 		C6E9AF43EB3CE5EDF2F1E47F /* FocusResolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 698B50B18F329E90E7674B02 /* FocusResolution.swift */; };
@@ -327,6 +328,7 @@
 		D01C12241132BDCD8C95E2D0 /* WorkspaceOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCF579F05A2DFBB28DF945A /* WorkspaceOrchestrator.swift */; };
 		D082FF426B4A4207AECE3C0E /* LayoutRestorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C7EA1B257E580577FE04BD /* LayoutRestorer.swift */; };
 		D0F7E9093162AFE0D4B5AE56 /* BSPNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14B540996EBFC8839339556 /* BSPNode.swift */; };
+		D1D7B694AE9DF8EE5462AC61 /* OwnPanelTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F37DB07FD01AEF4E18C96706 /* OwnPanelTracker.swift */; };
 		D1DF9408D40B20ADFE58C85D /* HoverResponseRateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 075CB706E42649E175CB784A /* HoverResponseRateTests.swift */; };
 		D2364C0428C5CEDC5AF46D76 /* KeybindDisplayHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7681B5C6FAEC2BFB53A30743 /* KeybindDisplayHelpers.swift */; };
 		D380E4A1BDD2AD4281299E72 /* KeybindDecoderToleranceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3521F94E7B0FCC0E03B50D3 /* KeybindDecoderToleranceTests.swift */; };
@@ -690,6 +692,7 @@
 		F1251E3F489A8D9DBD9866FE /* FixedSizeHintStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixedSizeHintStore.swift; sourceTree = "<group>"; };
 		F128E4713D085AE80F3D5B0A /* AXFrameWriteBatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXFrameWriteBatch.swift; sourceTree = "<group>"; };
 		F356D39971D5A80B38494D15 /* DwindleLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DwindleLayout.swift; sourceTree = "<group>"; };
+		F37DB07FD01AEF4E18C96706 /* OwnPanelTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OwnPanelTracker.swift; sourceTree = "<group>"; };
 		F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyRecorderView.swift; sourceTree = "<group>"; };
 		F3DB9C9425DBA2D12D58CAF7 /* WorkspaceSwitchAnnouncementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceSwitchAnnouncementTests.swift; sourceTree = "<group>"; };
 		F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AXNotificationService.swift; sourceTree = "<group>"; };
@@ -773,6 +776,7 @@
 				4DC1746711F81E185BA81143 /* Log.swift */,
 				E037AF7C84E48727003EE0D0 /* LogFile.swift */,
 				F783363419470C0FFCA17D43 /* Notifications.swift */,
+				F37DB07FD01AEF4E18C96706 /* OwnPanelTracker.swift */,
 				CE7C6CB56D09DB0F05AE6EDC /* ThreadAssertions.swift */,
 			);
 			path = Shared;
@@ -1377,6 +1381,7 @@
 				168E8536EF9F93533C18DFBE /* NewcomerRefusal.swift in Sources */,
 				A9ECD1E0F463C484A59A501A /* Notifications.swift in Sources */,
 				0A72A984DC1426E0D57F9C7B /* OverlayPreview.swift in Sources */,
+				D1D7B694AE9DF8EE5462AC61 /* OwnPanelTracker.swift in Sources */,
 				0CFEDE16FAF291E190636DE2 /* ParkAttempt.swift in Sources */,
 				F796DE8B56511CF5325B6F7D /* PassBudget.swift in Sources */,
 				59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */,
@@ -1530,6 +1535,7 @@
 				BACD47346AB8972892D8DA10 /* NewcomerRefusal.swift in Sources */,
 				5068FB57709B16331D3D08BC /* Notifications.swift in Sources */,
 				7793CE22F8C896C0ABE2C306 /* OverlayPreview.swift in Sources */,
+				C61908E8AA73424E6F101C97 /* OwnPanelTracker.swift in Sources */,
 				E746F728FF8F6E5A9EC338ED /* ParkAttempt.swift in Sources */,
 				8DBC52E0F9E7B680EDD2F573 /* PassBudget.swift in Sources */,
 				35764B87C3B878BA57801CA5 /* PermissionsGate.swift in Sources */,

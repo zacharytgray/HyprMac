@@ -370,6 +370,37 @@ final class MouseTrackingPopupTests: XCTestCase {
         return tracker
     }
 
+    // HyprMac's menu bar panel over a tile: the hit test skips our own
+    // windows, so hover used to focus the tile under the panel and post its
+    // synthetic click. open, nothing moves; closed, hover works again
+    func testHyprMacsOwnPanelPausesHoverFocusUntilItCloses() {
+        windows = [
+            win(80, pid: ownPID, layer: 101, CGRect(x: 1000, y: 0, width: 320, height: 400)),
+            win(11, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+            win(13, pid: otherPID, CGRect(x: 808, y: 0, width: 800, height: 1000)),
+        ]
+        var open = true
+        let tracker = makeTracker(cursor: CGPoint(x: 1100, y: 200))
+        tracker.isOwnUIOpen = { open }
+
+        tracker.handleMouseMove()
+        tracker.refocusUnderCursor()
+        XCTAssertEqual(focused, [])
+        XCTAssertEqual(last, 11)
+
+        open = false
+        tracker.handleMouseMove()
+        XCTAssertEqual(focused, [13])
+    }
+
+    func testAPanelThatWasNeverShownIsNotOpen() {
+        let tracker = OwnPanelTracker()
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: true)
+        tracker.track(panel)
+        tracker.track(panel)
+        XCTAssertFalse(tracker.isAnyOpen)
+    }
+
     func testAMenuOverAFloaterDoesNotHandTheFloaterFocus() {
         // chrome (front) has a bookmark folder open that hangs over a floater
         windows = [

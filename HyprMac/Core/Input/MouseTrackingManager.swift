@@ -144,6 +144,10 @@ class MouseTrackingManager {
     var onUpdateFocusBorder: (HyprWindow) -> Void = { _ in }
     // routed to `SuppressionKey.mouseFocus` by WindowManager
     var isMouseFocusSuppressed: () -> Bool = { false }
+    /// A HyprMac panel the pointer may be over (the menu bar panel, an
+    /// overlay) is open. The hit test skips our own windows, so without
+    /// this the window under the panel takes focus, and its synthetic click.
+    var isOwnUIOpen: () -> Bool = { false }
     // minimum spacing between eligible checks. skipped events are not replayed.
     // WindowManager derives this from the user-configured response rate.
     var hoverThrottleInterval: () -> CFAbsoluteTime = { Tuning.throttleInterval }
@@ -246,6 +250,11 @@ class MouseTrackingManager {
         if dockIsActive {
             noteBlocked("dock active")
             hyprLog(.debug, .mouse, "ffm-bail: dockIsActive")
+            return false
+        }
+        if isOwnUIOpen() {
+            noteBlocked("HyprMac panel open")
+            hyprLog(.debug, .mouse, "ffm-bail: HyprMac panel open")
             return false
         }
         if isMouseFocusSuppressed() {
@@ -394,7 +403,7 @@ class MouseTrackingManager {
         // popup, and, after a mouse-up only, the moment after a keyboard
         // action. a click on a menu or the Dock used to refocus the tile
         // under the cursor through them
-        guard !menuTracking, !dockIsActive else { return }
+        guard !menuTracking, !dockIsActive, !isOwnUIOpen() else { return }
         if afterMouseUp, isMouseFocusSuppressed() { return }
         let mouseNS = mouseLocationNS()
         let cgY = primaryScreenHeight() - mouseNS.y

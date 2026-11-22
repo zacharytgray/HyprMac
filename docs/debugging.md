@@ -993,7 +993,7 @@ Log lines, all at notice level:
 |---|---|---|
 | `ffm paused: popup wid=<id> pid=<pid> layer=<n> bounds=<rect>` | mouse | hover focus stopped for an open menu |
 | `ffm resumed: popup <id> gone` | mouse | hover focus back |
-| `ffm blocked <n>s: <reason>` | mouse | hover refused for one reason for 5 s. The reason is a held button, a menu, the Dock, the quiet window after an action, a raised window of the front app, or an unmanaged window on top |
+| `ffm blocked <n>s: <reason>` | mouse | hover refused for one reason for 5 s. The reason is a held button, a menu, the Dock, a HyprMac panel (the menu bar panel or an overlay, which the hit test sees through), the quiet window after an action, a raised window of the front app, or an unmanaged window on top |
 | `ffm unblocked after <n>s: <reason>` | mouse | that reason ended |
 | `screenshot picker open\|closed: <reason>` | lifecycle | the dim comes down while macOS's picker is up. The picker stops at the dim panel over an inactive window, whatever its `ignoresMouseEvents` and `sharingType` say |
 | `press state stuck with no button held — clearing` | mouse | a mouse-up never arrived. Hover and window polling would have stood down until the next real click |

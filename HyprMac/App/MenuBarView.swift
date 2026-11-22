@@ -28,6 +28,8 @@ struct MenuBarView: View {
         .padding(HyprSpacing.md)
         .frame(width: 320)
         .background(Color.hyprBackground)
+        // hover focus pauses while this panel is open (OwnPanelTracker)
+        .background(HostingWindowReader { OwnPanelTracker.shared.track($0) })
         .onAppear { appDelegate.windowManager?.refreshFocusedWindowRuleInfo() }
     }
 

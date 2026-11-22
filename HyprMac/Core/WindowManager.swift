@@ -467,6 +467,8 @@ class WindowManager {
         mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
         mouseTracker.floatingWindowIDs = { [weak self] in self?.stateCache.floatingWindowIDs ?? [] }
         mouseTracker.isWindowVisible = { [weak self] wid in self?.focusResolver.isInteractive(wid) ?? false }
+        // our own panels sit over other windows; hover must not reach through them
+        mouseTracker.isOwnUIOpen = { OwnPanelTracker.shared.isAnyOpen }
         mouseTracker.cachedWindow = { [weak self] wid in self?.stateCache.cachedWindows[wid] }
         mouseTracker.tiledPositions = { [weak self] in
             guard let self else { return [:] }
