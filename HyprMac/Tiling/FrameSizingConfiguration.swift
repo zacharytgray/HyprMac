@@ -14,7 +14,10 @@ struct FrameSizingConfiguration {
         return strict
     }
 
-    var deadline: TimeInterval = 0.36
+    /// Long enough for one slow setter inside a three-window pass: 0.36 s
+    /// ran out when a single size write took over 200 ms (see
+    /// `perCallTimeout`).
+    var deadline: TimeInterval = 0.75
     var pollInterval: TimeInterval = 0.03
     var maximumAttempts: Int = 12
     var positionTolerance: CGFloat = 1
@@ -43,7 +46,13 @@ struct FrameSizingConfiguration {
     /// long, so a write that lands inside the pass is never called failed.
     /// A pass whose budget ends first is a timeout, not a refusal.
     var serverMismatchSettle: TimeInterval = 0.36
-    var perCallTimeout: TimeInterval = 0.1
+    /// How long one AX call may take. At 100 ms a togglesplit that narrowed
+    /// Telegram to 517 pt or 595 pt timed out on the size write every time
+    /// (-25204 at 101 ms), the rollback timed out on the same window, and
+    /// the layout ended degraded with the windows after it never written.
+    /// Telegram does apply the size, later: 216 ms in the one write that
+    /// got the time.
+    var perCallTimeout: TimeInterval = 0.25
     /// Windows that move before they are sized. The engine picks them: a
     /// parked window, or one whose target is bigger than the screen it
     /// stands on. A size written there would be clamped by that screen, and
