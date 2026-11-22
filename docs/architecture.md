@@ -358,7 +358,13 @@ hidden, not returned. The tile pass keeps its leaf and writes no frame to
 it, and the poll that reads it again retiles its key once. A later walk
 that reads the window ends discovery's hold on it too, without waiting for
 that poll (`AccessibilityManager.readWindowIDs`). A switch does not wait
-for the poll at all, see "Reveal retry" below. The walk sets
+for the poll at all, see "Reveal retry" below. When the list answers but
+one of its elements does not (its role read fails with anything but "no
+such attribute", "no value" or "element gone", or its id and frame both
+fail), the walk can't tell which window that element is, so every
+on-screen window of the app it did not read is held the same way (#98).
+A role read that timed out used to count as "not a window", which hid a
+window right after its app recovered. The walk sets
 a 0.25 s messaging timeout on the elements it reads, so a stalled app
 costs a quarter second and is held rather than judged. An app whose
 window list timed out is not asked again until a backoff is up, half a

@@ -1703,6 +1703,10 @@ window(s)`, see "A window vanished for a poll"). Notice-tier evidence chain (all
   edges only.
 - `AX frame read FAILED for N window(s) of <bundle>` — per-window
   variant of the same failure.
+- `AX window list answered but N element(s) did not: bundle=… listed=…
+  onScreen=… roleErrors=[…] — holding […]` — the list read worked but an
+  element's role (or its id and frame) did not; the app's unread on-screen
+  windows stay held. Logged once per episode.
 - `window hidden: <id> (<bundle>)` / `window returned` — the
   discovery transitions.
 - `FLAP: '<title>' (<id>) returned <ms>ms after vanishing` — a return within

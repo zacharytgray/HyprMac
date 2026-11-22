@@ -385,6 +385,26 @@ class AccessibilityManager {
         policy == .regular && pid != ownPID && !excludedBundleIDs.contains(bundleID ?? "")
     }
 
+    /// Whether an AX read failed because the app did not answer, not
+    /// because the element has no such value or is already gone. A read
+    /// past the messaging timeout fails with `cannotComplete` (-25204).
+    static func isUnanswered(_ error: AXError) -> Bool {
+        switch error {
+        case .success, .attributeUnsupported, .noValue, .invalidUIElement: return false
+        default: return true
+        }
+    }
+
+    /// The on-screen windows the walk holds for an app whose window list
+    /// answered but some of whose listed elements did not: a role that did
+    /// not read, or a window whose id and frame both failed. Such an element
+    /// could be any of the app's windows, so every on-screen one the walk did
+    /// not read is held, as when the whole list fails (#98).
+    static func heldForUnansweredElements(_ count: Int, visible: [CGWindowID],
+                                          read: Set<CGWindowID>) -> Set<CGWindowID> {
+        count > 0 ? Set(visible).subtracting(read) : []
+    }
+
     func getAllWindows() -> [HyprWindow] {
         guard AXIsProcessTrusted() else { return [] }
 
@@ -495,6 +515,10 @@ class AccessibilityManager {
             // may be handed to another window by the position fallback.
             var quickLookOwnIDs: Set<CGWindowID> = []
             var frameDropCount = 0
+            // listed elements that did not answer enough to say which window
+            // they are, and the role read errors among them
+            var unansweredElements = 0
+            var unansweredErrors: [Int32] = []
             // why each standard window that stays out of the snapshot does,
             // keyed so a window logs once while the reason lasts
             var lines: [String: String] = [:]
@@ -511,7 +535,10 @@ class AccessibilityManager {
 
                 // subrole and modal only matter for a window, so a role drop
                 // costs one read
-                let role = stringAttribute(axWin, kAXRoleAttribute)
+                // a role that did not answer is not "not a window"
+                var roleValue: AnyObject?
+                let roleError = AXUIElementCopyAttributeValue(axWin, kAXRoleAttribute as CFString, &roleValue)
+                let role = roleError == .success ? roleValue as? String : nil
                 let isWindowRole = role == kAXWindowRole as String
                 let subrole = isWindowRole ? stringAttribute(axWin, kAXSubroleAttribute) : nil
                 let isModal = isWindowRole ? (boolAttribute(axWin, kAXModalAttribute) ?? false) : false
@@ -540,7 +567,7 @@ class AccessibilityManager {
                     guard let frame = axFrame(for: axWin) else {
                         // the window is listed but its frame did not answer:
                         // unreadable, not absent
-                        if let spiID { unreadable.insert(spiID) }
+                        if let spiID { unreadable.insert(spiID) } else { unansweredElements += 1 }
                         frameDropCount += 1
                         noteUnbound("frameUnreadable", id: spiID, frame: nil)
                         continue
@@ -556,6 +583,10 @@ class AccessibilityManager {
                                          frame: { frame }, cg: ownCG)
                     quickLookEntries.append((element: axWin, windowID: id, frame: frame))
                 case .dropped(let reason):
+                    if reason == .role, Self.isUnanswered(roleError) {
+                        unansweredElements += 1
+                        unansweredErrors.append(roleError.rawValue)
+                    }
                     if isQuickLook, let id = ownID {
                         quickLookSeen.insert(id)
                         noteQuickLookVerdict(verdict, windowID: id, pid: pid, bundle: bundle,
@@ -629,6 +660,14 @@ class AccessibilityManager {
                     noteUnbound("fallbackTooFar", id: nil, frame: entry.frame,
                                 detail: " nearest=\(nearest) distance=\(Int(distance.rounded()))")
                 }
+            }
+            let heldForElements = Self.heldForUnansweredElements(
+                unansweredElements, visible: visible.map(\.windowID), read: usedIDs)
+            if unansweredElements > 0 {
+                unreadable.formUnion(heldForElements)
+                lines["unanswered"] = "AX window list answered but \(unansweredElements) element(s) did not:"
+                    + " bundle=\(bundle) pid=\(pid) listed=\(axWindows.count) onScreen=\(visible.count)"
+                    + " roleErrors=\(unansweredErrors) — holding \(heldForElements.sorted())"
             }
             noteWalkLines(lines, pid: pid)
         }

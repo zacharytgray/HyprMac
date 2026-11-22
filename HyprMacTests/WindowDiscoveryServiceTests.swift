@@ -484,6 +484,44 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(changes.needsRetile)
     }
 
+    /// #98: the list read fails, then answers again, but its one element
+    /// times out on the role read. the walk can't say which window that is,
+    /// so the app's on-screen window stays held instead of going hidden
+    /// until the next good read
+    func testAWindowStaysHeldWhenItsAppListsAnElementThatDoesNotAnswer() {
+        let stub = StubAccessibility()
+        let (svc, cache, _) = makeService(accessibility: stub)
+        cache.knownWindowIDs = [10907]
+        cache.windowOwners = [10907: 8000]
+
+        // list read failed: the walk holds every on-screen window of the app
+        _ = compute(svc, snapshot: [], runningPIDs: [8000], unreadable: [10907])
+
+        // list answered; its element's role read hit the messaging timeout
+        let unanswered = AccessibilityManager.isUnanswered(.cannotComplete) ? 1 : 0
+        let held = AccessibilityManager.heldForUnansweredElements(unanswered, visible: [10907], read: [])
+        let changes = compute(svc, snapshot: [], runningPIDs: [8000], unreadable: held)
+
+        XCTAssertTrue(changes.goneIDs.isEmpty)
+        XCTAssertFalse(changes.needsRetile)
+        XCTAssertTrue(cache.knownWindowIDs.contains(10907))
+        XCTAssertFalse(cache.hiddenWindowIDs.contains(10907))
+    }
+
+    /// an element with no role, or one already destroyed, answered: it holds
+    /// nothing, so a real close is still seen. a window the walk read needs
+    /// no hold
+    func testOnlyAnUnansweredElementHoldsItsAppsWindows() {
+        XCTAssertTrue(AccessibilityManager.isUnanswered(.cannotComplete))
+        XCTAssertTrue(AccessibilityManager.isUnanswered(.failure))
+        XCTAssertFalse(AccessibilityManager.isUnanswered(.success))
+        XCTAssertFalse(AccessibilityManager.isUnanswered(.attributeUnsupported))
+        XCTAssertFalse(AccessibilityManager.isUnanswered(.noValue))
+        XCTAssertFalse(AccessibilityManager.isUnanswered(.invalidUIElement))
+        XCTAssertEqual(AccessibilityManager.heldForUnansweredElements(0, visible: [1, 2], read: []), [])
+        XCTAssertEqual(AccessibilityManager.heldForUnansweredElements(1, visible: [1, 2], read: [1, 9]), [2])
+    }
+
     // MARK: - hidden-window workspace reservations
 
     func testVerifiedClosedHiddenWindowDoesNotReserveItsWorkspaceSlot() {
