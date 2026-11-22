@@ -129,3 +129,46 @@ final class WindowRulesOverlayControllerTests: XCTestCase {
         XCTAssertTrue(performed.isEmpty)
     }
 }
+
+// it stays about one window: anything that moves on from it closes it
+final class WindowRulesOverlayLeaveTests: XCTestCase {
+    private func shown() -> (WindowRulesOverlayController, () -> [CGWindowID]) {
+        let controller = WindowRulesOverlayController()
+        var restored: [CGWindowID] = []
+        controller.restoreFocus = { restored.append($0) }
+        let info = FocusedWindowRuleInfo(windowID: 8905, appName: "Microsoft Teams", bundleID: "com.microsoft.teams2",
+                                         title: "Chat", currentRule: nil, appFloats: false, appTiles: false,
+                                         isFloating: false)
+        controller.show(info, ownerPID: 4242, over: nil, icon: nil)
+        return (controller, { restored })
+    }
+
+    func testAClickElsewhereClosesIt() {
+        let (c, restored) = shown()
+        c.noteClickElsewhere()
+        XCTAssertFalse(c.isShowing)
+        XCTAssertTrue(restored().isEmpty, "the user moved on; focus stays where they went")
+    }
+
+    func testAnotherAppComingForwardClosesItButItsOwnAppDoesNot() {
+        let (c, _) = shown()
+        c.noteAppActivated(pid: 4242)
+        XCTAssertTrue(c.isShowing)
+        c.noteAppActivated(pid: getpid())
+        XCTAssertTrue(c.isShowing)
+        c.noteAppActivated(pid: 777)
+        XCTAssertFalse(c.isShowing)
+    }
+
+    func testAnotherActionOrTheWindowGoingAwayClosesIt() {
+        let (c, _) = shown()
+        c.noteWindowsGone([1, 2])
+        XCTAssertTrue(c.isShowing)
+        c.noteWindowsGone([8905])
+        XCTAssertFalse(c.isShowing)
+
+        let (d, _) = shown()
+        d.noteOtherAction()
+        XCTAssertFalse(d.isShowing)
+    }
+}

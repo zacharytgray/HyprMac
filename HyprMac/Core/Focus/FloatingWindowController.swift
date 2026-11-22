@@ -137,6 +137,8 @@ struct FloatToTileRejectionMessage {
             return "This window did not accept the tile size"
         case .layoutRejected:
             return "Could not apply the tiled layout"
+        case let .keepsFixedSize(fixed):
+            return "It keeps its \(fixed.axis.rawValue) at \(Int(fixed.length)). Hypr+T again to try anyway"
         }
     }
 }
@@ -291,6 +293,11 @@ final class FloatingWindowController {
     var onMaximizeEnded: (NSScreen) -> Void = { _ in }
     /// The rules the open windows were last brought in line with.
     private var appliedRuleBook: FloatingRuleBook?
+    /// When Hypr+T last refused a window for a length it keeps, so a second
+    /// ask within `tryAnywayWindow` tries for real.
+    private var fixedSizeRefusals: [CGWindowID: TimeInterval] = [:]
+    static let tryAnywayWindow: TimeInterval = 5
+
     /// What the user chose by hand for a window: floating or tiled. It beats
     /// every rule, Never tile included, until the window closes.
     private(set) var manualChoices: [CGWindowID: Bool] = [:]
@@ -538,7 +545,18 @@ final class FloatingWindowController {
     ///
     private func forceInsert(_ window: HyprWindow, workspace: Int,
                              screen: NSScreen) -> TilingEngine.ForceInsertResult {
-        let first = tilingEngine.forceInsertWindow(window, toWorkspace: workspace, on: screen)
+        // a window known to keep a length no slot holds is refused before
+        // anything moves; asking again soon after tries for real, in case
+        // the app let go of it
+        let now = self.now()
+        let askedAgain = fixedSizeRefusals[window.windowID].map { now - $0 <= Self.tryAnywayWindow } ?? false
+        fixedSizeRefusals[window.windowID] = nil
+        let first = tilingEngine.forceInsertWindow(window, toWorkspace: workspace, on: screen,
+                                                   honoringFixedSize: !askedAgain)
+        if case .failed(.keepsFixedSize) = first {
+            fixedSizeRefusals[window.windowID] = now
+            return first
+        }
         guard case .failed(.noFittingSlot) = first else { return first }
         guard case .revalidatable = tilingEngine.admissionOutlook(window, onWorkspace: workspace,
                                                                  screen: screen) else { return first }

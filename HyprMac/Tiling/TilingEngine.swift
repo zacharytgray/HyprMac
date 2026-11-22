@@ -145,6 +145,9 @@ class TilingEngine {
         case noFittingSlot
         /// the window fit the tree but the screen did not accept the layout.
         case layoutRejected(FrameSizingFailure)
+        /// it keeps a length no slot here can hold, as it showed before;
+        /// refused before writing anything
+        case keepsFixedSize(FixedSize)
     }
 
     /// One slot's reason for refusing an incoming window, with where the
@@ -3851,13 +3854,25 @@ class TilingEngine {
     /// the tenants already in the tree. Structure is untouched — the same
     /// depth, the same slot geometry, no eviction, and the same
     /// publication gate decide it.
+    /// `honoringFixedSize`: a window whose kept length (its own record, or
+    /// its app's hint at the length it stands at) no slot can hold is
+    /// refused before any write, instead of resized and rolled back once
+    /// more. The caller lets a repeated ask through without it.
     func forceInsertWindow(_ window: HyprWindow, toWorkspace workspace: Int, on screen: NSScreen,
-                           bypassingLearnedMinima: Bool = false) -> ForceInsertResult {
+                           bypassingLearnedMinima: Bool = false,
+                           honoringFixedSize: Bool = false) -> ForceInsertResult {
         let key = TilingKey(workspace: workspace, screen: screen)
         guard !bypassingLearnedMinima else {
             return withRevalidationBypass(incoming: [window.windowID], key: key) {
                 forceInsertWindow(window, toWorkspace: workspace, on: screen)
             }
+        }
+        if honoringFixedSize, trees[key]?.contains(window) != true, let fixed = minSizes.fixedSize(for: window),
+           fixedLengthRefuses(fixed, window, tree: trees[key] ?? BSPTree(), maxDepth: maxDepth(for: screen),
+                              rect: layoutRect(for: key, screen: screen), splitting: nil) {
+            hyprLog(.notice, .tiling, "force insert refused before writing: \(window.windowID) keeps its"
+                    + " \(fixed.axis.rawValue) at \(String(format: "%g", Double(fixed.length)))")
+            return .failed(.keepsFixedSize(fixed))
         }
         minSizes.forgetFixedSize(window)
         primeMinimumSizes([window])

@@ -213,17 +213,57 @@ final class WindowRulesOverlayController {
 
     private var panel: NSPanel?
     private var keyMonitor: Any?
+    private var clickMonitor: Any?
+    private var activationObserver: NSObjectProtocol?
     private var model: WindowRulesOverlayModel?
+    /// the app that owns the window the overlay is about
+    private var targetPID: pid_t?
 
     var isShowing: Bool { panel != nil }
+    /// the window it was opened on, while it is open
+    var targetWindowID: CGWindowID? { model?.target.windowID }
+
+    // MARK: closing when the user moves on
+
+    /// A click anywhere outside the overlay. Clicks on the overlay are
+    /// HyprMac's own and never reach this.
+    func noteClickElsewhere() {
+        guard isShowing else { return }
+        hyprLog(.notice, .floating, "window rules overlay closed: click elsewhere")
+        close(restoringFocus: false)
+    }
+
+    /// An app came forward. The window's own app doesn't count: closing a
+    /// sheet or the toggle's own focus pass can activate it.
+    func noteAppActivated(pid: pid_t) {
+        guard isShowing, pid != targetPID, pid != getpid() else { return }
+        hyprLog(.notice, .floating, "window rules overlay closed: app switch to pid \(pid)")
+        close(restoringFocus: false)
+    }
+
+    /// Any HyprMac action other than Hypr+I: a workspace switch, a move,
+    /// a focus change. The window may not be where the overlay is about.
+    func noteOtherAction() {
+        guard isShowing else { return }
+        hyprLog(.notice, .floating, "window rules overlay closed: another action")
+        close(restoringFocus: false)
+    }
+
+    /// Windows that closed, hid or left this poll.
+    func noteWindowsGone(_ ids: Set<CGWindowID>) {
+        guard let target = targetWindowID, ids.contains(target) else { return }
+        hyprLog(.notice, .floating, "window rules overlay closed: \(target) went away")
+        close(restoringFocus: false)
+    }
 
     /// Show the overlay for `info`, centered over `frame` (CG coordinates)
     /// when there is one, else on the main screen.
-    func show(_ info: FocusedWindowRuleInfo, over frame: CGRect?, icon: NSImage?) {
+    func show(_ info: FocusedWindowRuleInfo, ownerPID: pid_t? = nil, over frame: CGRect?, icon: NSImage?) {
         mainThreadOnly()
         close(restoringFocus: false)
         let model = WindowRulesOverlayModel(target: info)
         self.model = model
+        targetPID = ownerPID
         let hosting = NSHostingView(rootView: WindowRulesOverlayView(model: model, icon: icon) { [weak self] row in
             self?.run(row)
         })
@@ -244,6 +284,15 @@ final class WindowRulesOverlayController {
         panel = p
         OwnPanelTracker.shared.track(p)
         installMonitor()
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.noteClickElsewhere()
+        }
+        activationObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
+            self?.noteAppActivated(pid: app.processIdentifier)
+        }
         hyprLog(.notice, .floating, "window rules overlay: \(info.windowID) \(info.bundleID)"
                 + " rule=\(info.currentRule ?? "none")")
     }
@@ -252,10 +301,16 @@ final class WindowRulesOverlayController {
     /// window it was opened on.
     func close(restoringFocus: Bool = true) {
         mainThreadOnly()
-        if let m = keyMonitor {
-            NSEvent.removeMonitor(m)
-            keyMonitor = nil
+        for monitor in [keyMonitor, clickMonitor].compactMap({ $0 }) {
+            NSEvent.removeMonitor(monitor)
         }
+        keyMonitor = nil
+        clickMonitor = nil
+        if let observer = activationObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            activationObserver = nil
+        }
+        targetPID = nil
         let target = model?.target.windowID
         panel?.close()
         panel = nil

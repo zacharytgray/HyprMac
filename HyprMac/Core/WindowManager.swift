@@ -647,7 +647,13 @@ class WindowManager {
         actionDispatcher.restoreLayout = { [weak self] in self?.restoreLayoutSnapshot(manual: true) }
         actionDispatcher.retileAll = { [weak self] in self?.retileAllRequested() }
         actionDispatcher.showWindowRules = { [weak self] in
-            guard let self, let focused = self.focusResolver.currentFocusedWindow() else { return }
+            guard let self else { return }
+            // Hypr+I again closes it
+            if self.windowRulesOverlay.isShowing {
+                self.windowRulesOverlay.close()
+                return
+            }
+            guard let focused = self.focusResolver.currentFocusedWindow() else { return }
             self.showWindowRules(for: focused.windowID)
         }
         floatingRuleCommands.window = { [weak self] id in
@@ -1807,6 +1813,8 @@ class WindowManager {
     func handleAction(_ action: Action) {
         // the menu bar calls in here too, and nobody reaches it while locked
         discovery.endSessionInterruption(evidence: "action")
+        // any other action moves on from the window the overlay is about
+        if action != .showWindowRules { windowRulesOverlay.noteOtherAction() }
         let decision = ActionPolicy.decide(action,
                                            displayTransitionPending: displayTransitionPending,
                                            scratchpadVisible: scratchpad.isVisible)
@@ -2704,6 +2712,7 @@ class WindowManager {
         // re-apply or a recovery attempt from it would lay the trees out
         // without the windows it is missing
         if changes.heldForInterruption { return }
+        windowRulesOverlay.noteWindowsGone(changes.goneIDs.union(changes.fullyForgottenIDs))
         adoptRecreatedElements(allWindows)
         // an off-screen hold ends on its own; the poll that hides the
         // window, or finds it back, is asked for then, not at the next
@@ -3437,7 +3446,7 @@ class WindowManager {
         guard isRunning, let info = floatingRuleCommands.info(for: id) else { return }
         let window = stateCache.cachedWindows[id]
         let icon = window.flatMap { NSRunningApplication(processIdentifier: $0.ownerPID)?.icon }
-        windowRulesOverlay.show(info, over: window?.frame, icon: icon)
+        windowRulesOverlay.show(info, ownerPID: window?.ownerPID, over: window?.frame, icon: icon)
     }
 
     @objc private func retileAllRequested() {

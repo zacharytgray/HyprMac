@@ -208,6 +208,36 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(engine.knownFixedSizeApps.isEmpty)
     }
 
+    /// live check, CARROT Weather: every Hypr+T on a window that keeps its
+    /// height resized and rolled back two slots. honoring its record, the
+    /// toggle is refused before any write; an explicit second ask tries
+    func testAHandTileHonoringAKeptLengthWritesNothing() {
+        let screen = MembershipHomeScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 1201), b = makeWindow(id: 1202)
+        let rect = engine.displayManager.cgRect(for: screen)
+        trace.frames[a.windowID] = rect.insetBy(dx: 100, dy: 100)
+        XCTAssertTrue(engine.tileWindows([a], onWorkspace: 1, screen: screen).published)
+        b.bundleID = "com.grailr.CARROTweather"
+        trace.frames[b.windowID] = CGRect(x: rect.minX + 300, y: rect.minY + 200, width: 400, height: 300)
+        trace.fixedWidth[b.windowID] = 400
+        _ = engine.tileWindows([a, b], onWorkspace: 1, screen: screen)
+        let fixed = FixedSize(bundleID: "com.grailr.CARROTweather", axis: .width, length: 400)
+        XCTAssertEqual(engine.fixedSize(for: b), fixed)
+
+        trace.written = []
+        XCTAssertEqual(engine.forceInsertWindow(b, toWorkspace: 1, on: screen, honoringFixedSize: true),
+                       .failed(.keepsFixedSize(fixed)))
+        XCTAssertTrue(trace.written.isEmpty, "nothing moves")
+        XCTAssertEqual(engine.fixedSize(for: b), fixed, "the record stands")
+
+        // asked again: the real try, which the app refuses as before
+        XCTAssertNotEqual(engine.forceInsertWindow(b, toWorkspace: 1, on: screen), .inserted)
+        XCTAssertTrue(trace.written.contains(b.windowID))
+    }
+
     /// the hint outlives the engine, so a restart doesn't try the app again
     func testFixedSizeHintsSurviveARestart() throws {
         let file = FileManager.default.temporaryDirectory
