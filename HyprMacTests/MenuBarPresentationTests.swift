@@ -285,6 +285,14 @@ final class MenuBarPresentationTests: XCTestCase {
                              version: "v0.26.0", highlighted: true))
     }
 
+    // an external manager replaces the update row with who updates HyprMac
+    func testTheManagedUpdatesRowNamesWhoUpdates() {
+        XCTAssertEqual(MenuBarPresentation.managedUpdatesTitle(nixInstall: true),
+                       "Updates are managed by Nix")
+        XCTAssertEqual(MenuBarPresentation.managedUpdatesTitle(nixInstall: false),
+                       "Updates are managed by your package manager")
+    }
+
     func testTheMenuBarDotSaysWhatIsPending() {
         XCTAssertEqual(MenuBarPresentation.updateHelp(for: .available(version: "0.26.0")),
                        "HyprMac 0.26.0 is available")

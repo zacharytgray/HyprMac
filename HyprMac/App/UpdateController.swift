@@ -40,9 +40,9 @@ final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate, SP
 
     private override init() {
         super.init()
-        // Nix replaces the bundle on its own; Sparkle must not
+        // Nix or another manager replaces the bundle on its own; Sparkle must not
         controller = SPUStandardUpdaterController(
-            startingUpdater: !RuntimeVariant.updatesManagedByNix,
+            startingUpdater: !RuntimeVariant.updatesManagedExternally,
             updaterDelegate: self, userDriverDelegate: self)
         canCheckObservation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
             DispatchQueue.main.async { self?.canCheckForUpdates = updater.canCheckForUpdates }

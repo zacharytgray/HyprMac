@@ -196,8 +196,9 @@ struct MenuBarView: View {
                 }
             }
             #if !HYPRMAC_DEBUG_VARIANT
-            if RuntimeVariant.updatesManagedByNix {
-                MenuBarRow("Updates are managed by Nix", icon: "shippingbox", action: {}) {
+            if RuntimeVariant.updatesManagedExternally {
+                MenuBarRow(MenuBarPresentation.managedUpdatesTitle(nixInstall: RuntimeVariant.updatesManagedByNix),
+                           icon: "shippingbox", action: {}) {
                     versionLabel
                 }
                 .disabled(true)
@@ -458,6 +459,12 @@ enum MenuBarPresentation {
             return UpdateRow(title: "Restart to update", icon: "arrow.clockwise.circle.fill",
                              version: "v\(version)", highlighted: true)
         }
+    }
+
+    /// The disabled menu row shown instead of the update row when
+    /// something outside HyprMac updates it.
+    static func managedUpdatesTitle(nixInstall: Bool) -> String {
+        nixInstall ? "Updates are managed by Nix" : "Updates are managed by your package manager"
     }
 
     /// Tooltip for the menu bar item's update dot.

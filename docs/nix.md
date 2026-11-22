@@ -108,7 +108,10 @@ can still save it. A non-empty one becomes a read-only link into `/nix/store`:
 - HyprMac reloads both files within about two seconds of a switch. No restart.
 - The iCloud sync switch stays off.
 - In-app updates are off when HyprMac runs from the store, "Nix Apps" or
-  "Home Manager Apps". Update through Nix.
+  "Home Manager Apps". Update through Nix. A copy elsewhere, for example one
+  from a nix-darwin `homebrew` setup, can turn them off through
+  `targets.darwin.defaults."com.zachgray.HyprMac".HyprMacUpdatesManagedExternally = true;`
+  Quit and reopen HyprMac after the switch.
 
 ## An existing config file
 
