@@ -375,7 +375,7 @@ struct GeneralSettingsView: View {
 
             Button { config.resetToDefaults() } label: {
                 HyprRow("Reset all settings…",
-                        subtitle: "Restores keybinds, tiling, exclusions to defaults",
+                        subtitle: "Restores the Hypr key, keybinds, rules, workspace names, layout, appearance and monitor settings, and turns off external control. Keeps this Mac's Show in Dock, Menu bar, Launch at login, iCloud sync and Updates.",
                         divider: false) { EmptyView() }
                     .contentShape(Rectangle())
             }
