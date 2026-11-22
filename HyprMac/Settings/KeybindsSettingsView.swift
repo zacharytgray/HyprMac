@@ -74,7 +74,7 @@ struct KeybindsSettingsView: View {
             }
 
             Button("Reset to defaults") {
-                config.keybinds = Keybind.defaults
+                config.resetKeybindsToDefaults()
             }
             .controlSize(.small)
             .foregroundStyle(Color.hyprTextSecondary)

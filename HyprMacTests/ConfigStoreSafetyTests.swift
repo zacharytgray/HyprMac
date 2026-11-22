@@ -645,6 +645,33 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertEqual(copy(monitor, "replaced"), monitorText)
     }
 
+    func testKeybindResetKeepsTheLaunchersItDrops() throws {
+        try good.write(to: local)
+        let monitorText = Data(#"{"maxSplitsPerMonitor":{"DELL":2}}"#.utf8)
+        try monitorText.write(to: monitor)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        config.keybinds.append(Keybind(keyCode: 11, modifiers: .hypr,
+                                       action: .launchApp(bundleID: "com.apple.Safari")))
+        let withLauncher = try Data(contentsOf: local)
+
+        config.resetKeybindsToDefaults()
+
+        XCTAssertEqual(config.keybinds, Keybind.defaults)
+        XCTAssertEqual(try JSONDecoder().decode(SavedConfig.self, from: Data(contentsOf: local)).keybinds,
+                       Keybind.defaults)
+        XCTAssertEqual(copy(local, "replaced"), withLauncher)
+        XCTAssertNil(copy(monitor, "replaced"), "the keybind reset leaves the monitor file alone")
+        XCTAssertEqual(config.gapSize, 23, "only the keybinds reset")
+    }
+
+    func testKeybindResetOnDefaultsKeepsNoCopy() throws {
+        try good.write(to: local)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        config.keybinds = Keybind.defaults
+        config.resetKeybindsToDefaults()
+        XCTAssertNil(copy(local, "replaced"))
+    }
+
     func testResetWhileHeldStaysOutOfICloud() throws {
         try linkLocalToICloud()
         let config = UserConfig(store: store, iCloudSyncEnabled: true)

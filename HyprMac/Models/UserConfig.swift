@@ -595,6 +595,14 @@ class UserConfig: ObservableObject {
         floatingRulesReloaded.send()
     }
 
+    // Keys → Reset to defaults. it drops every launcher and command bind with
+    // no confirmation, so keep config.json.replaced first, like resetToDefaults
+    func resetKeybindsToDefaults() {
+        guard keybinds != Keybind.defaults else { return }
+        store.keepCopiesBeforeReset(includingMonitorConfig: false)
+        keybinds = Keybind.defaults
+    }
+
     /// Restore the controls in Focus Chrome without changing layout,
     /// keybind, monitor, or scratchpad preferences.
     func resetAppearanceToDefaults() {

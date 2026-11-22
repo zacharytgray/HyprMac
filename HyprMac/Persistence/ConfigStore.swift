@@ -338,9 +338,11 @@ final class ConfigStore {
         watch.checkNow()
     }
 
-    /// Keep what a reset is about to replace.
-    func keepCopiesBeforeReset() {
-        for url in [localConfigURL, monitorConfigURL] {
+    /// Keep what a reset is about to replace. The keybind reset touches
+    /// only config.json, so it leaves the monitor file out.
+    func keepCopiesBeforeReset(includingMonitorConfig: Bool = true) {
+        let urls = includingMonitorConfig ? [localConfigURL, monitorConfigURL] : [localConfigURL]
+        for url in urls {
             if let data = try? bytes(at: url) {
                 keepCopy(data, of: url, suffix: "replaced")
             }

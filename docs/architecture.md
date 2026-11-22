@@ -982,6 +982,7 @@ Config safety, all in `ConfigStore`:
 | Enable sync over an iCloud file that doesn't decode, or choosing this Mac's settings | The local file goes up. The bad iCloud file is copied to `config.json.replaced` first, and the local file goes only after iCloud holds its data |
 | Toggle sync on a private file | The mode carries across, so a 0600 file stays 0600 in iCloud and back |
 | Reset all settings | One update. The button has no confirmation, so both files are copied to `<name>.replaced` first |
+| Keys → Reset to defaults | Replaces every keybind, launchers and commands too, with no confirmation. `config.json` is copied to `config.json.replaced` first; nothing is copied when the keybinds are already the defaults |
 
 Copies live beside the local path and never sync. Each takes the mode of the
 file it copies, so a 0600 file gives a 0600 copy. An older copy is never
