@@ -663,6 +663,11 @@ class WindowManager {
         }
         floatingRuleCommands.clearManualChoice = { [weak self] id in self?.floatingController.forgetManualChoice(id) }
         failedTilePrompt.chooseRules = { [weak self] id in self?.showWindowRules(for: id) }
+        windowRulesOverlay.restoreFocus = { [weak self] id in
+            guard let self, let window = self.stateCache.cachedWindows[id] else { return }
+            window.focus()
+            self.focusController.recordFocus(id, reason: "rules-overlay-closed")
+        }
         windowRulesOverlay.perform = { [weak self] row, match, id in
             guard let commands = self?.floatingRuleCommands else { return }
             switch row {

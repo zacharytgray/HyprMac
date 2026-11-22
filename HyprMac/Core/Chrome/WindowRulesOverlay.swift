@@ -157,6 +157,9 @@ struct WindowRulesOverlayView: View {
             TextField("Title text", text: $model.text)
                 .textFieldStyle(.roundedBorder)
                 .focused($editingTitle)
+                // typing edits the title at once; the arrows, Return and Esc
+                // still go to the rows through the key monitor
+                .onAppear { DispatchQueue.main.async { editingTitle = true } }
             Text("Trim it to the part every such window shares, like “Meeting”.")
                 .font(.hyprMonoXs)
                 .foregroundStyle(Color.hyprTextTertiary)
@@ -202,6 +205,11 @@ struct WindowRulesOverlayView: View {
 final class WindowRulesOverlayController {
     /// run the row for the window the overlay was opened on
     var perform: (WindowRulesOverlayModel.Row, FloatingRule.Match?, CGWindowID) -> Void = { _, _, _ in }
+    /// The panel only gets keys while HyprMac is the active app: another
+    /// app in front keeps them, Esc included. So HyprMac comes forward on
+    /// open, and the window goes back to its app on close.
+    var activateApp: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    var restoreFocus: (CGWindowID) -> Void = { _ in }
 
     private var panel: NSPanel?
     private var keyMonitor: Any?
@@ -213,7 +221,7 @@ final class WindowRulesOverlayController {
     /// when there is one, else on the main screen.
     func show(_ info: FocusedWindowRuleInfo, over frame: CGRect?, icon: NSImage?) {
         mainThreadOnly()
-        close()
+        close(restoringFocus: false)
         let model = WindowRulesOverlayModel(target: info)
         self.model = model
         let hosting = NSHostingView(rootView: WindowRulesOverlayView(model: model, icon: icon) { [weak self] row in
@@ -232,6 +240,7 @@ final class WindowRulesOverlayController {
         hosting.frame = NSRect(origin: .zero, size: panelFrame.size)
         hosting.autoresizingMask = [.width, .height]
         p.contentView = hosting
+        activateApp()
         p.makeKeyAndOrderFront(nil)
         panel = p
         OwnPanelTracker.shared.track(p)
@@ -240,21 +249,26 @@ final class WindowRulesOverlayController {
                 + " rule=\(info.currentRule ?? "none")")
     }
 
-    func close() {
+    /// Close it. Unless a row's action takes over, focus goes back to the
+    /// window it was opened on.
+    func close(restoringFocus: Bool = true) {
         mainThreadOnly()
         if let m = keyMonitor {
             NSEvent.removeMonitor(m)
             keyMonitor = nil
         }
+        let target = model?.target.windowID
         panel?.close()
         panel = nil
         model = nil
+        if restoringFocus, let target { restoreFocus(target) }
     }
 
     private func run(_ row: WindowRulesOverlayModel.Row) {
         guard let model, model.isEnabled(row) else { return }
         let match = model.titleMatch
         let id = model.target.windowID
+        // focus back first, so the action runs on the window in front
         close()
         perform(row, match, id)
     }

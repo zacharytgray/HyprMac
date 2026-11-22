@@ -103,3 +103,33 @@ final class FailedTilePromptPolicyTests: XCTestCase {
         XCTAssertFalse(policy.shouldPrompt(bundleID: nil, isFloating: true, coveredByRule: false, hasManualChoice: false))
     }
 }
+
+// live check: with another app in front the overlay never got Esc or the
+// typing. it brings HyprMac forward on open and hands focus back on close
+final class WindowRulesOverlayControllerTests: XCTestCase {
+    func testOpeningActivatesAndClosingRestoresTheWindow() {
+        let controller = WindowRulesOverlayController()
+        var activations = 0
+        var restored: [CGWindowID] = []
+        var performed: [WindowRulesOverlayModel.Row] = []
+        controller.activateApp = { activations += 1 }
+        controller.restoreFocus = { restored.append($0) }
+        controller.perform = { row, _, _ in performed.append(row) }
+        let info = FocusedWindowRuleInfo(windowID: 8905, appName: "Microsoft Teams", bundleID: "com.microsoft.teams2",
+                                         title: "Chat", currentRule: nil, appFloats: false, appTiles: false,
+                                         isFloating: false)
+        controller.show(info, over: nil, icon: nil)
+        XCTAssertEqual(activations, 1)
+        XCTAssertTrue(controller.isShowing)
+
+        controller.close()
+        XCTAssertFalse(controller.isShowing)
+        XCTAssertEqual(restored, [8905], "Esc hands focus back to the window")
+
+        controller.show(info, over: nil, icon: nil)
+        controller.show(info, over: nil, icon: nil)
+        XCTAssertEqual(restored, [8905], "reopening doesn't bounce focus")
+        controller.close(restoringFocus: false)
+        XCTAssertTrue(performed.isEmpty)
+    }
+}
