@@ -264,6 +264,7 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 | `Hypr + W` | Close window |
 | `Hypr + P` | Pause tiling. While paused, Caps Lock is a normal Caps Lock again, so resume from the menu bar. With F13 to F20 or a modifier as the Hypr key, `Hypr + P` also resumes |
 | `Hypr + K` | Show the keybind overlay |
+| `Hypr + I` | Window rules for the focused window |
 | `Hypr + O` | Show workspace overview |
 | `Hypr + Ctrl + S` / `Hypr + Ctrl + R` | Save / restore the layout for this display setup |
 | `Hypr + R` | Retile all spaces (also applies workspace pins) |
@@ -291,15 +292,17 @@ can be pinned too: it goes to its workspace and stays floating.
 
 Settings → General → "Float and tile rules" lists which apps, and which kinds of window inside
 an app, always float or always tile. A rule for one kind of window beats a rule for its app.
-Make one from the window itself: the menu bar's "Focused window" section has "Always float
-windows like this", "Always tile windows like this", "Always float all <App> windows" and
-"Forget rule for this window". Both "like this" items and Forget also exist as keybindable
-actions. "Windows like this" are the app's windows with the focused one's title. Settings' Edit can
-change a title rule to "contains", for meeting windows whose title carries the meeting's name.
-Windows that stay on top of others, like picture in picture, are never tiled and need no rule.
+Make one from the window itself with **Hypr + I**: a small panel over the focused window offers
+to float or tile it once, always float or tile all of the app's windows, always float or tile
+windows whose title is or contains text you trim from this window's title (for meeting windows
+whose title carries the meeting's name), or forget the rule that covers it. The menu bar's
+"Focused window" section has the app rules and opens the same panel. Windows that stay on top of
+others, like picture in picture, are never tiled and need no rule.
 
-A window a float rule covers can't be tiled by hand. Hypr+T on one shakes red and says so; remove
-the rule to tile it again. "Always tile" can't tile a window HyprMac can't resize.
+You always win: **Hypr + T** floats or tiles a window by hand whatever the rules say, Never tile
+included, and the rules leave that window alone until it closes. Only a window that can't take a
+tile shakes red. When HyprMac tries to tile a new window and can't, it floats it and asks once per
+app whether to always float windows like it.
 
 </details>
 

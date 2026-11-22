@@ -291,6 +291,9 @@ final class FloatingWindowController {
     var onMaximizeEnded: (NSScreen) -> Void = { _ in }
     /// The rules the open windows were last brought in line with.
     private var appliedRuleBook: FloatingRuleBook?
+    /// What the user chose by hand for a window: floating or tiled. It beats
+    /// every rule, Never tile included, until the window closes.
+    private(set) var manualChoices: [CGWindowID: Bool] = [:]
     var windowListForZOrder: () -> [[String: Any]]? = {
         CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
@@ -409,17 +412,9 @@ final class FloatingWindowController {
             }
             return
         }
-        if wasFloating, let verdict = floatRule(for: window) {
-            // the user put this app in Never tile, or made a float rule for
-            // windows like this one. say so, and where to change it
-            hyprLog(.notice, .floating, "float→tile refused: \(window.windowID) "
-                    + (verdict.rule == nil ? "belongs to a never-tile app" : "is covered by a float rule"))
-            if let frame = window.frame ?? stateCache.cachedWindows[window.windowID]?.frame {
-                focusBorder.flashError(around: frame, windowID: window.windowID,
-                                       message: FloatingAdmissionPolicy.refusalMessage(for: verdict))
-            }
-            return
-        }
+        // no rule refuses this: the user asked for this window, and that wins
+        // over Never tile and every float rule until the window closes. only
+        // a window that can't take a tile fails, below, with the red shake
         guard let retile = retile else { return }
 
         if wasFloating {
@@ -431,6 +426,7 @@ final class FloatingWindowController {
 
                 switch forceInsert(window, workspace: workspace, screen: screen) {
                 case .inserted, .alreadyPresent:
+                    noteManualChoice(window.windowID, floating: false)
                     hyprLog(.debug, .floating, "tiling window '\(window.title ?? "?")'")
                 case let .failed(reason):
                     // the tree never took it, so it is still a floater. put
@@ -445,6 +441,7 @@ final class FloatingWindowController {
             dimmingOverlay.hideAll()
             retile { [self] in
                 stateCache.setFloating(true, window: window)
+                noteManualChoice(window.windowID, floating: true)
                 tilingEngine.removeWindow(window, fromWorkspace: workspace)
 
                 let screenRect = displayManager.cgRect(for: screen)
@@ -921,6 +918,25 @@ final class FloatingWindowController {
         }
     }
 
+    // MARK: - manual choices
+
+    /// The user floated (`true`) or tiled (`false`) this window directly:
+    /// Hypr+T, the rules overlay's one-off, the scratchpad, the dedicated
+    /// workspace move. Rules leave it alone from now on.
+    func noteManualChoice(_ id: CGWindowID, floating: Bool) {
+        if manualChoices[id] != floating {
+            hyprLog(.notice, .floating, "manual choice: \(id) \(floating ? "floating" : "tiled") — rules leave it alone")
+        }
+        manualChoices[id] = floating
+    }
+
+    func manualChoice(for id: CGWindowID) -> Bool? { manualChoices[id] }
+
+    /// The window closed: its next life starts without the choice.
+    func forgetManualChoice(_ id: CGWindowID) {
+        manualChoices.removeValue(forKey: id)
+    }
+
     var ruleBook: FloatingRuleBook {
         FloatingRuleBook(rules: floatingRules(), excludedBundleIDs: excludedBundleIDs())
     }
@@ -929,6 +945,8 @@ final class FloatingWindowController {
     /// rule for the app or for windows like it that no tile rule above it
     /// overrides. nil when no rule floats it.
     func floatRule(for window: HyprWindow) -> FloatingRuleVerdict? {
+        // the user tiled it by hand: no rule floats it now
+        if manualChoices[window.windowID] == false { return nil }
         guard let verdict = window.floatingVerdict(ruleBook), verdict.floats else { return nil }
         return verdict
     }
@@ -997,7 +1015,7 @@ final class FloatingWindowController {
         for window in windows {
             let id = window.windowID
             guard stateCache.knownWindowIDs.contains(id), !stateCache.hiddenWindowIDs.contains(id),
-                  !window.isQuickLookPanel,
+                  !window.isQuickLookPanel, manualChoices[id] == nil,
                   let workspace = workspaceManager.workspaceFor(id),
                   workspace != ScratchpadController.workspace,
                   !(displayManager.screen(for: window).map(workspaceManager.isMonitorDisabled) ?? false)
@@ -1086,8 +1104,11 @@ final class FloatingWindowController {
         _ window: HyprWindow, excludedBundleIDs: Set<String>, floatingRules: [FloatingRule] = []
     ) -> FloatingAdmissionPolicy.Reason? {
         let book = FloatingRuleBook(rules: floatingRules, excludedBundleIDs: excludedBundleIDs)
+        // tiled by hand: Retile All keeps it tiled, whatever the rules say.
+        // floated by hand it goes back to tiling, as Retile All always did
+        let rule = manualChoices[window.windowID] == false ? nil : window.floatingVerdict(book)
         return FloatingAdmissionPolicy.reason(
-            rule: window.floatingVerdict(book),
+            rule: rule,
             isSizeSettable: isWindowSizeSettable(window),
             isQuickLookPanel: window.isQuickLookPanel
         )

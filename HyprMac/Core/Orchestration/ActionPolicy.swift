@@ -43,7 +43,7 @@ enum ActionPolicy {
         switch action {
         case .switchWorkspace, .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,
              .cycleWorkspace, .moveToNextEmptyWorkspace, .toggleMaximize, .saveLayout,
-             .restoreLayout, .retileAll, .floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule:
+             .restoreLayout, .retileAll:
             return true
         default:
             return false
@@ -66,7 +66,7 @@ enum ActionPolicy {
     static func cancelsPendingRecovery(_ action: Action) -> Bool {
         switch action {
         case .switchWorkspace, .cycleWorkspace, .focusDirection, .focusFloating,
-             .focusMenuBar, .showKeybinds, .showWorkspaceOverview, .launchApp,
+             .focusMenuBar, .showKeybinds, .showWorkspaceOverview, .showWindowRules, .launchApp,
              .runCommand, .saveLayout, .resizeDirection, .swapDirection, .toggleSplit,
              .toggleMaximize:
             return false
@@ -81,8 +81,7 @@ enum ActionPolicy {
         switch action {
         case .swapDirection, .resizeDirection, .toggleSplit, .toggleFloating,
              .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,
-             .moveToNextEmptyWorkspace, .moveToScratchpad, .restoreLayout, .retileAll,
-             .floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule:
+             .moveToNextEmptyWorkspace, .moveToScratchpad, .restoreLayout, .retileAll:
             return true
         default:
             return false

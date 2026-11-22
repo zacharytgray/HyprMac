@@ -102,6 +102,10 @@ extension Keybind {
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_K), modifiers: .hypr,
                              action: .showKeybinds))
 
+        // hypr + i: window rules for the focused window
+        binds.append(Keybind(keyCode: UInt16(kVK_ANSI_I), modifiers: .hypr,
+                             action: .showWindowRules))
+
         // hypr + o: show workspace overview
         binds.append(Keybind(keyCode: UInt16(kVK_ANSI_O), modifiers: .hypr,
                              action: .showWorkspaceOverview))

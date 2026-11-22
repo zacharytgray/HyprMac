@@ -487,7 +487,9 @@ final class WindowRuleTests: XCTestCase {
 
     // MARK: - Never tile refusal
 
-    func testHyprTOnANeverTileWindowLeavesItFloatingAndOutOfEveryTree() {
+    // Zach's rule: a direct action wins. Hypr+T on a Never tile window tiles
+    // it, and Never tile leaves that window alone until it closes
+    func testHyprTOnANeverTileWindowTilesItAndRemembersTheChoice() {
         let screen = WindowRuleTestScreen()
         let display = DisplayManager(screenSource: { [screen] })
         let workspaces = WorkspaceManager(displayManager: display)
@@ -515,12 +517,17 @@ final class WindowRuleTests: XCTestCase {
 
         controller.toggle(window, on: screen, in: workspace)
 
-        XCTAssertTrue(cache.floatingWindowIDs.contains(51))
-        XCTAssertTrue(window.isFloating)
-        XCTAssertEqual(retiles, 0, "nothing is laid out")
-        XCTAssertEqual(refusals, 0, "not a tree refusal; the app is refused up front")
-        XCTAssertTrue(engine.windowIDs(inTreeForWorkspace: workspace, screen: screen).isEmpty)
-        XCTAssertTrue(controller.isNeverTile(window))
+        XCTAssertFalse(cache.floatingWindowIDs.contains(51))
+        XCTAssertEqual(retiles, 1)
+        XCTAssertEqual(refusals, 0)
+        XCTAssertEqual(engine.windowIDs(inTreeForWorkspace: workspace, screen: screen), [51])
+        XCTAssertEqual(controller.manualChoice(for: 51), false)
+        XCTAssertFalse(controller.isNeverTile(window), "the hand choice beats Never tile")
+        XCTAssertNil(controller.autoFloatReason(window, excludedBundleIDs: ["com.apple.FaceTime"]),
+                     "Retile All keeps it tiled")
+
+        controller.forgetManualChoice(51)
+        XCTAssertTrue(controller.isNeverTile(window), "closed and reopened, Never tile applies again")
     }
 
     func testAnAppOutsideNeverTileIsNotRefused() {

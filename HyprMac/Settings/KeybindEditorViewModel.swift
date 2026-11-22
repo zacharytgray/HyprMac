@@ -49,9 +49,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case saveLayout             = "Save Layout"
         case restoreLayout          = "Restore Layout"
         case retileAll              = "Retile All Spaces"
-        case floatWindowsLikeThis   = "Always Float Windows Like This"
-        case tileWindowsLikeThis    = "Always Tile Windows Like This"
-        case forgetWindowRule       = "Forget Rule for This Window"
+        case showWindowRules        = "Show Window Rules"
     }
 
     /// nil unless the command action is selected and its line is unusable
@@ -107,9 +105,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .saveLayout:                    selectedAction = .saveLayout
         case .restoreLayout:                 selectedAction = .restoreLayout
         case .retileAll:                     selectedAction = .retileAll
-        case .floatWindowsLikeThis:          selectedAction = .floatWindowsLikeThis
-        case .tileWindowsLikeThis:           selectedAction = .tileWindowsLikeThis
-        case .forgetWindowRule:              selectedAction = .forgetWindowRule
+        case .showWindowRules:               selectedAction = .showWindowRules
         }
     }
 
@@ -148,9 +144,7 @@ final class KeybindEditorViewModel: ObservableObject {
         case .saveLayout:             action = .saveLayout
         case .restoreLayout:          action = .restoreLayout
         case .retileAll:              action = .retileAll
-        case .floatWindowsLikeThis:   action = .floatWindowsLikeThis
-        case .tileWindowsLikeThis:    action = .tileWindowsLikeThis
-        case .forgetWindowRule:       action = .forgetWindowRule
+        case .showWindowRules:        action = .showWindowRules
         }
         return Keybind(keyCode: recordedKeyCode, modifiers: mods, action: action)
     }

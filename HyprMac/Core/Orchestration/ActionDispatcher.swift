@@ -210,8 +210,8 @@ final class ActionDispatcher {
     var saveLayout: () -> Void = {}
     var restoreLayout: () -> Void = {}
     var retileAll: () -> Void = {}
-    // the three float and tile rule actions; WindowManager owns the config
-    var floatingRuleAction: (Action) -> Void = { _ in }
+    // the window rules overlay on the focused window; WindowManager owns it
+    var showWindowRules: () -> Void = {}
     // switch to a pinned new window's workspace and focus it
     var followPinnedWindow: (CGWindowID, Int) -> Void = { _, _ in }
     // keep drift off a window sent to the cursor's monitor, and end that
@@ -301,6 +301,7 @@ final class ActionDispatcher {
         for id in changes.fullyForgottenIDs {
             tilingEngine.removeWindowID(id)
             applyForgottenIDCleanup(id)
+            floatingController.forgetManualChoice(id)
         }
 
         // proactively drop every gone window from its BSP tree. tileAllVisibleSpaces
@@ -316,6 +317,8 @@ final class ActionDispatcher {
         // no remembered slot, so smart insert tries the focused tile first
         for id in changes.reopenedAfterClose {
             tilingEngine.forgetRememberedSlot(id)
+            // closed and opened again: a hand choice belonged to its last life
+            floatingController.forgetManualChoice(id)
         }
         // the workspace retile below skips the scratchpad's tree, so the layer
         // re-lays its own members here
@@ -683,8 +686,8 @@ final class ActionDispatcher {
             restoreLayout()
         case .retileAll:
             retileAll()
-        case .floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule:
-            floatingRuleAction(action)
+        case .showWindowRules:
+            showWindowRules()
         }
 
         // let the Tour try-it hint (and any future observers) react. cheap —
@@ -724,9 +727,7 @@ final class ActionDispatcher {
         case .saveLayout:          return "saveLayout"
         case .restoreLayout:       return "restoreLayout"
         case .retileAll:           return "retileAll"
-        case .floatWindowsLikeThis: return "floatWindowsLikeThis"
-        case .tileWindowsLikeThis: return "tileWindowsLikeThis"
-        case .forgetWindowRule:    return "forgetWindowRule"
+        case .showWindowRules:     return "showWindowRules"
         }
     }
 

@@ -53,6 +53,9 @@ class WindowManager {
     // action or Settings, reaches the open windows at once
     private var floatingRuleSync: FloatingRuleSync?
     private(set) lazy var floatingRuleCommands = FloatingRuleCommands(config: config)
+    let windowRulesOverlay = WindowRulesOverlayController()
+    let failedTilePrompt = FailedTilePromptController()
+    private let failedTilePolicy = FailedTilePromptPolicy(defaults: .standard)
 
     private(set) var workspaceManager: WorkspaceManager!
     private(set) var tilingEngine: TilingEngine!
@@ -303,6 +306,9 @@ class WindowManager {
         self.workspaceOrchestrator.floatRule = { [weak self] window in
             self?.floatingController.floatRule(for: window)
         }
+        self.workspaceOrchestrator.noteManualTile = { [weak self] id in
+            self?.floatingController.noteManualChoice(id, floating: false)
+        }
         self.workspaceOrchestrator.isScratchpadWindow = { [weak self] id in
             self?.scratchpad.contains(id) ?? false
         }
@@ -338,9 +344,8 @@ class WindowManager {
         scratchpad.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         scratchpad.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         scratchpad.isNeverTile = { [weak self] w in self?.floatingController.isNeverTile(w) ?? false }
-        scratchpad.refusalMessage = { [weak self] w in
-            self?.floatingController.floatRule(for: w).map(FloatingAdmissionPolicy.refusalMessage(for:))
-                ?? FloatingAdmissionPolicy.neverTileMessage
+        scratchpad.noteManualChoice = { [weak self] id, floating in
+            self?.floatingController.noteManualChoice(id, floating: floating)
         }
         scratchpad.retile = { [weak self] prepare, completion in
             self?.retile(prepare: prepare, completion: completion)
@@ -497,6 +502,7 @@ class WindowManager {
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
         floatingController.excludedBundleIDs = { [weak self] in Set(self?.config.excludedBundleIDs ?? []) }
         floatingController.floatingRules = { [weak self] in self?.config.floatingRules ?? [] }
+        discovery.hasManualChoice = { [weak self] id in self?.floatingController.manualChoice(for: id) != nil }
         floatingController.isDisplayTransitionPending = { [weak self] in self?.displayTransitionPending ?? false }
         floatingController.onMaximizeEnded = { [weak self] screen in
             self?.workspaceOverview.showFullscreenHUD(isOn: false, screen: screen)
@@ -640,10 +646,34 @@ class WindowManager {
         actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }
         actionDispatcher.restoreLayout = { [weak self] in self?.restoreLayoutSnapshot(manual: true) }
         actionDispatcher.retileAll = { [weak self] in self?.retileAllRequested() }
-        actionDispatcher.floatingRuleAction = { [weak self] action in
-            self?.floatingRuleCommands.perform(action)
+        actionDispatcher.showWindowRules = { [weak self] in
+            guard let self, let focused = self.focusResolver.currentFocusedWindow() else { return }
+            self.showWindowRules(for: focused.windowID)
         }
-        floatingRuleCommands.focusedWindow = { [weak self] in self?.focusResolver.currentFocusedWindow() }
+        floatingRuleCommands.window = { [weak self] id in
+            guard let self, self.stateCache.knownWindowIDs.contains(id),
+                  !self.stateCache.hiddenWindowIDs.contains(id) else { return nil }
+            return self.stateCache.cachedWindows[id]
+        }
+        floatingRuleCommands.isFloating = { [weak self] id in self?.stateCache.floatingWindowIDs.contains(id) ?? false }
+        floatingRuleCommands.toggle = { [weak self] window in
+            guard let self,
+                  let screen = self.displayManager.screen(for: window) ?? self.displayManager.screens.first else { return }
+            self.floatingController.toggle(window, on: screen, in: self.workspaceManager.workspaceForScreen(screen))
+        }
+        floatingRuleCommands.clearManualChoice = { [weak self] id in self?.floatingController.forgetManualChoice(id) }
+        failedTilePrompt.chooseRules = { [weak self] id in self?.showWindowRules(for: id) }
+        windowRulesOverlay.perform = { [weak self] row, match, id in
+            guard let commands = self?.floatingRuleCommands else { return }
+            switch row {
+            case .once: commands.toggleOnce(id)
+            case .floatApp: commands.setAppRule(id, action: .float)
+            case .tileApp: commands.setAppRule(id, action: .tile)
+            case .floatTitle: if let match { commands.setTitleRule(id, match: match, action: .float) }
+            case .tileTitle: if let match { commands.setTitleRule(id, match: match, action: .tile) }
+            case .forget: commands.forget(id)
+            }
+        }
         floatingRuleCommands.refuse = { [weak self] window, message in
             guard let self, let frame = window.frame ?? self.stateCache.cachedWindows[window.windowID]?.frame else {
                 NSSound.beep()
@@ -3358,13 +3388,51 @@ class WindowManager {
             known: stateCache.knownWindowIDs)
         guard floatingController.rulesChanged(windows: windows) != nil else { return }
         statusPresenter.updateMenuBarState()
-        refreshFocusedWindowRuleInfo()
+        updateFocusedWindowRuleInfo()
     }
 
-    /// Fill the menu bar's "Focused window" section. Called when the menu
-    /// opens, and after a rule change.
+    /// Fill the menu bar's "Focused window" section when the menu opens.
+    /// The window is fixed then: the rows act on it, whatever hover does
+    /// while the menu is up.
     func refreshFocusedWindowRuleInfo() {
-        MenuBarState.shared.focusedWindowRule = isRunning ? floatingRuleCommands.focusedInfo() : nil
+        let id = isRunning ? focusResolver.currentFocusedWindow()?.windowID : nil
+        MenuBarState.shared.focusedWindowRule = id.flatMap(floatingRuleCommands.info(for:))
+    }
+
+    /// After a rule change: the same window, its new rule. nil once it's gone.
+    private func updateFocusedWindowRuleInfo() {
+        guard let id = MenuBarState.shared.focusedWindowRule?.windowID else { return }
+        MenuBarState.shared.focusedWindowRule = floatingRuleCommands.info(for: id)
+    }
+
+    /// The once-per-app offer after a new window couldn't tile. Asked a
+    /// moment later, so a window that tiled or got a rule meanwhile, or
+    /// that the user toggled, is left alone.
+    private func offerFailedTilePrompt(_ id: CGWindowID) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self, self.isRunning, self.stateCache.knownWindowIDs.contains(id),
+                  let window = self.stateCache.cachedWindows[id],
+                  self.workspaceManager.workspaceFor(id).map(self.workspaceManager.isWorkspaceVisible) == true
+            else { return }
+            let bundleID = window.bundleID ?? NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier
+            guard self.failedTilePolicy.shouldPrompt(
+                bundleID: bundleID,
+                isFloating: self.stateCache.floatingWindowIDs.contains(id),
+                coveredByRule: window.floatingVerdict(self.config.floatingRuleBook) != nil,
+                hasManualChoice: self.floatingController.manualChoice(for: id) != nil),
+                  let bundleID else { return }
+            self.failedTilePolicy.markAsked(bundleID)
+            let appName = NSRunningApplication(processIdentifier: window.ownerPID)?.localizedName ?? bundleID
+            self.failedTilePrompt.show(windowID: id, appName: appName, frame: window.frame)
+        }
+    }
+
+    /// The window rules overlay, on the window with this id.
+    func showWindowRules(for id: CGWindowID) {
+        guard isRunning, let info = floatingRuleCommands.info(for: id) else { return }
+        let window = stateCache.cachedWindows[id]
+        let icon = window.flatMap { NSRunningApplication(processIdentifier: $0.ownerPID)?.icon }
+        windowRulesOverlay.show(info, over: window?.frame, icon: icon)
     }
 
     @objc private func retileAllRequested() {
@@ -3487,6 +3555,8 @@ private extension WindowManager {
             // fallback retile, which walks once and refreshes the cache for
             // the key. a walk per float was eight walks for eight windows
             self?.floatingController.floatInPlace(window, reason: reason)
+            // HyprMac tried, failed twice, and gave up: offer a rule once
+            self?.offerFailedTilePrompt(window.windowID)
         }
         admissionRecovery.isTiled = { [weak self] id in
             guard let self, let workspace = self.workspaceManager.workspaceFor(id),

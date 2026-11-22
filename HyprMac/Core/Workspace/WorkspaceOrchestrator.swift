@@ -102,6 +102,8 @@ final class WorkspaceOrchestrator {
     // the rule that keeps a window floating (Never tile or a float rule),
     // nil when none does. FloatingWindowController.floatRule(for:)
     var floatRule: (HyprWindow) -> FloatingRuleVerdict? = { _ in nil }
+    // the dedicated-workspace move tiles the window on the user's word
+    var noteManualTile: (CGWindowID) -> Void = { _ in }
     var isScratchpadWindow: (CGWindowID) -> Bool = { _ in false }
 
     init(workspaceManager: WorkspaceManager,
@@ -173,10 +175,10 @@ final class WorkspaceOrchestrator {
         // the desired end state. Repeating this action is therefore a no-op, even if
         // that sole window is currently floating.
         guard sourceIDs.count > 1 else { return }
-        let rule = floatRule(focused)
-        if FloatingAdmissionPolicy.reason(rule: rule, isSizeSettable: focused.isSizeSettable) != nil {
-            rejectTransfer(focused, message: rule.map(FloatingAdmissionPolicy.refusalMessage(for:))
-                ?? "This window cannot be tiled")
+        // a direct ask: no rule refuses it. only a window that can't take a
+        // tile is turned away
+        if FloatingAdmissionPolicy.reason(rule: nil, isSizeSettable: focused.isSizeSettable) != nil {
+            rejectTransfer(focused, message: "This window cannot be tiled")
             return
         }
         // a workspace with nothing on screen is empty, same as the menu bar:
@@ -312,6 +314,7 @@ final class WorkspaceOrchestrator {
         }
         tilingEngine.removeWindowMembershipOnly(focused, fromWorkspace: sourceWorkspace)
         stateCache.floatingWindowIDs.remove(focused.windowID)
+        noteManualTile(focused.windowID)
         workspaceManager.clearSavedFloatingFrame(for: focused.windowID)
         if wasFloating, let original = tilingEngine.capturedFrame(for: focused.windowID, in: prepared) {
             stateCache.originalFrames[focused.windowID] = original

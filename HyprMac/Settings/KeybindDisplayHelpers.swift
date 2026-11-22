@@ -96,12 +96,8 @@ extension Keybind {
             return "square.and.arrow.up"
         case .retileAll:
             return "rectangle.3.group"
-        case .floatWindowsLikeThis:
-            return "macwindow.on.rectangle"
-        case .tileWindowsLikeThis:
-            return "rectangle.split.2x1"
-        case .forgetWindowRule:
-            return "xmark.circle"
+        case .showWindowRules:
+            return "slider.horizontal.3"
         }
     }
 
@@ -143,9 +139,7 @@ extension Keybind {
         case .saveLayout:                   return "Save Layout"
         case .restoreLayout:                return "Restore Layout"
         case .retileAll:                    return "Retile All Spaces"
-        case .floatWindowsLikeThis:         return "Always Float Windows Like This"
-        case .tileWindowsLikeThis:          return "Always Tile Windows Like This"
-        case .forgetWindowRule:             return "Forget Rule for This Window"
+        case .showWindowRules:              return "Show Window Rules"
         }
     }
 

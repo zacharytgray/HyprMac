@@ -53,8 +53,11 @@ settings.floatingRules = [
 ];
 ```
 
-A rule added from the menu bar or an action on a read-only config applies until
-the next reload, like any Settings change. Copy it into `settings` to keep it.
+A rule added from the menu bar or the Hypr+I overlay on a read-only config
+applies until the next reload, like any Settings change. Copy it into
+`settings` to keep it. A switch that changes the rules reaches new windows,
+Hypr+T and Retile All; it doesn't move windows already open. The Hypr+I bind
+is added at load when your `keybinds` leave that chord free.
 
 `settings` and `monitorSettings` are attribute sets written as JSON. See
 [Keybinds and actions](keybinds-and-actions.md) for every key. The module adds

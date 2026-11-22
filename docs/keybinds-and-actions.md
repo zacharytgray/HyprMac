@@ -34,9 +34,7 @@ enum Action: Equatable {
     case saveLayout
     case restoreLayout
     case retileAll
-    case floatWindowsLikeThis
-    case tileWindowsLikeThis
-    case forgetWindowRule
+    case showWindowRules
 }
 ```
 
@@ -262,39 +260,71 @@ covers the app. There is no rule for windows above normal windows
 those are never managed and already float.
 
 **Precedence**, highest first: Quick Look previews and windows on a disabled
-monitor (always float, outside rules); a window rule, the first that matches
-in list order; the app's rule; HyprMac's automatic logic (a window whose size
-AX can't set floats). A hand edit that puts an app in `excludedBundleIDs` and
-gives it an app tile rule floats it, as before tile rules existed. Settings
-never makes that state: picking one removes the other.
+monitor (always float, outside rules); the user's own choice for that window
+(below); a window rule, the first that matches in list order; the app's rule;
+HyprMac's automatic logic (a window whose size AX can't set floats). A hand
+edit that puts an app in `excludedBundleIDs` and gives it an app tile rule
+floats it, as before tile rules existed. Settings never makes that state:
+picking one removes the other.
+
+**The user wins.** A direct action on a window beats every rule for it, Never
+tile included, until the window closes: Hypr+T, the overlay's one-off, tiling
+or untiling it in the scratchpad, and the dedicated workspace move
+(`FloatingWindowController.noteManualChoice`). No rule refuses those. Only a
+window that can't take a tile fails, as before: the red shake, or a float in
+place, with no retry loop. Rules then leave that window alone: a rule edit
+skips it, the late-title re-check skips it, and Retile All keeps a window the
+user tiled by hand tiled. A window floated by hand goes back to tiling on
+Retile All, as it always did. The choice is forgotten when the window closes
+(fully forgotten, or reopened after a verified close).
 
 A tile rule never tiles a window HyprMac can't resize. At admission it stays
-floating with one `.notice` line; from an action it gets the red shake. The
-same precedence answers at every place that asked about Never tile: admission
-(`WindowDiscoveryService.admitNew`), startup and Retile All
-(`FloatingWindowController.autoFloatReason`), Hypr+T
-(`FloatingWindowController.toggle`), the dedicated workspace move, a move to a
+floating with one `.notice` line; from the overlay or the menu it gets the red
+shake and no rule is saved. The same precedence answers at every place that
+asked about Never tile: admission (`WindowDiscoveryService.admitNew`), startup
+and Retile All (`FloatingWindowController.autoFloatReason`), a move to a
 workspace and the scratchpad (`isNeverTile`, `floatRule(for:)`).
 
-**From the focused window.** Three actions, no default binds, listed under
-Window Management once bound:
+**The window rules overlay**, `showWindowRules`, default Hypr+I:
 
 ```json
-{"floatWindowsLikeThis":{}}
-{"tileWindowsLikeThis":{}}
-{"forgetWindowRule":{}}
+{"showWindowRules":{}}
+{"action":{"showWindowRules":{}},"keyCode":34,"modifiers":1}
 ```
 
-The menu bar's "Focused window" section runs them too, plus "Always float all
-<App> windows". "Windows like this" are the app's windows with the focused
-one's exact title. Settings' Edit popover loosens a title to "contains" and
-trims it, for titles that carry a meeting's name. A window with no title has
-nothing to match, so the menu items are dimmed and the action shakes. A new rule goes
-ahead of the app's older ones. Forget removes the rule that decides the window:
-a window rule, the app tile rule, or the app from Never tile.
+A small card over the focused window, fixed when the key is pressed. It
+shows the app, the window's title and the rule that covers it, and offers:
+float or tile this window once (Hypr+T's toggle); always float or always tile
+all of the app's windows (the one in effect is not offered again); always
+float or always tile windows whose title is, or contains, the text in an
+editable field prefilled with the window's title, which the user trims (a
+Teams chat window carries the chat's name, so "Chat |" or the app name is the
+usual edit); and forget the rule that covers it. Up and Down choose, Return
+applies, Esc closes, and a mouse works. Typing goes to the title field. A new
+rule goes ahead of the app's older ones. Forget removes the rule that decides
+the window: a title rule, the app tile rule, or the app from Never tile. Any
+rule set here for a window also drops the user's hand choice for it: it is the
+newest word. Hypr+I is added for existing configs by `mergeNewDefaults` only
+when the chord is free; no `ConfigMigration` step is involved.
 
-**Live, for edits on this Mac.** A change made in Settings, the menu bar or an
-action (`UserConfig.floatingRulesEdited`) re-applies to open windows whose
+**The menu bar's "Focused window" section** takes the window that had focus
+when the menu opened, and acts on it whatever hover does while the menu is up
+(hover focus is paused while a HyprMac panel is open). It shows the rule that
+covers it, "Edit rule for this window…" (the overlay), "Always float all
+<App> windows", "Always tile all <App> windows", and "Forget rule for this
+window". Rows wrap to two lines.
+
+**After a failed tile.** When HyprMac tried to tile a new window, failed, and
+floated it in place (`AdmissionRecovery`), it offers once per app, a moment
+later: "<App> window couldn't tile. Always float windows like this?" with
+"Choose…" (the overlay on that window) and "Not now". It is HyprMac's own
+panel, takes no focus, needs no notification permission, and hides after
+10 s. Not shown when the window tiled meanwhile, a rule covers it, or the user
+toggled it; not for a window that is simply not resizable. Asked apps are kept
+per Mac in UserDefaults (`FailedTilePromptedApps`), not in the config.
+
+**Live, for edits on this Mac.** A change made in Settings, the menu bar or the
+overlay (`UserConfig.floatingRulesEdited`) re-applies to open windows whose
 verdict changed (`FloatingWindowController.applyRuleChange`). A change that
 arrives by reload, from iCloud, a Nix rebuild or a hand edit, or from Reset
 all settings (`floatingRulesReloaded`), moves nothing open, as Never tile
@@ -303,9 +333,9 @@ transition a local edit waits until the screens settle, and a window it moves
 leaves any maximize first. On a local edit, one that a rule now floats
 floats, back to its pre-tile frame when that is on its screen; one that a
 tile rule now covers, or whose float rule is gone, tiles if it can. A window
-the user floated by hand and no rule covered stays. Scratchpad members,
-hidden windows and windows on a disabled monitor keep what they have. A
-window on a hidden workspace changes state now and shows it on reveal.
+with a hand choice, scratchpad members, hidden windows and windows on a
+disabled monitor keep what they have. A window on a hidden workspace changes
+state now and shows it on reveal.
 
 **Late titles.** Apps often name a window a moment after it opens. A new
 window of an app with title rules, that no window rule matched at first sight,
@@ -751,7 +781,7 @@ every JSON example in this file.
 
 **Other config fields**: `gapSize`, `outerPadding`, `enabled`,
 `focusFollowsMouse`, `excludedBundleIDs` (Never tile: bundle IDs that
-always float — auto-float on discovery, and Hypr+T refuses to tile them;
+always float — auto-float on discovery; Hypr+T still tiles one by hand, and
 a window tile rule can take one window out, see "Float and tile rules"),
 `floatingRules` (app tile and window rules, see "Float and tile rules"),
 `windowRules` (per-app workspace pins, see "Window rules"), `disabledMonitors` (in `monitor-config.json`: monitor names

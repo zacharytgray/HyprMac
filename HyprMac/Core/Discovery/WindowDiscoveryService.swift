@@ -423,6 +423,9 @@ final class WindowDiscoveryService {
     static let titleRuleRecheckDelays: [TimeInterval] = [0.5, 1, 2, 4]
     /// The rules in force this cycle, for the re-check.
     private var ruleBook = FloatingRuleBook.empty
+    /// The user floated or tiled the window by hand; no rule touches it.
+    /// FloatingWindowController's manual choices.
+    var hasManualChoice: (CGWindowID) -> Bool = { _ in false }
 
     /// How long until discovery wants another poll for something no event
     /// will report: a window not ready yet, a fixed-size re-check, or an
@@ -1028,7 +1031,7 @@ final class WindowDiscoveryService {
             guard now >= entry.due else { continue }
             let floating = stateCache.floatingWindowIDs.contains(id)
             let workspace = workspaceManager.workspaceFor(id)
-            guard floating == entry.floating,
+            guard floating == entry.floating, !hasManualChoice(id),
                   workspace != ScratchpadController.workspace,
                   !(displayManager.screen(for: w).map(workspaceManager.isMonitorDisabled) ?? false) else {
                 titleRuleRechecks[id] = nil

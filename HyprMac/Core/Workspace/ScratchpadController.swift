@@ -67,8 +67,8 @@ final class ScratchpadController {
     // the app is in Never tile, or a float rule covers the window: the
     // layer keeps it floating
     var isNeverTile: (HyprWindow) -> Bool = { _ in false }
-    // what the red shake says when such a window is refused a tile
-    var refusalMessage: (HyprWindow) -> String = { _ in FloatingAdmissionPolicy.neverTileMessage }
+    // a direct float or tile here beats every rule for that window
+    var noteManualChoice: (CGWindowID, Bool) -> Void = { _, _ in }
     var raiseScrim: () -> Void = {}
     /// Order the scrim panels directly below this window (cross-app window
     /// number). The settle passes use it to tuck the scrim under the
@@ -665,19 +665,11 @@ final class ScratchpadController {
             noteFocus(id)
             updatePositionCache()
             hyprLog(.notice, .lifecycle, "scratchpad: untiled '\(focused.title ?? "?")' (\(id)) → floating")
+            noteManualChoice(id, true)
             return true
         }
 
-        if isNeverTile(focused) {
-            if let f = focused.frame {
-                focusBorder.flashError(around: f, windowID: id,
-                                       message: refusalMessage(focused))
-            } else {
-                NSSound.beep()
-            }
-            hyprLog(.notice, .lifecycle, "scratchpad: tile refused for never-tile app '\(focused.title ?? "?")' (\(id))")
-            return true
-        }
+        // no rule refuses this: the user asked to tile this window here
 
         // floating → tiled. save the current free-form frame first so the
         // reverse toggle restores it (belt-and-suspenders: fall back to the
@@ -703,6 +695,7 @@ final class ScratchpadController {
         noteFocus(id)
         updatePositionCache()
         hyprLog(.notice, .lifecycle, "scratchpad: tiled '\(focused.title ?? "?")' (\(id)) into layer")
+        noteManualChoice(id, false)
         return true
     }
 

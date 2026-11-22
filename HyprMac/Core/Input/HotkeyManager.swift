@@ -137,7 +137,7 @@ class HotkeyManager {
     static func ignoresAutorepeat(_ action: Action) -> Bool {
         switch action {
         case .toggleTiling, .moveToNextEmptyWorkspace, .toggleMaximize, .runCommand, .retileAll,
-             .floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule:
+             .showWindowRules:
             return true
         default:
             return false

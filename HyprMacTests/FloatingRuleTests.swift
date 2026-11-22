@@ -596,12 +596,15 @@ final class FloatingRuleControllerTests: XCTestCase {
         var shakes: [String] = []
         let border = FocusBorder()
 
-        init() {
+        /// `refusing`: every window keeps a 300x200 size, like an app that
+        /// won't take its tile
+        init(refusing: Bool = false) {
             let screen = self.screen
             let display = DisplayManager(screenSource: { [screen] })
             workspaces = WorkspaceManager(displayManager: display)
             workspaces.initializeMonitors()
-            engine = TilingEngine(displayManager: display, frameSizingIOFactory: acceptingFrameSizingIOFactory())
+            engine = TilingEngine(displayManager: display,
+                                  frameSizingIOFactory: refusing ? Self.refusingFactory() : acceptingFrameSizingIOFactory())
             controller = FloatingWindowController(
                 stateCache: cache, suppressions: SuppressionRegistry(), workspaceManager: workspaces,
                 tilingEngine: engine, displayManager: display, accessibility: AccessibilityManager(),
@@ -615,6 +618,19 @@ final class FloatingRuleControllerTests: XCTestCase {
 
         var workspace: Int { workspaces.workspaceForScreen(screen) }
 
+        static func refusingFactory() -> ([CGWindowID: HyprWindow], @escaping () -> UInt64) -> FrameSizingIO {
+            var positions: [CGWindowID: CGPoint] = [:]
+            return { _, generation in
+                FrameSizingIO(
+                    setMessagingTimeout: { _, _ in .success },
+                    writeSize: { _, _, _ in .success },
+                    writePosition: { id, position, _ in positions[id] = position; return .success },
+                    readPosition: { id, _ in (.success, positions[id] ?? .zero) },
+                    readSize: { _, _ in (.success, CGSize(width: 300, height: 200)) },
+                    now: { 0 }, sleep: { _ in }, currentGeneration: generation)
+            }
+        }
+
         func window(_ id: CGWindowID, bundleID: String, title: String?, floating: Bool) -> HyprWindow {
             let w = TitledWindow(id: id, title: title)
             w.bundleID = bundleID
@@ -626,15 +642,49 @@ final class FloatingRuleControllerTests: XCTestCase {
         }
     }
 
-    func testHyprTOnAWindowAFloatRuleCoversIsRefused() {
+    // Zach's rule: Hypr+T is never refused for a rule. it tiles a window a
+    // float rule covers, and from then on no rule moves that window
+    func testHyprTTilesAWindowAFloatRuleCoversAndRulesLeaveItAlone() {
         let h = Harness()
         h.rules = [FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting"))]
         let w = h.window(1, bundleID: zoom, title: "Zoom Meeting", floating: true)
+        h.controller.markRulesApplied()
+        h.controller.toggle(w, on: h.screen, in: h.workspace)
+        XCTAssertFalse(h.cache.floatingWindowIDs.contains(1))
+        XCTAssertEqual(h.retiles, 1)
+        XCTAssertEqual(h.controller.manualChoice(for: 1), false)
+        XCTAssertNil(h.controller.floatRule(for: w))
+
+        // a later rule edit doesn't take it back
+        h.rules.append(FloatingRule(bundleID: zoom, action: .float))
+        XCTAssertEqual(h.controller.rulesChanged(windows: [w])?.floated, [])
+        XCTAssertFalse(h.cache.floatingWindowIDs.contains(1))
+    }
+
+    // floating it by hand is remembered too; a tile rule leaves it floating
+    func testFloatingByHandBeatsATileRule() {
+        let h = Harness()
+        let w = h.window(1, bundleID: zoom, title: "Zoom", floating: false)
+        h.controller.markRulesApplied()
         h.controller.toggle(w, on: h.screen, in: h.workspace)
         XCTAssertTrue(h.cache.floatingWindowIDs.contains(1))
-        XCTAssertEqual(h.retiles, 0)
-        XCTAssertEqual(h.controller.floatRule(for: w).map(FloatingAdmissionPolicy.refusalMessage(for:)),
-                       FloatingAdmissionPolicy.floatRuleMessage)
+        XCTAssertEqual(h.controller.manualChoice(for: 1), true)
+        h.rules = [FloatingRule(bundleID: zoom, action: .tile)]
+        XCTAssertEqual(h.controller.rulesChanged(windows: [w])?.tiled, [])
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(1))
+    }
+
+    // only a window that can't take a tile still fails, with the shake
+    func testHyprTOnAWindowThatCannotTileStillShakes() {
+        let h = Harness(refusing: true)
+        h.excluded = [faceTime]
+        var refused = 0
+        h.controller.rejectFloatToTile = { _, _ in refused += 1 }
+        let w = h.window(1, bundleID: faceTime, title: "FaceTime", floating: true)
+        h.controller.toggle(w, on: h.screen, in: h.workspace)
+        XCTAssertEqual(refused, 1)
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(1), "floats in place, no loop")
+        XCTAssertNil(h.controller.manualChoice(for: 1), "a failed tile is not a choice")
     }
 
     // the FaceTime example: the app floats, its main window tiles
@@ -833,92 +883,134 @@ final class FloatingRuleControllerTests: XCTestCase {
         XCTAssertEqual(h.retiles, 0)
     }
 
-    // MARK: actions
+    // MARK: commands, on the window they were opened for
 
-    private func commands(_ window: HyprWindow?, settable: Bool? = true)
-        -> (FloatingRuleCommands, UserConfig, () -> [String]) {
+    private final class CommandFixture {
+        let config: UserConfig
+        let commands: FloatingRuleCommands
+        var windows: [CGWindowID: HyprWindow] = [:]
+        var floating: Set<CGWindowID> = []
+        var refusals: [String] = []
+        var toggled: [CGWindowID] = []
+        var cleared: [CGWindowID] = []
+        var settable: Bool? = true
+
+        init(dir: URL) {
+            config = UserConfig(store: ConfigStore(
+                localConfigURL: dir.appendingPathComponent("config.json"),
+                monitorConfigURL: dir.appendingPathComponent("monitor-config.json"),
+                iCloudRootURL: dir.appendingPathComponent("cloud", isDirectory: true)), iCloudSyncEnabled: false)
+            config.excludedBundleIDs = []
+            commands = FloatingRuleCommands(config: config)
+            commands.window = { [unowned self] in self.windows[$0] }
+            commands.isFloating = { [unowned self] in self.floating.contains($0) }
+            commands.refuse = { [unowned self] _, message in self.refusals.append(message) }
+            commands.toggle = { [unowned self] in self.toggled.append($0.windowID) }
+            commands.clearManualChoice = { [unowned self] in self.cleared.append($0) }
+            commands.isSizeSettable = { [unowned self] _ in self.settable }
+            commands.appName = { _ in "Microsoft Teams" }
+        }
+
+        func add(_ id: CGWindowID, bundleID: String, title: String) -> HyprWindow {
+            let w = TitledWindow(id: id, title: title)
+            w.bundleID = bundleID
+            windows[id] = w
+            return w
+        }
+    }
+
+    private func fixture() -> CommandFixture {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("FloatingRuleCommands-\(UUID().uuidString)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
-        let config = UserConfig(store: ConfigStore(
-            localConfigURL: dir.appendingPathComponent("config.json"),
-            monitorConfigURL: dir.appendingPathComponent("monitor-config.json"),
-            iCloudRootURL: dir.appendingPathComponent("cloud", isDirectory: true)), iCloudSyncEnabled: false)
-        config.excludedBundleIDs = []
-        let commands = FloatingRuleCommands(config: config)
-        var refusals: [String] = []
-        commands.focusedWindow = { window }
-        commands.refuse = { _, message in refusals.append(message) }
-        commands.isSizeSettable = { _ in settable }
-        commands.appName = { _ in "Zoom" }
-        return (commands, config, { refusals })
+        return CommandFixture(dir: dir)
     }
 
-    func testFloatWindowsLikeThisCapturesTheTitle() {
-        let w = TitledWindow(id: 1, title: "Zoom Meeting")
-        w.bundleID = zoom
-        let (commands, config, refusals) = commands(w)
-        commands.perform(.floatWindowsLikeThis)
-        XCTAssertEqual(config.floatingRules, [FloatingRule(bundleID: zoom, action: .float,
-                                                           match: .titleIs("Zoom Meeting"))])
-        XCTAssertTrue(refusals().isEmpty)
-        XCTAssertEqual(commands.focusedInfo()?.currentRule, "Always float: windows titled “Zoom Meeting”")
+    private let teams = "com.microsoft.teams2"
+
+    // the live bug: the menu named Teams, hover moved focus to Dia, and the
+    // click wrote a Dia rule. the commands take the window id the menu or
+    // the overlay was opened for; focus doesn't enter into it
+    func testACommandActsOnTheWindowItWasOpenedFor() {
+        let f = fixture()
+        _ = f.add(8905, bundleID: teams, title: "Chat | Someone")
+        _ = f.add(28823, bundleID: "company.thebrowser.dia", title: "New Tab")
+        let info = f.commands.info(for: 8905)
+        XCTAssertEqual(info?.bundleID, teams)
+        f.commands.setAppRule(info!.windowID, action: .tile)
+        XCTAssertEqual(f.config.floatingRules, [FloatingRule(bundleID: teams, action: .tile)])
+        XCTAssertEqual(f.cleared, [8905], "the rule is the newest word about that window")
     }
 
-    func testTileWindowsLikeThisOnAWindowThatCannotResizeIsRefused() {
-        let w = TitledWindow(id: 1, title: "Zoom Meeting")
-        w.bundleID = zoom
-        let (commands, config, refusals) = commands(w, settable: false)
-        commands.perform(.tileWindowsLikeThis)
-        XCTAssertTrue(config.floatingRules.isEmpty)
-        XCTAssertEqual(refusals(), [FloatingRuleCommands.cannotTileMessage])
+    func testAGoneWindowGetsNothing() {
+        let f = fixture()
+        XCTAssertNil(f.commands.info(for: 7))
+        f.commands.setAppRule(7, action: .float)
+        f.commands.toggleOnce(7)
+        XCTAssertTrue(f.config.excludedBundleIDs.isEmpty)
+        XCTAssertTrue(f.toggled.isEmpty)
     }
 
-    func testAWindowNothingTellsApartIsRefused() {
-        let w = TitledWindow(id: 1, title: "")
-        w.bundleID = zoom
-        let (commands, config, refusals) = commands(w)
-        commands.perform(.floatWindowsLikeThis)
-        XCTAssertTrue(config.floatingRules.isEmpty)
-        XCTAssertEqual(refusals(), [FloatingRuleCommands.nothingToMatchMessage])
-        XCTAssertNil(commands.focusedInfo()?.likeThis)
+    func testTheOneOffIsAToggle() {
+        let f = fixture()
+        _ = f.add(1, bundleID: teams, title: "Chat")
+        f.commands.toggleOnce(1)
+        XCTAssertEqual(f.toggled, [1])
+        XCTAssertTrue(f.config.floatingRules.isEmpty)
+    }
+
+    func testATitleRuleFromTheEditedText() {
+        let f = fixture()
+        _ = f.add(1, bundleID: teams, title: "Weekly sync | Meeting | Microsoft Teams")
+        f.commands.setTitleRule(1, match: .titleContains("Meeting"), action: .float)
+        XCTAssertEqual(f.config.floatingRules,
+                       [FloatingRule(bundleID: teams, action: .float, match: .titleContains("Meeting"))])
+        XCTAssertEqual(f.commands.info(for: 1)?.currentRule, "Always float: windows with “Meeting” in the title")
+    }
+
+    func testATileRuleForAWindowThatCannotResizeIsRefused() {
+        let f = fixture()
+        _ = f.add(1, bundleID: teams, title: "Meeting")
+        f.settable = false
+        f.commands.setTitleRule(1, match: .titleIs("Meeting"), action: .tile)
+        f.commands.setAppRule(1, action: .tile)
+        XCTAssertTrue(f.config.floatingRules.isEmpty)
+        XCTAssertEqual(f.refusals, [FloatingRuleCommands.cannotTileMessage, FloatingRuleCommands.cannotTileMessage])
     }
 
     func testAQuickLookPreviewIsRefused() {
-        let w = TitledWindow(id: 1, title: "photo.jpg")
-        w.bundleID = zoom
+        let f = fixture()
+        let w = f.add(1, bundleID: teams, title: "photo.jpg")
         w.isQuickLookPanel = true
-        let (commands, config, refusals) = commands(w)
-        commands.perform(.tileWindowsLikeThis)
-        XCTAssertTrue(config.floatingRules.isEmpty)
-        XCTAssertEqual(refusals(), [FloatingRuleCommands.quickLookMessage])
+        XCTAssertNil(f.commands.info(for: 1))
+        f.commands.setAppRule(1, action: .float)
+        XCTAssertTrue(f.config.excludedBundleIDs.isEmpty)
+        XCTAssertEqual(f.refusals, [FloatingRuleCommands.quickLookMessage])
     }
 
     func testForgetRemovesTheRuleThatDecides() {
-        let w = TitledWindow(id: 1, title: "Zoom Meeting")
-        w.bundleID = zoom
-        let (commands, config, refusals) = commands(w)
-        commands.perform(.floatWindowsLikeThis)
-        XCTAssertEqual(config.floatingRules, [FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting"))])
-        commands.perform(.forgetWindowRule)
-        XCTAssertTrue(config.floatingRules.isEmpty)
-        commands.perform(.forgetWindowRule)
-        XCTAssertEqual(refusals(), [FloatingRuleCommands.noRuleMessage])
+        let f = fixture()
+        _ = f.add(1, bundleID: teams, title: "Meeting")
+        f.commands.setTitleRule(1, match: .titleIs("Meeting"), action: .float)
+        f.commands.forget(1)
+        XCTAssertTrue(f.config.floatingRules.isEmpty)
+        f.commands.forget(1)
+        XCTAssertEqual(f.refusals, [FloatingRuleCommands.noRuleMessage])
 
-        commands.floatFocusedApp()
-        XCTAssertEqual(config.excludedBundleIDs, [zoom])
-        XCTAssertEqual(commands.focusedInfo()?.currentRule, "Never tile: all windows")
-        commands.perform(.forgetWindowRule)
-        XCTAssertTrue(config.excludedBundleIDs.isEmpty)
+        f.commands.setAppRule(1, action: .float)
+        XCTAssertEqual(f.config.excludedBundleIDs, [teams])
+        XCTAssertEqual(f.commands.info(for: 1)?.currentRule, "Never tile: all windows")
+        XCTAssertEqual(f.commands.info(for: 1)?.appFloats, true)
+        f.commands.forget(1)
+        XCTAssertTrue(f.config.excludedBundleIDs.isEmpty)
     }
 
-    func testTheActionsAreWindowManagementBindsThatFireOncePerPress() {
-        for action in [Action.floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule] {
-            XCTAssertEqual(KeybindCategory.from(action), .windowManagement)
-            XCTAssertTrue(HotkeyManager.ignoresAutorepeat(action))
-            XCTAssertTrue(ActionPolicy.isDroppedMidDisplayTransition(action))
-        }
+    func testShowWindowRulesIsAWindowManagementBindOncePerPress() {
+        XCTAssertEqual(KeybindCategory.from(.showWindowRules), .windowManagement)
+        XCTAssertTrue(HotkeyManager.ignoresAutorepeat(.showWindowRules))
+        XCTAssertFalse(ActionPolicy.cancelsPendingRecovery(.showWindowRules))
+        XCTAssertTrue(Keybind.defaults.contains(Keybind(keyCode: 34, modifiers: .hypr, action: .showWindowRules)))
     }
 }
 

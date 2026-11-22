@@ -171,7 +171,10 @@ live for the entire app lifetime. The process-wide singletons are
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
 | `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate, and the live re-apply of a float or tile rule change (`applyRuleChange`). |
-| `FloatingRuleCommands` | The `floatWindowsLikeThis`, `tileWindowsLikeThis` and `forgetWindowRule` actions and the menu bar's "Focused window" section. Edits the config only; `WindowManager` watches the rule lists and re-applies (see "Float and tile rules"). |
+| `FloatingRuleCommands` | The rule edits and one-off toggles behind the window rules overlay (Hypr+I), the menu bar's "Focused window" section and the failed-tile prompt. Each acts on the window id it was opened for. Edits the config only; `WindowManager` watches the rule lists and re-applies (see "Float and tile rules"). |
+| `WindowRulesOverlayController` | The Hypr+I card over one window. `WindowRulesOverlayModel` holds its rows and keyboard state. |
+| `FailedTilePromptController` | The once-per-app offer after admission recovery floated a new window in place. `FailedTilePromptPolicy` decides. |
+| `OwnPanelTracker` | HyprMac's own panels (menu bar panel, rules overlay); hover focus pauses while one is visible. |
 | `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
 | `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown and the focus invariant. Puts floaters an old tile covers back on top, then focuses and lifts the target. |
 | `WindowStacking` | Rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, the tiles covering each floater, and the rect-strip `subtract` that `FocusBorder` shares. Pure apart from `onScreen()` and `bounds(of:)`, which read the list. `bounds(of:)` returns one window's current frame. |
@@ -920,8 +923,11 @@ the app's rule, which beats the automatic logic. `FloatingAdmissionPolicy`
 turns that answer into a float reason, and a tile answer never tiles a window
 whose AX size can't be set. Every place that used to ask about Never tile asks
 the book: discovery's admission and late-title re-check, startup and Retile
-All (`autoFloatReason`), Hypr+T, the dedicated workspace move, moves to a
-workspace, and the scratchpad (`floatRule(for:)` and `isNeverTile`).
+All (`autoFloatReason`), moves to a workspace, and the scratchpad
+(`floatRule(for:)` and `isNeverTile`). Above the book sits the user's hand
+choice (`FloatingWindowController.manualChoices`): Hypr+T, the overlay's
+one-off, the scratchpad toggle and the dedicated workspace move record it, no
+rule refuses them, and rules skip that window until it closes.
 
 `FloatingRuleSync` routes changes. An edit on this Mac (Settings, the menu,
 an action) reaches `FloatingWindowController.rulesChanged`, which measures from

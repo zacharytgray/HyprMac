@@ -72,14 +72,10 @@ enum Action: Equatable {
     /// menu bar's "Retile all spaces". Also moves pinned apps' windows
     /// back onto their pinned workspaces.
     case retileAll
-    /// Make a float rule from the focused window: "windows like this" are
-    /// the app's windows above normal windows, or with its exact title.
-    case floatWindowsLikeThis
-    /// Same, as a tile rule. Refused with the red shake for a window
-    /// HyprMac can't resize.
-    case tileWindowsLikeThis
-    /// Remove the rule that decides the focused window, window-kind or app.
-    case forgetWindowRule
+    /// The window rules overlay for the focused window: float or tile it
+    /// once, always for its app or for windows with a title like its own,
+    /// or forget the rule that covers it.
+    case showWindowRules
 }
 
 // MARK: - Codable
@@ -126,9 +122,7 @@ extension Action: Codable {
         case saveLayout
         case restoreLayout
         case retileAll
-        case floatWindowsLikeThis
-        case tileWindowsLikeThis
-        case forgetWindowRule
+        case showWindowRules
     }
 
     /// Accepted-but-not-emitted aliases. Lets a hand-edited config
@@ -206,9 +200,7 @@ extension Action: Codable {
         case .saveLayout:    self = .saveLayout
         case .restoreLayout: self = .restoreLayout
         case .retileAll:     self = .retileAll
-        case .floatWindowsLikeThis: self = .floatWindowsLikeThis
-        case .tileWindowsLikeThis: self = .tileWindowsLikeThis
-        case .forgetWindowRule: self = .forgetWindowRule
+        case .showWindowRules: self = .showWindowRules
         }
     }
 
@@ -288,12 +280,8 @@ extension Action: Codable {
             _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .restoreLayout)
         case .retileAll:
             _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .retileAll)
-        case .floatWindowsLikeThis:
-            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .floatWindowsLikeThis)
-        case .tileWindowsLikeThis:
-            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .tileWindowsLikeThis)
-        case .forgetWindowRule:
-            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .forgetWindowRule)
+        case .showWindowRules:
+            _ = c.nestedContainer(keyedBy: PayloadKey.self, forKey: .showWindowRules)
         }
     }
 }
