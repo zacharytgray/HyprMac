@@ -467,7 +467,7 @@ Malformed payloads are handled defensively rather than crashing.
   presence marks the new bracket schema.
 - **Core fields**: the `keybinds` array, `gapSize`, `outerPadding` and
   `enabled` stay strict, since every build since v0.4.2 writes them with
-  these types. `version` stays strict too, because it will pick which
+  these types. `version` stays strict too, because it picks which
   migrations run.
 
 ## Per-element tolerance
@@ -510,27 +510,36 @@ layout actions.
 
 ## Schema versioning
 
-`SavedConfig` carries an optional `version: Int?`:
+`config.json` carries a top-level `version`. The current schema is 2
+(`ConfigMigration.currentVersion`), and every save writes it:
+`UserConfig.makeSavedConfig` sets `version: ConfigMigration.currentVersion`.
 
-```swift
-struct SavedConfig: Codable {
-    let version: Int?  // nil for v1 (the implicit version)
-    // ...
-}
-```
+`SavedConfig.version` is an `Int?` so older files still decode. A file with no
+`version` key reads as version 1 (`ConfigMigration.schemaVersion(of:)`), which
+covers every config written before the bump.
 
-The field is declared but not currently emitted. `ConfigMigration.currentVersion`
-is `1`; the encoder constructs `SavedConfig(version: nil, ...)` so
-the encoded JSON does not gain a `version` key. This keeps the wire
-format byte-equal for unchanged settings — important when a user's
-config round-trips through iCloud sync between machines on
-different HyprMac versions.
+Steps gated on the version run only when the loaded file is older:
 
-The first concrete schema bump will be the moment to start
-emitting a value. The decoder already maps `nil → 1`; bumping to
-v2 means setting `version = 2` on encode, adding a v1 → v2 migration
-case in `ConfigMigration`, and updating `KeybindDecoderToleranceTests`
-to round-trip both shapes.
+- v1 → v2: Hypr+F moved from `moveToNextEmptyWorkspace` to `toggleMaximize`
+  (`ConfigMigration.migrateHyprFToMaximize`). It rewrites the bind only while
+  Hypr+F is still the shipped default and nothing else is bound to maximize.
+  The next save writes `version: 2`, so it runs once.
+
+Other keybind moves (`migrateToggleFloating`, `migrateFocusFloating`) are not
+gated on the version. They run on every load and leave a customized bind alone.
+
+A file without `version` runs the v1 → v2 step on every load until a save
+writes the key. Hand-written and Nix-managed files should set `version = 2`;
+the Nix module adds it when `settings` leaves it out.
+
+An older build that predates the bump reads `version` as an unknown key and
+drops it on its next save, so the file reads as v1 again. That is safe: the
+new build runs the v1 → v2 step again, and it changes only a Hypr+F that is
+still the old default.
+
+A future bump raises `currentVersion`, adds a step in `ConfigMigration` gated
+on the old version, and updates `ConfigMigrationTests` and
+`KeybindDecoderToleranceTests` for both shapes.
 
 ## Monitor-config split
 

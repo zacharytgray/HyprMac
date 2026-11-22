@@ -861,8 +861,7 @@ private final class ConfigWatch {
 // in the loader.
 //
 // `version` is optional so old configs without it still decode — ConfigMigration
-// treats nil as version 1. it is written as nil today; a real value starts with
-// the first schema bump.
+// treats nil as version 1. every save writes ConfigMigration.currentVersion (2).
 struct SavedConfig: Codable {
     let version: Int?
     let keybinds: [Keybind]
