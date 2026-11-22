@@ -104,42 +104,27 @@ final class FailedTilePromptPolicyTests: XCTestCase {
     }
 }
 
-// live check: with another app in front the overlay never got Esc or the
-// typing. it brings HyprMac forward on open and hands focus back on close
+// closing hands focus back to the window the overlay was opened on;
+// reopening doesn't bounce it
 final class WindowRulesOverlayControllerTests: XCTestCase {
-    func testOpeningActivatesAndClosingRestoresTheWindow() {
+    func testClosingRestoresTheWindow() {
         let controller = WindowRulesOverlayController()
-        var activations = 0
         var restored: [CGWindowID] = []
         var performed: [WindowRulesOverlayModel.Row] = []
-        controller.activateApp = { activations += 1 }
         controller.restoreFocus = { restored.append($0) }
         controller.perform = { row, _, _ in performed.append(row) }
-        var later: [() -> Void] = []
-        controller.schedule = { _, body in later.append(body) }
         let info = FocusedWindowRuleInfo(windowID: 8905, appName: "Microsoft Teams", bundleID: "com.microsoft.teams2",
                                          title: "Chat", currentRule: nil, appFloats: false, appTiles: false,
                                          isFloating: false)
         controller.show(info, over: nil, icon: nil)
-        XCTAssertEqual(activations, 1)
         XCTAssertTrue(controller.isShowing)
-        // the Hypr key's focus pass re-activated the window's app after the
-        // overlay opened, and the typing went there. it takes the keys back
-        later.forEach { $0() }
-        XCTAssertEqual(activations, 1 + WindowRulesOverlayController.reassertDelays.count)
-        later.removeAll()
-
         controller.close()
         XCTAssertFalse(controller.isShowing)
-        XCTAssertEqual(restored, [8905], "Esc hands focus back to the window")
+        XCTAssertEqual(restored, [8905])
 
         controller.show(info, over: nil, icon: nil)
-        let stale = later
         controller.show(info, over: nil, icon: nil)
         XCTAssertEqual(restored, [8905], "reopening doesn't bounce focus")
-        let before = activations
-        stale.forEach { $0() }
-        XCTAssertEqual(activations, before, "a closed panel's re-assert does nothing")
         controller.close(restoringFocus: false)
         XCTAssertTrue(performed.isEmpty)
     }

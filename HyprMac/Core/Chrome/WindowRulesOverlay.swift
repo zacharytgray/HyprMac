@@ -205,18 +205,11 @@ struct WindowRulesOverlayView: View {
 final class WindowRulesOverlayController {
     /// run the row for the window the overlay was opened on
     var perform: (WindowRulesOverlayModel.Row, FloatingRule.Match?, CGWindowID) -> Void = { _, _, _ in }
-    /// The panel only gets keys while HyprMac is the active app: another
-    /// app in front keeps them, Esc included. So HyprMac comes forward on
-    /// open, and the window goes back to its app on close.
-    var activateApp: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
+    /// The window goes back to the front on close. The panel itself is a
+    /// non-activating key panel and never activates HyprMac: on macOS 27 an
+    /// activation HyprMac isn't allowed takes key status off the panel, and
+    /// the typing goes to the app behind it.
     var restoreFocus: (CGWindowID) -> Void = { _ in }
-    var schedule: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
-    }
-    /// The Hypr key's own focus pass re-activates the window's app about a
-    /// tenth of a second after the press, after the overlay has opened. The
-    /// overlay takes the keys back at these delays.
-    static let reassertDelays: [TimeInterval] = [0.15, 0.35]
 
     private var panel: NSPanel?
     private var keyMonitor: Any?
@@ -247,16 +240,8 @@ final class WindowRulesOverlayController {
         hosting.frame = NSRect(origin: .zero, size: panelFrame.size)
         hosting.autoresizingMask = [.width, .height]
         p.contentView = hosting
-        activateApp()
         p.makeKeyAndOrderFront(nil)
         panel = p
-        for delay in Self.reassertDelays {
-            schedule(delay) { [weak self, weak p] in
-                guard let self, let p, self.panel === p else { return }
-                self.activateApp()
-                p.makeKey()
-            }
-        }
         OwnPanelTracker.shared.track(p)
         installMonitor()
         hyprLog(.notice, .floating, "window rules overlay: \(info.windowID) \(info.bundleID)"
