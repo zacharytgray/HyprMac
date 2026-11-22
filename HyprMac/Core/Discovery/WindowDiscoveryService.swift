@@ -71,6 +71,10 @@ struct WindowChanges {
     /// resizable. The service cleared their floating flag; the retile
     /// tiles them like any other member of their workspace.
     var unfloated: Set<CGWindowID> = []
+    /// Windows a title-decided rule floated once their title arrived. The
+    /// service set their floating flag; the retile takes them out of their
+    /// tree where they stand.
+    var ruleFloated: Set<CGWindowID> = []
     /// Subset of `returned` that came back after a verified close: hidden
     /// as absent from its app's list, so never reserved (Teams keeps the id
     /// across a close and reopen). The caller places it like a new window.
@@ -88,7 +92,7 @@ struct WindowChanges {
     /// when the shown tab does not stand in the frame the hidden one had.
     var needsRetile: Bool {
         !newWindows.isEmpty || !goneIDs.isEmpty || !returned.isEmpty || !screenDrift.isEmpty
-            || !unfloated.isEmpty || tabSwitches.contains { !$0.keepsFrame }
+            || !unfloated.isEmpty || !ruleFloated.isEmpty || tabSwitches.contains { !$0.keepsFrame }
     }
 }
 
@@ -207,14 +211,21 @@ final class WindowDiscoveryService {
          displayManager: DisplayManager,
          workspaceManager: WorkspaceManager,
          bundleIDForPID: @escaping (pid_t) -> String? = { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
-         isWindowSizeSettable: @escaping (HyprWindow) -> Bool? = { $0.isSizeSettable }) {
+         isWindowSizeSettable: @escaping (HyprWindow) -> Bool? = { $0.isSizeSettable },
+         windowTitle: @escaping (HyprWindow) -> String? = { $0.title },
+         isWindowRaised: @escaping (HyprWindow) -> Bool = { $0.isAboveNormalLayer }) {
         self.stateCache = stateCache
         self.accessibility = accessibility
         self.displayManager = displayManager
         self.workspaceManager = workspaceManager
         self.bundleIDForPID = bundleIDForPID
         self.isWindowSizeSettable = isWindowSizeSettable
+        self.windowTitle = windowTitle
+        self.isWindowRaised = isWindowRaised
     }
+
+    private let windowTitle: (HyprWindow) -> String?
+    private let isWindowRaised: (HyprWindow) -> Bool
 
     /// Known windows the last cycle held because AX could not read them.
     /// Kept so the outage is logged at its edges rather than every cycle.
@@ -376,6 +387,7 @@ final class WindowDiscoveryService {
         stateCache.windowOwners[id] = shown.ownerPID
         hiddenAt.removeValue(forKey: id)
         fixedSizeRechecks[id] = nil
+        titleRuleRechecks[id] = nil
         stateCache.setFloating(stateCache.floatingWindowIDs.contains(hiddenID), window: shown)
         if let original = stateCache.originalFrames[hiddenID] { stateCache.originalFrames[id] = original }
 
@@ -405,6 +417,16 @@ final class WindowDiscoveryService {
     private var fixedSizeRechecks: [CGWindowID: (attempts: Int, due: Date)] = [:]
     static let fixedSizeRecheckDelays: [TimeInterval] = [0.5, 1, 2]
 
+    /// New windows of an app with title rules that no window-kind rule
+    /// matched at first sight, and the title and floating state they had
+    /// then. Apps often name a window a moment after it opens, so the rules
+    /// are asked again when the title changes, until one matches or the
+    /// delays run out.
+    private var titleRuleRechecks: [CGWindowID: (attempts: Int, due: Date, title: String?, floating: Bool)] = [:]
+    static let titleRuleRecheckDelays: [TimeInterval] = [0.5, 1, 2, 4]
+    /// The rules in force this cycle, for the re-check.
+    private var ruleBook = FloatingRuleBook.empty
+
     /// How long until discovery wants another poll for something no event
     /// will report: a window not ready yet, a fixed-size re-check, or an
     /// app the walk is skipping (stalled, or left out by its budget) whose
@@ -413,6 +435,7 @@ final class WindowDiscoveryService {
     var secondsUntilARetryIsDue: TimeInterval? {
         let now = self.now()
         let dues = readinessRetries.values.map(\.due) + fixedSizeRechecks.values.map(\.due)
+            + titleRuleRechecks.values.map(\.due)
         // a look still due after the cycle means the cycle was guarded
         // (mass-gone) and checked nothing; give the guard its own pace
         let ours = dues.filter { $0 != .distantFuture }.min()
@@ -579,8 +602,10 @@ final class WindowDiscoveryService {
     func computeChanges(snapshot: [HyprWindow],
                         runningPIDs: Set<pid_t>,
                         excludedBundleIDs: Set<String>,
+                        floatingRules: [FloatingRule] = [],
                         focusedWindowID: CGWindowID,
                         unreadableWindowIDs: Set<CGWindowID> = []) -> WindowChanges {
+        ruleBook = FloatingRuleBook(rules: floatingRules, excludedBundleIDs: excludedBundleIDs)
         let currentIDs = Set(snapshot.map { $0.windowID })
 
         // a known window missing from the snapshot is gone only when AX
@@ -696,11 +721,13 @@ final class WindowDiscoveryService {
         // new
         for w in snapshot where !stateCache.knownWindowIDs.contains(w.windowID)
             && !tabs.deferred.contains(w.windowID) {
-            admitNew(w, excludedBundleIDs: excludedBundleIDs, newOnDisabled: &newOnDisabled)
+            admitNew(w, newOnDisabled: &newOnDisabled)
             newWindows.append(w)
         }
 
-        let unfloated = recheckFixedSize(snapshot)
+        let unfloatedForSize = recheckFixedSize(snapshot)
+        let titled = recheckTitleRules(snapshot)
+        let unfloated = unfloatedForSize.union(titled.tiled)
 
         // gone. the held ids stay out of this: they are still known
         let gone = apparentlyGone
@@ -803,6 +830,7 @@ final class WindowDiscoveryService {
             reopenedOntoHiddenWorkspace: reopenedOntoHidden,
             unfloated: unfloated
         )
+        changes.ruleFloated = titled.floated
         changes.reopenedAfterClose = reopenedAfterClose
         changes.tabSwitches = pairs
         return changes
@@ -811,8 +839,7 @@ final class WindowDiscoveryService {
     /// First sight of `w`: the cache half of admitting it. Known from now
     /// on, its owner and on-screen frame kept, auto-floated when policy or a
     /// disabled monitor says so (then in `newOnDisabled`).
-    private func admitNew(_ w: HyprWindow, excludedBundleIDs: Set<String>,
-                          newOnDisabled: inout Set<CGWindowID>) {
+    private func admitNew(_ w: HyprWindow, newOnDisabled: inout Set<CGWindowID>) {
         if let frame = w.frame {
             let onScreen = displayManager.screens.contains { screen in
                 frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
@@ -824,11 +851,14 @@ final class WindowDiscoveryService {
         stateCache.knownWindowIDs.insert(w.windowID)
         stateCache.windowOwners[w.windowID] = w.ownerPID
 
-        // auto-float excluded apps, explicitly fixed-size windows and
-        // quick look previews
-        let excluded = bundleIDForPID(w.ownerPID).map(excludedBundleIDs.contains) ?? false
+        // auto-float excluded apps, float rules, explicitly fixed-size
+        // windows and quick look previews. a tile rule beats Never tile
+        // but not a size HyprMac can't set
+        let bundleID = bundleIDForPID(w.ownerPID) ?? w.bundleID
+        let verdict = ruleBook.verdict(bundleID: bundleID, title: { self.windowTitle(w) },
+                                       isRaised: { self.isWindowRaised(w) })
         if let reason = FloatingAdmissionPolicy.reason(
-            isExcluded: excluded,
+            rule: verdict,
             isSizeSettable: isWindowSizeSettable(w),
             isQuickLookPanel: w.isQuickLookPanel
         ) {
@@ -841,9 +871,19 @@ final class WindowDiscoveryService {
                         + " \(bundleIDForPID(w.ownerPID) ?? "pid \(w.ownerPID)") — re-checked"
                         + " \(Self.fixedSizeRecheckDelays.count) times over"
                         + " \(Self.fixedSizeRecheckDelays.reduce(0, +))s")
+            } else if reason == .floatRule, let rule = verdict?.rule {
+                hyprLog(.notice, .discovery, "auto-float float rule: \(w.windowID) \(rule.bundleID)"
+                        + " \(rule.matchDescription)")
             } else {
                 hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
             }
+        } else if case let .tile(rule)? = verdict, rule.match != nil {
+            hyprLog(.notice, .discovery, "tile rule: \(w.windowID) \(rule.bundleID) \(rule.matchDescription)")
+        }
+        // a title that arrives late can still meet a title rule
+        if verdict?.isWindowKind != true, !w.isQuickLookPanel, ruleBook.hasTitleRules(bundleID: bundleID) {
+            titleRuleRechecks[w.windowID] = (0, now().addingTimeInterval(Self.titleRuleRecheckDelays[0]),
+                                             windowTitle(w), stateCache.floatingWindowIDs.contains(w.windowID))
         }
 
         // auto-float on disabled monitors — surface so caller skips workspace assignment
@@ -853,8 +893,9 @@ final class WindowDiscoveryService {
                 hyprLog(.debug, .discovery, "auto-float on disabled monitor: '\(w.title ?? "?")'")
             }
             newOnDisabled.insert(w.windowID)
-            // it floats for the monitor, whatever its size says
+            // it floats for the monitor, whatever its size or title says
             fixedSizeRechecks[w.windowID] = nil
+            titleRuleRechecks[w.windowID] = nil
             hyprLog(.debug, .discovery, "new window (disabled monitor): '\(w.title ?? "?")' (\(w.windowID))")
         } else {
             hyprLog(.debug, .discovery, "new window: '\(w.title ?? "?")' (\(w.windowID))")
@@ -870,7 +911,9 @@ final class WindowDiscoveryService {
     /// gone, hidden, returned or held bookkeeping, no fixed-size re-check,
     /// no screen drift. The full poll after the hold does all of that.
     func computeAdmissions(snapshot: [HyprWindow], excludedBundleIDs: Set<String>,
+                           floatingRules: [FloatingRule] = [],
                            unreadableWindowIDs: Set<CGWindowID> = []) -> WindowChanges {
+        ruleBook = FloatingRuleBook(rules: floatingRules, excludedBundleIDs: excludedBundleIDs)
         var newWindows: [HyprWindow] = []
         var newOnDisabled: Set<CGWindowID> = []
         // a locked or asleep session's walk is not the desktop
@@ -886,7 +929,7 @@ final class WindowDiscoveryService {
                 && !leavers.contains(where: {
                     $0.pid == w.ownerPID && TabSwitchPairing.stands(w.cachedFrame ?? w.frame, inPlaceOf: $0)
                 }) {
-                admitNew(w, excludedBundleIDs: excludedBundleIDs, newOnDisabled: &newOnDisabled)
+                admitNew(w, newOnDisabled: &newOnDisabled)
                 if w.isQuickLookPanel { quickLookPanelIDs.insert(w.windowID) }
                 newWindows.append(w)
             }
@@ -949,6 +992,70 @@ final class WindowDiscoveryService {
             }
         }
         return unfloated
+    }
+
+    /// Ask the rules again about new windows whose title may have arrived
+    /// since first sight. A window whose title changed and now meets a
+    /// window-kind rule is floated or handed back to tiling once, and its
+    /// re-check ends. One the user (or anything else) floated or tiled
+    /// since, one that left, and one on the scratchpad or a disabled
+    /// monitor are dropped. A tile rule doesn't tile a window HyprMac can't
+    /// resize.
+    private func recheckTitleRules(_ snapshot: [HyprWindow]) -> (floated: Set<CGWindowID>, tiled: Set<CGWindowID>) {
+        guard !titleRuleRechecks.isEmpty else { return ([], []) }
+        let now = self.now()
+        let byID = Dictionary(snapshot.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
+        var floated: Set<CGWindowID> = []
+        var tiled: Set<CGWindowID> = []
+        for (id, entry) in titleRuleRechecks.sorted(by: { $0.key < $1.key }) {
+            guard let w = byID[id] else {
+                if !stateCache.knownWindowIDs.contains(id) { titleRuleRechecks[id] = nil }
+                continue
+            }
+            guard now >= entry.due else { continue }
+            let floating = stateCache.floatingWindowIDs.contains(id)
+            guard floating == entry.floating,
+                  let workspace = workspaceManager.workspaceFor(id),
+                  workspace != ScratchpadController.workspace,
+                  !(displayManager.screen(for: w).map(workspaceManager.isMonitorDisabled) ?? false) else {
+                titleRuleRechecks[id] = nil
+                continue
+            }
+            let title = windowTitle(w)
+            if title != entry.title {
+                let verdict = ruleBook.verdict(bundleID: bundleIDForPID(w.ownerPID) ?? w.bundleID,
+                                               title: { title }, isRaised: { self.isWindowRaised(w) })
+                if let verdict, verdict.isWindowKind {
+                    titleRuleRechecks[id] = nil
+                    let description = verdict.rule?.matchDescription ?? ""
+                    if verdict.floats, !floating {
+                        stateCache.setFloating(true, window: w)
+                        floated.insert(id)
+                        hyprLog(.notice, .discovery, "title rule re-check: \(id) now matches \(description)"
+                                + " — floating it")
+                    } else if !verdict.floats, floating {
+                        if isWindowSizeSettable(w) == false {
+                            hyprLog(.notice, .discovery, "title rule re-check: \(id) matches \(description)"
+                                    + " but is not resizable — stays floating")
+                        } else {
+                            stateCache.setFloating(false, window: w)
+                            tiled.insert(id)
+                            hyprLog(.notice, .discovery, "title rule re-check: \(id) now matches \(description)"
+                                    + " — handing it to tiling")
+                        }
+                    }
+                    continue
+                }
+            }
+            let next = entry.attempts + 1
+            if next < Self.titleRuleRecheckDelays.count {
+                titleRuleRechecks[id] = (next, now.addingTimeInterval(Self.titleRuleRecheckDelays[next]),
+                                         title, entry.floating)
+            } else {
+                titleRuleRechecks[id] = nil
+            }
+        }
+        return (floated, tiled)
     }
 
     /// Fully forget every window owned by `pid`.

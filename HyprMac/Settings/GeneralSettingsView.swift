@@ -102,57 +102,27 @@ struct GeneralSettingsView: View {
         }
     }
 
-    // MARK: never tile
+    // MARK: float and tile rules
 
+    // one list for every rule: an app in Never tile, an app tile rule, and
+    // the rules for one kind of window, made from the menu bar or an action
     private var neverTilePanel: some View {
-        HyprPanel("Never tile",
-                  footer: "These apps always float and are never placed in the tiling layout.") {
-            if config.excludedBundleIDs.isEmpty {
-                HyprRow("No exclusions", icon: "circle.dashed",
-                        subtitle: "All windows tile by default", divider: false) { EmptyView() }
+        HyprPanel("Float and tile rules",
+                  footer: "A rule for one kind of window beats a rule for its app. Add window rules from the menu bar's Focused window section.") {
+            let rows = FloatingRuleRow.rows(excludedBundleIDs: config.excludedBundleIDs,
+                                            rules: config.floatingRules)
+            if rows.isEmpty {
+                HyprRow("No rules", icon: "circle.dashed",
+                        subtitle: "HyprMac decides what floats", divider: false) { EmptyView() }
             } else {
-                let sorted = Array(config.excludedBundleIDs).sorted()
-                ForEach(Array(sorted.enumerated()), id: \.element) { idx, bundleID in
-                    excludedRow(bundleID: bundleID, isLast: idx == sorted.count - 1)
+                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
+                    FloatingRuleRowView(row: row, config: config, isLast: idx == rows.count - 1,
+                                        appName: appDisplayName(for: row.bundleID))
                 }
             }
-            HyprRow("Add app", icon: "plus", divider: false) {
+            HyprRow("Always float an app", icon: "plus", divider: false) {
                 Button("Choose…") { pickExcludedApp() }
                     .controlSize(.small)
-            }
-        }
-    }
-
-    private func excludedRow(bundleID: String, isLast: Bool) -> some View {
-        HStack(spacing: HyprSpacing.md) {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                    .resizable()
-                    .frame(width: 22, height: 22)
-            } else {
-                Image(systemName: "app").font(.system(size: 16)).foregroundStyle(Color.hyprTextTertiary)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(appDisplayName(for: bundleID)).font(.hyprBody)
-                Text(bundleID).font(.hyprMonoXs).foregroundStyle(Color.hyprTextTertiary)
-            }
-            Spacer()
-            Button {
-                config.excludedBundleIDs.remove(bundleID)
-            } label: {
-                Image(systemName: "minus.circle.fill")
-                    .foregroundStyle(.red.opacity(0.75))
-            }
-            .buttonStyle(.borderless)
-        }
-        .padding(.horizontal, HyprSpacing.md)
-        .padding(.vertical, HyprSpacing.sm)
-        .overlay(alignment: .bottom) {
-            if !isLast {
-                Rectangle()
-                    .fill(Color.hyprSeparator)
-                    .frame(height: 0.5)
-                    .padding(.leading, HyprSpacing.md + 22 + HyprSpacing.md)
             }
         }
     }

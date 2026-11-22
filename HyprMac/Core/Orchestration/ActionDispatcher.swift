@@ -210,6 +210,8 @@ final class ActionDispatcher {
     var saveLayout: () -> Void = {}
     var restoreLayout: () -> Void = {}
     var retileAll: () -> Void = {}
+    // the three float and tile rule actions; WindowManager owns the config
+    var floatingRuleAction: (Action) -> Void = { _ in }
     // switch to a pinned new window's workspace and focus it
     var followPinnedWindow: (CGWindowID, Int) -> Void = { _, _ in }
     // keep drift off a window sent to the cursor's monitor, and end that
@@ -337,6 +339,7 @@ final class ActionDispatcher {
                 changes.returned.isEmpty ? nil : "returned=\(changes.returned.map(\.windowID).sorted())",
                 changes.screenDrift.isEmpty ? nil : "drift=\(changes.screenDrift.map(\.windowID).sorted())",
                 changes.unfloated.isEmpty ? nil : "unfloated=\(changes.unfloated.sorted())",
+                changes.ruleFloated.isEmpty ? nil : "ruleFloated=\(changes.ruleFloated.sorted())",
                 changes.tabSwitches.allSatisfy(\.keepsFrame) ? nil
                     : "tab=\(changes.tabSwitches.filter { !$0.keepsFrame }.map(\.shown.windowID).sorted())",
             ].compactMap { $0 }.joined(separator: " ")
@@ -680,6 +683,8 @@ final class ActionDispatcher {
             restoreLayout()
         case .retileAll:
             retileAll()
+        case .floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule:
+            floatingRuleAction(action)
         }
 
         // let the Tour try-it hint (and any future observers) react. cheap —
@@ -719,6 +724,9 @@ final class ActionDispatcher {
         case .saveLayout:          return "saveLayout"
         case .restoreLayout:       return "restoreLayout"
         case .retileAll:           return "retileAll"
+        case .floatWindowsLikeThis: return "floatWindowsLikeThis"
+        case .tileWindowsLikeThis: return "tileWindowsLikeThis"
+        case .forgetWindowRule:    return "forgetWindowRule"
         }
     }
 

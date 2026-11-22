@@ -8,21 +8,45 @@ import Cocoa
 enum FloatingAdmissionPolicy {
     enum Reason: String {
         case excludedApp = "excluded app"
+        /// a float rule for the app or for windows like this one
+        case floatRule = "float rule"
         case fixedSize = "window is not resizable"
         case quickLook = "quick look preview"
     }
 
     static func reason(isExcluded: Bool, isSizeSettable: Bool?,
                        isQuickLookPanel: Bool = false) -> Reason? {
+        reason(rule: isExcluded ? .float(nil) : nil, isSizeSettable: isSizeSettable,
+               isQuickLookPanel: isQuickLookPanel)
+    }
+
+    /// Why a window floats on admission, or nil when it tiles. A rule
+    /// decides before the size check, but a tile rule can't make a window
+    /// HyprMac can't resize take a tile: that one still floats.
+    static func reason(rule: FloatingRuleVerdict?, isSizeSettable: Bool?,
+                       isQuickLookPanel: Bool = false) -> Reason? {
         // a preview always floats: it sizes itself to each file
         if isQuickLookPanel { return .quickLook }
-        if isExcluded { return .excludedApp }
-        if isSizeSettable == false { return .fixedSize }
-        return nil
+        switch rule {
+        case let .float(decider)?:
+            return decider == nil ? .excludedApp : .floatRule
+        case .tile?, nil:
+            if isSizeSettable == false { return .fixedSize }
+            return nil
+        }
     }
+
+    /// What a rule change does to an open window.
+    enum RuleStep: Equatable { case float, tile }
 
     /// Shown when the user tries to tile a window of an app in Never tile.
     static let neverTileMessage = "App not allowed to tile. Change it in Settings"
+    /// Shown when the user tries to tile a window a float rule covers.
+    static let floatRuleMessage = "A float rule covers this window. Change it in Settings"
+
+    static func refusalMessage(for verdict: FloatingRuleVerdict) -> String {
+        verdict.rule == nil ? neverTileMessage : floatRuleMessage
+    }
 }
 
 /// Every frame HyprMac writes to a floating window goes through here: the
@@ -257,8 +281,10 @@ final class FloatingWindowController {
     var updatePositionCache: (() -> Void)?
     var isMenuTracking: () -> Bool = { false }
     var isScratchpadVisible: () -> Bool = { false }
-    // the Never tile list, read live so a settings change applies at once
+    // the Never tile list and the float and tile rules, read live so a
+    // settings change applies at once
     var excludedBundleIDs: () -> Set<String> = { [] }
+    var floatingRules: () -> [FloatingRule] = { [] }
     var windowListForZOrder: () -> [[String: Any]]? = {
         CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
@@ -377,12 +403,14 @@ final class FloatingWindowController {
             }
             return
         }
-        if wasFloating && isNeverTile(window) {
-            // the user put this app in Never tile. say so, and where to change it
-            hyprLog(.notice, .floating, "float→tile refused: \(window.windowID) belongs to a never-tile app")
+        if wasFloating, let verdict = floatRule(for: window) {
+            // the user put this app in Never tile, or made a float rule for
+            // windows like this one. say so, and where to change it
+            hyprLog(.notice, .floating, "float→tile refused: \(window.windowID) "
+                    + (verdict.rule == nil ? "belongs to a never-tile app" : "is covered by a float rule"))
             if let frame = window.frame ?? stateCache.cachedWindows[window.windowID]?.frame {
                 focusBorder.flashError(around: frame, windowID: window.windowID,
-                                       message: FloatingAdmissionPolicy.neverTileMessage)
+                                       message: FloatingAdmissionPolicy.refusalMessage(for: verdict))
             }
             return
         }
@@ -887,11 +915,118 @@ final class FloatingWindowController {
         }
     }
 
-    /// Whether `window` belongs to an app in the Never tile list.
+    var ruleBook: FloatingRuleBook {
+        FloatingRuleBook(rules: floatingRules(), excludedBundleIDs: excludedBundleIDs())
+    }
+
+    /// The rule that floats `window`: its app in Never tile, or a float
+    /// rule for the app or for windows like it that no tile rule above it
+    /// overrides. nil when no rule floats it.
+    func floatRule(for window: HyprWindow) -> FloatingRuleVerdict? {
+        guard let verdict = window.floatingVerdict(ruleBook), verdict.floats else { return nil }
+        return verdict
+    }
+
+    /// Whether a rule keeps `window` floating: Never tile, or a float rule
+    /// that covers it. A window-kind tile rule inside a Never tile app
+    /// takes that window out.
     func isNeverTile(_ window: HyprWindow) -> Bool {
-        guard let bundleID = window.bundleID
-                ?? NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier else { return false }
-        return excludedBundleIDs().contains(bundleID)
+        floatRule(for: window) != nil
+    }
+
+    // MARK: - rule changes
+
+    /// What a change of rules does to one open window, nil for nothing.
+    ///
+    /// Only a window whose verdict changed moves. It floats when the new
+    /// rules float it. It tiles when a tile rule now covers it, or when the
+    /// rule that floated it is gone, and only if `canTile` (HyprMac can
+    /// resize it and nothing else floats it). A window the user floated by
+    /// hand that no rule ever covered is left alone.
+    static func ruleChangeStep(before: FloatingRuleVerdict?, after: FloatingRuleVerdict?,
+                               isFloating: Bool, canTile: Bool) -> FloatingAdmissionPolicy.RuleStep? {
+        guard before != after else { return nil }
+        if after?.floats == true { return isFloating ? nil : .float }
+        guard isFloating, canTile else { return nil }
+        if case .tile? = after { return .tile }
+        return before?.floats == true ? .tile : nil
+    }
+
+    /// Re-apply the rules to every open window after they changed from
+    /// `old`: the menu, an action, Settings, or a config reload. Windows on
+    /// visible workspaces move at once, through one retile; ones on hidden
+    /// workspaces change state and show up that way when revealed.
+    /// Scratchpad members, Quick Look panels and windows on a disabled
+    /// monitor keep what they have.
+    /// - Returns: the windows it floated and tiled.
+    @discardableResult
+    func applyRuleChange(from old: FloatingRuleBook, windows: [HyprWindow])
+        -> (floated: [CGWindowID], tiled: [CGWindowID]) {
+        let new = ruleBook
+        guard new != old else { return ([], []) }
+        var floated: [HyprWindow] = []
+        var tiled: [HyprWindow] = []
+        for window in windows {
+            let id = window.windowID
+            guard stateCache.knownWindowIDs.contains(id), !stateCache.hiddenWindowIDs.contains(id),
+                  !window.isQuickLookPanel,
+                  let workspace = workspaceManager.workspaceFor(id),
+                  workspace != ScratchpadController.workspace,
+                  !(displayManager.screen(for: window).map(workspaceManager.isMonitorDisabled) ?? false)
+            else { continue }
+            let after = window.floatingVerdict(new)
+            let step = Self.ruleChangeStep(
+                before: window.floatingVerdict(old), after: after,
+                isFloating: stateCache.floatingWindowIDs.contains(id),
+                canTile: { FloatingAdmissionPolicy.reason(rule: after, isSizeSettable: isWindowSizeSettable(window),
+                                                          isQuickLookPanel: false) == nil }())
+            switch step {
+            case .float?: floated.append(window)
+            case .tile?: tiled.append(window)
+            case nil: continue
+            }
+        }
+        guard !floated.isEmpty || !tiled.isEmpty else { return ([], []) }
+        hyprLog(.notice, .floating, "rule change: floating \(floated.map(\.windowID).sorted())"
+                + " tiling \(tiled.map(\.windowID).sorted())")
+        let apply = { [self] in
+            for window in floated { floatForRule(window) }
+            for window in tiled {
+                stateCache.setFloating(false, window: window)
+                workspaceManager.clearSavedFloatingFrame(for: window.windowID)
+            }
+        }
+        if let retile { retile(apply) } else { apply() }
+        return (floated.map(\.windowID), tiled.map(\.windowID))
+    }
+
+    /// Float a window a rule now covers. On a visible workspace it goes back
+    /// to the frame it had before HyprMac tiled it, when that is on its
+    /// screen, else it stays where it is. On a hidden one it is parked in
+    /// the corner, so the reveal needs a saved frame: that same frame, or
+    /// its size centered on the workspace's home screen.
+    private func floatForRule(_ window: HyprWindow) {
+        let id = window.windowID
+        stateCache.setFloating(true, window: window)
+        guard let workspace = workspaceManager.workspaceFor(id) else { return }
+        let original = stateCache.originalFrames[id]
+        if let screen = workspaceManager.screenForWorkspace(workspace) {
+            if let original, original.isSubstantiallyVisible(on: displayManager.cgRect(for: screen)) {
+                window.placeFloating(original, reason: "float rule, original frame",
+                                     on: screen, displayManager: displayManager)
+            }
+            return
+        }
+        guard let home = workspaceManager.homeScreenForWorkspace(workspace) else { return }
+        let usable = displayManager.cgRect(for: home)
+        if let original, original.isSubstantiallyVisible(on: usable) {
+            workspaceManager.setSavedFloatingFrame(original, for: id)
+            return
+        }
+        let size = original?.size ?? window.cachedFrame?.size ?? CGSize(width: 800, height: 600)
+        let centered = CGRect(x: usable.midX - size.width / 2, y: usable.midY - size.height / 2,
+                              width: size.width, height: size.height)
+        workspaceManager.setSavedFloatingFrame(centered.clamped(into: usable), for: id)
     }
 
     /// `true` when `window` should auto-float on first discovery.
@@ -899,16 +1034,17 @@ final class FloatingWindowController {
     /// Excluded apps and windows that explicitly reject AX resize enter as
     /// floaters. An unreadable resize capability is left to verified tiling
     /// and its existing recovery. Disabled-monitor auto-float is separate.
-    func shouldAutoFloat(_ window: HyprWindow, excludedBundleIDs: Set<String>) -> Bool {
-        autoFloatReason(window, excludedBundleIDs: excludedBundleIDs) != nil
+    func shouldAutoFloat(_ window: HyprWindow, excludedBundleIDs: Set<String>,
+                         floatingRules: [FloatingRule] = []) -> Bool {
+        autoFloatReason(window, excludedBundleIDs: excludedBundleIDs, floatingRules: floatingRules) != nil
     }
 
     func autoFloatReason(
-        _ window: HyprWindow, excludedBundleIDs: Set<String>
+        _ window: HyprWindow, excludedBundleIDs: Set<String>, floatingRules: [FloatingRule] = []
     ) -> FloatingAdmissionPolicy.Reason? {
-        let bundleID = NSRunningApplication(processIdentifier: window.ownerPID)?.bundleIdentifier
+        let book = FloatingRuleBook(rules: floatingRules, excludedBundleIDs: excludedBundleIDs)
         return FloatingAdmissionPolicy.reason(
-            isExcluded: bundleID.map(excludedBundleIDs.contains) ?? false,
+            rule: window.floatingVerdict(book),
             isSizeSettable: isWindowSizeSettable(window),
             isQuickLookPanel: window.isQuickLookPanel
         )

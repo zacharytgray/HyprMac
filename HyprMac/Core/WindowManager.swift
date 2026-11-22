@@ -49,6 +49,11 @@ class WindowManager {
             publish: publisher.publish, clear: publisher.clear)
     }()
     private var statusConfigObservation: AnyCancellable?
+    // the float and tile rules: watched so a change, from the menu, an
+    // action or Settings, reaches the open windows at once
+    private var floatingRuleObservation: AnyCancellable?
+    private var appliedRuleBook = FloatingRuleBook.empty
+    private(set) lazy var floatingRuleCommands = FloatingRuleCommands(config: config)
 
     private(set) var workspaceManager: WorkspaceManager!
     private(set) var tilingEngine: TilingEngine!
@@ -296,8 +301,8 @@ class WindowManager {
             self?.statusPresenter.updateMenuBarState()
             self?.refreshWorkspaceOverview()
         }
-        self.workspaceOrchestrator.excludedBundleIDs = { [weak self] in
-            Set(self?.config.excludedBundleIDs ?? [])
+        self.workspaceOrchestrator.floatRule = { [weak self] window in
+            self?.floatingController.floatRule(for: window)
         }
         self.workspaceOrchestrator.isScratchpadWindow = { [weak self] id in
             self?.scratchpad.contains(id) ?? false
@@ -334,6 +339,10 @@ class WindowManager {
         scratchpad.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         scratchpad.refocusUnderCursor = { [weak self] in self?.mouseTracker.refocusUnderCursor() }
         scratchpad.isNeverTile = { [weak self] w in self?.floatingController.isNeverTile(w) ?? false }
+        scratchpad.refusalMessage = { [weak self] w in
+            self?.floatingController.floatRule(for: w).map(FloatingAdmissionPolicy.refusalMessage(for:))
+                ?? FloatingAdmissionPolicy.neverTileMessage
+        }
         scratchpad.retile = { [weak self] prepare, completion in
             self?.retile(prepare: prepare, completion: completion)
         }
@@ -486,6 +495,7 @@ class WindowManager {
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
         floatingController.excludedBundleIDs = { [weak self] in Set(self?.config.excludedBundleIDs ?? []) }
+        floatingController.floatingRules = { [weak self] in self?.config.floatingRules ?? [] }
         floatingController.findPopup = { [weak self] windows, front in
             self?.mouseTracker.livePopup(in: windows, frontmostPID: front)
         }
@@ -624,6 +634,17 @@ class WindowManager {
         actionDispatcher.saveLayout = { [weak self] in self?.saveLayoutSnapshot(manual: true) }
         actionDispatcher.restoreLayout = { [weak self] in self?.restoreLayoutSnapshot(manual: true) }
         actionDispatcher.retileAll = { [weak self] in self?.retileAllRequested() }
+        actionDispatcher.floatingRuleAction = { [weak self] action in
+            self?.floatingRuleCommands.perform(action)
+        }
+        floatingRuleCommands.focusedWindow = { [weak self] in self?.focusResolver.currentFocusedWindow() }
+        floatingRuleCommands.refuse = { [weak self] window, message in
+            guard let self, let frame = window.frame ?? self.stateCache.cachedWindows[window.windowID]?.frame else {
+                NSSound.beep()
+                return
+            }
+            self.focusBorder.flashError(around: frame, windowID: window.windowID, message: message)
+        }
         actionDispatcher.exemptFromDrift = { [weak self] id in self?.discovery.exemptFromDrift(id) }
         actionDispatcher.endDriftExemption = { [weak self] id in self?.discovery.endDriftExemption(id) }
         actionDispatcher.cancelAdmissionRecovery = { [weak self] id, reason in
@@ -712,6 +733,13 @@ class WindowManager {
         statusConfigObservation = config.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in
             self?.statusExporter.noteChange()
         }
+        appliedRuleBook = config.floatingRuleBook
+        // @Published sends before the write lands; the hop to the next turn
+        // reads both lists settled, and folds an edit that changes both
+        floatingRuleObservation = config.$floatingRules.combineLatest(config.$excludedBundleIDs)
+            .dropFirst()
+            .debounce(for: .milliseconds(50), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.floatingRulesChanged() }
     }
 
     /// Observe the model's post-mutation signal once and route a complete
@@ -2627,6 +2655,7 @@ class WindowManager {
             snapshot: allWindows,
             runningPIDs: runningPIDs,
             excludedBundleIDs: Set(config.excludedBundleIDs),
+            floatingRules: config.floatingRules,
             focusedWindowID: focusController.lastFocusedID,
             unreadableWindowIDs: accessibility.unreadableWindowIDs
         )
@@ -2719,6 +2748,7 @@ class WindowManager {
         let changes = discovery.computeAdmissions(
             snapshot: allWindows,
             excludedBundleIDs: Set(config.excludedBundleIDs),
+            floatingRules: config.floatingRules,
             unreadableWindowIDs: accessibility.unreadableWindowIDs)
         if !changes.newWindows.isEmpty {
             let left = suppressions.remaining(.workspaceTransition).map { Int(($0 * 1000).rounded()) } ?? 0
@@ -3305,6 +3335,26 @@ class WindowManager {
 
     /// Handler for Retile All: the `.hyprMacRetileAll` notification posted
     /// from the menu bar and the `retileAll` keybind (Hypr+R).
+    /// The float and tile rules changed: re-apply the difference to the
+    /// open windows. Paused, nothing moves; the next start classifies every
+    /// window under the new rules anyway.
+    private func floatingRulesChanged() {
+        let old = appliedRuleBook
+        appliedRuleBook = config.floatingRuleBook
+        guard isRunning, old != appliedRuleBook else { return }
+        let known = stateCache.knownWindowIDs
+        let windows = stateCache.cachedWindows.values.filter { known.contains($0.windowID) }
+        floatingController.applyRuleChange(from: old, windows: Array(windows))
+        statusPresenter.updateMenuBarState()
+        refreshFocusedWindowRuleInfo()
+    }
+
+    /// Fill the menu bar's "Focused window" section. Called when the menu
+    /// opens, and after a rule change.
+    func refreshFocusedWindowRuleInfo() {
+        MenuBarState.shared.focusedWindowRule = isRunning ? floatingRuleCommands.focusedInfo() : nil
+    }
+
     @objc private func retileAllRequested() {
         hyprLog(.debug, .lifecycle, "retile all spaces requested")
         scratchpad.hide(reason: .workspaceAction)

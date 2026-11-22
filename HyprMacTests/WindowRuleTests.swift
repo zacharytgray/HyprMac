@@ -465,6 +465,26 @@ final class WindowRuleTests: XCTestCase {
         XCTAssertTrue(h.follows.isEmpty)
     }
 
+    // a pinned app's window that a float rule covers goes to its pin and
+    // floats there, the way a Never tile app's window always has
+    func testAPinnedWindowAFloatRuleCoversFloatsOnItsPin() {
+        let h = ReopenHarness(rules: rules(("us.zoom.xos", 2)), visibleWorkspace: 4)
+        let w = h.framedWindow(90, bundleID: "us.zoom.xos")
+        h.cache.knownWindowIDs.insert(90)
+        // discovery admitted it floating, for the rule
+        h.cache.setFloating(true, window: w)
+
+        _ = h.dispatcher.applyChanges(
+            WindowChanges(newWindows: [w], newOnDisabledMonitor: [], returned: [], goneIDs: [],
+                          fullyForgottenIDs: [], screenDrift: [], focusedWindowGone: false,
+                          requestsRecheck: false),
+            allWindows: [w])
+
+        XCTAssertEqual(h.workspaces.workspaceFor(90), 2)
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(90), "the pin moves it, the rule keeps it floating")
+        XCTAssertFalse(h.engine.windowIDs(inTreeForWorkspace: 2, screen: h.screen).contains(90))
+    }
+
     // MARK: - Never tile refusal
 
     func testHyprTOnANeverTileWindowLeavesItFloatingAndOutOfEveryTree() {

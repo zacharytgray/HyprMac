@@ -60,9 +60,10 @@ final class WindowPlacement {
             stateCache.knownWindowIDs.insert(w.windowID)
             stateCache.windowOwners[w.windowID] = w.ownerPID
 
-            // auto-float excluded apps and explicitly fixed-size windows
+            // auto-float excluded apps, float rules and explicitly
+            // fixed-size windows
             if let reason = floatingController.autoFloatReason(
-                w, excludedBundleIDs: Set(config.excludedBundleIDs)
+                w, excludedBundleIDs: Set(config.excludedBundleIDs), floatingRules: config.floatingRules
             ), !stateCache.floatingWindowIDs.contains(w.windowID) {
                 stateCache.setFloating(true, window: w)
                 hyprLog(.debug, .lifecycle, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
@@ -103,9 +104,11 @@ final class WindowPlacement {
         // full redistribution: un-float everything except excluded apps and
         // non-standard windows (dialogs, sheets, floating panels).
         let excluded = Set(config.excludedBundleIDs)
+        let rules = config.floatingRules
         let keepFloating = Set(allWindows.filter {
             RetileAllPlanner.shouldRemainFloating(
-                isAutoFloat: floatingController.shouldAutoFloat($0, excludedBundleIDs: excluded),
+                isAutoFloat: floatingController.shouldAutoFloat($0, excludedBundleIDs: excluded,
+                                                                floatingRules: rules),
                 isOnDisabledMonitor: displayManager.screen(for: $0).map(workspaceManager.isMonitorDisabled) == true
             )
         }.map { $0.windowID })

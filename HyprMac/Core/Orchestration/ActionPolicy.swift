@@ -43,7 +43,7 @@ enum ActionPolicy {
         switch action {
         case .switchWorkspace, .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,
              .cycleWorkspace, .moveToNextEmptyWorkspace, .toggleMaximize, .saveLayout,
-             .restoreLayout, .retileAll:
+             .restoreLayout, .retileAll, .floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule:
             return true
         default:
             return false
@@ -81,7 +81,8 @@ enum ActionPolicy {
         switch action {
         case .swapDirection, .resizeDirection, .toggleSplit, .toggleFloating,
              .moveToWorkspace, .moveToWorkspaceAndFollow, .moveWindowToMonitor,
-             .moveToNextEmptyWorkspace, .moveToScratchpad, .restoreLayout, .retileAll:
+             .moveToNextEmptyWorkspace, .moveToScratchpad, .restoreLayout, .retileAll,
+             .floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule:
             return true
         default:
             return false

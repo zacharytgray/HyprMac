@@ -173,6 +173,13 @@ class UserConfig: ObservableObject {
         didSet { guard !isReloading else { return }; save() }
     }
 
+    // float and tile rules beyond the app-wide float list in
+    // excludedBundleIDs. WindowManager watches both lists and re-applies a
+    // change to the open windows it touches
+    @Published var floatingRules: [FloatingRule] {
+        didSet { guard !isReloading else { return }; save() }
+    }
+
     // custom names for workspaces 1–10, keyed "1"…"10". display only:
     // every reader looks it up through `workspaceDisplayName`
     // one accent for the overlays. nil keeps the brand cyan and magenta pair
@@ -338,6 +345,7 @@ class UserConfig: ObservableObject {
             self.scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
             self.restoreLayoutOnLaunch = saved.restoreLayoutOnLaunch ?? UserConfigDefaults.restoreLayoutOnLaunch
             self.windowRules = saved.windowRules ?? []
+            self.floatingRules = saved.floatingRules ?? []
             self.overlayAccentHex = saved.overlayAccentHex
             self.workspaceNames = saved.workspaceNames ?? [:]
         } else {
@@ -371,6 +379,7 @@ class UserConfig: ObservableObject {
             self.scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
             self.restoreLayoutOnLaunch = UserConfigDefaults.restoreLayoutOnLaunch
             self.windowRules = []
+            self.floatingRules = []
             self.overlayAccentHex = nil
             self.workspaceNames = [:]
         }
@@ -509,6 +518,7 @@ class UserConfig: ObservableObject {
             scratchpadRegionInset: scratchpadRegionInset,
             restoreLayoutOnLaunch: restoreLayoutOnLaunch,
             windowRules: windowRules.isEmpty ? nil : windowRules,
+            floatingRules: floatingRules.isEmpty ? nil : floatingRules,
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
             overlayAccentHex: overlayAccentHex,
             keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch,
@@ -558,6 +568,7 @@ class UserConfig: ObservableObject {
         scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
         restoreLayoutOnLaunch = UserConfigDefaults.restoreLayoutOnLaunch
         windowRules = []
+        floatingRules = []
         workspaceNames = [:]
         statusExportEnabled = false
         statusHookCommand = nil
@@ -676,6 +687,7 @@ class UserConfig: ObservableObject {
         scratchpadRegionInset = saved.scratchpadRegionInset ?? UserConfigDefaults.scratchpadRegionInset
         restoreLayoutOnLaunch = saved.restoreLayoutOnLaunch ?? UserConfigDefaults.restoreLayoutOnLaunch
         windowRules = saved.windowRules ?? []
+        floatingRules = saved.floatingRules ?? []
         overlayAccentHex = saved.overlayAccentHex
         workspaceNames = saved.workspaceNames ?? [:]
 

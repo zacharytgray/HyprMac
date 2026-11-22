@@ -34,6 +34,9 @@ enum Action: Equatable {
     case saveLayout
     case restoreLayout
     case retileAll
+    case floatWindowsLikeThis
+    case tileWindowsLikeThis
+    case forgetWindowRule
 }
 ```
 
@@ -206,7 +209,8 @@ app:
   pinned to ws<N>`. Any other return keeps its workspace, including a
   reopen or flap on its own visible workspace. An unpinned app's reopen
   still drifts to the visible workspace.
-- **Never tile apps.** They stay floating and still go to their pin.
+- **Never tile apps, and windows a float rule covers.** They stay floating
+  and still go to their pin.
   `WorkspaceOrchestrator.placePinnedFloater` carries the floater to the
   workspace's display, and parks it with that frame saved when the
   workspace is hidden. A reopened one starts from the frame it reopened at,
@@ -231,6 +235,86 @@ Downgrade: an older build sharing `config.json` over iCloud ignores
 `windowRules` and writes the file without it on its next save, so the
 pins are lost on every machine. Keep machines that share a config on a
 build with window rules. No `ConfigMigration` step is involved.
+
+## Float and tile rules
+
+The user's word on what floats. Settings → General → "Float and tile rules"
+lists every rule, with a Float/Tile switch and a remove button on each row.
+
+- **App float** is Never tile: the app's bundle id in `excludedBundleIDs`,
+  the list that has always held it. Configs and Nix modules that set it
+  work unchanged. There is no migration.
+- **App tile and window rules** live in `floatingRules`, written only when
+  there is at least one:
+
+```
+"floatingRules": [
+  { "bundleID": "us.zoom.xos", "action": "float", "match": { "titleIs": "Zoom Meeting" } },
+  { "bundleID": "com.microsoft.teams2", "action": "tile", "match": { "titleContains": "Meeting" } },
+  { "bundleID": "com.apple.FaceTime", "action": "float", "match": { "raised": true } },
+  { "bundleID": "com.apple.FaceTime", "action": "tile", "match": { "titleIs": "FaceTime" } }
+]
+```
+
+`action` is `float` or `tile`. `match` holds exactly one criterion: `titleIs`
+(the exact title), `titleContains` (ignoring case), or `raised: true` (the
+window sits above normal windows, CG layer above 0, the way picture-in-picture,
+call pop-ups and mini players do). With no `match` the rule covers the app.
+
+**Precedence**, highest first: Quick Look previews and windows on a disabled
+monitor (always float, outside rules); a window rule, the first that matches
+in list order; the app's rule; HyprMac's automatic logic (a window whose size
+AX can't set floats). A hand edit that puts an app in `excludedBundleIDs` and
+gives it an app tile rule floats it, as before tile rules existed. Settings
+never makes that state: picking one removes the other.
+
+A tile rule never tiles a window HyprMac can't resize. At admission it stays
+floating with one `.notice` line; from an action it gets the red shake. The
+same precedence answers at every place that asked about Never tile: admission
+(`WindowDiscoveryService.admitNew`), startup and Retile All
+(`FloatingWindowController.autoFloatReason`), Hypr+T
+(`FloatingWindowController.toggle`), the dedicated workspace move, a move to a
+workspace and the scratchpad (`isNeverTile`, `floatRule(for:)`).
+
+**From the focused window.** Three actions, no default binds, listed under
+Window Management once bound:
+
+```json
+{"floatWindowsLikeThis":{}}
+{"tileWindowsLikeThis":{}}
+{"forgetWindowRule":{}}
+```
+
+The menu bar's "Focused window" section runs them too, plus "Always float all
+<App> windows". "Windows like this" are the app's windows above normal windows
+when the focused one is raised, else the ones with its exact title. Settings'
+Edit popover loosens a title to "contains" and trims it, for titles that carry
+a meeting's name. A window with no title on the normal layer has nothing to
+match, so the menu items are dimmed and the action shakes. A new rule goes
+ahead of the app's older ones. Forget removes the rule that decides the window:
+a window rule, the app tile rule, or the app from Never tile.
+
+**Live.** `WindowManager` watches `floatingRules` and `excludedBundleIDs`. A
+change from the menu, an action, Settings or a config reload re-applies to
+open windows whose verdict changed
+(`FloatingWindowController.applyRuleChange`): one that a rule now floats
+floats, back to its pre-tile frame when that is on its screen; one that a
+tile rule now covers, or whose float rule is gone, tiles if it can. A window
+the user floated by hand and no rule covered stays. Scratchpad members,
+hidden windows and windows on a disabled monitor keep what they have. A
+window on a hidden workspace changes state now and shows it on reveal.
+
+**Late titles.** Apps often name a window a moment after it opens. A new
+window of an app with title rules, that no window rule matched at first sight,
+is asked again at 0.5, 1, 2 and 4 s when its title has changed. The first
+match applies once, and later title changes are ignored. A window the user
+floated or tiled in between is skipped. Logs: `title rule re-check: <id> now
+matches …`.
+
+Downgrade: an older build ignores `floatingRules` and drops it on its next
+save, like `windowRules`. App floats survive, since they are
+`excludedBundleIDs`. The array decodes per element: a rule with an unknown
+action or a malformed match is logged and dropped alone.
 
 ## Workspace names
 
@@ -662,8 +746,10 @@ every JSON example in this file.
 - Return=36, Space=49, Tab=48, Delete=51, Escape=53, Grave/Backtick=50
 
 **Other config fields**: `gapSize`, `outerPadding`, `enabled`,
-`focusFollowsMouse`, `excludedBundleIDs` (bundle IDs that never
-tile — auto-float on discovery, and Hypr+T refuses to tile them),
+`focusFollowsMouse`, `excludedBundleIDs` (Never tile: bundle IDs that
+always float — auto-float on discovery, and Hypr+T refuses to tile them;
+a window tile rule can take one window out, see "Float and tile rules"),
+`floatingRules` (app tile and window rules, see "Float and tile rules"),
 `windowRules` (per-app workspace pins, see "Window rules"), `disabledMonitors` (in `monitor-config.json`: monitor names
 matching `NSScreen.localizedName`, excluded from tiling entirely),
 `outerPaddingPerMonitor` (in `monitor-config.json`: per-side outer

@@ -238,6 +238,35 @@ final class KeybindDecoderToleranceTests: XCTestCase {
         XCTAssertEqual(saved.keybinds.map(\.action), [.retileAll])
     }
 
+    func testTheRuleActionsRoundTripThroughSavedConfig() throws {
+        let actions: [Action] = [.floatWindowsLikeThis, .tileWindowsLikeThis, .forgetWindowRule]
+        let binds = actions.enumerated().map {
+            Keybind(keyCode: UInt16(20 + $0.offset), modifiers: .hypr, action: $0.element)
+        }
+        let encoded = try binds.map { String(data: try JSONEncoder().encode($0), encoding: .utf8)! }
+        let json = """
+        {"keybinds":[\(encoded.joined(separator: ","))],"gapSize":8,"outerPadding":8,"enabled":true}
+        """
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        let reloaded = try JSONDecoder().decode(SavedConfig.self, from: try JSONEncoder().encode(saved))
+        XCTAssertEqual(reloaded.keybinds.map(\.action), actions)
+    }
+
+    // an older build meets a newer bind as unknown and drops only that bind;
+    // the rules key beside it decodes on its own
+    func testAnUnknownBindBesideTheRuleActionsKeepsTheRest() throws {
+        let json = """
+        {"keybinds":[
+            {"action":{"futureRuleThing":{}},"keyCode":1,"modifiers":1},
+            {"action":{"forgetWindowRule":{}},"keyCode":15,"modifiers":1}
+        ],"gapSize":8,"outerPadding":8,"enabled":true,
+        "floatingRules":[{"bundleID":"us.zoom.xos","action":"float","match":{"titleIs":"Zoom Meeting"}}]}
+        """
+        let saved = try JSONDecoder().decode(SavedConfig.self, from: Data(json.utf8))
+        XCTAssertEqual(saved.keybinds.map(\.action), [.forgetWindowRule])
+        XCTAssertEqual(saved.floatingRules?.count, 1)
+    }
+
     func testMoveToWorkspaceAndFollowWireFormatDecodes() throws {
         let json = #"{"action":{"moveToWorkspaceAndFollow":{"_0":10}},"keyCode":29,"modifiers":11}"#
         let kb = try JSONDecoder().decode(Keybind.self, from: Data(json.utf8))

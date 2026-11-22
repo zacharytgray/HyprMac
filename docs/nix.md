@@ -43,6 +43,19 @@ programs.hyprmac = {
 };
 ```
 
+Never tile is `settings.excludedBundleIDs`, as before. App tile rules and rules
+for one kind of window go in `settings.floatingRules`:
+
+```nix
+settings.floatingRules = [
+  { bundleID = "us.zoom.xos"; action = "float"; match.titleIs = "Zoom Meeting"; }
+  { bundleID = "com.apple.FaceTime"; action = "float"; match.raised = true; }
+];
+```
+
+A rule added from the menu bar or an action on a read-only config applies until
+the next reload, like any Settings change. Copy it into `settings` to keep it.
+
 `settings` and `monitorSettings` are attribute sets written as JSON. See
 [Keybinds and actions](keybinds-and-actions.md) for every key. The module adds
 `version = 2`, `keybinds = [ ]`, `gapSize = 8`, `outerPadding = 8` and

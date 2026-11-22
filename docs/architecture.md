@@ -170,7 +170,8 @@ live for the entire app lifetime. The process-wide singletons are
 | `DockAffordance` | What an outside app activation does when none of that app's windows are on screen. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
-| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate. |
+| `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate, and the live re-apply of a float or tile rule change (`applyRuleChange`). |
+| `FloatingRuleCommands` | The `floatWindowsLikeThis`, `tileWindowsLikeThis` and `forgetWindowRule` actions and the menu bar's "Focused window" section. Edits the config only; `WindowManager` watches the rule lists and re-applies (see "Float and tile rules"). |
 | `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
 | `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown and the focus invariant. Puts floaters an old tile covers back on top, then focuses and lifts the target. |
 | `WindowStacking` | Rules over the CG window list: the frontmost app's open popup, pointer hit-test, floaters above or below a tile, the tiles covering each floater, and the rect-strip `subtract` that `FocusBorder` shares. Pure apart from `onScreen()` and `bounds(of:)`, which read the list. `bounds(of:)` returns one window's current frame. |
@@ -909,6 +910,25 @@ An admitted panel is always a floater (`FloatingAdmissionPolicy` reason
 
 macOS 27 behaviour is unconfirmed. `docs/debugging.md` lists the log lines
 that show what the panel reports there.
+
+## Float and tile rules
+
+`FloatingRuleBook` (`Models/FloatingRule.swift`) reads `excludedBundleIDs`
+(Never tile, the app float) and `floatingRules` (app tile and window rules)
+together and answers one window: float, tile or nothing. A window rule beats
+the app's rule, which beats the automatic logic. `FloatingAdmissionPolicy`
+turns that answer into a float reason, and a tile answer never tiles a window
+whose AX size can't be set. Every place that used to ask about Never tile asks
+the book: discovery's admission and late-title re-check, startup and Retile
+All (`autoFloatReason`), Hypr+T, the dedicated workspace move, moves to a
+workspace, and the scratchpad (`floatRule(for:)` and `isNeverTile`).
+
+Rules change from the menu, an action, Settings or a config reload.
+`WindowManager` watches both lists (50 ms debounce) and hands the old book to
+`FloatingWindowController.applyRuleChange`, which moves only the open windows
+whose answer changed, in one retile. Windows that leave a tree for a float
+come back to their pre-tile frame when it is on their screen. The full rules
+are in `docs/keybinds-and-actions.md`, "Float and tile rules".
 
 ## Coordinate systems
 

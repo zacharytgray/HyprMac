@@ -895,6 +895,8 @@ struct SavedConfig: Codable {
     // trailing optional — existing `SavedConfig(...)` call sites keep compiling.
     var restoreLayoutOnLaunch: Bool? = nil
     var windowRules: [WindowRule]? = nil
+    // nil when there are none, so a config without rules is written as before
+    var floatingRules: [FloatingRule]? = nil
     var workspaceNames: [String: String]? = nil
     // nil = the brand cyan and magenta pair
     var overlayAccentHex: String? = nil
@@ -930,6 +932,7 @@ extension SavedConfig {
         case scratchpadTileByDefault, scratchpadRegionInset
         case restoreLayoutOnLaunch
         case windowRules
+        case floatingRules
         case workspaceNames
         case overlayAccentHex
         case keepCursorOnWorkspaceSwitch
@@ -1004,6 +1007,7 @@ extension SavedConfig {
         self.scratchpadRegionInset = Self.tolerant(c, .scratchpadRegionInset)
         self.restoreLayoutOnLaunch = Self.tolerant(c, .restoreLayoutOnLaunch)
         self.windowRules = Self.tolerantWindowRules(c)
+        self.floatingRules = Self.tolerantFloatingRules(c)
         self.workspaceNames = Self.tolerantWorkspaceNames(c)
         self.overlayAccentHex = Self.tolerant(c, .overlayAccentHex)
         self.keepCursorOnWorkspaceSwitch = Self.tolerant(c, .keepCursorOnWorkspaceSwitch)
@@ -1033,6 +1037,23 @@ extension SavedConfig {
         while !arr.isAtEnd {
             if (try? arr.decodeNil()) == true { continue }
             guard let element = try? arr.decode(FailableWindowRule.self) else { break }
+            if let rule = element.rule { kept.append(rule) }
+        }
+        return kept
+    }
+
+    // same per-element tolerance: a rule a newer build wrote, or a hand edit
+    // with a bad action or match, costs only that rule
+    private static func tolerantFloatingRules(_ c: KeyedDecodingContainer<CodingKeys>) -> [FloatingRule]? {
+        guard c.contains(.floatingRules), (try? c.decodeNil(forKey: .floatingRules)) == false else { return nil }
+        guard var arr = try? c.nestedUnkeyedContainer(forKey: .floatingRules) else {
+            hyprLog(.notice, .config, "config.json has a floatingRules value this build can't read; using no rules")
+            return nil
+        }
+        var kept: [FloatingRule] = []
+        while !arr.isAtEnd {
+            if (try? arr.decodeNil()) == true { continue }
+            guard let element = try? arr.decode(FailableFloatingRule.self) else { break }
             if let rule = element.rule { kept.append(rule) }
         }
         return kept
@@ -1081,6 +1102,20 @@ private struct FailableWindowRule: Decodable {
         } catch {
             rule = nil
             hyprLog(.warning, .config, "skipping malformed window rule")
+        }
+    }
+}
+
+// one float or tile rule, or nil when it doesn't decode.
+private struct FailableFloatingRule: Decodable {
+    let rule: FloatingRule?
+
+    init(from decoder: Decoder) throws {
+        do {
+            rule = try FloatingRule(from: decoder)
+        } catch {
+            rule = nil
+            hyprLog(.warning, .config, "skipping malformed float or tile rule")
         }
     }
 }

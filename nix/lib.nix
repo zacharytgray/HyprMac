@@ -85,6 +85,13 @@ let
               "com.apple.FaceTime"
               "com.apple.systempreferences"
             ];
+            floatingRules = [
+              {
+                bundleID = "us.zoom.xos";
+                action = "float";
+                match.titleIs = "Zoom Meeting";
+              }
+            ];
             workspaceNames = {
               "1" = "code";
               "2" = "web";

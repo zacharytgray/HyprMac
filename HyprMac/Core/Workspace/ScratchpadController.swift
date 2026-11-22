@@ -64,8 +64,11 @@ final class ScratchpadController {
     var updatePositionCache: () -> Void = {}
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var refocusUnderCursor: () -> Void = {}
-    // the app is in Never tile: the layer keeps it floating
+    // the app is in Never tile, or a float rule covers the window: the
+    // layer keeps it floating
     var isNeverTile: (HyprWindow) -> Bool = { _ in false }
+    // what the red shake says when such a window is refused a tile
+    var refusalMessage: (HyprWindow) -> String = { _ in FloatingAdmissionPolicy.neverTileMessage }
     var raiseScrim: () -> Void = {}
     /// Order the scrim panels directly below this window (cross-app window
     /// number). The settle passes use it to tuck the scrim under the
@@ -668,7 +671,7 @@ final class ScratchpadController {
         if isNeverTile(focused) {
             if let f = focused.frame {
                 focusBorder.flashError(around: f, windowID: id,
-                                       message: FloatingAdmissionPolicy.neverTileMessage)
+                                       message: refusalMessage(focused))
             } else {
                 NSSound.beep()
             }

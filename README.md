@@ -280,11 +280,26 @@ Settings → General → "Pin apps" sends an app to a workspace of your choice, 
 Every new window of a pinned app opens there, and HyprMac shows it. An app pinned to the scratchpad
 also goes back there at launch and on **Hypr + R**, with the scratchpad left closed. If a pinned
 workspace is full, the window goes to the next one with room. **Hypr + R** (Retile all
-spaces) also moves a pinned app's open windows back to its workspace. An app in "Never tile"
+spaces) also moves a pinned app's open windows back to its workspace. An app that always floats
 can be pinned too: it goes to its workspace and stays floating.
 
-Apps in "Never tile" can't be tiled by hand either. Hypr+T on one shakes red and says so; remove
-the app from the list to tile it again.
+</details>
+
+<details>
+<summary><b>Float and tile rules</b></summary>
+<br>
+
+Settings → General → "Float and tile rules" lists which apps, and which kinds of window inside
+an app, always float or always tile. A rule for one kind of window beats a rule for its app.
+Make one from the window itself: the menu bar's "Focused window" section has "Always float
+windows like this", "Always tile windows like this", "Always float all <App> windows" and
+"Forget rule for this window". The first three also exist as keybindable actions. "Windows like
+this" are the app's windows that stay on top of others when the focused one does, else the ones
+with its title. Settings' Edit can change a title rule to "contains", for meeting windows whose
+title carries the meeting's name.
+
+A window a float rule covers can't be tiled by hand. Hypr+T on one shakes red and says so; remove
+the rule to tile it again. "Always tile" can't tile a window HyprMac can't resize.
 
 </details>
 

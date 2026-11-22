@@ -22,11 +22,61 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: HyprSpacing.md) {
             header
             workspacePanel
+            focusedWindowPanel
             actions
         }
         .padding(HyprSpacing.md)
         .frame(width: 320)
         .background(Color.hyprBackground)
+        .onAppear { appDelegate.windowManager?.refreshFocusedWindowRuleInfo() }
+    }
+
+    // MARK: focused window
+
+    /// The focused window's float and tile rules: make one from it, or
+    /// forget the one that decides it. Settings lists them all.
+    @ViewBuilder
+    private var focusedWindowPanel: some View {
+        if config.enabled, let info = menuBarState.focusedWindowRule {
+            HyprPanel("Focused window: \(info.appName)") {
+                VStack(spacing: 1) {
+                    Text(info.currentRule ?? "No rule: HyprMac decides")
+                        .font(.hyprMonoXs)
+                        .foregroundStyle(Color.hyprTextTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, HyprSpacing.md)
+                        .padding(.vertical, HyprSpacing.xs)
+                    ruleRow("Always float windows like this", icon: "macwindow.on.rectangle",
+                            action: .floatWindowsLikeThis, enabled: info.likeThis != nil)
+                        .help(info.likeThis ?? FloatingRuleCommands.nothingToMatchMessage)
+                    ruleRow("Always tile windows like this", icon: "rectangle.split.2x1",
+                            action: .tileWindowsLikeThis, enabled: info.likeThis != nil)
+                        .help(info.likeThis ?? FloatingRuleCommands.nothingToMatchMessage)
+                    if !info.appFloats {
+                        MenuBarRow("Always float all \(info.appName) windows", icon: "rectangle.on.rectangle") {
+                            appDelegate.windowManager?.floatingRuleCommands.floatFocusedApp()
+                        }
+                    }
+                    ruleRow("Forget rule for this window", icon: "xmark.circle",
+                            action: .forgetWindowRule, enabled: info.currentRule != nil)
+                }
+                .padding(.vertical, HyprSpacing.xs)
+            }
+        }
+    }
+
+    private func ruleRow(_ label: String, icon: String, action: Action, enabled: Bool) -> some View {
+        MenuBarRow(label, icon: icon) {
+            appDelegate.windowManager?.handleAction(action)
+        } trailing: {
+            if let binding = config.keybinds.first(where: { $0.action == action }) {
+                KeybadgeView(bind: binding, fontSize: 11)
+            }
+        }
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
     }
 
     // MARK: header
@@ -277,6 +327,9 @@ class MenuBarState: ObservableObject {
     @Published var scratchpadCount = 0
     /// Whether the scratchpad layer is currently summoned (filled tray).
     @Published var scratchpadVisible = false
+    /// The focused window's rule state, read when the menu opens. nil hides
+    /// the section.
+    @Published var focusedWindowRule: FocusedWindowRuleInfo?
 }
 
 struct MenuBarMonitorSnapshot: Equatable, Identifiable {

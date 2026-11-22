@@ -99,7 +99,9 @@ final class WorkspaceOrchestrator {
     /// could not reveal is still being retried. A brand-new window may be
     /// tiled during the switch's transition hold only then.
     var isSwitchSettled: Bool { switchesInFlight == 0 && revealRetryPending.isEmpty }
-    var excludedBundleIDs: () -> Set<String> = { [] }
+    // the rule that keeps a window floating (Never tile or a float rule),
+    // nil when none does. FloatingWindowController.floatRule(for:)
+    var floatRule: (HyprWindow) -> FloatingRuleVerdict? = { _ in nil }
     var isScratchpadWindow: (CGWindowID) -> Bool = { _ in false }
 
     init(workspaceManager: WorkspaceManager,
@@ -171,12 +173,10 @@ final class WorkspaceOrchestrator {
         // the desired end state. Repeating this action is therefore a no-op, even if
         // that sole window is currently floating.
         guard sourceIDs.count > 1 else { return }
-        if let reason = FloatingAdmissionPolicy.reason(
-            isExcluded: focused.bundleID.map(excludedBundleIDs().contains) ?? false,
-            isSizeSettable: focused.isSizeSettable
-        ) {
-            rejectTransfer(focused, message: reason == .excludedApp
-                ? FloatingAdmissionPolicy.neverTileMessage : "This window cannot be tiled")
+        let rule = floatRule(focused)
+        if FloatingAdmissionPolicy.reason(rule: rule, isSizeSettable: focused.isSizeSettable) != nil {
+            rejectTransfer(focused, message: rule.map(FloatingAdmissionPolicy.refusalMessage(for:))
+                ?? "This window cannot be tiled")
             return
         }
         // a workspace with nothing on screen is empty, same as the menu bar:
@@ -728,8 +728,8 @@ final class WorkspaceOrchestrator {
 
         // when coming from disabled monitor, unfloat so it enters tiling on
         // target. a quick look preview, or an app in Never tile, stays
-        // floating wherever it goes.
-        let isNeverTile = focused.bundleID.map(excludedBundleIDs().contains) ?? false
+        // floating wherever it goes. so does a window a float rule covers.
+        let isNeverTile = floatRule(focused) != nil
         let willTile = ((onDisabledMonitor && !isNeverTile) || !isFloating) && !focused.isQuickLookPanel
 
         // target screen is the workspace's static home — same answer

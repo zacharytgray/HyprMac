@@ -31,6 +31,9 @@ final class ActionWireKeyTests: XCTestCase {
         case .saveLayout: "saveLayout"
         case .restoreLayout: "restoreLayout"
         case .retileAll: "retileAll"
+        case .floatWindowsLikeThis: "floatWindowsLikeThis"
+        case .tileWindowsLikeThis: "tileWindowsLikeThis"
+        case .forgetWindowRule: "forgetWindowRule"
         }
     }
 
@@ -60,11 +63,14 @@ final class ActionWireKeyTests: XCTestCase {
         (.saveLayout, #"{"saveLayout":{}}"#),
         (.restoreLayout, #"{"restoreLayout":{}}"#),
         (.retileAll, #"{"retileAll":{}}"#),
+        (.floatWindowsLikeThis, #"{"floatWindowsLikeThis":{}}"#),
+        (.tileWindowsLikeThis, #"{"tileWindowsLikeThis":{}}"#),
+        (.forgetWindowRule, #"{"forgetWindowRule":{}}"#),
     ]
 
     func testTableCoversEveryKeyOnce() {
         XCTAssertEqual(Set(Self.table.map { Self.wireKey($0.action) }).count, Self.table.count)
-        XCTAssertEqual(Self.table.count, 25)
+        XCTAssertEqual(Self.table.count, 28)
     }
 
     func testEveryActionEncodesToItsFrozenJSON() throws {
