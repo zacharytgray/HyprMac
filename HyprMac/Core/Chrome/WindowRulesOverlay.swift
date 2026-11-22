@@ -56,6 +56,18 @@ final class WindowRulesOverlayModel: ObservableObject {
 
     func isTitleRow(_ row: Row) -> Bool { row == .floatTitle || row == .tileTitle }
 
+    /// The title editor shows under the picked row while it is a title row.
+    var isEditingTitle: Bool { isTitleRow(selection) }
+
+    /// A mouse click on a row. It picks the row and says whether to apply it
+    /// now. A title row opens its editor on the first click, like the arrow
+    /// keys, and applies on a second click or Return.
+    func click(_ row: Row) -> Bool {
+        let opensEditor = isTitleRow(row) && selection != row
+        selection = row
+        return !opensEditor && isEnabled(row)
+    }
+
     /// Up (-1) or down (+1), wrapping, over the rows.
     func move(_ step: Int) {
         let all = rows
@@ -81,7 +93,8 @@ final class WindowRulesOverlayModel: ObservableObject {
         switch row {
         case .floatApp, .tileApp: return "every window"
         case .forget: return target.currentRule
-        default: return nil
+        // these take typed text: say so until the editor is open
+        case .floatTitle, .tileTitle: return selection == row ? nil : "edit title…"
         }
     }
 
@@ -119,7 +132,7 @@ struct WindowRulesOverlayView: View {
             VStack(spacing: 2) {
                 ForEach(model.rows, id: \.self) { row in
                     rowView(row)
-                    if row == model.selection, model.isTitleRow(row) { titleEditor }
+                    if row == model.selection, model.isEditingTitle { titleEditor }
                 }
             }
             footer
@@ -127,9 +140,9 @@ struct WindowRulesOverlayView: View {
         .padding(EdgeInsets(top: 14, leading: 14, bottom: 12, trailing: 14))
         .frame(width: Self.width, alignment: .topLeading)
         .overlayCard(cornerRadius: 14, glassTint: OverlayGlassTint.card)
-        .onChange(of: model.selection) { row in
+        .onChange(of: model.selection) { _ in
             // the field takes the keys while a title row is picked
-            editingTitle = model.isTitleRow(row)
+            editingTitle = model.isEditingTitle
         }
     }
 
@@ -168,8 +181,7 @@ struct WindowRulesOverlayView: View {
     private func rowView(_ row: WindowRulesOverlayModel.Row) -> some View {
         let selected = model.selection == row
         return Button {
-            model.selection = row
-            if model.isEnabled(row) { choose(row) }
+            if model.click(row) { choose(row) }
         } label: {
             HStack(spacing: 9) {
                 // the pick: an inset accent bar, a colored icon and heavier
@@ -188,9 +200,14 @@ struct WindowRulesOverlayView: View {
                         .foregroundColor(Color.primary.opacity(model.isEnabled(row) ? 0.9 : 0.4))
                         .layoutPriority(1)
                     if let detail = model.detail(row) {
-                        Text(detail)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Color.secondary)
+                        HStack(spacing: 3) {
+                            if model.isTitleRow(row) {
+                                Image(systemName: "character.cursor.ibeam")
+                                    .font(.system(size: 10))
+                            }
+                            Text(detail).font(.system(size: 11))
+                        }
+                        .foregroundStyle(Color.secondary)
                     }
                 }
                 .lineLimit(1)

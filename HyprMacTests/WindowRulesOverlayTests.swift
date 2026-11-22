@@ -54,6 +54,43 @@ final class WindowRulesOverlayTests: XCTestCase {
         XCTAssertTrue(model.isEnabled(.floatApp))
     }
 
+    // a click on an app row applies it at once, as before
+    func testClickingAnAppRowAppliesIt() {
+        let model = WindowRulesOverlayModel(target: info())
+        XCTAssertTrue(model.click(.tileApp))
+        XCTAssertEqual(model.selection, .tileApp)
+        XCTAssertFalse(model.isEditingTitle)
+
+        let covered = WindowRulesOverlayModel(target: info(rule: "Never tile: all windows", appFloats: true))
+        XCTAssertTrue(covered.click(.forget))
+        XCTAssertEqual(covered.selection, .forget)
+    }
+
+    // a click on a title row opens its editor like the arrow keys do; a
+    // second click on the row (its ↩ chip included) applies it
+    func testClickingATitleRowOpensTheEditor() {
+        let model = WindowRulesOverlayModel(target: info())
+        XCTAssertEqual(model.detail(.floatTitle), "edit title…", "it shows the row takes text")
+        XCTAssertFalse(model.click(.floatTitle), "the first click only opens the editor")
+        XCTAssertEqual(model.selection, .floatTitle)
+        XCTAssertTrue(model.isEditingTitle)
+        XCTAssertEqual(model.text, "Chat | Someone", "prefilled with the window's title")
+        XCTAssertNil(model.detail(.floatTitle), "the open editor says it")
+        XCTAssertEqual(model.detail(.tileTitle), "edit title…")
+
+        XCTAssertFalse(model.click(.tileTitle), "moving to the other title row opens it there")
+        XCTAssertEqual(model.selection, .tileTitle)
+        XCTAssertTrue(model.click(.tileTitle))
+
+        model.text = ""
+        XCTAssertFalse(model.click(.tileTitle), "nothing to apply while the text is empty")
+
+        let keyed = WindowRulesOverlayModel(target: info())
+        keyed.move(2)
+        XCTAssertEqual(keyed.selection, .floatTitle)
+        XCTAssertTrue(keyed.click(.floatTitle), "picked with the keys, a click applies")
+    }
+
     func testTheHeaderChip() {
         XCTAssertEqual(WindowRulesOverlayModel(target: info()).ruleChip, "No rule")
         XCTAssertEqual(WindowRulesOverlayModel(target: info(rule: "Never tile: all windows")).ruleChip, "Always float")

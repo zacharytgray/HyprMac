@@ -307,7 +307,10 @@ Teams chat window carries the chat's name, so "Chat |" or the app name is the
 usual edit); and forget the rule that covers it. Up and Down choose, Return
 applies, Esc closes, and a mouse works. The title field and its is/contains
 switch appear only under a picked title row; the field takes the typing and
-Tab switches is/contains. Hypr+I again closes it, and so does moving on: a
+Tab switches is/contains. Until then, the title rows say "edit title…". A click
+on an app row or Forget applies it at once. A click on a title row picks it
+and opens the field, like the arrow keys; a second click on the row (its ↩
+chip included) or Return applies it. Hypr+I again closes it, and so does moving on: a
 click elsewhere, another app coming forward, any other HyprMac action, or the
 window going away. It is the same glass card, type and key chips as Hypr+K,
 and it never activates HyprMac: a non-activating key panel takes the keys,

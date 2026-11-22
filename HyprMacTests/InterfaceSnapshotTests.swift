@@ -155,9 +155,11 @@ final class InterfaceSnapshotTests: XCTestCase {
     func testRenderWindowRulesOverlay() throws {
         let icon = NSWorkspace.shared.icon(forFile: "/System/Applications/FaceTime.app")
         func card(_ info: FocusedWindowRuleInfo, _ select: WindowRulesOverlayModel.Row? = nil,
+                  click: WindowRulesOverlayModel.Row? = nil,
                   text: String? = nil, contains: Bool = false) -> some View {
             let model = WindowRulesOverlayModel(target: info)
             if let select { model.selection = select }
+            if let click { _ = model.click(click) }
             if let text { model.text = text }
             model.contains = contains
             return WindowRulesOverlayView(model: model, icon: icon) { _ in }
@@ -178,6 +180,9 @@ final class InterfaceSnapshotTests: XCTestCase {
             try render("rules-overlay-title-\(mode)", card(teams, .floatTitle, text: "Chat |", contains: true),
                        width: width, dark: dark)
             try render("rules-overlay-rule-\(mode)", card(faceTime), width: width, dark: dark)
+            // a mouse click on a title row opens the editor with the full title
+            try render("rules-overlay-title-click-\(mode)", card(teams, click: .floatTitle),
+                       width: width, dark: dark)
         }
     }
 
