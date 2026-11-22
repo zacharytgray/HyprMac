@@ -1512,7 +1512,8 @@ that display instead. The state is not saved: a restart re-tiles.
 
 While a display showing now has a maximized window, the Full menu bar label shows one
 icon in place of the workspace glyphs. Compact fills its one badge instead
-(`3.square.fill`) while the workspace it shows has one. Every start and end shows the switch HUD
+(`3.square.fill`) while the workspace it shows has one; a named workspace
+gets the icon beside its name. Every start and end shows the switch HUD
 with `FULLSCREEN` and On or Off, whatever caused it (`TilingEngine.onMaximizeChanged`).
 Workspaces that aren't showing stay quiet.
 

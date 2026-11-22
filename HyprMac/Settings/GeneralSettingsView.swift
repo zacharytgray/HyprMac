@@ -256,7 +256,7 @@ struct GeneralSettingsView: View {
             }
 
             HyprRow("Menu bar", icon: "menubar.rectangle",
-                    subtitle: "Full shows every workspace in use. Compact shows the current workspace in a fixed space. Hidden removes the item; open HyprMac again from Spotlight or Finder to get back to Settings.") {
+                    subtitle: "Full shows every workspace in use. Compact shows only the current workspace: its name from Workspace names, else its number. Hidden removes the item; open HyprMac again from Spotlight or Finder to get back to Settings.") {
                 Picker("", selection: $menuBarStyle) {
                     ForEach(MenuBarStyle.allCases) { style in
                         Text(style.displayName).tag(style)
