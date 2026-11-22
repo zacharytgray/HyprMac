@@ -557,7 +557,8 @@ Two on-disk files:
   through iCloud Drive clobbered each machine's setup. The status bar
   export keys `statusExportEnabled` and `statusHookCommand` live here
   too, set by hand with no Settings UI (see [status-bar.md](status-bar.md)).
-  So does `externalControlEnabled` (see [external-control.md](external-control.md)).
+  So does `externalControlEnabled`, which Settings → General → System turns
+  on and off (see [external-control.md](external-control.md)).
   HyprMac watches this file too and reloads it on change.
 
 A file HyprMac can't decode is copied to `<name>.unreadable` before a save
