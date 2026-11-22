@@ -820,10 +820,17 @@ Legacy keys, read for a one-time migration and never written:
 `maxSplitsPerMonitor` and `disabledMonitors` in `config.json` (see
 "Monitor-config split"), and `topPaddingPerMonitor` in `monitor-config.json`.
 
+### Per-Mac preferences
+
 Per-Mac options that are not in either file live in HyprMac's preferences
-(`com.zachgray.HyprMac`): Show in Dock (`showDockIcon`), the menu bar style
-(`menuBarStyle`: `full`, `compact` or `hidden`), iCloud sync and the update
-switches.
+(`com.zachgray.HyprMac`), never synced. iCloud sync and the update switches
+live there too.
+
+| Key | Type | Range | Default | Changed in Settings |
+| --- | --- | --- | --- | --- |
+| `showDockIcon` | boolean | — | `false` | General → System → Show in Dock |
+| `menuBarStyle` | string | `full`, `compact`, `hidden` | `full` | General → System → Menu bar |
+| `HyprMacUpdatesManagedExternally` | boolean | — | `false` | `defaults` only; read at launch. `true` turns off the in-app updater for a copy something else updates (see README) |
 
 ## Hand-editing config.json
 
