@@ -23,13 +23,6 @@ class AccessibilityManager {
         AXIsProcessTrusted()
     }
 
-    /// Show the macOS Accessibility prompt that takes the user to
-    /// System Settings to grant the app permission.
-    static func promptForAccessibility() {
-        let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-        AXIsProcessTrustedWithOptions(opts)
-    }
-
     // snapshot of all on-screen CGWindows: pid -> [(wid, bounds)]
     private struct CGWindowInfo {
         let windowID: CGWindowID

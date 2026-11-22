@@ -80,8 +80,11 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("tour-workspace-strip-light", TourView(mode: .firstRun, startPage: 4, onDismiss: {}),
                    size: CGSize(width: 520, height: 440), dark: false)
         try render("permissions-gate-dark",
-                   PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
-                   size: CGSize(width: 520, height: 530))
+                   PermissionsGateView(model: PermissionsGateModel(), onGrant: {}, onQuit: {}), width: 520)
+        try render("accessibility-drag-helper-dark", AccessibilityDragHelperView(onClose: {}),
+                   width: AccessibilityDragHelperPlacement.panelWidth)
+        try render("accessibility-drag-helper-light", AccessibilityDragHelperView(onClose: {}),
+                   width: AccessibilityDragHelperPlacement.panelWidth, dark: false)
         // the release variant builds the menu with a sparkle updater; the
         // debug variant has none, so only render it there
         #if HYPRMAC_DEBUG_VARIANT
