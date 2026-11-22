@@ -21,13 +21,9 @@ final class WindowRulesOverlayModel: ObservableObject {
     let target: FocusedWindowRuleInfo
     @Published var selection: Row
     @Published var contains = false
-    @Published var text: String {
-        didSet {
-            // typing is about the title rule: follow it there
-            guard text != oldValue, !isTitleRow(selection) else { return }
-            selection = .floatTitle
-        }
-    }
+    /// the title rule's text: the window's title, which the user trims.
+    /// edited only while a title row is picked
+    @Published var text: String
 
     init(target: FocusedWindowRuleInfo) {
         self.target = target
@@ -72,132 +68,207 @@ final class WindowRulesOverlayModel: ObservableObject {
     func label(_ row: Row) -> String {
         switch row {
         case .once: return target.isFloating ? "Tile this window" : "Float this window"
-        case .floatApp: return "Always float all \(target.appName) windows"
-        case .tileApp: return "Always tile all \(target.appName) windows"
-        case .floatTitle: return "Always float windows whose title matches"
-        case .tileTitle: return "Always tile windows whose title matches"
-        case .forget: return "Forget the rule: \(target.currentRule ?? "")"
+        case .floatApp: return "Always float \(target.appName)"
+        case .tileApp: return "Always tile \(target.appName)"
+        case .floatTitle: return "Always float windows with this title"
+        case .tileTitle: return "Always tile windows with this title"
+        case .forget: return "Forget the rule"
         }
     }
 
+    /// The quiet second half of a row, nil when the label says it all.
     func detail(_ row: Row) -> String? {
         switch row {
-        case .once: return "Just this window, until it closes. Same as Hypr+T"
+        case .once: return "until it closes"
+        case .floatApp, .tileApp: return "every window"
+        case .forget: return target.currentRule
         default: return nil
         }
     }
+
+    /// SF Symbol for the row, beside its label.
+    func symbol(_ row: Row) -> String {
+        switch row {
+        case .once: return target.isFloating ? "rectangle.split.2x1" : "macwindow.on.rectangle"
+        case .floatApp, .floatTitle: return "macwindow.on.rectangle"
+        case .tileApp, .tileTitle: return "rectangle.split.2x1"
+        case .forget: return "arrow.uturn.backward"
+        }
+    }
+
+    /// The rule as a short chip for the header.
+    var ruleChip: String {
+        guard let rule = target.currentRule else { return "No rule" }
+        if rule.hasPrefix("Never tile") { return "Always float" }
+        return rule.components(separatedBy: ":").first ?? rule
+    }
 }
 
-/// The overlay's card.
+/// The overlay's card: the same glass, type and chips as Hypr+K, compact.
 struct WindowRulesOverlayView: View {
     @ObservedObject var model: WindowRulesOverlayModel
     let icon: NSImage?
     let choose: (WindowRulesOverlayModel.Row) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
     @FocusState private var editingTitle: Bool
 
-    static let width: CGFloat = 440
+    static let width: CGFloat = 380
 
     var body: some View {
-        VStack(alignment: .leading, spacing: HyprSpacing.sm) {
+        VStack(alignment: .leading, spacing: 10) {
             header
-            Rectangle().fill(Color.hyprSeparator).frame(height: 0.5)
-            row(.once)
-            if model.rows.contains(.floatApp) { row(.floatApp) }
-            if model.rows.contains(.tileApp) { row(.tileApp) }
-            titleEditor
-            row(.floatTitle)
-            row(.tileTitle)
-            if model.rows.contains(.forget) { row(.forget) }
-            Text("↑↓ choose · Return apply · Esc close")
-                .font(.hyprMonoXs)
-                .foregroundStyle(Color.hyprTextTertiary)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            VStack(spacing: 2) {
+                ForEach(model.rows, id: \.self) { row in
+                    rowView(row)
+                    if row == model.selection, model.isTitleRow(row) { titleEditor }
+                }
+            }
+            footer
         }
-        .padding(HyprSpacing.md)
-        .frame(width: Self.width)
-        .background(
-            RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
-                .fill(Color.hyprBackground)
-                .overlay(RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
-                    .stroke(Color.hyprSeparator, lineWidth: 1))
-                .shadow(color: .black.opacity(0.35), radius: 18, y: 6)
-        )
+        .padding(EdgeInsets(top: 14, leading: 14, bottom: 12, trailing: 14))
+        .frame(width: Self.width, alignment: .topLeading)
+        .overlayCard(cornerRadius: 14, glassTint: OverlayGlassTint.card)
+        .onChange(of: model.selection) { row in
+            // the field takes the keys while a title row is picked
+            editingTitle = model.isTitleRow(row)
+        }
     }
+
+    // MARK: header
 
     private var header: some View {
-        HStack(spacing: HyprSpacing.sm) {
+        HStack(alignment: .center, spacing: 10) {
             if let icon {
-                Image(nsImage: icon).resizable().frame(width: 28, height: 28)
+                Image(nsImage: icon).resizable().frame(width: 26, height: 26)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(model.target.appName).font(.hyprBody.weight(.semibold))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(model.target.appName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .lineLimit(1)
                 Text(model.target.title.isEmpty ? "No title" : model.target.title)
-                    .font(.hyprMonoXs)
-                    .foregroundStyle(Color.hyprTextSecondary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
-                Text(model.target.currentRule ?? "No rule: HyprMac decides")
-                    .font(.hyprMonoXs)
-                    .foregroundStyle(Color.hyprTextTertiary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: 8)
+            Text(model.ruleChip)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(model.target.currentRule == nil ? Color.secondary : Color.overlayPrimary)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 3)
+                .background(palette.surface, in: Capsule())
         }
+        .padding(.horizontal, 4)
     }
 
-    private var titleEditor: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Picker("", selection: $model.contains) {
-                Text("Title is exactly").tag(false)
-                Text("Title contains").tag(true)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            TextField("Title text", text: $model.text)
-                .textFieldStyle(.roundedBorder)
-                .focused($editingTitle)
-                // typing edits the title at once; the arrows, Return and Esc
-                // still go to the rows through the key monitor
-                .onAppear { DispatchQueue.main.async { editingTitle = true } }
-            Text("Trim it to the part every such window shares, like “Meeting”.")
-                .font(.hyprMonoXs)
-                .foregroundStyle(Color.hyprTextTertiary)
-        }
-        .padding(.horizontal, HyprSpacing.sm)
-        .padding(.top, HyprSpacing.xs)
-    }
+    // MARK: rows
 
-    private func row(_ row: WindowRulesOverlayModel.Row) -> some View {
+    private func rowView(_ row: WindowRulesOverlayModel.Row) -> some View {
         let selected = model.selection == row
-        let enabled = model.isEnabled(row)
         return Button {
-            guard enabled else { return }
             model.selection = row
-            choose(row)
+            if model.isEnabled(row) { choose(row) }
         } label: {
-            HStack(spacing: HyprSpacing.sm) {
-                // an inset accent bar marks the pick, not a full-row fill
+            HStack(spacing: 9) {
+                // the pick: an inset accent bar, a colored icon and heavier
+                // text. never a filled row
                 RoundedRectangle(cornerRadius: 1.5)
-                    .fill(selected ? Color.hyprCyan : Color.clear)
-                    .frame(width: 3, height: 18)
-                VStack(alignment: .leading, spacing: 1) {
+                    .fill(selected ? Color.overlayPrimary : Color.clear)
+                    .frame(width: 3, height: 16)
+                Image(systemName: model.symbol(row))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(selected ? Color.overlayPrimary : Color.secondary)
+                    .frame(width: 16)
+                HStack(spacing: 6) {
                     Text(model.label(row))
-                        .font(selected ? .hyprBody.weight(.semibold) : .hyprBody)
-                        .foregroundStyle(enabled ? Color.hyprTextPrimary : Color.hyprTextTertiary)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
+                        .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                        .foregroundColor(Color.primary.opacity(model.isEnabled(row) ? 0.9 : 0.4))
                     if let detail = model.detail(row) {
-                        Text(detail).font(.hyprMonoXs).foregroundStyle(Color.hyprTextTertiary)
+                        Text(detail)
+                            .font(.system(size: 11))
+                            .foregroundStyle(Color.secondary)
                     }
                 }
-                Spacer(minLength: 0)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                Spacer(minLength: 6)
+                if selected { KeyChip("↩", fontSize: 10, onGlass: true) }
             }
-            .padding(.vertical, 3)
+            .padding(.trailing, 4)
+            .frame(height: 28)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!enabled)
+    }
+
+    // under the picked title row only: is / contains, and the text
+    private var titleEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                matchChip("is", selected: !model.contains) { model.contains = false }
+                matchChip("contains", selected: model.contains) { model.contains = true }
+                Spacer()
+                Text("tab switches")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.secondary)
+            }
+            TextField("Title text", text: $model.text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(Color.primary)
+                .focused($editingTitle)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(palette.surface, in: RoundedRectangle(cornerRadius: HyprRadius.md))
+                .overlay(RoundedRectangle(cornerRadius: HyprRadius.md)
+                    .strokeBorder(Color.overlayPrimary.opacity(editingTitle ? 0.6 : 0), lineWidth: 1))
+            Text("Trim it to what every such window shares, like “Meeting”.")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.secondary)
+        }
+        .padding(.leading, 37)
+        .padding(.trailing, 4)
+        .padding(.vertical, 4)
+        .onAppear { DispatchQueue.main.async { editingTitle = true } }
+    }
+
+    private func matchChip(_ label: String, selected: Bool, _ pick: @escaping () -> Void) -> some View {
+        Button(action: pick) {
+            Text(label)
+                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .foregroundStyle(selected ? Color.overlayPrimary : Color.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(selected ? palette.activeSurface : palette.surface, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: footer
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            hint(["↑", "↓"], "choose")
+            hint(["↩"], "apply")
+            hint(["esc"], "close")
+            Spacer()
+            hint(["HYPR", "I"], "")
+        }
+        .padding(.horizontal, 4)
+        .padding(.top, 2)
+    }
+
+    private func hint(_ keys: [String], _ label: String) -> some View {
+        HStack(spacing: 3) {
+            ForEach(keys, id: \.self) { KeyChip($0, fontSize: 9, onGlass: true) }
+            if !label.isEmpty {
+                Text(label).font(.system(size: 10)).foregroundStyle(Color.secondary)
+            }
+        }
     }
 }
 
@@ -216,6 +287,7 @@ final class WindowRulesOverlayController {
     private var clickMonitor: Any?
     private var activationObserver: NSObjectProtocol?
     private var model: WindowRulesOverlayModel?
+    private var selectionWatch: AnyCancellable?
     /// the app that owns the window the overlay is about
     private var targetPID: pid_t?
 
@@ -284,6 +356,17 @@ final class WindowRulesOverlayController {
         panel = p
         OwnPanelTracker.shared.track(p)
         installMonitor()
+        // the title editor opens under a title row: grow or shrink, top fixed
+        selectionWatch = model.$selection.dropFirst().removeDuplicates().sink { [weak self, weak hosting] _ in
+            DispatchQueue.main.async {
+                guard let self, let hosting, let panel = self.panel else { return }
+                let size = hosting.fittingSize
+                var frame = panel.frame
+                frame.origin.y += frame.height - size.height
+                frame.size = size
+                panel.setFrame(frame, display: true)
+            }
+        }
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.noteClickElsewhere()
         }
@@ -311,6 +394,7 @@ final class WindowRulesOverlayController {
             activationObserver = nil
         }
         targetPID = nil
+        selectionWatch = nil
         let target = model?.target.windowID
         panel?.close()
         panel = nil
@@ -335,6 +419,8 @@ final class WindowRulesOverlayController {
             case 125: model.move(1); return nil              // down
             case 126: model.move(-1); return nil             // up
             case 36, 76: self.run(model.selection); return nil // return, enter
+            case 48 where model.isTitleRow(model.selection):  // tab: is / contains
+                model.contains.toggle(); return nil
             default: return event                            // typing goes to the title field
             }
         }

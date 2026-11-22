@@ -146,6 +146,35 @@ final class InterfaceSnapshotTests: XCTestCase {
         }
     }
 
+    func testRenderWindowRulesOverlay() throws {
+        let icon = NSWorkspace.shared.icon(forFile: "/System/Applications/FaceTime.app")
+        func card(_ info: FocusedWindowRuleInfo, _ select: WindowRulesOverlayModel.Row? = nil,
+                  text: String? = nil, contains: Bool = false) -> some View {
+            let model = WindowRulesOverlayModel(target: info)
+            if let select { model.selection = select }
+            if let text { model.text = text }
+            model.contains = contains
+            return WindowRulesOverlayView(model: model, icon: icon) { _ in }
+                .padding(48)
+                .background(wallpaper)
+        }
+        let teams = FocusedWindowRuleInfo(
+            windowID: 1, appName: "Microsoft Teams", bundleID: "com.microsoft.teams2",
+            title: "Chat | Weekly sync with design", currentRule: nil,
+            appFloats: false, appTiles: false, isFloating: false)
+        let faceTime = FocusedWindowRuleInfo(
+            windowID: 2, appName: "FaceTime", bundleID: "com.apple.FaceTime", title: "FaceTime",
+            currentRule: "Never tile: all windows", appFloats: true, appTiles: false, isFloating: true)
+        let width = WindowRulesOverlayView.width + 96
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            try render("rules-overlay-\(mode)", card(teams), width: width, dark: dark)
+            try render("rules-overlay-title-\(mode)", card(teams, .floatTitle, text: "Chat |", contains: true),
+                       width: width, dark: dark)
+            try render("rules-overlay-rule-\(mode)", card(faceTime), width: width, dark: dark)
+        }
+    }
+
     func testRenderWorkspaceOverview() throws {
         func window(_ id: Int, _ name: String, _ frame: CGRect, floating: Bool) -> WorkspaceWindowSnapshot {
             WorkspaceWindowSnapshot(id: CGWindowID(id), title: name, bundleID: nil, appName: name,

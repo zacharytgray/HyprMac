@@ -16,14 +16,15 @@ final class WindowRulesOverlayTests: XCTestCase {
         let model = WindowRulesOverlayModel(target: info())
         XCTAssertEqual(model.rows, [.once, .floatApp, .tileApp, .floatTitle, .tileTitle])
         XCTAssertEqual(model.label(.once), "Float this window")
-        XCTAssertEqual(model.label(.floatApp), "Always float all Microsoft Teams windows")
+        XCTAssertEqual(model.label(.floatApp), "Always float Microsoft Teams")
 
         let covered = WindowRulesOverlayModel(target: info(rule: "Never tile: all windows", appFloats: true,
                                                            floating: true))
         XCTAssertEqual(covered.rows, [.once, .tileApp, .floatTitle, .tileTitle, .forget],
                        "the app rule in effect isn't offered again; Forget shows")
         XCTAssertEqual(covered.label(.once), "Tile this window")
-        XCTAssertEqual(covered.label(.forget), "Forget the rule: Never tile: all windows")
+        XCTAssertEqual(covered.label(.forget), "Forget the rule")
+        XCTAssertEqual(covered.detail(.forget), "Never tile: all windows")
     }
 
     func testUpAndDownWrap() {
@@ -36,23 +37,27 @@ final class WindowRulesOverlayTests: XCTestCase {
         XCTAssertEqual(model.selection, .floatApp)
     }
 
-    // prefilled with the window's title, trimmed by the user. typing moves
-    // the pick to the title rule
+    // prefilled with the window's title, trimmed by the user
     func testTheTitleEditor() {
         let model = WindowRulesOverlayModel(target: info(title: "Weekly sync | Meeting | Microsoft Teams"))
         XCTAssertEqual(model.titleMatch, .titleIs("Weekly sync | Meeting | Microsoft Teams"))
+        model.selection = .floatTitle
         model.text = "Meeting"
-        XCTAssertEqual(model.selection, .floatTitle)
         model.contains = true
         XCTAssertEqual(model.titleMatch, .titleContains("Meeting"))
-        model.selection = .tileTitle
         model.text = "Meeting "
-        XCTAssertEqual(model.selection, .tileTitle, "typing on a title row keeps it")
         XCTAssertEqual(model.titleMatch, .titleContains("Meeting"))
         model.text = "  "
         XCTAssertNil(model.titleMatch)
         XCTAssertFalse(model.isEnabled(.floatTitle))
         XCTAssertTrue(model.isEnabled(.floatApp))
+    }
+
+    func testTheHeaderChip() {
+        XCTAssertEqual(WindowRulesOverlayModel(target: info()).ruleChip, "No rule")
+        XCTAssertEqual(WindowRulesOverlayModel(target: info(rule: "Never tile: all windows")).ruleChip, "Always float")
+        XCTAssertEqual(WindowRulesOverlayModel(target: info(rule: "Always tile: windows titled “x”")).ruleChip,
+                       "Always tile")
     }
 
     func testAWindowWithNoTitleStartsWithAnEmptyEditor() {

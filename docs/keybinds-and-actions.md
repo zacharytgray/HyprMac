@@ -267,6 +267,11 @@ edit that puts an app in `excludedBundleIDs` and gives it an app tile rule
 floats it, as before tile rules existed. Settings never makes that state:
 picking one removes the other.
 
+A first Hypr+T on a window that keeps a length no slot can hold (its own
+fixed-size record, or its app's hint at the length it stands at) is refused
+with the shake before anything moves; a second within 5 s tries for real, in
+case the app let go of it.
+
 **The user wins.** A direct action on a window beats every rule for it, Never
 tile included, until the window closes: Hypr+T, the overlay's one-off, tiling
 or untiling it in the scratchpad, and the dedicated workspace move
@@ -300,7 +305,13 @@ float or always tile windows whose title is, or contains, the text in an
 editable field prefilled with the window's title, which the user trims (a
 Teams chat window carries the chat's name, so "Chat |" or the app name is the
 usual edit); and forget the rule that covers it. Up and Down choose, Return
-applies, Esc closes, and a mouse works. Typing goes to the title field. A new
+applies, Esc closes, and a mouse works. The title field and its is/contains
+switch appear only under a picked title row; the field takes the typing and
+Tab switches is/contains. Hypr+I again closes it, and so does moving on: a
+click elsewhere, another app coming forward, any other HyprMac action, or the
+window going away. It is the same glass card, type and key chips as Hypr+K,
+and it never activates HyprMac: a non-activating key panel takes the keys,
+and closing hands focus back to the window. A new
 rule goes ahead of the app's older ones. Forget removes the rule that decides
 the window: a title rule, the app tile rule, or the app from Never tile. Any
 rule set here for a window also drops the user's hand choice for it: it is the
