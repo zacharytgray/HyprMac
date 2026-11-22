@@ -1924,8 +1924,20 @@ class TilingEngine {
         // a pass like any other: what it reads back about a floor is
         // kept, or the admission retry 250 ms later writes the same
         // refused frames again and learns them a second time
-        let retry = applyLayout(firstLayouts, usableFrame: rect, generation: generation,
-                                poller: relaxedPoller)
+        // the rollback put the windows back on their originals, so a target
+        // that hung off the screen from there still does: stage it as the
+        // first pass did, or the retry sizes it in place and is clamped
+        let standing = Dictionary(originals.map { ($0.0.windowID, $0.1) },
+                                  uniquingKeysWith: { first, _ in first })
+        let inPlaceStaging = inPlaceStagingOrigins(standing, layouts: firstLayouts, destination: rect)
+        let retry = inPlaceStaging.isEmpty
+            ? applyLayout(firstLayouts, usableFrame: rect, generation: generation,
+                          poller: relaxedPoller)
+            : reconcile(relaxedPoller.applyWorkspaceReveal(firstLayouts, positionFirstWindowIDs: [],
+                                                           inPlaceStagingOrigins: inPlaceStaging,
+                                                           usableFrame: rect, gap: gapSize,
+                                                           generation: generation),
+                        generation: generation)
         if case .accepted = retry.verdict {
             // it wrote the first layouts, so it publishes their ratios
             adoptFirstRatios(attempt)
