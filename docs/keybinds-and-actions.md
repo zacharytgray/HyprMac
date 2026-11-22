@@ -743,6 +743,83 @@ Pinned by the double tap tests in `PhysicalCapsLockTests`.
 `.warning`. Invalid color strings fall back to the system default
 silently rather than crashing.
 
+## Config key reference
+
+Every key HyprMac reads from its two config files. "Range" is what Settings
+offers; a hand-edited value outside it is noted where HyprMac treats it
+differently. A missing optional key uses its default. "File only" means no
+Settings control writes it. Tabs and panels are named as Settings shows them.
+
+### `config.json`
+
+Synced over iCloud when sync is on.
+
+| Key | Type | Range | Default | Changed in Settings |
+| --- | --- | --- | --- | --- |
+| `version` | integer | 2 | written as 2; missing reads as 1 | File only (see "Schema versioning") |
+| `keybinds` | array of keybinds | — | required; missing built-in binds are added at load | Keys |
+| `gapSize` | number (px) | 0–32, step 2 | required; 8 | Layout → Gaps → Inner gap |
+| `outerPadding` | number (px) | 0–32, step 2 | required; 8 | Layout → Gaps → Outer padding |
+| `enabled` | boolean | — | required; `true` | General → Status, the menu bar, Hypr+P |
+| `hyprKey` | string | `capsLock`, `backslash`, `f13`…`f20`, `leftOption`, `rightOption`, `leftCommand`, `rightCommand`; also `tab`, `grave`, `leftShift`, `rightShift`, `leftControl`, `rightControl` (not recommended) | `capsLock` | Keys → Hypr key |
+| `doubleTapHyprTogglesCapsLock` | boolean | — | `false` | Keys → Hypr key |
+| `focusFollowsMouse` | boolean | — | `true` | General → Mouse |
+| `mouseHoverPollHz` | integer (Hz) | 60, 120, 240; other values show as Custom, below 30 runs at 30 | 120 | General → Mouse → Hover response |
+| `keepCursorOnWorkspaceSwitch` | boolean | — | `false` | General → Mouse |
+| `excludedBundleIDs` | array of bundle IDs | — | `com.apple.FaceTime`, `com.apple.systempreferences` | General → Float and tile rules (Never tile) |
+| `floatingRules` | array of rules | see "Float and tile rules" | none | General → Float and tile rules, the menu bar, Hypr+I |
+| `windowRules` | array of rules | see "Window rules" | none | General → Pin apps |
+| `workspaceNames` | object, `"1"`…`"10"` → name | non-empty names | none | General → Workspace names |
+| `restoreLayoutOnLaunch` | boolean | — | `false` | General → Layouts |
+| `overlayAppearance` | string | `system`, `light`, `dark` | `system` | General → System |
+| `overlayAccentHex` | hex color | — | none (cyan and magenta) | Layout → Focus appearance |
+| `showFocusBorder` | boolean | — | `false` | Layout → Focus appearance → Focus indicator |
+| `focusBracketStyle` | string | `rounded`, `off` | `rounded` | Layout → Focus appearance → Focus indicator |
+| `focusBracketColorHex` | hex color | — | none (black) | Layout → Focus appearance |
+| `focusBracketRadius` | number (pt) | 0–32 | 20 | Layout → Focus appearance → Mark roundness |
+| `focusBracketThickness` | number (pt) | 1–6, step 0.5 | 4.5 | Layout → Focus appearance → Mark thickness |
+| `focusBracketLength` | number (pt) | 4–40; a file value is clamped to it | 15 | Layout → Focus appearance → Mark length |
+| `focusBorderColorHex` | hex color | — | none (cyan) | Layout → Focus appearance → Tiled window color |
+| `floatingBorderColorHex` | hex color | — | none (magenta) | Layout → Focus appearance → Floating window color |
+| `focusBorderFlash` | boolean | — | `true` | Layout → Focus appearance → Flash on focus change |
+| `animateFocusIndicator` | boolean | — | `true` | Layout → Focus appearance → Animate focus moves |
+| `dimInactiveWindows` | boolean | — | `true` | Layout → Focus appearance |
+| `dimIntensity` | number, 0–1 | 0–0.27; higher is file only | 0.135 | Layout → Focus appearance |
+| `chromeFadeDurationSec` | number (s) | 0–1 | 0.13 | Layout → Focus appearance → Fade duration |
+| `windowCornerRadius` | number (pt) | 0–32 | none (16 on macOS 26 and later, 10 before) | Layout → Focus appearance |
+| `scratchpadTileByDefault` | boolean | — | `true` | Layout → Scratchpad |
+| `scratchpadRegionInset` | number, fraction | 0–0.15 | 0.06 | Layout → Scratchpad → Layer padding |
+| `showMenuBarIndicator` | boolean | — | `true` | Legacy. File only; read once to pick the first menu bar style, then ignored |
+
+Corners and window borders at once (`focusBracketStyle` `rounded` with
+`showFocusBorder` `true`) is file only. Settings keeps it and shows it as
+"Both (saved)".
+
+### `monitor-config.json`
+
+Per Mac, never synced. Monitor names are `NSScreen.localizedName`, as
+Settings shows them.
+
+| Key | Type | Range | Default | Changed in Settings |
+| --- | --- | --- | --- | --- |
+| `maxSplitsPerMonitor` | object, name → integer | 1–7 | 3 | Layout → Per-Monitor Settings → Max splits |
+| `disabledMonitors` | array of names | — | none | Layout → Per-Monitor Settings (the switch by each name) |
+| `outerPaddingPerMonitor` | object, name → `top`/`left`/`bottom`/`right` | each side optional | none (`outerPadding`) | Layout → Per-Monitor Settings → Edge padding |
+| `workspaceMonitorsPerDisplaySet` | array of `{displays, workspaceMonitors}` | workspaces 1–10 | none | Layout → Per-Monitor Settings → Workspaces |
+| `workspaceMonitors` | object, name → workspaces | 1–10 | none (formula homes) | File only; the fallback for display sets with no entry |
+| `externalControlEnabled` | boolean | — | `false` | General → System → Allow other apps to control HyprMac |
+| `statusExportEnabled` | boolean | — | `false` | File only (see [status-bar.md](status-bar.md)) |
+| `statusHookCommand` | string | — | none | File only (see [status-bar.md](status-bar.md)) |
+
+Legacy keys, read for a one-time migration and never written:
+`maxSplitsPerMonitor` and `disabledMonitors` in `config.json` (see
+"Monitor-config split"), and `topPaddingPerMonitor` in `monitor-config.json`.
+
+Per-Mac options that are not in either file live in HyprMac's preferences
+(`com.zachgray.HyprMac`): Show in Dock (`showDockIcon`), the menu bar style
+(`menuBarStyle`: `full`, `compact` or `hidden`), iCloud sync and the update
+switches.
+
 ## Hand-editing config.json
 
 Config lives at `~/Library/Application Support/HyprMac/config.json`
@@ -800,7 +877,8 @@ every JSON example in this file.
 - Numbers: 1=18, 2=19, 3=20, 4=21, 5=23, 6=22, 7=26, 8=28, 9=25, 0=29
 - Return=36, Space=49, Tab=48, Delete=51, Escape=53, Grave/Backtick=50
 
-**Other config fields**: `gapSize`, `outerPadding`, `enabled`,
+**Other config fields** (all keys, with types and defaults, are in
+"Config key reference" above): `gapSize`, `outerPadding`, `enabled`,
 `focusFollowsMouse`, `excludedBundleIDs` (Never tile: bundle IDs that
 always float — auto-float on discovery; Hypr+T still tiles one by hand, and
 a window tile rule can take one window out, see "Float and tile rules"),

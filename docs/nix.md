@@ -60,7 +60,7 @@ Hypr+T and Retile All; it doesn't move windows already open. The Hypr+I bind
 is added at load when your `keybinds` leave that chord free.
 
 `settings` and `monitorSettings` are attribute sets written as JSON. See
-[Keybinds and actions](keybinds-and-actions.md) for every key. The module adds
+[Config key reference](keybinds-and-actions.md#config-key-reference) for every key. The module adds
 `version = 2`, `keybinds = [ ]`, `gapSize = 8`, `outerPadding = 8` and
 `enabled = true` for any you leave out. Set `settings.version` to override the
 schema version. Missing built-in keybinds are added at load, as for any config.
