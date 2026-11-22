@@ -3,6 +3,7 @@
 // lists and re-applies a change to the open windows it touches.
 
 import Cocoa
+import Combine
 
 /// What the menu bar's "Focused window" section shows.
 struct FocusedWindowRuleInfo: Equatable {
@@ -67,7 +68,7 @@ final class FloatingRuleCommands {
     /// The menu's "Always float all <App> windows".
     func floatFocusedApp() {
         guard let window = focusedWindow(), let bundleID = bundleID(window) else { return }
-        config.addFloatingRule(FloatingRule(bundleID: bundleID, action: .float))
+        config.addAlwaysFloatApp(bundleID)
         hyprLog(.notice, .floating, "rule added: float \(bundleID) all windows, from \(window.windowID)")
     }
 
@@ -144,5 +145,25 @@ extension HyprWindow {
                          title: @escaping (HyprWindow) -> String?,
                          isRaised: @escaping (HyprWindow) -> Bool) -> FloatingRuleVerdict? {
         book.verdict(bundleID: bundleID, title: { title(self) }, isRaised: { isRaised(self) })
+    }
+}
+
+/// Routes rule changes: an edit made on this Mac reaches the open windows,
+/// a reload or a reset only moves the baseline the next edit is measured
+/// from, so nothing open moves (as Never tile edits behaved before rules).
+///
+/// Both go through one `schedule`, a turn after the write, so they keep
+/// their order and a Settings binding is not mid-update when windows move.
+final class FloatingRuleSync {
+    private var subscriptions: [AnyCancellable] = []
+
+    init(config: UserConfig,
+         schedule: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
+         applyLocalEdit: @escaping () -> Void,
+         rebase: @escaping () -> Void) {
+        subscriptions = [
+            config.floatingRulesEdited.sink { schedule(applyLocalEdit) },
+            config.floatingRulesReloaded.sink { schedule(rebase) },
+        ]
     }
 }

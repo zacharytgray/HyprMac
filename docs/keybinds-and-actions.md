@@ -294,10 +294,14 @@ match, so the menu items are dimmed and the action shakes. A new rule goes
 ahead of the app's older ones. Forget removes the rule that decides the window:
 a window rule, the app tile rule, or the app from Never tile.
 
-**Live.** `WindowManager` watches `floatingRules` and `excludedBundleIDs`. A
-change from the menu, an action, Settings or a config reload re-applies to
-open windows whose verdict changed
-(`FloatingWindowController.applyRuleChange`): one that a rule now floats
+**Live, for edits on this Mac.** A change made in Settings, the menu bar or an
+action (`UserConfig.floatingRulesEdited`) re-applies to open windows whose
+verdict changed (`FloatingWindowController.applyRuleChange`). A change that
+arrives by reload, from iCloud, a Nix rebuild or a hand edit, or from Reset
+all settings (`floatingRulesReloaded`), moves nothing open, as Never tile
+edits never did: it reaches new windows, Hypr+T and Retile All. Mid display
+transition a local edit waits until the screens settle, and a window it moves
+leaves any maximize first. On a local edit, one that a rule now floats
 floats, back to its pre-tile frame when that is on its screen; one that a
 tile rule now covers, or whose float rule is gone, tiles if it can. A window
 the user floated by hand and no rule covered stays. Scratchpad members,
@@ -314,7 +318,8 @@ matches …`.
 Downgrade: an older build ignores `floatingRules` and drops it on its next
 save, like `windowRules`. App floats survive, since they are
 `excludedBundleIDs`. The array decodes per element: a rule with an unknown
-action or a malformed match is logged and dropped alone.
+action or a malformed match (including `"match": null`) is logged and dropped
+alone.
 
 ## Workspace names
 

@@ -285,6 +285,12 @@ final class FloatingWindowController {
     // settings change applies at once
     var excludedBundleIDs: () -> Set<String> = { [] }
     var floatingRules: () -> [FloatingRule] = { [] }
+    // rule changes wait out a display transition, as the actions do
+    var isDisplayTransitionPending: () -> Bool = { false }
+    // a maximize a rule change ended, for the HUD and the menu bar
+    var onMaximizeEnded: (NSScreen) -> Void = { _ in }
+    /// The rules the open windows were last brought in line with.
+    private var appliedRuleBook: FloatingRuleBook?
     var windowListForZOrder: () -> [[String: Any]]? = {
         CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
@@ -952,6 +958,28 @@ final class FloatingWindowController {
         return before?.floats == true ? .tile : nil
     }
 
+    /// The open windows match the current rules: startup classified them.
+    func markRulesApplied() {
+        appliedRuleBook = ruleBook
+    }
+
+    /// The rules changed: bring the open windows in line, from the rules
+    /// they were last applied under. Mid display transition nothing moves
+    /// (the trees and screens are in flux, so the actions that move windows
+    /// are dropped then too); the caller asks again once it settles, and
+    /// the difference is still there to apply.
+    /// - Returns: what moved, or nil when it waited.
+    @discardableResult
+    func rulesChanged(windows: [HyprWindow]) -> (floated: [CGWindowID], tiled: [CGWindowID])? {
+        guard !isDisplayTransitionPending() else {
+            hyprLog(.notice, .floating, "rule change deferred: display transition pending")
+            return nil
+        }
+        let old = appliedRuleBook ?? ruleBook
+        appliedRuleBook = ruleBook
+        return applyRuleChange(from: old, windows: windows)
+    }
+
     /// Re-apply the rules to every open window after they changed from
     /// `old`: the menu, an action, Settings, or a config reload. Windows on
     /// visible workspaces move at once, through one retile; ones on hidden
@@ -989,6 +1017,8 @@ final class FloatingWindowController {
         guard !floated.isEmpty || !tiled.isEmpty else { return ([], []) }
         hyprLog(.notice, .floating, "rule change: floating \(floated.map(\.windowID).sorted())"
                 + " tiling \(tiled.map(\.windowID).sorted())")
+        // like the actions that rework a window's place (ActionPolicy.endsMaximize)
+        for window in floated + tiled { endMaximize(window) }
         let apply = { [self] in
             for window in floated { floatForRule(window) }
             for window in tiled {
@@ -998,6 +1028,19 @@ final class FloatingWindowController {
         }
         if let retile { retile(apply) } else { apply() }
         return (floated.map(\.windowID), tiled.map(\.windowID))
+    }
+
+    /// End a maximize `window` is part of, floating or tiled, before a rule
+    /// moves it: a stale maximized frame would otherwise outlive the change.
+    private func endMaximize(_ window: HyprWindow) {
+        let id = window.windowID
+        if isMaximized(id) {
+            forgetMaximized(id)
+            if let screen = displayManager.screen(for: window) { onMaximizeEnded(screen) }
+        }
+        if let location = tilingEngine.maximizeLocation(involving: id) {
+            tilingEngine.endMaximize(onWorkspace: location.workspace, screen: location.screen)
+        }
     }
 
     /// Float a window a rule now covers. On a visible workspace it goes back

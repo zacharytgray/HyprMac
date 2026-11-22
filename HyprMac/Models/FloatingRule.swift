@@ -63,8 +63,8 @@ struct FloatingRule: Codable, Equatable, Hashable, Identifiable {
 // {"bundleID":"com.apple.FaceTime","action":"tile"}
 //
 // a match with no known criterion, two criteria, empty text or raised:false
-// throws, so the tolerant config decoder drops that one rule instead of
-// reading it as a whole-app rule.
+// throws, and so does "match": null, so the tolerant config decoder drops
+// that one rule instead of reading it as a whole-app rule.
 extension FloatingRule.Match: Codable {
     private enum Key: String, CodingKey {
         case titleIs, titleContains, raised
@@ -116,6 +116,11 @@ extension FloatingRule {
         }
         self.bundleID = bundleID
         self.action = try c.decode(Action.self, forKey: .action)
+        // "match": null is a bad match, not a whole-app rule: a Nix
+        // `match = null` must not widen a window rule to the app
+        if c.contains(.match), try c.decodeNil(forKey: .match) {
+            throw DecodingError.dataCorruptedError(forKey: .match, in: c, debugDescription: "null match")
+        }
         self.match = try c.decodeIfPresent(Match.self, forKey: .match)
     }
 
@@ -289,6 +294,12 @@ extension UserConfig {
             rules = FloatingRule.upserting(new, into: rules)
         }
         floatingRules = rules
+    }
+
+    /// Settings' "Always float an app" and the menu's "Always float all
+    /// <App> windows": Never tile for the app, and its app tile rule gone.
+    func addAlwaysFloatApp(_ bundleID: String) {
+        addFloatingRule(FloatingRule(bundleID: bundleID, action: .float))
     }
 
     /// Remove the rule a verdict named: a window-kind or app rule from

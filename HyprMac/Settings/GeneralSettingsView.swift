@@ -396,7 +396,8 @@ struct GeneralSettingsView: View {
 
         if panel.runModal() == .OK, let url = panel.url,
            let bundle = Bundle(url: url), let id = bundle.bundleIdentifier {
-            config.excludedBundleIDs.insert(id)
+            // through the rule path, so an app tile rule for it goes
+            config.addAlwaysFloatApp(id)
         }
     }
 

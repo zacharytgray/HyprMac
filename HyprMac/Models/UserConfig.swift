@@ -61,7 +61,11 @@ class UserConfig: ObservableObject {
         didSet { persistRuntimeChange() }
     }
     @Published var excludedBundleIDs: Set<String> {
-        didSet { persistRuntimeChange() }
+        didSet {
+            guard !isReloading else { return }
+            persistRuntimeChange()
+            floatingRulesEdited.send()
+        }
     }
     @Published var showMenuBarIndicator: Bool {
         didSet { persistRuntimeChange() }
@@ -177,8 +181,20 @@ class UserConfig: ObservableObject {
     // excludedBundleIDs. WindowManager watches both lists and re-applies a
     // change to the open windows it touches
     @Published var floatingRules: [FloatingRule] {
-        didSet { guard !isReloading else { return }; save() }
+        didSet {
+            guard !isReloading else { return }
+            save()
+            floatingRulesEdited.send()
+        }
     }
+
+    /// A float or tile rule edit made on this Mac (Settings, the menu bar,
+    /// an action). Open windows follow it at once.
+    let floatingRulesEdited = PassthroughSubject<Void, Never>()
+    /// The rules were replaced by a reload from disk (iCloud, Nix, a hand
+    /// edit) or a reset. As before rules existed, that reaches new windows,
+    /// Hypr+T and Retile All, and moves nothing open.
+    let floatingRulesReloaded = PassthroughSubject<Void, Never>()
 
     // custom names for workspaces 1–10, keyed "1"…"10". display only:
     // every reader looks it up through `workspaceDisplayName`
@@ -576,6 +592,7 @@ class UserConfig: ObservableObject {
         isReloading = false
         save()
         didApplyRuntimeChange.send()
+        floatingRulesReloaded.send()
     }
 
     /// Restore the controls in Focus Chrome without changing layout,
@@ -699,6 +716,7 @@ class UserConfig: ObservableObject {
 
         isReloading = false
         didApplyRuntimeChange.send()
+        floatingRulesReloaded.send()
     }
 
     private func applyMonitorConfig(_ mc: SavedMonitorConfig) {

@@ -923,10 +923,12 @@ the book: discovery's admission and late-title re-check, startup and Retile
 All (`autoFloatReason`), Hypr+T, the dedicated workspace move, moves to a
 workspace, and the scratchpad (`floatRule(for:)` and `isNeverTile`).
 
-Rules change from the menu, an action, Settings or a config reload.
-`WindowManager` watches both lists (50 ms debounce) and hands the old book to
-`FloatingWindowController.applyRuleChange`, which moves only the open windows
-whose answer changed, in one retile. Windows that leave a tree for a float
+`FloatingRuleSync` routes changes. An edit on this Mac (Settings, the menu,
+an action) reaches `FloatingWindowController.rulesChanged`, which measures from
+the rules last applied and moves only the open windows whose answer changed,
+in one retile, after a display transition settles and after ending any
+maximize they are in. A reload (iCloud, Nix, a hand edit) or a reset only
+moves that baseline, so nothing open moves. Windows that leave a tree for a float
 come back to their pre-tile frame when it is on their screen. The full rules
 are in `docs/keybinds-and-actions.md`, "Float and tile rules".
 

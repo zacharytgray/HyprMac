@@ -977,8 +977,18 @@ final class WindowDiscoveryService {
             }
             if isWindowSizeSettable(w) == true {
                 fixedSizeRechecks[id] = nil
+                // resizable now, but a float rule that matches it keeps it floating
+                if ruleBook.verdict(bundleID: bundleIDForPID(w.ownerPID) ?? w.bundleID,
+                                    title: { self.windowTitle(w) }, isRaised: { self.isWindowRaised(w) })?
+                    .floats == true {
+                    hyprLog(.notice, .discovery, "auto-float re-check: \(id) is resizable now"
+                            + " but a float rule covers it — stays floating")
+                    continue
+                }
                 stateCache.setFloating(false, window: w)
                 unfloated.insert(id)
+                // this is not the user tiling it: a title rule still gets its turn
+                titleRuleRechecks[id]?.floating = false
                 hyprLog(.notice, .discovery, "auto-float re-check: '\(w.title ?? "?")' (\(id)) is resizable now"
                         + " — handing it back to tiling")
                 continue
@@ -1009,20 +1019,28 @@ final class WindowDiscoveryService {
         var tiled: Set<CGWindowID> = []
         for (id, entry) in titleRuleRechecks.sorted(by: { $0.key < $1.key }) {
             guard let w = byID[id] else {
-                if !stateCache.knownWindowIDs.contains(id) { titleRuleRechecks[id] = nil }
+                if !stateCache.knownWindowIDs.contains(id) {
+                    titleRuleRechecks[id] = nil
+                } else if now >= entry.due {
+                    // held this cycle: same turn, asked after the same gap
+                    titleRuleRechecks[id] = (entry.attempts,
+                                             now.addingTimeInterval(Self.titleRuleRecheckDelays[entry.attempts]),
+                                             entry.title, entry.floating)
+                }
                 continue
             }
             guard now >= entry.due else { continue }
             let floating = stateCache.floatingWindowIDs.contains(id)
+            let workspace = workspaceManager.workspaceFor(id)
             guard floating == entry.floating,
-                  let workspace = workspaceManager.workspaceFor(id),
                   workspace != ScratchpadController.workspace,
                   !(displayManager.screen(for: w).map(workspaceManager.isMonitorDisabled) ?? false) else {
                 titleRuleRechecks[id] = nil
                 continue
             }
-            let title = windowTitle(w)
-            if title != entry.title {
+            // no workspace yet: this tick counts, the window waits for the next
+            let title = workspace == nil ? entry.title : windowTitle(w)
+            if workspace != nil, title != entry.title {
                 let verdict = ruleBook.verdict(bundleID: bundleIDForPID(w.ownerPID) ?? w.bundleID,
                                                title: { title }, isRaised: { self.isWindowRaised(w) })
                 if let verdict, verdict.isWindowKind {

@@ -51,8 +51,7 @@ class WindowManager {
     private var statusConfigObservation: AnyCancellable?
     // the float and tile rules: watched so a change, from the menu, an
     // action or Settings, reaches the open windows at once
-    private var floatingRuleObservation: AnyCancellable?
-    private var appliedRuleBook = FloatingRuleBook.empty
+    private var floatingRuleSync: FloatingRuleSync?
     private(set) lazy var floatingRuleCommands = FloatingRuleCommands(config: config)
 
     private(set) var workspaceManager: WorkspaceManager!
@@ -496,6 +495,11 @@ class WindowManager {
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
         floatingController.excludedBundleIDs = { [weak self] in Set(self?.config.excludedBundleIDs ?? []) }
         floatingController.floatingRules = { [weak self] in self?.config.floatingRules ?? [] }
+        floatingController.isDisplayTransitionPending = { [weak self] in self?.displayTransitionPending ?? false }
+        floatingController.onMaximizeEnded = { [weak self] screen in
+            self?.workspaceOverview.showFullscreenHUD(isOn: false, screen: screen)
+            self?.statusPresenter.updateMenuBarState()
+        }
         floatingController.findPopup = { [weak self] windows, front in
             self?.mouseTracker.livePopup(in: windows, frontmostPID: front)
         }
@@ -733,13 +737,13 @@ class WindowManager {
         statusConfigObservation = config.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in
             self?.statusExporter.noteChange()
         }
-        appliedRuleBook = config.floatingRuleBook
-        // @Published sends before the write lands; the hop to the next turn
-        // reads both lists settled, and folds an edit that changes both
-        floatingRuleObservation = config.$floatingRules.combineLatest(config.$excludedBundleIDs)
-            .dropFirst()
-            .debounce(for: .milliseconds(50), scheduler: DispatchQueue.main)
-            .sink { [weak self] _ in self?.floatingRulesChanged() }
+        floatingController.markRulesApplied()
+        // an edit here moves open windows; a reload (iCloud, Nix, a hand
+        // edit) or a reset doesn't, as Never tile edits never did
+        floatingRuleSync = FloatingRuleSync(
+            config: config,
+            applyLocalEdit: { [weak self] in self?.floatingRulesChanged() },
+            rebase: { [weak self] in self?.floatingController.markRulesApplied() })
     }
 
     /// Observe the model's post-mutation signal once and route a complete
@@ -3301,6 +3305,8 @@ class WindowManager {
                 self.displayTransitionPending = false
                 self.suppressions.suppress(.workspaceTransition, for: SuppressionDelay.displaySettle)
                 self.tileAllVisibleSpaces()
+                // a rule change that waited out the transition
+                self.floatingRulesChanged()
                 return
             case .reconcile(let settled):
                 fingerprint = settled
@@ -3320,6 +3326,8 @@ class WindowManager {
             // lookup the engine consults is current.
             self.reconcileAfterDisplayChange(
                 restoreSavedLayout: DisplaySettle.restoresAfterSettle(from: departedKey, to: self.settledDisplayKey))
+            // a rule change that waited out the transition
+            self.floatingRulesChanged()
         }
     }
 
@@ -3339,12 +3347,13 @@ class WindowManager {
     /// open windows. Paused, nothing moves; the next start classifies every
     /// window under the new rules anyway.
     private func floatingRulesChanged() {
-        let old = appliedRuleBook
-        appliedRuleBook = config.floatingRuleBook
-        guard isRunning, old != appliedRuleBook else { return }
+        guard isRunning else {
+            floatingController.markRulesApplied()
+            return
+        }
         let known = stateCache.knownWindowIDs
         let windows = stateCache.cachedWindows.values.filter { known.contains($0.windowID) }
-        floatingController.applyRuleChange(from: old, windows: Array(windows))
+        guard floatingController.rulesChanged(windows: Array(windows)) != nil else { return }
         statusPresenter.updateMenuBarState()
         refreshFocusedWindowRuleInfo()
     }

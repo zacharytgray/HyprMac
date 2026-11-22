@@ -50,6 +50,15 @@ final class FloatingRuleTests: XCTestCase {
         XCTAssertEqual(saved.gapSize, 8)
     }
 
+    // review: "match": null read as a whole-app rule, so a Nix match = null
+    // widened a window rule to the app
+    func testANullMatchDropsTheRuleInsteadOfCoveringTheApp() throws {
+        let saved = try decodeRules(#""floatingRules":["#
+            + #"{"bundleID":"com.microsoft.teams2","action":"float","match":null},"#
+            + #"{"bundleID":"us.zoom.xos","action":"float"}]"#)
+        XCTAssertEqual(saved.floatingRules, [FloatingRule(bundleID: zoom, action: .float)])
+    }
+
     func testAnUnreadableRulesValueCostsOnlyTheRules() throws {
         let saved = try decodeRules(#""floatingRules":{"future":"value"}"#)
         XCTAssertNil(saved.floatingRules)
@@ -245,6 +254,19 @@ final class FloatingRuleTests: XCTestCase {
         config.addFloatingRule(FloatingRule(bundleID: faceTime, action: .float))
         XCTAssertEqual(config.excludedBundleIDs, [faceTime])
         XCTAssertTrue(config.floatingRules.isEmpty)
+    }
+
+    // review: Settings' "Always float an app" inserted into Never tile
+    // directly, so an app tile rule stayed beside it: two "All windows" rows
+    func testAlwaysFloatingAnAppFromSettingsReplacesItsTileRule() {
+        let (store, _) = makeStore()
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        config.excludedBundleIDs = []
+        config.floatingRules = [FloatingRule(bundleID: teams, action: .tile)]
+        config.addAlwaysFloatApp(teams)
+        let rows = FloatingRuleRow.rows(excludedBundleIDs: config.excludedBundleIDs, rules: config.floatingRules)
+        XCTAssertEqual(rows.map(\.source), [.neverTile])
+        XCTAssertEqual(config.excludedBundleIDs, [teams])
     }
 
     func testRemovingTheRuleAVerdictNamed() {
@@ -445,6 +467,97 @@ final class FloatingRuleDiscoveryTests: XCTestCase {
         XCTAssertNil(svc.secondsUntilARetryIsDue)
     }
 
+    // review: the fixed-size re-check tiled a window that turned resizable,
+    // and the title re-check took that for the user and dropped it, so a
+    // title that arrived later never applied
+    func testAFixedSizeUnfloatDoesNotEndTheTitleRecheck() {
+        var title: String? = ""
+        var settable: Bool? = false
+        let (svc, cache, workspaces) = makeService(titles: { _ in title }, settable: { _ in settable },
+                                                   bundleID: teams)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let rule = FloatingRule(bundleID: teams, action: .float, match: .titleContains("Meeting"))
+        let w = makeWindow(id: 5, pid: 100)
+        _ = poll(svc, [w], rules: [rule])
+        workspaces.assignWindow(5, toWorkspace: 1)
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5), "fixed size at first sight")
+
+        settable = true
+        clock += 0.5
+        XCTAssertEqual(poll(svc, [w], rules: [rule]).unfloated, [5])
+        XCTAssertNotNil(svc.secondsUntilARetryIsDue, "the title re-check is still pending")
+
+        title = "Meeting with Sam"
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        XCTAssertEqual(poll(svc, [w], rules: [rule]).ruleFloated, [5])
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5))
+    }
+
+    // the other order: a title rule floated it first; the fixed-size
+    // re-check that finds it resizable must not tile it
+    func testAFloatRuleKeepsAWindowTheFixedSizeRecheckFindsResizable() {
+        var settable: Bool? = false
+        let (svc, cache, workspaces) = makeService(titles: { _ in "Meeting" }, settable: { _ in settable },
+                                                   bundleID: teams)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 5, pid: 100)
+        // the rule arrives after the window: it floated for its size
+        _ = poll(svc, [w], rules: [])
+        workspaces.assignWindow(5, toWorkspace: 1)
+        let rule = FloatingRule(bundleID: teams, action: .float, match: .titleContains("Meeting"))
+        settable = true
+        clock += 0.5
+        XCTAssertTrue(poll(svc, [w], rules: [rule]).unfloated.isEmpty)
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5))
+    }
+
+    // review: a held window kept an overdue entry, so every cycle of the
+    // hold asked for a poll half a second later
+    func testAHeldWindowReschedulesItsTitleRecheck() {
+        let rule = FloatingRule(bundleID: teams, action: .float, match: .titleContains("Meeting"))
+        var title: String? = ""
+        let (svc, _, workspaces) = makeService(titles: { _ in title }, bundleID: teams)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 5, pid: 100)
+        _ = poll(svc, [w], rules: [rule])
+        workspaces.assignWindow(5, toWorkspace: 1)
+        title = "Chat"
+        clock += 0.5
+        _ = poll(svc, [w], rules: [rule])
+        XCTAssertEqual(svc.secondsUntilARetryIsDue!, 1, accuracy: 0.001, "second turn, one second on")
+
+        clock += 1
+        _ = svc.computeChanges(snapshot: [], runningPIDs: [100], excludedBundleIDs: [],
+                               floatingRules: [rule], focusedWindowID: 0, unreadableWindowIDs: [5])
+        // an overdue entry reads as overdueRetry every cycle of the hold; the
+        // hold's own readiness look may still come sooner than the new turn
+        XCTAssertNotEqual(svc.secondsUntilARetryIsDue, WindowDiscoveryService.overdueRetry,
+                          "held: same turn, rescheduled, not overdue")
+    }
+
+    // review nit: a tick before the window had a workspace dropped it
+    func testATitleRecheckWaitsForAWorkspace() {
+        let rule = FloatingRule(bundleID: teams, action: .float, match: .titleContains("Meeting"))
+        var title: String? = ""
+        let (svc, cache, workspaces) = makeService(titles: { _ in title }, bundleID: teams)
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 5, pid: 100)
+        _ = poll(svc, [w], rules: [rule])
+        clock += 0.5
+        _ = poll(svc, [w], rules: [rule])
+        XCTAssertNotNil(svc.secondsUntilARetryIsDue, "still pending without a workspace")
+
+        workspaces.assignWindow(5, toWorkspace: 1)
+        title = "Meeting with Sam"
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        XCTAssertEqual(poll(svc, [w], rules: [rule]).ruleFloated, [5])
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5))
+    }
+
     func testTheRecheckGivesUpAfterItsDelays() {
         let rule = FloatingRule(bundleID: teams, action: .float, match: .titleContains("Meeting"))
         let (svc, cache, _, setTitle, next) = lateTitleFixture(rule: rule, startTitle: "Loading")
@@ -474,6 +587,8 @@ final class FloatingRuleControllerTests: XCTestCase {
         }
         override var title: String? { fakeTitle }
         override var isAboveNormalLayer: Bool { false }
+        override func readPosition() -> (AXError, CGPoint?) { (.success, CGPoint(x: 100, y: 100)) }
+        override func readSize() -> (AXError, CGSize?) { (.success, CGSize(width: 600, height: 400)) }
     }
 
     private final class Harness {
@@ -599,6 +714,106 @@ final class FloatingRuleControllerTests: XCTestCase {
             XCTAssertTrue(saved.isSubstantiallyVisible(on: DisplayManager(screenSource: { [home] })
                 .cgRect(for: home)))
         }
+    }
+
+    // review: a rule change from Settings or the menu skipped the display
+    // transition hold the actions have
+    func testARuleChangeWaitsOutADisplayTransition() {
+        let h = Harness()
+        var pending = true
+        h.controller.isDisplayTransitionPending = { pending }
+        h.controller.markRulesApplied()
+        let w = h.window(1, bundleID: zoom, title: "Zoom Meeting", floating: false)
+        h.rules = [FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting"))]
+        XCTAssertNil(h.controller.rulesChanged(windows: [w]))
+        XCTAssertFalse(h.cache.floatingWindowIDs.contains(1))
+        XCTAssertEqual(h.retiles, 0)
+
+        pending = false
+        XCTAssertEqual(h.controller.rulesChanged(windows: [w])?.floated, [1], "the difference is still there")
+        XCTAssertEqual(h.controller.rulesChanged(windows: [w])?.floated, [], "and applied once")
+    }
+
+    // review: a maximized floater a new tile rule tiled kept its maximized
+    // frames, as no endsMaximize ran
+    func testARuleChangeEndsTheMaximizeOfAWindowItMoves() {
+        let h = Harness()
+        h.excluded = [faceTime]
+        let w = h.window(1, bundleID: faceTime, title: "FaceTime", floating: true)
+        _ = h.controller.toggleMaximized(w, fullFrame: CGRect(x: 0, y: 0, width: 1920, height: 1055), on: h.screen)
+        XCTAssertTrue(h.controller.isMaximized(1))
+        var ended = 0
+        h.controller.onMaximizeEnded = { _ in ended += 1 }
+        let before = h.controller.ruleBook
+        h.rules = [FloatingRule(bundleID: faceTime, action: .tile, match: .titleIs("FaceTime"))]
+        XCTAssertEqual(h.controller.applyRuleChange(from: before, windows: [w]).tiled, [1])
+        XCTAssertFalse(h.controller.isMaximized(1))
+        XCTAssertEqual(ended, 1)
+    }
+
+    // Zach's call: an edit on this Mac moves open windows; the same change
+    // arriving by reload (iCloud, Nix, a hand edit) moves nothing open, as
+    // a Never tile edit never did
+    private func syncedConfig(_ h: Harness) -> (UserConfig, URL, FloatingRuleSync) {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FloatingRuleSync-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: dir) }
+        let config = UserConfig(store: ConfigStore(
+            localConfigURL: dir.appendingPathComponent("config.json"),
+            monitorConfigURL: dir.appendingPathComponent("monitor-config.json"),
+            iCloudRootURL: dir.appendingPathComponent("cloud", isDirectory: true)), iCloudSyncEnabled: false)
+        config.excludedBundleIDs = []
+        config.floatingRules = []
+        h.controller.excludedBundleIDs = { config.excludedBundleIDs }
+        h.controller.floatingRules = { config.floatingRules }
+        h.controller.markRulesApplied()
+        let windows = { [h] in Array(h.cache.cachedWindows.values) }
+        let sync = FloatingRuleSync(config: config, schedule: { $0() },
+                                    applyLocalEdit: { [h] in h.controller.rulesChanged(windows: windows()) },
+                                    rebase: { [h] in h.controller.markRulesApplied() })
+        return (config, dir.appendingPathComponent("config.json"), sync)
+    }
+
+    func testALocalRuleEditMovesTheOpenWindow() {
+        let h = Harness()
+        let (config, _, sync) = syncedConfig(h)
+        _ = h.window(1, bundleID: zoom, title: "Zoom Meeting", floating: false)
+        config.addFloatingRule(FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting")))
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(1))
+        withExtendedLifetime(sync) {}
+    }
+
+    func testALocalNeverTileEditMovesTheOpenWindow() {
+        let h = Harness()
+        let (config, _, sync) = syncedConfig(h)
+        _ = h.window(1, bundleID: zoom, title: "Zoom", floating: false)
+        config.addAlwaysFloatApp(zoom)
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(1))
+        withExtendedLifetime(sync) {}
+    }
+
+    func testTheSameChangeByReloadMovesNothingOpen() throws {
+        let h = Harness()
+        let (config, url, sync) = syncedConfig(h)
+        _ = h.window(1, bundleID: zoom, title: "Zoom Meeting", floating: false)
+        let text = #"{"keybinds":[],"gapSize":8,"outerPadding":8,"enabled":true,"#
+            + #""excludedBundleIDs":["com.apple.FaceTime"],"#
+            + #""floatingRules":[{"bundleID":"us.zoom.xos","action":"float","match":{"titleIs":"Zoom Meeting"}}]}"#
+        try Data(text.utf8).write(to: url)
+        config.reloadFromDisk()
+        XCTAssertEqual(config.floatingRules.count, 1, "the reload took the rule")
+        XCTAssertFalse(h.cache.floatingWindowIDs.contains(1), "nothing open moved")
+        XCTAssertEqual(h.retiles, 0)
+
+        // a later local edit about another app doesn't sweep the reload in
+        config.addFloatingRule(FloatingRule(bundleID: faceTime, action: .tile, match: .titleIs("FaceTime")))
+        XCTAssertFalse(h.cache.floatingWindowIDs.contains(1))
+        // new windows and Retile All do see the reloaded rule
+        let late = h.window(2, bundleID: zoom, title: "Zoom Meeting", floating: false)
+        XCTAssertEqual(h.controller.autoFloatReason(late, excludedBundleIDs: config.excludedBundleIDs,
+                                                    floatingRules: config.floatingRules), .floatRule)
+        withExtendedLifetime(sync) {}
     }
 
     func testARuleChangeLeavesScratchpadAndHiddenWindowsAlone() {
