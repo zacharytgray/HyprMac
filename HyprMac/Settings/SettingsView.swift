@@ -93,7 +93,7 @@ struct SettingsView: View {
             .padding(.vertical, HyprSpacing.md)
 
             #if !HYPRMAC_DEBUG_VARIANT
-            if let updates, !RuntimeVariant.updatesManagedByNix {
+            if let updates, !RuntimeVariant.updatesManagedExternally {
                 SidebarUpdateRow(updates: updates)
                     .padding(.horizontal, HyprSpacing.lg)
                     .padding(.bottom, HyprSpacing.md)

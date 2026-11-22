@@ -364,8 +364,8 @@ folder, turn off the in-app updater and quit and reopen HyprMac:
 defaults write com.zachgray.HyprMac HyprMacUpdatesManagedExternally -bool true
 ```
 
-The menu then shows "Updates are managed by your package manager", and Settings → General hides
-the Updates panel. `defaults delete com.zachgray.HyprMac HyprMacUpdatesManagedExternally` turns
+The menu then shows "Updates are managed by your package manager". Settings hides the sidebar's
+"Check for Updates" button and the Updates panel in General. `defaults delete com.zachgray.HyprMac HyprMacUpdatesManagedExternally` turns
 the updater back on.
 
 </details>
