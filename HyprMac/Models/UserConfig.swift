@@ -603,10 +603,12 @@ class UserConfig: ObservableObject {
         keybinds = Keybind.defaults
     }
 
-    /// Restore the controls in Focus Chrome without changing layout,
-    /// keybind, monitor, or scratchpad preferences.
+    /// Restore the controls in Layout → Focus appearance without changing
+    /// layout, keybind, monitor, or scratchpad preferences. Overlay
+    /// appearance is in General → System, so it stays.
     func resetAppearanceToDefaults() {
         isReloading = true
+        animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
         dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
         dimIntensity = UserConfigDefaults.dimIntensity
         focusBracketStyle = UserConfigDefaults.focusBracketStyle

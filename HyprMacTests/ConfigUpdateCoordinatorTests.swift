@@ -587,6 +587,8 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.showFocusBorder = true
         config.focusBorderFlash = false
         config.dimInactiveWindows = false
+        config.animateFocusIndicator = false
+        config.overlayAppearance = .dark
 
         var notifications = 0
         let observation = config.didApplyRuntimeChange.sink { notifications += 1 }
@@ -603,6 +605,8 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertFalse(config.showFocusBorder)
         XCTAssertTrue(config.focusBorderFlash)
         XCTAssertTrue(config.dimInactiveWindows)
+        XCTAssertTrue(config.animateFocusIndicator, "Animate focus moves is in the same panel")
+        XCTAssertEqual(config.overlayAppearance, .dark, "overlay appearance is in General → System")
     }
 
     func testResetToDefaultsRestoresEverySetting() throws {
