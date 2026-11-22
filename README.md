@@ -293,7 +293,7 @@ can be pinned too: it goes to its workspace and stays floating.
 Settings → General → "Float and tile rules" lists which apps, and which kinds of window inside
 an app, always float or always tile. A rule for one kind of window beats a rule for its app.
 Make one from the window itself with **Hypr + I**: a small panel over the focused window offers
-to float or tile it once, always float or tile all of the app's windows, always float or tile
+to always float or tile all of the app's windows, always float or tile
 windows whose title is or contains text you trim from this window's title (for meeting windows
 whose title carries the meeting's name), or forget the rule that covers it. The menu bar's
 "Focused window" section has the app rules and opens the same panel. Windows that stay on top of

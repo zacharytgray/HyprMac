@@ -171,7 +171,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
 | `FloatingWindowController` | Float / tile toggle, cycle, raise-behind (with `RaiseBehindThrottle`), the click re-raise, auto-float predicate, and the live re-apply of a float or tile rule change (`applyRuleChange`). |
-| `FloatingRuleCommands` | The rule edits and one-off toggles behind the window rules overlay (Hypr+I), the menu bar's "Focused window" section and the failed-tile prompt. Each acts on the window id it was opened for. Edits the config only; `WindowManager` watches the rule lists and re-applies (see "Float and tile rules"). |
+| `FloatingRuleCommands` | The rule edits behind the window rules overlay (Hypr+I), the menu bar's "Focused window" section and the failed-tile prompt. Each acts on the window id it was opened for. Edits the config only; `WindowManager` watches the rule lists and re-applies (see "Float and tile rules"). |
 | `WindowRulesOverlayController` | The Hypr+I card over one window. `WindowRulesOverlayModel` holds its rows and keyboard state. |
 | `FailedTilePromptController` | The once-per-app offer after admission recovery floated a new window in place. `FailedTilePromptPolicy` decides. |
 | `OwnPanelTracker` | HyprMac's own panels (menu bar panel, rules overlay); hover focus pauses while one is visible. |
@@ -925,8 +925,8 @@ whose AX size can't be set. Every place that used to ask about Never tile asks
 the book: discovery's admission and late-title re-check, startup and Retile
 All (`autoFloatReason`), moves to a workspace, and the scratchpad
 (`floatRule(for:)` and `isNeverTile`). Above the book sits the user's hand
-choice (`FloatingWindowController.manualChoices`): Hypr+T, the overlay's
-one-off, the scratchpad toggle and the dedicated workspace move record it, no
+choice (`FloatingWindowController.manualChoices`): Hypr+T, the scratchpad
+toggle and the dedicated workspace move record it, no
 rule refuses them, and rules skip that window until it closes.
 
 `FloatingRuleSync` routes changes. An edit on this Mac (Settings, the menu,

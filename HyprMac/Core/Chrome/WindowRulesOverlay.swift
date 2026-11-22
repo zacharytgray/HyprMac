@@ -10,9 +10,8 @@ import SwiftUI
 /// What the overlay offers and which row is picked. Plain values, so the
 /// keyboard behavior is tested without a panel.
 final class WindowRulesOverlayModel: ObservableObject {
+    /// Permanent rules only: floating or tiling one window once is Hypr+T.
     enum Row: Equatable, Hashable {
-        /// float or tile it once, as Hypr+T does
-        case once
         case floatApp, tileApp
         case floatTitle, tileTitle
         case forget
@@ -28,13 +27,15 @@ final class WindowRulesOverlayModel: ObservableObject {
     init(target: FocusedWindowRuleInfo) {
         self.target = target
         self.text = target.title
-        self.selection = .once
+        self.selection = Self.rows(for: target)[0]
     }
 
     /// The rows in order. The app rule already in effect isn't offered
     /// again, and Forget only shows when a rule covers the window.
-    var rows: [Row] {
-        var out: [Row] = [.once]
+    var rows: [Row] { Self.rows(for: target) }
+
+    private static func rows(for target: FocusedWindowRuleInfo) -> [Row] {
+        var out: [Row] = []
         if !target.appFloats { out.append(.floatApp) }
         if !target.appTiles { out.append(.tileApp) }
         out += [.floatTitle, .tileTitle]
@@ -59,7 +60,7 @@ final class WindowRulesOverlayModel: ObservableObject {
     func move(_ step: Int) {
         let all = rows
         guard let index = all.firstIndex(of: selection) else {
-            selection = all.first ?? .once
+            selection = all.first ?? .floatTitle
             return
         }
         selection = all[(index + step + all.count) % all.count]
@@ -67,7 +68,6 @@ final class WindowRulesOverlayModel: ObservableObject {
 
     func label(_ row: Row) -> String {
         switch row {
-        case .once: return target.isFloating ? "Tile this window" : "Float this window"
         case .floatApp: return "Always float \(target.appName)"
         case .tileApp: return "Always tile \(target.appName)"
         case .floatTitle: return "Always float windows with this title"
@@ -79,7 +79,6 @@ final class WindowRulesOverlayModel: ObservableObject {
     /// The quiet second half of a row, nil when the label says it all.
     func detail(_ row: Row) -> String? {
         switch row {
-        case .once: return "until it closes"
         case .floatApp, .tileApp: return "every window"
         case .forget: return target.currentRule
         default: return nil
@@ -89,7 +88,6 @@ final class WindowRulesOverlayModel: ObservableObject {
     /// SF Symbol for the row, beside its label.
     func symbol(_ row: Row) -> String {
         switch row {
-        case .once: return target.isFloating ? "rectangle.split.2x1" : "macwindow.on.rectangle"
         case .floatApp, .floatTitle: return "macwindow.on.rectangle"
         case .tileApp, .tileTitle: return "rectangle.split.2x1"
         case .forget: return "arrow.uturn.backward"
@@ -113,7 +111,7 @@ struct WindowRulesOverlayView: View {
     private var palette: OverlayPalette { OverlayPalette(scheme: colorScheme) }
     @FocusState private var editingTitle: Bool
 
-    static let width: CGFloat = 380
+    static let width: CGFloat = 400
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -184,9 +182,11 @@ struct WindowRulesOverlayView: View {
                     .foregroundStyle(selected ? Color.overlayPrimary : Color.secondary)
                     .frame(width: 16)
                 HStack(spacing: 6) {
+                    // the label keeps its width; the quiet detail gives way first
                     Text(model.label(row))
                         .font(.system(size: 13, weight: selected ? .semibold : .regular))
                         .foregroundColor(Color.primary.opacity(model.isEnabled(row) ? 0.9 : 0.4))
+                        .layoutPriority(1)
                     if let detail = model.detail(row) {
                         Text(detail)
                             .font(.system(size: 11))

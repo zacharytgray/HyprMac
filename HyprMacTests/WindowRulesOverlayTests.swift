@@ -14,27 +14,28 @@ final class WindowRulesOverlayTests: XCTestCase {
 
     func testTheRowsAndTheirOrder() {
         let model = WindowRulesOverlayModel(target: info())
-        XCTAssertEqual(model.rows, [.once, .floatApp, .tileApp, .floatTitle, .tileTitle])
-        XCTAssertEqual(model.label(.once), "Float this window")
+        XCTAssertEqual(model.rows, [.floatApp, .tileApp, .floatTitle, .tileTitle],
+                       "permanent rules only: once is Hypr+T")
+        XCTAssertEqual(model.selection, .floatApp)
         XCTAssertEqual(model.label(.floatApp), "Always float Microsoft Teams")
 
         let covered = WindowRulesOverlayModel(target: info(rule: "Never tile: all windows", appFloats: true,
                                                            floating: true))
-        XCTAssertEqual(covered.rows, [.once, .tileApp, .floatTitle, .tileTitle, .forget],
+        XCTAssertEqual(covered.rows, [.tileApp, .floatTitle, .tileTitle, .forget],
                        "the app rule in effect isn't offered again; Forget shows")
-        XCTAssertEqual(covered.label(.once), "Tile this window")
+        XCTAssertEqual(covered.selection, .tileApp, "the first rule that fits")
         XCTAssertEqual(covered.label(.forget), "Forget the rule")
         XCTAssertEqual(covered.detail(.forget), "Never tile: all windows")
     }
 
     func testUpAndDownWrap() {
         let model = WindowRulesOverlayModel(target: info())
-        XCTAssertEqual(model.selection, .once)
+        XCTAssertEqual(model.selection, .floatApp)
         model.move(-1)
         XCTAssertEqual(model.selection, .tileTitle)
         model.move(1)
         model.move(1)
-        XCTAssertEqual(model.selection, .floatApp)
+        XCTAssertEqual(model.selection, .tileApp)
     }
 
     // prefilled with the window's title, trimmed by the user

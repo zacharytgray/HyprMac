@@ -22,7 +22,8 @@ struct FocusedWindowRuleInfo: Equatable {
     let isFloating: Bool
 }
 
-/// The rule edits and one-off toggles, on a window the caller names.
+/// The rule edits, on a window the caller names. Floating or tiling one
+/// window once is Hypr+T, not a rule.
 ///
 /// Every edit made for a window also drops the user's earlier hand choice
 /// for it: the newest word about that window is the rule. A refusal gets
@@ -38,8 +39,6 @@ final class FloatingRuleCommands {
     var isFloating: (CGWindowID) -> Bool = { _ in false }
     /// red shake around the window, with this text
     var refuse: (HyprWindow, String) -> Void = { _, _ in }
-    /// Toggle Floating on that window: the one-off float or tile
-    var toggle: (HyprWindow) -> Void = { _ in }
     /// the user's latest word about this window is a rule: forget the hand choice
     var clearManualChoice: (CGWindowID) -> Void = { _ in }
     var bundleID: (HyprWindow) -> String? = {
@@ -76,12 +75,6 @@ final class FloatingRuleCommands {
             appFloats: config.excludedBundleIDs.contains(bundleID),
             appTiles: config.floatingRules.contains { $0.bundleID == bundleID && $0.match == nil && $0.action == .tile },
             isFloating: isFloating(id))
-    }
-
-    /// Float or tile it once, as Hypr+T does.
-    func toggleOnce(_ id: CGWindowID) {
-        guard let window = live(id) else { return }
-        toggle(window)
     }
 
     /// "Always float all <App> windows" or "Always tile all <App> windows".

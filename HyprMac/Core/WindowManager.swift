@@ -662,11 +662,6 @@ class WindowManager {
             return self.stateCache.cachedWindows[id]
         }
         floatingRuleCommands.isFloating = { [weak self] id in self?.stateCache.floatingWindowIDs.contains(id) ?? false }
-        floatingRuleCommands.toggle = { [weak self] window in
-            guard let self,
-                  let screen = self.displayManager.screen(for: window) ?? self.displayManager.screens.first else { return }
-            self.floatingController.toggle(window, on: screen, in: self.workspaceManager.workspaceForScreen(screen))
-        }
         floatingRuleCommands.clearManualChoice = { [weak self] id in self?.floatingController.forgetManualChoice(id) }
         failedTilePrompt.chooseRules = { [weak self] id in self?.showWindowRules(for: id) }
         windowRulesOverlay.restoreFocus = { [weak self] id in
@@ -677,7 +672,6 @@ class WindowManager {
         windowRulesOverlay.perform = { [weak self] row, match, id in
             guard let commands = self?.floatingRuleCommands else { return }
             switch row {
-            case .once: commands.toggleOnce(id)
             case .floatApp: commands.setAppRule(id, action: .float)
             case .tileApp: commands.setAppRule(id, action: .tile)
             case .floatTitle: if let match { commands.setTitleRule(id, match: match, action: .float) }

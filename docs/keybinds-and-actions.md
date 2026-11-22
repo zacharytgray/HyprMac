@@ -273,7 +273,7 @@ with the shake before anything moves; a second within 5 s tries for real, in
 case the app let go of it.
 
 **The user wins.** A direct action on a window beats every rule for it, Never
-tile included, until the window closes: Hypr+T, the overlay's one-off, tiling
+tile included, until the window closes: Hypr+T, tiling
 or untiling it in the scratchpad, and the dedicated workspace move
 (`FloatingWindowController.noteManualChoice`). No rule refuses those. Only a
 window that can't take a tile fails, as before: the red shake, or a float in
@@ -298,9 +298,9 @@ workspace and the scratchpad (`isNeverTile`, `floatRule(for:)`).
 ```
 
 A small card over the focused window, fixed when the key is pressed. It
-shows the app, the window's title and the rule that covers it, and offers:
-float or tile this window once (Hypr+T's toggle); always float or always tile
-all of the app's windows (the one in effect is not offered again); always
+shows the app, the window's title and the rule that covers it, and offers
+permanent rules only (floating or tiling one window once is Hypr+T): always
+float or always tile all of the app's windows (the one in effect is not offered again); always
 float or always tile windows whose title is, or contains, the text in an
 editable field prefilled with the window's title, which the user trims (a
 Teams chat window carries the chat's name, so "Chat |" or the app name is the

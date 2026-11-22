@@ -891,7 +891,6 @@ final class FloatingRuleControllerTests: XCTestCase {
         var windows: [CGWindowID: HyprWindow] = [:]
         var floating: Set<CGWindowID> = []
         var refusals: [String] = []
-        var toggled: [CGWindowID] = []
         var cleared: [CGWindowID] = []
         var settable: Bool? = true
 
@@ -905,7 +904,6 @@ final class FloatingRuleControllerTests: XCTestCase {
             commands.window = { [unowned self] in self.windows[$0] }
             commands.isFloating = { [unowned self] in self.floating.contains($0) }
             commands.refuse = { [unowned self] _, message in self.refusals.append(message) }
-            commands.toggle = { [unowned self] in self.toggled.append($0.windowID) }
             commands.clearManualChoice = { [unowned self] in self.cleared.append($0) }
             commands.isSizeSettable = { [unowned self] _ in self.settable }
             commands.appName = { _ in "Microsoft Teams" }
@@ -947,17 +945,7 @@ final class FloatingRuleControllerTests: XCTestCase {
         let f = fixture()
         XCTAssertNil(f.commands.info(for: 7))
         f.commands.setAppRule(7, action: .float)
-        f.commands.toggleOnce(7)
         XCTAssertTrue(f.config.excludedBundleIDs.isEmpty)
-        XCTAssertTrue(f.toggled.isEmpty)
-    }
-
-    func testTheOneOffIsAToggle() {
-        let f = fixture()
-        _ = f.add(1, bundleID: teams, title: "Chat")
-        f.commands.toggleOnce(1)
-        XCTAssertEqual(f.toggled, [1])
-        XCTAssertTrue(f.config.floatingRules.isEmpty)
     }
 
     func testATitleRuleFromTheEditedText() {
