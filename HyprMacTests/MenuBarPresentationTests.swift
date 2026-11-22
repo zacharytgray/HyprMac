@@ -80,15 +80,13 @@ final class MenuBarPresentationTests: XCTestCase {
     }
 
     func testCompactSymbolCoversWorkspaceOneAndTen() {
-        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
-            workspace: 1, floating: false, maximized: false), "1.square")
-        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
-            workspace: 10, floating: false, maximized: false), "10.square")
+        XCTAssertEqual(compactLabel(1), .symbol("1.square"))
+        XCTAssertEqual(compactLabel(10), .symbol("10.square"))
     }
 
     // every badge is one 20x20 template image so the item never changes width
     func testCompactImageIsOneFixedSizeTemplate() {
-        for symbol in ["3.square", "3.circle", "10.square.fill", "10.circle.fill"] {
+        for symbol in ["3.square", "3.circle", "10.square.fill", "10.circle.fill", "w.square", "z.circle.fill"] {
             let image = MenuBarPresentation.compactImage(symbol: symbol)
             XCTAssertEqual(image?.size, NSSize(width: 20, height: 20), symbol)
             XCTAssertEqual(image?.isTemplate, true, symbol)
@@ -116,28 +114,43 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertEqual(focusedScreen(focused: 20, cursor: 0, visible: [3, 2], switchedTo: nil), 1)
     }
 
-    // a set name replaces the badge; the fullscreen icon sits beside it
-    func testCompactShowsTheSetNameElseTheNumberedBadge() {
-        let plain = MenuBarCompactBadge(workspace: 3, floating: true, maximized: false)
-        let maximized = MenuBarCompactBadge(workspace: 3, floating: false, maximized: true)
-        XCTAssertEqual(MenuBarPresentation.compactLabel(plain, names: ["3": "R", "1": "W"]),
-                       .name("R", fullscreen: false))
-        XCTAssertEqual(MenuBarPresentation.compactLabel(maximized, names: ["3": "R"]),
-                       .name("R", fullscreen: true))
-        XCTAssertEqual(MenuBarPresentation.compactLabel(plain, names: ["1": "W"]), .symbol("3.circle"))
-        XCTAssertEqual(MenuBarPresentation.compactLabel(maximized, names: ["3": "  "]),
-                       .symbol("3.square.fill"))
+    // a one-letter name takes the number's place in the badge
+    func testCompactPutsAOneLetterNameInTheBadge() {
+        XCTAssertEqual(compactLabel(3, names: ["3": "R", "1": "W"]), .symbol("r.square"))
+        XCTAssertEqual(compactLabel(3, names: ["3": "r"]), .symbol("r.square"))
+        XCTAssertEqual(compactLabel(3, floating: true, maximized: true, names: ["3": " R "]),
+                       .symbol("r.circle.fill"))
+        XCTAssertEqual(compactLabel(3, names: ["3": "7"]), .symbol("7.square"))
+    }
+
+    // a longer name, or one character with no symbol, is text in full;
+    // the fullscreen icon sits beside it, and floating windows change nothing
+    func testCompactShowsAnyOtherNameAsText() {
+        XCTAssertEqual(compactLabel(3, floating: true, names: ["3": "terminal"]),
+                       .name("terminal", fullscreen: false))
+        XCTAssertEqual(compactLabel(3, maximized: true, names: ["3": "web"]), .name("web", fullscreen: true))
+        XCTAssertEqual(compactLabel(3, names: ["3": "Ж"]), .name("Ж", fullscreen: false))
+        XCTAssertEqual(compactLabel(3, names: ["3": "⌘"]), .name("⌘", fullscreen: false))
+    }
+
+    // no name, or a blank one, keeps the numbered badge
+    func testCompactKeepsTheNumberWithoutAName() {
+        XCTAssertEqual(compactLabel(3, floating: true, names: ["1": "W"]), .symbol("3.circle"))
+        XCTAssertEqual(compactLabel(3, maximized: true, names: ["3": "  "]), .symbol("3.square.fill"))
     }
 
     func testCompactSymbolShowsFloatingAndMaximizedStates() {
-        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
-            workspace: 3, floating: false, maximized: false), "3.square")
-        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
-            workspace: 3, floating: true, maximized: false), "3.circle")
-        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
-            workspace: 3, floating: false, maximized: true), "3.square.fill")
-        XCTAssertEqual(MenuBarPresentation.compactSymbolName(
-            workspace: 3, floating: true, maximized: true), "3.circle.fill")
+        XCTAssertEqual(compactLabel(3), .symbol("3.square"))
+        XCTAssertEqual(compactLabel(3, floating: true), .symbol("3.circle"))
+        XCTAssertEqual(compactLabel(3, maximized: true), .symbol("3.square.fill"))
+        XCTAssertEqual(compactLabel(3, floating: true, maximized: true), .symbol("3.circle.fill"))
+    }
+
+    // the label for workspace `id` in that state, with these names
+    private func compactLabel(_ id: Int, floating: Bool = false, maximized: Bool = false,
+                              names: [String: String] = [:]) -> MenuBarCompactLabel {
+        MenuBarPresentation.compactLabel(
+            MenuBarCompactWorkspace(id: id, hasFloatingWindows: floating, isMaximized: maximized), names: names)
     }
 
     // two screens: the left shows 4 (windows 11, 12), the right shows 2
@@ -194,13 +207,12 @@ final class MenuBarPresentationTests: XCTestCase {
     func testCompactSymbolForTheChosenWorkspace() {
         let floating: Set<Int> = [2]
         let maximized: Set<Int> = [4]
-        let symbols = [4, 2].map {
-            MenuBarPresentation.compactSymbolName(workspace: $0, floating: floating.contains($0),
-                                                  maximized: maximized.contains($0))
+        let labels = [4, 2].map {
+            compactLabel($0, floating: floating.contains($0), maximized: maximized.contains($0))
         }
-        XCTAssertEqual(symbols, ["4.square.fill", "2.circle"])
-        XCTAssertEqual(focusedScreen(focused: 20, cursor: 0).map { symbols[$0] }, "2.circle")
-        XCTAssertEqual(focusedScreen(focused: 0, cursor: 0).map { symbols[$0] }, "4.square.fill")
+        XCTAssertEqual(labels, [.symbol("4.square.fill"), .symbol("2.circle")])
+        XCTAssertEqual(focusedScreen(focused: 20, cursor: 0).map { labels[$0] }, .symbol("2.circle"))
+        XCTAssertEqual(focusedScreen(focused: 0, cursor: 0).map { labels[$0] }, .symbol("4.square.fill"))
     }
 
     // a burst of moves schedules one check; the next move after it schedules another

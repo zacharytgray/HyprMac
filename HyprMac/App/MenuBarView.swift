@@ -271,7 +271,7 @@ class MenuBarState: ObservableObject {
     @Published var monitors: [MenuBarMonitorSnapshot] = []
     /// The compact style's one badge: the focused workspace, else the one
     /// on the cursor's screen. nil with no screens.
-    @Published var compactBadge: MenuBarCompactBadge?
+    @Published var compactWorkspace: MenuBarCompactWorkspace?
     @Published var hasData = false
     /// Number of windows in the scratchpad (0 = hide the tray glyph).
     @Published var scratchpadCount = 0
@@ -303,15 +303,16 @@ struct MenuBarWorkspaceBadge: Equatable, Identifiable {
     let hasFloatingWindows: Bool
 }
 
-/// The workspace the Compact style shows and what its badge marks.
-struct MenuBarCompactBadge: Equatable {
-    let workspace: Int
-    let floating: Bool
-    let maximized: Bool
+/// The workspace the Compact style shows, and what its badge marks.
+struct MenuBarCompactWorkspace: Equatable {
+    let id: Int
+    let hasFloatingWindows: Bool
+    let isMaximized: Bool
 }
 
-/// What the Compact style draws: the workspace's set name, beside the
-/// fullscreen icon while it has a maximized window; else its numbered badge.
+/// What the Compact style draws: a badge with the workspace's number, or
+/// with its name when that is one Latin letter or digit; else the name as text,
+/// beside the fullscreen icon while the workspace has a maximized window.
 enum MenuBarCompactLabel: Equatable {
     case name(String, fullscreen: Bool)
     case symbol(String)
@@ -415,17 +416,26 @@ enum MenuBarPresentation {
         hasData && (!labelText.isEmpty || scratchpadCount > 0)
     }
 
-    // square, circle with floaters, filled when maximized
-    static func compactSymbolName(workspace: Int, floating: Bool, maximized: Bool) -> String {
-        "\(workspace).\(floating ? "circle" : "square")\(maximized ? ".fill" : "")"
+    /// The symbol glyph for a one-character name: a Latin (ASCII) letter or
+    /// a digit, lowercased as symbol names are (`w.square` draws a capital W).
+    /// nil for any other name: SF Symbols has letter badges only for a–z.
+    static func badgeGlyph(_ name: String) -> String? {
+        guard name.count == 1, let char = name.first, char.isASCII,
+              char.isLetter || char.isNumber else { return nil }
+        return name.lowercased()
     }
 
-    // a blank name counts as none, as everywhere else
-    static func compactLabel(_ badge: MenuBarCompactBadge, names: [String: String]) -> MenuBarCompactLabel {
-        let name = UserConfig.workspaceDisplayName(badge.workspace, names: names, fallback: "")
-        if !name.isEmpty { return .name(name, fullscreen: badge.maximized) }
-        return .symbol(compactSymbolName(workspace: badge.workspace, floating: badge.floating,
-                                         maximized: badge.maximized))
+    // no name keeps the number; a Latin letter or a digit takes its place in
+    // the badge; any other name is text, in full. A blank name counts as
+    // none, as everywhere else.
+    static func compactLabel(_ workspace: MenuBarCompactWorkspace, names: [String: String]) -> MenuBarCompactLabel {
+        let name = UserConfig.workspaceDisplayName(workspace.id, names: names, fallback: "")
+        guard let glyph = name.isEmpty ? String(workspace.id) : badgeGlyph(name) else {
+            return .name(name, fullscreen: workspace.isMaximized)
+        }
+        // square, circle with floaters, filled when maximized
+        let shape = workspace.hasFloatingWindows ? "circle" : "square"
+        return .symbol("\(glyph).\(shape)\(workspace.isMaximized ? ".fill" : "")")
     }
 
     // 17 pt medium is about the size of the icons next to it
@@ -446,6 +456,23 @@ enum MenuBarPresentation {
         }
         canvas.isTemplate = true
         return canvas
+    }
+}
+
+/// The fullscreen icon, then the text, for the Full glyphs and a Compact
+/// name; the HStack around it spaces them.
+struct MenuBarLabelText: View {
+    let fullscreen: Bool
+    let text: String
+
+    var body: some View {
+        if fullscreen {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+        }
+        if !text.isEmpty {
+            Text(text)
+                .font(.system(size: 12, weight: .regular))
+        }
     }
 }
 
@@ -470,16 +497,12 @@ struct WorkspaceIndicatorLabel: View {
     }
 
     @ViewBuilder private var content: some View {
-        if style == .compact, state.hasData, let badge = state.compactBadge {
+        if style == .compact, state.hasData, let workspace = state.compactWorkspace {
             Group {
-                switch MenuBarPresentation.compactLabel(badge, names: config.workspaceNames) {
+                switch MenuBarPresentation.compactLabel(workspace, names: config.workspaceNames) {
                 case .name(let name, let fullscreen):
                     HStack(spacing: 5) {
-                        if fullscreen {
-                            Image(systemName: "arrow.up.left.and.arrow.down.right")
-                        }
-                        Text(name)
-                            .font(.system(size: 12, weight: .regular))
+                        MenuBarLabelText(fullscreen: fullscreen, text: name)
                     }
                 case .symbol(let symbol):
                     if let image = MenuBarPresentation.compactImage(symbol: symbol) {
@@ -495,12 +518,9 @@ struct WorkspaceIndicatorLabel: View {
             labelText: state.labelText,
             scratchpadCount: state.scratchpadCount) {
             HStack(spacing: 5) {
-                if state.isFullscreen {
-                    Image(systemName: "arrow.up.left.and.arrow.down.right")
-                } else if !state.labelText.isEmpty {
-                    Text(state.labelText)
-                        .font(.system(size: 12, weight: .regular))
-                }
+                // the icon stands in for the glyphs
+                MenuBarLabelText(fullscreen: state.isFullscreen,
+                                 text: state.isFullscreen ? "" : state.labelText)
                 if state.scratchpadCount > 0 {
                     Image(systemName: state.scratchpadVisible ? "tray.fill" : "tray")
                     if state.scratchpadCount > 1 {

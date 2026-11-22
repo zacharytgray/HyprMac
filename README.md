@@ -320,9 +320,10 @@ copied to `config.json.unreadable` before a save overwrites it.
 HyprMac lives in the menu bar and stays out of the Dock. Settings → General → System can add a
 Dock icon and pick the menu bar style. Full shows every workspace in use. Compact shows one
 workspace: the one you just switched to, then the focused window's workspace. With nothing
-focused, it shows the workspace on the monitor under the pointer. A workspace with a name from
-Workspace names shows the name; one without shows a numbered badge. Hidden removes the
-item. Opening HyprMac again from Spotlight or Finder, or clicking its Dock icon, opens Settings.
+focused, it shows the workspace on the monitor under the pointer. The badge shows the workspace
+number, or its name from Workspace names when that is one Latin letter or digit (SF Symbols has
+badge symbols only for those). Any other name shows in full as text. Hidden removes the item.
+Opening HyprMac again from Spotlight or Finder, or clicking its Dock icon, opens Settings.
 
 HyprMac keeps itself up to date through Sparkle. It checks once a day and downloads a new
 version in the background. A dot on the menu bar icon says one is ready, and the menu has
