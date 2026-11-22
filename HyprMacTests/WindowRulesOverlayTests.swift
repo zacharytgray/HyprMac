@@ -115,20 +115,31 @@ final class WindowRulesOverlayControllerTests: XCTestCase {
         controller.activateApp = { activations += 1 }
         controller.restoreFocus = { restored.append($0) }
         controller.perform = { row, _, _ in performed.append(row) }
+        var later: [() -> Void] = []
+        controller.schedule = { _, body in later.append(body) }
         let info = FocusedWindowRuleInfo(windowID: 8905, appName: "Microsoft Teams", bundleID: "com.microsoft.teams2",
                                          title: "Chat", currentRule: nil, appFloats: false, appTiles: false,
                                          isFloating: false)
         controller.show(info, over: nil, icon: nil)
         XCTAssertEqual(activations, 1)
         XCTAssertTrue(controller.isShowing)
+        // the Hypr key's focus pass re-activated the window's app after the
+        // overlay opened, and the typing went there. it takes the keys back
+        later.forEach { $0() }
+        XCTAssertEqual(activations, 1 + WindowRulesOverlayController.reassertDelays.count)
+        later.removeAll()
 
         controller.close()
         XCTAssertFalse(controller.isShowing)
         XCTAssertEqual(restored, [8905], "Esc hands focus back to the window")
 
         controller.show(info, over: nil, icon: nil)
+        let stale = later
         controller.show(info, over: nil, icon: nil)
         XCTAssertEqual(restored, [8905], "reopening doesn't bounce focus")
+        let before = activations
+        stale.forEach { $0() }
+        XCTAssertEqual(activations, before, "a closed panel's re-assert does nothing")
         controller.close(restoringFocus: false)
         XCTAssertTrue(performed.isEmpty)
     }

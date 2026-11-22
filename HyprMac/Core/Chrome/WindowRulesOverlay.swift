@@ -210,6 +210,13 @@ final class WindowRulesOverlayController {
     /// open, and the window goes back to its app on close.
     var activateApp: () -> Void = { NSApp.activate(ignoringOtherApps: true) }
     var restoreFocus: (CGWindowID) -> Void = { _ in }
+    var schedule: (TimeInterval, @escaping () -> Void) -> Void = { delay, body in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: body)
+    }
+    /// The Hypr key's own focus pass re-activates the window's app about a
+    /// tenth of a second after the press, after the overlay has opened. The
+    /// overlay takes the keys back at these delays.
+    static let reassertDelays: [TimeInterval] = [0.15, 0.35]
 
     private var panel: NSPanel?
     private var keyMonitor: Any?
@@ -243,6 +250,13 @@ final class WindowRulesOverlayController {
         activateApp()
         p.makeKeyAndOrderFront(nil)
         panel = p
+        for delay in Self.reassertDelays {
+            schedule(delay) { [weak self, weak p] in
+                guard let self, let p, self.panel === p else { return }
+                self.activateApp()
+                p.makeKey()
+            }
+        }
         OwnPanelTracker.shared.track(p)
         installMonitor()
         hyprLog(.notice, .floating, "window rules overlay: \(info.windowID) \(info.bundleID)"
