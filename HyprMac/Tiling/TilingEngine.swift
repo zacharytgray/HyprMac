@@ -1731,9 +1731,11 @@ class TilingEngine {
     private func runFirstPass(_ attempt: VerifiedAttempt) -> FrameReadbackPoller.Result {
         let positionFirstIDs = positionFirstWindowIDs(attempt.originalFrames, layouts: attempt.firstLayouts,
                                                       destination: attempt.rect)
+        let inPlaceStaging = inPlaceStagingOrigins(attempt.originalFrames, layouts: attempt.firstLayouts,
+                                                   destination: attempt.rect)
         // the first pass gets the captured originals: a layout every window
         // already stands on is accepted from them, without a write
-        return !positionFirstIDs.isEmpty
+        return !positionFirstIDs.isEmpty || !inPlaceStaging.isEmpty
             ? reconcile(attempt.poller.applyWorkspaceReveal(attempt.firstLayouts,
                                                             positionFirstWindowIDs: positionFirstIDs,
                                                             firstReadWindowIDs: Self.firstReadWindowIDs(
@@ -1750,6 +1752,7 @@ class TilingEngine {
                                                                     positionFirstIDs.contains($0.0.windowID)
                                                                 }.map { ($0.0.windowID, $0.1) },
                                                                 destination: attempt.rect),
+                                                            inPlaceStagingOrigins: inPlaceStaging,
                                                             usableFrame: attempt.rect, gap: gapSize,
                                                             generation: attempt.generation,
                                                             originalFrames: attempt.originalFrames),
@@ -2098,25 +2101,16 @@ class TilingEngine {
     /// its target is bigger than the screen. That is the reveal onto the
     /// portrait that settled 1528 tall against an 1874 target.
     ///
-    /// A window already on `rect` moves first for the same reason, when its
-    /// target fits the screen but hangs off it from the window's current
-    /// origin.
+    /// A window already on `rect` is never position-first. One whose target
+    /// hangs off the screen from where it stands gets a staging origin
+    /// instead: see `inPlaceStagingOrigins`.
     private func positionFirstWindowIDs(_ originals: [CGWindowID: CGRect],
                                         layouts: [(HyprWindow, CGRect)],
                                         destination rect: CGRect) -> Set<CGWindowID> {
         var ids = Set<CGWindowID>()
         for (window, target) in layouts {
-            guard let original = originals[window.windowID] else { continue }
-            if original.isSubstantiallyVisible(on: rect, threshold: 0.5) {
-                // not crossing: sized where it stands, unless the target
-                // would hang off the screen from there and be clamped (see
-                // `CrossScreenWriteOrder.decideInPlace`)
-                guard let order = inPlaceWriteOrder(from: original, targetSize: target.size) else { continue }
-                hyprLog(.notice, .tiling, "write order: wid=\(window.windowID) \(order) "
-                        + String(format: "target=%gx%g", Double(target.width), Double(target.height)))
-                ids.insert(window.windowID)
-                continue
-            }
+            guard let original = originals[window.windowID],
+                  !original.isSubstantiallyVisible(on: rect, threshold: 0.5) else { continue }
             let order = crossScreenWriteOrder(from: original, targetSize: target.size)
             hyprLog(.notice, .tiling, "write order: wid=\(window.windowID) \(order) "
                     + String(format: "target=%gx%g", Double(target.width), Double(target.height)))
@@ -2124,6 +2118,36 @@ class TilingEngine {
             ids.insert(window.windowID)
         }
         return ids
+    }
+
+    /// Where each window that stays on `rect` stands while its size is
+    /// written, when its target would hang off the screen from the window's
+    /// current origin (see `CrossScreenWriteOrder.decideInPlace`): its
+    /// target origin, pulled in just far enough that its old size stands
+    /// inside `rect`.
+    ///
+    /// This is not position-first. The window waits for no settle, and what
+    /// it reads back still teaches the size memory: it never left its
+    /// screen, so nothing but the app decided its size. Marking these
+    /// windows position-first stopped fixed-size hints being recorded.
+    private func inPlaceStagingOrigins(_ originals: [CGWindowID: CGRect],
+                                       layouts: [(HyprWindow, CGRect)],
+                                       destination rect: CGRect) -> [CGWindowID: CGPoint] {
+        var origins: [CGWindowID: CGPoint] = [:]
+        for (window, target) in layouts {
+            guard let original = originals[window.windowID],
+                  original.isSubstantiallyVisible(on: rect, threshold: 0.5),
+                  original.width <= rect.width, original.height <= rect.height,
+                  let order = inPlaceWriteOrder(from: original, targetSize: target.size) else { continue }
+            let staged = Self.stagingOrigins(originals: originals,
+                                             targets: [(window.windowID, target)],
+                                             destination: rect)[window.windowID] ?? target.origin
+            hyprLog(.debug, .tiling, "write order: wid=\(window.windowID) \(order) "
+                    + String(format: "target=%gx%g via=(%g,%g)", Double(target.width),
+                             Double(target.height), Double(staged.x), Double(staged.y)))
+            origins[window.windowID] = staged
+        }
+        return origins
     }
 
     /// Position-first windows whose target fits the screen they stand on, even

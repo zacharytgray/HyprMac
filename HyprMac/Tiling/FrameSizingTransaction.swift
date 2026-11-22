@@ -526,6 +526,13 @@ struct FrameSizingAttempt {
         // where the position-first write sends the window, and where its
         // settle waits for it
         let firstOrigin = staging ?? target.frame.origin
+        // a window sized in the default order from a staging origin: one
+        // plain move ahead of the size, no settle
+        let inPlaceStaging = settlePositionBeforeSizing
+            ? nil : configuration.inPlaceStagingOrigins[target.windowID]
+        let inPlaceWrites: [(String, () -> AXError)] = inPlaceStaging.map { origin in
+            [("position0", { io.writePosition(target.windowID, origin, configuration.perCallTimeout) })]
+        } ?? []
         let writes: [(String, () -> AXError)] = settlePositionBeforeSizing
             ? [
                 ("position", { io.writePosition(target.windowID, firstOrigin, configuration.perCallTimeout) }),
@@ -535,7 +542,7 @@ struct FrameSizingAttempt {
             ]) + [
                 ("size2", { io.writeSize(target.windowID, target.frame.size, configuration.perCallTimeout) })
             ]
-            : [
+            : inPlaceWrites + [
                 ("size", { io.writeSize(target.windowID, target.frame.size, configuration.perCallTimeout) }),
                 ("position", { io.writePosition(target.windowID, target.frame.origin, configuration.perCallTimeout) }),
                 ("size2", { io.writeSize(target.windowID, target.frame.size, configuration.perCallTimeout) })

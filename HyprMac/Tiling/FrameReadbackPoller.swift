@@ -123,6 +123,7 @@ struct FrameReadbackPoller {
                               positionFirstWindowIDs: Set<CGWindowID>,
                               firstReadWindowIDs: Set<CGWindowID> = [],
                               stagingOrigins: [CGWindowID: CGPoint] = [:],
+                              inPlaceStagingOrigins: [CGWindowID: CGPoint] = [:],
                               usableFrame: CGRect, gap: CGFloat,
                               generation requestedGeneration: UInt64,
                               originalFrames: [CGWindowID: CGRect]? = nil) -> Result {
@@ -130,6 +131,7 @@ struct FrameReadbackPoller {
         revealConfiguration.positionSettleWindowIDs = positionFirstWindowIDs
         revealConfiguration.positionSettleFirstReadWindowIDs = firstReadWindowIDs
         revealConfiguration.stagingOrigins = stagingOrigins
+        revealConfiguration.inPlaceStagingOrigins = inPlaceStagingOrigins
         return applyLayout(layouts, usableFrame: usableFrame, gap: gap,
                            generation: requestedGeneration, configuration: revealConfiguration,
                            phase: .candidate, originalFrames: originalFrames)
