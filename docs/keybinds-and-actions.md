@@ -244,8 +244,11 @@ Settings → General → "Workspace names" edits it:
 A set name replaces the number in the switch HUD, the menu bar panel
 (buttons, tooltips), the workspace pickers in Settings and the
 "is full" flash. Overview cards show it after the number (the digit
-keys still switch by number) and its search matches it. The menu bar
-glyphs, the keybind list and log lines keep the number. All readers go through
+keys still switch by number) and its search matches it. The Compact
+menu bar style shows the name in place of its numbered badge, beside the
+fullscreen icon while the workspace has a maximized window; the name
+takes as much room as it needs. The Full menu bar glyphs, the keybind
+list and log lines keep the number. All readers go through
 `UserConfig.workspaceDisplayName`; a missing or blank name falls back to
 the number. Keys other than "1"…"10" and empty names are dropped on load,
 and an unreadable value costs only the names. An older build ignores the

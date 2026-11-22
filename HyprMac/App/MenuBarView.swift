@@ -271,7 +271,7 @@ class MenuBarState: ObservableObject {
     @Published var monitors: [MenuBarMonitorSnapshot] = []
     /// The compact style's one badge: the focused workspace, else the one
     /// on the cursor's screen. nil with no screens.
-    @Published var compactSymbol: String?
+    @Published var compactBadge: MenuBarCompactBadge?
     @Published var hasData = false
     /// Number of windows in the scratchpad (0 = hide the tray glyph).
     @Published var scratchpadCount = 0
@@ -301,6 +301,20 @@ struct MenuBarWorkspaceBadge: Equatable, Identifiable {
     let isActive: Bool
     let isOccupied: Bool
     let hasFloatingWindows: Bool
+}
+
+/// The workspace the Compact style shows and what its badge marks.
+struct MenuBarCompactBadge: Equatable {
+    let workspace: Int
+    let floating: Bool
+    let maximized: Bool
+}
+
+/// What the Compact style draws: the workspace's set name, beside the
+/// fullscreen icon while it has a maximized window; else its numbered badge.
+enum MenuBarCompactLabel: Equatable {
+    case name(String, fullscreen: Bool)
+    case symbol(String)
 }
 
 /// What the menu bar item shows. Per Mac, kept in UserDefaults.
@@ -406,6 +420,14 @@ enum MenuBarPresentation {
         "\(workspace).\(floating ? "circle" : "square")\(maximized ? ".fill" : "")"
     }
 
+    // a blank name counts as none, as everywhere else
+    static func compactLabel(_ badge: MenuBarCompactBadge, names: [String: String]) -> MenuBarCompactLabel {
+        let name = UserConfig.workspaceDisplayName(badge.workspace, names: names, fallback: "")
+        if !name.isEmpty { return .name(name, fullscreen: badge.maximized) }
+        return .symbol(compactSymbolName(workspace: badge.workspace, floating: badge.floating,
+                                         maximized: badge.maximized))
+    }
+
     // 17 pt medium is about the size of the icons next to it
     static let compactPointSize: CGFloat = 17
     // square is 20x18 and circle 20x20 at that size, so draw both into one box
@@ -448,12 +470,23 @@ struct WorkspaceIndicatorLabel: View {
     }
 
     @ViewBuilder private var content: some View {
-        if style == .compact, state.hasData, let symbol = state.compactSymbol {
+        if style == .compact, state.hasData, let badge = state.compactBadge {
             Group {
-                if let image = MenuBarPresentation.compactImage(symbol: symbol) {
-                    Image(nsImage: image)
-                } else {
-                    Image(systemName: symbol)
+                switch MenuBarPresentation.compactLabel(badge, names: config.workspaceNames) {
+                case .name(let name, let fullscreen):
+                    HStack(spacing: 5) {
+                        if fullscreen {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        }
+                        Text(name)
+                            .font(.system(size: 12, weight: .regular))
+                    }
+                case .symbol(let symbol):
+                    if let image = MenuBarPresentation.compactImage(symbol: symbol) {
+                        Image(nsImage: image)
+                    } else {
+                        Image(systemName: symbol)
+                    }
                 }
             }
             .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))

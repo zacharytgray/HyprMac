@@ -116,6 +116,19 @@ final class MenuBarPresentationTests: XCTestCase {
         XCTAssertEqual(focusedScreen(focused: 20, cursor: 0, visible: [3, 2], switchedTo: nil), 1)
     }
 
+    // a set name replaces the badge; the fullscreen icon sits beside it
+    func testCompactShowsTheSetNameElseTheNumberedBadge() {
+        let plain = MenuBarCompactBadge(workspace: 3, floating: true, maximized: false)
+        let maximized = MenuBarCompactBadge(workspace: 3, floating: false, maximized: true)
+        XCTAssertEqual(MenuBarPresentation.compactLabel(plain, names: ["3": "R", "1": "W"]),
+                       .name("R", fullscreen: false))
+        XCTAssertEqual(MenuBarPresentation.compactLabel(maximized, names: ["3": "R"]),
+                       .name("R", fullscreen: true))
+        XCTAssertEqual(MenuBarPresentation.compactLabel(plain, names: ["1": "W"]), .symbol("3.circle"))
+        XCTAssertEqual(MenuBarPresentation.compactLabel(maximized, names: ["3": "  "]),
+                       .symbol("3.square.fill"))
+    }
+
     func testCompactSymbolShowsFloatingAndMaximizedStates() {
         XCTAssertEqual(MenuBarPresentation.compactSymbolName(
             workspace: 3, floating: false, maximized: false), "3.square")
