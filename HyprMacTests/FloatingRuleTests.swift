@@ -816,6 +816,17 @@ final class FloatingRuleControllerTests: XCTestCase {
         withExtendedLifetime(sync) {}
     }
 
+    // live check: a window parked on a hidden workspace is not in the
+    // cache, so the rule edit never reached it until the walk was added
+    func testARuleEditReachesWindowsOnHiddenWorkspacesThroughTheWalk() {
+        let visible = makeWindow(id: 1), parked = makeWindow(id: 2), unknown = makeWindow(id: 3)
+        let freshVisible = makeWindow(id: 1)
+        let windows = FloatingRuleSync.windowsToReapply(cached: [visible], walked: [freshVisible, parked, unknown],
+                                                        known: [1, 2])
+        XCTAssertEqual(windows.map(\.windowID), [1, 2])
+        XCTAssertTrue(windows[0] === freshVisible, "the walk's newer element wins")
+    }
+
     func testARuleChangeLeavesScratchpadAndHiddenWindowsAlone() {
         let h = Harness()
         let stashed = h.window(1, bundleID: zoom, title: "Zoom Meeting", floating: false)

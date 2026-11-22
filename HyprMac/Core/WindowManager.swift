@@ -3351,9 +3351,10 @@ class WindowManager {
             floatingController.markRulesApplied()
             return
         }
-        let known = stateCache.knownWindowIDs
-        let windows = stateCache.cachedWindows.values.filter { known.contains($0.windowID) }
-        guard floatingController.rulesChanged(windows: Array(windows)) != nil else { return }
+        let windows = FloatingRuleSync.windowsToReapply(
+            cached: Array(stateCache.cachedWindows.values), walked: accessibility.getAllWindows(),
+            known: stateCache.knownWindowIDs)
+        guard floatingController.rulesChanged(windows: windows) != nil else { return }
         statusPresenter.updateMenuBarState()
         refreshFocusedWindowRuleInfo()
     }

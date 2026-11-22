@@ -166,4 +166,18 @@ final class FloatingRuleSync {
             config.floatingRulesReloaded.sink { schedule(rebase) },
         ]
     }
+
+    /// The open windows a rule edit is measured against. The cache holds
+    /// only windows on visible workspaces, so a fresh walk adds the ones
+    /// parked on hidden workspaces; a walk's newer element wins. Known
+    /// windows only: one discovery hasn't admitted yet is admitted under the
+    /// new rules anyway.
+    static func windowsToReapply(cached: [HyprWindow], walked: [HyprWindow],
+                                 known: Set<CGWindowID>) -> [HyprWindow] {
+        var byID: [CGWindowID: HyprWindow] = [:]
+        for window in cached + walked where known.contains(window.windowID) {
+            byID[window.windowID] = window
+        }
+        return byID.keys.sorted().compactMap { byID[$0] }
+    }
 }
