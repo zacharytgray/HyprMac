@@ -33,6 +33,13 @@ programs.hyprmac = {
 
   # becomes monitor-config.json
   monitorSettings.workspaceMonitors."DELL U3225QE" = [ 1 2 3 4 5 ];
+  # one mapping per set of connected displays; other sets use workspaceMonitors
+  monitorSettings.workspaceMonitorsPerDisplaySet = [
+    {
+      displays = [ "DELL U3225QE" "LG HDR 4K" ];
+      workspaceMonitors = { "DELL U3225QE" = [ 1 2 3 4 5 6 ]; "LG HDR 4K" = [ 7 8 9 10 ]; };
+    }
+  ];
 };
 ```
 
@@ -41,6 +48,10 @@ programs.hyprmac = {
 `version = 2`, `keybinds = [ ]`, `gapSize = 8`, `outerPadding = 8` and
 `enabled = true` for any you leave out. Set `settings.version` to override the
 schema version. Missing built-in keybinds are added at load, as for any config.
+
+In `workspaceMonitorsPerDisplaySet`, `displays` lists every connected display
+by the name Settings shows, disabled ones too. That entry applies only when
+exactly those displays are connected; any other set uses `workspaceMonitors`.
 
 Turn on `targets.darwin.copyApps`. It keeps a real copy in
 `~/Applications/Home Manager Apps`, which is what macOS grants Accessibility

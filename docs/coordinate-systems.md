@@ -81,7 +81,9 @@ schemes intentionally:
 - **User-facing per-monitor config** — keyed by
   `NSScreen.localizedName`. This includes
   `config.disabledMonitors`, `config.maxSplitsPerMonitor`,
-  `config.outerPaddingPerMonitor`, `config.workspaceMonitors`, and
+  `config.outerPaddingPerMonitor`, `config.workspaceMonitors`,
+  `config.workspaceMonitorsPerDisplaySet` (whose display sets are lists
+  of these names), and
   every per-monitor row in the settings UI. Config files written
   before a monitor unplug must continue to apply when that monitor
   reappears, so the key has to be stable across power events. The

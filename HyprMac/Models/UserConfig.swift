@@ -78,8 +78,13 @@ class UserConfig: ObservableObject {
     @Published var outerPaddingPerMonitor: [String: EdgePadding] {
         didSet { persistRuntimeChange() }
     }
-    // monitor name → workspaces that live there. empty = the formula homes
+    // monitor name → workspaces that live there. empty = the formula homes.
+    // hand-written or Nix only now; the fallback for display sets below
     @Published var workspaceMonitors: [String: [Int]] {
+        didSet { persistRuntimeChange() }
+    }
+    // the mapping per set of connected displays. Settings edits this
+    @Published var workspaceMonitorsPerDisplaySet: [DisplaySetWorkspaces] {
         didSet { persistRuntimeChange() }
     }
     @Published var showFocusBorder: Bool {
@@ -378,6 +383,7 @@ class UserConfig: ObservableObject {
         // local-only from the start, so the synced config has nothing to migrate
         self.outerPaddingPerMonitor = monitorConfig?.outerPaddingPerMonitor ?? [:]
         self.workspaceMonitors = monitorConfig?.workspaceMonitors ?? [:]
+        self.workspaceMonitorsPerDisplaySet = monitorConfig?.workspaceMonitorsPerDisplaySet ?? []
 
         var relinked = false
         if iCloudSyncEnabled, repairsOnLaunch {
@@ -449,11 +455,16 @@ class UserConfig: ObservableObject {
         let savedPadding = outerPaddingPerMonitor.filter { !$0.value.isEmpty }
         // same for a monitor with no workspaces; none at all is no mapping
         let savedWorkspaces = workspaceMonitors.filter { !$0.value.isEmpty }
+        // an entry with an empty mapping stays: it means the formula on that set
+        let savedSets = workspaceMonitorsPerDisplaySet.map {
+            DisplaySetWorkspaces(displays: $0.displays, workspaceMonitors: $0.workspaceMonitors.filter { !$0.value.isEmpty })
+        }
         return SavedMonitorConfig(
             maxSplitsPerMonitor: maxSplitsPerMonitor,
             disabledMonitors: Array(disabledMonitors),
             outerPaddingPerMonitor: savedPadding.isEmpty ? nil : savedPadding,
             workspaceMonitors: savedWorkspaces.isEmpty ? nil : savedWorkspaces,
+            workspaceMonitorsPerDisplaySet: savedSets.isEmpty ? nil : savedSets,
             // off and empty write no key, so a machine that never opts in is unchanged
             statusExportEnabled: statusExportEnabled ? true : nil,
             statusHookCommand: statusHookCommand?.isEmpty == false ? statusHookCommand : nil,
@@ -528,6 +539,7 @@ class UserConfig: ObservableObject {
         disabledMonitors = []
         outerPaddingPerMonitor = [:]
         workspaceMonitors = [:]
+        workspaceMonitorsPerDisplaySet = []
         showFocusBorder = UserConfigDefaults.showFocusBorder
         focusBorderFlash = UserConfigDefaults.focusBorderFlash
         focusBorderColorHex = nil
@@ -682,6 +694,7 @@ class UserConfig: ObservableObject {
         disabledMonitors = Set(mc.disabledMonitors ?? [])
         outerPaddingPerMonitor = mc.outerPaddingPerMonitor ?? [:]
         workspaceMonitors = mc.workspaceMonitors ?? [:]
+        workspaceMonitorsPerDisplaySet = mc.workspaceMonitorsPerDisplaySet ?? []
         statusExportEnabled = mc.statusExportEnabled ?? false
         statusHookCommand = mc.statusHookCommand
         externalControlEnabled = mc.externalControlEnabled ?? false
@@ -755,5 +768,27 @@ extension NSColor {
                       Int(c.redComponent * 255),
                       Int(c.greenComponent * 255),
                       Int(c.blueComponent * 255))
+    }
+}
+
+// MARK: - workspace homes in Settings
+
+extension UserConfig {
+    /// The workspaces Settings shows on `name` with `connectedNames`
+    /// connected. A read: it writes nothing.
+    func workspaces(on name: String, connectedNames: [String]) -> Set<Int> {
+        Set(WorkspaceHomeResolver.mapping(forDisplays: connectedNames,
+                                          perSet: workspaceMonitorsPerDisplaySet,
+                                          fallback: workspaceMonitors)[name] ?? [])
+    }
+
+    /// A Settings edit: `name` holds exactly `workspaces` on the connected
+    /// display set. Only that set's entry changes; `workspaceMonitors` never
+    /// does. No change, no write.
+    func setWorkspaces(_ workspaces: Set<Int>, on name: String, connectedNames: [String]) {
+        guard let next = WorkspaceHomeResolver.editing(workspaces, for: name, connectedNames: connectedNames,
+                                                       perSet: workspaceMonitorsPerDisplaySet,
+                                                       fallback: workspaceMonitors) else { return }
+        workspaceMonitorsPerDisplaySet = next
     }
 }

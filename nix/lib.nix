@@ -122,6 +122,16 @@ let
               "Built-in Retina Display" = [ 6 7 8 9 10 ];
               "DELL U3225QE" = [ 1 2 3 4 5 ];
             };
+            # wins over workspaceMonitors when exactly these displays are connected
+            workspaceMonitorsPerDisplaySet = [
+              {
+                displays = [ "DELL U3225QE" "LG HDR 4K" ];
+                workspaceMonitors = {
+                  "DELL U3225QE" = [ 1 2 3 4 5 6 ];
+                  "LG HDR 4K" = [ 7 8 9 10 ];
+                };
+              }
+            ];
             outerPaddingPerMonitor = {
               "DELL U3225QE" = {
                 top = 36;

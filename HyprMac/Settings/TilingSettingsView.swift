@@ -358,18 +358,25 @@ struct TilingSettingsView: View {
 
     // MARK: monitors
 
+    // every connected display, disabled ones too: the set the mapping is saved for
+    private var connectedNames: [String] { screens.map(\.localizedName) }
+
     // the mapping would leave an enabled monitor with nothing to show
     private var workspaceMappingIgnored: Bool {
         let enabled = WorkspaceManager.leftToRight(screens)
             .filter { !config.disabledMonitors.contains($0.localizedName) }
+        let mapping = WorkspaceHomeResolver.mapping(forDisplays: connectedNames,
+                                                    perSet: config.workspaceMonitorsPerDisplaySet,
+                                                    fallback: config.workspaceMonitors)
         return WorkspaceHomeResolver.resolve(enabledNames: enabled.map(\.localizedName),
-                                             mapping: config.workspaceMonitors).mappingIgnored
+                                             mapping: mapping).mappingIgnored
     }
 
     private var monitorsPanel: some View {
         HyprPanel("Per-Monitor Settings",
                   footer: "Edge padding replaces the outer padding on one side of a monitor, to make room for a bar or the Dock. "
-                  + "Workspaces you don't put on a monitor keep their default home.") {
+                  + "Workspaces you don't put on a monitor keep their default home. "
+                  + "Workspace choices are saved for this set of displays.") {
             if workspaceMappingIgnored {
                 Text("A monitor would have no workspace, so the default workspace homes apply on this layout.")
                     .font(.hyprCaption)
@@ -408,10 +415,9 @@ struct TilingSettingsView: View {
                         }
                     ),
                     workspaces: Binding(
-                        get: { Set(config.workspaceMonitors[screen.localizedName] ?? []) },
+                        get: { config.workspaces(on: screen.localizedName, connectedNames: connectedNames) },
                         set: { newVal in
-                            config.workspaceMonitors = WorkspaceHomeResolver.setting(
-                                newVal, for: screen.localizedName, in: config.workspaceMonitors)
+                            config.setWorkspaces(newVal, on: screen.localizedName, connectedNames: connectedNames)
                         }
                     ),
                     gap: config.gapSize,

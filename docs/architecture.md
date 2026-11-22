@@ -709,18 +709,30 @@ Two screens on one x, a stacked desk, keep the order `NSScreen.screens`
 lists them in, which puts the primary display first, so a stacked desk
 keeps the homes it had. Retile All fills the screens in the same order.
 
-The user can put workspaces on monitors by name (`workspaceMonitors` in
-`monitor-config.json`, Settings → Layout → Workspaces). One pure function,
+The user can put workspaces on monitors by name (Settings → Layout →
+Workspaces). The mapping is saved per set of connected displays
+(`workspaceMonitorsPerDisplaySet` in `monitor-config.json`), so a laptop
+keeps one mapping docked and another on the road. A set is every connected
+display by name, disabled ones too, in any order; two displays of one model
+count twice, and resolution is not part of it. A set with no entry uses
+`workspaceMonitors`, the hand-written fallback that Settings no longer
+writes. A Settings edit changes only the connected set's entry. The first
+edit on a set seeds its entry from the mapping in force for its monitors,
+so every other home stays put (`WorkspaceHomeResolver.editing`). One pure function,
 `WorkspaceHomeResolver.resolve`, decides every home from the enabled
-screens and that mapping, and `WorkspaceManager.homeScreenForWorkspace` and
+screens and the mapping in force (`WorkspaceManager.mappingInForce`, read
+from the live screens on every call, so a plug or unplug needs no extra
+step), and `WorkspaceManager.homeScreenForWorkspace` and
 `workspacesAnchoredTo` are its only callers; every other consumer (the dedicated workspace move,
 cycling, `initializeMonitors`, the overview, the menu bar, the switch HUD,
 moves, window rules, layout restore, Retile All) goes through those two. A
 workspace mapped to a connected, enabled monitor lives there. Every other
 one, unmapped or mapped to a monitor that is missing or disabled, keeps its
 formula home, so every workspace always has a home and an empty mapping is
-the formula exactly. A number under two monitors goes to the name that
-sorts first. Numbers outside 1–10 are ignored. Two displays that share a
+the formula exactly. A number under two monitors goes to the one that is
+connected and enabled; under two of those, to the name that sorts first.
+A Settings toggle takes a number off the other connected monitors only.
+Numbers outside 1–10 are ignored. Two displays that share a
 name take the mapping on the leftmost of them. If the mapping would leave an
 enabled monitor with no workspace, it is ignored for that layout and the
 formula decides everything; Settings says so in one line. A mapping change

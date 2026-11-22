@@ -1123,8 +1123,12 @@ struct SavedMonitorConfig: Codable {
     let disabledMonitors: [String]?
     // a monitor without an entry pads every edge with outerPadding
     var outerPaddingPerMonitor: [String: EdgePadding]? = nil
-    // monitor name → workspaces that live there. nil = the formula homes
+    // monitor name → workspaces that live there. nil = the formula homes.
+    // the fallback for a display set with no entry below
     var workspaceMonitors: [String: [Int]]? = nil
+    // the same mapping, saved per set of connected displays. Settings
+    // writes here. nil = workspaceMonitors for every set
+    var workspaceMonitorsPerDisplaySet: [DisplaySetWorkspaces]? = nil
     // status bar export, see docs/status-bar.md. per machine since the bar
     // and its hook are set up per Mac. no Settings UI, hand-edited
     var statusExportEnabled: Bool? = nil
@@ -1139,7 +1143,7 @@ struct SavedMonitorConfig: Codable {
 extension SavedMonitorConfig {
     private enum CodingKeys: String, CodingKey {
         case maxSplitsPerMonitor, disabledMonitors, outerPaddingPerMonitor, workspaceMonitors,
-             statusExportEnabled, statusHookCommand, externalControlEnabled
+             workspaceMonitorsPerDisplaySet, statusExportEnabled, statusHookCommand, externalControlEnabled
     }
 
     // unreleased top-only shape from PR #51. read once, never written back
@@ -1168,8 +1172,72 @@ extension SavedMonitorConfig {
                   disabledMonitors: tolerant(c, .disabledMonitors),
                   outerPaddingPerMonitor: padding,
                   workspaceMonitors: tolerant(c, .workspaceMonitors),
+                  workspaceMonitorsPerDisplaySet: Self.tolerantDisplaySets(c),
                   statusExportEnabled: tolerant(c, .statusExportEnabled),
                   statusHookCommand: tolerant(c, .statusHookCommand),
                   externalControlEnabled: tolerant(c, .externalControlEnabled))
+    }
+}
+
+// a bad entry costs only itself, and a second entry for one set loses to
+// the first, so what Settings edits is what applies
+extension SavedMonitorConfig {
+    private static func tolerantDisplaySets(_ c: KeyedDecodingContainer<CodingKeys>) -> [DisplaySetWorkspaces]? {
+        guard c.contains(.workspaceMonitorsPerDisplaySet),
+              (try? c.decodeNil(forKey: .workspaceMonitorsPerDisplaySet)) == false else { return nil }
+        guard var arr = try? c.nestedUnkeyedContainer(forKey: .workspaceMonitorsPerDisplaySet) else {
+            hyprLog(.notice, .config,
+                    "monitor-config.json has a workspaceMonitorsPerDisplaySet value this build can't read; using workspaceMonitors")
+            return nil
+        }
+        var kept: [DisplaySetWorkspaces] = []
+        while !arr.isAtEnd {
+            if (try? arr.decodeNil()) == true { continue }
+            guard let element = try? arr.decode(FailableDisplaySetWorkspaces.self) else { break }
+            guard let entry = element.entry else { continue }
+            let key = WorkspaceHomeResolver.displaySet(entry.displays)
+            if kept.contains(where: { WorkspaceHomeResolver.displaySet($0.displays) == key }) {
+                hyprLog(.notice, .config, "monitor-config.json lists one display set twice; the first entry applies")
+                continue
+            }
+            kept.append(entry)
+        }
+        return kept
+    }
+}
+
+// the workspace mapping for one set of connected displays. `displays` is
+// every connected display by name, disabled ones too; order doesn't matter
+struct DisplaySetWorkspaces: Codable, Equatable {
+    var displays: [String]
+    var workspaceMonitors: [String: [Int]]
+}
+
+extension DisplaySetWorkspaces {
+    private enum CodingKeys: String, CodingKey {
+        case displays, workspaceMonitors
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let displays = try c.decode([String].self, forKey: .displays)
+        guard !displays.isEmpty else {
+            throw DecodingError.dataCorruptedError(forKey: .displays, in: c, debugDescription: "no displays")
+        }
+        self.init(displays: displays,
+                  workspaceMonitors: try c.decode([String: [Int]].self, forKey: .workspaceMonitors))
+    }
+}
+
+private struct FailableDisplaySetWorkspaces: Decodable {
+    let entry: DisplaySetWorkspaces?
+
+    init(from decoder: Decoder) throws {
+        do {
+            entry = try DisplaySetWorkspaces(from: decoder)
+        } catch {
+            entry = nil
+            hyprLog(.notice, .config, "skipping a workspaceMonitorsPerDisplaySet entry this build can't read")
+        }
     }
 }

@@ -413,7 +413,8 @@ Two on-disk files:
 - `~/Library/Application Support/HyprMac/monitor-config.json` —
   per-machine settings. Local only, never synced.
   `maxSplitsPerMonitor`, `disabledMonitors`,
-  `outerPaddingPerMonitor` and `workspaceMonitors` live here. The first two
+  `outerPaddingPerMonitor`, `workspaceMonitors` and
+  `workspaceMonitorsPerDisplaySet` live here. The first two
   used to live in `config.json`, but per-machine settings round-tripping
   through iCloud Drive clobbered each machine's setup. The status bar
   export keys `statusExportEnabled` and `statusHookCommand` live here
@@ -443,13 +444,30 @@ is the source of truth and the synced fields are ignored.
 `{"DELL U3225QE": [1, 2, 3], "LG HDR 4K": [4, 5], "Built-in Retina Display": [6, 7]}`.
 Absent or empty means the formula homes, `(N - 1) % enabledMonitorCount`.
 Unlisted workspaces, and workspaces listed under a monitor that is not
-connected or is disabled, keep their formula home. A number listed twice
-goes to the name that sorts first, with one notice in the log. Numbers
+connected or is disabled, keep their formula home. A number listed under
+two monitors goes to the one that is connected and enabled; under two of
+those, to the name that sorts first, with one notice in the log. Numbers
 outside 1–10 are ignored. A mapping that would leave an enabled monitor
 with no workspace is ignored for that layout. Keys 1–9 and 0 still mean
 workspaces 1–10. It decodes tolerantly like the other monitor fields: a
 value this build can't read costs only `workspaceMonitors`. It was
 local-only from the start, so there is no `ConfigMigration` step.
+
+`workspaceMonitorsPerDisplaySet` is optional too. It is a list of the same
+mapping, one per set of connected displays, and it is what Settings writes:
+`[{"displays": ["DELL U4021QW", "LG SDQHD"], "workspaceMonitors": {"DELL U4021QW": [1, 2, 3, 4, 5, 6], "LG SDQHD": [7, 8, 9, 10]}}]`.
+`displays` lists every connected display by name, disabled ones too, in any
+order; list a name twice for two displays of one model. The entry whose
+`displays` match the connected set exactly applies, even an empty mapping
+(the formula on that set). Any other set uses `workspaceMonitors`, which
+Settings no longer writes. So once a set has an entry, a hand edit of
+`workspaceMonitors` no longer changes that set. The first Settings edit on
+a set creates its entry from the mapping it had. A bad entry costs only
+itself; a value that isn't a list costs only this field; a second entry
+for one set loses to the first. The field is additive and missing means
+`workspaceMonitors` everywhere, so there is no `ConfigMigration` step. A
+build from before it ignores the field, uses `workspaceMonitors`, and drops
+the field on its next save.
 
 ## Default keybinds
 

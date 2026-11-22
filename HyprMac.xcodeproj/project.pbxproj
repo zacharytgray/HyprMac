@@ -95,6 +95,7 @@
 		3564F2FDA0E1E1BEA5FDFCA8 /* HyprKey.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85E2687861DA70718C132100 /* HyprKey.swift */; };
 		35764B87C3B878BA57801CA5 /* PermissionsGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EE53329CB188DC5E31735E1 /* PermissionsGate.swift */; };
 		381F8B3911920F8BEF848FD2 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */; };
+		39008CE23AB258754A5EB5BA /* WorkspaceDisplaySetMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDDC1BD10F1C0855FD5C0F0C /* WorkspaceDisplaySetMappingTests.swift */; };
 		3955A053C485588A5CF09D76 /* TilingConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC47A2DE51571E5A9EEBE362 /* TilingConfig.swift */; };
 		39F4595FA15123DA0A281370 /* RelaunchHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5295C91AF924071646986BEB /* RelaunchHandoff.swift */; };
 		3AAB922B85C5906E5A96D580 /* TilingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772FFAF897AAC136F605737C /* TilingSettingsView.swift */; };
@@ -647,6 +648,7 @@
 		DC44CFDA4A541CD04BD4175D /* LayoutRestorerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutRestorerTests.swift; sourceTree = "<group>"; };
 		DC47A2DE51571E5A9EEBE362 /* TilingConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingConfig.swift; sourceTree = "<group>"; };
 		DDD57690AD7669194DF8619B /* AdmissionRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdmissionRecoveryTests.swift; sourceTree = "<group>"; };
+		DDDC1BD10F1C0855FD5C0F0C /* WorkspaceDisplaySetMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDisplaySetMappingTests.swift; sourceTree = "<group>"; };
 		DE5C2D5C6BE675D940B28364 /* HyprMac-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HyprMac-Release.entitlements"; sourceTree = "<group>"; };
 		DF8049A0C6B0FBEF8B6ED25B /* TiledDragTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragTarget.swift; sourceTree = "<group>"; };
 		E037AF7C84E48727003EE0D0 /* LogFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogFile.swift; sourceTree = "<group>"; };
@@ -1021,6 +1023,7 @@
 				E9EF96B688DCAEC0C6EB7A10 /* WindowRuleTests.swift */,
 				901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */,
 				162A7BC992F18583B4289589 /* WorkspaceBatchMoveTests.swift */,
+				DDDC1BD10F1C0855FD5C0F0C /* WorkspaceDisplaySetMappingTests.swift */,
 				0E2931B6DAD1E489B5F372FC /* WorkspaceFollowTests.swift */,
 				0E91BD79281123D28B840628 /* WorkspaceMonitorMappingTests.swift */,
 				1435DD496602492940D332E8 /* WorkspaceNameTests.swift */,
@@ -1677,6 +1680,7 @@
 				E3C9EA041BCCF3D861E305F1 /* WindowRuleTests.swift in Sources */,
 				EA8FC0F77CB146BAD8B35CBE /* WindowStateCacheTests.swift in Sources */,
 				32F6911C6656248A6458CBC2 /* WorkspaceBatchMoveTests.swift in Sources */,
+				39008CE23AB258754A5EB5BA /* WorkspaceDisplaySetMappingTests.swift in Sources */,
 				C0CB8311CCCD82F35DE8A451 /* WorkspaceFollowTests.swift in Sources */,
 				8E3735550BDEEB9448C3C9DA /* WorkspaceMonitorMappingTests.swift in Sources */,
 				136E9824DF5C06DA270FF635 /* WorkspaceNameTests.swift in Sources */,

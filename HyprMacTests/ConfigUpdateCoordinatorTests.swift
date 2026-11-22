@@ -32,6 +32,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         disabled: Set<String> = [],
         paddingOverrides: [String: EdgePadding] = [:],
         workspaceMonitors: [String: [Int]] = [:],
+        perDisplaySet: [DisplaySetWorkspaces] = [],
         overlayAppearance: OverlayAppearance = .system,
         showBorder: Bool = true,
         focusFlash: Bool = true,
@@ -53,6 +54,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
             maxSplitsPerMonitor: splits, disabledMonitors: disabled,
             outerPaddingPerMonitor: paddingOverrides,
             workspaceMonitors: workspaceMonitors,
+            workspaceMonitorsPerDisplaySet: perDisplaySet,
             overlayAppearance: overlayAppearance,
             showFocusBorder: showBorder, focusBorderFlash: focusFlash,
             focusBorderColorHex: focusColor,
@@ -105,7 +107,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         coordinator.onMaximumSplits = { _ in effects += 1 }
         coordinator.onDisabledMonitors = { _ in effects += 1 }
         coordinator.onOuterPaddingOverride = { _ in effects += 1 }
-        coordinator.onWorkspaceMonitors = { _ in effects += 1 }
+        coordinator.onWorkspaceMonitors = { _, _ in effects += 1 }
         coordinator.onChrome = { _, _ in effects += 1 }
         coordinator.onScratchpadRegion = { _ in effects += 1 }
         coordinator.onScratchpadEntryMode = { _ in effects += 1 }
@@ -140,7 +142,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         let coordinator = ConfigUpdateCoordinator(initial: state())
         var mappings: [[String: [Int]]] = []
         var other = 0
-        coordinator.onWorkspaceMonitors = { mappings.append($0) }
+        coordinator.onWorkspaceMonitors = { mapping, _ in mappings.append(mapping) }
         coordinator.onLayoutGeometry = { _, _ in other += 1 }
         coordinator.onMaximumSplits = { _ in other += 1 }
         coordinator.onDisabledMonitors = { _ in other += 1 }
@@ -156,8 +158,29 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(other, 0)
     }
 
-    // a Settings toggle is one assignment, so one reconcile, and the file
-    // holds the mapping until no monitor has a workspace left
+    // a per-set change is the same signal as a fallback change: one reconcile
+    func testPerDisplaySetChangeReachesTheWorkspaceRouteOnly() {
+        let coordinator = ConfigUpdateCoordinator(initial: state())
+        var seen: [[DisplaySetWorkspaces]] = []
+        var other = 0
+        coordinator.onWorkspaceMonitors = { _, perSet in seen.append(perSet) }
+        coordinator.onLayoutGeometry = { _, _ in other += 1 }
+        coordinator.onMaximumSplits = { _ in other += 1 }
+        coordinator.onDisabledMonitors = { _ in other += 1 }
+        coordinator.onOuterPaddingOverride = { _ in other += 1 }
+        coordinator.onChrome = { _, _ in other += 1 }
+
+        let docked = [DisplaySetWorkspaces(displays: ["A", "B"], workspaceMonitors: ["A": [1, 2]])]
+        coordinator.receive(state(perDisplaySet: docked))
+        coordinator.receive(state(perDisplaySet: docked))
+        coordinator.receive(state())
+
+        XCTAssertEqual(seen, [docked, []])
+        XCTAssertEqual(other, 0)
+    }
+
+    // a Settings toggle is one assignment, so one reconcile. it writes the
+    // entry for the connected set and never the fallback mapping
     func testSettingsWorkspaceToggleReachesTheRouteOnceAndPersists() throws {
         try requireIsolatedHome()
         let configBefore = try? Data(contentsOf: ConfigStore.configPath)
@@ -168,28 +191,71 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         }
         let config = UserConfig()
         config.workspaceMonitors = [:]
+        config.workspaceMonitorsPerDisplaySet = []
         let coordinator = ConfigUpdateCoordinator(initial: RuntimeConfigState(config))
-        var mappings: [[String: [Int]]] = []
+        var calls: [[DisplaySetWorkspaces]] = []
         var disabled = 0
-        coordinator.onWorkspaceMonitors = { mappings.append($0) }
+        coordinator.onWorkspaceMonitors = { _, perSet in calls.append(perSet) }
         coordinator.onDisabledMonitors = { _ in disabled += 1 }
         coordinator.observe(config)
 
-        config.workspaceMonitors = WorkspaceHomeResolver.setting([1, 2, 3], for: "Left", in: config.workspaceMonitors)
-        config.workspaceMonitors = WorkspaceHomeResolver.setting([3, 4], for: "Right", in: config.workspaceMonitors)
+        let connected = ["Right", "Left"]
+        config.setWorkspaces([1, 2, 3], on: "Left", connectedNames: connected)
+        config.setWorkspaces([3, 4], on: "Right", connectedNames: connected)
+        // the same value again is no edit
+        config.setWorkspaces([3, 4], on: "Right", connectedNames: connected)
 
-        XCTAssertEqual(mappings, [["Left": [1, 2, 3]], ["Left": [1, 2], "Right": [3, 4]]])
+        let set = { (mapping: [String: [Int]]) in [DisplaySetWorkspaces(displays: ["Left", "Right"], workspaceMonitors: mapping)] }
+        XCTAssertEqual(calls, [set(["Left": [1, 2, 3]]), set(["Left": [1, 2], "Right": [3, 4]])])
         XCTAssertEqual(disabled, 0)
         let saved = try JSONDecoder().decode(SavedMonitorConfig.self,
                                              from: Data(contentsOf: ConfigStore.monitorConfigPath))
-        XCTAssertEqual(saved.workspaceMonitors, ["Left": [1, 2], "Right": [3, 4]])
+        XCTAssertEqual(saved.workspaceMonitorsPerDisplaySet, set(["Left": [1, 2], "Right": [3, 4]]))
+        XCTAssertNil(saved.workspaceMonitors)
 
-        config.workspaceMonitors = WorkspaceHomeResolver.setting([], for: "Left", in: config.workspaceMonitors)
-        config.workspaceMonitors = WorkspaceHomeResolver.setting([], for: "Right", in: config.workspaceMonitors)
-        XCTAssertEqual(mappings.last, [:])
+        // cleared: the entry stays, empty, and means the formula on this set
+        config.setWorkspaces([], on: "Left", connectedNames: connected)
+        config.setWorkspaces([], on: "Right", connectedNames: connected)
+        XCTAssertEqual(calls.last, set([:]))
         let cleared = try JSONDecoder().decode(SavedMonitorConfig.self,
                                                from: Data(contentsOf: ConfigStore.monitorConfigPath))
+        XCTAssertEqual(cleared.workspaceMonitorsPerDisplaySet, set([:]))
         XCTAssertNil(cleared.workspaceMonitors)
+    }
+
+    // opening Settings reads the rows; only a real edit writes, and it
+    // seeds from the mapping the set had
+    func testAFirstSettingsVisitWritesNothing() throws {
+        try requireIsolatedHome()
+        let configBefore = try? Data(contentsOf: ConfigStore.configPath)
+        let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
+        defer {
+            restore(configBefore, to: ConfigStore.configPath)
+            restore(monitorBefore, to: ConfigStore.monitorConfigPath)
+        }
+        let config = UserConfig()
+        config.workspaceMonitorsPerDisplaySet = []
+        config.workspaceMonitors = ["Left": [1, 2], "Right": [3], "Away": [4]]
+        let written = try Data(contentsOf: ConfigStore.monitorConfigPath)
+        let coordinator = ConfigUpdateCoordinator(initial: RuntimeConfigState(config))
+        var calls = 0
+        coordinator.onWorkspaceMonitors = { _, _ in calls += 1 }
+        coordinator.observe(config)
+
+        let connected = ["Left", "Right"]
+        XCTAssertEqual(config.workspaces(on: "Left", connectedNames: connected), [1, 2])
+        XCTAssertEqual(config.workspaces(on: "Right", connectedNames: connected), [3])
+        XCTAssertEqual(config.workspaces(on: "Nobody", connectedNames: connected), [])
+        config.setWorkspaces([3], on: "Right", connectedNames: connected)
+        XCTAssertEqual(calls, 0)
+        XCTAssertEqual(config.workspaceMonitorsPerDisplaySet, [])
+        XCTAssertEqual(try Data(contentsOf: ConfigStore.monitorConfigPath), written)
+
+        config.setWorkspaces([1, 2, 5], on: "Left", connectedNames: connected)
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(config.workspaceMonitorsPerDisplaySet,
+                       [DisplaySetWorkspaces(displays: ["Left", "Right"], workspaceMonitors: ["Left": [1, 2, 5], "Right": [3]])])
+        XCTAssertEqual(config.workspaceMonitors, ["Left": [1, 2], "Right": [3], "Away": [4]])
     }
 
     func testEveryVisualChangeUsesOnlyChromeRoute() {
@@ -562,6 +628,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.disabledMonitors = ["Screen"]
         config.outerPaddingPerMonitor = ["Screen": EdgePadding(top: 1, left: 2, bottom: 3, right: 4)]
         config.workspaceMonitors = ["Screen": [1]]
+        config.workspaceMonitorsPerDisplaySet = [DisplaySetWorkspaces(displays: ["Screen"], workspaceMonitors: ["Screen": [2]])]
         config.showFocusBorder = true
         config.focusBorderFlash = false
         config.focusBorderColorHex = "111111"
@@ -600,6 +667,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(config.disabledMonitors, [])
         XCTAssertEqual(config.outerPaddingPerMonitor, [:])
         XCTAssertEqual(config.workspaceMonitors, [:])
+        XCTAssertEqual(config.workspaceMonitorsPerDisplaySet, [])
         XCTAssertEqual(config.showFocusBorder, UserConfigDefaults.showFocusBorder)
         XCTAssertEqual(config.focusBorderFlash, UserConfigDefaults.focusBorderFlash)
         XCTAssertNil(config.focusBorderColorHex)

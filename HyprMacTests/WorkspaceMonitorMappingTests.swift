@@ -77,6 +77,52 @@ final class WorkspaceMonitorMappingTests: XCTestCase {
         XCTAssertTrue(workspaces.homeScreenForWorkspace(5) === bravo)
     }
 
+    // #89: only connected, enabled monitors can own a number
+    func testANumberUnderAConnectedAndAMissingMonitorGoesToTheConnectedOne() {
+        let mapping = ["Away": [2, 3], "Right": [2]]
+        let left = MappingScreen(x: 0, name: "Left")
+        let right = MappingScreen(x: 2000, name: "Right")
+        let workspaces = manager([left, right], mapping: mapping)
+        XCTAssertTrue(workspaces.homeScreenForWorkspace(2) === right, "Away sorts first but isn't here")
+        // 3 is only under the missing monitor: its formula home
+        XCTAssertTrue(workspaces.homeScreenForWorkspace(3) === left)
+        XCTAssertEqual(WorkspaceHomeResolver.owners(mapping, among: ["Left", "Right"]).duplicates, [])
+        XCTAssertEqual(WorkspaceHomeResolver.owners(mapping).duplicates, [2])
+    }
+
+    // tioan's docked desk, lid closed, with the road mapping in the same file
+    func testTheClamshellExampleFromIssue89() {
+        let mapping = ["Built-in Retina Display": [1, 2, 3, 4, 5, 6],
+                       "DELL U4021QW": [1, 2, 3, 4, 5, 6],
+                       "LG SDQHD": [7, 8, 9, 10]]
+        let dell = MappingScreen(x: 0, name: "DELL U4021QW")
+        let lg = MappingScreen(x: 3840, name: "LG SDQHD")
+        let docked = manager([dell, lg], mapping: mapping)
+        XCTAssertEqual(docked.workspacesAnchoredTo(dell), [1, 2, 3, 4, 5, 6])
+        XCTAssertEqual(docked.workspacesAnchoredTo(lg), [7, 8, 9, 10])
+
+        // on the road the built-in display is the only one here listing 1–6;
+        // 7–10 sit under the missing LG and use the formula
+        let builtIn = MappingScreen(x: -1512, name: "Built-in Retina Display")
+        let sidecar = MappingScreen(x: 0, name: "Sidecar Display (AirPlay)")
+        let road = manager([builtIn, sidecar], mapping: mapping)
+        XCTAssertEqual(road.workspacesAnchoredTo(builtIn), [1, 2, 3, 4, 5, 6, 7, 9])
+        XCTAssertEqual(road.workspacesAnchoredTo(sidecar), [8, 10])
+    }
+
+    func testADisabledMonitorLosesADuplicateToAnEnabledOne() {
+        let mapping = ["Alpha": [2], "Bravo": [2]]
+        let alpha = MappingScreen(x: 0, name: "Alpha")
+        let bravo = MappingScreen(x: 2000, name: "Bravo")
+        let charlie = MappingScreen(x: 4000, name: "Charlie")
+        let workspaces = WorkspaceManager(displayManager: DisplayManager(screenSource: { [alpha, bravo, charlie] }))
+        workspaces.disabledMonitors = ["Alpha"]
+        workspaces.workspaceMonitors = mapping
+        workspaces.initializeMonitors()
+        XCTAssertTrue(workspaces.homeScreenForWorkspace(2) === bravo)
+        XCTAssertEqual(workspaces.workspacesAnchoredTo(alpha), [])
+    }
+
     func testNumbersOutsideOneToTenAreIgnored() {
         let mapping = ["Right": [0, -1, 11, 99, 3]]
         XCTAssertEqual(WorkspaceHomeResolver.owners(mapping).owners, [3: "Right"])
@@ -217,6 +263,18 @@ final class WorkspaceMonitorMappingTests: XCTestCase {
         mapping = WorkspaceHomeResolver.setting([], for: "Away", in: mapping)
         mapping = WorkspaceHomeResolver.setting([], for: "Middle", in: mapping)
         XCTAssertEqual(mapping, [:])
+    }
+
+    // on the road, a toggle must not wipe the docked monitors' numbers
+    func testATogglesOnlyTakeNumbersOffConnectedMonitors() {
+        let docked = ["DELL U4021QW": [1, 2, 3, 4, 5, 6], "LG SDQHD": [7, 8, 9, 10]]
+        let next = WorkspaceHomeResolver.setting([1, 2, 3, 7], for: "Built-in Retina Display", in: docked,
+                                                 connected: ["Built-in Retina Display", "Sidecar Display (AirPlay)"])
+        XCTAssertEqual(next, ["Built-in Retina Display": [1, 2, 3, 7],
+                              "DELL U4021QW": [1, 2, 3, 4, 5, 6], "LG SDQHD": [7, 8, 9, 10]])
+        let connected = WorkspaceHomeResolver.setting([5], for: "LG SDQHD", in: docked,
+                                                      connected: ["DELL U4021QW", "LG SDQHD"])
+        XCTAssertEqual(connected, ["DELL U4021QW": [1, 2, 3, 4, 6], "LG SDQHD": [5]])
     }
 
     // MARK: - monitor-config

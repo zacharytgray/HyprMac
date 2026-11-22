@@ -9,7 +9,7 @@ import Cocoa
 ///
 /// **Static anchoring**: every workspace has a deterministic home
 /// monitor, decided by `WorkspaceHomeResolver` from the enabled screens
-/// and `workspaceMonitors`. With no mapping that is
+/// and the mapping in force for the connected displays. With no mapping that is
 /// `enabledScreens[(N - 1) % enabledScreens.count]`. Switching to ws N
 /// always lands on its home monitor. Workspaces cannot move between
 /// monitors.
@@ -80,16 +80,24 @@ class WorkspaceManager {
     var disabledMonitors: Set<String> = []
 
     /// Monitor name → the workspaces the user put on it, from
-    /// monitor-config.json. Empty means the formula decides every home.
-    var workspaceMonitors: [String: [Int]] = [:] {
-        didSet {
-            guard workspaceMonitors != oldValue else { return }
-            let duplicates = WorkspaceHomeResolver.owners(workspaceMonitors, workspaceCount: workspaceCount).duplicates
-            if !duplicates.isEmpty {
-                hyprLog(.notice, .lifecycle, "workspace mapping lists ws\(duplicates) under more than one monitor — the name that sorts first keeps each")
-            }
-        }
+    /// monitor-config.json. Applies to any display set with no entry in
+    /// `workspaceMonitorsPerDisplaySet`. Empty means the formula.
+    var workspaceMonitors: [String: [Int]] = [:]
+
+    /// The same mapping saved per set of connected displays. The entry
+    /// for the connected set wins over `workspaceMonitors`.
+    var workspaceMonitorsPerDisplaySet: [DisplaySetWorkspaces] = []
+
+    /// The mapping in force for the displays connected now, disabled
+    /// ones included in the set.
+    func mappingInForce() -> [String: [Int]] {
+        WorkspaceHomeResolver.mapping(forDisplays: displayManager.screens.map(\.localizedName),
+                                      perSet: workspaceMonitorsPerDisplaySet,
+                                      fallback: workspaceMonitors)
     }
+
+    // the duplicate notice already logged, so a re-init doesn't repeat it
+    private var loggedMappingDuplicates: String?
 
     let workspaceCount = Constants.workspaceCount
 
@@ -141,7 +149,7 @@ class WorkspaceManager {
     private func resolvedHomes() -> (enabled: [NSScreen], resolution: WorkspaceHomeResolver.Resolution) {
         let enabled = enabledScreensLeftToRight()
         let resolution = WorkspaceHomeResolver.resolve(
-            enabledNames: enabled.map(\.localizedName), mapping: workspaceMonitors,
+            enabledNames: enabled.map(\.localizedName), mapping: mappingInForce(),
             workspaceCount: workspaceCount)
         return (enabled, resolution)
     }
@@ -186,6 +194,16 @@ class WorkspaceManager {
         let enabled = allScreens.filter { !isMonitorDisabled($0) }
         if resolvedHomes().resolution.mappingIgnored {
             hyprLog(.notice, .lifecycle, "init: workspace mapping would leave a monitor with no workspace — using the default homes for this layout")
+        }
+        // only monitors that are connected and enabled can hold a duplicate
+        let duplicates = WorkspaceHomeResolver.owners(mappingInForce(), among: enabled.map(\.localizedName),
+                                                      workspaceCount: workspaceCount).duplicates
+        let notice = duplicates.isEmpty ? nil : "ws\(duplicates)"
+        if notice != loggedMappingDuplicates {
+            loggedMappingDuplicates = notice
+            if let notice {
+                hyprLog(.notice, .lifecycle, "workspace mapping lists \(notice) under more than one connected monitor — the name that sorts first keeps each")
+            }
         }
 
         // remove workspace assignments for disabled monitors
@@ -252,7 +270,7 @@ class WorkspaceManager {
     }
 
     /// Static home screen for `workspace`. Pure function of `workspace`,
-    /// the current enabled-screens layout and `workspaceMonitors`, through
+    /// the current enabled-screens layout and the mapping in force, through
     /// `WorkspaceHomeResolver`; with no mapping it is
     /// `enabledScreens[(workspace - 1) % enabledScreens.count]`. Returns
     /// `nil` only when no enabled screens exist.

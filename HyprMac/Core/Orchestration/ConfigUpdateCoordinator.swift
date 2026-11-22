@@ -12,6 +12,7 @@ struct RuntimeConfigState: Equatable {
     let disabledMonitors: Set<String>
     let outerPaddingPerMonitor: [String: EdgePadding]
     let workspaceMonitors: [String: [Int]]
+    let workspaceMonitorsPerDisplaySet: [DisplaySetWorkspaces]
     let overlayAppearance: OverlayAppearance
     let showFocusBorder: Bool
     let focusBorderFlash: Bool
@@ -36,6 +37,7 @@ struct RuntimeConfigState: Equatable {
         maxSplitsPerMonitor: [String: Int], disabledMonitors: Set<String>,
         outerPaddingPerMonitor: [String: EdgePadding] = [:],
         workspaceMonitors: [String: [Int]] = [:],
+        workspaceMonitorsPerDisplaySet: [DisplaySetWorkspaces] = [],
         overlayAppearance: OverlayAppearance = UserConfigDefaults.overlayAppearance,
         showFocusBorder: Bool,
         focusBorderFlash: Bool = UserConfigDefaults.focusBorderFlash,
@@ -58,6 +60,7 @@ struct RuntimeConfigState: Equatable {
         self.disabledMonitors = disabledMonitors
         self.outerPaddingPerMonitor = outerPaddingPerMonitor
         self.workspaceMonitors = workspaceMonitors
+        self.workspaceMonitorsPerDisplaySet = workspaceMonitorsPerDisplaySet
         self.overlayAppearance = overlayAppearance
         self.showFocusBorder = showFocusBorder
         self.focusBorderFlash = focusBorderFlash
@@ -85,6 +88,7 @@ struct RuntimeConfigState: Equatable {
             disabledMonitors: config.disabledMonitors,
             outerPaddingPerMonitor: config.outerPaddingPerMonitor,
             workspaceMonitors: config.workspaceMonitors,
+            workspaceMonitorsPerDisplaySet: config.workspaceMonitorsPerDisplaySet,
             overlayAppearance: config.overlayAppearance,
             showFocusBorder: config.showFocusBorder,
             focusBorderFlash: config.focusBorderFlash,
@@ -139,7 +143,9 @@ final class ConfigUpdateCoordinator {
     var onMaximumSplits: ([String: Int]) -> Void = { _ in }
     var onDisabledMonitors: (Set<String>) -> Void = { _ in }
     var onOuterPaddingOverride: ([String: EdgePadding]) -> Void = { _ in }
-    var onWorkspaceMonitors: ([String: [Int]]) -> Void = { _ in }
+    // the fallback mapping and the per-display-set ones, together: either
+    // changing is one reconcile
+    var onWorkspaceMonitors: ([String: [Int]], [DisplaySetWorkspaces]) -> Void = { _, _ in }
     var onChrome: (RuntimeConfigState, ChromeConfigChanges) -> Void = { _, _ in }
     var onScratchpadRegion: (CGFloat) -> Void = { _ in }
     var onScratchpadEntryMode: (Bool) -> Void = { _ in }
@@ -180,8 +186,9 @@ final class ConfigUpdateCoordinator {
         if next.outerPaddingPerMonitor != previous.outerPaddingPerMonitor {
             onOuterPaddingOverride(next.outerPaddingPerMonitor)
         }
-        if next.workspaceMonitors != previous.workspaceMonitors {
-            onWorkspaceMonitors(next.workspaceMonitors)
+        if next.workspaceMonitors != previous.workspaceMonitors
+            || next.workspaceMonitorsPerDisplaySet != previous.workspaceMonitorsPerDisplaySet {
+            onWorkspaceMonitors(next.workspaceMonitors, next.workspaceMonitorsPerDisplaySet)
         }
 
         var chrome: ChromeConfigChanges = []
