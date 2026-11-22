@@ -146,10 +146,11 @@ class WindowManager {
     private var mouseDraggedSinceDown: Bool { mouseDragLifecycle.sawDragEvent }
     private var mouseDownPointCG: CGPoint?
     private var mouseDownFloatingWindowID: CGWindowID = 0
-    // CG frame of that floater, read in the same mouse-down enumeration —
-    // the dim-drag anchor must come from here, not a fresh AX read at arm
-    // time (which pairs a pre-drag frame with a mid-flick cursor position)
+    // window-list frame of that floater and the cursor, read together at
+    // the press. the drag anchor is this pair: a frame read at one moment
+    // with a cursor from another bakes the gap in as an offset
     private var mouseDownFloatingFrame: CGRect?
+    private var mouseDownFloatingCursorCG: CGPoint?
 
     // window whose focus border was hidden when a drag started — re-shown on mouseUp.
     // we hide rather than try to follow, because we'd need 60Hz AX polling per window
@@ -566,7 +567,11 @@ class WindowManager {
             return self.mouseDragLifecycle.releaseRequestsSwap(hyprHeld: self.hyprHeld)
         }
         tiledDrag.visibleFloatingWindows = { [weak self] in self?.focusResolver.visibleFloatingWindows() ?? [] }
-        tiledDrag.acceptTiledDragCapture = { [weak self] frames in self?.acceptTiledDragCapture(frames) }
+        // read at the press, just after notePressedFloater refreshed the list
+        tiledDrag.pressHit = { [weak self] point in
+            guard let self, self.mouseTracker.stackedWindows() != nil else { return nil }
+            return self.mouseTracker.hitTest(at: point)
+        }
         tiledDrag.isFullscreenSuppressed = { [weak self] w in self?.isFullscreenSuppressed(focused: w) ?? false }
         tiledDrag.refreshDimming = { [weak self] rects in self?.refreshDimming(tiledRectsOverride: rects) }
         tiledDrag.schedulePoll = { [weak self] in self?.pollingScheduler.schedule(trigger: .drag) }
@@ -1277,8 +1282,10 @@ class WindowManager {
             self.mouseDownPointCG = downCG
             // a press is what opens a menu, so the next hover must read a fresh list
             self.mouseTracker.invalidateWindowListCache()
+            // before the AX-heavy capture below, so the floater has not moved yet
+            self.notePressedFloater()
             self.tiledDrag.handleMouseDown(at: downCG)
-            self.armFloaterDrag(downPointNS: downNS)
+            self.armFloaterDrag()
             // a menu open at the OS level eats clicks before we'd see them
             // here, so a global mouseDown reaching us is unambiguous proof
             // there is no menu currently tracking. clears the flag if a
@@ -1377,6 +1384,7 @@ class WindowManager {
             self?.mouseDownPointCG = nil
             self?.mouseDownFloatingWindowID = 0
             self?.mouseDownFloatingFrame = nil
+            self?.mouseDownFloatingCursorCG = nil
             if self?.dimDrag.isArmed == true {
                 self?.dimDrag.finish()
             }
@@ -1449,6 +1457,7 @@ class WindowManager {
         mouseDownPointCG = nil
         mouseDownFloatingWindowID = 0
         mouseDownFloatingFrame = nil
+        mouseDownFloatingCursorCG = nil
         realClickInProgress = false
         // teardown can land mid-drag — drop the overlay's override too or a
         // stale carve hole survives until the next full update
@@ -1464,6 +1473,7 @@ class WindowManager {
         mouseDownPointCG = nil
         mouseDownFloatingWindowID = 0
         mouseDownFloatingFrame = nil
+        mouseDownFloatingCursorCG = nil
         realClickInProgress = false
         dimDrag.finish()
         mouseTracker.invalidateWindowListCache()
@@ -1572,7 +1582,10 @@ class WindowManager {
         }
         // brackets follow focus changes while Hypr is held (e.g. Hypr+arrow
         // shifts focus mid-press, workspace switch hides the border).
-        if hyprHeld, let frame = window.frame {
+        // the chrome goes where the window is drawn. some apps' AX frame
+        // stops updating (onScreenFrame)
+        let drawnFrame = window.onScreenFrame()
+        if hyprHeld, let frame = drawnFrame {
             focusBrackets.applyAppearance(
                 style: config.focusBracketStyle,
                 color: focusMarkColor(for: window.windowID),
@@ -1583,7 +1596,7 @@ class WindowManager {
                                glide: focusGlide.traversal(from: focusBrackets.frame, to: frame))
             focusGlide.startTraversal()
         }
-        if config.showFocusBorder, let frame = window.frame {
+        if config.showFocusBorder, let frame = drawnFrame {
             focusBorder.accentCGColor = stateCache.floatingWindowIDs.contains(window.windowID)
                 ? config.resolvedFloatingBorderColor.cgColor
                 : config.resolvedFocusBorderColor.cgColor
@@ -1613,7 +1626,7 @@ class WindowManager {
         let fid = focusBorder.trackedWindowID ?? focusController.lastFocusedID
         guard fid != 0, let window = stateCache.cachedWindows[fid] else { return }
         if isFullscreenSuppressed(focused: window) { return }
-        guard let frame = window.frame else { return }
+        guard let frame = window.onScreenFrame() else { return }
         focusBrackets.applyAppearance(
             style: config.focusBracketStyle,
             color: focusMarkColor(for: fid),
@@ -1740,7 +1753,8 @@ class WindowManager {
         dimmingOverlay.setIntensity(CGFloat(config.dimIntensity))
         dimmingOverlay.primaryScreenHeight = displayManager.primaryScreenHeight
         let tiles = tiledRectsOverride ?? currentTiledRects()
-        let floaters = floatingFrames(from: Array(stateCache.cachedWindows.values), expandedBy: 2)
+        let floaters = floatingFrames(from: Array(stateCache.cachedWindows.values),
+                                      listed: listedFrames(), expandedBy: 2)
         dimmingOverlay.update(
             focusedID: fid,
             tiledRects: tiles,
@@ -2255,19 +2269,28 @@ class WindowManager {
         return results
     }
 
-    /// Accept the verified mouse-down frame batch. Also note the floating
-    /// window under the click (if any) — and its frame — so the dim carve
-    /// and the floater outline can follow the drag from a consistent pair.
-    private func acceptTiledDragCapture(_ frames: [CGWindowID: CGRect]) {
+    /// Note the floater a press lands on, its window-list frame and the
+    /// cursor, read together, so the dim carve and the floater outline can
+    /// follow the drag from a consistent pair.
+    ///
+    /// The window list, not AX: some windows' AX frame stops updating
+    /// (CARROT Weather), and AX lags a moving window by about 100 ms. The
+    /// frontmost window under the cursor wins, so a floater pressed where it
+    /// overlaps another floater is still the one dragged.
+    private func notePressedFloater() {
         mouseDownFloatingWindowID = 0
         mouseDownFloatingFrame = nil
-        guard let point = mouseDownPointCG else { return }
-        let hits = frames.filter {
-            stateCache.floatingWindowIDs.contains($0.key) && $0.value.contains(point)
-        }
-        guard hits.count == 1, let hit = hits.first else { return }
-        mouseDownFloatingWindowID = hit.key
-        mouseDownFloatingFrame = hit.value
+        mouseDownFloatingCursorCG = nil
+        let cursor = displayManager.flippedY(NSEvent.mouseLocation)
+        guard let windows = mouseTracker.stackedWindows(maxAge: 0),
+              let pressed = WindowStacking.pressedFloater(
+                at: cursor, in: windows,
+                floaterIDs: stateCache.floatingWindowIDs.filter(workspaceManager.isWindowVisible),
+                frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                ownPID: getpid(), mouseTarget: mouseTracker.mouseTargetAt) else { return }
+        mouseDownFloatingWindowID = pressed.id
+        mouseDownFloatingFrame = pressed.frame
+        mouseDownFloatingCursorCG = cursor
     }
 
     /// One notice line per floater drag, read once the drop has settled,
@@ -2276,7 +2299,7 @@ class WindowManager {
     /// here came from the app or macOS. Any frame HyprMac writes to a
     /// floater logs its own `floating frame write:` line.
     private func noteFloaterDrag(_ id: CGWindowID, from start: CGRect?, settled: Bool = false) {
-        guard let window = stateCache.cachedWindows[id], let frame = window.frame else { return }
+        guard let window = stateCache.cachedWindows[id], let frame = window.onScreenFrame() else { return }
         let destination = displayManager.screen(containingMostOf: frame)
         let fits = destination.map { frame.clamped(into: displayManager.cgRect(for: $0)) == frame } ?? false
         let resized = start.map { abs($0.width - frame.width) > 1 || abs($0.height - frame.height) > 1 }
@@ -2291,7 +2314,7 @@ class WindowManager {
                 + " resized=\(resized.map(String.init) ?? "unknown") fitsUsable=\(fits)")
         guard !settled else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self, let later = self.stateCache.cachedWindows[id]?.frame,
+            guard let self, let later = self.stateCache.cachedWindows[id]?.onScreenFrame(),
                   later != frame else { return }
             self.noteFloaterDrag(id, from: start, settled: true)
         }
@@ -2299,26 +2322,20 @@ class WindowManager {
 
     /// Arm the live drag follow if the press landed on a visible ordinary
     /// floating window and something follows it: the dim carve (normal dim
-    /// mode) or the floater outline (`FloaterDragFollow`). Reuses the
-    /// hit AND the frame read by verified tiled-drag capture — no new AX
-    /// queries. The anchor pair must be sampled consistently: the frame
-    /// from the mouse-down enumeration with the event's click point. A
-    /// fresh `w.frame` here still reports the pre-drag position (Tahoe AX
-    /// reads lag) while a live cursor read is already mid-flick — that
-    /// mismatch permanently offset the carve by the initial flick distance.
-    private func armFloaterDrag(downPointNS: NSPoint) {
+    /// mode) or the floater outline (`FloaterDragFollow`). The anchor is the
+    /// pair `notePressedFloater` read together: the window-list frame and
+    /// the cursor. A frame from AX here once paired a pre-drag position
+    /// with a mid-flick cursor and offset the carve for the whole drag.
+    private func armFloaterDrag() {
         dimDrag.disarm()
         floaterDragFollow = .resolve(dimInactive: config.dimInactiveWindows,
                                      scratchpadVisible: scratchpad.isVisible, marks: floaterMarks)
-        guard floaterDragFollow.arms, mouseDownFloatingWindowID != 0 else { return }
+        guard floaterDragFollow.arms, mouseDownFloatingWindowID != 0,
+              let frame = mouseDownFloatingFrame, let cursor = mouseDownFloatingCursorCG else { return }
         let id = mouseDownFloatingWindowID
-        guard let w = stateCache.cachedWindows[id] else { return }
-        guard let frame = mouseDownFloatingFrame ?? w.frame else { return }
-
-        let downCG = displayManager.flippedY(downPointNS)
         dimDrag.arm(id: id,
                     readFrame: { WindowStacking.bounds(of: id) },
-                    startFrame: frame, downPointCG: downCG)
+                    startFrame: frame, downPointCG: cursor)
     }
 
     /// Hit-test the click point against floating and tiled windows and
@@ -2395,13 +2412,40 @@ class WindowManager {
     /// Collect frames for every visible floating window in `source`,
     /// optionally inset by `-padding` (negative inset enlarges) so dim
     /// cutouts can leave breathing room around the floater outline.
-    private func floatingFrames(from source: [HyprWindow], expandedBy padding: CGFloat = 0) -> [CGWindowID: CGRect] {
+    private func floatingFrames(from source: [HyprWindow], listed: [CGWindowID: CGRect],
+                                expandedBy padding: CGFloat = 0) -> [CGWindowID: CGRect] {
+        Self.floatingFrames(from: source, floatingIDs: stateCache.floatingWindowIDs,
+                            isVisible: workspaceManager.isWindowVisible,
+                            listed: listed, expandedBy: padding)
+    }
+
+    /// Each visible floater's frame as the window server draws it
+    /// (`onScreenFrame`), else its cached AX frame.
+    static func floatingFrames(from source: [HyprWindow], floatingIDs: Set<CGWindowID>,
+                               isVisible: (CGWindowID) -> Bool, listed: [CGWindowID: CGRect],
+                               expandedBy padding: CGFloat = 0) -> [CGWindowID: CGRect] {
         var frames: [CGWindowID: CGRect] = [:]
         for w in source {
-            guard stateCache.floatingWindowIDs.contains(w.windowID),
-                  workspaceManager.isWindowVisible(w.windowID),
-                  let frame = w.frame ?? w.cachedFrame else { continue }
+            guard floatingIDs.contains(w.windowID), isVisible(w.windowID),
+                  let frame = w.onScreenFrame(listed: listed) ?? w.cachedFrame else { continue }
             frames[w.windowID] = padding == 0 ? frame : frame.insetBy(dx: -padding, dy: -padding)
+        }
+        return frames
+    }
+
+    /// On-screen window frames by id, from the mouse tracker's short-lived
+    /// window list, so the chrome refresh shares one list read with hover
+    /// and the dim. Empty when the list is unavailable: frames then come
+    /// from AX.
+    private func listedFrames() -> [CGWindowID: CGRect] {
+        guard let windows = mouseTracker.stackedWindows() else { return [:] }
+        return Self.listedFrames(windows)
+    }
+
+    static func listedFrames(_ windows: [StackedWindow]) -> [CGWindowID: CGRect] {
+        var frames: [CGWindowID: CGRect] = [:]
+        for w in windows where frames[w.windowID] == nil {
+            if let bounds = w.bounds { frames[w.windowID] = bounds }
         }
         return frames
     }
@@ -2421,6 +2465,9 @@ class WindowManager {
     /// walk's own frame is the one the pass replaced.
     private func updatePositionCache(windows: [HyprWindow]? = nil) {
         tiledRectsMemo = nil // geometry may have changed — force live re-reads
+        // and the window list: the chrome below reads frames from it
+        mouseTracker.invalidateWindowListCache()
+        let listed = listedFrames()
         let allWindows = windows ?? accessibility.getAllWindows()
         tilingEngine.primeMinimumSizes(allWindows)
         stateCache.tiledPositions.removeAll()
@@ -2440,18 +2487,19 @@ class WindowManager {
                 stateCache.tiledPositions[w.windowID] = frame
             }
         }
-        refreshFloatingBorders(windows: allWindows)
+        refreshFloatingBorders(windows: allWindows, listed: listed)
         statusPresenter.updateMenuBarState()
         refreshWorkspaceOverview(windows: allWindows)
 
         // keep focus border tracking window position (retile, resize, etc.)
-        if let tid = focusBorder.trackedWindowID, let w = stateCache.cachedWindows[tid], let frame = w.frame {
+        if let tid = focusBorder.trackedWindowID, let w = stateCache.cachedWindows[tid],
+           let frame = w.onScreenFrame(listed: listed) {
             focusBorder.updatePosition(frame)
-            refreshFloatingBorders(windows: allWindows)
+            refreshFloatingBorders(windows: allWindows, listed: listed)
         }
         // brackets follow the same window if visible (Hypr held during retile)
         if focusBrackets.isVisible, let bid = focusBrackets.trackedWindowID,
-           let w = stateCache.cachedWindows[bid], let frame = w.frame {
+           let w = stateCache.cachedWindows[bid], let frame = w.onScreenFrame(listed: listed) {
             focusBrackets.updatePosition(frame)
             // a float toggle mid-press changes the mark color
             focusBrackets.recolor(focusMarkColor(for: bid))
@@ -2476,10 +2524,11 @@ class WindowManager {
     /// floater gets a persistent outline at the floating border color so
     /// the user can spot a floater that ended up behind a tile. It draws in
     /// Corners mode too, with no focus border.
-    private func refreshFloatingBorders(windows: [HyprWindow]? = nil) {
+    private func refreshFloatingBorders(windows: [HyprWindow]? = nil,
+                                        listed: [CGWindowID: CGRect]? = nil) {
         if floaterMarks != .none {
             let source = windows ?? Array(stateCache.cachedWindows.values)
-            var frames = floatingFrames(from: source)
+            var frames = floatingFrames(from: source, listed: listed ?? listedFrames())
             // prime the radius cache for each visible floater so the
             // bundle-id override table applies (otherwise resolve()
             // falls back to osDefault for every floating window).

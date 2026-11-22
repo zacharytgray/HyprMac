@@ -36,6 +36,8 @@ final class TiledDragController {
     var pressPoint: () -> CGPoint? = { nil }
     var releaseRequestsSwap: () -> Bool = { false }
     var visibleFloatingWindows: () -> [HyprWindow] = { [] }
+    /// the window-list hit at a press point. nil when the list is unavailable
+    var pressHit: (CGPoint) -> WindowStacking.Hit? = { _ in nil }
     var acceptTiledDragCapture: ([CGWindowID: CGRect]) -> Void = { _ in }
     var isFullscreenSuppressed: (HyprWindow) -> Bool = { _ in false }
     var refreshDimming: (_ tiledRects: [CGWindowID: CGRect]) -> Void = { _ in }
@@ -84,6 +86,27 @@ final class TiledDragController {
         dropPreviewTargets = [:]
     }
 
+    /// The floaters the capture checks for covering the press, or nil when
+    /// a floater is in front at the press and the press is not a tiled drag.
+    ///
+    /// The window list says which window is in front. The capture's own
+    /// check asks whether a floater's AX frame holds the press, and a stale
+    /// AX frame (CARROT Weather's) refused presses on the tiles under its
+    /// old spot, so those tiles moved freely and stayed where they were
+    /// dropped. With no list hit, every floater is checked as before.
+    static func pressOccluders(at point: CGPoint, hit: WindowStacking.Hit?,
+                               floaters: [HyprWindow]) -> [HyprWindow]? {
+        guard case .window(let front)? = hit else { return floaters }
+        if floaters.contains(where: { $0.windowID == front }) { return nil }
+        for floater in floaters {
+            guard let ax = floater.frame, ax.contains(point) else { continue }
+            hyprLog(.notice, .tiling, "tiled drag press: window list has \(front) in front at "
+                    + "(\(Int(point.x)),\(Int(point.y))), floater \(floater.windowID)'s AX frame \(ax) "
+                    + "also holds it; following the window list")
+        }
+        return []
+    }
+
     private func makeTiledDragHandler() -> TiledDragHandler {
         TiledDragHandler(
             capture: { [weak self] point, publish in
@@ -92,9 +115,13 @@ final class TiledDragController {
                     return .ineligible(.noTarget)
                 }
                 let displayID = Self.tiledDragDisplayID(screen)
+                guard let occluding = Self.pressOccluders(at: point, hit: self.pressHit(point),
+                                                          floaters: self.visibleFloatingWindows()) else {
+                    return .ineligible(.noTarget)
+                }
                 return self.tilingEngine.captureTiledDrag(
                     pointer: point,
-                    occludingWindows: self.visibleFloatingWindows(),
+                    occludingWindows: occluding,
                     currentLocation: { [weak self] in
                         guard let self, self.isRunning else { return nil }
                         let matches = self.displayManager.screens.filter {

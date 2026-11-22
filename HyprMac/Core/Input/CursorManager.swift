@@ -8,7 +8,8 @@ import Cocoa
 ///
 /// Threading: main-thread only.
 class CursorManager {
-    /// Move the cursor to the center of `window`.
+    /// Move the cursor to the center of `window`, as the window server
+    /// draws it (`onScreenCenter`).
     ///
     /// `CGWarpMouseCursorPosition` alone is not reliable: macOS keeps
     /// accumulating mouse deltas from physical motion that happened
@@ -17,7 +18,7 @@ class CursorManager {
     /// the accumulation; the empirical 50 ms window matches what other
     /// apps use for the same pattern.
     func warpToCenter(of window: HyprWindow) {
-        guard let center = window.center else { return }
+        guard let center = window.onScreenCenter else { return }
         warp(to: center)
     }
 

@@ -202,6 +202,47 @@ final class TilingEngineTiledDragTests: XCTestCase {
         guard case .captured = result else { return XCTFail("expected pointer capture") }
     }
 
+    // carrot's AX frame stays at its old spot over a tile. the window list
+    // has the tile in front at the press, so the tile is dragged
+    func testStaleFloaterFrameOverATileNoLongerRefusesItsDrag() throws {
+        let fixture = try makeFixture()
+        let pointer = center(of: fixture.trace.frames[1])
+        let carrot = makeWindow(id: 40)
+        fixture.trace.frames[40] = fixture.trace.frames[1]!.insetBy(dx: -20, dy: -20)
+
+        let before = fixture.engine.captureTiledDrag(
+            pointer: pointer, occludingWindows: [carrot],
+            currentLocation: { (1, fixture.screen, [40]) })
+        guard case .ineligible(.noTarget) = before else {
+            return XCTFail("an AX frame over the press refuses the drag")
+        }
+
+        let occluding = TiledDragController.pressOccluders(at: pointer, hit: .window(1), floaters: [carrot])
+        XCTAssertEqual(occluding?.map(\.windowID), [])
+        let after = fixture.engine.captureTiledDrag(
+            pointer: pointer, occludingWindows: occluding ?? [carrot],
+            currentLocation: { (1, fixture.screen, [40]) })
+        guard case let .captured(snapshot) = after else {
+            return XCTFail("the tile in front must be captured")
+        }
+        XCTAssertEqual(snapshot.draggedID, 1)
+    }
+
+    func testPressOccludersFollowTheWindowList() {
+        let carrot = makeWindow(id: 40)
+        let point = CGPoint(x: 10, y: 10)
+        // a floater in front: not a tiled drag
+        XCTAssertNil(TiledDragController.pressOccluders(at: point, hit: .window(40), floaters: [carrot]))
+        // a tile in front: no floater covers the press
+        XCTAssertEqual(TiledDragController.pressOccluders(at: point, hit: .window(1), floaters: [carrot])?
+            .map(\.windowID), [])
+        // no list hit: every floater is checked, as before
+        XCTAssertEqual(TiledDragController.pressOccluders(at: point, hit: nil, floaters: [carrot])?
+            .map(\.windowID), [40])
+        XCTAssertEqual(TiledDragController.pressOccluders(at: point, hit: WindowStacking.Hit.none,
+                                                          floaters: [carrot])?.map(\.windowID), [40])
+    }
+
     func testPointerCaptureRechecksFloatingStateDuringReads() throws {
         let fixture = try makeFixture()
         var location: (workspace: Int, screen: NSScreen, floatingIDs: Set<CGWindowID>)?

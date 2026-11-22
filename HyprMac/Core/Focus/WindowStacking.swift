@@ -195,6 +195,22 @@ enum WindowStacking {
         return .none
     }
 
+    /// The floater a press at `point` lands on, with its window-list frame:
+    /// the window the hit test finds there, when that is one of
+    /// `floaterIDs`. Where two floaters overlap, the front one is pressed;
+    /// a floater under a tile is not.
+    static func pressedFloater(at point: CGPoint, in windows: [StackedWindow],
+                               floaterIDs: Set<CGWindowID>, frontmostPID: pid_t?, ownPID: pid_t,
+                               mouseTarget: ((CGPoint) -> CGWindowID)? = nil)
+        -> (id: CGWindowID, frame: CGRect)? {
+        guard case .window(let id) = hitTest(point, in: windows, frontmostPID: frontmostPID,
+                                             ownPID: ownPID, managedFloaters: floaterIDs,
+                                             mouseTarget: mouseTarget),
+              floaterIDs.contains(id),
+              let frame = windows.first(where: { $0.windowID == id })?.bounds else { return nil }
+        return (id, frame)
+    }
+
     /// Smallest overlap, in points on each axis, that counts as covering.
     /// Tiles sit a gap apart, so a touching edge is not an overlap.
     static let minOverlap: CGFloat = 4

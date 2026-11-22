@@ -40,6 +40,7 @@ the cache and adds an unnecessary syscall on every conversion.
 | `HyprWindow.frame` (CG, from AX) | `NSPanel.setFrame` (NS) | `ns_y = primaryScreenHeight - cg_y - height` |
 | `screen.frame` (NS) | `DisplayManager.cgRect(for:)` (CG) | as above, applied to `visibleFrame` |
 | `CGWindowListCopyWindowInfo` bounds (CG) | overlap math against `screen.frame` (NS) | as above |
+| `HyprWindow.onScreenFrame` (CG, window list, else AX) | chrome panels, pointer warp, synthetic click | none: window-list bounds and AX frames share the CG top-left space |
 
 `DisplayManager` owns the canonical `cgRect(for screen: NSScreen)`
 helper. New code that needs a CG-space rect for a screen should call

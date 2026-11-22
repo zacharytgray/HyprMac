@@ -1060,6 +1060,34 @@ A `floater drag` line with `resized=true` and no `floating
 frame write` line before it means the app or macOS changed the size, not
 HyprMac. A `floating frame write` line names the path that did it.
 
+The `floater drag` frames come from the window list, like the drag outline.
+
+### The border or pointer lands beside a window
+
+Some windows stop updating their AX frame. CARROT Weather's floating window
+keeps its first centered position after every drag. The chrome (focus border,
+floater outlines, brackets, dim holes), the pointer warp, the synthetic focus
+click and the floater drag follow use the window list instead
+(`HyprWindow.onScreenFrame`). Frame writes and readback stay on AX. When the
+two disagree by more than 4 points, HyprMac logs this once per window every
+30 s:
+
+```
+[notice] [border] frame disagreement: wid=<id> ax=(x, y, w, h) windowList=(x, y, w, h); chrome and pointer follow the window list
+```
+
+A window that logs this and also misbehaves under a frame write is an app
+whose AX frame cannot be trusted.
+
+The tiled drag press asks the window list too. A press counts as on a floater
+only when the list has that floater in front. A stale AX frame used to refuse
+the drag of a tile under the floater's old spot, and the tile stayed where it
+was dropped. When the list overrides an AX frame that holds the press, it logs:
+
+```
+[notice] [tiling] tiled drag press: window list has <tile> in front at (x,y), floater <id>'s AX frame (x, y, w, h) also holds it; following the window list
+```
+
 ### Rejected drag feedback and source restoration
 
 Persistent border refreshes defer to the bounded error feedback interval.

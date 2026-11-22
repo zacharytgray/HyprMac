@@ -367,6 +367,62 @@ class HyprWindow: Equatable, Hashable {
         return CGPoint(x: f.midX, y: f.midY)
     }
 
+    /// Where the window server draws the window, for the chrome and the
+    /// pointer only. Writes and readback stay on `frame`.
+    ///
+    /// Some windows stop updating their AX frame. CARROT Weather's
+    /// SceneWindow keeps its first centered position after every drag,
+    /// while the window list follows the real window. Both use global
+    /// top-left CG coordinates, so no conversion. `listed` is a window-list
+    /// snapshot by id; nil asks the window server about this one window.
+    /// A window the list lacks falls back to AX.
+    func onScreenFrame(listed: [CGWindowID: CGRect]? = nil) -> CGRect? {
+        let server = listed.map { $0[windowID] } ?? windowServerFrame
+        let ax = frame
+        Self.noteFrameDisagreement(windowID, server: server, ax: ax)
+        return Self.onScreenFrame(server: server, ax: ax)
+    }
+
+    var onScreenCenter: CGPoint? {
+        guard let f = onScreenFrame() else { return nil }
+        return CGPoint(x: f.midX, y: f.midY)
+    }
+
+    /// This one window's bounds from the window list.
+    var windowServerFrame: CGRect? {
+        WindowStacking.bounds(of: windowID)
+    }
+
+    /// The window-list frame when it has one, else the AX frame.
+    static func onScreenFrame(server: CGRect?, ax: CGRect?) -> CGRect? {
+        if let server, server.width > 1, server.height > 1 { return server }
+        return ax
+    }
+
+    /// Points either frame may be off by before the two count as apart.
+    static let frameDisagreementTolerance: CGFloat = 4
+    static let frameDisagreementLogInterval: CFAbsoluteTime = 30
+    private static var frameDisagreementLogged: [CGWindowID: CFAbsoluteTime] = [:]
+
+    static func framesDisagree(_ a: CGRect, _ b: CGRect) -> Bool {
+        let t = frameDisagreementTolerance
+        return abs(a.minX - b.minX) > t || abs(a.minY - b.minY) > t
+            || abs(a.width - b.width) > t || abs(a.height - b.height) > t
+    }
+
+    // one line per window per interval, so a stale AX frame shows in the log
+    private static func noteFrameDisagreement(_ id: CGWindowID, server: CGRect?, ax: CGRect?) {
+        guard let server, let ax, framesDisagree(server, ax) else { return }
+        let now = CFAbsoluteTimeGetCurrent()
+        if let last = frameDisagreementLogged[id], now - last < frameDisagreementLogInterval { return }
+        if frameDisagreementLogged.count > 64 {
+            frameDisagreementLogged = frameDisagreementLogged.filter { now - $0.value < frameDisagreementLogInterval }
+        }
+        frameDisagreementLogged[id] = now
+        hyprLog(.notice, .border, "frame disagreement: wid=\(id) ax=\(ax) windowList=\(server)"
+                + "; chrome and pointer follow the window list")
+    }
+
     /// Raise z-order only — no keyboard focus, no app activation.
     /// Used when stacking several windows (scratchpad show) where only
     /// the final one should take focus.
@@ -530,7 +586,8 @@ class HyprWindow: Equatable, Hashable {
     /// in-content button. A bare down+up does not start a drag.
     func focusViaSyntheticClick() {
         Self.activationObserver?(ownerPID)
-        guard let frame = self.frame else {
+        // the title bar where it is drawn: a stale AX frame aims the click elsewhere
+        guard let frame = onScreenFrame() else {
             hyprLog(.notice, .focus, "focusViaSyntheticClick(\(windowID)) no frame")
             return
         }
