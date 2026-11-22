@@ -114,11 +114,11 @@ final class WorkspaceStatusPresenter {
             focusedWindowID: focusController.lastFocusedID,
             cursorScreenIndex: enabledScreens.firstIndex { workspaceManager.screenID(for: $0) == cursorID },
             switchedTo: lastSwitchedWorkspace)
-        let compactBadge = focusedIndex.map { visible[$0] }.map { workspace in
-            MenuBarCompactBadge(
-                workspace: workspace,
-                floating: floating.contains(workspace),
-                maximized: maximized.contains(workspace))
+        let compactWorkspace = focusedIndex.map { visible[$0] }.map { workspace in
+            MenuBarCompactWorkspace(
+                id: workspace,
+                hasFloatingWindows: floating.contains(workspace),
+                isMaximized: maximized.contains(workspace))
         }
         let scratchpadCount = scratchpad.members.count
         let scratchpadVisible = scratchpad.isVisible
@@ -129,7 +129,7 @@ final class WorkspaceStatusPresenter {
             if state.labelText != labelText { state.labelText = labelText }
             if state.isFullscreen != isFullscreen { state.isFullscreen = isFullscreen }
             if state.monitors != monitors { state.monitors = monitors }
-            if state.compactBadge != compactBadge { state.compactBadge = compactBadge }
+            if state.compactWorkspace != compactWorkspace { state.compactWorkspace = compactWorkspace }
             if state.scratchpadCount != scratchpadCount { state.scratchpadCount = scratchpadCount }
             if state.scratchpadVisible != scratchpadVisible { state.scratchpadVisible = scratchpadVisible }
             if !state.hasData { state.hasData = true }

@@ -173,7 +173,8 @@ Hypr+F (maximize):
 - Each start and end shows the FULLSCREEN HUD. The Full menu bar shows the icon while a
   showing workspace has a maximized window, and the glyphs again otherwise. Compact
   fills its badge while the workspace it shows has one, or puts the icon beside a
-  workspace name.
+  workspace name shown as text: anything but one Latin letter or digit (SF Symbols
+  has badge symbols only for those).
 - Try Screen Sharing or another fixed-size window: red flash, nothing moves.
 
 Move to dedicated workspace (no default chord; bind it in Settings → Keys):
