@@ -51,13 +51,30 @@ let
     in
     if cleaned == { } then null else cleaned;
 
+  # The app reads `showMenuBarIcon` only once, to pick a first `menuBarStyle`,
+  # so the deprecated option is written as `menuBarStyle` instead.
+  # `menuBarStyle` wins when both are set.
+  resolveMenuBarStyle =
+    cfg:
+    if cfg.menuBarStyle != null then
+      cfg.menuBarStyle
+    else if cfg.showMenuBarIcon == null then
+      null
+    else if cfg.showMenuBarIcon then
+      "full"
+    else
+      "hidden";
+
   buildUserDefaults =
     cfg:
+    let
+      menuBarStyle = resolveMenuBarStyle cfg;
+    in
     optionalAttrs (cfg.showDockIcon != null) {
       inherit (cfg) showDockIcon;
     }
-    // optionalAttrs (cfg.showMenuBarIcon != null) {
-      inherit (cfg) showMenuBarIcon;
+    // optionalAttrs (menuBarStyle != null) {
+      inherit menuBarStyle;
     };
 
   standardSystemPaths = [
@@ -170,12 +187,28 @@ let
         '';
       };
 
+      menuBarStyle = mkOption {
+        type = types.nullOr (
+          types.enum [
+            "full"
+            "compact"
+            "hidden"
+          ]
+        );
+        default = null;
+        description = ''
+          HyprMac's menu bar item (`com.zachgray.HyprMac` `menuBarStyle`
+          preference): `"full"`, `"compact"` or `"hidden"`. `null` leaves the
+          preference unmanaged.
+        '';
+      };
+
       showMenuBarIcon = mkOption {
         type = types.nullOr types.bool;
         default = null;
         description = ''
-          Whether to show HyprMac's menu bar icon (`com.zachgray.HyprMac`
-          `showMenuBarIcon` preference). `null` leaves the preference unmanaged.
+          Deprecated: use `menuBarStyle`. `true` sets `menuBarStyle` to
+          `"full"` and `false` to `"hidden"`, unless `menuBarStyle` is set.
         '';
       };
     };
@@ -188,6 +221,7 @@ in
     coreConfigDefaults
     filterNullsRecursive
     mkSharedOptions
+    resolveMenuBarStyle
     standardSystemPaths
     ;
 }

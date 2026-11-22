@@ -90,6 +90,8 @@ in
   // hyprmacLib.mkSharedOptions { inherit jsonFormat; };
 
   config = mkIf cfg.enable {
+    warnings = optional (cfg.showMenuBarIcon != null) "`programs.hyprmac.showMenuBarIcon` is deprecated. Use `programs.hyprmac.menuBarStyle` (\"full\", \"compact\" or \"hidden\").";
+
     assertions = [
       (lib.hm.assertions.assertPlatform "programs.hyprmac" pkgs lib.platforms.darwin)
       {

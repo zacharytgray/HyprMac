@@ -67,6 +67,23 @@ in
           { keep = "yes"; }
         ];
       };
+    assert assertEq "showMenuBarIcon maps to menuBarStyle"
+      (hyprmacLib.buildUserDefaults {
+        showDockIcon = null;
+        menuBarStyle = null;
+        showMenuBarIcon = false;
+      })
+      { menuBarStyle = "hidden"; };
+    assert assertEq "menuBarStyle wins over showMenuBarIcon"
+      (hyprmacLib.buildUserDefaults {
+        showDockIcon = true;
+        menuBarStyle = "compact";
+        showMenuBarIcon = false;
+      })
+      {
+        showDockIcon = true;
+        menuBarStyle = "compact";
+      };
     pkgs.runCommand "hyprmac-lib-json-check" { } ''
       touch "$out"
     '';

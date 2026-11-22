@@ -20,7 +20,7 @@ programs.hyprmac = {
   launchd.enable = true;               # start at login; off by default
   extraPackages = [ pkgs.sketchybar ]; # PATH for runCommand and the status hook
   showDockIcon = false;                # null leaves these preferences alone
-  showMenuBarIcon = true;
+  menuBarStyle = "compact";            # "full", "compact" or "hidden"
 
   # becomes ~/Library/Application Support/HyprMac/config.json
   settings = {
@@ -64,6 +64,12 @@ is added at load when your `keybinds` leave that chord free.
 `version = 2`, `keybinds = [ ]`, `gapSize = 8`, `outerPadding = 8` and
 `enabled = true` for any you leave out. Set `settings.version` to override the
 schema version. Missing built-in keybinds are added at load, as for any config.
+
+`showDockIcon` and `menuBarStyle` are per-Mac preferences, not config keys.
+Nix sets them on every switch, so a change in Settings lasts until the next
+one. `showMenuBarIcon` is deprecated: HyprMac reads it only once, on its first
+launch. The module now writes it as `menuBarStyle`, `true` as `"full"` and
+`false` as `"hidden"`, and warns. Use `menuBarStyle` instead.
 
 In `workspaceMonitorsPerDisplaySet`, `displays` lists every connected display
 by the name Settings shows, disabled ones too. That entry applies only when
