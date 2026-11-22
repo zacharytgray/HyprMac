@@ -941,6 +941,11 @@ overlap, and a floater is on top of every other tile. It applies to hover and cl
 alike. True always-on-top isn't available: a window level needs SIP off, and raising
 the floater after each click blinked on every click and took the keyboard for a moment.
 
+Tried on 2026-11-22 and not shipped: keeping floaters that float on their own (fixed
+size, a float rule, Never tile) above tiles. Skipping the lift on hover and Hypr+Arrow
+lost to app activation, which brought the tile above the floater anyway. Re-raising a
+same-app floater after a click kept it on top, but the keys stayed on the floater.
+
 Two facts drive the guards. Chrome's bookmark folders are not NSMenus. They are windows
 at `kCGPopUpMenuWindowLevel` (101), so the HIToolbox menu-tracking guard does not see
 them. And `focusWithoutRaise` is not raise-free: it writes kAXMain, may call
