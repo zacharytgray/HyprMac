@@ -195,7 +195,9 @@ final class TilingEngineVerifiedLayoutTests: XCTestCase {
         }
         XCTAssertEqual(fixture.trace.candidateApplications, 1)
         XCTAssertEqual(fixture.trace.restorationApplications, 1)
-        XCTAssertEqual(fixture.trace.maximumTimeout, 0.1, accuracy: 0.001)
+        // only the rollback calls on the recovery's 250 ms (issue #99). the
+        // candidate ran once, so no retry did
+        XCTAssertEqual(fixture.trace.maximumTimeout, 0.25, accuracy: 0.001)
     }
 
     func testCleanupCannotCompleteDoesNotEnterTimeoutRecovery() {
@@ -1468,5 +1470,130 @@ private final class SlowAppTrace {
         } else {
             now += timedOut ? afterTimeoutSetterCost ?? setterCost : setterCost
         }
+    }
+}
+
+/// Issue #99: an app slow to answer a size write that narrows it. Telegram
+/// took 100–251 ms for those. The call times out at 100 ms, the app still
+/// carries the write out, and it answers nothing else until it has.
+final class TilingEngineSlowWriteRollbackTests: XCTestCase {
+    private let usable = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+
+    /// the candidate's narrowing write to the slow window times out, so the
+    /// pass stops before the window after it. the rollback opens that
+    /// window's writes while the app is still busy with the late size. on
+    /// the 100 ms call timeout that also times out and the layout is left
+    /// degraded, half-applied. on the recovery budget's 250 ms the rollback
+    /// waits the app out and verifies, and the timeout retry lays the whole
+    /// layout out
+    func testARollbackOutwaitsTheWriteItIsUndoing() {
+        let tree = BSPTree()
+        let windows = [makeWindow(id: 9901), makeWindow(id: 9902), makeWindow(id: 9903)]
+        for window in windows { XCTAssertTrue(tree.insert(window, maxDepth: 3)) }
+        let originals: [CGWindowID: CGRect] = [
+            9901: CGRect(x: 8, y: 8, width: 788, height: 984),
+            9902: CGRect(x: 400, y: 8, width: 1192, height: 984),
+            9903: CGRect(x: 820, y: 30, width: 760, height: 900)
+        ]
+        let trace = BusyAppTrace(frames: originals, slowWindowID: 9902, narrowingCost: 0.22)
+        let engine = TilingEngine(displayManager: DisplayManager(),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let targets = Dictionary(uniqueKeysWithValues: tree.layout(
+            in: usable, gap: engine.gapSize, padding: engine.outerPadding
+        ).map { ($0.0.windowID, $0.1) })
+        XCTAssertLessThan(targets[9902]!.width, originals[9902]!.width, "the slow window narrows")
+
+        let outcome = engine.applyVerifiedLayout(tree, in: usable, generation: engine.beginLayoutGeneration(),
+                                                 originalFrames: originals)
+
+        guard case .accepted = outcome else {
+            return XCTFail("expected the timeout retry to lay the layout out, got \(outcome)")
+        }
+        XCTAssertEqual(trace.frames, targets, "every window on its target, the one after the slow one too")
+        XCTAssertGreaterThanOrEqual(trace.restorationTimeout, 0.25,
+                                    "the rollback calls on the recovery budget's timeout")
+    }
+}
+
+/// One slow app on a virtual clock. A size write that narrows `slowWindowID`
+/// keeps its app busy for `narrowingCost`. A call to that window waits for
+/// the app; one that would wait past its timeout answers -25204 at the
+/// timeout and still lands when the app gets to it. Other windows answer at
+/// once.
+private final class BusyAppTrace {
+    var frames: [CGWindowID: CGRect]
+    private(set) var restorationTimeout: TimeInterval = 0
+    private var now: TimeInterval = 0
+    private var busyUntil: TimeInterval = 0
+    private var pending: [(at: TimeInterval, id: CGWindowID, size: CGSize)] = []
+    private let originals: [CGWindowID: CGRect]
+    private let slowWindowID: CGWindowID
+    private let narrowingCost: TimeInterval
+
+    init(frames: [CGWindowID: CGRect], slowWindowID: CGWindowID, narrowingCost: TimeInterval) {
+        self.frames = frames
+        self.originals = frames
+        self.slowWindowID = slowWindowID
+        self.narrowingCost = narrowingCost
+    }
+
+    private func land() {
+        for change in pending where change.at <= now { frames[change.id]?.size = change.size }
+        pending.removeAll { $0.at <= now }
+    }
+
+    /// waits for the app, then spends `cost`. false when that runs past
+    /// `timeout`: the caller gets -25204 at the timeout, the work still
+    /// happens
+    private func call(_ id: CGWindowID, timeout: TimeInterval, cost: TimeInterval = 0) -> (Bool, TimeInterval) {
+        land()
+        guard id == slowWindowID else { return (true, now) }
+        let start = max(now, busyUntil)
+        let done = start + cost
+        busyUntil = done
+        if done - now > timeout {
+            now += timeout
+            land()
+            return (false, done)
+        }
+        now = done
+        land()
+        return (true, done)
+    }
+
+    func io(_ generation: @escaping () -> UInt64) -> FrameSizingIO {
+        var io = FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { [self] id, size, timeout in
+                let narrowing = size.width < (frames[id]?.width ?? 0) - 1
+                let (answered, at) = call(id, timeout: timeout, cost: narrowing ? narrowingCost : 0)
+                if answered { frames[id]?.size = size } else { pending.append((at, id, size)) }
+                return answered ? .success : .cannotComplete
+            },
+            writePosition: { [self] id, position, timeout in
+                if position == originals[id]?.origin { restorationTimeout = max(restorationTimeout, timeout) }
+                let (answered, _) = call(id, timeout: timeout)
+                if answered { frames[id]?.origin = position }
+                return answered ? .success : .cannotComplete
+            },
+            readPosition: { [self] id, timeout in
+                let (answered, _) = call(id, timeout: timeout)
+                return answered ? (.success, frames[id]?.origin) : (.cannotComplete, nil)
+            },
+            readSize: { [self] id, timeout in
+                let (answered, _) = call(id, timeout: timeout)
+                return answered ? (.success, frames[id]?.size) : (.cannotComplete, nil)
+            },
+            now: { [self] in now },
+            sleep: { [self] interval in now += interval; land() },
+            currentGeneration: generation
+        )
+        // opening a window's writes reads its enhanced-UI flag: an AX call
+        // like any other, and the one dex157's rollback timed out on
+        io.beginFrameWrite = { [self] id, timeout, _ in
+            let (answered, _) = call(id, timeout: timeout)
+            return answered ? .ready(.noop(windowID: id)) : .failed(.cannotComplete)
+        }
+        return io
     }
 }

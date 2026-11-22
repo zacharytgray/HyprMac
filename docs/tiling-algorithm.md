@@ -399,7 +399,10 @@ returns `cannotComplete`. That covers a setter, a frame read, or the
 enhanced-UI read that opens a window's writes. Such a call is a timeout,
 not a refusal, and gets one more try with a 0.25-second call timeout and a
 0.75-second deadline (`withTimeoutRecoveryBudget`). A verified layout takes
-that try after its rollback verifies. A tiled drag takes it straight away,
+that try after its rollback verifies. Its rollback runs on the same
+0.25-second call timeout from the start, so it can wait out the write that
+timed out (see **Restoration correspondence is not tiled validity**). A
+tiled drag takes the try straight away,
 on the settle read, the release screen's read, each candidate and each
 rollback. A `cannotComplete` that comes back at once is AX refusing, and
 gets no second try.
@@ -625,10 +628,16 @@ and HyprMac's dim overlay makes that visible.
 A rollback asks every window to go back exactly where it was. It is verified
 per window against the strict one-point size and position bound. It gets
 at least the timeout recovery's 0.75-second deadline, not the candidate's
-0.36, and the attempt's pass cap never cuts it. It is the safety net: a rollback that
+0.36, and the attempt's pass cap never cuts it. Its AX calls use the
+recovery's 0.25-second timeout, not 0.1. A rollback often runs right after a
+setter that timed out, and the app is still carrying that write out. AX
+gave up on it at 100 ms, but the app applies it anyway and answers nothing
+else until it has. On a 100 ms timeout the rollback then timed out on the
+same window, before a single setter, and left the layout half-applied
+(issue #99: Telegram took 100 to 251 ms to narrow). It is the safety net: a rollback that
 fails leaves the candidate's frames under the old tree. It returns as soon
-as its frames read back stable, so the longer deadline costs a healthy
-rollback nothing. The
+as its frames read back stable, so the longer deadline and timeout cost a
+healthy rollback nothing. The
 pairwise checks are not verdicts on it: two originals that overlapped before
 the candidate ran still overlap after it, and calling that a failed rollback
 would be a lie about correspondence. The overlap is reported separately on

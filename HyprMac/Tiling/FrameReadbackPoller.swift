@@ -141,9 +141,13 @@ struct FrameReadbackPoller {
         // the rollback is the safety net: a refused candidate is undone by
         // it, and a rollback that fails leaves the candidate's frames under
         // the old tree. it returns as soon as its frames read back stable,
-        // so the larger cap costs the happy path nothing
-        strictConfiguration.deadline = max(strictConfiguration.deadline,
-                                           strictConfiguration.withTimeoutRecoveryBudget.deadline)
+        // so the larger cap costs the happy path nothing.
+        // its calls get the recovery's timeout too: a rollback runs right
+        // after a write that timed out, while the app is still carrying it
+        // out, and on 100 ms it timed out on the same window (issue #99)
+        let recovery = strictConfiguration.withTimeoutRecoveryBudget
+        strictConfiguration.deadline = max(strictConfiguration.deadline, recovery.deadline)
+        strictConfiguration.perCallTimeout = recovery.perCallTimeout
         strictConfiguration.maximumAttempts = max(
             strictConfiguration.maximumAttempts,
             Int((strictConfiguration.deadline / strictConfiguration.pollInterval).rounded(.up)))
