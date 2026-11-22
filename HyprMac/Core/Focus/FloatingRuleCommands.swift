@@ -10,8 +10,8 @@ struct FocusedWindowRuleInfo: Equatable {
     let windowID: CGWindowID
     let appName: String
     let bundleID: String
-    /// what "windows like this" would match, nil when nothing tells this
-    /// window apart (no title, normal layer)
+    /// what "windows like this" would match, nil when the window has no
+    /// title to match
     let likeThis: String?
     /// the rule deciding this window now, in words; nil when none does
     let currentRule: String?
@@ -23,7 +23,7 @@ struct FocusedWindowRuleInfo: Equatable {
 /// `forgetWindowRule`, plus the menu's "always float the whole app".
 ///
 /// A refusal gets the red shake and one notice line, like Toggle Floating:
-/// a Quick Look preview, a window nothing tells apart, a tile rule for a
+/// a Quick Look preview, a window with no title, a tile rule for a
 /// window HyprMac can't resize, a forget with no rule to forget.
 ///
 /// Threading: main-thread only.
@@ -40,10 +40,9 @@ final class FloatingRuleCommands {
         NSRunningApplication(processIdentifier: $0.ownerPID)?.localizedName
     }
     var title: (HyprWindow) -> String? = { $0.title }
-    var isRaised: (HyprWindow) -> Bool = { $0.isAboveNormalLayer }
     var isSizeSettable: (HyprWindow) -> Bool? = { $0.isSizeSettable }
 
-    static let nothingToMatchMessage = "Nothing tells this window apart. Use an app rule in Settings"
+    static let nothingToMatchMessage = "This window has no title to match. Use an app rule in Settings"
     static let noRuleMessage = "No rule covers this window"
     static let cannotTileMessage = "This window cannot be tiled"
     static let quickLookMessage = "Quick Look previews stay floating"
@@ -79,9 +78,9 @@ final class FloatingRuleCommands {
             return
         }
         guard let rule = FloatingRule.capture(bundleID: bundleID(window), title: title(window),
-                                              isRaised: isRaised(window), action: action) else {
+                                              action: action) else {
             refuse(window, Self.nothingToMatchMessage)
-            hyprLog(.notice, .floating, "rule refused: \(window.windowID) has no title and sits on the normal layer")
+            hyprLog(.notice, .floating, "rule refused: \(window.windowID) has no title")
             return
         }
         // same failure as Toggle Floating: a rule can't make this one tile
@@ -98,7 +97,7 @@ final class FloatingRuleCommands {
     private func forget(_ window: HyprWindow) {
         guard let bundleID = bundleID(window),
               let verdict = window.floatingVerdict(config.floatingRuleBook, bundleID: bundleID,
-                                                   title: title, isRaised: isRaised) else {
+                                                   title: title) else {
             refuse(window, Self.noRuleMessage)
             hyprLog(.notice, .floating, "rule forget: no rule covers \(window.windowID)")
             return
@@ -112,12 +111,11 @@ final class FloatingRuleCommands {
     /// The focused window as the menu describes it, nil with none.
     func focusedInfo() -> FocusedWindowRuleInfo? {
         guard let window = focusedWindow(), let bundleID = bundleID(window) else { return nil }
-        let raised = isRaised(window)
         let windowTitle = title(window)
         let likeThis = window.isQuickLookPanel ? nil
-            : FloatingRule.capture(bundleID: bundleID, title: windowTitle, isRaised: raised, action: .float)
+            : FloatingRule.capture(bundleID: bundleID, title: windowTitle, action: .float)
         let verdict = window.floatingVerdict(config.floatingRuleBook, bundleID: bundleID,
-                                             title: { _ in windowTitle }, isRaised: { _ in raised })
+                                             title: { _ in windowTitle })
         return FocusedWindowRuleInfo(
             windowID: window.windowID,
             appName: appName(window) ?? bundleID,
@@ -142,9 +140,8 @@ extension HyprWindow {
     /// `floatingVerdict` with the reads injected, for callers that already
     /// have them or tests that fake them.
     func floatingVerdict(_ book: FloatingRuleBook, bundleID: String?,
-                         title: @escaping (HyprWindow) -> String?,
-                         isRaised: @escaping (HyprWindow) -> Bool) -> FloatingRuleVerdict? {
-        book.verdict(bundleID: bundleID, title: { title(self) }, isRaised: { isRaised(self) })
+                         title: @escaping (HyprWindow) -> String?) -> FloatingRuleVerdict? {
+        book.verdict(bundleID: bundleID, title: { title(self) })
     }
 }
 

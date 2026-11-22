@@ -111,21 +111,12 @@ class HyprWindow: Equatable, Hashable {
         return value as? String
     }
 
-    /// Whether the window sits above normal windows: CG layer above 0, the
-    /// way picture-in-picture, call pop-ups and mini players sit. One window
-    /// list read; false when the window has no entry.
-    var isAboveNormalLayer: Bool {
-        guard let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowID) as? [[String: Any]],
-              let layer = info.first?[kCGWindowLayer as String] as? Int else { return false }
-        return layer > Int(CGWindowLevelForKey(.normalWindow))
-    }
-
     /// What the float and tile rules say about this window, nil when none
-    /// covers it. The title and layer are read only if a rule needs them.
+    /// covers it. The title is read only if a rule needs it.
     func floatingVerdict(_ book: FloatingRuleBook) -> FloatingRuleVerdict? {
         let bundleID = self.bundleID
             ?? NSRunningApplication(processIdentifier: ownerPID)?.bundleIdentifier
-        return book.verdict(bundleID: bundleID, title: { self.title }, isRaised: { self.isAboveNormalLayer })
+        return book.verdict(bundleID: bundleID, title: { self.title })
     }
 
     /// `true` when the window is in macOS native fullscreen mode (green

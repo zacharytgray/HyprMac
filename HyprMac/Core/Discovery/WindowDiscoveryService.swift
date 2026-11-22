@@ -212,8 +212,7 @@ final class WindowDiscoveryService {
          workspaceManager: WorkspaceManager,
          bundleIDForPID: @escaping (pid_t) -> String? = { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
          isWindowSizeSettable: @escaping (HyprWindow) -> Bool? = { $0.isSizeSettable },
-         windowTitle: @escaping (HyprWindow) -> String? = { $0.title },
-         isWindowRaised: @escaping (HyprWindow) -> Bool = { $0.isAboveNormalLayer }) {
+         windowTitle: @escaping (HyprWindow) -> String? = { $0.title }) {
         self.stateCache = stateCache
         self.accessibility = accessibility
         self.displayManager = displayManager
@@ -221,11 +220,9 @@ final class WindowDiscoveryService {
         self.bundleIDForPID = bundleIDForPID
         self.isWindowSizeSettable = isWindowSizeSettable
         self.windowTitle = windowTitle
-        self.isWindowRaised = isWindowRaised
     }
 
     private let windowTitle: (HyprWindow) -> String?
-    private let isWindowRaised: (HyprWindow) -> Bool
 
     /// Known windows the last cycle held because AX could not read them.
     /// Kept so the outage is logged at its edges rather than every cycle.
@@ -855,8 +852,7 @@ final class WindowDiscoveryService {
         // windows and quick look previews. a tile rule beats Never tile
         // but not a size HyprMac can't set
         let bundleID = bundleIDForPID(w.ownerPID) ?? w.bundleID
-        let verdict = ruleBook.verdict(bundleID: bundleID, title: { self.windowTitle(w) },
-                                       isRaised: { self.isWindowRaised(w) })
+        let verdict = ruleBook.verdict(bundleID: bundleID, title: { self.windowTitle(w) })
         if let reason = FloatingAdmissionPolicy.reason(
             rule: verdict,
             isSizeSettable: isWindowSizeSettable(w),
@@ -979,7 +975,7 @@ final class WindowDiscoveryService {
                 fixedSizeRechecks[id] = nil
                 // resizable now, but a float rule that matches it keeps it floating
                 if ruleBook.verdict(bundleID: bundleIDForPID(w.ownerPID) ?? w.bundleID,
-                                    title: { self.windowTitle(w) }, isRaised: { self.isWindowRaised(w) })?
+                                    title: { self.windowTitle(w) })?
                     .floats == true {
                     hyprLog(.notice, .discovery, "auto-float re-check: \(id) is resizable now"
                             + " but a float rule covers it — stays floating")
@@ -1042,7 +1038,7 @@ final class WindowDiscoveryService {
             let title = workspace == nil ? entry.title : windowTitle(w)
             if workspace != nil, title != entry.title {
                 let verdict = ruleBook.verdict(bundleID: bundleIDForPID(w.ownerPID) ?? w.bundleID,
-                                               title: { title }, isRaised: { self.isWindowRaised(w) })
+                                               title: { title })
                 if let verdict, verdict.isWindowKind {
                     titleRuleRechecks[id] = nil
                     let description = verdict.rule?.matchDescription ?? ""

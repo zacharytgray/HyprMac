@@ -17,14 +17,16 @@ struct FloatingRule: Codable, Equatable, Hashable, Identifiable {
     }
 
     /// Which windows of the app a rule covers. One criterion per rule.
+    ///
+    /// The title is the only one. A window above normal windows (picture in
+    /// picture, a call pop-up) is never managed, since discovery binds only
+    /// layer-0 windows, so it floats already and a rule on its layer could
+    /// never apply.
     enum Match: Equatable, Hashable {
         /// the title, exactly
         case titleIs(String)
         /// the title contains this text, ignoring case
         case titleContains(String)
-        /// the window sits above normal windows (CG layer above 0): a
-        /// picture-in-picture, a call pop-up, a mini player
-        case raised
     }
 
     let bundleID: String
@@ -33,17 +35,14 @@ struct FloatingRule: Codable, Equatable, Hashable, Identifiable {
 
     var id: String { "\(bundleID)|\(match.map(Self.key) ?? "app")" }
 
-    /// Whether `match` covers a window with this title and layer. `isRaised`
-    /// is asked only for a `.raised` rule: it costs a window-list read.
-    static func matches(_ match: Match, title: String?, isRaised: () -> Bool) -> Bool {
+    /// Whether `match` covers a window with this title.
+    static func matches(_ match: Match, title: String?) -> Bool {
         switch match {
         case let .titleIs(text):
             return title == text
         case let .titleContains(text):
             guard let title, !text.isEmpty else { return false }
             return title.range(of: text, options: .caseInsensitive) != nil
-        case .raised:
-            return isRaised()
         }
     }
 
@@ -51,7 +50,6 @@ struct FloatingRule: Codable, Equatable, Hashable, Identifiable {
         switch match {
         case let .titleIs(text): return "titleIs:\(text)"
         case let .titleContains(text): return "titleContains:\(text)"
-        case .raised: return "raised"
         }
     }
 }
@@ -59,23 +57,32 @@ struct FloatingRule: Codable, Equatable, Hashable, Identifiable {
 // MARK: - wire format
 
 // {"bundleID":"us.zoom.xos","action":"float","match":{"titleIs":"Zoom Meeting"}}
-// {"bundleID":"com.apple.FaceTime","action":"float","match":{"raised":true}}
 // {"bundleID":"com.apple.FaceTime","action":"tile"}
 //
-// a match with no known criterion, two criteria, empty text or raised:false
-// throws, and so does "match": null, so the tolerant config decoder drops
+// a match with no known criterion (including the "raised" key an unreleased
+// build wrote), two criteria or empty text throws, and so does "match": null, so the tolerant config decoder drops
 // that one rule instead of reading it as a whole-app rule.
 extension FloatingRule.Match: Codable {
     private enum Key: String, CodingKey {
-        case titleIs, titleContains, raised
+        case titleIs, titleContains
+    }
+
+    // every key the object holds, known or not
+    private struct AnyKey: CodingKey {
+        var stringValue: String
+        var intValue: Int? { nil }
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
     }
 
     init(from decoder: Decoder) throws {
+        // a key this build doesn't know makes the match unreadable, not
+        // narrower: {"titleIs": "x", "raised": true} drops, it isn't titleIs
+        let all = try decoder.container(keyedBy: AnyKey.self).allKeys
         let c = try decoder.container(keyedBy: Key.self)
-        let keys = c.allKeys
-        guard keys.count == 1, let key = keys.first else {
+        guard all.count == 1, let key = c.allKeys.first else {
             throw DecodingError.dataCorrupted(.init(
-                codingPath: decoder.codingPath, debugDescription: "match needs exactly one criterion"))
+                codingPath: decoder.codingPath, debugDescription: "match needs exactly one known criterion"))
         }
         switch key {
         case .titleIs, .titleContains:
@@ -84,12 +91,6 @@ extension FloatingRule.Match: Codable {
                 throw DecodingError.dataCorruptedError(forKey: key, in: c, debugDescription: "empty title")
             }
             self = key == .titleIs ? .titleIs(text) : .titleContains(text)
-        case .raised:
-            guard try c.decode(Bool.self, forKey: .raised) else {
-                throw DecodingError.dataCorruptedError(forKey: .raised, in: c,
-                                                       debugDescription: "raised must be true")
-            }
-            self = .raised
         }
     }
 
@@ -98,7 +99,6 @@ extension FloatingRule.Match: Codable {
         switch self {
         case let .titleIs(text): try c.encode(text, forKey: .titleIs)
         case let .titleContains(text): try c.encode(text, forKey: .titleContains)
-        case .raised: try c.encode(true, forKey: .raised)
         }
     }
 }
@@ -171,22 +171,15 @@ struct FloatingRuleBook: Equatable {
 
     static let empty = FloatingRuleBook()
 
-    /// `title` and `isRaised` are live reads: each is asked once at most,
-    /// and only when one of the app's rules needs it.
-    func verdict(bundleID: String?, title: () -> String?, isRaised: () -> Bool) -> FloatingRuleVerdict? {
+    /// `title` is a live read: asked once at most, and only when one of the
+    /// app's rules needs it.
+    func verdict(bundleID: String?, title: () -> String?) -> FloatingRuleVerdict? {
         guard let bundleID, !bundleID.isEmpty else { return nil }
         var readTitle: String??
-        var readRaised: Bool?
-        let raised: () -> Bool = {
-            if let readRaised { return readRaised }
-            let value = isRaised()
-            readRaised = value
-            return value
-        }
         for rule in rules where rule.bundleID == bundleID {
             guard let match = rule.match else { continue }
-            if match != .raised, readTitle == nil { readTitle = .some(title()) }
-            guard FloatingRule.matches(match, title: readTitle ?? nil, isRaised: raised) else { continue }
+            if readTitle == nil { readTitle = .some(title()) }
+            guard FloatingRule.matches(match, title: readTitle ?? nil) else { continue }
             return rule.action == .float ? .float(rule) : .tile(rule)
         }
         if excludedBundleIDs.contains(bundleID) { return .float(nil) }
@@ -200,26 +193,18 @@ struct FloatingRuleBook: Equatable {
     /// title arrives late is worth asking again.
     func hasTitleRules(bundleID: String?) -> Bool {
         guard let bundleID else { return false }
-        return rules.contains { rule in
-            guard rule.bundleID == bundleID, let match = rule.match else { return false }
-            if case .raised = match { return false }
-            return true
-        }
+        return rules.contains { $0.bundleID == bundleID && $0.match != nil }
     }
 }
 
 // MARK: - one-click capture
 
 extension FloatingRule {
-    /// The rule "windows like this" makes from the focused window. A window
-    /// above normal windows is matched by that, since pop-ups often share
-    /// the main window's title. Otherwise its exact title, which Settings
-    /// can loosen to "contains". nil when nothing tells the window apart:
-    /// no title and a normal layer.
-    static func capture(bundleID: String?, title: String?, isRaised: Bool,
-                        action: Action) -> FloatingRule? {
+    /// The rule "windows like this" makes from the focused window: its exact
+    /// title, which Settings can loosen to "contains". nil when the window
+    /// has no title, so nothing tells it apart.
+    static func capture(bundleID: String?, title: String?, action: Action) -> FloatingRule? {
         guard let bundleID, !bundleID.isEmpty else { return nil }
-        if isRaised { return FloatingRule(bundleID: bundleID, action: action, match: .raised) }
         guard let title, !title.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
         return FloatingRule(bundleID: bundleID, action: action, match: .titleIs(title))
     }
@@ -245,7 +230,6 @@ extension FloatingRule {
         case nil: return "All windows"
         case let .titleIs(text)?: return "Windows titled “\(text)”"
         case let .titleContains(text)?: return "Windows with “\(text)” in the title"
-        case .raised?: return "Windows that stay on top"
         }
     }
 }

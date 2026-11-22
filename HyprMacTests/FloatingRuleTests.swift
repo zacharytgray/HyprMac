@@ -23,12 +23,12 @@ final class FloatingRuleTests: XCTestCase {
         let saved = try decodeRules(#""floatingRules":["#
             + #"{"bundleID":"us.zoom.xos","action":"float","match":{"titleIs":"Zoom Meeting"}},"#
             + #"{"bundleID":"com.microsoft.teams2","action":"tile","match":{"titleContains":"Meeting"}},"#
-            + #"{"bundleID":"com.apple.FaceTime","action":"float","match":{"raised":true}},"#
+            + #"{"bundleID":"com.apple.FaceTime","action":"float","match":{"titleContains":"Call"}},"#
             + #"{"bundleID":"com.apple.FaceTime","action":"tile"}]"#)
         XCTAssertEqual(saved.floatingRules, [
             FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting")),
             FloatingRule(bundleID: teams, action: .tile, match: .titleContains("Meeting")),
-            FloatingRule(bundleID: faceTime, action: .float, match: .raised),
+            FloatingRule(bundleID: faceTime, action: .float, match: .titleContains("Call")),
             FloatingRule(bundleID: faceTime, action: .tile),
         ])
         XCTAssertEqual(saved.excludedBundleIDs, [faceTime])
@@ -44,8 +44,18 @@ final class FloatingRuleTests: XCTestCase {
             + #"{"bundleID":"e","action":"float","match":{"identifier":"x"}},"#
             + #"{"bundleID":"","action":"float"},"#
             + #"null,"#
-            + #"{"bundleID":"ok","action":"float","match":{"raised":true}}]"#)
-        XCTAssertEqual(saved.floatingRules, [FloatingRule(bundleID: "ok", action: .float, match: .raised)])
+            + #"{"bundleID":"ok","action":"float","match":{"titleContains":"Meeting"}}]"#)
+        XCTAssertEqual(saved.floatingRules, [FloatingRule(bundleID: "ok", action: .float, match: .titleContains("Meeting"))])
+    }
+
+    // the stay-on-top match an unreleased build wrote is an unknown key now:
+    // the rule drops, it is not read as a whole-app rule or as its title part
+    func testARaisedMatchDropsTheRule() throws {
+        let saved = try decodeRules(#""floatingRules":["#
+            + #"{"bundleID":"com.apple.FaceTime","action":"float","match":{"raised":true}},"#
+            + #"{"bundleID":"com.apple.FaceTime","action":"float","match":{"titleIs":"FaceTime","raised":true}},"#
+            + #"{"bundleID":"us.zoom.xos","action":"float"}]"#)
+        XCTAssertEqual(saved.floatingRules, [FloatingRule(bundleID: zoom, action: .float)])
         XCTAssertEqual(saved.excludedBundleIDs, [faceTime])
         XCTAssertEqual(saved.gapSize, 8)
     }
@@ -73,13 +83,13 @@ final class FloatingRuleTests: XCTestCase {
     func testRulesRoundTrip() throws {
         let rules = [
             FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting")),
-            FloatingRule(bundleID: faceTime, action: .float, match: .raised),
+            FloatingRule(bundleID: faceTime, action: .float, match: .titleContains("Call")),
             FloatingRule(bundleID: teams, action: .tile),
         ]
         let data = try JSONEncoder().encode(rules)
         XCTAssertEqual(try JSONDecoder().decode([FloatingRule].self, from: data), rules)
         let text = String(decoding: data, as: UTF8.self)
-        XCTAssertTrue(text.contains(#""raised":true"#), text)
+        XCTAssertTrue(text.contains(#""titleContains":"Call""#), text)
         XCTAssertFalse(text.contains(#""match":null"#), "an app rule writes no match: \(text)")
     }
 
@@ -142,70 +152,66 @@ final class FloatingRuleTests: XCTestCase {
     func testAWindowRuleBeatsNeverTile() {
         let tileMain = FloatingRule(bundleID: faceTime, action: .tile, match: .titleIs("FaceTime"))
         let b = book([tileMain], excluded: [faceTime])
-        XCTAssertEqual(b.verdict(bundleID: faceTime, title: { "FaceTime" }, isRaised: { false }), .tile(tileMain))
-        XCTAssertEqual(b.verdict(bundleID: faceTime, title: { "Call" }, isRaised: { false }), .float(nil))
+        XCTAssertEqual(b.verdict(bundleID: faceTime, title: { "FaceTime" }), .tile(tileMain))
+        XCTAssertEqual(b.verdict(bundleID: faceTime, title: { "Call" }), .float(nil))
     }
 
     // a hand edit with both: Never tile wins, as before tile rules existed
     func testNeverTileBeatsAnAppTileRule() {
         let b = book([FloatingRule(bundleID: faceTime, action: .tile)], excluded: [faceTime])
-        XCTAssertEqual(b.verdict(bundleID: faceTime, title: { nil }, isRaised: { false }), .float(nil))
+        XCTAssertEqual(b.verdict(bundleID: faceTime, title: { nil }), .float(nil))
     }
 
     func testAnAppTileRuleAndNoRule() {
         let appTile = FloatingRule(bundleID: teams, action: .tile)
         let b = book([appTile])
-        XCTAssertEqual(b.verdict(bundleID: teams, title: { nil }, isRaised: { false }), .tile(appTile))
-        XCTAssertNil(b.verdict(bundleID: zoom, title: { nil }, isRaised: { false }))
-        XCTAssertNil(b.verdict(bundleID: nil, title: { nil }, isRaised: { false }))
+        XCTAssertEqual(b.verdict(bundleID: teams, title: { nil }), .tile(appTile))
+        XCTAssertNil(b.verdict(bundleID: zoom, title: { nil }))
+        XCTAssertNil(b.verdict(bundleID: nil, title: { nil }))
     }
 
     func testTheFirstMatchingWindowRuleWins() {
         let first = FloatingRule(bundleID: teams, action: .tile, match: .titleContains("meeting"))
-        let second = FloatingRule(bundleID: teams, action: .float, match: .raised)
+        let second = FloatingRule(bundleID: teams, action: .float, match: .titleContains("Teams"))
         let b = book([first, second])
-        XCTAssertEqual(b.verdict(bundleID: teams, title: { "Weekly Meeting | Teams" }, isRaised: { true }),
+        XCTAssertEqual(b.verdict(bundleID: teams, title: { "Weekly Meeting | Teams" }),
                        .tile(first), "contains ignores case, and the earlier rule wins")
-        XCTAssertEqual(b.verdict(bundleID: teams, title: { "Chat" }, isRaised: { true }), .float(second))
+        XCTAssertEqual(b.verdict(bundleID: teams, title: { "Chat | Teams" }), .float(second))
     }
 
     func testTitleIsIsExact() {
         let rule = FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting"))
         let b = book([rule])
-        XCTAssertEqual(b.verdict(bundleID: zoom, title: { "Zoom Meeting" }, isRaised: { false }), .float(rule))
-        XCTAssertNil(b.verdict(bundleID: zoom, title: { "Zoom Meeting 2" }, isRaised: { false }))
-        XCTAssertNil(b.verdict(bundleID: zoom, title: { nil }, isRaised: { false }))
+        XCTAssertEqual(b.verdict(bundleID: zoom, title: { "Zoom Meeting" }), .float(rule))
+        XCTAssertNil(b.verdict(bundleID: zoom, title: { "Zoom Meeting 2" }))
+        XCTAssertNil(b.verdict(bundleID: zoom, title: { nil }))
     }
 
     // the live reads happen once at most, and only when a rule needs them
     func testTheReadsAreLazyAndOnce() {
-        var titleReads = 0, layerReads = 0
+        var titleReads = 0
         let b = book([FloatingRule(bundleID: zoom, action: .float, match: .titleIs("a")),
-                      FloatingRule(bundleID: zoom, action: .float, match: .titleContains("b")),
-                      FloatingRule(bundleID: zoom, action: .float, match: .raised)],
+                      FloatingRule(bundleID: zoom, action: .float, match: .titleContains("b"))],
                      excluded: [faceTime])
-        _ = b.verdict(bundleID: faceTime, title: { titleReads += 1; return "x" },
-                      isRaised: { layerReads += 1; return false })
-        XCTAssertEqual(titleReads + layerReads, 0, "no rule of that app needs a read")
-        _ = b.verdict(bundleID: zoom, title: { titleReads += 1; return "x" },
-                      isRaised: { layerReads += 1; return false })
+        _ = b.verdict(bundleID: faceTime, title: { titleReads += 1; return "x" })
+        XCTAssertEqual(titleReads, 0, "no rule of that app needs a read")
+        _ = b.verdict(bundleID: zoom, title: { titleReads += 1; return "x" })
         XCTAssertEqual(titleReads, 1)
-        XCTAssertEqual(layerReads, 1)
     }
 
     func testTitleRulesAreKnown() {
         let b = book([FloatingRule(bundleID: zoom, action: .float, match: .titleIs("a")),
-                      FloatingRule(bundleID: faceTime, action: .float, match: .raised)])
+                      FloatingRule(bundleID: faceTime, action: .tile)])
         XCTAssertTrue(b.hasTitleRules(bundleID: zoom))
-        XCTAssertFalse(b.hasTitleRules(bundleID: faceTime), "a layer rule needs no title")
+        XCTAssertFalse(b.hasTitleRules(bundleID: faceTime), "an app rule needs no title")
         XCTAssertFalse(b.hasTitleRules(bundleID: nil))
     }
 
     // MARK: - admission policy
 
     func testThePolicyTable() {
-        let rule = FloatingRule(bundleID: zoom, action: .float, match: .raised)
-        let tile = FloatingRule(bundleID: zoom, action: .tile, match: .raised)
+        let rule = FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting"))
+        let tile = FloatingRule(bundleID: zoom, action: .tile, match: .titleIs("Zoom Meeting"))
         XCTAssertEqual(FloatingAdmissionPolicy.reason(rule: .tile(tile), isSizeSettable: true,
                                                       isQuickLookPanel: true), .quickLook)
         XCTAssertEqual(FloatingAdmissionPolicy.reason(rule: .float(nil), isSizeSettable: true), .excludedApp)
@@ -221,23 +227,20 @@ final class FloatingRuleTests: XCTestCase {
     // MARK: - capture and edits
 
     func testOneClickCapture() {
-        XCTAssertEqual(FloatingRule.capture(bundleID: zoom, title: "Zoom Meeting", isRaised: true, action: .float),
-                       FloatingRule(bundleID: zoom, action: .float, match: .raised),
-                       "a raised window is matched by its layer: pop-ups share titles")
-        XCTAssertEqual(FloatingRule.capture(bundleID: zoom, title: "Zoom Meeting", isRaised: false, action: .tile),
+        XCTAssertEqual(FloatingRule.capture(bundleID: zoom, title: "Zoom Meeting", action: .tile),
                        FloatingRule(bundleID: zoom, action: .tile, match: .titleIs("Zoom Meeting")))
-        XCTAssertNil(FloatingRule.capture(bundleID: zoom, title: "", isRaised: false, action: .float))
-        XCTAssertNil(FloatingRule.capture(bundleID: zoom, title: "  ", isRaised: false, action: .float))
-        XCTAssertNil(FloatingRule.capture(bundleID: zoom, title: nil, isRaised: false, action: .float))
-        XCTAssertNil(FloatingRule.capture(bundleID: nil, title: "x", isRaised: true, action: .float))
+        XCTAssertNil(FloatingRule.capture(bundleID: zoom, title: "", action: .float))
+        XCTAssertNil(FloatingRule.capture(bundleID: zoom, title: "  ", action: .float))
+        XCTAssertNil(FloatingRule.capture(bundleID: zoom, title: nil, action: .float))
+        XCTAssertNil(FloatingRule.capture(bundleID: nil, title: "x", action: .float))
     }
 
     func testANewRuleGoesAheadOfTheAppsOthersAndAnEqualMatchIsReplaced() {
-        let old = FloatingRule(bundleID: teams, action: .float, match: .raised)
-        let other = FloatingRule(bundleID: zoom, action: .float, match: .raised)
+        let old = FloatingRule(bundleID: teams, action: .float, match: .titleIs("Chat"))
+        let other = FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Chat"))
         let new = FloatingRule(bundleID: teams, action: .tile, match: .titleContains("Meeting"))
         XCTAssertEqual(FloatingRule.upserting(new, into: [other, old]), [other, new, old])
-        let flipped = FloatingRule(bundleID: teams, action: .tile, match: .raised)
+        let flipped = FloatingRule(bundleID: teams, action: .tile, match: .titleIs("Chat"))
         XCTAssertEqual(FloatingRule.upserting(flipped, into: [other, old]), [other, flipped])
     }
 
@@ -286,7 +289,7 @@ final class FloatingRuleTests: XCTestCase {
         let (store, _) = makeStore()
         let config = UserConfig(store: store, iCloudSyncEnabled: false)
         let a = FloatingRule(bundleID: teams, action: .tile, match: .titleIs("Weekly sync | Microsoft Teams"))
-        let b = FloatingRule(bundleID: teams, action: .float, match: .raised)
+        let b = FloatingRule(bundleID: teams, action: .float, match: .titleIs("Chat"))
         config.floatingRules = [a, b]
         let trimmed = FloatingRule(bundleID: teams, action: .tile, match: .titleContains("Microsoft Teams"))
         config.replaceFloatingRule(a, with: trimmed)
@@ -328,8 +331,8 @@ final class FloatingRuleTests: XCTestCase {
     // MARK: - rule change step
 
     func testTheRuleChangeTable() {
-        let float = FloatingRule(bundleID: zoom, action: .float, match: .raised)
-        let tile = FloatingRule(bundleID: zoom, action: .tile, match: .raised)
+        let float = FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting"))
+        let tile = FloatingRule(bundleID: zoom, action: .tile, match: .titleIs("Zoom Meeting"))
         typealias C = FloatingWindowController
         XCTAssertEqual(C.ruleChangeStep(before: nil, after: .float(float), isFloating: false, canTile: true), .float)
         XCTAssertNil(C.ruleChangeStep(before: nil, after: .float(float), isFloating: true, canTile: true))
@@ -354,7 +357,6 @@ final class FloatingRuleDiscoveryTests: XCTestCase {
     private let faceTime = "com.apple.FaceTime"
 
     private func makeService(titles: @escaping (CGWindowID) -> String?,
-                             raised: @escaping (CGWindowID) -> Bool = { _ in false },
                              settable: @escaping (CGWindowID) -> Bool? = { _ in true },
                              bundleID: String)
         -> (WindowDiscoveryService, WindowStateCache, WorkspaceManager) {
@@ -365,7 +367,7 @@ final class FloatingRuleDiscoveryTests: XCTestCase {
             stateCache: cache, accessibility: AccessibilityManager(), displayManager: display,
             workspaceManager: workspaces, bundleIDForPID: { _ in bundleID },
             isWindowSizeSettable: { settable($0.windowID) },
-            windowTitle: { titles($0.windowID) }, isWindowRaised: { raised($0.windowID) })
+            windowTitle: { titles($0.windowID) })
         return (service, cache, workspaces)
     }
 
@@ -380,14 +382,6 @@ final class FloatingRuleDiscoveryTests: XCTestCase {
         let rule = FloatingRule(bundleID: teams, action: .float, match: .titleContains("Meeting"))
         _ = poll(svc, [makeWindow(id: 1, pid: 100)], rules: [rule])
         XCTAssertTrue(cache.floatingWindowIDs.contains(1))
-    }
-
-    func testARaisedRuleFloatsAPopUp() {
-        let (svc, cache, _) = makeService(titles: { _ in "FaceTime" }, raised: { $0 == 2 }, bundleID: faceTime)
-        let rule = FloatingRule(bundleID: faceTime, action: .float, match: .raised)
-        _ = poll(svc, [makeWindow(id: 1, pid: 100), makeWindow(id: 2, pid: 100)], rules: [rule])
-        XCTAssertFalse(cache.floatingWindowIDs.contains(1), "the main window sits on the normal layer")
-        XCTAssertTrue(cache.floatingWindowIDs.contains(2))
     }
 
     // FaceTime in Never tile, its main window tiled by a window rule
@@ -586,7 +580,6 @@ final class FloatingRuleControllerTests: XCTestCase {
             super.init(element: AXUIElementCreateApplication(0), windowID: id, ownerPID: 0)
         }
         override var title: String? { fakeTitle }
-        override var isAboveNormalLayer: Bool { false }
         override func readPosition() -> (AXError, CGPoint?) { (.success, CGPoint(x: 100, y: 100)) }
         override func readSize() -> (AXError, CGSize?) { (.success, CGSize(width: 600, height: 400)) }
     }
@@ -842,7 +835,7 @@ final class FloatingRuleControllerTests: XCTestCase {
 
     // MARK: actions
 
-    private func commands(_ window: HyprWindow?, raised: Bool = false, settable: Bool? = true)
+    private func commands(_ window: HyprWindow?, settable: Bool? = true)
         -> (FloatingRuleCommands, UserConfig, () -> [String]) {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("FloatingRuleCommands-\(UUID().uuidString)", isDirectory: true)
@@ -857,7 +850,6 @@ final class FloatingRuleControllerTests: XCTestCase {
         var refusals: [String] = []
         commands.focusedWindow = { window }
         commands.refuse = { _, message in refusals.append(message) }
-        commands.isRaised = { _ in raised }
         commands.isSizeSettable = { _ in settable }
         commands.appName = { _ in "Zoom" }
         return (commands, config, { refusals })
@@ -906,9 +898,9 @@ final class FloatingRuleControllerTests: XCTestCase {
     func testForgetRemovesTheRuleThatDecides() {
         let w = TitledWindow(id: 1, title: "Zoom Meeting")
         w.bundleID = zoom
-        let (commands, config, refusals) = commands(w, raised: true)
+        let (commands, config, refusals) = commands(w)
         commands.perform(.floatWindowsLikeThis)
-        XCTAssertEqual(config.floatingRules, [FloatingRule(bundleID: zoom, action: .float, match: .raised)])
+        XCTAssertEqual(config.floatingRules, [FloatingRule(bundleID: zoom, action: .float, match: .titleIs("Zoom Meeting"))])
         commands.perform(.forgetWindowRule)
         XCTAssertTrue(config.floatingRules.isEmpty)
         commands.perform(.forgetWindowRule)

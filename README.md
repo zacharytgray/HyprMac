@@ -293,10 +293,10 @@ Settings → General → "Float and tile rules" lists which apps, and which kind
 an app, always float or always tile. A rule for one kind of window beats a rule for its app.
 Make one from the window itself: the menu bar's "Focused window" section has "Always float
 windows like this", "Always tile windows like this", "Always float all <App> windows" and
-"Forget rule for this window". The first three also exist as keybindable actions. "Windows like
-this" are the app's windows that stay on top of others when the focused one does, else the ones
-with its title. Settings' Edit can change a title rule to "contains", for meeting windows whose
-title carries the meeting's name.
+"Forget rule for this window". Both "like this" items and Forget also exist as keybindable
+actions. "Windows like this" are the app's windows with the focused one's title. Settings' Edit can
+change a title rule to "contains", for meeting windows whose title carries the meeting's name.
+Windows that stay on top of others, like picture in picture, are never tiled and need no rule.
 
 A window a float rule covers can't be tiled by hand. Hypr+T on one shakes red and says so; remove
 the rule to tile it again. "Always tile" can't tile a window HyprMac can't resize.

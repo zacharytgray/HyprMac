@@ -251,15 +251,15 @@ lists every rule, with a Float/Tile switch and a remove button on each row.
 "floatingRules": [
   { "bundleID": "us.zoom.xos", "action": "float", "match": { "titleIs": "Zoom Meeting" } },
   { "bundleID": "com.microsoft.teams2", "action": "tile", "match": { "titleContains": "Meeting" } },
-  { "bundleID": "com.apple.FaceTime", "action": "float", "match": { "raised": true } },
   { "bundleID": "com.apple.FaceTime", "action": "tile", "match": { "titleIs": "FaceTime" } }
 ]
 ```
 
 `action` is `float` or `tile`. `match` holds exactly one criterion: `titleIs`
-(the exact title), `titleContains` (ignoring case), or `raised: true` (the
-window sits above normal windows, CG layer above 0, the way picture-in-picture,
-call pop-ups and mini players do). With no `match` the rule covers the app.
+(the exact title) or `titleContains` (ignoring case). With no `match` the rule
+covers the app. There is no rule for windows above normal windows
+(picture-in-picture, call pop-ups): discovery binds only layer-0 windows, so
+those are never managed and already float.
 
 **Precedence**, highest first: Quick Look previews and windows on a disabled
 monitor (always float, outside rules); a window rule, the first that matches
@@ -286,11 +286,10 @@ Window Management once bound:
 ```
 
 The menu bar's "Focused window" section runs them too, plus "Always float all
-<App> windows". "Windows like this" are the app's windows above normal windows
-when the focused one is raised, else the ones with its exact title. Settings'
-Edit popover loosens a title to "contains" and trims it, for titles that carry
-a meeting's name. A window with no title on the normal layer has nothing to
-match, so the menu items are dimmed and the action shakes. A new rule goes
+<App> windows". "Windows like this" are the app's windows with the focused
+one's exact title. Settings' Edit popover loosens a title to "contains" and
+trims it, for titles that carry a meeting's name. A window with no title has
+nothing to match, so the menu items are dimmed and the action shakes. A new rule goes
 ahead of the app's older ones. Forget removes the rule that decides the window:
 a window rule, the app tile rule, or the app from Never tile.
 
@@ -318,8 +317,8 @@ matches …`.
 Downgrade: an older build ignores `floatingRules` and drops it on its next
 save, like `windowRules`. App floats survive, since they are
 `excludedBundleIDs`. The array decodes per element: a rule with an unknown
-action or a malformed match (including `"match": null`) is logged and dropped
-alone.
+action or a malformed match (including `"match": null` and an unknown key such
+as `raised`, which an unreleased build wrote) is logged and dropped alone.
 
 ## Workspace names
 

@@ -49,7 +49,7 @@ for one kind of window go in `settings.floatingRules`:
 ```nix
 settings.floatingRules = [
   { bundleID = "us.zoom.xos"; action = "float"; match.titleIs = "Zoom Meeting"; }
-  { bundleID = "com.apple.FaceTime"; action = "float"; match.raised = true; }
+  { bundleID = "com.microsoft.teams2"; action = "float"; match.titleContains = "Meeting"; }
 ];
 ```
 
