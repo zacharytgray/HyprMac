@@ -34,7 +34,7 @@ enum RuntimeVariant {
 
     /// True when something other than Sparkle updates this copy: a Nix
     /// install, or the user-defaults key above. Sparkle stays off, Settings
-    /// hides the sidebar update row and the Updates panel, and the menu shows
+    /// hides the sidebar update row, and the menu and the Updates panel say
     /// who manages updates.
     static let updatesManagedExternally = updatesManagedExternally(nixInstall: updatesManagedByNix)
 

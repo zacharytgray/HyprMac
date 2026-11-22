@@ -58,6 +58,12 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("keys-leftcommand-dark", tab(KeybindsSettingsView()))
     }
 
+    // the Updates panel when Nix or the defaults key manages updates
+    func testRenderManagedUpdatesPanel() throws {
+        try render("updates-managed-package-manager-dark", tab(ManagedUpdatesPanel(nixInstall: false)))
+        try render("updates-managed-nix-dark", tab(ManagedUpdatesPanel(nixInstall: true)))
+    }
+
     func testRenderTourGateAndMenu() throws {
         UserConfig.shared.hyprKey = .capsLock
         try render("tour-hypr-key-dark", TourView(mode: .firstRun, onDismiss: {}),

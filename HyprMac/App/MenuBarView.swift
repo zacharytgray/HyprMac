@@ -467,6 +467,19 @@ enum MenuBarPresentation {
         nixInstall ? "Updates are managed by Nix" : "Updates are managed by your package manager"
     }
 
+    /// The line under that title in Settings → General → Updates.
+    static func managedUpdatesHint(nixInstall: Bool) -> String {
+        nixInstall
+            ? "Update HyprMac through Nix."
+            : "To turn the in-app updater back on, run this in Terminal, then quit and reopen HyprMac."
+    }
+
+    /// The command that clears the defaults key. nil for a Nix install,
+    /// where the key doesn't decide anything.
+    static func updaterBackOnCommand(nixInstall: Bool) -> String? {
+        nixInstall ? nil : "defaults delete com.zachgray.HyprMac \(RuntimeVariant.updatesManagedExternallyKey)"
+    }
+
     /// Tooltip for the menu bar item's update dot.
     static func updateHelp(for notice: UpdateNotice) -> String {
         switch notice {

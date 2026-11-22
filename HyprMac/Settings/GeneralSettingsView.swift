@@ -335,10 +335,13 @@ struct GeneralSettingsView: View {
 
     // MARK: updates
 
-    /// Nix or another manager replaces the app itself, and the debug variant has no updater.
+    /// Nix or another manager replaces the app itself, so the switches give
+    /// way to one read-only line. The debug variant has no updater.
     @ViewBuilder private var updatesPanel: some View {
         #if !HYPRMAC_DEBUG_VARIANT
-        if let updates, !RuntimeVariant.updatesManagedExternally {
+        if RuntimeVariant.updatesManagedExternally {
+            ManagedUpdatesPanel(nixInstall: RuntimeVariant.updatesManagedByNix)
+        } else if let updates {
             UpdateSettingsPanel(updates: updates)
         }
         #endif
@@ -414,6 +417,41 @@ struct GeneralSettingsView: View {
         let ids = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
         let added = WindowRule.newRules(forBundleIDs: ids, existing: config.windowRules)
         if !added.isEmpty { config.windowRules.append(contentsOf: added) }
+    }
+}
+
+/// Updates when something outside HyprMac updates it: the menu row's
+/// wording, read-only, and for the defaults key the command that undoes it.
+struct ManagedUpdatesPanel: View {
+    let nixInstall: Bool
+
+    var body: some View {
+        let command = MenuBarPresentation.updaterBackOnCommand(nixInstall: nixInstall)
+        HyprPanel("Updates") {
+            HyprRow(MenuBarPresentation.managedUpdatesTitle(nixInstall: nixInstall),
+                    icon: "shippingbox",
+                    subtitle: MenuBarPresentation.managedUpdatesHint(nixInstall: nixInstall),
+                    divider: false) {
+                if let command {
+                    Button("Copy command") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                    }
+                    .controlSize(.small)
+                }
+            }
+            if let command {
+                Text(command)
+                    .font(.hyprMonoXs)
+                    .foregroundStyle(Color.hyprTextSecondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // lines up with the row text, past the icon column
+                    .padding(.leading, HyprSpacing.md + 16 + HyprSpacing.md)
+                    .padding(.trailing, HyprSpacing.md)
+                    .padding(.bottom, HyprSpacing.sm + 2)
+            }
+        }
     }
 }
 

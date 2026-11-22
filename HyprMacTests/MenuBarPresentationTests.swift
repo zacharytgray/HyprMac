@@ -293,6 +293,17 @@ final class MenuBarPresentationTests: XCTestCase {
                        "Updates are managed by your package manager")
     }
 
+    // the Updates panel keeps the menu's wording; only the key can be undone
+    func testTheManagedUpdatesPanelSaysHowToTurnTheUpdaterBackOn() {
+        XCTAssertEqual(MenuBarPresentation.managedUpdatesHint(nixInstall: true),
+                       "Update HyprMac through Nix.")
+        XCTAssertNil(MenuBarPresentation.updaterBackOnCommand(nixInstall: true))
+        XCTAssertEqual(MenuBarPresentation.managedUpdatesHint(nixInstall: false),
+                       "To turn the in-app updater back on, run this in Terminal, then quit and reopen HyprMac.")
+        XCTAssertEqual(MenuBarPresentation.updaterBackOnCommand(nixInstall: false),
+                       "defaults delete com.zachgray.HyprMac HyprMacUpdatesManagedExternally")
+    }
+
     func testTheMenuBarDotSaysWhatIsPending() {
         XCTAssertEqual(MenuBarPresentation.updateHelp(for: .available(version: "0.26.0")),
                        "HyprMac 0.26.0 is available")
