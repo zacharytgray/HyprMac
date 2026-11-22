@@ -384,6 +384,15 @@ Mac is working against that. Some apps push back, and now and then a window will
 its own thing. HyprMac is in active development and very usable day to day. When something
 misbehaves, [open an issue](https://github.com/zacharytgray/HyprMac/issues) and tell me about it.
 
+When a window misbehaves, these usually fix it:
+
+- <kbd>Hypr</kbd> + <kbd>I</kbd> sets a permanent float or tile rule for that app, or for that kind
+  of window.
+- <kbd>Hypr</kbd> + <kbd>T</kbd> floats or tiles just that window.
+- <kbd>Hypr</kbd> + <kbd>Shift</kbd> + <kbd>T</kbd> focuses a floating window, and cycles through
+  them when pressed again.
+- <kbd>Hypr</kbd> + <kbd>R</kbd> retiles everything.
+
 ## Why I built it
 
 I use Hyprland on Linux and wanted the same workflow on my Mac. Reaching for the mouse to find a
