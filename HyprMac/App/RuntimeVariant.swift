@@ -27,6 +27,21 @@ enum RuntimeVariant {
     /// Sparkle would replace a bundle Nix owns, so it stays off.
     static let updatesManagedByNix = isNixInstall(bundlePath: Bundle.main.bundlePath)
 
+    /// Set with `defaults write com.zachgray.HyprMac HyprMacUpdatesManagedExternally -bool true`
+    /// when something outside HyprMac updates a copy Nix detection can't see,
+    /// such as `brew upgrade --greedy` or an MDM. Read once at launch.
+    static let updatesManagedExternallyKey = "HyprMacUpdatesManagedExternally"
+
+    /// True when something other than Sparkle updates this copy: a Nix
+    /// install, or the user-defaults key above. Sparkle stays off, Settings
+    /// hides the Updates panel, and the menu shows who manages updates.
+    static let updatesManagedExternally = updatesManagedExternally(nixInstall: updatesManagedByNix)
+
+    static func updatesManagedExternally(nixInstall: Bool,
+                                         defaults: UserDefaults = .standard) -> Bool {
+        nixInstall || defaults.bool(forKey: updatesManagedExternallyKey)
+    }
+
     static func isNixInstall(bundlePath: String) -> Bool {
         let folders = URL(fileURLWithPath: bundlePath).deletingLastPathComponent().pathComponents
         return bundlePath.hasPrefix("/nix/store/")

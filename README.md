@@ -333,6 +333,17 @@ made in an older version is kept. The Accessibility permission carries over.
 Homebrew installs update the same way, so `brew upgrade` leaves HyprMac alone unless you pass
 `--greedy`. A copy installed by Nix is updated by Nix.
 
+If something else updates your copy, such as `brew upgrade --greedy`, an MDM, or a custom app
+folder, turn off the in-app updater and quit and reopen HyprMac:
+
+```bash
+defaults write com.zachgray.HyprMac HyprMacUpdatesManagedExternally -bool true
+```
+
+The menu then shows "Updates are managed by your package manager", and Settings → General hides
+the Updates panel. `defaults delete com.zachgray.HyprMac HyprMacUpdatesManagedExternally` turns
+the updater back on.
+
 </details>
 
 <details>

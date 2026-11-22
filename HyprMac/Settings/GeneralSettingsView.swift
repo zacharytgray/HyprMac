@@ -365,10 +365,10 @@ struct GeneralSettingsView: View {
 
     // MARK: updates
 
-    /// Nix replaces the app itself, and the debug variant has no updater.
+    /// Nix or another manager replaces the app itself, and the debug variant has no updater.
     @ViewBuilder private var updatesPanel: some View {
         #if !HYPRMAC_DEBUG_VARIANT
-        if let updates, !RuntimeVariant.updatesManagedByNix {
+        if let updates, !RuntimeVariant.updatesManagedExternally {
             UpdateSettingsPanel(updates: updates)
         }
         #endif

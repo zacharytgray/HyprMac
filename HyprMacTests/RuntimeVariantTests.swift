@@ -109,4 +109,25 @@ final class RuntimeVariantTests: XCTestCase {
                      "/Volumes/HyprMac/HyprMac.app"]
         for path in other { XCTAssertFalse(RuntimeVariant.isNixInstall(bundlePath: path), path) }
     }
+
+    // a copy outside the Nix paths opts out of Sparkle through the defaults key
+    func testTheDefaultsKeyLeavesUpdatesToAnExternalManager() throws {
+        let suite = "RuntimeVariantTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let key = RuntimeVariant.updatesManagedExternallyKey
+        XCTAssertEqual(key, "HyprMacUpdatesManagedExternally")
+
+        XCTAssertFalse(RuntimeVariant.updatesManagedExternally(nixInstall: false, defaults: defaults))
+        XCTAssertTrue(RuntimeVariant.updatesManagedExternally(nixInstall: true, defaults: defaults))
+
+        defaults.set(true, forKey: key)
+        XCTAssertTrue(RuntimeVariant.updatesManagedExternally(nixInstall: false, defaults: defaults))
+        XCTAssertTrue(RuntimeVariant.updatesManagedExternally(nixInstall: true, defaults: defaults))
+
+        // false never turns Sparkle back on for a Nix install
+        defaults.set(false, forKey: key)
+        XCTAssertFalse(RuntimeVariant.updatesManagedExternally(nixInstall: false, defaults: defaults))
+        XCTAssertTrue(RuntimeVariant.updatesManagedExternally(nixInstall: true, defaults: defaults))
+    }
 }
