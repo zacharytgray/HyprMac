@@ -31,6 +31,10 @@ final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate, SP
     private var lastWait: IdleInstallPolicy.Wait?
     /// set by `AppDelegate` once the window manager exists
     var windowManager: () -> WindowManager? = { nil }
+    /// Sparkle's own flag, false while it downloads a feed or an update in
+    /// the background. The menu and Settings disable their check with it.
+    @Published private(set) var canCheckForUpdates = true
+    private var canCheckObservation: NSKeyValueObservation?
 
     var updater: SPUUpdater { controller.updater }
 
@@ -40,6 +44,9 @@ final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate, SP
         controller = SPUStandardUpdaterController(
             startingUpdater: !RuntimeVariant.updatesManagedByNix,
             updaterDelegate: self, userDriverDelegate: self)
+        canCheckObservation = updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
+            DispatchQueue.main.async { self?.canCheckForUpdates = updater.canCheckForUpdates }
+        }
         let center = NotificationCenter.default
         for name in [NSWindow.didBecomeKeyNotification, NSWindow.didBecomeMainNotification] {
             center.addObserver(self, selector: #selector(windowCameForward(_:)), name: name, object: nil)
@@ -65,16 +72,21 @@ final class UpdateController: NSObject, ObservableObject, SPUUpdaterDelegate, SP
         set { objectWillChange.send(); updater.automaticallyDownloadsUpdates = newValue }
     }
 
-    // MARK: the menu's update row
+    // MARK: the update rows in the menu and Settings
 
     /// Install a downloaded update, or open the update window: the one a
     /// scheduled check is holding back, or a fresh check.
     func activate() {
         if let installNow {
-            hyprLog(.notice, .lifecycle, "update: installing now, asked from the menu")
+            hyprLog(.notice, .lifecycle, "update: installing now, asked from the menu or Settings")
             installNow()
             return
         }
+        checkForUpdates()
+    }
+
+    /// A user check. Sparkle shows its window, or the update it already holds.
+    func checkForUpdates() {
         updater.checkForUpdates()
         bringWindowsForward()
     }

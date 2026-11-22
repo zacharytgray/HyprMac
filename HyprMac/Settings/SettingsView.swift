@@ -9,6 +9,9 @@ struct SettingsView: View {
     let showTutorial: () -> Void
     @ObservedObject private var config = UserConfig.shared
     @State private var selectedTab: SettingsTab = .general
+    #if !HYPRMAC_DEBUG_VARIANT
+    @Environment(\.updateController) private var updates
+    #endif
 
     enum SettingsTab: String, CaseIterable, Hashable {
         case general, keys, layout
@@ -46,7 +49,7 @@ struct SettingsView: View {
             // header
             VStack(spacing: 4) {
                 HyprStackedLockup(markSize: 64)
-                Text("v\(appVersion)")
+                Text(UpdatePresentation.versionLabel(version: appVersion, build: appBuild))
                     .font(.hyprMonoXs)
                     .foregroundStyle(Color.hyprTextTertiary)
             }
@@ -88,6 +91,14 @@ struct SettingsView: View {
             .help(configURL.path)
             .padding(.horizontal, HyprSpacing.lg)
             .padding(.vertical, HyprSpacing.md)
+
+            #if !HYPRMAC_DEBUG_VARIANT
+            if let updates, !RuntimeVariant.updatesManagedByNix {
+                SidebarUpdateRow(updates: updates)
+                    .padding(.horizontal, HyprSpacing.lg)
+                    .padding(.bottom, HyprSpacing.md)
+            }
+            #endif
         }
         .frame(maxHeight: .infinity)
     }
@@ -122,6 +133,10 @@ struct SettingsView: View {
 
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+
+    private var appBuild: String? {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String
     }
 
     private var configURL: URL {
@@ -178,6 +193,52 @@ private struct SidebarItem: View {
         .animation(HyprMotion.snap, value: hovering)
     }
 }
+
+#if !HYPRMAC_DEBUG_VARIANT
+// MARK: - sidebar update row
+
+/// "Check for Updates" at the bottom of the sidebar, replaced by the
+/// pending update when there is one. Runs the same action as the menu's
+/// update row, so it works with the menu bar item hidden. A pending update
+/// gets a cyan icon and a heavier title, nothing more.
+private struct SidebarUpdateRow: View {
+    @ObservedObject var updates: UpdateController
+    @ObservedObject private var updateState = UpdateState.shared
+
+    @State private var hovering = false
+
+    var body: some View {
+        let row = UpdatePresentation.sidebarRow(for: updateState.notice,
+                                                canCheckForUpdates: updates.canCheckForUpdates)
+        Button { updates.activate() } label: {
+            VStack(spacing: 2) {
+                HStack(spacing: 5) {
+                    Image(systemName: row.icon)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(row.highlighted ? Color.hyprCyan : Color.hyprTextSecondary)
+                    Text(row.title)
+                        .font(.hyprCaption)
+                        .fontWeight(row.highlighted ? .semibold : .regular)
+                        .foregroundStyle(row.highlighted || hovering ? Color.hyprTextPrimary : Color.hyprTextSecondary)
+                }
+                if let detail = row.detail {
+                    Text(detail)
+                        .font(.hyprCaption)
+                        .foregroundStyle(Color.hyprTextTertiary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+            .opacity(row.enabled ? 1 : 0.6)
+        }
+        .buttonStyle(.plain)
+        .disabled(!row.enabled)
+        .onHover { hovering = $0 }
+    }
+}
+#endif
 
 // keeps settings above passive overlays once its window is available
 private struct WindowLevelSetter: NSViewRepresentable {

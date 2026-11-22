@@ -15,7 +15,7 @@ struct MenuBarView: View {
     @ObservedObject private var updateState = UpdateState.shared
     @Environment(\.openWindow) private var openWindow
     #if !HYPRMAC_DEBUG_VARIANT
-    let updates: UpdateController
+    @ObservedObject var updates: UpdateController
     #endif
 
     var body: some View {
@@ -160,6 +160,8 @@ struct MenuBarView: View {
                         .font(.hyprMonoXs)
                         .foregroundStyle(row.highlighted ? Color.hyprCyan : Color.hyprTextTertiary)
                 }
+                .disabled(!UpdatePresentation.canActivate(notice: updateState.notice,
+                                                          canCheckForUpdates: updates.canCheckForUpdates))
             }
             #endif
             Rectangle()

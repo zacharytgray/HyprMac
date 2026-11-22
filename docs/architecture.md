@@ -478,6 +478,17 @@ a new install; a choice already stored in the user's defaults wins.
   Sparkle's install block and sets the notice to `.ready`. A 30-second
   timer asks `IdleInstallPolicy`, and the menu row calls the same block.
   Quitting still installs, as before.
+- **The Settings sidebar mirrors the menu's update row.** At the
+  bottom of the sidebar, `SidebarUpdateRow` shows "Check for Updates", or "Show Update" /
+  "Restart to Update" while a notice is set, and calls `activate()` like
+  the menu row. The version (and build) is under the logo. A check is
+  disabled while Sparkle's `canCheckForUpdates` is false. That is a
+  background download, and also the whole time Sparkle holds a
+  downloaded update, so the row says "Checking…" only with no notice. A
+  `.ready` install stays enabled. `UpdatePresentation` holds the text.
+  This is how someone with the menu bar item hidden and no Dock icon
+  checks or installs. Settings → General → Updates keeps only the two
+  switches. Nix installs show neither.
 
 `IdleInstallPolicy` installs after five minutes with no keyboard or
 pointer input, and only when the screen is unlocked, the display is

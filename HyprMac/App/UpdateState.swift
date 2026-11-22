@@ -1,4 +1,4 @@
-// What the menu bar says about a pending update, when a downloaded update
+// What the menu bar and the Settings sidebar say about a pending update, when a downloaded update
 // may install on its own, and how the updater's windows stay above the
 // tiles. No Sparkle here, so the debug variant and the tests build it.
 
@@ -22,6 +22,54 @@ enum UpdateNotice: Equatable {
 final class UpdateState: ObservableObject {
     static let shared = UpdateState()
     @Published var notice: UpdateNotice?
+}
+
+// MARK: - update rows
+
+/// Text and state for the update rows in the menu and the Settings
+/// sidebar. Both read the same notice and run `UpdateController.activate()`.
+enum UpdatePresentation {
+    /// the update row at the bottom of the Settings sidebar
+    struct SidebarRow: Equatable {
+        let title: String
+        /// second line, or nil
+        let detail: String?
+        let icon: String
+        /// cyan icon and heavier title
+        let highlighted: Bool
+        let enabled: Bool
+    }
+
+    /// the version under the logo, with the build when it adds something
+    static func versionLabel(version: String, build: String?) -> String {
+        guard let build, !build.isEmpty, build != version else { return "v\(version)" }
+        return "v\(version) (\(build))"
+    }
+
+    /// A pending update replaces the check. A session that holds a
+    /// downloaded update keeps Sparkle's `canCheckForUpdates` false, so
+    /// "Checking…" shows only when there is no notice.
+    static func sidebarRow(for notice: UpdateNotice?, canCheckForUpdates: Bool) -> SidebarRow {
+        let enabled = canActivate(notice: notice, canCheckForUpdates: canCheckForUpdates)
+        switch notice {
+        case nil:
+            return SidebarRow(title: "Check for Updates", detail: canCheckForUpdates ? nil : "Checking…",
+                              icon: "arrow.down.circle", highlighted: false, enabled: enabled)
+        case .available(let version):
+            return SidebarRow(title: "Show Update", detail: "HyprMac \(version) is available",
+                              icon: "arrow.down.circle.fill", highlighted: true, enabled: enabled)
+        case .ready(let version):
+            return SidebarRow(title: "Restart to Update", detail: "HyprMac \(version) is ready to install",
+                              icon: "arrow.clockwise.circle.fill", highlighted: true, enabled: enabled)
+        }
+    }
+
+    /// Whether `UpdateController.activate()` can run. A downloaded update
+    /// always installs; anything else is a Sparkle check.
+    static func canActivate(notice: UpdateNotice?, canCheckForUpdates: Bool) -> Bool {
+        if case .ready = notice { return true }
+        return canCheckForUpdates
+    }
 }
 
 // MARK: - idle install

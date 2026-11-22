@@ -448,7 +448,8 @@ struct GeneralSettingsView: View {
 
 #if !HYPRMAC_DEBUG_VARIANT
 /// The two updater switches. They write Sparkle's own settings, so a
-/// choice made in an update window shows here too.
+/// choice made in an update window shows here too. The version, the
+/// manual check and a pending update are in the sidebar (`SidebarUpdateRow`).
 private struct UpdateSettingsPanel: View {
     @ObservedObject var updates: UpdateController
 
@@ -463,7 +464,7 @@ private struct UpdateSettingsPanel: View {
                     .labelsHidden()
             }
             HyprRow("Install updates automatically", icon: "arrow.down.circle",
-                    subtitle: "Off shows a dot in the menu bar and waits for you.", divider: false) {
+                    subtitle: "Off shows a dot in the menu bar and a button in the sidebar, then waits for you.", divider: false) {
                 Toggle("", isOn: Binding(get: { updates.installsAutomatically },
                                          set: { updates.installsAutomatically = $0 }))
                     .toggleStyle(HyprToggleStyle())

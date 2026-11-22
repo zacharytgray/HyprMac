@@ -330,6 +330,10 @@ the Mac has been idle for five minutes: HyprMac restarts and puts your workspace
 are on for a new install. Settings → General → Updates turns either one off, and a choice you
 made in an older version is kept. The Accessibility permission carries over.
 
+The Settings sidebar shows the running version and a "Check for Updates" button. When an
+update is waiting, the button becomes "Show Update" or "Restart to Update". That works with the
+menu bar item hidden.
+
 Homebrew installs update the same way, so `brew upgrade` leaves HyprMac alone unless you pass
 `--greedy`. A copy installed by Nix is updated by Nix.
 

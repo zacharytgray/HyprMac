@@ -111,10 +111,11 @@ answers it.
 - With the defaults as shipped, the app downloads 99.0.0 at launch, the
   menu bar shows the dot, and the install runs once the Mac has been idle
   for 20 seconds. The file log has `update:` and `relaunch handoff` lines.
+  The bottom of the Settings sidebar shows "Restart to Update".
 - `defaults write com.zachgray.HyprMac.debug SUAutomaticallyUpdate -bool false`
   gives the window path instead. `serve.py --appcast-delay 8` makes the
   launch check finish late, so the find takes the scheduled path: a dot and
-  no window.
+  no window. The Settings sidebar shows "Show Update".
 - A `DEBUG` build runs the menu's update row on the distributed
   notification `com.zachgray.HyprMac.test.activateUpdate`, for driving it
   over SSH.
