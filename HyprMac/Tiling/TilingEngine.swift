@@ -2097,13 +2097,26 @@ class TilingEngine {
     /// be clamped by that screen: it is parked, hidden or on no screen, or
     /// its target is bigger than the screen. That is the reveal onto the
     /// portrait that settled 1528 tall against an 1874 target.
+    ///
+    /// A window already on `rect` moves first for the same reason, when its
+    /// target fits the screen but hangs off it from the window's current
+    /// origin.
     private func positionFirstWindowIDs(_ originals: [CGWindowID: CGRect],
                                         layouts: [(HyprWindow, CGRect)],
                                         destination rect: CGRect) -> Set<CGWindowID> {
         var ids = Set<CGWindowID>()
         for (window, target) in layouts {
-            guard let original = originals[window.windowID],
-                  !original.isSubstantiallyVisible(on: rect, threshold: 0.5) else { continue }
+            guard let original = originals[window.windowID] else { continue }
+            if original.isSubstantiallyVisible(on: rect, threshold: 0.5) {
+                // not crossing: sized where it stands, unless the target
+                // would hang off the screen from there and be clamped (see
+                // `CrossScreenWriteOrder.decideInPlace`)
+                guard let order = inPlaceWriteOrder(from: original, targetSize: target.size) else { continue }
+                hyprLog(.notice, .tiling, "write order: wid=\(window.windowID) \(order) "
+                        + String(format: "target=%gx%g", Double(target.width), Double(target.height)))
+                ids.insert(window.windowID)
+                continue
+            }
             let order = crossScreenWriteOrder(from: original, targetSize: target.size)
             hyprLog(.notice, .tiling, "write order: wid=\(window.windowID) \(order) "
                     + String(format: "target=%gx%g", Double(target.width), Double(target.height)))
@@ -2156,13 +2169,22 @@ class TilingEngine {
 
     private func crossScreenWriteOrder(from original: CGRect,
                                        targetSize: CGSize) -> CrossScreenWriteOrder {
-        let source = displayManager.screen(containingMostOf: original).map { screen in
+        .decide(from: original, targetSize: targetSize, source: writeOrderSource(for: original),
+                sizeSlack: FrameSizingConfiguration().sizeTolerance)
+    }
+
+    private func inPlaceWriteOrder(from original: CGRect,
+                                   targetSize: CGSize) -> CrossScreenWriteOrder? {
+        .decideInPlace(from: original, targetSize: targetSize, source: writeOrderSource(for: original),
+                       sizeSlack: FrameSizingConfiguration().sizeTolerance)
+    }
+
+    private func writeOrderSource(for original: CGRect) -> CrossScreenWriteOrder.Source? {
+        displayManager.screen(containingMostOf: original).map { screen in
             CrossScreenWriteOrder.Source(name: screen.localizedName,
                                          fullFrame: displayManager.cgFullRect(for: screen),
                                          usableFrame: displayManager.cgRect(for: screen))
         }
-        return .decide(from: original, targetSize: targetSize, source: source,
-                       sizeSlack: FrameSizingConfiguration().sizeTolerance)
     }
 
     // both passes teach the same memory. the adjusted pass is where a
