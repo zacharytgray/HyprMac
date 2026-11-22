@@ -63,6 +63,12 @@ struct FrameSizingConfiguration {
     /// target. Issue #43: a parked Ghostty window moved to a bottom slot hung
     /// below every screen and ignored both size writes.
     var stagingOrigins: [CGWindowID: CGPoint] = [:]
+    /// Windows that stay on their screen and are sized in the default
+    /// order, but from here: each moves to this origin first, with no
+    /// settle, so that its target size does not hang off the screen and get
+    /// clamped while it is written. Never a position-first window. See
+    /// `CrossScreenWriteOrder.decideInPlace`.
+    var inPlaceStagingOrigins: [CGWindowID: CGPoint] = [:]
     /// Restoration only. A rollback asks every window to go back where it
     /// was, so the question is per-window correspondence, not whether the
     /// result is a valid tiled arrangement. Originals that overlapped each

@@ -136,6 +136,34 @@ final class CrossScreenWriteOrderDecisionTests: XCTestCase {
         let sliver = CGRect(x: 1511, y: 900, width: 800, height: 600)
         XCTAssertEqual(describe(sliver, CGSize(width: 100, height: 100), source: source), "position-first (parked)")
     }
+
+    private let staged = "staged in place (hangs off source panel from where it stands)"
+
+    private func inPlace(_ original: CGRect, _ size: CGSize, source: CrossScreenWriteOrder.Source?) -> String? {
+        CrossScreenWriteOrder.decideInPlace(from: original, targetSize: size, source: source, sizeSlack: 2)?.description
+    }
+
+    func testAWindowStayingOnItsScreenIsSizedWhereItStandsWhenTheTargetFitsFromThere() {
+        XCTAssertNil(inPlace(onScreen, CGSize(width: 1000, height: 800), source: source))
+    }
+
+    // Telegram live: a 595 pt column at x=1955 on a 2560 pt screen, sent 1265 wide, took 605
+    func testATargetThatHangsOffTheRightEdgeFromTheWindowsOriginIsStaged() {
+        let column = CGRect(x: 1000, y: 100, width: 400, height: 800)
+        XCTAssertEqual(inPlace(column, CGSize(width: 900, height: 400), source: source), staged)
+    }
+
+    func testATargetThatHangsOffTheBottomEdgeFromTheWindowsOriginIsStaged() {
+        let low = CGRect(x: 100, y: 500, width: 800, height: 400)
+        XCTAssertEqual(inPlace(low, CGSize(width: 400, height: 900), source: source), staged)
+    }
+
+    func testATargetBiggerThanTheScreenOrAParkedWindowIsLeftToTheDefault() {
+        XCTAssertNil(inPlace(onScreen, CGSize(width: 1600, height: 600), source: source))
+        XCTAssertNil(inPlace(onScreen, CGSize(width: 100, height: 100), source: nil))
+        let sliver = CGRect(x: 1511, y: 900, width: 800, height: 600)
+        XCTAssertNil(inPlace(sliver, CGSize(width: 900, height: 400), source: source))
+    }
 }
 
 final class NewcomerRefusalTests: XCTestCase {

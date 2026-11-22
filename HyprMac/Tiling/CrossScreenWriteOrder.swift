@@ -11,17 +11,18 @@ enum CrossScreenWriteOrder: CustomStringConvertible {
     case positionFirstParked
     /// bigger than the screen it stands on: moved, then resized
     case positionFirst(tooSmallSource: String)
-    /// fits the screen it stands on, but not from where it stands: moved,
-    /// then resized
-    case positionFirstOverflow(source: String)
+    /// fits the screen it stands on, but not from where it stands: staged
+    /// at an origin the size fits, resized, moved, resized again. Not
+    /// position-first: no settle, and its readback still teaches sizes
+    case stagedInPlace(source: String)
 
     var description: String {
         switch self {
         case let .sizeFirst(source): return "size-first (fits source \(source))"
         case .positionFirstParked: return "position-first (parked)"
         case let .positionFirst(source): return "position-first (does not fit source \(source))"
-        case let .positionFirstOverflow(source):
-            return "position-first (hangs off source \(source) from where it stands)"
+        case let .stagedInPlace(source):
+            return "staged in place (hangs off source \(source) from where it stands)"
         }
     }
 
@@ -73,6 +74,6 @@ enum CrossScreenWriteOrder: CustomStringConvertible {
               targetSize.height <= source.fullFrame.height + sizeSlack else { return nil }
         let hangsRight = original.minX + targetSize.width > source.fullFrame.maxX + sizeSlack
         let hangsBelow = original.minY + targetSize.height > source.fullFrame.maxY + sizeSlack
-        return hangsRight || hangsBelow ? .positionFirstOverflow(source: source.name) : nil
+        return hangsRight || hangsBelow ? .stagedInPlace(source: source.name) : nil
     }
 }
