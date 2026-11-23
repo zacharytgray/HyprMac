@@ -402,7 +402,9 @@ answer when it went), `offSpace` (the window server had it on another
 Space) or `appShown` (its app was shown again after Cmd-H, which hid every
 one of its windows from AX, so one closed meanwhile looked hidden).
 `appShown` and `offSpace` close only on the window server's word: on no
-hidden Space, and not listed by AX. `ReservationCheck.step` is the only transition: seen on another
+hidden Space, and not listed by AX. Only windows AX called hidden with their
+app get `appShown`; one minimized before the hide stays a settled hide,
+since one failed AX id lookup would read it as absent. `ReservationCheck.step` is the only transition: seen on another
 Space it stays `offSpace`, a failed Space question keeps an `offSpace`
 window, and otherwise AX decides, so once the window server has the window
 on no hidden Space and AX does not list it, it is a close and the slot

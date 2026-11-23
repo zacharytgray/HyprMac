@@ -1442,6 +1442,28 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         }
     }
 
+    // poll 1: a Mail window minimized on the current desktop, reserved as a
+    // hide. Mail is hidden and shown again. poll 2: the window server has it
+    // on the current Space, and one failed AX id lookup reads as absent. the
+    // unhide check is for windows its app's hiding hid, not this one
+    func testAMinimizedWindowIsNotRecheckedWhenItsAppIsShown() {
+        let scene = makeSpaceScene()
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        scene.access.stateAnswer = .minimized
+        scene.svc.windowSpaces = offDesktop([])
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        scene.svc.appWasShown(8500)
+        scene.access.stateAnswer = .absent
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
+                           runningPIDs: [8500])
+        XCTAssertTrue(back.reopenedAfterClose.isEmpty, "unminimized, not reopened")
+    }
+
     // a window closed while full screen is in front is on no Space: a close
     func testAWindowOnNoSpaceIsStillAClose() {
         let scene = makeSpaceScene()

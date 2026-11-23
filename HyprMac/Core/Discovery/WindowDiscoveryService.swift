@@ -140,6 +140,10 @@ final class WindowDiscoveryService {
     /// as the user's: a slow app's window that drops out of one walk must
     /// not pull the user to its workspace.
     private var minimizedOrAppHiddenIDs: Set<CGWindowID> = []
+    /// Hidden ids AX called hidden with their app (Cmd-H), the only ones an
+    /// unhide re-checks. A minimized window is not among them: AX can say
+    /// where it stands, and one failed id lookup would read it as closed.
+    private var hiddenWithAppIDs: Set<CGWindowID> = []
 
     /// Reserved hidden ids still asked about each cycle, one check per id.
     /// A reservation not in here is settled: AX said minimized, Cmd-H'd or
@@ -408,6 +412,7 @@ final class WindowDiscoveryService {
         stateCache.cachedWindows.removeValue(forKey: hiddenID)
         userHiddenIDs.remove(hiddenID)
         minimizedOrAppHiddenIDs.remove(hiddenID)
+        hiddenWithAppIDs.remove(hiddenID)
         reservationChecks[hiddenID] = nil
         hiddenAt.removeValue(forKey: hiddenID)
         hyprLog(.debug, .discovery, "native tab switch: \(hiddenID) → \(id) — the shown tab takes its place")
@@ -839,6 +844,7 @@ final class WindowDiscoveryService {
                 if state == .minimized || state == .appHidden {
                     minimizedOrAppHiddenIDs.insert(id)
                 }
+                if state == .appHidden { hiddenWithAppIDs.insert(id) }
                 let bundle = bundleIDForPID(pid) ?? "pid \(pid)"
                 let onSpace = offSpace[id] != nil ? " — on another Space, reserved" : ""
                 if workspaceManager.isWindowVisible(id) {
@@ -870,6 +876,7 @@ final class WindowDiscoveryService {
         userHiddenIDs.formIntersection(stateCache.hiddenWindowIDs)
         minimizedOrAppHiddenIDs.subtract(returned.map { $0.windowID })
         minimizedOrAppHiddenIDs.formIntersection(stateCache.hiddenWindowIDs)
+        hiddenWithAppIDs.formIntersection(stateCache.hiddenWindowIDs)
         stateCache.reservedHiddenWindowIDs.subtract(returned.map { $0.windowID })
         stateCache.reservedHiddenWindowIDs.formIntersection(stateCache.hiddenWindowIDs)
         reservationChecks = reservationChecks.filter { stateCache.reservedHiddenWindowIDs.contains($0.key) }
@@ -1209,13 +1216,15 @@ final class WindowDiscoveryService {
 
     /// An app shown again after Cmd-H. While it was hidden AX answered
     /// "hidden with its app" for every one of its windows, from the process
-    /// alone, so a window closed meanwhile kept its slot. Each of its
-    /// reservations no longer under a check is asked about again; a window
-    /// the window server places on no hidden Space that AX does not list is a
-    /// close. One under a check keeps it.
+    /// alone, so a window closed meanwhile kept its slot. Each reservation
+    /// that hiding made, and no longer under a check, is asked about again; a
+    /// window the window server places on no hidden Space that AX does not
+    /// list is a close. One under a check keeps it, and a window minimized
+    /// before the hide is not asked.
     func appWasShown(_ pid: pid_t) {
-        for id in stateCache.reservedHiddenWindowIDs
-        where stateCache.windowOwners[id] == pid && reservationChecks[id] == nil {
+        for id in hiddenWithAppIDs.sorted() where stateCache.windowOwners[id] == pid {
+            hiddenWithAppIDs.remove(id)
+            guard stateCache.reservedHiddenWindowIDs.contains(id), reservationChecks[id] == nil else { continue }
             reservationChecks[id] = .appShown
         }
     }
@@ -1239,8 +1248,12 @@ final class WindowDiscoveryService {
             // an app the walk is backing off from would answer nil without
             // being asked; that is not one of the few asks. the window
             // server's answer still counts
+            var axAnswer: AccessibilityManager.HiddenWindowState?
             let ax: (() -> AccessibilityManager.HiddenWindowState?)? = accessibility.isBackingOff(pid: pid)
-                ? nil : { self.accessibility.hiddenWindowState(windowID: id, pid: pid) }
+                ? nil : {
+                    axAnswer = self.accessibility.hiddenWindowState(windowID: id, pid: pid)
+                    return axAnswer
+                }
             let step = ReservationCheck.step(check, space: space, ax: ax)
             switch step {
             case .keep(let next):
@@ -1250,6 +1263,7 @@ final class WindowDiscoveryService {
                 stateCache.reservedHiddenWindowIDs.remove(id)
                 userHiddenIDs.remove(id)
                 minimizedOrAppHiddenIDs.remove(id)
+                hiddenWithAppIDs.remove(id)
                 if check == .offSpace || check == .appShown {
                     hyprLog(.notice, .discovery, "hidden window \(id) is on no hidden Space and its app no longer"
                             + " lists it — verified closed, releasing its workspace reservation")
@@ -1259,6 +1273,7 @@ final class WindowDiscoveryService {
             case .settled(let minimizedOrAppHidden):
                 reservationChecks[id] = nil
                 if minimizedOrAppHidden { minimizedOrAppHiddenIDs.insert(id) }
+                if axAnswer == .appHidden { hiddenWithAppIDs.insert(id) }
             }
         }
     }
