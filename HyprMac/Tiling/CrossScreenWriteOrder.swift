@@ -64,16 +64,20 @@ enum CrossScreenWriteOrder: CustomStringConvertible {
     /// resend at the target origin only has the height left to fix, which
     /// it does: 1265x823, accepted 20 times out of 20 live.
     ///
-    /// The edges are the full frame's: the clamp was at 2560, not at the
-    /// usable frame's 2550. A target bigger than the screen is left to the
-    /// default; nothing here makes it fit.
+    /// The edges checked are the usable frame's. Where AppKit clamps
+    /// depends on the Dock: Telegram's width stopped at the full frame's
+    /// 2560 with 2550 usable, while on the hub (macOS 15, Dock at the
+    /// bottom) a height stopped at 994 against 995 usable and 1080 full.
+    /// Checking the usable edge stages both. One more position write is
+    /// all a needless staging costs. A target bigger than the screen is
+    /// left to the default; nothing here makes it fit.
     static func decideInPlace(from original: CGRect, targetSize: CGSize, source: Source?,
                               sizeSlack: CGFloat) -> CrossScreenWriteOrder? {
         guard let source, original.isSubstantiallyVisible(on: source.fullFrame),
               targetSize.width <= source.fullFrame.width + sizeSlack,
               targetSize.height <= source.fullFrame.height + sizeSlack else { return nil }
-        let hangsRight = original.minX + targetSize.width > source.fullFrame.maxX + sizeSlack
-        let hangsBelow = original.minY + targetSize.height > source.fullFrame.maxY + sizeSlack
+        let hangsRight = original.minX + targetSize.width > source.usableFrame.maxX + sizeSlack
+        let hangsBelow = original.minY + targetSize.height > source.usableFrame.maxY + sizeSlack
         return hangsRight || hangsBelow ? .stagedInPlace(source: source.name) : nil
     }
 }

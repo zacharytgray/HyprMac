@@ -158,6 +158,17 @@ final class CrossScreenWriteOrderDecisionTests: XCTestCase {
         XCTAssertEqual(inPlace(low, CGSize(width: 400, height: 900), source: source), staged)
     }
 
+    // the hub, Dock at the bottom: a size written at y=500 stopped at 994,
+    // the usable frame's bottom, 86 pt short of the full frame's
+    func testATargetThatHangsIntoTheDockFromTheWindowsOriginIsStaged() {
+        let docked = CrossScreenWriteOrder.Source(
+            name: "panel", fullFrame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+            usableFrame: CGRect(x: 0, y: 25, width: 1920, height: 970))
+        let low = CGRect(x: 100, y: 600, width: 800, height: 300)
+        XCTAssertEqual(inPlace(low, CGSize(width: 800, height: 420), source: docked), staged)
+        XCTAssertNil(inPlace(low, CGSize(width: 800, height: 390), source: docked), "fits above the Dock")
+    }
+
     func testATargetBiggerThanTheScreenOrAParkedWindowIsLeftToTheDefault() {
         XCTAssertNil(inPlace(onScreen, CGSize(width: 1600, height: 600), source: source))
         XCTAssertNil(inPlace(onScreen, CGSize(width: 100, height: 100), source: nil))
