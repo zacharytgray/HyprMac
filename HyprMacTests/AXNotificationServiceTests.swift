@@ -37,6 +37,30 @@ final class AXNotificationServiceTests: XCTestCase {
         }
     }
 
+    // the chrome follows a window an app or another tool moved. a move never asks for a poll
+    func testAWindowMoveOrResizeGoesToTheFrameSinkNotThePoll() {
+        let service = AXNotificationService()
+        var polls = 0
+        var moved: [CGWindowID] = []
+        service.onEvent = { _, _ in polls += 1 }
+        service.onFrameChange = { moved.append($0) }
+
+        service.routeFrameChange(notification: kAXWindowMovedNotification as String, windowID: 42)
+        service.routeFrameChange(notification: kAXWindowResizedNotification as String, windowID: 43)
+        service.routeFrameChange(notification: kAXWindowMovedNotification as String, windowID: 0)
+        service.route(notification: kAXWindowMovedNotification as String, elementPID: 77, observerPID: nil)
+
+        XCTAssertEqual(moved, [42, 43])
+        XCTAssertEqual(polls, 0)
+    }
+
+    func testEveryAppIsAskedForItsWindowMovesAndResizes() {
+        XCTAssertTrue(AXNotificationService.appNotifications.contains(kAXWindowMovedNotification as String))
+        XCTAssertTrue(AXNotificationService.appNotifications.contains(kAXWindowResizedNotification as String))
+        XCTAssertTrue(AXNotificationService.isFrameChange(kAXWindowMovedNotification as String))
+        XCTAssertFalse(AXNotificationService.isFrameChange(kAXWindowCreatedNotification as String))
+    }
+
     func testEventIsDroppedWhenNeitherElementNorObserverHasPID() {
         let service = AXNotificationService()
         var fireCount = 0

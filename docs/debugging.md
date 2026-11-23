@@ -1140,6 +1140,24 @@ the layout down` for a timeout or a superseded pass
 says `resizeDirection` instead, and a keyboard swap refused after its
 readback says `swapDirection`.
 
+### The outline trails a floater or sits beside it
+
+The chrome follows a window's AX moved and resized notifications
+(`ChromeFrameFollow`), so an app's own move, another tool's AX write, a drag
+and a frame HyprMac wrote all move the outline, the border and the brackets.
+Each follow reads the window list, not AX. An app posts the move a few
+milliseconds before the window server has it, so a window the list still
+shows at the old spot is read again a frame later, up to six times. The
+occlusion masks and the dim's carves are cut again 0.12 s after the last
+move.
+
+If an outline still lags, check that the app took the move subscriptions.
+An app that refuses them logs, after five tries:
+
+```
+[notice] [discovery] AX observer for <bundle> pid=<pid> has no AXWindowMoved subscription after 5 tries (err <n>) — the chrome follows its windows' moves only at the next refresh
+```
+
 ### Rejected drag feedback and source restoration
 
 Persistent border refreshes defer to the bounded error feedback interval.

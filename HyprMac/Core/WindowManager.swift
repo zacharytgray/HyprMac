@@ -180,6 +180,14 @@ class WindowManager {
     // what the armed drag moves, decided at the press
     private var floaterDragFollow = FloaterDragFollow(carve: false, outline: false)
 
+    // the chrome follows a window that moved or resized: the app's own move,
+    // another tool's, a drag, or a frame HyprMac wrote landing late. the
+    // apps' AX move and resize notifications drive it, no timer
+    private lazy var chromeFollow = ChromeFrameFollow(
+        isTracked: { [weak self] id in self?.chromeTracks(id) ?? false },
+        follow: { [weak self] ids in self?.followMovedWindows(ids) ?? [] },
+        settle: { [weak self] in self?.settleMovedWindows() })
+
     // true while the Hypr key is physically held. drives focusBrackets — when held,
     // every focus change re-targets the brackets so they track Hypr+arrow even
     // across workspace switches (which transiently hide the focus border).
@@ -971,6 +979,7 @@ class WindowManager {
         // so no extra guards here. create/miniaturize/deminiaturize get a 0.2s
         // debounce to let AX settle; focus is snappier at 0.15s; destroy uses
         // the 0.2s default.
+        axNotifications.onFrameChange = { [weak self] id in self?.chromeFollow.noteFrameChange(id) }
         axNotifications.onEvent = { [weak self] kind, pid in
             guard let self else { return }
             hyprLog(.debug, .discovery, "ax event: \(kind) pid=\(pid)")
@@ -1528,6 +1537,54 @@ class WindowManager {
             self.refreshFloatingBorders()
             self.refreshDimming()
         }
+    }
+
+    /// Whether `id` has chrome that has to follow it: a visible floater
+    /// (outline, dim carve), or the window the focus border or the brackets
+    /// mark.
+    private func chromeTracks(_ id: CGWindowID) -> Bool {
+        guard isRunning, workspaceManager.isWindowVisible(id) else { return false }
+        return stateCache.floatingWindowIDs.contains(id)
+            || focusBorder.trackedWindowID == id
+            || (focusBrackets.isVisible && focusBrackets.trackedWindowID == id)
+    }
+
+    /// Move the marks on each window to where the window server draws it
+    /// now. One window-list read per window, no AX: AX can stay stale
+    /// (CARROT Weather). Returns the windows the list still shows where
+    /// their marks are: the app posts a move before the window server has
+    /// it, so those are read again a frame later. Occlusion and the dim wait
+    /// for `settleMovedWindows`.
+    private func followMovedWindows(_ ids: [CGWindowID]) -> [CGWindowID] {
+        var notMoved: [CGWindowID] = []
+        for id in ids where chromeTracks(id) {
+            guard let frame = WindowStacking.bounds(of: id), frame.width > 1, frame.height > 1 else { continue }
+            // where each mark on the window sits now
+            let drawn = [focusBorder.floaterOutlineFrame(id),
+                         focusBorder.trackedWindowID == id ? focusBorder.frame : nil,
+                         focusBrackets.isVisible && focusBrackets.trackedWindowID == id ? focusBrackets.frame : nil]
+            guard drawn.contains(where: { $0 != nil }) else { continue }
+            guard drawn.contains(where: { $0 != nil && $0 != frame }) else {
+                notMoved.append(id)
+                continue
+            }
+            if drawn[0] != nil { focusBorder.followFloater(id, to: frame) }
+            if drawn[1] != nil { focusBorder.updatePosition(frame) }
+            if drawn[2] != nil { focusBrackets.updatePosition(frame) }
+        }
+        return notMoved
+    }
+
+    /// The moves stopped: cut the outlines' occlusion masks and the dim's
+    /// carves for the new frames. A press in progress waits for its
+    /// mouse-up, which refreshes on its own.
+    private func settleMovedWindows() {
+        guard isRunning, !mouseButtonDown, !tiledDrag.isFinishingDrag else { return }
+        let fid = focusBorder.trackedWindowID ?? focusController.lastFocusedID
+        guard !isFullscreenSuppressed(focused: stateCache.cachedWindows[fid]) else { return }
+        mouseTracker.invalidateWindowListCache()
+        refreshFloatingBorders()
+        refreshDimming()
     }
 
     /// Apply focus-follows-mouse to `window`.

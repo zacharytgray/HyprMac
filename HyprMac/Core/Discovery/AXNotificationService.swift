@@ -97,8 +97,10 @@ struct AppSubscriptionRetry {
 /// runs only when something actually changed. Same architecture as
 /// yabai / AeroSpace.
 ///
-/// App-level subscriptions (`kAXWindowCreated`, `kAXFocusedWindowChanged`)
-/// go on the app element and cover the app's whole lifetime. Window-level
+/// App-level subscriptions (`kAXWindowCreated`, `kAXFocusedWindowChanged`,
+/// `kAXMainWindowChanged`, `kAXWindowMoved`, `kAXWindowResized`) go on the
+/// app element and cover the app's whole lifetime. Moves and resizes reach
+/// `onFrameChange` only, so the chrome follows; they never schedule a poll. Window-level
 /// subscriptions (`kAXUIElementDestroyed`, `kAXWindowMiniaturized`,
 /// `kAXWindowDeminiaturized`) go on each window element and are attached
 /// lazily via `ensureWindowSubscriptions(for:)` after every discovery pass,
@@ -149,6 +151,10 @@ final class AXNotificationService {
         kAXFocusedWindowChangedNotification as String,
         // a window coming forward can bury a floater; only the stacking visuals use this
         kAXMainWindowChangedNotification as String,
+        // any window of the app moved or resized, by the app, by another
+        // tool, by a drag or by HyprMac. only the chrome uses these
+        kAXWindowMovedNotification as String,
+        kAXWindowResizedNotification as String,
     ]
 
     /// The AX notifications we translate and forward. Each maps to one or
@@ -166,6 +172,21 @@ final class AXNotificationService {
     /// belongs to (derived from the firing element). Set by `WindowManager`
     /// to route into the polling scheduler.
     var onEvent: ((Kind, pid_t) -> Void)?
+
+    /// Sink for a window that moved or resized, by window id. Set by
+    /// `WindowManager` so the chrome follows. A move never asks for a poll.
+    var onFrameChange: ((CGWindowID) -> Void)?
+
+    static func isFrameChange(_ notification: String) -> Bool {
+        notification == kAXWindowMovedNotification as String
+            || notification == kAXWindowResizedNotification as String
+    }
+
+    /// Pure routing seam for a move or resize, after the window id is read.
+    func routeFrameChange(notification: String, windowID: CGWindowID) {
+        guard Self.isFrameChange(notification), windowID != 0 else { return }
+        onFrameChange?(windowID)
+    }
 
     // per-pid observer + its window-level subscription bookkeeping.
     // the observer and app/window elements are CF types retained by ARC
@@ -341,7 +362,9 @@ final class AXNotificationService {
                     ? "its new windows wait for a focus event or the reconcile poll"
                     : name == kAXFocusedWindowChangedNotification as String
                         ? "its focus changes wait for the next poll"
-                        : "floater stacking may lag"
+                        : Self.isFrameChange(name)
+                            ? "the chrome follows its windows' moves only at the next refresh"
+                            : "floater stacking may lag"
                 hyprLog(.notice, .discovery, "AX observer for \(bundle) pid=\(pid) has no \(name) subscription"
                         + " after \(AppSubscriptionRetry.maxAttempts) tries (err \(err.rawValue)) — \(effect)")
             } else if tookHold && wasOwed {
@@ -385,9 +408,16 @@ final class AXNotificationService {
         }
     }
 
-    /// Route a raw AX notification (from the C callback) to `onEvent`. The
+    /// Route a raw AX notification (from the C callback) to `onEvent`, or a
+    /// window move or resize to `onFrameChange` with the window's id. The
     /// firing element gives us the pid regardless of app- vs window-level.
     fileprivate func handle(notification: String, element: AXUIElement, observer: AXObserver) {
+        if Self.isFrameChange(notification) {
+            var wid: CGWindowID = 0
+            guard _AXUIElementGetWindow(element, &wid) == .success else { return }
+            routeFrameChange(notification: notification, windowID: wid)
+            return
+        }
         var pid: pid_t = 0
         let elementPID = AXUIElementGetPid(element, &pid) == .success ? pid : nil
         let observerPID = entries.first { CFEqual($0.value.observer, observer) }?.key

@@ -518,6 +518,29 @@ class FocusBorder {
         fadeOutAndOrderOut(border.panel, layer: border.glowView.layer, duration: fadeDurationSec)
     }
 
+    /// Move `windowID`'s outline to `frame` (CG), geometry only, when the
+    /// window moved: the window list's frame after the app said so. Its
+    /// occlusion mask was cut for the old frame, so it goes until the settle
+    /// refresh cuts a new one. A floater being dragged follows the drag
+    /// instead.
+    func followFloater(_ windowID: CGWindowID, to frame: CGRect) {
+        mainThreadOnly()
+        guard floaterDrag?.id != windowID, let border = floatingPanels[windowID],
+              floaterFrames[windowID] != frame else { return }
+        floaterFrames[windowID] = frame
+        border.panel.setFrame(panelRect(for: frame, expansion: Self.floaterPanelExpansion), display: false)
+        positionFloaterViews(border)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        border.glowView.layer?.mask = nil
+        CATransaction.commit()
+    }
+
+    /// Where `windowID`'s floater outline sits now (CG), nil without one.
+    func floaterOutlineFrame(_ windowID: CGWindowID) -> CGRect? {
+        floatingPanels[windowID] == nil ? nil : floaterFrames[windowID]
+    }
+
     /// Transition the focused-window panel from `active` (filled) to
     /// `settled` (outline only). Called automatically by the timer
     /// scheduled in `show`; safe to call manually as well.

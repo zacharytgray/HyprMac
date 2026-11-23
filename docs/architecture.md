@@ -167,6 +167,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `TiledDragController` | Capture and drop wiring for `TiledDragHandler`, the live drop preview, and what a finished drop owes. |
 | `TiledDragFeedbackCoordinator` | Holds a degraded drop's error until a later layout settles it. |
 | `FloatingDimDragTracker` | Keeps the dim's carve and the floater outline on a floater while it is dragged. `FloaterDragFollow` decides which of the two follow. Reads the floater's frame from the window list (`WindowStacking.bounds(of:)`), not from AX. |
+| `ChromeFrameFollow` | Moves the chrome with a window that moved or resized: the app's own move, another tool's AX write, a drag, or a frame HyprMac wrote landing late. `AXNotificationService` hands it each move and resize. One follow per run loop turn reads the window list for each window with chrome; a window the list still shows at the old spot is read again a frame later, up to six times. A full refresh (occlusion, dim) runs 0.12 s after the last move. No timer runs between events. |
 | `DockAffordance` | What an outside app activation does when none of that app's windows are on screen. |
 | `WorkspaceManager` | HyprMac's ten virtual workspaces, screen↔workspace mapping, home-screen affinity. |
 | `TilingEngine` | One BSP tree per `(workspace, screen)`, verified sizing, smart insert, keyboard swap, and candidate drag commit. |
@@ -194,7 +195,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `FrameSizingAttempt` | Bounded AX writes and complete frame readback through an injected clock and IO surface. |
 | `FrameSizingTransaction` | A candidate attempt, then a rollback to the original frames when it fails, with one retry after an AX timeout when the caller asks. `TiledDragTransaction` uses it. |
 | `AXFrameWriteBatch` | Brackets a window's frame writes: sets the app's AX messaging timeout and turns `AXEnhancedUserInterface` off for the writes, then restores it. |
-| `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. Also owns one outline panel per visible floater, drawn in Corners and Window borders modes alike (`FloaterMarkStyle`: outline, or none in None mode). `WindowManager.refreshFloatingBorders` feeds it one floater set and one occlusion pass. |
+| `FocusBorder` | Visual focus indicator. Persistent panels at `.floating` level with occlusion masking. Also owns one outline panel per visible floater, drawn in Corners and Window borders modes alike (`FloaterMarkStyle`: outline, or none in None mode). `WindowManager.refreshFloatingBorders` feeds it one floater set and one occlusion pass; `ChromeFrameFollow` moves one outline between those. |
 | `FocusBrackets` | Corner brackets shown around the focus target while the Hypr key is held. They take the floating color on a floater (`FocusMarkColor`). `CornerMarkGeometry` builds the corner paths. |
 | `DimmingOverlay` | Dim mask over non-focused tiled windows; one panel per display at `.floating - 1`. A floater's cutout covers only the part of it that is in front. |
 | `CursorManager` | Cursor warp via `CGWarpMouseCursorPosition` + reassociate dance. |
@@ -269,7 +270,9 @@ These types decompose what would otherwise be a monolithic
 - **`AXNotificationService`** owns one `AXObserver` per regular app and
   translates their AX notifications (window created / destroyed /
   miniaturized / deminiaturized, focused-window changed, main-window
-  changed) into `schedule(after:)` calls on `PollingScheduler`. Apps
+  changed) into `schedule(after:)` calls on `PollingScheduler`. Window
+  moved and resized go to `ChromeFrameFollow` with the window's id and
+  never schedule a poll. Apps
   report changes instead of being polled, so the discovery diff runs
   only when something changed. App-level subscriptions attach on
   `attachToRunningApps` / `attach(pid:)`; window-level ones attach lazily
