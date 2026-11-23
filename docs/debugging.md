@@ -1402,16 +1402,30 @@ holding 1 unreadable window(s) in place: [21915] — on screen, but their app di
 unreadable window(s) readable again: [21915]
 holding 2 window(s) off the screen in place: [15173, 21915] — their app still lists them (another Space, full screen, or a stale snapshot); hidden if not back within 5s
 off-screen hold ended: [15173, 21915]
+holding 4 window(s) behind a full-screen Space in place: [32918, 34425, 34464, 35441] — on a desktop Space their display does not show; held until it does
+full-screen hold ended: [32918, 34425, 34464, 35441]
 ```
 
 The first is an app that failed the walk's window-list or frame read
 while the window server still shows the window (`AX window-list read
 FAILED for <bundle>` precedes it). The second is a window the window
 server no longer shows on screen while its app still lists it, neither
-minimized nor hidden with the app: a native full-screen app on the
-display, a Space switched away, or a stale snapshot. That hold lasts five
-seconds, and a poll is scheduled for when it runs out; a window still
-missing then is `window hidden` as before, with its slot reserved.
+minimized nor hidden with the app: a Space switched away or a stale
+snapshot. That hold lasts five seconds, and a poll is scheduled for when it
+runs out; a window still missing then is `window hidden` as before, with
+its slot reserved.
+
+On macOS 27 an app does not list its windows on a Space the display does
+not show, so AX alone reads them as closed. Discovery asks the window
+server which Spaces such a window is on (`SLSCopySpacesForWindows`). The
+third line is every desktop window while a native full-screen app is in
+front: held, with no time limit, until the display shows their Space
+again. A window on another desktop Space gets the five-second hold and
+then `window hidden: <id> (<bundle>) — on another Space, reserved`. Neither
+comes back as `reopened after a close`. Before this, each full-screen exit
+logged `window returned: … — reopened after a close` for every desktop
+window, and a window its app put back on screen was moved with `drift: …
+[reopened onto hidden ws]` to the workspace showing.
 `FLAP: … returned <n>ms after vanishing` on the return is the diagnostic
 for a window that was not held and came back within five seconds; with
 both holds in place it should be rare. Every tile pass logs

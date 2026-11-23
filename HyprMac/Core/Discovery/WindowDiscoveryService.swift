@@ -233,6 +233,9 @@ final class WindowDiscoveryService {
     /// When each listed-but-off-screen window was first missed, for the
     /// hold's span.
     private var listedSince: [CGWindowID: Date] = [:]
+    /// Known windows the last cycle held because a native full-screen Space
+    /// is in front of their display. Held for as long as it is.
+    private var heldBehindFullScreenIDs: Set<CGWindowID> = []
 
     /// How long a window its app still lists is held after it leaves the
     /// screen. Long enough for a native full-screen excursion that lasts a
@@ -242,7 +245,9 @@ final class WindowDiscoveryService {
 
     /// Every known window the last cycle held, for whatever reason. A tile
     /// pass between polls keeps their leaves and writes them nothing.
-    var heldWindowIDs: Set<CGWindowID> { heldUnreadableIDs.union(heldListedIDs).union(tabHolds.keys) }
+    var heldWindowIDs: Set<CGWindowID> {
+        heldUnreadableIDs.union(heldListedIDs).union(heldBehindFullScreenIDs).union(tabHolds.keys)
+    }
 
     /// How long until the earliest off-screen or tab hold runs out, so the
     /// caller can poll then rather than at the next reconcile. nil without
@@ -288,6 +293,10 @@ final class WindowDiscoveryService {
     /// What the window server shows on screen, front to back. Asked only
     /// when a window left with nothing read in its frame.
     var onScreenWindows: () -> [StackedWindow] = { WindowStacking.onScreen() ?? [] }
+    /// Which of the given missing windows the window server keeps on a Space
+    /// its display does not show (`WindowSpaces.offSpace` in the app). Tests
+    /// script it; the default knows of none.
+    var offSpaceStanding: (Set<CGWindowID>) -> [CGWindowID: OffSpaceStanding] = { _ in [:] }
     /// Whether the window server still has the window, off screen, while
     /// its app has another ordinary window off screen: what a background
     /// tab looks like. A window its app destroyed is a close.
@@ -472,7 +481,21 @@ final class WindowDiscoveryService {
         }
     }
 
-    private func noteHeld(unreadable: Set<CGWindowID>, listed: Set<CGWindowID>) {
+    private func noteHeld(unreadable: Set<CGWindowID>, listed: Set<CGWindowID>,
+                          behindFullScreen: Set<CGWindowID>) {
+        if behindFullScreen != heldBehindFullScreenIDs {
+            let began = behindFullScreen.subtracting(heldBehindFullScreenIDs)
+            let ended = heldBehindFullScreenIDs.subtracting(behindFullScreen)
+            heldBehindFullScreenIDs = behindFullScreen
+            if !began.isEmpty {
+                hyprLog(.notice, .discovery, "holding \(began.count) window(s) behind a full-screen Space in"
+                        + " place: \(began.sorted()) — on a desktop Space their display does not show;"
+                        + " held until it does")
+            }
+            if !ended.isEmpty {
+                hyprLog(.notice, .discovery, "full-screen hold ended: \(ended.sorted())")
+            }
+        }
         if unreadable != heldUnreadableIDs {
             let began = unreadable.subtracting(heldUnreadableIDs)
             let ended = heldUnreadableIDs.subtracting(unreadable)
@@ -616,12 +639,23 @@ final class WindowDiscoveryService {
         // re-insert it somewhere else on the next poll.
         let missing = stateCache.knownWindowIDs.subtracting(currentIDs)
         let unreadable = missing.intersection(unreadableWindowIDs)
+        // an app lists only the windows on the current Space, so AX reads a
+        // window on a Space its display does not show as closed. the window
+        // server knows better: one question per missing window per cycle
+        let spaceAsked = missing.subtracting(unreadable).union(unverifiedReservedIDs.keys)
+        let offSpace = spaceAsked.isEmpty ? [:] : offSpaceStanding(spaceAsked)
+        // a native full-screen Space in front: the whole desktop behind it is
+        // off the screen, held where it is until the display shows it again
+        let behindFullScreen = Set(offSpace.filter { $0.value == .behindFullScreen }.keys)
+            .intersection(missing)
         // one AX question per missing window per cycle, shared between the
         // holds and the hidden classification below
         var states: [CGWindowID: AccessibilityManager.HiddenWindowState?] = [:]
         func hiddenState(_ id: CGWindowID, pid: pid_t) -> AccessibilityManager.HiddenWindowState? {
             if let asked = states[id] { return asked }
-            let state = accessibility.hiddenWindowState(windowID: id, pid: pid)
+            var state = accessibility.hiddenWindowState(windowID: id, pid: pid)
+            // on another Space: still there, whatever AX says
+            if state == .absent, offSpace[id] != nil { state = .present }
             states[id] = state
             return state
         }
@@ -629,7 +663,9 @@ final class WindowDiscoveryService {
         // its app, and a window of the same app the walk read in its frame
         // are one tile changing its tab
         let arrivals = self.arrivals(in: snapshot)
-        let leavers = missing.subtracting(unreadable).sorted().compactMap { id -> TabSwitchPairing.Leaver? in
+        // a window on another Space is not a tab sent to the background
+        let leavers = missing.subtracting(unreadable).subtracting(offSpace.keys).sorted()
+            .compactMap { id -> TabSwitchPairing.Leaver? in
             guard let leaver = leaver(id, runningPIDs: runningPIDs) else { return nil }
             let state = hiddenState(id, pid: leaver.pid)
             return state == .minimized || state == .appHidden ? nil : leaver
@@ -644,13 +680,14 @@ final class WindowDiscoveryService {
             }
             .sorted { $0.hiddenID < $1.hiddenID }
         let switched = Set(pairs.map(\.hiddenID))
-        let listed = listedButOffScreen(missing.subtracting(unreadable).subtracting(switched),
+        let listed = listedButOffScreen(missing.subtracting(unreadable).subtracting(switched)
+                                            .subtracting(behindFullScreen),
                                         runningPIDs: runningPIDs, state: hiddenState)
         let tabs = tabHolds(for: leavers.filter { !switched.contains($0.windowID) && !listed.contains($0.windowID) },
                             arrivals: arrivals.filter { arrival in !pairs.contains { $0.shown.windowID == arrival.windowID } },
                             currentIDs: currentIDs, state: hiddenState)
-        let held = unreadable.union(listed).union(tabs.held)
-        noteHeld(unreadable: unreadable, listed: listed)
+        let held = unreadable.union(listed).union(tabs.held).union(behindFullScreen)
+        noteHeld(unreadable: unreadable, listed: listed, behindFullScreen: behindFullScreen)
         // a window the walk saw but could not use gets a few quick looks:
         // one on screen whose app or frame did not answer, a new one its
         // app lists before the window server shows it, and whatever a tab
@@ -687,7 +724,7 @@ final class WindowDiscoveryService {
         }
         massGoneSkips = 0
 
-        reverifyUnresolvedReservations(currentIDs: currentIDs, runningPIDs: runningPIDs)
+        reverifyUnresolvedReservations(currentIDs: currentIDs, runningPIDs: runningPIDs, offSpace: offSpace)
 
         var newWindows: [HyprWindow] = []
         var newOnDisabled: Set<CGWindowID> = []
@@ -764,17 +801,19 @@ final class WindowDiscoveryService {
                     stateCache.reservedHiddenWindowIDs.insert(id)
                     if state == nil { unverifiedReservedIDs[id] = 0 }
                 }
-                if state == nil || state == .minimized || state == .appHidden {
+                // on another Space keeps its workspace on return, as a hide does
+                if state == nil || state == .minimized || state == .appHidden || offSpace[id] != nil {
                     userHiddenIDs.insert(id)
                 }
                 if state == .minimized || state == .appHidden {
                     minimizedOrAppHiddenIDs.insert(id)
                 }
                 let bundle = bundleIDForPID(pid) ?? "pid \(pid)"
+                let onSpace = offSpace[id] != nil ? " — on another Space, reserved" : ""
                 if workspaceManager.isWindowVisible(id) {
-                    hyprLog(.notice, .discovery, "window hidden: \(id) (\(bundle))")
+                    hyprLog(.notice, .discovery, "window hidden: \(id) (\(bundle))\(onSpace)")
                 } else {
-                    hyprLog(.notice, .discovery, "window hidden (inactive ws): \(id) (\(bundle))")
+                    hyprLog(.notice, .discovery, "window hidden (inactive ws): \(id) (\(bundle))\(onSpace)")
                 }
             } else {
                 stateCache.forget(id)
@@ -1102,7 +1141,8 @@ final class WindowDiscoveryService {
     /// in `computeChanges` owns them, and AX would answer "not minimized" for a window
     /// that is plainly on screen — stripping the reservation and misfiling
     /// the return as a recycled-id reopen.
-    private func reverifyUnresolvedReservations(currentIDs: Set<CGWindowID>, runningPIDs: Set<pid_t>) {
+    private func reverifyUnresolvedReservations(currentIDs: Set<CGWindowID>, runningPIDs: Set<pid_t>,
+                                                offSpace: [CGWindowID: OffSpaceStanding]) {
         for (id, attempts) in unverifiedReservedIDs {
             guard stateCache.hiddenWindowIDs.contains(id) else {
                 unverifiedReservedIDs[id] = nil
@@ -1113,7 +1153,10 @@ final class WindowDiscoveryService {
             // an app the walk is backing off from would answer nil without
             // being asked; that is not one of the few asks this gets
             guard !accessibility.isBackingOff(pid: pid) else { continue }
-            switch accessibility.hiddenWindowState(windowID: id, pid: pid) {
+            var state = accessibility.hiddenWindowState(windowID: id, pid: pid)
+            // its app does not list a window on another Space
+            if state == .absent, offSpace[id] != nil { state = .present }
+            switch state {
             case .absent:
                 stateCache.reservedHiddenWindowIDs.remove(id)
                 unverifiedReservedIDs[id] = nil

@@ -124,3 +124,94 @@ private struct SkyLightConstraintCalls {
                                        advance: advance, getConstraints: constraints)
     }()
 }
+
+/// Where a window that left the screen is, by the window server's Spaces.
+/// An app's AX window list holds only the windows on the current Space, so a
+/// window on a Space its display does not show reads as closed to AX.
+enum OffSpaceStanding: Equatable {
+    /// its display shows a native full-screen Space (or Split View)
+    case behindFullScreen
+    /// its display shows another desktop Space
+    case onOtherDesktop
+}
+
+enum WindowSpaces {
+    /// One display's Spaces: the current one, its type, and every Space it has.
+    struct Display: Equatable {
+        let current: UInt64
+        let currentIsFullScreen: Bool
+        let spaces: Set<UInt64>
+    }
+
+    /// SkyLight's type for a native full-screen Space.
+    static let fullScreenSpaceType = 4
+
+    /// Where a window on `windowSpaces` stands. nil when it is on a current
+    /// Space, on none (ordered out, closed) or on one no display has.
+    static func standing(windowSpaces: [UInt64], displays: [Display]) -> OffSpaceStanding? {
+        guard !windowSpaces.isEmpty else { return nil }
+        let current = Set(displays.map(\.current))
+        guard current.isDisjoint(with: windowSpaces) else { return nil }
+        guard let display = displays.first(where: { !$0.spaces.isDisjoint(with: windowSpaces) }) else { return nil }
+        return display.currentIsFullScreen ? .behindFullScreen : .onOtherDesktop
+    }
+
+    /// The standing of each of `ids` that is on a Space its display does not
+    /// show. One window-server question per id, plus one for the displays.
+    static func offSpace(_ ids: Set<CGWindowID>) -> [CGWindowID: OffSpaceStanding] {
+        guard !ids.isEmpty, let calls = SkyLightSpaceCalls.shared else { return [:] }
+        let cid = calls.mainConnectionID()
+        guard let raw = calls.copyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]]
+        else { return [:] }
+        let displays = raw.compactMap(display(from:))
+        guard !displays.isEmpty else { return [:] }
+        var result: [CGWindowID: OffSpaceStanding] = [:]
+        for id in ids {
+            let list = [NSNumber(value: id)] as CFArray
+            // 0x7: every Space the window is on, current or not
+            guard let spaces = calls.copySpacesForWindows(cid, 0x7, list)?.takeRetainedValue() as? [NSNumber]
+            else { continue }
+            if let standing = standing(windowSpaces: spaces.map(\.uint64Value), displays: displays) {
+                result[id] = standing
+            }
+        }
+        return result
+    }
+
+    private static func display(from entry: [String: Any]) -> Display? {
+        guard let current = entry["Current Space"] as? [String: Any],
+              let currentID = (current["ManagedSpaceID"] as? NSNumber)?.uint64Value else { return nil }
+        let spaces = (entry["Spaces"] as? [[String: Any]] ?? [])
+            .compactMap { ($0["ManagedSpaceID"] as? NSNumber)?.uint64Value }
+        let type = (current["type"] as? NSNumber)?.intValue
+        return Display(current: currentID, currentIsFullScreen: type == fullScreenSpaceType,
+                       spaces: Set(spaces).union([currentID]))
+    }
+}
+
+private struct SkyLightSpaceCalls {
+    typealias MainConnectionID = @convention(c) () -> Int32
+    // both return a +1 reference
+    typealias CopyManagedDisplaySpaces = @convention(c) (Int32) -> Unmanaged<CFArray>?
+    typealias CopySpacesForWindows = @convention(c) (Int32, Int32, CFArray) -> Unmanaged<CFArray>?
+
+    let mainConnectionID: MainConnectionID
+    let copyManagedDisplaySpaces: CopyManagedDisplaySpaces
+    let copySpacesForWindows: CopySpacesForWindows
+
+    static let shared: SkyLightSpaceCalls? = {
+        // RTLD_DEFAULT: SkyLight is already linked
+        let handle = UnsafeMutableRawPointer(bitPattern: -2)
+        func symbol<T>(_ name: String, as _: T.Type) -> T? {
+            dlsym(handle, name).map { unsafeBitCast($0, to: T.self) }
+        }
+        guard let main = symbol("SLSMainConnectionID", as: MainConnectionID.self),
+              let displays = symbol("SLSCopyManagedDisplaySpaces", as: CopyManagedDisplaySpaces.self),
+              let spaces = symbol("SLSCopySpacesForWindows", as: CopySpacesForWindows.self) else {
+            hyprLog(.notice, .discovery, "window spaces: SkyLight Space calls unavailable")
+            return nil
+        }
+        return SkyLightSpaceCalls(mainConnectionID: main, copyManagedDisplaySpaces: displays,
+                                  copySpacesForWindows: spaces)
+    }()
+}

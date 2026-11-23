@@ -45,7 +45,9 @@ set with `togglesplit` comes back as the user's pin.
 
 A window that comes back after a verified close does not use its slot. Its app
 no longer listed it when it went, so discovery never reserved it, and some apps
-(Teams) reuse the id when the window reopens. Discovery reports it in
+(Teams) reuse the id when the window reopens. A window on a Space its display
+does not show is not a close, though its app does not list it either: the
+window server still has it on that Space (see `docs/architecture.md`). Discovery reports it in
 `WindowChanges.reopenedAfterClose`. `ActionDispatcher.applyChanges` drops the
 memory with `TilingEngine.forgetRememberedSlot` before the retile, and the
 window is placed like a new window: the focused tile first, then the walk. A

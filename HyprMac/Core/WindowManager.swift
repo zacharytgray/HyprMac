@@ -254,6 +254,7 @@ class WindowManager {
             displayManager: displayManager,
             workspaceManager: workspaceManager
         )
+        self.discovery.offSpaceStanding = WindowSpaces.offSpace
         self.floatingController = FloatingWindowController(
             stateCache: stateCache,
             suppressions: suppressions,

@@ -385,11 +385,19 @@ quick looks at a new window that was unbound or unreadable, and the
 re-checks of a window floated for a fixed size, which goes back to tiling
 if it turns resizable. A missing
 window its app still lists, neither minimized nor hidden with the app —
-another Space, a native full-screen excursion, a stale snapshot — is held
+another Space, a stale snapshot — is held
 the same way for five seconds (`WindowDiscoveryService.listedHoldSpan`)
 and hidden once it passes; a tile pass in between keeps its
 leaf, so the excursion leaves the layout untouched, and the poll that
-ends the hold is asked for when it runs out. `TilingEngine` owns the
+ends the hold is asked for when it runs out. An app's AX window list holds
+only the current Space's windows, so a missing window AX calls absent is
+also asked of the window server (`WindowSpaces.offSpace`, SkyLight): one on
+a Space its display does not show is not a close. Behind a native
+full-screen Space it is held for as long as that Space is in front; on
+another desktop Space it gets the five-second hold and is then hidden with
+its slot reserved. Either way it comes back as the same window: no
+reopen, no drift, its slot and hand choice kept. A window on no Space
+(ordered out, destroyed) is judged by AX as before. `TilingEngine` owns the
 hold: `heldWindowIDsSource` names the windows the walk could not hand
 over, every pass asks it and holds the members its list does not carry,
 so a retile, a move onto the workspace, a scratchpad show, the recovery's

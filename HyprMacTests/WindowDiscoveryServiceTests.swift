@@ -1044,6 +1044,166 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(back.reopenedOntoHiddenWorkspace.isEmpty)
     }
 
+    // MARK: - windows on a Space their display does not show
+
+    /// one screen showing ws3. 30 and 33 on ws1, 32 on ws2, 34 beside the
+    /// video on ws3, 31 the video that goes native full screen. an app lists
+    /// only the current Space's windows, so AX answers every desktop window
+    /// absent while the full-screen Space is in front (macOS 27.2)
+    private struct SpaceScene {
+        let svc: WindowDiscoveryService
+        let cache: WindowStateCache
+        let workspaces: WorkspaceManager
+        let access: StubAccessibility
+        let screen: DiscoveryDriftScreen
+        let clock: Date
+    }
+
+    private func makeSpaceScene() -> SpaceScene {
+        let screen = DiscoveryDriftScreen()
+        let display = DisplayManager(screenSource: { [screen] })
+        let workspaces = WorkspaceManager(displayManager: display)
+        workspaces.initializeMonitors()
+        _ = workspaces.switchWorkspace(3, cursorScreen: screen)
+        let access = StubAccessibility()
+        access.stateAnswer = .absent
+        let cache = WindowStateCache()
+        let svc = WindowDiscoveryService(stateCache: cache, accessibility: access,
+                                         displayManager: display, workspaceManager: workspaces,
+                                         bundleIDForPID: { _ in nil }, isWindowSizeSettable: { _ in true })
+        cache.knownWindowIDs = [30, 31, 32, 33, 34]
+        for id: CGWindowID in [30, 31, 32, 33, 34] { cache.windowOwners[id] = 8500 }
+        workspaces.assignWindow(30, toWorkspace: 1)
+        workspaces.assignWindow(31, toWorkspace: 3)
+        workspaces.assignWindow(32, toWorkspace: 2)
+        workspaces.assignWindow(33, toWorkspace: 1)
+        workspaces.assignWindow(34, toWorkspace: 3)
+        return SpaceScene(svc: svc, cache: cache, workspaces: workspaces, access: access, screen: screen,
+                          clock: Date(timeIntervalSinceReferenceDate: 1000))
+    }
+
+    private let parkedFrame = CGRect(x: 1599, y: 999, width: 800, height: 600)
+    private let tileFrame = CGRect(x: 100, y: 100, width: 800, height: 600)
+
+    // Dia's video goes native full screen and comes back, again and again.
+    // its other window, on a hidden workspace, read as closed, came back as
+    // a reopen, and the recycled-id drift moved it onto the video's
+    // workspace: Dia puts it back on screen when the video leaves full screen
+    func testANativeFullScreenExcursionKeepsEveryDesktopWindowInPlace() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        scene.svc.offSpaceStanding = { ids in
+            Dictionary(uniqueKeysWithValues: ids.intersection([30, 32, 33, 34]).map { ($0, .behindFullScreen) })
+        }
+        let video = DiscoveryFramedWindow(id: 31, frame: CGRect(x: 0, y: 0, width: 1600, height: 1000))
+
+        for _ in 0..<8 {
+            let changes = compute(scene.svc, snapshot: [video], runningPIDs: [8500])
+            XCTAssertTrue(changes.goneIDs.isEmpty)
+            XCTAssertFalse(changes.needsRetile)
+            now += 2
+        }
+        XCTAssertTrue(scene.cache.hiddenWindowIDs.isEmpty)
+        XCTAssertEqual(scene.svc.heldWindowIDs, [30, 32, 33, 34])
+        XCTAssertTrue(scene.access.queries.isEmpty, "the window server answered; AX was not asked")
+
+        // back on the desktop: 30 stands on screen, the others parked
+        scene.svc.offSpaceStanding = { _ in [:] }
+        let back = compute(scene.svc, snapshot: [
+            video, DiscoveryFramedWindow(id: 30, frame: tileFrame),
+            DiscoveryFramedWindow(id: 32, frame: parkedFrame), DiscoveryFramedWindow(id: 33, frame: parkedFrame),
+            DiscoveryFramedWindow(id: 34, frame: tileFrame),
+        ], runningPIDs: [8500])
+
+        XCTAssertTrue(back.returned.isEmpty)
+        XCTAssertTrue(back.reopenedAfterClose.isEmpty, "slots and hand choices stay")
+        XCTAssertTrue(back.screenDrift.isEmpty)
+        XCTAssertEqual(scene.workspaces.workspaceFor(30), 1)
+        XCTAssertEqual(scene.workspaces.workspaceFor(34), 3)
+        XCTAssertTrue(scene.svc.heldWindowIDs.isEmpty)
+    }
+
+    // a desktop Space switched away: hidden after the off-screen hold, with
+    // its slot reserved, and back as the same window
+    func testAWindowOnAnotherDesktopSpaceIsReservedAndComesBackTheSameWindow() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        scene.svc.offSpaceStanding = { ids in
+            Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .onOtherDesktop) })
+        }
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+
+        let first = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(first.goneIDs.isEmpty, "held first, like any window off the screen")
+        now += WindowDiscoveryService.listedHoldSpan + 1
+        let gone = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertEqual(gone.goneIDs, [30])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        scene.svc.offSpaceStanding = { _ in [:] }
+        let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
+                           runningPIDs: [8500])
+        XCTAssertEqual(back.returned.map(\.windowID), [30])
+        XCTAssertTrue(back.reopenedAfterClose.isEmpty)
+        XCTAssertTrue(back.screenDrift.isEmpty)
+        XCTAssertEqual(scene.workspaces.workspaceFor(30), 1)
+    }
+
+    // a reservation AX could not verify when the window left is not released
+    // later just because AX does not list a window on another Space
+    func testAnUnverifiedReservationOnAnotherSpaceIsKept() {
+        let scene = makeSpaceScene()
+        scene.access.stateAnswer = nil
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        scene.access.stateAnswer = .absent
+        scene.svc.offSpaceStanding = { ids in
+            Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .onOtherDesktop) })
+        }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+    }
+
+    // a window closed while full screen is in front is on no Space: a close
+    func testAWindowOnNoSpaceIsStillAClose() {
+        let scene = makeSpaceScene()
+        scene.svc.offSpaceStanding = { ids in
+            Dictionary(uniqueKeysWithValues: ids.intersection([32, 33, 34]).map { ($0, .behindFullScreen) })
+        }
+        let video = DiscoveryFramedWindow(id: 31, frame: CGRect(x: 0, y: 0, width: 1600, height: 1000))
+
+        let changes = compute(scene.svc, snapshot: [video], runningPIDs: [8500])
+
+        XCTAssertEqual(changes.goneIDs, [30])
+        XCTAssertTrue(scene.cache.hiddenWindowIDs.contains(30))
+        XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(30), "a verified close")
+        XCTAssertEqual(scene.svc.heldWindowIDs, [32, 33, 34])
+
+        scene.svc.offSpaceStanding = { _ in [:] }
+        let desktop = [32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        let back = compute(scene.svc, snapshot: [video, DiscoveryFramedWindow(id: 30, frame: tileFrame)] + desktop,
+                           runningPIDs: [8500])
+        XCTAssertEqual(back.reopenedAfterClose, [30])
+        XCTAssertEqual(back.screenDrift.map(\.windowID), [30], "the recycled-id reopen still lands where it opened")
+    }
+
+    func testTheWindowServerStandingOfAWindow() {
+        let desktop = WindowSpaces.Display(current: 1, currentIsFullScreen: false, spaces: [1, 3, 1096])
+        let fullScreen = WindowSpaces.Display(current: 1096, currentIsFullScreen: true, spaces: [1, 3, 1096])
+        let other = WindowSpaces.Display(current: 7, currentIsFullScreen: false, spaces: [7])
+
+        XCTAssertNil(WindowSpaces.standing(windowSpaces: [], displays: [fullScreen]), "ordered out or closed")
+        XCTAssertNil(WindowSpaces.standing(windowSpaces: [1096], displays: [fullScreen]), "on the current Space")
+        XCTAssertNil(WindowSpaces.standing(windowSpaces: [7], displays: [fullScreen, other]), "current elsewhere")
+        XCTAssertNil(WindowSpaces.standing(windowSpaces: [42], displays: [fullScreen]), "no display has it")
+        XCTAssertEqual(WindowSpaces.standing(windowSpaces: [1], displays: [fullScreen, other]), .behindFullScreen)
+        XCTAssertEqual(WindowSpaces.standing(windowSpaces: [3], displays: [desktop]), .onOtherDesktop)
+    }
+
     // MARK: - gone (dead pid → fully forgotten)
 
     func testGoneWindowWithDeadPIDIsFullyForgotten() {
