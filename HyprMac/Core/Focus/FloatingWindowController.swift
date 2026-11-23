@@ -128,6 +128,26 @@ extension HyprWindow {
     }
 }
 
+/// What goes off the screen before a floater's Hypr+T attempt. The attempt
+/// moves the floater and the tiles around it on the main thread, where
+/// nothing can redraw, so every mark drawn on those frames would sit on the
+/// old spots until it ends: the floater's outline, the border or brackets
+/// on it, and the dim, whose layers follow each tile and carve each
+/// floater. The scratchpad scrim covers whole screens with no carves, so it
+/// stays.
+struct TileAttemptChrome: Equatable {
+    var outline: Bool
+    var border: Bool
+    var brackets: Bool
+    var dim: Bool
+
+    static func clearing(_ id: CGWindowID, borderTrackedID: CGWindowID?, bracketsTrackedID: CGWindowID?,
+                         scrimShowing: Bool) -> Self {
+        Self(outline: true, border: borderTrackedID == id, brackets: bracketsTrackedID == id,
+             dim: !scrimShowing)
+    }
+}
+
 struct FloatToTileRejectionMessage {
     static func text(for failure: TilingEngine.ForceInsertFailure) -> String {
         switch failure {

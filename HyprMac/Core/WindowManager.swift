@@ -1608,16 +1608,20 @@ class WindowManager {
         refreshDimming()
     }
 
-    /// Before a floater's tile attempt: take its outline, and the focus
-    /// border or brackets on it, off the screen now. The pass blocks the
-    /// main thread while the window tries its slots, so marks left up would
-    /// sit on the old spot until it ends, and a fade would not start until
-    /// then. The pass's own refresh draws them on the frame it settles on.
+    /// Before a floater's tile attempt: take what `TileAttemptChrome` names
+    /// off the screen now. The pass blocks the main thread while the window
+    /// tries its slots, so marks left up would sit on the old spots until it
+    /// ends, and a fade would not start until then. The pass's own refresh
+    /// and `didTryTile` draw them again on the frames it settles on.
     private func clearMarksForTileAttempt(_ window: HyprWindow) {
         let id = window.windowID
-        focusBorder.dropFloatingBorder(for: id)
-        if focusBorder.trackedWindowID == id { focusBorder.hide(fade: false) }
-        if focusBrackets.trackedWindowID == id { focusBrackets.hide(fade: false) }
+        let plan = TileAttemptChrome.clearing(id, borderTrackedID: focusBorder.trackedWindowID,
+                                              bracketsTrackedID: focusBrackets.trackedWindowID,
+                                              scrimShowing: scratchpad.isVisible)
+        if plan.outline { focusBorder.dropFloatingBorder(for: id) }
+        if plan.border { focusBorder.hide(fade: false) }
+        if plan.brackets { focusBrackets.hide(fade: false) }
+        if plan.dim { dimmingOverlay.hideImmediately() }
         // AppKit hands window ordering to the window server with the
         // transaction's commit, at the end of this turn, which the pass holds
         CATransaction.flush()

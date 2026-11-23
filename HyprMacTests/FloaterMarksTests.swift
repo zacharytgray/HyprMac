@@ -289,3 +289,25 @@ final class FloaterOutlineDropTests: XCTestCase {
         XCTAssertEqual(border.visibleOwnedPanelCount, 1, "no fade: the panel is out before the pass blocks")
     }
 }
+
+// the attempt moves the floater and the tiles around it while nothing can
+// redraw, so every mark that sits on those frames goes before it
+final class TileAttemptChromeTests: XCTestCase {
+    func testTheOutlineAndTheDimGo() {
+        let plan = TileAttemptChrome.clearing(7, borderTrackedID: nil, bracketsTrackedID: nil, scrimShowing: false)
+        XCTAssertEqual(plan, TileAttemptChrome(outline: true, border: false, brackets: false, dim: true))
+    }
+
+    func testTheBorderAndBracketsGoOnlyWhenTheyMarkThatWindow() {
+        let mine = TileAttemptChrome.clearing(7, borderTrackedID: 7, bracketsTrackedID: 7, scrimShowing: false)
+        XCTAssertTrue(mine.border && mine.brackets)
+        let other = TileAttemptChrome.clearing(7, borderTrackedID: 8, bracketsTrackedID: 8, scrimShowing: false)
+        XCTAssertFalse(other.border || other.brackets)
+    }
+
+    // the scratchpad scrim covers the screen with no holes; nothing on it is stale
+    func testTheScrimStays() {
+        XCTAssertFalse(TileAttemptChrome.clearing(7, borderTrackedID: nil, bracketsTrackedID: nil,
+                                                  scrimShowing: true).dim)
+    }
+}
