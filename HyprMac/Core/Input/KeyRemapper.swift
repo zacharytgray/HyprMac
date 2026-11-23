@@ -431,12 +431,6 @@ enum KeyMappingMerge {
     static let f18: UInt64 = 0x70000006D
     static let ours = HIDKeyMapping(src: capsLock, dst: f18)
 
-    /// Whether our entry is in the list. nil when the list can't be read.
-    static func hasOurs(_ raw: Any?) -> Bool? {
-        guard let current = parse(raw) else { return nil }
-        return current.contains(ours)
-    }
-
     /// nil means the read can't be trusted and nothing may be written.
     static func plan(_ operation: Operation, read raw: Any?, held: [HIDKeyMapping]) -> Plan? {
         guard let current = parse(raw) else { return nil }
