@@ -1419,8 +1419,8 @@ snapshot. That hold lasts five seconds, and a poll is scheduled for when it
 runs out; a window still missing then is `window hidden` as before, with
 its slot reserved.
 
-On macOS 27 an app does not list its windows on a Space the display does
-not show, so AX alone reads them as closed. Discovery asks the window
+An app does not list its windows on a Space the display does not show
+(seen on macOS 15 and 27), so AX alone reads them as closed. Discovery asks the window
 server which Spaces such a window is on (`SLSCopySpacesForWindows`). The
 third line is every desktop window while a native full-screen app is in
 front: held, with no time limit, until the display shows their Space
@@ -1429,7 +1429,10 @@ then `window hidden: <id> (<bundle>) — on another Space, reserved`. Neither
 comes back as `reopened after a close`. Before this, each full-screen exit
 logged `window returned: … — reopened after a close` for every desktop
 window, and a window its app put back on screen was moved with `drift: …
-[reopened onto hidden ws]` to the workspace showing.
+[reopened onto hidden ws]` to the workspace showing. While an app is in
+full screen, macOS pulls its other windows from the park corner onto the
+screen of their Space; on the way back `park repair: '<title>' (<id>) on
+hidden ws<N> reads visible — re-parking` puts each back, which is expected.
 `FLAP: … returned <n>ms after vanishing` on the return is the diagnostic
 for a window that was not held and came back within five seconds; with
 both holds in place it should be rare. Every tile pass logs

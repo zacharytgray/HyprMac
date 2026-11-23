@@ -1049,7 +1049,7 @@ final class WindowDiscoveryServiceTests: XCTestCase {
     /// one screen showing ws3. 30 and 33 on ws1, 32 on ws2, 34 beside the
     /// video on ws3, 31 the video that goes native full screen. an app lists
     /// only the current Space's windows, so AX answers every desktop window
-    /// absent while the full-screen Space is in front (macOS 27.2)
+    /// absent while the full-screen Space is in front (macOS 15 and 27)
     private struct SpaceScene {
         let svc: WindowDiscoveryService
         let cache: WindowStateCache
