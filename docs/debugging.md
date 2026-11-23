@@ -290,6 +290,14 @@ write order: wid=5100 position-first (does not fit source LG BL450) target=3424x
 write order: wid=5300 position-first (parked) target=1496x928
 ```
 
+A window that stays on its screen but whose target would hang off it from
+where it stands is staged in place. That line is `.debug`, so it is only in
+the file log, and its `frame write:` steps start with `position0`:
+
+```
+write order: wid=3546 staged in place (hangs off source onn TV from where it stands) target=948x473 via=(964,41)
+```
+
 A position-first window whose position does not read back on target twice
 within a third of the deadline is sized anyway, and says so:
 

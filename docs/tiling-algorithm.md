@@ -435,6 +435,25 @@ off the destination screen moves first to a staging origin where that size
 stands on the screen, is sized there, then moves to its target and is sized
 again (`stagingOrigins`).
 
+A window that stays on its screen is staged too when its target size, put
+at its current origin, would hang past the usable frame's right or bottom
+edge (`CrossScreenWriteOrder.decideInPlace`, `inPlaceStagingOrigins`).
+AppKit clamps a size written there at that edge: a 900-wide write at
+x=1300 on the hub's 1920 screen landed 620 wide, and a tall one stopped at
+the Dock. The plain order's last size then has to cross the whole gap, and
+an app that changes its own frame on that write is not corrected. Telegram
+takes 32 pt off its height when a size carries it across its layout switch,
+so every togglesplit back to a stack was refused (issue #99). Staged, the
+window moves first to its target origin pulled in until its old size
+stands inside the rect, then takes size, position and size again
+(`position0`, `size`, `position`, `size2` in the trace). The crossing write
+is then the first size, and the last one puts the height back. This is not
+position-first: there is no settle wait, and its readback still teaches the
+size memory, since the window never left its screen. The AX timeout
+recovery's retry stages the same way, from where the rollback put the
+windows. The adjusted pass, the topology recovery and the tiled drag size in
+place as before. The staging is logged at `.debug`, in the file log only.
+
 A setter can answer `attributeUnsupported` (-25205) whatever the app did with
 it. Dia gives that answer to size writes it carried out (seen live 2026-11-18:
 the window server had the new size when the answer came back) and to a close
