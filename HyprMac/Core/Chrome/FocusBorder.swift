@@ -518,6 +518,16 @@ class FocusBorder {
         fadeOutAndOrderOut(border.panel, layer: border.glowView.layer, duration: fadeDurationSec)
     }
 
+    /// Order out `windowID`'s floater panel now, with no fade. A fade
+    /// runs only once the main thread is free; before a layout pass that
+    /// blocks it, the outline would sit on the old spot for the whole pass.
+    func dropFloatingBorder(for windowID: CGWindowID) {
+        mainThreadOnly()
+        guard let border = floatingPanels.removeValue(forKey: windowID) else { return }
+        floaterFrames.removeValue(forKey: windowID)
+        border.panel.orderOut(nil)
+    }
+
     /// Move `windowID`'s outline to `frame` (CG), geometry only, when the
     /// window moved: the window list's frame after the app said so. Its
     /// occlusion mask was cut for the old frame, so it goes until the settle
@@ -564,8 +574,10 @@ class FocusBorder {
     /// Detaches `panel` and `glowView` synchronously — the captured
     /// reference keeps the old panel alive through the animation, while
     /// the next `show` builds a fresh panel rather than reusing the one
-    /// that is mid-fade. Cancels any pending settle or shake work.
-    func hide() {
+    /// that is mid-fade. Cancels any pending settle or shake work. Without
+    /// `fade` the panel goes at once, for a pass about to block the main
+    /// thread, where a fade would only start once the pass ends.
+    func hide(fade: Bool = true) {
         mainThreadOnly()
         if errorFeedback.isActive {
             hyprLog(.notice, .border, "error feedback cancel: wid=\(errorFeedbackWindowID ?? 0)")
@@ -589,6 +601,7 @@ class FocusBorder {
         panel = nil
         glowView = nil
 
+        guard fade else { p.orderOut(nil); return }
         fadeOutAndOrderOut(p, layer: glowLayer, duration: fadeDurationSec)
     }
 

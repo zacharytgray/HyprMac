@@ -340,6 +340,12 @@ final class FloatingWindowController {
     var isWindowSizeSettable: (HyprWindow) -> Bool? = { $0.isSizeSettable }
     // red flash on a float→tile the tree or the screen refused.
     var rejectFloatToTile: ((HyprWindow, TilingEngine.ForceInsertFailure) -> Void)?
+    // a floater's marks go before its tile attempt: the pass blocks the
+    // main thread while the window tries its slots, and the marks would stay
+    // on the old spot until it ends
+    var willTryTile: (HyprWindow) -> Void = { _ in }
+    // and come back on the frame the attempt left, tiled or floating
+    var didTryTile: (HyprWindow) -> Void = { _ in }
 
     // same-stack-frame reentrancy guard for raiseBehind. paired with defer.
     // not a SuppressionRegistry key: not a time gate.
@@ -428,6 +434,7 @@ final class FloatingWindowController {
             // floating → tiled: retile so the surrounding windows make room.
             // reassign workspace in case the window was dragged to a different monitor while floating.
             workspaceManager.moveWindow(window.windowID, toWorkspace: workspace)
+            willTryTile(window)
             retile { [self] in
                 stateCache.setFloating(false, window: window)
 
@@ -442,6 +449,7 @@ final class FloatingWindowController {
                     rejectFloatToTile?(window, reason)
                 }
             }
+            didTryTile(window)
         } else {
             // tiled → floating: retile so the remaining windows fill the gap.
             focusBorder.hide()

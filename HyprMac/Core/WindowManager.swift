@@ -531,6 +531,12 @@ class WindowManager {
         floatingController.findPopup = { [weak self] windows, front in
             self?.mouseTracker.livePopup(in: windows, frontmostPID: front)
         }
+        floatingController.willTryTile = { [weak self] w in self?.clearMarksForTileAttempt(w) }
+        floatingController.didTryTile = { [weak self] w in
+            // a refusal's red flash holds the border; it re-shows when the flash ends
+            guard let self, self.isRunning else { return }
+            self.updateFocusBorder(for: w)
+        }
         floatingController.rejectFloatToTile = { [weak self] w, reason in
             guard let self, let frame = w.frame ?? self.stateCache.cachedWindows[w.windowID]?.frame else { return }
             self.focusBorder.flashError(around: frame, windowID: w.windowID,
@@ -1587,6 +1593,21 @@ class WindowManager {
         mouseTracker.invalidateWindowListCache()
         refreshFloatingBorders()
         refreshDimming()
+    }
+
+    /// Before a floater's tile attempt: take its outline, and the focus
+    /// border or brackets on it, off the screen now. The pass blocks the
+    /// main thread while the window tries its slots, so marks left up would
+    /// sit on the old spot until it ends, and a fade would not start until
+    /// then. The pass's own refresh draws them on the frame it settles on.
+    private func clearMarksForTileAttempt(_ window: HyprWindow) {
+        let id = window.windowID
+        focusBorder.dropFloatingBorder(for: id)
+        if focusBorder.trackedWindowID == id { focusBorder.hide(fade: false) }
+        if focusBrackets.trackedWindowID == id { focusBrackets.hide(fade: false) }
+        // AppKit hands window ordering to the window server with the
+        // transaction's commit, at the end of this turn, which the pass holds
+        CATransaction.flush()
     }
 
     /// Apply focus-follows-mouse to `window`.

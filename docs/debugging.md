@@ -1152,12 +1152,24 @@ occlusion masks and the dim's carves are cut again 0.12 s after the last
 move. A drag reads the list on every drag event; a mouse-up reads it once
 more, since the last event can land a step behind the window.
 
+A Hypr+T tile attempt on a floater blocks the main thread while the window
+tries its slots. Its outline, and the border or brackets on it, go before the
+attempt and come back on the frame it settles on.
+
 If an outline still lags, check that the app took the move subscriptions.
 An app that refuses them logs, after five tries:
 
 ```
 [notice] [discovery] AX observer for <bundle> pid=<pid> has no AXWindowMoved subscription after 5 tries (err <n>) — the chrome follows its windows' moves only at the next refresh
 ```
+
+To measure, sample the window list from outside: HyprMac's floater panel
+sits 9.75 pt outside the window on every side (`floaterPanelExpansion`), so
+its bounds minus that should equal the window's. On the hub, 2026-11-23, with
+a test window: an app's own jump and another tool's AX write were followed
+within one 25–40 ms sample (before: not until the next unrelated refresh,
+seconds later), and the outline was off the window for 0 samples during a
+tile attempt (before: 1.1–1.3 s at up to 605 pt).
 
 ### Rejected drag feedback and source restoration
 

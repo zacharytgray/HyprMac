@@ -191,13 +191,18 @@ class FocusBrackets {
 
     /// Fade out and order out. Cheap to call repeatedly — no-op when
     /// already hidden.
-    func hide() {
+    func hide(fade: Bool = true) {
         mainThreadOnly()
         guard isVisible, let p = panel else { return }
         isVisible = false
         trackedWindowID = nil
         trackedFrame = nil
         glideTarget = nil
+        // a pass about to block the main thread would hold a fade until it ends
+        guard fade else {
+            p.orderOut(nil)
+            return
+        }
 
         let captured = p
         let duration = Tuning.fadeOutDurationSec

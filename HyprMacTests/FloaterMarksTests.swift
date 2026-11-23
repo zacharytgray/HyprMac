@@ -269,3 +269,23 @@ final class FocusBorderFlashTests: XCTestCase {
         XCTAssertNil(try decode(#""yes""#).focusBorderFlash)
     }
 }
+
+// a tile attempt blocks the main thread while the window tries its slots.
+// the outline has to be gone before that, so it is ordered out at once
+final class FloaterOutlineDropTests: XCTestCase {
+    func testDropOrdersTheOutlineOutAtOnce() {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1000
+        border.setFloaterMarks(.outline)
+        let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
+        border.updateFloatingBorders([7: frame, 8: frame.offsetBy(dx: 500, dy: 0)],
+                                     color: NSColor.systemBlue.cgColor)
+        XCTAssertEqual(border.visibleOwnedPanelCount, 2)
+
+        border.dropFloatingBorder(for: 7)
+
+        XCTAssertNil(border.currentFloaterOutline(for: 7))
+        XCTAssertNotNil(border.currentFloaterOutline(for: 8))
+        XCTAssertEqual(border.visibleOwnedPanelCount, 1, "no fade: the panel is out before the pass blocks")
+    }
+}

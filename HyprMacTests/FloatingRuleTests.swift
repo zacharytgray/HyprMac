@@ -921,6 +921,24 @@ final class FloatingRuleControllerTests: XCTestCase {
         XCTAssertTrue(h.cache.floatingWindowIDs.contains(1))
     }
 
+    // the attempt blocks the main thread while the window tries its slots,
+    // so its floater marks go before the pass, not after it
+    func testHyprTOnAFloaterClearsItsMarksBeforeTheTileAttempt() {
+        let h = Harness(refusing: true)
+        var steps: [String] = []
+        h.controller.willTryTile = { steps.append("clear \($0.windowID)") }
+        h.controller.didTryTile = { steps.append("redraw \($0.windowID)") }
+        h.controller.retile = { body in steps.append("retile"); body() }
+        let w = h.window(1, bundleID: zoom, title: "Zoom", floating: true)
+        h.controller.toggle(w, on: h.screen, in: h.workspace)
+        XCTAssertEqual(steps, ["clear 1", "retile", "redraw 1"])
+
+        steps = []
+        let tile = h.window(2, bundleID: zoom, title: "Zoom 2", floating: false)
+        h.controller.toggle(tile, on: h.screen, in: h.workspace)
+        XCTAssertEqual(steps, ["retile"], "a tile going floating has no floater marks yet")
+    }
+
     // only a window that can't take a tile still fails, with the shake
     func testHyprTOnAWindowThatCannotTileStillShakes() {
         let h = Harness(refusing: true)
