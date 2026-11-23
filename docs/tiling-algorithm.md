@@ -126,8 +126,8 @@ until the next sibling restructure (insert / remove on that node).
 
 ### A refused layout key
 
-`togglesplit` and the keyboard resize run the same verified pass as any
-other layout, and only an accepted pass publishes. When the pass is refused,
+`togglesplit`, the keyboard resize and the keyboard swap run the same
+verified pass as any other layout, and only an accepted pass publishes. When the pass is refused,
 the tree goes back to its snapshot and the windows to their frames (issue
 #102 asked to keep the misfit layout instead; the rollback stays). So the
 key does not look dead, `ActionDispatcher` gives the red shake once per
@@ -146,8 +146,13 @@ press, after the pass and all of its recoveries are done
 A refusal the adjusted pass fixes is accepted, not refused: a resize that
 asks a window to shrink below what it takes stops at that width, with no
 shake. Background passes (discovery retiles, admissions, the recovery's
-retries, drift re-applies) never shake. A keyboard swap and a move to a
-workspace had their own red shake already and keep it.
+retries, drift re-applies) never shake.
+
+The keyboard swap follows the same rule after its readback, with its own
+text ("Not enough room to swap here") and a beep. A swap the fit check
+refuses before anything moves still shakes the focused window: the known
+minima rule out the swap as a whole and name no window. A move to a
+workspace has its own red shake and is unchanged.
 
 ## Ratio memory
 

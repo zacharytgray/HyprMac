@@ -1035,8 +1035,9 @@ final class ActionDispatcher {
     /// Candidates are pre-filtered to the focused window's own screen so
     /// a tied directional pick cannot drift across monitors. Rejected
     /// before any mutation when `canSwapWindows` reports a min-size
-    /// violation. `swapWindows` owns its own snapshot and revert, and a
-    /// refusal surfaces a `flashError`.
+    /// violation, with the red shake on the focused window. A swap refused
+    /// after the readback shakes the window the failure names, and one
+    /// rolled back for a timeout shakes nothing (`showRefusal`).
     private func swapInDirection(_ direction: Direction) {
         guard let focused = currentFocusedWindow() else { return }
         guard !stateCache.floatingWindowIDs.contains(focused.windowID) else { return }
@@ -1066,13 +1067,19 @@ final class ActionDispatcher {
             return
         }
 
-        // swapWindows handles its own snapshot/revert. flashError on false.
-        let ok = tilingEngine.swapWindows(focused, target, onWorkspace: workspace, screen: screen)
-        if !ok {
-            rejectSwap(focused, reason: "swap overflows min-size constraints (post-readback)")
+        // the engine owns the snapshot and revert. a refusal shakes the
+        // window the failure names, a timeout nothing (see showRefusal)
+        guard let outcome = tilingEngine.swapWindowsOutcome(focused, target,
+                                                            onWorkspace: workspace, screen: screen) else {
+            rejectSwap(focused, reason: "swap would violate min-size constraints")
+            return
+        }
+        if case .accepted = outcome {} else {
             // the revert retiled — sync the cache, but don't warp the
             // cursor: nothing moved from the user's point of view.
             updatePositionCache()
+            showRefusal(outcome, focused: focused, action: "swapDirection",
+                        message: Self.swapRefusedMessage, beep: true)
             return
         }
         if layer != nil { scratchpadLayoutChanged() }
@@ -1094,14 +1101,16 @@ final class ActionDispatcher {
         return (workspaceManager.workspaceForScreen(screen), screen)
     }
 
-    /// Beep and flash a red border around `window` when a keyboard swap is
-    /// rejected.
+    private static let swapRefusedMessage = "Not enough room to swap here"
+
+    /// Beep and flash a red border around `window` when the fit check
+    /// refuses a keyboard swap before anything moves. The known minima
+    /// rule the swap out as a whole, so the focused window takes it.
     func rejectSwap(_ window: HyprWindow, reason: String) {
         hyprLog(.debug, .orchestration, "\(reason) — rejected swap")
         NSSound.beep()
         if let frame = window.frame {
-            focusBorder.flashError(around: frame, windowID: window.windowID,
-                                   message: "Not enough room to swap here")
+            shake(window.windowID, frame: frame, message: Self.swapRefusedMessage)
         }
     }
 
@@ -1280,7 +1289,7 @@ final class ActionDispatcher {
                                                      onWorkspace: workspace, screen: screen)
         if workspace == ScratchpadController.workspace { scratchpadLayoutChanged() }
         updatePositionCache()
-        showRefusal(outcome, focused: focused, action: "resizeDirection")
+        showRefusal(outcome, focused: focused, action: "resizeDirection", message: Self.layoutRefusedMessage)
     }
 
     /// Toggle the BSP split direction at the focused leaf's parent.
@@ -1293,7 +1302,7 @@ final class ActionDispatcher {
         let outcome = tilingEngine.toggleSplit(focused, onWorkspace: workspace, screen: screen)
         if workspace == ScratchpadController.workspace { scratchpadLayoutChanged() }
         updatePositionCache()
-        showRefusal(outcome, focused: focused, action: "toggleSplit")
+        showRefusal(outcome, focused: focused, action: "toggleSplit", message: Self.layoutRefusedMessage)
     }
 
     // MARK: - refused layout keys
@@ -1328,11 +1337,15 @@ final class ActionDispatcher {
         }
     }
 
+    private static let layoutRefusedMessage = "Won't fit this layout"
+
     /// One red shake for a layout key the engine refused and rolled back
     /// (#102), on the window that did not fit, where it stands now. Only
-    /// the keys call this: background passes stay quiet.
+    /// the keys call this: background passes stay quiet. `beep` only
+    /// sounds with a shake.
     private func showRefusal(_ outcome: TilingEngine.LayoutApplicationOutcome?,
-                             focused: HyprWindow, action: String) {
+                             focused: HyprWindow, action: String, message: String,
+                             beep: Bool = false) {
         guard let outcome, let reason = TilingEngine.failure(of: outcome) else { return }
         guard let id = Self.refusalTarget(outcome, focused.windowID) else {
             hyprLog(.notice, .orchestration, "\(action) refused without a shake: reason=\(reason.trace)"
@@ -1347,7 +1360,11 @@ final class ActionDispatcher {
             return
         }
         hyprLog(.notice, .orchestration, "\(action) refused: shaking wid=\(id) reason=\(reason.trace)")
-        let message = "Won't fit this layout"
+        if beep { NSSound.beep() }
+        shake(id, frame: frame, message: message)
+    }
+
+    private func shake(_ id: CGWindowID, frame: CGRect, message: String) {
         if let layoutRefused {
             layoutRefused(id, frame, message)
         } else {

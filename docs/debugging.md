@@ -1137,7 +1137,8 @@ wid=<id> reason=<failure>` with the red shake on that window, or
 `toggleSplit refused without a shake: reason=<failure> — nothing turned
 the layout down` for a timeout or a superseded pass
 (`docs/tiling-algorithm.md`, "A refused layout key"). The keyboard resize
-says `resizeDirection` instead.
+says `resizeDirection` instead, and a keyboard swap refused after its
+readback says `swapDirection`.
 
 ### Rejected drag feedback and source restoration
 

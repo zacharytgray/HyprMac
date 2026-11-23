@@ -13,6 +13,8 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
     private var tilingEngine: TilingEngine!
     private var stateCache: WindowStateCache!
     private var dispatcher: ActionDispatcher!
+    private var workspaceManager: WorkspaceManager!
+    private var accessibility: WindowListAccessibility!
     private var shakes: [(id: CGWindowID, frame: CGRect, message: String)] = []
 
     override func setUpWithError() throws {
@@ -28,9 +30,9 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
         let suppressions = SuppressionRegistry()
         let focusBorder = FocusBorder()
         let focusController = FocusStateController(focusBorder: focusBorder)
-        let accessibility = AccessibilityManager()
+        accessibility = WindowListAccessibility()
         let cursorManager = CursorManager()
-        let workspaceManager = WorkspaceManager(displayManager: displayManager)
+        workspaceManager = WorkspaceManager(displayManager: displayManager)
         tilingEngine = TilingEngine(displayManager: displayManager,
                                     frameSizingIOFactory: io.factory())
         let orchestrator = WorkspaceOrchestrator(
@@ -73,7 +75,7 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
     func testARefusedToggleSplitShakesTheWindowThatDidNotFit() {
         _ = seed()
         let standing = io.frame(2)
-        io.fixedSize = 2
+        io.fixedSize = [2]
 
         dispatcher.dispatch(.toggleSplit)
 
@@ -95,7 +97,7 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
     /// a floor and the adjusted pass is accepted: no rollback, no shake.)
     func testARefusedResizeShakesTheWindowThatDidNotFit() {
         _ = seed()
-        io.fixedSize = 2
+        io.fixedSize = [2]
 
         dispatcher.dispatch(.resizeDirection(.left))
 
@@ -106,7 +108,7 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
     func testAToggleSplitRolledBackOnAnAXTimeoutDoesNotShake() {
         _ = seed()
         let standing = io.frame(2)
-        io.timesOut = 2
+        io.timesOut = [2]
 
         dispatcher.dispatch(.toggleSplit)
 
@@ -119,7 +121,7 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
     /// pass, and nobody pressed a key.
     func testABackgroundRetileRefusalDoesNotShake() {
         let windows = seed([1, 2, 3])
-        io.fixedSize = 2
+        io.fixedSize = [2]
         var results: [TilingEngine.AdmissionResult] = []
         dispatcher.retile = { [unowned self] _ in
             let result = tilingEngine.tileWindows(Array(windows.prefix(2)),
@@ -136,6 +138,61 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
 
         XCTAssertNotNil(results.first?.failure, "precondition: the background pass was refused")
         XCTAssertTrue(shakes.isEmpty)
+    }
+
+    // MARK: - keyboard swap
+
+    /// One column on the left, a stack of two on the right, every window
+    /// standing on its tile and readable where the fake IO put it. 1 is
+    /// focused and swaps right into the stack.
+    private func seedSwap() -> [HyprWindow] {
+        let windows: [HyprWindow] = ([1, 2, 3] as [CGWindowID]).map { FramedWindow(id: $0, io: io) }
+        let layouts = tilingEngine.seedTree(windows, onWorkspace: workspace, screen: screen)
+        for (window, frame) in layouts {
+            io.place(window.windowID, at: frame)
+            workspaceManager.assignWindow(window.windowID, toWorkspace: workspace)
+        }
+        accessibility.windows = windows
+        dispatcher.currentFocusedWindow = { windows[0] }
+        return windows
+    }
+
+    /// Either of the stack can be the swap's target. Whichever it is has to
+    /// take the tall column and keeps its height.
+    func testARefusedSwapShakesTheWindowThatDidNotFit() {
+        _ = seedSwap()
+        let standing: [CGWindowID: CGRect] = [2: io.frame(2), 3: io.frame(3)]
+        io.fixedSize = [2, 3]
+
+        dispatcher.dispatch(.swapDirection(.right))
+
+        XCTAssertEqual(shakes.count, 1, "one shake per press")
+        let id = shakes.first?.id ?? 0
+        XCTAssertTrue([2, 3].contains(id), "the shake went on \(id), not on the window that would not fit")
+        XCTAssertEqual(shakes.first?.frame, standing[id], "the shake sits where the rollback left the window")
+        XCTAssertEqual(shakes.first?.message, "Not enough room to swap here")
+    }
+
+    func testASwapRolledBackOnAnAXTimeoutDoesNotShake() {
+        _ = seedSwap()
+        let standing = io.frame(1)
+        io.timesOut = [2, 3]
+
+        dispatcher.dispatch(.swapDirection(.right))
+
+        XCTAssertTrue(shakes.isEmpty, "a timeout is not a refusal")
+        XCTAssertNotEqual(io.timedOutWrites, 0, "precondition: a write timed out")
+        XCTAssertEqual(io.frame(1), standing, "precondition: the swap was rolled back")
+    }
+
+    func testAnAcceptedSwapDoesNotShake() {
+        _ = seedSwap()
+        let before = io.frame(1)
+
+        dispatcher.dispatch(.swapDirection(.right))
+
+        XCTAssertTrue(shakes.isEmpty)
+        XCTAssertNotEqual(io.frame(1), before, "precondition: the swap moved the focused window")
     }
 
     // MARK: - which window a refusal names
@@ -180,12 +237,31 @@ final class RefusedLayoutFeedbackTests: XCTestCase {
     }
 }
 
-/// Every window lands where it is sent, except `fixedSize`, which keeps its
-/// size like an app with a fixed window, and `timesOut`, whose resizes come
-/// back as an AX timeout.
+/// A window whose frame reads from the fake IO instead of AX, so the
+/// dispatcher's window list and screen lookup see where it stands.
+private final class FramedWindow: HyprWindow {
+    private let io: MisfitFrameIO
+
+    init(id: CGWindowID, io: MisfitFrameIO) {
+        self.io = io
+        super.init(element: AXUIElementCreateApplication(0), windowID: id, ownerPID: 0)
+    }
+
+    override var frame: CGRect? { io.frame(windowID) }
+}
+
+/// The walk returns the scene's windows.
+private final class WindowListAccessibility: AccessibilityManager {
+    var windows: [HyprWindow] = []
+    override func getAllWindows() -> [HyprWindow] { windows }
+}
+
+/// Every window lands where it is sent, except those in `fixedSize`, which
+/// keep their size like an app with a fixed window, and those in
+/// `timesOut`, whose resizes come back as an AX timeout.
 private final class MisfitFrameIO {
-    var fixedSize: CGWindowID?
-    var timesOut: CGWindowID?
+    var fixedSize: Set<CGWindowID> = []
+    var timesOut: Set<CGWindowID> = []
     private(set) var sizeWrites = 0
     private(set) var timedOutWrites = 0
     private var positions: [CGWindowID: CGPoint] = [:]
@@ -208,11 +284,11 @@ private final class MisfitFrameIO {
                 setMessagingTimeout: { _, _ in .success },
                 writeSize: { [self] id, size, _ in
                     sizeWrites += 1
-                    if id == timesOut, size != sizes[id] {
+                    if timesOut.contains(id), size != sizes[id] {
                         timedOutWrites += 1
                         return .cannotComplete
                     }
-                    if id != fixedSize { sizes[id] = size }
+                    if !fixedSize.contains(id) { sizes[id] = size }
                     return .success
                 },
                 writePosition: { [self] id, position, _ in positions[id] = position; return .success },

@@ -3324,13 +3324,22 @@ class TilingEngine {
     /// or reverted after readback.
     @discardableResult
     func swapWindows(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+        if case .accepted = swapWindowsOutcome(a, b, onWorkspace: workspace, screen: screen) { return true }
+        return false
+    }
+
+    /// `swapWindows` with the layout's outcome, so the key can say which
+    /// window refused it. nil when the fit check refused before anything
+    /// moved.
+    func swapWindowsOutcome(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int,
+                            screen: NSScreen) -> LayoutApplicationOutcome? {
         let fit = swapFit(a, b, onWorkspace: workspace, screen: screen)
-        if case .refused = fit { return false }
+        if case .refused = fit { return nil }
         return performSwap(a, b, fit: fit, onWorkspace: workspace, screen: screen)
     }
 
     private func performSwap(_ a: HyprWindow, _ b: HyprWindow, fit: SwapFit,
-                             onWorkspace workspace: Int, screen: NSScreen) -> Bool {
+                             onWorkspace workspace: Int, screen: NSScreen) -> LayoutApplicationOutcome? {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
 
@@ -3355,17 +3364,13 @@ class TilingEngine {
         case let .revalidatable(bypass):
             outcome = withMinimaBypass(bypass, apply)
         case .refused:
-            return false
+            return nil
         }
-        switch outcome {
-        case .accepted:
-            return true
-        case .rejectedRestored, .degraded:
-            guard layoutGeneration == generation else { return false }
-            hyprLog(.debug, .lifecycle, "swap frame application failed — restoring tree")
-            t.restore(snapshot)
-            return false
-        }
+        if case .accepted = outcome { return outcome }
+        guard layoutGeneration == generation else { return outcome }
+        hyprLog(.debug, .lifecycle, "swap frame application failed — restoring tree")
+        t.restore(snapshot)
+        return outcome
     }
 
     /// Split-direction toggle for `window`'s parent node. Returns the
