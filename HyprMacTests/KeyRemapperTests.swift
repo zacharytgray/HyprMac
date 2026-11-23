@@ -58,18 +58,21 @@ final class KeyRemapperTests: XCTestCase {
 
         XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: { present },
                                                    write: { written.append($0); return true },
-                                                   defaults: defaults, capsLockOff: {}))
+                                                   defaults: defaults, capsLockOff: {},
+                                                   keyboards: { [] }, pushToKeyboard: { _, _ in false }))
         XCTAssertTrue(written.isEmpty, "present: nothing to write")
 
         XCTAssertTrue(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: { nil },
                                                   write: { written.append($0); return true },
-                                                  defaults: defaults, capsLockOff: {}))
+                                                  defaults: defaults, capsLockOff: {},
+                                                  keyboards: { [] }, pushToKeyboard: { _, _ in false }))
         XCTAssertEqual(written, [[KeyMappingMerge.ours]], "gone: put back")
 
         written = []
         XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: { [["bogus": 1]] },
                                                    write: { written.append($0); return true },
-                                                   defaults: defaults, capsLockOff: {}))
+                                                   defaults: defaults, capsLockOff: {},
+                                                   keyboards: { [] }, pushToKeyboard: { _, _ in false }))
         XCTAssertTrue(written.isEmpty, "unreadable: untouched")
     }
 
@@ -79,7 +82,8 @@ final class KeyRemapperTests: XCTestCase {
         guard let other else { return }
         XCTAssertFalse(KeyRemapper.reassertHyprKey(other, enabled: true, read: { nil },
                                                    write: { _ in written += 1; return true },
-                                                   capsLockOff: {}))
+                                                   capsLockOff: {}, keyboards: { [] },
+                                                   pushToKeyboard: { _, _ in false }))
         XCTAssertEqual(written, 0)
     }
 
@@ -88,8 +92,97 @@ final class KeyRemapperTests: XCTestCase {
         var written = 0
         XCTAssertFalse(KeyRemapper.reassertHyprKey(.capsLock, enabled: false, read: { nil },
                                                    write: { _ in written += 1; return true },
-                                                   capsLockOff: {}))
+                                                   capsLockOff: {}, keyboards: { [] },
+                                                   pushToKeyboard: { _, _ in false }))
         XCTAssertEqual(written, 0)
+    }
+
+    // MARK: - keyboards without a copy of the list (#103)
+
+    private struct KeyboardPush: Equatable {
+        let id: UInt64
+        let mapping: [HIDKeyMapping]
+    }
+
+    private func reassert(list: [HIDKeyMapping], keyboards: [HIDKeyboardMapping],
+                          key: HyprKey = .capsLock, enabled: Bool = true,
+                          pushSucceeds: Bool = true,
+                          written: inout [[HIDKeyMapping]], pushes: inout [KeyboardPush],
+                          keyboardReads: inout Int) -> Bool {
+        let raw = raw(list)
+        var w: [[HIDKeyMapping]] = []
+        var p: [KeyboardPush] = []
+        var reads = 0
+        let result = KeyRemapper.reassertHyprKey(
+            key, enabled: enabled, read: { raw }, write: { w.append($0); return true },
+            defaults: defaults, capsLockOff: {},
+            keyboards: { reads += 1; return keyboards },
+            pushToKeyboard: { p.append(KeyboardPush(id: $0, mapping: $1)); return pushSucceeds })
+        written += w
+        pushes += p
+        keyboardReads += reads
+        return result
+    }
+
+    /// the issue's wake: the list still has ours, the keyboards from before
+    /// the sleep keep their copy, and the one the system made on wake has
+    /// none. only that keyboard gets the list, and the list isn't rewritten
+    func testReassertGivesTheListToAKeyboardWithoutOne() {
+        var written: [[HIDKeyMapping]] = []
+        var pushes: [KeyboardPush] = []
+        var reads = 0
+        let keyboards = [HIDKeyboardMapping(id: 0x100000953, name: "old", hasList: true),
+                         HIDKeyboardMapping(id: 0x10000516C, name: "new", hasList: false)]
+        XCTAssertTrue(reassert(list: [f20, ours], keyboards: keyboards,
+                               written: &written, pushes: &pushes, keyboardReads: &reads))
+        XCTAssertEqual(pushes, [KeyboardPush(id: 0x10000516C, mapping: [f20, ours])])
+        XCTAssertTrue(written.isEmpty, "the system list is already right")
+    }
+
+    /// a keyboard with any list of its own, even one without ours, was set by
+    /// someone (hidutil --matching, another tool). it is left alone
+    func testReassertLeavesKeyboardsWithTheirOwnList() {
+        var written: [[HIDKeyMapping]] = []
+        var pushes: [KeyboardPush] = []
+        var reads = 0
+        let keyboards = [HIDKeyboardMapping(id: 1, name: "a", hasList: true),
+                         HIDKeyboardMapping(id: 2, name: "b", hasList: true)]
+        XCTAssertFalse(reassert(list: [ours], keyboards: keyboards,
+                                written: &written, pushes: &pushes, keyboardReads: &reads))
+        XCTAssertTrue(pushes.isEmpty)
+        XCTAssertTrue(written.isEmpty)
+    }
+
+    /// a failed push counts as nothing written; the next check tries again
+    func testReassertReportsAFailedKeyboardPush() {
+        var written: [[HIDKeyMapping]] = []
+        var pushes: [KeyboardPush] = []
+        var reads = 0
+        let keyboards = [HIDKeyboardMapping(id: 7, name: "new", hasList: false)]
+        XCTAssertFalse(reassert(list: [ours], keyboards: keyboards, pushSucceeds: false,
+                                written: &written, pushes: &pushes, keyboardReads: &reads))
+        XCTAssertEqual(pushes.count, 1)
+    }
+
+    /// paused, another Hypr key, or a missing entry: keyboards aren't read.
+    /// a system-wide write already reaches every keyboard present
+    func testReassertReadsKeyboardsOnlyWhenTheListHasOurs() {
+        var written: [[HIDKeyMapping]] = []
+        var pushes: [KeyboardPush] = []
+        var reads = 0
+        let keyboards = [HIDKeyboardMapping(id: 7, name: "new", hasList: false)]
+        _ = reassert(list: [ours], keyboards: keyboards, enabled: false,
+                     written: &written, pushes: &pushes, keyboardReads: &reads)
+        if let other = HyprKey.allCases.first(where: { !$0.usesCapsLockRemap }) {
+            _ = reassert(list: [ours], keyboards: keyboards, key: other,
+                         written: &written, pushes: &pushes, keyboardReads: &reads)
+        }
+        XCTAssertEqual(reads, 0)
+        XCTAssertTrue(reassert(list: [f20], keyboards: keyboards,
+                               written: &written, pushes: &pushes, keyboardReads: &reads))
+        XCTAssertEqual(written, [[f20, ours]])
+        XCTAssertEqual(reads, 0)
+        XCTAssertTrue(pushes.isEmpty)
     }
 
     func testOurEntryIsCapsLockToF18() {

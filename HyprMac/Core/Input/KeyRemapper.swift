@@ -20,6 +20,15 @@ struct HIDKeyMapping: Codable, Equatable {
     let dst: UInt64
 }
 
+/// One keyboard service and whether it holds its own copy of
+/// `UserKeyMapping`. The system-wide write hands every keyboard present a
+/// copy; a keyboard the event system makes later gets none (#103).
+struct HIDKeyboardMapping: Equatable {
+    let id: UInt64
+    let name: String
+    let hasList: Bool
+}
+
 /// Static helpers for applying and clearing the Caps Lock → F18 remap.
 /// The remap is in place only while Caps Lock is the Hypr key and HyprMac
 /// is active. Pausing removes it and resuming puts it back.
@@ -67,26 +76,62 @@ class KeyRemapper {
     /// release build beside a debug build, or the reverse) restores Caps
     /// Lock for both, a hidutil script or a reset list does the same, and
     /// the Hypr key is then a plain Caps Lock until the next launch, with
-    /// nothing in the log to say so. Asked after a wake, an unlock and the
-    /// session becoming active again. One IOKit read; hidutil runs only when
-    /// the entry is missing.
-    /// - Returns: whether the mapping was written.
+    /// nothing in the log to say so.
+    ///
+    /// With the entry in place it also checks each keyboard. The event
+    /// system copies the list into every keyboard present at a write, and
+    /// gives a keyboard it makes later (a wake, a plug-in, a Bluetooth
+    /// reconnect) no copy at all, so Caps Lock on that keyboard stays Caps
+    /// Lock (#103). Such a keyboard gets the current list, and only it. A
+    /// keyboard with any list of its own is left alone: someone set it.
+    ///
+    /// Asked after a wake, an unlock, the session becoming active again and
+    /// a keyboard arriving. Two IOKit reads; a write runs only when the
+    /// entry or a keyboard's copy is missing.
+    /// - Returns: whether anything was written.
     @discardableResult
     static func reassertHyprKey(_ key: HyprKey, enabled: Bool,
                                 read: () -> Any? = KeyRemapper.readUserKeyMapping,
                                 write: ([HIDKeyMapping]) -> Bool = KeyRemapper.writeUserKeyMapping,
                                 defaults: UserDefaults = .standard,
-                                capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff) -> Bool {
+                                capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff,
+                                keyboards: () -> [HIDKeyboardMapping] = KeyRemapper.readKeyboardMappings,
+                                pushToKeyboard: (UInt64, [HIDKeyMapping]) -> Bool = KeyRemapper.writeKeyboardMapping) -> Bool {
         guard wantsRemap(key, enabled: enabled) else { return false }
         let raw = read()
-        guard let present = KeyMappingMerge.hasOurs(raw) else {
+        guard let current = KeyMappingMerge.parse(raw) else {
             hyprLog(.error, .lifecycle, "UserKeyMapping check: the list has an entry HyprMac can't read, so it was left unchanged")
             return false
         }
-        guard !present else { return false }
+        // the system-wide write below reaches every keyboard present, so
+        // keyboards only need a look while the list already has ours
+        guard !current.contains(KeyMappingMerge.ours) else {
+            return copyListToKeyboardsWithoutOne(current, keyboards: keyboards(), push: pushToKeyboard)
+        }
         hyprLog(.notice, .lifecycle, "Caps Lock → F18 mapping is gone (another HyprMac quit, or the list was reset) — putting it back")
         update(.install, read: { raw }, write: write, defaults: defaults, capsLockOff: capsLockOff)
         return true
+    }
+
+    /// Give the list to each keyboard that has no copy of it. true when one
+    /// took it.
+    private static func copyListToKeyboardsWithoutOne(_ list: [HIDKeyMapping],
+                                                     keyboards: [HIDKeyboardMapping],
+                                                     push: (UInt64, [HIDKeyMapping]) -> Bool) -> Bool {
+        var wrote = false
+        for keyboard in keyboards where !keyboard.hasList {
+            if push(keyboard.id, list) {
+                hyprLog(.notice, .lifecycle,
+                        "keyboard \(keyboard.name) (\(hex(keyboard.id))) had no UserKeyMapping, so Caps Lock "
+                        + "on it was still Caps Lock — gave it the list (\(list.count) entries)")
+                wrote = true
+            } else {
+                hyprLog(.error, .lifecycle,
+                        "keyboard \(keyboard.name) (\(hex(keyboard.id))) has no UserKeyMapping and "
+                        + "didn't take the list; Caps Lock on it is still Caps Lock")
+            }
+        }
+        return wrote
     }
 
     /// Read the list, merge, write it back when it changed. The closures and
@@ -152,6 +197,39 @@ class KeyRemapper {
     static func readUserKeyMapping() -> Any? {
         let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
         return IOHIDEventSystemClientCopyProperty(client, kIOHIDUserKeyUsageMapKey as CFString)
+    }
+
+    /// Every keyboard service the HID event system has, with whether it
+    /// holds its own `UserKeyMapping`. `hidutil property --matching … --get`
+    /// reads the same per-keyboard value.
+    static func readKeyboardMappings() -> [HIDKeyboardMapping] {
+        keyboardServices().map { id, service in
+            let name = IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String
+            let list = IOHIDServiceClientCopyProperty(service, kIOHIDUserKeyUsageMapKey as CFString)
+            return HIDKeyboardMapping(id: id, name: name ?? "keyboard", hasList: list != nil)
+        }
+    }
+
+    /// Set the list on one keyboard only. Every other keyboard and the
+    /// system-wide list stay as they are. true when the keyboard reads it
+    /// back: the set call itself says yes even when the keyboard refuses.
+    static func writeKeyboardMapping(_ id: UInt64, _ mapping: [HIDKeyMapping]) -> Bool {
+        guard let service = keyboardServices().first(where: { $0.id == id })?.service else { return false }
+        let list = KeyMappingMerge.propertyList(mapping) as CFArray
+        guard IOHIDServiceClientSetProperty(service, kIOHIDUserKeyUsageMapKey as CFString, list) else { return false }
+        let readBack = IOHIDServiceClientCopyProperty(service, kIOHIDUserKeyUsageMapKey as CFString)
+        return KeyMappingMerge.parse(readBack) == mapping
+    }
+
+    private static func keyboardServices() -> [(id: UInt64, service: IOHIDServiceClient)] {
+        let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
+        let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []
+        return services.compactMap { service in
+            guard IOHIDServiceClientConformsTo(service, UInt32(kHIDPage_GenericDesktop),
+                                               UInt32(kHIDUsage_GD_Keyboard)) != 0,
+                  let id = IOHIDServiceClientGetRegistryID(service) as? NSNumber else { return nil }
+            return (id.uint64Value, service)
+        }
     }
 
     /// Replace the whole list. true when hidutil exited cleanly.
@@ -238,6 +316,85 @@ class KeyRemapper {
     private static func hex(_ usage: UInt64) -> String {
         "0x" + String(usage, radix: 16, uppercase: true)
     }
+}
+
+/// Calls back once keyboards stop arriving: a plug-in, a Bluetooth
+/// reconnect, or a keyboard the system rebuilt on wake. The event system
+/// gives such a keyboard no copy of `UserKeyMapping` (#103), and it can
+/// show up after the wake and unlock notifications. A registry
+/// notification, so nothing polls and no permission is needed.
+final class KeyboardArrivalWatcher {
+    /// the event system makes its own service a beat after the registry
+    /// match; a burst of arrivals on wake runs one check
+    static let settleDelay: TimeInterval = 1.0
+
+    private let onArrival: () -> Void
+    private var port: IONotificationPortRef?
+    private var iterator: io_iterator_t = 0
+    private var pending: DispatchWorkItem?
+
+    init(onArrival: @escaping () -> Void) {
+        self.onArrival = onArrival
+    }
+
+    deinit { stop() }
+
+    func start() {
+        guard port == nil, let port = IONotificationPortCreate(kIOMainPortDefault) else { return }
+        IONotificationPortSetDispatchQueue(port, .main)
+        let matching = IOServiceMatching("IOHIDEventService") as NSMutableDictionary
+        matching[kIOPropertyMatchKey] = [kIOHIDPrimaryUsagePageKey: kHIDPage_GenericDesktop,
+                                         kIOHIDPrimaryUsageKey: kHIDUsage_GD_Keyboard]
+        let context = Unmanaged.passUnretained(self).toOpaque()
+        let result = IOServiceAddMatchingNotification(port, kIOFirstMatchNotification, matching,
+                                                      keyboardArrivalCallback, context, &iterator)
+        guard result == KERN_SUCCESS else {
+            IONotificationPortDestroy(port)
+            hyprLog(.error, .lifecycle, "could not watch for keyboards arriving (\(result))")
+            return
+        }
+        self.port = port
+        // the keyboards already here aren't arrivals, but draining arms it
+        Self.drain(iterator)
+    }
+
+    func stop() {
+        pending?.cancel()
+        pending = nil
+        if iterator != 0 {
+            IOObjectRelease(iterator)
+            iterator = 0
+        }
+        if let port {
+            IONotificationPortDestroy(port)
+            self.port = nil
+        }
+    }
+
+    fileprivate func keyboardsArrived(_ iterator: io_iterator_t) {
+        let count = Self.drain(iterator)
+        guard count > 0 else { return }
+        hyprLog(.debug, .lifecycle, "\(count) keyboard service(s) arrived")
+        pending?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.onArrival() }
+        pending = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settleDelay, execute: work)
+    }
+
+    @discardableResult
+    private static func drain(_ iterator: io_iterator_t) -> Int {
+        var count = 0
+        while case let service = IOIteratorNext(iterator), service != 0 {
+            IOObjectRelease(service)
+            count += 1
+        }
+        return count
+    }
+}
+
+private func keyboardArrivalCallback(_ context: UnsafeMutableRawPointer?, _ iterator: io_iterator_t) {
+    guard let context else { return }
+    Unmanaged<KeyboardArrivalWatcher>.fromOpaque(context).takeUnretainedValue().keyboardsArrived(iterator)
 }
 
 /// Pure rules for HyprMac's one entry in `UserKeyMapping`.

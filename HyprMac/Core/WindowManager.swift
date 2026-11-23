@@ -208,6 +208,12 @@ class WindowManager {
     /// topology change soon after a wake settles more slowly, because
     /// displays reattach one at a time over several seconds
     private var lastSystemInterruptionAt = Date.distantPast
+    /// a keyboard the system makes after the last remap write has no copy
+    /// of it (#103); each arrival checks the remap like a wake does
+    private lazy var keyboardArrivals = KeyboardArrivalWatcher {
+        hyprLog(.notice, .lifecycle, "keyboard arrived — checking the Caps Lock remap")
+        KeyRemapper.reassertHyprKey(UserConfig.shared.hyprKey, enabled: UserConfig.shared.enabled)
+    }
     /// Pending destroy notifications whose poll has not yet seen the close.
     private var destroyRecheck = DestroyRecheck()
     /// Monotonic token for the display-change stability debounce — a newer
@@ -1116,6 +1122,7 @@ class WindowManager {
             self, selector: #selector(systemInterruption(_:)),
             name: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil
         )
+        keyboardArrivals.start()
 
         // hide chrome when entering a fullscreen Space, restore when leaving.
         // catches green-button / Cmd-Ctrl-F / browser HTML5 fullscreen since
@@ -1193,6 +1200,7 @@ class WindowManager {
         NSWorkspace.shared.notificationCenter.removeObserver(self)
         NotificationCenter.default.removeObserver(self)
         DistributedNotificationCenter.default().removeObserver(self)
+        keyboardArrivals.stop()
         focusBorder.hide()
         focusBorder.hideFloatingBorders()
         dimmingOverlay.hideAll()
