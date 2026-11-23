@@ -422,12 +422,14 @@ final class WorkspaceOrchestrator {
         }
 
         // batch: hide old + restore floating new in one tight pass
+        let parkStart = Date()
         for wid in result.toHide {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
                 if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: result.screen)
             }
         }
+        let parkEnd = Date()
         var unrevealed: [CGWindowID] = []
         for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
@@ -450,6 +452,7 @@ final class WorkspaceOrchestrator {
         // live frames, so the walk from before the parks is valid input
         let tileStart = Date()
         tileAllVisibleSpaces(allWindows)
+        let tileEnd = Date()
         let tileMS = Self.ms(since: tileStart)
 
         // a tile whose app did not answer the walk kept its leaf and got no
@@ -487,8 +490,16 @@ final class WorkspaceOrchestrator {
         // a slow switch holds the main thread, and with it a reveal retry
         // it scheduled; say where the time went
         let totalMS = Self.ms(since: switchStart)
+        // the phases as spans from the switch's start. the screen shows
+        // neither workspace between the end of the park and the end of the
+        // retile when the park runs first
+        let at = { (date: Date) in Self.ms(between: switchStart, and: date) }
+        let phases = "park \(result.toHide.count) \(at(parkStart))-\(at(parkEnd))ms, "
+            + "retile \(at(tileStart))-\(at(tileEnd))ms"
         if totalMS > Self.slowSwitchMS {
-            hyprLog(.notice, .lifecycle, "switch: ws\(number) took \(totalMS)ms (walk \(walkMS)ms, retile \(tileMS)ms, focus and rest \(totalMS - walkMS - tileMS)ms)")
+            hyprLog(.notice, .lifecycle, "switch: ws\(number) took \(totalMS)ms (walk \(walkMS)ms, retile \(tileMS)ms, focus and rest \(totalMS - walkMS - tileMS)ms; \(phases))")
+        } else {
+            hyprLog(.debug, .lifecycle, "switch: ws\(number) took \(totalMS)ms (\(phases))")
         }
     }
 
@@ -528,7 +539,11 @@ final class WorkspaceOrchestrator {
     private var msSinceRetryStarted: Int { revealRetryStarted.map(Self.ms(since:)) ?? 0 }
 
     private static func ms(since start: Date) -> Int {
-        Int((Date().timeIntervalSince(start) * 1000).rounded())
+        ms(between: start, and: Date())
+    }
+
+    private static func ms(between start: Date, and end: Date) -> Int {
+        Int((end.timeIntervalSince(start) * 1000).rounded())
     }
 
     private func attemptReveal() {
@@ -607,6 +622,7 @@ final class WorkspaceOrchestrator {
         _ = tilingEngine.releaseHeldWindows(readable: read)
         let tileStart = Date()
         tileAllVisibleSpaces(walk)
+        let tileEnd = Date()
         let tileMS = Self.ms(since: tileStart)
         revealRetryPending.subtract(back)
         for id in back.sorted() {
