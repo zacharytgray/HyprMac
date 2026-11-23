@@ -3,11 +3,11 @@ import XCTest
 import Carbon
 
 final class WelcomeContentTests: XCTestCase {
-    func testWhatsNewDescribesOnlyThe0260Changes() {
+    func testWhatsNewDescribesOnlyThe0270Changes() {
         let features = WhatsNewFeatures.current
 
-        XCTAssertEqual(features.map(\.title), ["Caps Lock While Paused", "Double-Tap Hypr for Caps Lock", "Menu Bar: Full, Compact or Hidden", "Smoother Updates", "Native Tabs Stay Put", "Circles Mark Floating Windows", "Nix Flake and Home Manager", "Steadier Focus"])
-        XCTAssertEqual(features.compactMap(\.credit), ["md2perpe", "xiphos991", "emilnymann"])
+        XCTAssertEqual(features.map(\.title), ["Float and Tile Rules", "Hypr+T Beats Rules", "Workspace Homes per Display Setup", "Workspace Names in Compact", "F13–F20 and Backslash as Hypr", "Updates in the Settings Sidebar", "Updates by a Package Manager", "Windows Stay Visible", "Steadier Focus"])
+        XCTAssertEqual(features.compactMap(\.credit), ["tioan", "tioan", "dex157", "mikaraunio", "tioan", "tioan"])
         XCTAssertEqual(WelcomeContent.productURL.absoluteString, "https://hyprmac.app/")
     }
 

@@ -26,48 +26,57 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "capslock",
-            title: "Caps Lock While Paused",
-            description: "With Caps Lock as the Hypr key, it works as a normal Caps Lock while HyprMac is paused. Resume from the menu bar.",
-            credit: "md2perpe"
+            icon: "slider.horizontal.3",
+            title: "Float and Tile Rules",
+            description: "Always float or tile an app, or one kind of window. Press Hypr+I on a window to pick a rule.",
+            tint: .magenta,
+            credit: "tioan"
         ),
         WhatsNewFeature(
-            icon: "hand.tap",
-            title: "Double-Tap Hypr for Caps Lock",
-            description: "A new option in Settings → Keys: tap the Hypr key twice quickly to turn Caps Lock on or off."
-        ),
-        WhatsNewFeature(
-            icon: "menubar.rectangle",
-            title: "Menu Bar: Full, Compact or Hidden",
-            description: "Pick a menu bar style in Settings → General. Compact is one badge for the focused workspace."
-        ),
-        WhatsNewFeature(
-            icon: "arrow.down.circle",
-            title: "Smoother Updates",
-            description: "The update window comes to the front. Updates install after 5 minutes idle, and your windows and workspaces come back after the relaunch."
-        ),
-        WhatsNewFeature(
-            icon: "macwindow.on.rectangle",
-            title: "Native Tabs Stay Put",
-            description: "Switching native tabs in Terminal and other apps no longer retiles the workspace or swaps tiles.",
-            credit: "xiphos991"
-        ),
-        WhatsNewFeature(
-            icon: "circle",
-            title: "Circles Mark Floating Windows",
-            description: "Floating windows show as circles instead of diamonds in the menu bar, the keybind list and Settings.",
+            icon: "cursorarrow.click",
+            title: "Hypr+T Beats Rules",
+            description: "Floating or tiling one window by hand now works even when a rule covers it, until the window closes.",
             tint: .magenta
         ),
         WhatsNewFeature(
+            icon: "display.2",
+            title: "Workspace Homes per Display Setup",
+            description: "Each set of connected displays keeps its own workspace-to-monitor mapping in Settings → Layout.",
+            credit: "tioan"
+        ),
+        WhatsNewFeature(
+            icon: "menubar.rectangle",
+            title: "Workspace Names in Compact",
+            description: "The Compact menu bar shows the workspace's name. A one-letter name goes in the badge.",
+            credit: "dex157"
+        ),
+        WhatsNewFeature(
+            icon: "keyboard",
+            title: "F13–F20 and Backslash as Hypr",
+            description: "Hypr chords work again with a function key or backslash as the Hypr key.",
+            credit: "mikaraunio"
+        ),
+        WhatsNewFeature(
+            icon: "arrow.down.circle",
+            title: "Updates in the Settings Sidebar",
+            description: "Check for updates, or restart to install one, from the bottom of the Settings sidebar."
+        ),
+        WhatsNewFeature(
             icon: "shippingbox",
-            title: "Nix Flake and Home Manager",
-            description: "HyprMac ships a flake and a Home Manager module that package the signed release.",
-            credit: "emilnymann"
+            title: "Updates by a Package Manager",
+            description: "A defaults key turns off the in-app updater when Homebrew or another tool updates HyprMac.",
+            credit: "tioan"
+        ),
+        WhatsNewFeature(
+            icon: "eye",
+            title: "Windows Stay Visible",
+            description: "A window no longer goes hidden for a minute when its app is slow to answer after it recovers.",
+            credit: "tioan"
         ),
         WhatsNewFeature(
             icon: "scope",
             title: "Steadier Focus",
-            description: "Focus no longer bounces between two apps, and an app that re-creates its window no longer blocks focus or drags."
+            description: "Hover focus pauses over HyprMac's menu, and windows that report a stale position get their border and clicks in the right place."
         ),
     ]
 }

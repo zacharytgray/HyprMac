@@ -72,6 +72,8 @@ final class InterfaceSnapshotTests: XCTestCase {
                    size: CGSize(width: 520, height: 440), dark: false)
         try render("whats-new-dark", TourView(mode: .whatsNew, onDismiss: {}),
                    size: CGSize(width: 520, height: 440))
+        try render("whats-new-light", TourView(mode: .whatsNew, onDismiss: {}),
+                   size: CGSize(width: 520, height: 440), dark: false)
         // the floating bullet and the workspace strip legend
         try render("tour-windows-dark", TourView(mode: .firstRun, startPage: 1, onDismiss: {}),
                    size: CGSize(width: 520, height: 440))
