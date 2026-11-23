@@ -358,8 +358,8 @@ floats it floats it, a tile rule tiles it when HyprMac can resize it, and the
 late-title re-check starts again, so a rule added while it was closed counts.
 With no rule it keeps what it had: one a since-removed float rule floated
 stays floating until Hypr+T or Retile All. A window back from a minimize,
-Cmd-H or another Space is the same window and keeps its state and the user's
-choice. Logs: `reopen: <id> <rule> — floating it` (or `tiling it`).
+Cmd-H, another Space or a native full-screen app in front is the same window
+and keeps its state and the user's choice. Logs: `reopen: <id> <rule> — floating it` (or `tiling it`).
 
 **Late titles.** Apps often name a window a moment after it opens. A new
 window of an app with title rules, that no window rule matched at first sight,

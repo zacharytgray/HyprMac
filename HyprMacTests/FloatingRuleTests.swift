@@ -590,7 +590,8 @@ final class ReopenedWindowRuleTests: XCTestCase {
     private func hideAndReturn(_ state: AccessibilityManager.HiddenWindowState?,
                                before: [FloatingRule], after: [FloatingRule],
                                floating: Bool = false, handChoice: Bool = false,
-                               title: String? = "Inbox", workspace: Int = 1)
+                               title: String? = "Inbox", workspace: Int = 1,
+                               offSpace: OffSpaceStanding? = nil)
         -> (WindowChanges, Reopen) {
         var currentTitle = title
         let access = StubAccessibility()
@@ -614,11 +615,15 @@ final class ReopenedWindowRuleTests: XCTestCase {
         _ = poll([w], before)
         workspaces.assignWindow(5, toWorkspace: workspace)
         if floating { cache.setFloating(true, window: w) }
+        // the window server has it on a Space its display does not show
+        service.offSpaceStanding = { ids in offSpace.map { [5: $0] } ?? [:] }
         _ = poll([], before)
         // a window its app still lists is held first; past the span it is hidden
         clock += WindowDiscoveryService.listedHoldSpan + 1
         _ = poll([], after)
-        XCTAssertTrue(cache.hiddenWindowIDs.contains(5))
+        // behind a full-screen Space it is held, not hidden
+        XCTAssertEqual(cache.hiddenWindowIDs.contains(5), offSpace != .behindFullScreen)
+        service.offSpaceStanding = { _ in [:] }
         let changes = poll([w], after)
         // the dispatcher forgets the choice of a reopen in the same pass
         if changes.reopenedAfterClose.contains(5) { choice = false }
@@ -700,6 +705,30 @@ final class ReopenedWindowRuleTests: XCTestCase {
             let (ruleAdded, r2) = hideAndReturn(state, before: [], after: [float])
             XCTAssertTrue(ruleAdded.ruleFloated.isEmpty, label)
             XCTAssertFalse(r2.cache.floatingWindowIDs.contains(5), label)
+        }
+    }
+
+    // AX does not list a window on a Space its display does not show. a
+    // native full-screen app in front, or another desktop Space, is not a
+    // close: the window keeps its state, its hand choice and its rules
+    func testAFullScreenOrSpaceExcursionIsNotAReopen() {
+        let tile = FloatingRule(bundleID: mail, action: .tile)
+        let float = FloatingRule(bundleID: mail, action: .float)
+        let late = FloatingRule(bundleID: mail, action: .float, match: .titleContains("Meeting"))
+        for standing: OffSpaceStanding in [.behindFullScreen, .onOtherDesktop] {
+            let label = String(describing: standing)
+            let (handFloated, r1) = hideAndReturn(.absent, before: [tile], after: [tile],
+                                                  floating: true, handChoice: true, offSpace: standing)
+            XCTAssertEqual(handFloated.reopenedAfterClose, [], label)
+            XCTAssertTrue(handFloated.unfloated.isEmpty, label)
+            XCTAssertTrue(r1.cache.floatingWindowIDs.contains(5), label)
+
+            let (ruleAdded, r2) = hideAndReturn(.absent, before: [], after: [float], offSpace: standing)
+            XCTAssertTrue(ruleAdded.ruleFloated.isEmpty, label)
+            XCTAssertFalse(r2.cache.floatingWindowIDs.contains(5), label)
+
+            let (_, r3) = hideAndReturn(.absent, before: [], after: [late], title: "", offSpace: standing)
+            XCTAssertNil(r3.service.secondsUntilARetryIsDue, "\(label): no title re-check")
         }
     }
 
