@@ -141,16 +141,11 @@ final class WindowDiscoveryService {
     /// not pull the user to its workspace.
     private var minimizedOrAppHiddenIDs: Set<CGWindowID> = []
 
-    /// Reserved hidden ids where AX could not answer when they vanished,
-    /// so the reservation is a guess, with the cycles spent asking. Re-checked
-    /// until AX gives a real answer or the budget runs out (then it stays
-    /// reserved — the safe side).
-    private var unverifiedReservedIDs: [CGWindowID: Int] = [:]
-    /// Reserved hidden ids that were on a Space their display did not show.
-    /// AX cannot see them there, so the window server is asked each cycle;
-    /// once it has the window on no such Space, AX decides as for any hide.
-    private var offSpaceReservedIDs: Set<CGWindowID> = []
-    private static let maxReverifyAttempts = 5
+    /// Reserved hidden ids still asked about each cycle, one check per id.
+    /// A reservation not in here is settled: AX said minimized, Cmd-H'd or
+    /// listed. See `ReservationCheck.step` for every transition.
+    private var reservationChecks: [CGWindowID: ReservationCheck] = [:]
+    static let maxReverifyAttempts = 5
 
     /// When each id went gone-but-pid-alive. A return within seconds is a
     /// flap — a stale/partial AX snapshot, not a real minimize — and each
@@ -408,9 +403,8 @@ final class WindowDiscoveryService {
         stateCache.tiledPositions.removeValue(forKey: hiddenID)
         stateCache.cachedWindows.removeValue(forKey: hiddenID)
         userHiddenIDs.remove(hiddenID)
-        offSpaceReservedIDs.remove(hiddenID)
         minimizedOrAppHiddenIDs.remove(hiddenID)
-        unverifiedReservedIDs[hiddenID] = nil
+        reservationChecks[hiddenID] = nil
         hiddenAt.removeValue(forKey: hiddenID)
         hyprLog(.debug, .discovery, "native tab switch: \(hiddenID) → \(id) — the shown tab takes its place")
     }
@@ -648,8 +642,8 @@ final class WindowDiscoveryService {
         // an app lists only the windows on the current Space, so AX reads a
         // window on a Space its display does not show as closed. the window
         // server knows better: one question per missing window per cycle
-        let spaceAsked = missing.subtracting(unreadable).union(unverifiedReservedIDs.keys)
-            .union(offSpaceReservedIDs.subtracting(currentIDs))
+        let spaceAsked = missing.subtracting(unreadable)
+            .union(Set(reservationChecks.keys).subtracting(currentIDs))
         let spaces = spaceAsked.isEmpty ? SpaceAnswers() : windowSpaces(spaceAsked)
         let offSpace = spaces.offSpace
         // a native full-screen Space in front: the whole desktop behind it is
@@ -732,8 +726,8 @@ final class WindowDiscoveryService {
         }
         massGoneSkips = 0
 
-        reverifyUnresolvedReservations(currentIDs: currentIDs, runningPIDs: runningPIDs, offSpace: offSpace)
-        reverifyOffSpaceReservations(currentIDs: currentIDs, runningPIDs: runningPIDs, spaces: spaces)
+        recheckReservations(currentIDs: currentIDs, unreadable: unreadableWindowIDs,
+                            runningPIDs: runningPIDs, spaces: spaces)
 
         var newWindows: [HyprWindow] = []
         var newOnDisabled: Set<CGWindowID> = []
@@ -817,8 +811,12 @@ final class WindowDiscoveryService {
                 let state = hiddenState(id, pid: pid)
                 if state != .absent {
                     stateCache.reservedHiddenWindowIDs.insert(id)
-                    if state == nil { unverifiedReservedIDs[id] = 0 }
-                    if offSpace[id] != nil { offSpaceReservedIDs.insert(id) }
+                    // the window server's word beats an AX guess
+                    if offSpace[id] != nil {
+                        reservationChecks[id] = .offSpace
+                    } else if state == nil {
+                        reservationChecks[id] = .unverified(attempts: 0)
+                    }
                 }
                 // on another Space keeps its workspace on return, as a hide does
                 if state == nil || state == .minimized || state == .appHidden || offSpace[id] != nil {
@@ -860,8 +858,7 @@ final class WindowDiscoveryService {
         minimizedOrAppHiddenIDs.formIntersection(stateCache.hiddenWindowIDs)
         stateCache.reservedHiddenWindowIDs.subtract(returned.map { $0.windowID })
         stateCache.reservedHiddenWindowIDs.formIntersection(stateCache.hiddenWindowIDs)
-        unverifiedReservedIDs = unverifiedReservedIDs.filter { stateCache.hiddenWindowIDs.contains($0.key) }
-        offSpaceReservedIDs.formIntersection(stateCache.reservedHiddenWindowIDs)
+        reservationChecks = reservationChecks.filter { stateCache.reservedHiddenWindowIDs.contains($0.key) }
         // a shown tab has no workspace of its own until the caller hands it
         // the hidden one's; a ghost's stale one says nothing
         let shownTabs = Set(pairs.map(\.shown.windowID))
@@ -1196,80 +1193,44 @@ final class WindowDiscoveryService {
 
     // MARK: - private helpers
 
-    /// Re-ask about hidden ids reserved while on another Space. Still there
-    /// (or no answer from the window server): kept. On no Space its display
-    /// hides, the window is AX's to judge again: absent is a close, which
-    /// releases the slot, and a same-id return is then a reopen.
-    private func reverifyOffSpaceReservations(currentIDs: Set<CGWindowID>, runningPIDs: Set<pid_t>,
-                                              spaces: SpaceAnswers) {
-        for id in offSpaceReservedIDs.sorted() {
+    /// Ask again about each reserved hidden id under a check, and apply
+    /// `ReservationCheck.step`. A window back in this cycle's snapshot is the
+    /// returned pass's. One the window server shows on screen that the walk
+    /// could not read is not judged either: AX could not match it, and a
+    /// failed match reads as absent.
+    private func recheckReservations(currentIDs: Set<CGWindowID>, unreadable: Set<CGWindowID>,
+                                     runningPIDs: Set<pid_t>, spaces: SpaceAnswers) {
+        for (id, check) in reservationChecks.sorted(by: { $0.key < $1.key }) {
             guard stateCache.hiddenWindowIDs.contains(id), stateCache.reservedHiddenWindowIDs.contains(id) else {
-                offSpaceReservedIDs.remove(id)
+                reservationChecks[id] = nil
                 continue
             }
-            guard !currentIDs.contains(id), spaces.answered.contains(id), spaces.offSpace[id] == nil,
+            guard !currentIDs.contains(id), !unreadable.contains(id),
                   let pid = stateCache.windowOwners[id], runningPIDs.contains(pid),
+                  // an app the walk is backing off from would answer nil
+                  // without being asked; that is not one of the few asks
                   !accessibility.isBackingOff(pid: pid) else { continue }
-            offSpaceReservedIDs.remove(id)
-            switch accessibility.hiddenWindowState(windowID: id, pid: pid) {
-            case .absent:
+            let space: ReservationCheck.SpaceRead = spaces.offSpace[id] != nil ? .offSpace
+                : spaces.answered.contains(id) ? .elsewhere : .noAnswer
+            let step = ReservationCheck.step(check, space: space,
+                                             ax: { self.accessibility.hiddenWindowState(windowID: id, pid: pid) })
+            switch step {
+            case .keep(let next):
+                reservationChecks[id] = next
+            case .release:
+                reservationChecks[id] = nil
                 stateCache.reservedHiddenWindowIDs.remove(id)
                 userHiddenIDs.remove(id)
                 minimizedOrAppHiddenIDs.remove(id)
-                hyprLog(.notice, .discovery, "hidden window \(id) is on no hidden Space and its app no longer"
-                        + " lists it — verified closed, releasing its workspace reservation")
-            case .minimized, .appHidden:
-                minimizedOrAppHiddenIDs.insert(id)
-            case .present:
-                break
-            case nil:
-                unverifiedReservedIDs[id] = 0
-            }
-        }
-    }
-
-    /// Re-ask AX about hidden ids whose reservation was a guess (the query
-    /// returned nil when they vanished). A window the user actually closed
-    /// would otherwise hold its workspace slot until the app quits.
-    ///
-    /// Ids back in this cycle's snapshot are left alone: the returned pass
-    /// in `computeChanges` owns them, and AX would answer "not minimized" for a window
-    /// that is plainly on screen — stripping the reservation and misfiling
-    /// the return as a recycled-id reopen.
-    private func reverifyUnresolvedReservations(currentIDs: Set<CGWindowID>, runningPIDs: Set<pid_t>,
-                                                offSpace: [CGWindowID: OffSpaceStanding]) {
-        for (id, attempts) in unverifiedReservedIDs {
-            guard stateCache.hiddenWindowIDs.contains(id) else {
-                unverifiedReservedIDs[id] = nil
-                continue
-            }
-            guard !currentIDs.contains(id) else { continue }
-            guard let pid = stateCache.windowOwners[id], runningPIDs.contains(pid) else { continue }
-            // an app the walk is backing off from would answer nil without
-            // being asked; that is not one of the few asks this gets
-            guard !accessibility.isBackingOff(pid: pid) else { continue }
-            var state = accessibility.hiddenWindowState(windowID: id, pid: pid)
-            // its app does not list a window on another Space
-            if state == .absent, offSpace[id] != nil { state = .present }
-            switch state {
-            case .absent:
-                stateCache.reservedHiddenWindowIDs.remove(id)
-                unverifiedReservedIDs[id] = nil
-                userHiddenIDs.remove(id)
-                minimizedOrAppHiddenIDs.remove(id)
-                hyprLog(.debug, .discovery, "hidden window \(id) verified closed — releasing its workspace reservation")
-            case .minimized, .appHidden:
-                unverifiedReservedIDs[id] = nil
-                minimizedOrAppHiddenIDs.insert(id)
-            case .present:
-                unverifiedReservedIDs[id] = nil
-            case nil:
-                // one AX round trip per cycle; stop asking after a few
-                if attempts + 1 >= Self.maxReverifyAttempts {
-                    unverifiedReservedIDs[id] = nil
+                if check == .offSpace {
+                    hyprLog(.notice, .discovery, "hidden window \(id) is on no hidden Space and its app no longer"
+                            + " lists it — verified closed, releasing its workspace reservation")
                 } else {
-                    unverifiedReservedIDs[id] = attempts + 1
+                    hyprLog(.debug, .discovery, "hidden window \(id) verified closed — releasing its workspace reservation")
                 }
+            case .settled(let minimizedOrAppHidden):
+                reservationChecks[id] = nil
+                if minimizedOrAppHidden { minimizedOrAppHiddenIDs.insert(id) }
             }
         }
     }
@@ -1428,4 +1389,53 @@ final class WindowDiscoveryService {
         return visibleArea / frameArea > 0.5
     }
 
+}
+
+/// Why a reserved hidden window is still asked about. One per id, so a
+/// window is never under two checks that disagree.
+enum ReservationCheck: Equatable {
+    /// AX could not answer when it went: asked again a few times
+    case unverified(attempts: Int)
+    /// the window server had it on a Space its display does not show, where
+    /// AX cannot see it
+    case offSpace
+
+    /// What the window server said of the window this cycle.
+    enum SpaceRead: Equatable {
+        /// on a Space its display does not show
+        case offSpace
+        /// answered: on a current Space, or on none
+        case elsewhere
+        /// the question failed
+        case noAnswer
+    }
+
+    enum Step: Equatable {
+        case keep(ReservationCheck)
+        /// a verified close: the reservation goes
+        case release
+        /// AX gave a real answer that keeps the reservation, or the asks ran
+        /// out; asked no more
+        case settled(minimizedOrAppHidden: Bool)
+    }
+
+    /// The one transition. Seen on another Space, it stays so whatever AX
+    /// says. Known to be on another Space with no answer now: kept, never
+    /// closed on a failed question. Otherwise AX decides as it always has,
+    /// and is asked only then.
+    static func step(_ check: ReservationCheck, space: SpaceRead,
+                     ax: () -> AccessibilityManager.HiddenWindowState?) -> Step {
+        if space == .offSpace { return .keep(.offSpace) }
+        if check == .offSpace, space == .noAnswer { return .keep(.offSpace) }
+        switch ax() {
+        case .absent?: return .release
+        case .minimized?, .appHidden?: return .settled(minimizedOrAppHidden: true)
+        case .present?: return .settled(minimizedOrAppHidden: false)
+        case nil:
+            guard case let .unverified(attempts) = check else { return .keep(.unverified(attempts: 0)) }
+            // one AX round trip per cycle; stop asking after a few, still reserved
+            return attempts + 1 >= WindowDiscoveryService.maxReverifyAttempts
+                ? .settled(minimizedOrAppHidden: false) : .keep(.unverified(attempts: attempts + 1))
+        }
+    }
 }

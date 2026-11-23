@@ -1168,6 +1168,120 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
     }
 
+    private func offDesktop(_ ids: Set<CGWindowID>) -> (Set<CGWindowID>) -> SpaceAnswers {
+        { asked in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: asked.intersection(ids).map { ($0, .onOtherDesktop) }),
+                         answered: asked)
+        }
+    }
+
+    // poll 1: AX unreadable, no Space answer: an unverified guess. poll 2:
+    // the window server has it on another Space. poll 3: closed there. the
+    // slot must go then, as for any reservation on another Space
+    func testAGuessLaterSeenOnAnotherSpaceIsStillReleasedWhenItCloses() {
+        let scene = makeSpaceScene()
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        scene.access.stateAnswer = nil
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        scene.access.stateAnswer = .absent
+        scene.svc.windowSpaces = offDesktop([30])
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30), "on another Space")
+
+        scene.svc.windowSpaces = offDesktop([])
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(30), "closed there")
+    }
+
+    // poll 1: on another Space and AX unreadable. poll 2: the Space query
+    // fails and AX does not list it (it cannot, on another Space). the
+    // window server said where it is; a failed question must not undo that
+    func testAFailedSpaceQueryNeverReleasesAWindowSeenOnAnotherSpace() {
+        let scene = makeSpaceScene()
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        scene.access.stateAnswer = nil
+        scene.svc.windowSpaces = offDesktop([30])
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        scene.access.stateAnswer = .absent
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
+                           runningPIDs: [8500])
+        XCTAssertTrue(back.reopenedAfterClose.isEmpty)
+    }
+
+    // back on the current Space and on screen, but its app did not answer
+    // for it this walk: AX cannot match it, and that is not a close
+    func testAReservedWindowBackOnScreenButUnreadableIsKept() {
+        for initialAX: AccessibilityManager.HiddenWindowState? in [.absent, nil] {
+            let scene = makeSpaceScene()
+            var now = scene.clock
+            scene.svc.now = { now }
+            let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+            scene.access.stateAnswer = initialAX
+            scene.svc.windowSpaces = offDesktop([30])
+            _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+            now += WindowDiscoveryService.listedHoldSpan + 1
+            _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+            XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+            scene.access.stateAnswer = .absent
+            scene.svc.windowSpaces = offDesktop([])
+            _ = compute(scene.svc, snapshot: others, runningPIDs: [8500], unreadable: [30])
+            XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30), "\(String(describing: initialAX))")
+
+            let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
+                               runningPIDs: [8500])
+            XCTAssertTrue(back.reopenedAfterClose.isEmpty, "\(String(describing: initialAX))")
+        }
+    }
+
+    // every transition of a reservation under a check. AX is asked only
+    // where the row says so
+    func testEveryReservationCheckTransition() {
+        typealias Check = ReservationCheck
+        let last = WindowDiscoveryService.maxReverifyAttempts - 1
+        let rows: [(Check, Check.SpaceRead, AccessibilityManager.HiddenWindowState?, Check.Step, Bool)] = [
+            // seen on another Space: kept as such, AX not asked
+            (.offSpace, .offSpace, .absent, .keep(.offSpace), false),
+            (.unverified(attempts: 2), .offSpace, .absent, .keep(.offSpace), false),
+            (.unverified(attempts: 2), .offSpace, nil, .keep(.offSpace), false),
+            // known on another Space, failed question: kept, AX not asked
+            (.offSpace, .noAnswer, .absent, .keep(.offSpace), false),
+            (.offSpace, .noAnswer, nil, .keep(.offSpace), false),
+            // off it now: AX decides
+            (.offSpace, .elsewhere, .absent, .release, true),
+            (.offSpace, .elsewhere, .minimized, .settled(minimizedOrAppHidden: true), true),
+            (.offSpace, .elsewhere, .appHidden, .settled(minimizedOrAppHidden: true), true),
+            (.offSpace, .elsewhere, .present, .settled(minimizedOrAppHidden: false), true),
+            (.offSpace, .elsewhere, nil, .keep(.unverified(attempts: 0)), true),
+            // an AX guess, with or without an answer: AX decides, as before
+            // Spaces were asked
+            (.unverified(attempts: 0), .elsewhere, .absent, .release, true),
+            (.unverified(attempts: 0), .noAnswer, .absent, .release, true),
+            (.unverified(attempts: 0), .noAnswer, .minimized, .settled(minimizedOrAppHidden: true), true),
+            (.unverified(attempts: 0), .elsewhere, .appHidden, .settled(minimizedOrAppHidden: true), true),
+            (.unverified(attempts: 0), .noAnswer, .present, .settled(minimizedOrAppHidden: false), true),
+            (.unverified(attempts: 0), .noAnswer, nil, .keep(.unverified(attempts: 1)), true),
+            (.unverified(attempts: last - 1), .elsewhere, nil, .keep(.unverified(attempts: last)), true),
+            (.unverified(attempts: last), .noAnswer, nil, .settled(minimizedOrAppHidden: false), true),
+        ]
+        for (check, space, ax, expected, asksAX) in rows {
+            var asked = false
+            let step = Check.step(check, space: space, ax: { asked = true; return ax })
+            let label = "\(check) \(space) \(String(describing: ax))"
+            XCTAssertEqual(step, expected, label)
+            XCTAssertEqual(asked, asksAX, label)
+        }
+    }
+
     // a window closed while full screen is in front is on no Space: a close
     func testAWindowOnNoSpaceIsStillAClose() {
         let scene = makeSpaceScene()
