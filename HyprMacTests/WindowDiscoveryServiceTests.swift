@@ -1280,6 +1280,85 @@ final class WindowDiscoveryServiceTests: XCTestCase {
             XCTAssertEqual(step, expected, label)
             XCTAssertEqual(asked, asksAX, label)
         }
+        // AX cannot be asked (the walk backs off the app): the window
+        // server's word still counts, and nothing else changes
+        let backedOff: [(Check, Check.SpaceRead, Check.Step)] = [
+            (.unverified(attempts: 1), .offSpace, .keep(.offSpace)),
+            (.unverified(attempts: 1), .elsewhere, .keep(.unverified(attempts: 1))),
+            (.unverified(attempts: 1), .noAnswer, .keep(.unverified(attempts: 1))),
+            (.offSpace, .offSpace, .keep(.offSpace)),
+            (.offSpace, .elsewhere, .keep(.offSpace)),
+            (.offSpace, .noAnswer, .keep(.offSpace)),
+        ]
+        for (check, space, expected) in backedOff {
+            XCTAssertEqual(Check.step(check, space: space, ax: nil), expected, "\(check) \(space) backed off")
+        }
+    }
+
+    // poll 1: an AX guess. poll 2: the walk backs off the app, and the
+    // window server has the window on another Space. poll 3: the app
+    // answers again, AX does not list it, the Space query fails. the window
+    // server's word from poll 2 must stand
+    func testAnOffSpaceAnswerDuringAnAXBackoffIsKept() {
+        let scene = makeSpaceScene()
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        scene.access.stateAnswer = nil
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        scene.access.backingOff = [8500]
+        scene.svc.windowSpaces = offDesktop([30])
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+
+        scene.access.backingOff = []
+        scene.access.stateAnswer = .absent
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+    }
+
+    // one held window, no tab in sight. a poll whose Space question fails
+    // must not turn the hold into a close: AX cannot see the window there
+    func testAFailedSpaceQueryDoesNotEndAFullScreenHold() {
+        let scene = makeSpaceScene()
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .behindFullScreen) }),
+                         answered: ids)
+        }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertEqual(scene.svc.heldWindowIDs, [30])
+
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        let failed = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(failed.goneIDs.isEmpty)
+        XCTAssertEqual(scene.svc.heldWindowIDs, [30])
+
+        // the window server says it is on no Space now: AX decides again
+        scene.svc.windowSpaces = { ids in SpaceAnswers(answered: ids) }
+        XCTAssertEqual(compute(scene.svc, snapshot: others, runningPIDs: [8500]).goneIDs, [30])
+    }
+
+    // the same during the desktop Space's five-second hold: a failed poll
+    // keeps it on another Space, and it is hidden with its slot, not closed
+    func testAFailedSpaceQueryDuringTheDesktopHoldIsNotAClose() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        scene.svc.windowSpaces = offDesktop([30])
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        now += 1
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        XCTAssertTrue(compute(scene.svc, snapshot: others, runningPIDs: [8500]).goneIDs.isEmpty, "still held")
+        now += WindowDiscoveryService.listedHoldSpan
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
+                           runningPIDs: [8500])
+        XCTAssertTrue(back.reopenedAfterClose.isEmpty)
     }
 
     // a window closed while full screen is in front is on no Space: a close

@@ -145,6 +145,10 @@ final class WindowDiscoveryService {
     /// A reservation not in here is settled: AX said minimized, Cmd-H'd or
     /// listed. See `ReservationCheck.step` for every transition.
     private var reservationChecks: [CGWindowID: ReservationCheck] = [:]
+    /// Where the window server last placed each known missing window that it
+    /// had on another Space. Sticky: a failed or missing answer keeps it, and
+    /// only a positive answer elsewhere, or the window's return, ends it.
+    private var offSpaceSeen: [CGWindowID: OffSpaceStanding] = [:]
     static let maxReverifyAttempts = 5
 
     /// When each id went gone-but-pid-alive. A return within seconds is a
@@ -645,7 +649,17 @@ final class WindowDiscoveryService {
         let spaceAsked = missing.subtracting(unreadable)
             .union(Set(reservationChecks.keys).subtracting(currentIDs))
         let spaces = spaceAsked.isEmpty ? SpaceAnswers() : windowSpaces(spaceAsked)
-        let offSpace = spaces.offSpace
+        // a window once seen on another Space stays so until the window
+        // server places it elsewhere: one failed question is not a close
+        offSpaceSeen = offSpaceSeen.filter { missing.contains($0.key) }
+        for id in missing {
+            if let standing = spaces.offSpace[id] {
+                offSpaceSeen[id] = standing
+            } else if spaces.answered.contains(id) {
+                offSpaceSeen[id] = nil
+            }
+        }
+        let offSpace = offSpaceSeen
         // a native full-screen Space in front: the whole desktop behind it is
         // off the screen, held where it is until the display shows it again
         let behindFullScreen = Set(offSpace.filter { $0.value == .behindFullScreen }.keys)
@@ -1206,14 +1220,15 @@ final class WindowDiscoveryService {
                 continue
             }
             guard !currentIDs.contains(id), !unreadable.contains(id),
-                  let pid = stateCache.windowOwners[id], runningPIDs.contains(pid),
-                  // an app the walk is backing off from would answer nil
-                  // without being asked; that is not one of the few asks
-                  !accessibility.isBackingOff(pid: pid) else { continue }
+                  let pid = stateCache.windowOwners[id], runningPIDs.contains(pid) else { continue }
             let space: ReservationCheck.SpaceRead = spaces.offSpace[id] != nil ? .offSpace
                 : spaces.answered.contains(id) ? .elsewhere : .noAnswer
-            let step = ReservationCheck.step(check, space: space,
-                                             ax: { self.accessibility.hiddenWindowState(windowID: id, pid: pid) })
+            // an app the walk is backing off from would answer nil without
+            // being asked; that is not one of the few asks. the window
+            // server's answer still counts
+            let ax: (() -> AccessibilityManager.HiddenWindowState?)? = accessibility.isBackingOff(pid: pid)
+                ? nil : { self.accessibility.hiddenWindowState(windowID: id, pid: pid) }
+            let step = ReservationCheck.step(check, space: space, ax: ax)
             switch step {
             case .keep(let next):
                 reservationChecks[id] = next
@@ -1422,11 +1437,13 @@ enum ReservationCheck: Equatable {
     /// The one transition. Seen on another Space, it stays so whatever AX
     /// says. Known to be on another Space with no answer now: kept, never
     /// closed on a failed question. Otherwise AX decides as it always has,
-    /// and is asked only then.
+    /// and is asked only then; `ax` is nil when AX cannot be asked this
+    /// cycle, and nothing changes.
     static func step(_ check: ReservationCheck, space: SpaceRead,
-                     ax: () -> AccessibilityManager.HiddenWindowState?) -> Step {
+                     ax: (() -> AccessibilityManager.HiddenWindowState?)?) -> Step {
         if space == .offSpace { return .keep(.offSpace) }
         if check == .offSpace, space == .noAnswer { return .keep(.offSpace) }
+        guard let ax else { return .keep(check) }
         switch ax() {
         case .absent?: return .release
         case .minimized?, .appHidden?: return .settled(minimizedOrAppHidden: true)

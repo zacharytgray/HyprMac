@@ -404,7 +404,11 @@ Space it stays `offSpace`, a failed Space question keeps an `offSpace`
 window, and otherwise AX decides, so once the window server has the window
 on no hidden Space and AX does not list it, it is a close and the slot
 goes. A window on screen that the walk could not read is not judged that
-cycle. A
+cycle. What the window server said is sticky: a missing window it once had
+on another Space keeps that standing (and its hold) through a failed or
+missing answer, and a reservation takes an off-Space answer even while the
+walk backs off its app. Only an answer placing the window elsewhere, its
+return, or the existing timeouts end it. A
 window on no Space (ordered out, destroyed) is judged by AX as before, and
 so is one the window server did not answer for: a failed query never reads
 as more closed than AX alone did before Spaces were asked. An expired
