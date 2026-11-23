@@ -1146,11 +1146,13 @@ keyboard with no copy gets the current list through
 The system list and every other keyboard stay as they are. A keyboard with
 any list of its own, even an empty one or one without our entry, was set
 by someone (`hidutil --matching`, another tool), so it is left alone. It
-runs on the wake, unlock and session-active notifications, and one second
-after keyboards stop arriving (`KeyboardArrivalWatcher`, a registry
-notification on `IOHIDEventService` with keyboard usage, started and
-stopped with `WindowManager`). Pinned by the #103 tests in
-`KeyRemapperTests`.
+runs on the wake, unlock and session-active notifications, and one and
+four seconds after keyboards stop arriving (`KeyboardArrivalWatcher`, a
+registry notification on `IOHIDEventService` with keyboard usage, started
+and stopped with `WindowManager`). The second look catches a keyboard the
+event system lists late, or one that refused the list the first time; a
+burst of arrivals replaces the checks still waiting. Pinned by the #103
+tests in `KeyRemapperTests`.
 
 A service client works only while the event system client that listed it
 is alive. A call on one after its client is released aborts the process
@@ -1158,11 +1160,15 @@ is alive. A call on one after its client is released aborts the process
 so `withKeyboardServices` holds the client for the whole read or write.
 `testLiveKeyboardReadOutlivesItsClient` is the one live read in the tests.
 
-Per-keyboard mappings set with `hidutil --matching` are not in the list.
-HyprMac doesn't read them, but each system-wide write replaces them: on
-macOS 15.8 a write, even of an identical list, put the list over a
-keyboard's own mapping. So they last only until HyprMac's next install or
-remove.
+Per-keyboard mappings set with `hidutil --matching` are not in the list,
+and each system-wide write replaces them: on macOS 15.8 a write, even of
+an identical list, put the list over a keyboard's own mapping. So
+`KeyRemapper.update` reads every keyboard before a write. A keyboard whose
+copy differs from the list gets its own mapping back right after the
+write, exactly as it was, so install, remove and the wake check change
+only HyprMac's entry. A keyboard with no copy isn't one of them; the write
+gives it the list. An own mapping HyprMac can't parse is replaced, and
+that logs at `.error`.
 
 Checked on the hub (macOS 15.8, 2026-11-23): an unentitled process can set
 and read back one keyboard's copy, and the set leaves the other keyboard

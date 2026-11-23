@@ -27,6 +27,8 @@ struct HIDKeyboardMapping: Equatable {
     let id: UInt64
     let name: String
     let hasList: Bool
+    /// the keyboard's own list; nil when it has none or HyprMac can't read it
+    var list: [HIDKeyMapping]? = nil
 }
 
 /// Static helpers for applying and clearing the Caps Lock → F18 remap.
@@ -61,11 +63,14 @@ class KeyRemapper {
                              read: () -> Any? = KeyRemapper.readUserKeyMapping,
                              write: ([HIDKeyMapping]) -> Bool = KeyRemapper.writeUserKeyMapping,
                              defaults: UserDefaults = .standard,
-                             capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff) {
+                             capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff,
+                             keyboards: () -> [HIDKeyboardMapping] = KeyRemapper.readKeyboardMappings,
+                             pushToKeyboard: (UInt64, [HIDKeyMapping]) -> Bool = KeyRemapper.writeKeyboardMapping) {
         // install assumes Modifier Keys still has Caps Lock on "⇪ Caps Lock";
         // we can't read that, so the UI asks the user instead
         update(wantsRemap(key, enabled: enabled) ? .install : .remove,
-               read: read, write: write, defaults: defaults, capsLockOff: capsLockOff)
+               read: read, write: write, defaults: defaults, capsLockOff: capsLockOff,
+               keyboards: keyboards, pushToKeyboard: pushToKeyboard)
     }
 
     static func restoreCapsLock() {
@@ -109,7 +114,8 @@ class KeyRemapper {
             return copyListToKeyboardsWithoutOne(current, keyboards: keyboards(), push: pushToKeyboard)
         }
         hyprLog(.notice, .lifecycle, "Caps Lock → F18 mapping is gone (another HyprMac quit, or the list was reset) — putting it back")
-        update(.install, read: { raw }, write: write, defaults: defaults, capsLockOff: capsLockOff)
+        update(.install, read: { raw }, write: write, defaults: defaults, capsLockOff: capsLockOff,
+               keyboards: keyboards, pushToKeyboard: pushToKeyboard)
         return true
     }
 
@@ -134,13 +140,45 @@ class KeyRemapper {
         return wrote
     }
 
+    /// Keyboards whose copy differs from the list: someone set it on that
+    /// keyboard alone (`hidutil --matching`, another tool). A keyboard with
+    /// no copy isn't one; the write gives it the list.
+    private static func ownMappings(_ keyboards: [HIDKeyboardMapping],
+                                    list: [HIDKeyMapping]) -> [HIDKeyboardMapping] {
+        keyboards.filter { $0.hasList && $0.list != list }
+    }
+
+    /// After a system-wide write, give each keyboard its own mapping back
+    /// as it was. HyprMac changes only its entry in the list.
+    private static func putBackOwnMappings(_ keyboards: [HIDKeyboardMapping],
+                                           push: (UInt64, [HIDKeyMapping]) -> Bool) {
+        for keyboard in keyboards {
+            guard let own = keyboard.list else {
+                hyprLog(.error, .lifecycle,
+                        "keyboard \(keyboard.name) (\(hex(keyboard.id))) had its own UserKeyMapping that "
+                        + "HyprMac can't read; the write replaced it with the list")
+                continue
+            }
+            if push(keyboard.id, own) {
+                hyprLog(.notice, .lifecycle,
+                        "kept keyboard \(keyboard.name)'s own UserKeyMapping (\(own.count) entries)")
+            } else {
+                hyprLog(.error, .lifecycle,
+                        "keyboard \(keyboard.name) (\(hex(keyboard.id))) didn't take its own UserKeyMapping "
+                        + "back; it has the list now")
+            }
+        }
+    }
+
     /// Read the list, merge, write it back when it changed. The closures and
     /// the defaults are the test seam; the live ones touch the real mapping.
     static func update(_ operation: KeyMappingMerge.Operation,
                        read: () -> Any? = KeyRemapper.readUserKeyMapping,
                        write: ([HIDKeyMapping]) -> Bool = KeyRemapper.writeUserKeyMapping,
                        defaults: UserDefaults = .standard,
-                       capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff) {
+                       capsLockOff: () -> Void = KeyRemapper.turnCapsLockOff,
+                       keyboards: () -> [HIDKeyboardMapping] = KeyRemapper.readKeyboardMappings,
+                       pushToKeyboard: (UInt64, [HIDKeyMapping]) -> Bool = KeyRemapper.writeKeyboardMapping) {
         let raw = read()
         let held = loadHeld(from: defaults)
         guard let plan = KeyMappingMerge.plan(operation, read: raw, held: held) else {
@@ -156,11 +194,15 @@ class KeyRemapper {
             saveHeld(plan.held, to: defaults)
         }
         if plan.changed {
+            // a system-wide write replaces every keyboard's copy, a
+            // keyboard's own mapping included, so those are read first
+            let own = ownMappings(keyboards(), list: KeyMappingMerge.parse(raw) ?? [])
             guard write(plan.mapping) else {
                 hyprLog(.error, .lifecycle,
                         "UserKeyMapping \(operation.rawValue): hidutil failed, the mapping is unchanged")
                 return
             }
+            putBackOwnMappings(own, push: pushToKeyboard)
             // the key just stopped being Caps Lock, so it can't turn a lock
             // off: one left on while paused or before launch would stay on
             if operation == .install { capsLockOff() }
@@ -207,7 +249,8 @@ class KeyRemapper {
             services.map { id, service in
                 let name = IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String
                 let list = IOHIDServiceClientCopyProperty(service, kIOHIDUserKeyUsageMapKey as CFString)
-                return HIDKeyboardMapping(id: id, name: name ?? "keyboard", hasList: list != nil)
+                return HIDKeyboardMapping(id: id, name: name ?? "keyboard", hasList: list != nil,
+                                          list: list.flatMap(KeyMappingMerge.parse))
             }
         }
     }
@@ -335,15 +378,21 @@ class KeyRemapper {
 /// notification, so nothing polls and no permission is needed.
 final class KeyboardArrivalWatcher {
     /// the event system makes its own service a beat after the registry
-    /// match; a burst of arrivals on wake runs one check
-    static let settleDelay: TimeInterval = 1.0
+    /// match; a burst of arrivals on wake runs one check. a second look
+    /// catches a keyboard listed late or one that refused the list
+    static let checkDelays: [TimeInterval] = [1, 4]
 
     private let onArrival: () -> Void
+    private let schedule: (TimeInterval, DispatchWorkItem) -> Void
     private var port: IONotificationPortRef?
     private var iterator: io_iterator_t = 0
-    private var pending: DispatchWorkItem?
+    private var pending: [DispatchWorkItem] = []
 
-    init(onArrival: @escaping () -> Void) {
+    init(schedule: @escaping (TimeInterval, DispatchWorkItem) -> Void = { delay, work in
+             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+         },
+         onArrival: @escaping () -> Void) {
+        self.schedule = schedule
         self.onArrival = onArrival
     }
 
@@ -369,8 +418,8 @@ final class KeyboardArrivalWatcher {
     }
 
     func stop() {
-        pending?.cancel()
-        pending = nil
+        pending.forEach { $0.cancel() }
+        pending = []
         if iterator != 0 {
             IOObjectRelease(iterator)
             iterator = 0
@@ -385,10 +434,17 @@ final class KeyboardArrivalWatcher {
         let count = Self.drain(iterator)
         guard count > 0 else { return }
         hyprLog(.debug, .lifecycle, "\(count) keyboard service(s) arrived")
-        pending?.cancel()
-        let work = DispatchWorkItem { [weak self] in self?.onArrival() }
-        pending = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.settleDelay, execute: work)
+        noteArrivals()
+    }
+
+    /// a new burst replaces the checks still waiting from the last one
+    func noteArrivals() {
+        pending.forEach { $0.cancel() }
+        pending = Self.checkDelays.map { delay in
+            let work = DispatchWorkItem { [weak self] in self?.onArrival() }
+            schedule(delay, work)
+            return work
+        }
     }
 
     @discardableResult

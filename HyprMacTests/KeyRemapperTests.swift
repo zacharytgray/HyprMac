@@ -164,9 +164,11 @@ final class KeyRemapperTests: XCTestCase {
         XCTAssertEqual(pushes.count, 1)
     }
 
-    /// paused, another Hypr key, or a missing entry: keyboards aren't read.
-    /// a system-wide write already reaches every keyboard present
-    func testReassertReadsKeyboardsOnlyWhenTheListHasOurs() {
+    /// paused or another Hypr key: keyboards aren't read. a missing entry
+    /// reads them once, before the system-wide write, to keep any keyboard's
+    /// own mapping; a keyboard without a copy needs no push, the write
+    /// reaches it
+    func testReassertReadsKeyboardsOnlyWhenTheRemapIsWanted() {
         var written: [[HIDKeyMapping]] = []
         var pushes: [KeyboardPush] = []
         var reads = 0
@@ -181,7 +183,7 @@ final class KeyRemapperTests: XCTestCase {
         XCTAssertTrue(reassert(list: [f20], keyboards: keyboards,
                                written: &written, pushes: &pushes, keyboardReads: &reads))
         XCTAssertEqual(written, [[f20, ours]])
-        XCTAssertEqual(reads, 0)
+        XCTAssertEqual(reads, 1)
         XCTAssertTrue(pushes.isEmpty)
     }
 
@@ -396,11 +398,16 @@ final class KeyRemapperTests: XCTestCase {
 
     // MARK: - update with fake IO
 
+    // the system list plus each keyboard's own copy. a system-wide write
+    // replaces every keyboard's copy, own mappings included: measured with
+    // hidutil on macOS 15.8 (architecture.md, "Each keyboard's copy")
     private final class FakeHID {
         var current: Any?
         var writes: [[HIDKeyMapping]] = []
         var writeSucceeds = true
         var capsLockOffCalls = 0
+        var keyboards: [HIDKeyboardMapping] = []
+        var pushes: [KeyboardPush] = []
 
         func read() -> Any? { current }
 
@@ -408,19 +415,101 @@ final class KeyRemapperTests: XCTestCase {
             writes.append(mapping)
             guard writeSucceeds else { return false }
             current = KeyMappingMerge.propertyList(mapping) as NSArray
+            keyboards = keyboards.map { HIDKeyboardMapping(id: $0.id, name: $0.name, hasList: true, list: mapping) }
             return true
+        }
+
+        func readKeyboards() -> [HIDKeyboardMapping] { keyboards }
+
+        func push(_ id: UInt64, _ mapping: [HIDKeyMapping]) -> Bool {
+            pushes.append(KeyboardPush(id: id, mapping: mapping))
+            keyboards = keyboards.map {
+                $0.id == id ? HIDKeyboardMapping(id: id, name: $0.name, hasList: true, list: mapping) : $0
+            }
+            return true
+        }
+
+        func keyboard(_ id: UInt64) -> [HIDKeyMapping]? {
+            keyboards.first { $0.id == id }?.list
         }
     }
 
     private func update(_ op: KeyMappingMerge.Operation, _ hid: FakeHID) {
         KeyRemapper.update(op, read: hid.read, write: hid.write, defaults: defaults,
-                           capsLockOff: { hid.capsLockOffCalls += 1 })
+                           capsLockOff: { hid.capsLockOffCalls += 1 },
+                           keyboards: hid.readKeyboards, pushToKeyboard: hid.push)
     }
 
     private func apply(_ key: HyprKey, enabled: Bool, _ hid: FakeHID) {
         KeyRemapper.applyHyprKey(key, enabled: enabled, read: hid.read, write: hid.write,
-                                 defaults: defaults, capsLockOff: { hid.capsLockOffCalls += 1 })
+                                 defaults: defaults, capsLockOff: { hid.capsLockOffCalls += 1 },
+                                 keyboards: hid.readKeyboards, pushToKeyboard: hid.push)
     }
+
+    // MARK: - a keyboard's own mapping
+
+    // keyboard 1 follows the list; keyboard 2 has its own, set with
+    // hidutil --matching or another tool
+    private func keyboards(following list: [HIDKeyMapping], own: [HIDKeyMapping]) -> [HIDKeyboardMapping] {
+        [HIDKeyboardMapping(id: 1, name: "follows", hasList: true, list: list),
+         HIDKeyboardMapping(id: 2, name: "own", hasList: true, list: own)]
+    }
+
+    /// another HyprMac quit and took ours out of the list; a keyboard then
+    /// arrives and the check puts ours back with a system-wide write. that
+    /// write must not take keyboard 2's own mapping with it
+    func testPuttingTheEntryBackKeepsAKeyboardsOwnMapping() {
+        let hid = FakeHID()
+        hid.current = raw([f20])
+        hid.keyboards = keyboards(following: [f20], own: [f19])
+        XCTAssertTrue(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: hid.read, write: hid.write,
+                                                  defaults: defaults, capsLockOff: {},
+                                                  keyboards: hid.readKeyboards, pushToKeyboard: hid.push))
+        XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20, ours])
+        XCTAssertEqual(hid.keyboard(1), [f20, ours])
+        XCTAssertEqual(hid.keyboard(2), [f19], "own mapping put back as it was")
+        XCTAssertEqual(hid.pushes, [KeyboardPush(id: 2, mapping: [f19])])
+    }
+
+    /// the same for every write: launch, pause, resume, quit
+    func testInstallAndRemoveKeepAKeyboardsOwnMapping() {
+        let hid = FakeHID()
+        hid.current = raw([f20])
+        hid.keyboards = keyboards(following: [f20], own: [capsToEscape])
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(hid.keyboard(1), [f20, ours])
+        XCTAssertEqual(hid.keyboard(2), [capsToEscape])
+        apply(.capsLock, enabled: false, hid)
+        XCTAssertEqual(hid.keyboard(1), [f20])
+        XCTAssertEqual(hid.keyboard(2), [capsToEscape])
+    }
+
+    /// no write, nothing replaced, nothing to put back
+    func testACurrentListTouchesNoKeyboard() {
+        let hid = FakeHID()
+        hid.current = raw([f20, ours])
+        hid.keyboards = keyboards(following: [f20, ours], own: [f19])
+        update(.install, hid)
+        XCTAssertTrue(hid.writes.isEmpty)
+        XCTAssertTrue(hid.pushes.isEmpty)
+    }
+
+    // MARK: - keyboard arrivals
+
+    /// a keyboard the event system hasn't listed yet at the first check, or
+    /// one that refused the list, gets one more look a few seconds later
+    func testAnArrivalBurstChecksTwice() {
+        var scheduled: [(TimeInterval, DispatchWorkItem)] = []
+        var checks = 0
+        let watcher = KeyboardArrivalWatcher(schedule: { scheduled.append(($0, $1)) },
+                                             onArrival: { checks += 1 })
+        watcher.noteArrivals()
+        watcher.noteArrivals()
+        XCTAssertEqual(scheduled.map(\.0), [1, 4, 1, 4])
+        scheduled.forEach { if !$0.1.isCancelled { $0.1.perform() } }
+        XCTAssertEqual(checks, 2, "the second burst replaces the first one's checks")
+    }
+
 
     // MARK: - paused (#94)
 

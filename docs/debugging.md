@@ -1703,11 +1703,13 @@ hidutil property --matching '{"PrimaryUsagePage":1,"PrimaryUsage":6}' --get User
 
 A keyboard showing `(null)` while the list has Caps Lock (30064771129) →
 F18 (30064771181) is the #103 state. HyprMac checks each keyboard after a
-wake, an unlock and the session becoming active, and one second after a
-keyboard arrives, and gives the list to a keyboard with `(null)` only.
-A keyboard showing its own list (even `()`) was set by someone with
-`hidutil --matching` or another tool, and HyprMac leaves it alone. All
-`[lifecycle]`:
+wake, an unlock and the session becoming active, and one and four seconds
+after a keyboard arrives, and gives the list to a keyboard with `(null)`
+only. A keyboard showing its own list (even `()`) was set by someone with
+`hidutil --matching` or another tool, and HyprMac leaves it alone. A
+system-wide write (install, remove, putting the entry back) would replace
+such a list, so HyprMac reads them first and puts each back after the
+write. All `[lifecycle]`:
 
 ```
 keyboard arrived — checking the Caps Lock remap                 (.notice)
@@ -1716,6 +1718,11 @@ keyboard <name> (0x…) had no UserKeyMapping, so Caps Lock on it
 keyboard <name> (0x…) has no UserKeyMapping and didn't take the
   list; Caps Lock on it is still Caps Lock                      (.error)
 could not watch for keyboards arriving (<code>)                 (.error)
+kept keyboard <name>'s own UserKeyMapping (N entries)           (.notice)
+keyboard <name> (0x…) didn't take its own UserKeyMapping back;
+  it has the list now                                           (.error)
+keyboard <name> (0x…) had its own UserKeyMapping that HyprMac
+  can't read; the write replaced it with the list               (.error)
 ```
 
 `hidutil list --matching keyboard` maps a RegistryID to a product name.
