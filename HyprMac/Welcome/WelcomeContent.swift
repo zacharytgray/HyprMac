@@ -35,7 +35,7 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "cursorarrow.click",
             title: "Hypr+T Beats Rules",
-            description: "Floating or tiling one window by hand now works even when a rule covers it, until the window closes.",
+            description: "Floating or tiling one window by hand now works even when a rule covers it. Retile All still tiles one you floated.",
             tint: .magenta
         ),
         WhatsNewFeature(
