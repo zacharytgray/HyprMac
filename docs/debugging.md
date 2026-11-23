@@ -1536,7 +1536,23 @@ instead. Other lines:
 `ran Nms late` large means something else held the main thread after the
 switch. `list read` and `walk` large mean the app's own replies were slow.
 A switch over 250 ms also logs `switch: ws<N> took …ms (walk, retile,
-focus and rest)`.
+focus and rest; park N a-bms, retile c-dms)`. Faster switches log the same
+spans at debug.
+
+### The wallpaper showed between two workspaces (#101)
+
+The spans in that line are milliseconds from the switch's start. A switch
+between two occupied workspaces should retile first and park after:
+
+```
+switch: ws4 took 371ms (walk 57ms, retile 169ms, focus and rest 145ms; park 2 227-350ms, retile 58-227ms)
+```
+
+A park that ends before the retile does (`park 2 60-183ms, retile
+183-349ms`) left the screen bare from the park's end to the retile's end.
+Only a switch to a workspace with nothing to show should park first. To
+measure what the screen showed, sample the window list during the switch
+and look for spans where no app window covers the screen.
 
 ### A new window was found late, or got the wrong id
 

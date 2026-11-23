@@ -757,6 +757,17 @@ monitors share the rightmost edge, the lowest one holds the corner: a
 monitor below it would catch the extension, and macOS would pull the
 window onto it under its menu bar, shrunk to its height.
 
+A switch to a hidden workspace (`WorkspaceOrchestrator.switchWorkspace`)
+restores the incoming floaters and retiles first, then parks the outgoing
+windows, then focuses. A park is one position write that lands at once.
+The reveal moves, resizes and verifies each window in turn. Parked first,
+the screen showed only the wallpaper for the whole reveal (#101). Now the
+outgoing windows stay up until the incoming ones are placed. A switch to a
+workspace with nothing to show (empty, or only hidden windows) parks first,
+since there is nothing to wait for. After the park the window-list cache is
+dropped (`windowsParked`): a list read during the retile still has the
+outgoing windows on screen, and hover would hit them.
+
 Every workspace is **statically anchored** to a home screen:
 `enabledScreens[(N - 1) % enabledScreens.count]`, left to right.
 Two screens on one x, a stacked desk, keep the order `NSScreen.screens`

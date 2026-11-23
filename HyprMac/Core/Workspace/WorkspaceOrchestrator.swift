@@ -46,8 +46,7 @@ final class WorkspaceOrchestrator {
     var updateFocusBorder: (HyprWindow) -> Void = { _ in }
     var updatePositionCache: () -> Void = { }
     /// Retile every visible workspace. A switch hands over the walk it
-    /// already took: the walk between the last park write and the first
-    /// reveal write left the switched screen empty for its duration.
+    /// already took, so the reveal does not wait on a second one.
     var tileAllVisibleSpaces: ([HyprWindow]?) -> Void = { _ in }
     /// Fired once a switch has parked the outgoing workspace. A window list
     /// read before that still has those windows on screen.
