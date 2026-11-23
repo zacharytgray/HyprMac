@@ -75,6 +75,10 @@ class WorkspaceManager {
     /// ghost over the tiles until then.
     var onParkFailed: (() -> Void)?
 
+    /// Whether a window is in native full screen. Wired by `WindowManager`
+    /// to `AXFullScreen`.
+    var isInNativeFullScreen: (HyprWindow) -> Bool = { _ in false }
+
     /// Localized names of monitors the user has excluded from tiling.
     /// Disabled monitors host floating windows only.
     var disabledMonitors: Set<String> = []
@@ -390,6 +394,13 @@ class WorkspaceManager {
     /// Park `window` at the global hide position via the
     /// EnhancedUI-guarded position write.
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
+        // native full screen lives on its own Space, and a write to it can
+        // take it out of full screen (#104). it is not parked
+        if isInNativeFullScreen(window) {
+            parkFailures.removeValue(forKey: window.windowID)
+            hyprLog(.debug, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) in native full screen — not parked")
+            return
+        }
         let pos = hidePosition()
         let rc = window.setPositionOnly(pos)
         guard rc == .success else {

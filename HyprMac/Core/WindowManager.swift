@@ -3562,6 +3562,7 @@ private extension WindowManager {
         }
         // a write to a window in native full screen takes it out (#104)
         tilingEngine.isInNativeFullScreen = { $0.isFullscreen }
+        workspaceManager.isInNativeFullScreen = { $0.isFullscreen }
         // a window sent to the cursor's monitor rolls back to where it opened
         tilingEngine.newcomerOriginSource = { [weak self] id in
             self?.actionDispatcher.cursorMoveOrigin(id)

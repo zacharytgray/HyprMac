@@ -894,6 +894,11 @@ neighbours keep their slots, and its tile is there when it comes back.
   (`unwrittenWindowIDs`), like a held member: nothing read, nothing written.
   It is not a hold. The walk reads the window, so no poll releases it into a
   retile, and the next pass after it leaves writes it like any member.
+- **Parking.** A workspace switch parks the windows of the workspace it
+  leaves. `WorkspaceManager.hideInCorner` skips one in full screen: it lives
+  on its own Space, and the park write can take it out of full screen. The
+  park repair skips it too, so a full-screen window on a hidden workspace is
+  not re-parked every poll.
 
 ### Forced insertion
 

@@ -288,6 +288,26 @@ final class DisplayReturnTests: XCTestCase {
         XCTAssertEqual(requests, WorkspaceManager.parkRepairRequests)
     }
 
+    /// issue #104: a workspace switch parks every window of the workspace it
+    /// leaves. a window in native full screen lives on its own Space, and a
+    /// write to it can take it out of full screen, so it is not parked
+    func testAWindowInNativeFullScreenIsNotParked() {
+        let screen = DeskScreen(x: 0, width: 1400)
+        let workspaces = WorkspaceManager(displayManager: DisplayManager(screenSource: { [screen] }))
+        var writes = 0
+        // its AX element answers nothing, so a write that goes out fails
+        // and asks for the repair poll: the count of writes sent
+        workspaces.onParkFailed = { writes += 1 }
+        let full = makeWindow(id: 4712), tiled = makeWindow(id: 4713)
+        workspaces.isInNativeFullScreen = { $0.windowID == full.windowID }
+
+        workspaces.hideInCorner(full, on: screen)
+        XCTAssertEqual(writes, 0, "no park write goes out to a full-screen window")
+
+        workspaces.hideInCorner(tiled, on: screen)
+        XCTAssertEqual(writes, 1, "every other window is parked as before")
+    }
+
     /// a stacked desk, two screens on one x: the primary display keeps the
     /// first homes, as it has, whatever its y
     func testAStackedDeskKeepsThePrimaryDisplaysHomesFirst() {

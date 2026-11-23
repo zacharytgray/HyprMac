@@ -250,7 +250,9 @@ final class WindowPlacement {
             let substantiallyVisible = displayManager.screens.contains { screen in
                 frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
             }
-            guard substantiallyVisible,
+            // a full-screen window reads visible on its own Space; the park
+            // skips it, so the repair does too rather than log every poll
+            guard substantiallyVisible, !workspaceManager.isInNativeFullScreen(w),
                   let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first
             else { continue }
             hyprLog(.notice, .lifecycle, "park repair: '\(w.title ?? "?")' (\(w.windowID)) on hidden ws\(ws) reads visible — re-parking")
