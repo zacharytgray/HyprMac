@@ -877,6 +877,24 @@ drifts again long after the re-apply held gets a fresh one. Nothing runs
 while something else owns the geometry: a mouse press, a tiled drag settling,
 a display reconfiguration, or a workspace transition.
 
+### Native full screen
+
+A tiled window in native full screen (the green button, Ctrl-Cmd-F, Split
+View) is never written. It stands at the display's frame, and a size write
+takes it out of full screen (issue #104). It keeps its leaf, so its
+neighbours keep their slots, and its tile is there when it comes back.
+
+- **Drift.** A drifted reading asks `AXFullScreen` before it counts. One in
+  full screen ends its episode and asks for nothing. Only a drifted window is
+  asked, so the AX read is not spent on every tile every poll. Leaving full
+  screen starts from scratch: macOS puts the window back on its tile, and if
+  the tile moved meanwhile, the usual two polls ask for one re-apply.
+- **Passes.** `applyVerifiedLayout` asks `TilingEngine.isInNativeFullScreen`
+  of every member and leaves the ones in full screen out of the attempt
+  (`unwrittenWindowIDs`), like a held member: nothing read, nothing written.
+  It is not a hold. The walk reads the window, so no poll releases it into a
+  retile, and the next pass after it leaves writes it like any member.
+
 ### Forced insertion
 
 `forceInsertWindow` is the float→tile entry point. It works on a private

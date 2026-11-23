@@ -396,7 +396,16 @@ a Space its display does not show is not a close. Behind a native
 full-screen Space it is held for as long as that Space is in front; on
 another desktop Space it gets the five-second hold and is then hidden with
 its slot reserved. Either way it comes back as the same window: no
-reopen, no drift, its slot and hand choice kept. A reserved hidden window
+reopen, no drift, its slot and hand choice kept. The full-screen window
+itself has a gap of its own: leaving full screen, its app lists none of its
+windows for up to a few seconds while the window is on no hidden Space, so
+AX reads it as closed. Discovery remembers which known windows the last
+poll found on a shown full-screen Space
+(`WindowSpaces.onShownFullScreenSpace`, one window-server question per poll
+unless such a Space is shown), and one of those that goes missing gets the
+five-second hold whatever AX says. It comes back with no reopen, so the
+window rules do not run again and its slot and floating choice stay. One
+still missing after the hold is a close as before. A reserved hidden window
 still asked about carries one `ReservationCheck`: `unverified` (AX could not
 answer when it went) or `offSpace` (the window server had it on another
 Space). `ReservationCheck.step` is the only transition: seen on another

@@ -728,6 +728,19 @@ intended rects until a layout for it is accepted. Neither fires while a mouse bu
 is settling, during a display change or a workspace transition, or on a poll
 that retiled anyway.
 
+A tiled window in native full screen is never written (issue #104). Two
+`[notice] [tiling]` lines say so:
+
+```
+tiled drift: 36088 ws3 is in native full screen — left alone, its tile kept
+layout: [36088] in native full screen — leaves kept, no frame written
+```
+
+The first is once per stay in full screen. The second is every pass on its
+workspace while it lasts. Before the fix, the first was
+`tiled drift: … — re-applying the layout once` with the display's frame as
+`actual`, then a `frame write` to that window, and the app left full screen.
+
 `admission recovery held:` is the other end of the fallback. After the
 fallback floats a workspace's newcomers, one ordinary retile runs for that
 key. A window this line names is visible, not floating, and in no tree even
@@ -1438,6 +1451,17 @@ window, and a window its app put back on screen was moved with `drift: …
 full screen, macOS pulls its other windows from the park corner onto the
 screen of their Space; on the way back `park repair: '<title>' (<id>) on
 hidden ws<N> reads visible — re-parking` puts each back, which is expected.
+The full-screen window itself, on its way out of full screen, logs
+
+```
+leaving native full screen: [36088] — not listed by their app for a moment; held in place, not a close
+```
+
+with the off-screen hold line, and `off-screen hold ended` when it is back.
+Before this (issue #104), a notched MacBook logged `window hidden` and then
+`window returned: … — reopened after a close` for it on every exit. A
+wider screen often hid the gap by luck: the transition window stood in the
+full-screen frame and took a tab hold.
 `FLAP: … returned <n>ms after vanishing` on the return is the diagnostic
 for a window that was not held and came back within five seconds; with
 both holds in place it should be rare. Every tile pass logs
