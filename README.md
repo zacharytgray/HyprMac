@@ -250,7 +250,7 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 | Shortcut | Action |
 |----------|--------|
 | `Hypr + ←/→/↑/↓` | Focus window in direction |
-| `Hypr + Shift + ←/→/↑/↓` | Swap window in direction |
+| `Hypr + Shift + ←/→/↑/↓` | Swap window in direction; at a monitor edge, swap with the nearest tile on the adjacent monitor |
 | `Hypr + Ctrl + ←/→/↑/↓` | Move window to the adjacent monitor in that direction |
 | `Hypr + Ctrl + Shift + ←/→/↑/↓` | Resize focused window in direction |
 | `Hypr + 1–9` / `Hypr + 0` | Switch to workspace 1–9 / workspace 10 |
