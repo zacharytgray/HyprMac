@@ -185,6 +185,15 @@ final class KeyRemapperTests: XCTestCase {
         XCTAssertTrue(pushes.isEmpty)
     }
 
+    /// the one live read here: it only reads. a service is only usable
+    /// while the event system client that listed it is alive; reading one
+    /// after the client went away aborted the app on the first wake check
+    func testLiveKeyboardReadOutlivesItsClient() {
+        let first = KeyRemapper.readKeyboardMappings()
+        let second = KeyRemapper.readKeyboardMappings()
+        XCTAssertEqual(first.map(\.id), second.map(\.id))
+    }
+
     func testOurEntryIsCapsLockToF18() {
         XCTAssertEqual(ours, HIDKeyMapping(src: 0x700000039, dst: 0x70000006D))
     }

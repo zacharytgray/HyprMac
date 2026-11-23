@@ -203,10 +203,12 @@ class KeyRemapper {
     /// holds its own `UserKeyMapping`. `hidutil property --matching … --get`
     /// reads the same per-keyboard value.
     static func readKeyboardMappings() -> [HIDKeyboardMapping] {
-        keyboardServices().map { id, service in
-            let name = IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String
-            let list = IOHIDServiceClientCopyProperty(service, kIOHIDUserKeyUsageMapKey as CFString)
-            return HIDKeyboardMapping(id: id, name: name ?? "keyboard", hasList: list != nil)
+        withKeyboardServices { services in
+            services.map { id, service in
+                let name = IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String
+                let list = IOHIDServiceClientCopyProperty(service, kIOHIDUserKeyUsageMapKey as CFString)
+                return HIDKeyboardMapping(id: id, name: name ?? "keyboard", hasList: list != nil)
+            }
         }
     }
 
@@ -214,21 +216,29 @@ class KeyRemapper {
     /// system-wide list stay as they are. true when the keyboard reads it
     /// back: the set call itself says yes even when the keyboard refuses.
     static func writeKeyboardMapping(_ id: UInt64, _ mapping: [HIDKeyMapping]) -> Bool {
-        guard let service = keyboardServices().first(where: { $0.id == id })?.service else { return false }
-        let list = KeyMappingMerge.propertyList(mapping) as CFArray
-        guard IOHIDServiceClientSetProperty(service, kIOHIDUserKeyUsageMapKey as CFString, list) else { return false }
-        let readBack = IOHIDServiceClientCopyProperty(service, kIOHIDUserKeyUsageMapKey as CFString)
-        return KeyMappingMerge.parse(readBack) == mapping
+        withKeyboardServices { services in
+            guard let service = services.first(where: { $0.id == id })?.service else { return false }
+            let list = KeyMappingMerge.propertyList(mapping) as CFArray
+            guard IOHIDServiceClientSetProperty(service, kIOHIDUserKeyUsageMapKey as CFString, list) else { return false }
+            let readBack = IOHIDServiceClientCopyProperty(service, kIOHIDUserKeyUsageMapKey as CFString)
+            return KeyMappingMerge.parse(readBack) == mapping
+        }
     }
 
-    private static func keyboardServices() -> [(id: UInt64, service: IOHIDServiceClient)] {
+    /// The keyboard services, used inside `body` only. A service client
+    /// works only while the event system client that listed it is alive;
+    /// a call on one after the client is gone aborts the process.
+    private static func withKeyboardServices<T>(_ body: ([(id: UInt64, service: IOHIDServiceClient)]) -> T) -> T {
         let client = IOHIDEventSystemClientCreateSimpleClient(kCFAllocatorDefault)
-        let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []
-        return services.compactMap { service in
-            guard IOHIDServiceClientConformsTo(service, UInt32(kHIDPage_GenericDesktop),
-                                               UInt32(kHIDUsage_GD_Keyboard)) != 0,
-                  let id = IOHIDServiceClientGetRegistryID(service) as? NSNumber else { return nil }
-            return (id.uint64Value, service)
+        return withExtendedLifetime(client) {
+            let services = IOHIDEventSystemClientCopyServices(client) as? [IOHIDServiceClient] ?? []
+            let keyboards = services.compactMap { service -> (id: UInt64, service: IOHIDServiceClient)? in
+                guard IOHIDServiceClientConformsTo(service, UInt32(kHIDPage_GenericDesktop),
+                                                   UInt32(kHIDUsage_GD_Keyboard)) != 0,
+                      let id = IOHIDServiceClientGetRegistryID(service) as? NSNumber else { return nil }
+                return (id.uint64Value, service)
+            }
+            return body(keyboards)
         }
     }
 
