@@ -1,6 +1,7 @@
 { lib }:
 let
   inherit (lib)
+    any
     filter
     filterAttrs
     isAttrs
@@ -37,10 +38,24 @@ let
     enabled = true;
   };
 
+  # the null-strip would turn `match = null` into no match, and the app reads
+  # a rule with no match as covering the whole app. JSON `"match": null` drops
+  # the rule; here it stops the switch with a message instead
+  checkFloatingRules =
+    settings:
+    let
+      rules = settings.floatingRules or null;
+      nullMatch = rule: isAttrs rule && rule ? match && rule.match == null;
+    in
+    if isList rules && any nullMatch rules then
+      throw "programs.hyprmac.settings.floatingRules: a rule has `match = null`. Leave `match` out for a rule that covers the whole app, or set `match.titleIs` or `match.titleContains`."
+    else
+      settings;
+
   buildConfigJson =
     settings:
     let
-      cleaned = filterNullsRecursive settings;
+      cleaned = filterNullsRecursive (checkFloatingRules settings);
     in
     if cleaned == { } then null else coreConfigDefaults // cleaned;
 

@@ -54,6 +54,10 @@ settings.floatingRules = [
 ];
 ```
 
+Leave `match` out for a rule that covers the whole app. `match = null` stops
+the switch with an error: the module strips nulls before it writes JSON, so the
+rule would otherwise cover the whole app.
+
 A rule added from the menu bar or the Hypr+I overlay on a read-only config
 applies until the next reload, like any Settings change. Copy it into
 `settings` to keep it. A switch that changes the rules reaches new windows,

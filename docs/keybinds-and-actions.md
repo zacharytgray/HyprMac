@@ -362,7 +362,9 @@ Downgrade: an older build ignores `floatingRules` and drops it on its next
 save, like `windowRules`. App floats survive, since they are
 `excludedBundleIDs`. The array decodes per element: a rule with an unknown
 action or a malformed match (including `"match": null` and an unknown key such
-as `raised`, which an unreleased build wrote) is logged and dropped alone.
+as `raised`, which an unreleased build wrote) is logged and dropped alone. Nix
+strips nulls before it writes the file, so the Home Manager module stops the
+switch on a `match = null` instead (`docs/nix.md`).
 
 ## Workspace names
 

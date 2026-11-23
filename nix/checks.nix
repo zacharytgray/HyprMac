@@ -50,6 +50,34 @@ in
     assert assertEq "settings.version overrides the default"
       (hyprmacLib.buildConfigJson { version = 3; }).version
       3;
+    assert assertEq "a floating rule with match = null fails evaluation"
+      (builtins.tryEval (
+        builtins.deepSeq (hyprmacLib.buildConfigJson {
+          floatingRules = [
+            {
+              bundleID = "us.zoom.xos";
+              action = "float";
+              match = null;
+            }
+          ];
+        }) true
+      )).success
+      false;
+    assert assertEq "a floating rule with no match stays an app rule"
+      (hyprmacLib.buildConfigJson {
+        floatingRules = [
+          {
+            bundleID = "us.zoom.xos";
+            action = "float";
+          }
+        ];
+      }).floatingRules
+      [
+        {
+          bundleID = "us.zoom.xos";
+          action = "float";
+        }
+      ];
     assert assertEq "nulls stripped recursively in lists and nested attrsets"
       (hyprmacLib.filterNullsRecursive {
         items = [

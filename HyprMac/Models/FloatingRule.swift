@@ -116,8 +116,9 @@ extension FloatingRule {
         }
         self.bundleID = bundleID
         self.action = try c.decode(Action.self, forKey: .action)
-        // "match": null is a bad match, not a whole-app rule: a Nix
-        // `match = null` must not widen a window rule to the app
+        // "match": null is a bad match, not a whole-app rule. a Nix
+        // `match = null` never gets here: the module strips nulls, so
+        // nix/lib.nix stops the switch on it instead
         if c.contains(.match), try c.decodeNil(forKey: .match) {
             throw DecodingError.dataCorruptedError(forKey: .match, in: c, debugDescription: "null match")
         }
