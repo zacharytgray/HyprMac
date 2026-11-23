@@ -1,20 +1,28 @@
-// "Layout" tab. Window gaps, focus color, dim intensity,
-// per-monitor enable, max-splits, edge padding and workspaces plus a live
-// dwindle preview.
+// Panels from the old "Layout" tab: window gaps, focus appearance, the
+// scratchpad, and per-monitor enable, max-splits, edge padding and
+// workspaces with a live dwindle preview.
 
 import SwiftUI
 
-/// "Layout" tab.
+/// The old "Layout" tab's panels. Each new section shows the ones it took
+/// over, unchanged, until that section gets its redesign.
 struct TilingSettingsView: View {
+    enum Panel { case gaps, focus, scratchpad, monitors }
+
+    var panels: [Panel] = [.gaps, .focus, .scratchpad, .monitors]
     @ObservedObject var config = UserConfig.shared
     @State private var screens: [NSScreen] = NSScreen.screens
 
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
-            gapsPanel
-            focusPanel
-            scratchpadPanel
-            monitorsPanel
+            ForEach(Array(panels.enumerated()), id: \.offset) { _, panel in
+                switch panel {
+                case .gaps: gapsPanel
+                case .focus: focusPanel
+                case .scratchpad: scratchpadPanel
+                case .monitors: monitorsPanel
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             screens = NSScreen.screens

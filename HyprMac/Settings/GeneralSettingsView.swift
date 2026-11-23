@@ -1,70 +1,214 @@
-// "General" tab of Settings.
+// "General" section of Settings, the first screen in the navy style, and
+// the panels that left General until their own sections are redone.
 
 import SwiftUI
 
-/// "General" tab. Enable toggle, accessibility status,
-/// focus-follows-mouse, never-tile list, workspace names, workspace pins, System panel
-/// (menu bar style, iCloud sync, launch-at-login), Updates, and a footer with
-/// replay-the-tour + reset.
+/// "General": is tiling on, what starts at login, where HyprMac shows,
+/// updates and the tutorial. Everything else moved to its own section.
 struct GeneralSettingsView: View {
     let showTutorial: () -> Void
     @ObservedObject var config = UserConfig.shared
     @AppStorage(UserConfig.menuBarStyleKey) private var menuBarStyle: MenuBarStyle = .full
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
     @StateObject private var loginItem = LoginItemController()
-    @State private var showingWorkspaceNames = false
-    @State private var choosingSyncSide = false
     #if !HYPRMAC_DEBUG_VARIANT
     @Environment(\.updateController) private var updates
     #endif
 
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
-            statusPanel
-            mousePanel
-            neverTilePanel
-            workspaceNamesPanel
-            workspacePinsPanel
-            systemPanel
-            updatesPanel
-            layoutsPanel
-            footerPanel
+            statusCard
+            startupCard
+            presenceCard
+            updatesCard
+            helpCard
         }
         .onAppear {
             accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
             loginItem.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
             loginItem.refresh()
         }
     }
 
     // MARK: status
 
-    private var statusPanel: some View {
-        HyprPanel("Status",
-                  footer: accessibilityGranted ? nil : "Accessibility permission is required for HyprMac to function. Open System Settings to grant it.") {
-            HyprRow("HyprMac", icon: "bolt.fill") {
-                // the toggle style carries its own spacer; keep the badge beside it
-                HStack(spacing: 0) {
-                    if config.enabled {
-                        HyprAccentBadge("ACTIVE", icon: "checkmark")
+    private var statusCard: some View {
+        SettingsCard("Status") {
+            SettingsRow("Tiling", icon: "rectangle.split.2x2.fill",
+                        subtitle: config.enabled
+                            ? "On. New windows tile as they open."
+                            : "Paused. Windows stay where you put them.") {
+                Toggle("", isOn: $config.enabled)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            } detail: {
+                shortcutLine("Pause or resume with", action: .toggleTiling)
+            }
+            SettingsRow("Accessibility access", icon: accessibilityGranted ? "checkmark.shield" : "exclamationmark.shield",
+                        tint: accessibilityGranted ? .hyprCyan : .hyprMagenta,
+                        subtitle: accessibilityGranted
+                            ? "Lets HyprMac move and resize windows."
+                            : "Required. HyprMac can't move windows without it.",
+                        divider: false) {
+                if accessibilityGranted {
+                    SettingsStatusPill(text: "GRANTED")
+                } else {
+                    Button("Grant…") { AccessibilityManager.promptForAccessibility() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    // MARK: startup
+
+    private var startupCard: some View {
+        SettingsCard("Startup") {
+            SettingsRow("Launch at login", icon: "power", subtitle: loginItemSubtitle) {
+                switch loginItem.state {
+                case .enabled:
+                    HStack(spacing: HyprSpacing.sm) {
+                        SettingsStatusPill(text: "ON")
+                        Button("Manage…") { loginItem.openLoginItems() }
+                            .controlSize(.small)
                     }
-                    Toggle("", isOn: $config.enabled)
-                        .toggleStyle(HyprToggleStyle())
-                        .labelsHidden()
+                    .fixedSize()
+                case .notEnabled:
+                    Button("Enable") { loginItem.enable() }
+                        .controlSize(.small)
+                case .requiresApproval, .failed:
+                    Button("Open Login Items") { loginItem.openLoginItems() }
+                        .controlSize(.small)
+                }
+            }
+            SettingsRow("Restore saved layout at launch", icon: "arrow.counterclockwise",
+                        subtitle: "Brings back the layout saved for this display setup.",
+                        divider: false) {
+                Toggle("", isOn: $config.restoreLayoutOnLaunch)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            } detail: {
+                shortcutLine("Save a layout with", action: .saveLayout)
+            }
+        }
+    }
+
+    private var loginItemSubtitle: String {
+        if let instruction = loginItem.instructionText { return instruction }
+        if loginItem.state == .enabled {
+            return "Starts when you sign in. Turn it off in Login Items."
+        }
+        return "Start \(loginItem.appName) when you sign in."
+    }
+
+    // MARK: menu bar and dock
+
+    private var menuBarSubtitle: String {
+        switch menuBarStyle {
+        case .full: return "Shows every workspace in use."
+        case .compact: return "Shows only the current workspace, by number or name."
+        case .hidden: return "No menu bar item. Open HyprMac from Spotlight to get back here."
+        }
+    }
+
+    private var presenceCard: some View {
+        SettingsCard("Menu bar and Dock") {
+            SettingsRow("Menu bar item", icon: "menubar.rectangle", subtitle: menuBarSubtitle) {
+                SettingsSegmented(options: MenuBarStyle.allCases.map { ($0, $0.displayName) },
+                                  selection: $menuBarStyle)
+            }
+            SettingsRow("Show in Dock", icon: "dock.rectangle",
+                        subtitle: "Also puts HyprMac in ⌘-Tab.", divider: false) {
+                Toggle("", isOn: $config.showDockIcon)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            }
+        }
+    }
+
+    // MARK: updates
+
+    /// Nix or another manager replaces the app itself, so the switches give
+    /// way to one read-only line. The debug variant has no updater.
+    @ViewBuilder private var updatesCard: some View {
+        #if !HYPRMAC_DEBUG_VARIANT
+        if RuntimeVariant.updatesManagedExternally {
+            ManagedUpdatesPanel(nixInstall: RuntimeVariant.updatesManagedByNix)
+        } else if let updates {
+            UpdateSettingsPanel(updates: updates)
+        }
+        #endif
+    }
+
+    // MARK: help
+
+    private var helpCard: some View {
+        SettingsCard("Help") {
+            Button(action: showTutorial) {
+                SettingsRow("Replay the tutorial", icon: "sparkles", tint: .hyprMagenta,
+                            subtitle: "The tour from first launch: the Hypr key, tiling, workspaces.",
+                            divider: false) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.settingsTextFaint)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // "Pause or resume with [hypr][P]", or nothing when the action has no bind
+    @ViewBuilder
+    private func shortcutLine(_ lead: String, action: Action) -> some View {
+        if let bind = config.keybinds.first(where: { $0.action == action }) {
+            HStack(spacing: 6) {
+                Text(lead)
+                    .font(.hyprCaption)
+                    .foregroundStyle(Color.settingsTextMuted)
+                // light key caps, so the chord reads as a hint, not a control
+                HStack(spacing: 3) {
+                    let labels = bind.badgeLabels()
+                    if bind.modifiers.contains(.hypr) { HyprKeyChip(fontSize: 9.5) }
+                    ForEach(Array(labels.dropFirst(bind.modifiers.contains(.hypr) ? 1 : 0).enumerated()),
+                            id: \.offset) { _, label in
+                        KeyChip(label, fontSize: 9.5, onGlass: true)
+                    }
                 }
                 .fixedSize()
             }
-            HyprRow(accessibilityGranted ? "Accessibility granted" : "Accessibility required",
-                    icon: accessibilityGranted ? "checkmark.shield" : "exclamationmark.shield",
-                    divider: false) {
-                if accessibilityGranted {
-                    HyprChip("OK")
-                } else {
-                    Button("Grant") { AccessibilityManager.promptForAccessibility() }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+            .padding(.top, 3)
+        }
+    }
+}
+
+/// The panels that left General, unchanged in look, shown in their new
+/// sections until each section gets its redesign.
+struct MovedGeneralPanels: View {
+    enum Panel { case mouse, rules, workspaceNames, pins, overlays, sync, otherApps, files, reset }
+
+    let panels: [Panel]
+    @ObservedObject var config = UserConfig.shared
+    @State private var showingWorkspaceNames = false
+    @State private var choosingSyncSide = false
+
+    var body: some View {
+        VStack(spacing: HyprSpacing.lg) {
+            ForEach(Array(panels.enumerated()), id: \.offset) { _, panel in
+                switch panel {
+                case .mouse: mousePanel
+                case .rules: neverTilePanel
+                case .workspaceNames: workspaceNamesPanel
+                case .pins: workspacePinsPanel
+                case .overlays: overlaysPanel
+                case .sync: syncPanel
+                case .otherApps: otherAppsPanel
+                case .files: filesPanel
+                case .reset: resetPanel
                 }
             }
         }
@@ -232,7 +376,7 @@ struct GeneralSettingsView: View {
         config.windowRules[index].workspace = workspace
     }
 
-    // MARK: system — menu bar + iCloud + login items
+    // MARK: sync, other apps, overlays, files
 
     // turning sync on asks first when this Mac and iCloud disagree
     private var iCloudSyncBinding: Binding<Bool> {
@@ -245,35 +389,21 @@ struct GeneralSettingsView: View {
         })
     }
 
-    private var systemPanel: some View {
-        HyprPanel("System",
-                  footer: loginItemFooter) {
-            HyprRow("Show in Dock", icon: "dock.rectangle",
-                    subtitle: "Off keeps HyprMac out of the Dock and ⌘-Tab.") {
-                Toggle("", isOn: $config.showDockIcon)
-                    .toggleStyle(HyprToggleStyle())
-                    .labelsHidden()
-            }
-
-            HyprRow("Menu bar", icon: "menubar.rectangle",
-                    subtitle: "Full shows every workspace in use. Compact shows only the current workspace: its number, or its name from Workspace names (one Latin letter or digit goes in the badge; SF Symbols has no badges for other characters). Hidden removes the item; open HyprMac again from Spotlight or Finder to get back to Settings.") {
-                Picker("", selection: $menuBarStyle) {
-                    ForEach(MenuBarStyle.allCases) { style in
-                        Text(style.displayName).tag(style)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 120)
-            }
-
+    private var otherAppsPanel: some View {
+        HyprPanel("Other apps") {
             HyprRow("Allow other apps to control HyprMac", icon: "link",
-                    subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.") {
+                    subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.",
+                    divider: false) {
                 Toggle("", isOn: $config.externalControlEnabled)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             }
+        }
+    }
 
-            HyprRow("Overlay appearance", icon: "circle.lefthalf.filled") {
+    private var overlaysPanel: some View {
+        HyprPanel("Overlays") {
+            HyprRow("Overlay appearance", icon: "circle.lefthalf.filled", divider: false) {
                 Picker("", selection: $config.overlayAppearance) {
                     ForEach(OverlayAppearance.allCases) { appearance in
                         Text(appearance.displayName).tag(appearance)
@@ -282,10 +412,15 @@ struct GeneralSettingsView: View {
                 .labelsHidden()
                 .frame(width: 120)
             }
+        }
+    }
 
+    private var syncPanel: some View {
+        HyprPanel("Sync") {
             if config.isICloudDriveAvailable {
                 HyprRow("Sync settings via iCloud", icon: "icloud",
-                        subtitle: config.isICloudSyncLocked ? "Off while another tool manages the config file." : nil) {
+                        subtitle: config.isICloudSyncLocked ? "Off while another tool manages the config file." : nil,
+                        divider: false) {
                     Toggle("", isOn: iCloudSyncBinding)
                         .toggleStyle(HyprToggleStyle())
                         .labelsHidden()
@@ -301,81 +436,37 @@ struct GeneralSettingsView: View {
                 }
             } else {
                 HyprRow("Sync settings via iCloud", icon: "xmark.icloud",
-                        subtitle: "Enable iCloud Drive in System Settings") { EmptyView() }
+                        subtitle: "Enable iCloud Drive in System Settings", divider: false) { EmptyView() }
             }
+        }
+    }
 
-            HyprRow("Launch at login", icon: "power", divider: false) {
-                switch loginItem.state {
-                case .enabled:
-                    HStack(spacing: HyprSpacing.sm) {
-                        HyprAccentBadge("ENABLED", icon: "checkmark")
-                        Button("Manage") { loginItem.openLoginItems() }
-                            .controlSize(.small)
-                    }
-                case .notEnabled:
-                    Button("Enable") { loginItem.enable() }
-                        .controlSize(.small)
-                case .requiresApproval, .failed:
-                    Button("Open Login Items") { loginItem.openLoginItems() }
+    // was the sidebar footer
+    private var filesPanel: some View {
+        HyprPanel("Files") {
+            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("HyprMac", isDirectory: true)
+            let files = ["config.json", "monitor-config.json"]
+            ForEach(Array(files.enumerated()), id: \.offset) { idx, name in
+                let url = support.appendingPathComponent(name)
+                HyprRow(name, icon: "doc", subtitle: Self.homeRelative(url.path),
+                        divider: idx < files.count - 1) {
+                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                         .controlSize(.small)
                 }
             }
         }
     }
 
-    private var loginItemFooter: String {
-        if let instruction = loginItem.instructionText {
-            return instruction
-        }
-        if loginItem.state == .enabled {
-            return "\(loginItem.appName) will launch automatically when you sign in. You can turn it off in System Settings → General → Login Items."
-        }
-        return "Start \(loginItem.appName) automatically when you sign in."
+    private static func homeRelative(_ path: String) -> String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
     }
 
-    // MARK: updates
+    // MARK: reset
 
-    /// Nix or another manager replaces the app itself, so the switches give
-    /// way to one read-only line. The debug variant has no updater.
-    @ViewBuilder private var updatesPanel: some View {
-        #if !HYPRMAC_DEBUG_VARIANT
-        if RuntimeVariant.updatesManagedExternally {
-            ManagedUpdatesPanel(nixInstall: RuntimeVariant.updatesManagedByNix)
-        } else if let updates {
-            UpdateSettingsPanel(updates: updates)
-        }
-        #endif
-    }
-
-    // MARK: layouts
-
-    private var layoutsPanel: some View {
-        HyprPanel("Layouts",
-                  footer: "Hypr+Ctrl+S saves the window arrangement for the current display setup; Hypr+Ctrl+R brings it back. A saved layout also restores on its own when that display setup reconnects.") {
-            HyprRow("Restore saved layout at launch", icon: "arrow.counterclockwise", divider: false) {
-                Toggle("", isOn: $config.restoreLayoutOnLaunch)
-                    .toggleStyle(HyprToggleStyle())
-                    .labelsHidden()
-            }
-        }
-    }
-
-    // MARK: footer — replay tour + reset
-
-    private var footerPanel: some View {
+    private var resetPanel: some View {
         HyprPanel {
-            Button {
-                showTutorial()
-            } label: {
-                HyprRow("HyprMac Tutorial", icon: "sparkles") {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.hyprTextTertiary)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
             Button { config.resetToDefaults() } label: {
                 HyprRow("Reset all settings…",
                         subtitle: "Restores the Hypr key, keybinds, rules, workspace names, layout, appearance and monitor settings, and turns off external control. Keeps this Mac's Show in Dock, Menu bar, Launch at login, iCloud sync and Updates.",
@@ -427,11 +518,11 @@ struct ManagedUpdatesPanel: View {
 
     var body: some View {
         let command = MenuBarPresentation.updaterBackOnCommand(nixInstall: nixInstall)
-        HyprPanel("Updates") {
-            HyprRow(MenuBarPresentation.managedUpdatesTitle(nixInstall: nixInstall),
-                    icon: "shippingbox",
-                    subtitle: MenuBarPresentation.managedUpdatesHint(nixInstall: nixInstall),
-                    divider: false) {
+        SettingsCard("Updates") {
+            SettingsRow(MenuBarPresentation.managedUpdatesTitle(nixInstall: nixInstall),
+                        icon: "shippingbox",
+                        subtitle: MenuBarPresentation.managedUpdatesHint(nixInstall: nixInstall),
+                        divider: false) {
                 if let command {
                     Button("Copy command") {
                         NSPasteboard.general.clearContents()
@@ -439,17 +530,14 @@ struct ManagedUpdatesPanel: View {
                     }
                     .controlSize(.small)
                 }
-            }
-            if let command {
-                Text(command)
-                    .font(.hyprMonoXs)
-                    .foregroundStyle(Color.hyprTextSecondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    // lines up with the row text, past the icon column
-                    .padding(.leading, HyprSpacing.md + 16 + HyprSpacing.md)
-                    .padding(.trailing, HyprSpacing.md)
-                    .padding(.bottom, HyprSpacing.sm + 2)
+            } detail: {
+                if let command {
+                    Text(command)
+                        .font(.hyprMonoXs)
+                        .foregroundStyle(Color.settingsText)
+                        .textSelection(.enabled)
+                        .padding(.top, 3)
+                }
             }
         }
     }
@@ -463,17 +551,18 @@ private struct UpdateSettingsPanel: View {
     @ObservedObject var updates: UpdateController
 
     var body: some View {
-        HyprPanel("Updates",
-                  footer: "A downloaded update installs when you quit HyprMac, or once the Mac has been idle for five minutes. HyprMac restarts and puts your workspaces back.") {
-            HyprRow("Check for updates automatically", icon: "arrow.triangle.2.circlepath",
-                    subtitle: "Once a day.") {
+        SettingsCard("Updates",
+                     footer: "A downloaded update installs when you quit HyprMac, or once the Mac has been idle for five minutes. HyprMac restarts and puts your workspaces back.") {
+            SettingsRow("Check for updates automatically", icon: "arrow.triangle.2.circlepath",
+                        subtitle: "Once a day.") {
                 Toggle("", isOn: Binding(get: { updates.checksAutomatically },
                                          set: { updates.checksAutomatically = $0 }))
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             }
-            HyprRow("Install updates automatically", icon: "arrow.down.circle",
-                    subtitle: "Off shows a dot in the menu bar and a button in the sidebar, then waits for you.", divider: false) {
+            SettingsRow("Install updates automatically", icon: "arrow.down.circle",
+                        subtitle: "Off shows a dot in the menu bar and a button in the sidebar, then waits for you.",
+                        divider: false) {
                 Toggle("", isOn: Binding(get: { updates.installsAutomatically },
                                          set: { updates.installsAutomatically = $0 }))
                     .toggleStyle(HyprToggleStyle())

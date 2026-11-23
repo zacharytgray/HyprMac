@@ -18,6 +18,7 @@
 		02EE6C2183BF202395DDC3C7 /* ConfigStoreSafetyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4661C01D50479A0D4762289 /* ConfigStoreSafetyTests.swift */; };
 		036927870393CBF7073D2622 /* TiledDragFeedbackReconciler.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED60042FE9D6F1A775F97858 /* TiledDragFeedbackReconciler.swift */; };
 		03AFF96F6D3A915C68251C5D /* Log.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DC1746711F81E185BA81143 /* Log.swift */; };
+		03DFCA7629A01887170D06B1 /* SettingsSearchIndexTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01DF961813D360DE8A3CF274 /* SettingsSearchIndexTests.swift */; };
 		04136D7AB66B8C7B662E76DA /* TiledDragController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CE7C605576D58BB77A314D0 /* TiledDragController.swift */; };
 		04652B7D0A465CD031E3B2FF /* TiledDragSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B6952D8617CE03DF8A8E96 /* TiledDragSnapshot.swift */; };
 		049A911F001515424E52E5B9 /* BSPNodeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16AC17310FABAC0CFEA327E7 /* BSPNodeTests.swift */; };
@@ -446,6 +447,7 @@
 
 /* Begin PBXFileReference section */
 		005ED746E11CC8E270685E3E /* ChromeFrameFollow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeFrameFollow.swift; sourceTree = "<group>"; };
+		01DF961813D360DE8A3CF274 /* SettingsSearchIndexTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSearchIndexTests.swift; sourceTree = "<group>"; };
 		0340E39E1A2FD9BE5C2790F4 /* CursorMonitorPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorMonitorPlacementTests.swift; sourceTree = "<group>"; };
 		05236C590CE2E79BBC1E52ED /* FloatingRuleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingRuleTests.swift; sourceTree = "<group>"; };
 		05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngine.swift; sourceTree = "<group>"; };
@@ -1030,6 +1032,7 @@
 				DBFE122D665A22CF5243E376 /* ScratchpadLayerLayoutTests.swift */,
 				7C20135BFA68C42326DDE511 /* ScratchpadPinTests.swift */,
 				C0394B5CB3AE82CEB9CC79BD /* ScreenshotPickerWatcherTests.swift */,
+				01DF961813D360DE8A3CF274 /* SettingsSearchIndexTests.swift */,
 				267A55058037FE2910A9DBB5 /* SingleInstanceTests.swift */,
 				704B5E0070BB599568F4BF52 /* SplitFocusedTileTests.swift */,
 				1FC7028DDC60C0DEC4FC1791 /* StaleWindowElementTests.swift */,
@@ -1710,6 +1713,7 @@
 				2055E558E349E0668D85DF94 /* ScratchpadLayerLayoutTests.swift in Sources */,
 				6F8CEB6AE18B352502189A31 /* ScratchpadPinTests.swift in Sources */,
 				4CEDE06BF8322750204A2B36 /* ScreenshotPickerWatcherTests.swift in Sources */,
+				03DFCA7629A01887170D06B1 /* SettingsSearchIndexTests.swift in Sources */,
 				4B85BBF4C662FF3C3DF684B6 /* SingleInstanceTests.swift in Sources */,
 				7CDC19C9BFC8217638232762 /* SplitFocusedTileTests.swift in Sources */,
 				7D127A8E9FD164382D5E5122 /* StaleWindowElementTests.swift in Sources */,

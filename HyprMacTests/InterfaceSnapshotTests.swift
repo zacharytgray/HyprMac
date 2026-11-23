@@ -59,6 +59,38 @@ final class InterfaceSnapshotTests: XCTestCase {
     }
 
     // the Updates panel when Nix or the defaults key manages updates
+    // every settings screen, full height, in both appearances, for redesign reviews
+    func testRenderSettingsScreensBothAppearances() throws {
+        UserConfig.shared.hyprKey = .capsLock
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            try render("screen-general-\(mode)", tab(GeneralSettingsView(showTutorial: {})), dark: dark)
+            try render("screen-keys-\(mode)", tab(KeybindsSettingsView()), dark: dark)
+            try render("screen-layout-\(mode)", tab(TilingSettingsView()), dark: dark)
+            try render("screen-window-\(mode)", SettingsView(showTutorial: {}),
+                       size: CGSize(width: 760, height: 600), dark: dark)
+        }
+    }
+
+    // the redesigned sidebar and General, plus the sections still waiting
+    func testRenderSettingsRedesign() throws {
+        UserConfig.shared.hyprKey = .capsLock
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            try render("redesign-window-general-\(mode)", SettingsView(showTutorial: {}),
+                       size: CGSize(width: 780, height: 940), dark: dark)
+            try render("redesign-general-\(mode)", navyTab(GeneralSettingsView(showTutorial: {})), dark: dark)
+            try render("redesign-search-\(mode)", SettingsView(showTutorial: {}, initialSearch: "dock"),
+                       size: CGSize(width: 780, height: 600), dark: dark)
+            try render("redesign-managed-updates-\(mode)", navyTab(ManagedUpdatesPanel(nixInstall: true)), dark: dark)
+        }
+        for section in SettingsSection.allCases where !section.isRedesigned {
+            try render("redesign-interim-\(section.rawValue)-dark",
+                       SettingsView(showTutorial: {}, initialSection: section),
+                       size: CGSize(width: 780, height: 760))
+        }
+    }
+
     func testRenderManagedUpdatesPanel() throws {
         try render("updates-managed-package-manager-dark", tab(ManagedUpdatesPanel(nixInstall: false)))
         try render("updates-managed-nix-dark", tab(ManagedUpdatesPanel(nixInstall: true)))
@@ -221,6 +253,15 @@ final class InterfaceSnapshotTests: XCTestCase {
             .padding(.vertical, HyprSpacing.lg)
             .frame(width: 568)
             .background(Color.hyprBackground)
+    }
+
+    // the same pane on the navy chassis of redesigned screens
+    private func navyTab<V: View>(_ content: V) -> some View {
+        VStack(spacing: HyprSpacing.lg) { content }
+            .padding(.horizontal, HyprSpacing.xl)
+            .padding(.vertical, HyprSpacing.lg)
+            .frame(width: 568)
+            .background(Color.settingsBackground)
     }
 
     private func render<V: View>(_ name: String, _ view: V, width: CGFloat = 568, dark: Bool = true) throws {
