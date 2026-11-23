@@ -544,9 +544,10 @@ class UserConfig: ObservableObject {
     }
 
     // one update: one save and one runtime signal, like resetAppearanceToDefaults.
-    // the button has no confirmation, so what it replaces gets a copy
+    // the button has no confirmation, so what it replaces gets a copy.
+    // no copy, no reset
     func resetToDefaults() {
-        store.keepCopiesBeforeReset()
+        guard store.keepCopiesBeforeReset() else { return }
         isReloading = true
         keybinds = Keybind.defaults
         gapSize = UserConfigDefaults.gapSize
@@ -598,8 +599,8 @@ class UserConfig: ObservableObject {
     // Keys → Reset to defaults. it drops every launcher and command bind with
     // no confirmation, so keep config.json.replaced first, like resetToDefaults
     func resetKeybindsToDefaults() {
-        guard keybinds != Keybind.defaults else { return }
-        store.keepCopiesBeforeReset(includingMonitorConfig: false)
+        guard keybinds != Keybind.defaults,
+              store.keepCopiesBeforeReset(includingMonitorConfig: false) else { return }
         keybinds = Keybind.defaults
     }
 

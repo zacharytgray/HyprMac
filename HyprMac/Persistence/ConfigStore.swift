@@ -339,14 +339,25 @@ final class ConfigStore {
     }
 
     /// Keep what a reset is about to replace. The keybind reset touches
-    /// only config.json, so it leaves the monitor file out.
-    func keepCopiesBeforeReset(includingMonitorConfig: Bool = true) {
+    /// only config.json, so it leaves the monitor file out. false means a
+    /// file is there and no copy of it was kept, so the reset must not run.
+    func keepCopiesBeforeReset(includingMonitorConfig: Bool = true) -> Bool {
         let urls = includingMonitorConfig ? [localConfigURL, monitorConfigURL] : [localConfigURL]
         for url in urls {
-            if let data = try? bytes(at: url) {
-                keepCopy(data, of: url, suffix: "replaced")
+            switch contents(of: url) {
+            case .missing:
+                continue
+            case .blocked(let reason):
+                hyprLog(.warning, .config, "reset not done: can't read \(url.lastPathComponent) to keep a copy (\(reason))")
+                return false
+            case .data(let data):
+                guard keepCopy(data, of: url, suffix: "replaced") else {
+                    hyprLog(.warning, .config, "reset not done: no copy of \(url.lastPathComponent) was kept")
+                    return false
+                }
             }
         }
+        return true
     }
 
     private func encode<Value: Encodable>(_ value: Value, for url: URL) -> Data? {

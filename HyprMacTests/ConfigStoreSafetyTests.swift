@@ -672,6 +672,63 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertNil(copy(local, "replaced"))
     }
 
+    // config.json links into a writable folder, so the save would land while
+    // the copy next to the link can't be written
+    private func makeCopyFailButSaveWork() throws {
+        let real = dir.appendingPathComponent("real", isDirectory: true)
+        try fm.createDirectory(at: real, withIntermediateDirectories: true)
+        let target = real.appendingPathComponent("config.json")
+        try fm.moveItem(at: local, to: target)
+        try fm.createSymbolicLink(at: local, withDestinationURL: target)
+        try fm.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+    }
+
+    func testKeybindResetStopsWhenTheCopyFails() throws {
+        try good.write(to: local)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        let launcher = Keybind(keyCode: 11, modifiers: .hypr, action: .launchApp(bundleID: "com.apple.Safari"))
+        config.keybinds.append(launcher)
+        let withLauncher = try Data(contentsOf: local)
+        try makeCopyFailButSaveWork()
+
+        config.resetKeybindsToDefaults()
+
+        XCTAssertTrue(config.keybinds.contains(launcher), "no copy, no reset")
+        XCTAssertEqual(try Data(contentsOf: local), withLauncher)
+        XCTAssertNil(copy(local, "replaced"))
+    }
+
+    func testResetStopsWhenTheCopyFails() throws {
+        try good.write(to: local)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        try makeCopyFailButSaveWork()
+        var signals = 0
+        let observation = config.didApplyRuntimeChange.sink { signals += 1 }
+        defer { observation.cancel() }
+
+        config.resetToDefaults()
+
+        XCTAssertEqual(config.gapSize, 23, "no copy, no reset")
+        XCTAssertEqual(try Data(contentsOf: local), good)
+        XCTAssertEqual(signals, 0)
+    }
+
+    // a file that is there and won't open can't be copied either
+    func testResetStopsWhenTheConfigWontOpen() throws {
+        try good.write(to: local)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        let launcher = Keybind(keyCode: 11, modifiers: .hypr, action: .launchApp(bundleID: "com.apple.Safari"))
+        config.keybinds.append(launcher)
+        try lock(local)
+        defer { try? unlock(local) }
+
+        config.resetKeybindsToDefaults()
+        config.resetToDefaults()
+
+        XCTAssertTrue(config.keybinds.contains(launcher))
+        XCTAssertEqual(config.gapSize, 23)
+    }
+
     func testResetWhileHeldStaysOutOfICloud() throws {
         try linkLocalToICloud()
         let config = UserConfig(store: store, iCloudSyncEnabled: true)

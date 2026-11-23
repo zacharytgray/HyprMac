@@ -576,7 +576,8 @@ what iCloud set up or a reset replaced, including Keys → Reset to defaults. Re
 runs on defaults until a save would replace it. With iCloud sync on, a launch
 that can't read the linked file holds `config.json` saves instead. A launch can
 also replace a regular local file with the link, keeping it as `<name>.replaced`.
-If the `.unreadable` copy fails, the save is skipped. A copy
+If the `.unreadable` copy fails, the save is skipped. If a reset can't keep its
+`.replaced` copy, it changes nothing. A copy
 never overwrites an older one. Different content goes to `<name>.unreadable.2`,
 then `.3`, and identical content is not copied twice. See Persistence in [architecture.md](architecture.md).
 
