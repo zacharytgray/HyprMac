@@ -1131,6 +1131,14 @@ was dropped. When the list overrides an AX frame that holds the press, it logs:
 [notice] [tiling] tiled drag press: window list has <tile> in front at (x,y), floater <id>'s AX frame (x, y, w, h) also holds it; following the window list
 ```
 
+A refused `togglesplit` or keyboard resize logs one more line under
+`orchestration` after the rollback lines: `toggleSplit refused: shaking
+wid=<id> reason=<failure>` with the red shake on that window, or
+`toggleSplit refused without a shake: reason=<failure> — nothing turned
+the layout down` for a timeout or a superseded pass
+(`docs/tiling-algorithm.md`, "A refused layout key"). The keyboard resize
+says `resizeDirection` instead.
+
 ### Rejected drag feedback and source restoration
 
 Persistent border refreshes defer to the bounded error feedback interval.

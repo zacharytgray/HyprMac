@@ -324,6 +324,9 @@ FocusBorder, FocusBrackets, DimmingOverlay (visual layer)
 ```
 
 The menu bar calls `handleAction` directly, and `hyprmac://action` links call `performUserAction`.
+A `togglesplit` or keyboard resize the engine refuses and rolls back gets one
+red shake from `ActionDispatcher`, on the window that did not fit
+(`docs/tiling-algorithm.md`, "A refused layout key"). Background passes never shake.
 
 Polling / discovery (parallel):
 

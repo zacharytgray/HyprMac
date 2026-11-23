@@ -124,6 +124,31 @@ produce the characteristic dwindle spiral on wide monitors:
 focused leaf's parent via `splitOverride`. The override survives
 until the next sibling restructure (insert / remove on that node).
 
+### A refused layout key
+
+`togglesplit` and the keyboard resize run the same verified pass as any
+other layout, and only an accepted pass publishes. When the pass is refused,
+the tree goes back to its snapshot and the windows to their frames (issue
+#102 asked to keep the misfit layout instead; the rollback stays). So the
+key does not look dead, `ActionDispatcher` gives the red shake once per
+press, after the pass and all of its recoveries are done
+(`ActionDispatcher.refusalTarget`):
+
+- One window refused (`geometryMismatch`, `outsideUsableFrame`, or a
+  setter it turned down, like Dia's -25205): the shake goes on that
+  window, where the rollback left it. It need not be the focused one.
+- An overlap or an eaten gap names a pair that matched their own tiles one
+  by one, so neither is the misfit: the shake goes on the focused window.
+- A timeout (`cannotComplete`, a spent deadline, readback samples run
+  out), a gone or unreadable window, or a superseded pass refused
+  nothing: no shake. The press may work the next time.
+
+A refusal the adjusted pass fixes is accepted, not refused: a resize that
+asks a window to shrink below what it takes stops at that width, with no
+shake. Background passes (discovery retiles, admissions, the recovery's
+retries, drift re-applies) never shake. A keyboard swap and a move to a
+workspace had their own red shake already and keep it.
+
 ## Ratio memory
 
 A Cmd-H looks like a close followed by an open a poll or two later.
