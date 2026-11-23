@@ -256,6 +256,14 @@ final class WindowPlacement {
                   let screen = workspaceManager.homeScreenForWorkspace(ws) ?? displayManager.screens.first
             else { continue }
             hyprLog(.notice, .lifecycle, "park repair: '\(w.title ?? "?")' (\(w.windowID)) on hidden ws\(ws) reads visible — re-parking")
+            // a floater hidden in native full screen kept no frame. one that
+            // left full screen since would stay in the corner on the reveal.
+            // a frame already saved is where the user put it, and stays
+            if stateCache.floatingWindowIDs.contains(w.windowID),
+               workspaceManager.savedFloatingFrame(for: w.windowID) == nil {
+                workspaceManager.setSavedFloatingFrame(frame, for: w.windowID)
+                hyprLog(.notice, .lifecycle, "park repair: \(w.windowID) had no saved frame — saved \(frame) for the reveal")
+            }
             workspaceManager.hideInCorner(w, on: screen)
         }
         workspaceOrchestrator.repairUnrevealedFloaters(allWindows)

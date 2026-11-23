@@ -429,6 +429,53 @@ final class WindowRuleTests: XCTestCase {
         XCTAssertEqual(h.parks, 1)
     }
 
+    // a floater in native full screen is hidden with its workspace: not
+    // parked, no saved frame. it leaves full screen while the workspace is
+    // still hidden, macOS puts it back on the desktop, and the park repair
+    // parks it. the reveal needs a frame to bring it back from the corner
+    func testAFloaterThatLeavesFullScreenOnAHiddenWorkspaceComesBackOnReveal() {
+        let h = ReopenHarness(rules: [], visibleWorkspace: 4)
+        let w = h.framedWindow(90, bundleID: "com.apple.TextEdit")
+        h.cache.floatingWindowIDs.insert(90)
+        h.workspaces.assignWindow(90, toWorkspace: 1)
+
+        // 1. hidden in full screen: nothing saved, nothing parked
+        h.workspaces.isInNativeFullScreen = { $0.windowID == 90 }
+        h.workspaces.saveFloatingFrame(w)
+        h.workspaces.hideInCorner(w, on: h.screen)
+        XCTAssertNil(h.workspaces.savedFloatingFrame(for: 90))
+        XCTAssertEqual(h.parks, 0)
+
+        // 2. out of full screen, back on screen on a hidden workspace
+        h.workspaces.isInNativeFullScreen = { _ in false }
+        h.placement.repairParkedWindows([w])
+        XCTAssertEqual(h.parks, 1, "the repair parks it")
+        XCTAssertEqual(h.workspaces.savedFloatingFrame(for: 90), w.frame,
+                       "the frame it left full screen at, saved before the park")
+
+        // 3. the reveal brings it back there
+        var written: [CGRect] = []
+        h.workspaces.revealWrite = { _, frame in written.append(frame) }
+        h.workspaces.restoreFloatingFrame(w)
+        XCTAssertEqual(written, [w.frame].compactMap { $0 }, "out of the corner, where it left full screen")
+    }
+
+    // a frame the floater already has saved is the one the user put it at;
+    // the repair does not replace it with where macOS moved it
+    func testTheParkRepairKeepsAFloatersSavedFrame() {
+        let h = ReopenHarness(rules: [], visibleWorkspace: 4)
+        let w = h.framedWindow(91, bundleID: "com.apple.TextEdit")
+        h.cache.floatingWindowIDs.insert(91)
+        h.workspaces.assignWindow(91, toWorkspace: 1)
+        let saved = CGRect(x: 900, y: 500, width: 300, height: 200)
+        h.workspaces.setSavedFloatingFrame(saved, for: 91)
+
+        h.placement.repairParkedWindows([w])
+
+        XCTAssertEqual(h.parks, 1)
+        XCTAssertEqual(h.workspaces.savedFloatingFrame(for: 91), saved)
+    }
+
     // a pinned floater reopened onto a hidden workspace goes to its pin, is
     // parked there with the frame it reopened at saved for the reveal, not
     // the one its ghost held, and is followed

@@ -900,8 +900,10 @@ neighbours keep their slots, and its tile is there when it comes back.
   park repair skips it too, so a full-screen window on a hidden workspace is
   not re-parked every poll. A floater hidden in full screen keeps no saved
   frame, and a reveal drops a saved frame instead of writing it while the
-  floater is in full screen. Out of full screen, macOS has already put it
-  back where it was.
+  floater is in full screen. One that leaves full screen while its
+  workspace is hidden comes back on the desktop, and the park repair parks
+  it. With no saved frame, the repair saves the frame it reads first, so
+  the reveal brings it out of the corner. A frame already saved stays.
 
 ### Forced insertion
 
