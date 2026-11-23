@@ -1033,7 +1033,9 @@ final class ActionDispatcher {
     /// `direction` on the same `(workspace, screen)` tree.
     ///
     /// Candidates are pre-filtered to the focused window's own screen so
-    /// a tied directional pick cannot drift across monitors. Rejected
+    /// a tied directional pick cannot drift across monitors. With no
+    /// candidate there, the swap continues past the monitor edge: see
+    /// `swapAcrossMonitorEdge`. Rejected
     /// before any mutation when `canSwapWindows` reports a min-size
     /// violation, with the red shake on the focused window. A swap refused
     /// after the readback shakes the window the failure names, and one
@@ -1061,7 +1063,14 @@ final class ActionDispatcher {
         let frameFor: (HyprWindow) -> CGRect? = {
             DirectionalGeometry.frame(for: $0.windowID, intended: intended, actual: $0.frame)
         }
-        guard let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor) else { return }
+        guard let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor) else {
+            // the scratchpad layer is one screen's tree: its edge stays a wall
+            if layer == nil {
+                swapAcrossMonitorEdge(direction, focused: focused, workspace: workspace, screen: screen,
+                                      frameFor: frameFor)
+            }
+            return
+        }
         guard tilingEngine.canSwapWindows(focused, target, onWorkspace: workspace, screen: screen) else {
             rejectSwap(focused, reason: "swap would violate min-size constraints")
             return
@@ -1084,6 +1093,61 @@ final class ActionDispatcher {
         }
         if layer != nil { scratchpadLayoutChanged() }
         cursorManager.warpToCenter(of: focused)
+        updatePositionCache()
+    }
+
+    /// Swap `focused`, which has no tile beyond it in `direction` on its own
+    /// screen, with the nearest tiled window on the nearest enabled monitor
+    /// that way (the one Hypr+Ctrl+arrow would move it to). Each window takes
+    /// the other's slot and workspace. Nothing happens when there is no
+    /// monitor that way or its visible workspace has no tiled window: the
+    /// edge acts as it did before, and Hypr+Ctrl+arrow moves into an empty one.
+    private func swapAcrossMonitorEdge(_ direction: Direction, focused: HyprWindow,
+                                       workspace: Int, screen: NSScreen,
+                                       frameFor: (HyprWindow) -> CGRect?) {
+        let enabled = displayManager.screens.filter { !workspaceManager.isMonitorDisabled($0) }
+        guard let index = WorkspaceOrchestrator.nearestScreenIndex(
+            from: screen.frame, direction: direction, among: enabled.map(\.frame)) else { return }
+        let otherScreen = enabled[index]
+        let otherWorkspace = workspaceManager.workspaceForScreen(otherScreen)
+        let windows = accessibility.getAllWindows().filter { w in
+            !stateCache.floatingWindowIDs.contains(w.windowID)
+                && workspaceManager.isWindowVisible(w.windowID)
+                && displayManager.screen(for: w) == otherScreen
+        }
+        // monitors offset along the edge can leave no tile in line with the
+        // source; the tile whose center is nearest then stands at the edge
+        let source = frameFor(focused)
+        func distance(_ w: HyprWindow) -> CGFloat {
+            guard let s = source, let f = frameFor(w) else { return .greatestFiniteMagnitude }
+            return hypot(f.midX - s.midX, f.midY - s.midY)
+        }
+        guard let target = accessibility.windowInDirection(direction, from: focused, among: windows, frameFor: frameFor)
+                ?? windows.min(by: { distance($0) < distance($1) }) else { return }
+        hyprLog(.debug, .orchestration, "swap \(direction): across the monitor edge to '\(target.title ?? "?")' (\(target.windowID)) on '\(otherScreen.localizedName)' ws\(otherWorkspace)")
+        guard tilingEngine.canSwapWindows(focused, onWorkspace: workspace, screen: screen,
+                                          with: target, onWorkspace: otherWorkspace, screen: otherScreen) else {
+            rejectSwap(focused, reason: "swap across monitors would violate min-size constraints")
+            return
+        }
+        // the engine restores both trees on a refusal, which shakes the
+        // window the failure names, a timeout nothing (see showRefusal)
+        guard let outcome = tilingEngine.swapWindowsOutcome(focused, onWorkspace: workspace, screen: screen,
+                                                            with: target, onWorkspace: otherWorkspace,
+                                                            screen: otherScreen) else {
+            rejectSwap(focused, reason: "swap across monitors would violate min-size constraints")
+            return
+        }
+        if case .accepted = outcome {} else {
+            updatePositionCache()
+            showRefusal(outcome, focused: focused, action: "swapDirection",
+                        message: Self.swapRefusedMessage, beep: true)
+            return
+        }
+        workspaceManager.moveWindow(focused.windowID, toWorkspace: otherWorkspace)
+        workspaceManager.moveWindow(target.windowID, toWorkspace: workspace)
+        cursorManager.warpToCenter(of: focused)
+        updateFocusBorder(focused)
         updatePositionCache()
     }
 
