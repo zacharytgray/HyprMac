@@ -1152,6 +1152,12 @@ notification on `IOHIDEventService` with keyboard usage, started and
 stopped with `WindowManager`). Pinned by the #103 tests in
 `KeyRemapperTests`.
 
+A service client works only while the event system client that listed it
+is alive. A call on one after its client is released aborts the process
+(`os_unfair_lock` unowned abort inside `IOHIDServiceClientCopyProperty`),
+so `withKeyboardServices` holds the client for the whole read or write.
+`testLiveKeyboardReadOutlivesItsClient` is the one live read in the tests.
+
 Per-keyboard mappings set with `hidutil --matching` are not in the list.
 HyprMac doesn't read them, but each system-wide write replaces them: on
 macOS 15.8 a write, even of an identical list, put the list over a
