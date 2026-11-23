@@ -26,57 +26,34 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "slider.horizontal.3",
-            title: "Float and Tile Rules",
-            description: "Always float or tile an app, or one kind of window. Press Hypr+I on a window to pick a rule.",
-            tint: .magenta,
-            credit: "tioan"
+            icon: "keyboard",
+            title: "Caps Lock After Sleep",
+            description: "Caps Lock works as the Hypr key again after a wake, and on keyboards you plug in.",
+            credit: "omeraloni"
         ),
         WhatsNewFeature(
-            icon: "cursorarrow.click",
-            title: "Hypr+T Beats Rules",
-            description: "Floating or tiling one window by hand now works even when a rule covers it. Retile All still tiles one you floated.",
+            icon: "arrow.up.left.and.arrow.down.right",
+            title: "Full Screen Sticks",
+            description: "Native full screen holds the first time, and HyprMac leaves full-screen windows alone.",
+            credit: "rangelkoli"
+        ),
+        WhatsNewFeature(
+            icon: "macwindow.on.rectangle",
+            title: "Outlines Follow Floaters",
+            description: "A floating window's outline stays on it as it moves. A refused Hypr+T puts it back where it was.",
             tint: .magenta
         ),
         WhatsNewFeature(
-            icon: "display.2",
-            title: "Workspace Homes per Display Setup",
-            description: "Each set of connected displays keeps its own workspace-to-monitor mapping in Settings → Layout.",
-            credit: "tioan"
-        ),
-        WhatsNewFeature(
-            icon: "menubar.rectangle",
-            title: "Workspace Names in Compact",
-            description: "The Compact menu bar shows the workspace's name. A one-letter name goes in the badge.",
+            icon: "rectangle.split.2x1",
+            title: "Shake on Refused Layout Keys",
+            description: "When togglesplit, a resize or a swap can't fit a window, that window shakes.",
             credit: "dex157"
         ),
         WhatsNewFeature(
-            icon: "keyboard",
-            title: "F13–F20 and Backslash as Hypr",
-            description: "Hypr chords work again with a function key or backslash as the Hypr key.",
-            credit: "mikaraunio"
-        ),
-        WhatsNewFeature(
-            icon: "arrow.down.circle",
-            title: "Updates in the Settings Sidebar",
-            description: "Check for updates, or restart to install one, from the bottom of the Settings sidebar."
-        ),
-        WhatsNewFeature(
-            icon: "shippingbox",
-            title: "Updates by a Package Manager",
-            description: "A defaults key turns off the in-app updater when Homebrew or another tool updates HyprMac.",
-            credit: "tioan"
-        ),
-        WhatsNewFeature(
-            icon: "eye",
-            title: "Windows Stay Visible",
-            description: "A window no longer goes hidden for a minute when its app is slow to answer after it recovers.",
-            credit: "tioan"
-        ),
-        WhatsNewFeature(
-            icon: "scope",
-            title: "Steadier Focus",
-            description: "Hover focus pauses over HyprMac's menu, and windows that report a stale position get their border and clicks in the right place."
+            icon: "photo",
+            title: "No Wallpaper Flash",
+            description: "Switching between workspaces with windows no longer flashes the desktop.",
+            credit: "emilnymann"
         ),
     ]
 }
