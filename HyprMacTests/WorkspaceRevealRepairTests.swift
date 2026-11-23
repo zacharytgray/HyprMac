@@ -483,6 +483,90 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertTrue(retries.isEmpty)
     }
 
+    // MARK: - reveal before park (#101)
+
+    // parking is one position write per window and lands at once, while the
+    // reveal moves, resizes and verifies each window in turn. parked first,
+    // the screen showed only the wallpaper for the whole reveal. the outgoing
+    // windows now stay up as the backdrop until the incoming ones are placed
+
+    /// a window on screen, on `workspace`, that records when it is parked
+    private func onScreenWindow(id: CGWindowID, on workspace: Int, floating: Bool = false) -> RevealWindow {
+        let window = RevealWindow(id: id, frame: CGRect(x: 0, y: 0, width: 800, height: 1000))
+        workspaceManager.assignWindow(id, toWorkspace: workspace)
+        stateCache.windowOwners[id] = window.ownerPID
+        if floating {
+            stateCache.floatingWindowIDs.insert(id)
+            window.isFloating = true
+        }
+        window.onWritePosition = { [unowned self] point in
+            if point == self.workspaceManager.hidePosition() { self.order.append("park:\(id)") }
+        }
+        return window
+    }
+
+    private var order: [String] = []
+
+    func testTheIncomingWorkspaceIsTiledBeforeTheOutgoingOneIsParked() {
+        let outgoing = onScreenWindow(id: 7401, on: visible)
+        let incoming = RevealWindow(id: 7402, frame: CGRect(origin: workspaceManager.hidePosition(),
+                                                            size: CGSize(width: 800, height: 1000)))
+        workspaceManager.assignWindow(incoming.windowID, toWorkspace: hidden)
+        orchestrator.allWindows = { [outgoing, incoming] }
+        orchestrator.tileAllVisibleSpaces = { [unowned self] _ in self.order.append("retile") }
+        orchestrator.windowsParked = { [unowned self] in self.order.append("list dropped") }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(order, ["retile", "park:7401", "list dropped"],
+                       "the outgoing window is the backdrop until the incoming one is placed")
+        XCTAssertEqual(outgoing.storedFrame.origin, workspaceManager.hidePosition(), "parked all the same")
+    }
+
+    func testAnIncomingFloaterIsRestoredBeforeTheOutgoingFloaterIsParked() {
+        let outgoing = onScreenWindow(id: 7403, on: visible, floating: true)
+        let incoming = parkedFloater(id: 7404, on: hidden)
+        orchestrator.allWindows = { [outgoing, incoming] }
+        var incomingRestoredAtPark: Bool?
+        outgoing.onWritePosition = { [unowned self] point in
+            guard point == self.workspaceManager.hidePosition() else { return }
+            incomingRestoredAtPark = self.workspaceManager.savedFloatingFrame(for: incoming.windowID) == nil
+        }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(incomingRestoredAtPark, true)
+        XCTAssertEqual(workspaceManager.savedFloatingFrame(for: outgoing.windowID),
+                       CGRect(x: 0, y: 0, width: 800, height: 1000),
+                       "the outgoing floater's frame was saved before it was parked")
+    }
+
+    // nothing to put on screen, so nothing to wait for: the outgoing windows
+    // go at once, as they always did
+    func testSwitchingToAnEmptyWorkspaceParksBeforeTheRetile() {
+        let outgoing = onScreenWindow(id: 7405, on: visible)
+        orchestrator.allWindows = { [outgoing] }
+        orchestrator.tileAllVisibleSpaces = { [unowned self] _ in self.order.append("retile") }
+        orchestrator.windowsParked = { [unowned self] in self.order.append("list dropped") }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(order, ["park:7405", "list dropped", "retile"])
+    }
+
+    // a workspace holding only a closed-but-alive window shows nothing
+    func testAWorkspaceWithOnlyHiddenWindowsCountsAsEmpty() {
+        let outgoing = onScreenWindow(id: 7406, on: visible)
+        workspaceManager.assignWindow(7407, toWorkspace: hidden)
+        stateCache.hiddenWindowIDs.insert(7407)
+        orchestrator.allWindows = { [outgoing] }
+        orchestrator.tileAllVisibleSpaces = { [unowned self] _ in self.order.append("retile") }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(order, ["park:7406", "retile"])
+    }
+
     func testTheRepairLeavesAFloaterOnAHiddenWorkspaceParked() {
         let floater = parkedFloater(id: 7304, on: hidden)
 
@@ -557,8 +641,10 @@ private final class RevealWindow: HyprWindow {
     }
     override func readPosition() -> (AXError, CGPoint?) { (.success, storedFrame.origin) }
     override func readSize() -> (AXError, CGSize?) { (.success, storedFrame.size) }
+    var onWritePosition: (CGPoint) -> Void = { _ in }
     override func writePosition(_ point: CGPoint) -> AXError {
         storedFrame.origin = point
+        onWritePosition(point)
         return .success
     }
 }

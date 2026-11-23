@@ -49,6 +49,9 @@ final class WorkspaceOrchestrator {
     /// already took: the walk between the last park write and the first
     /// reveal write left the switched screen empty for its duration.
     var tileAllVisibleSpaces: ([HyprWindow]?) -> Void = { _ in }
+    /// Fired once a switch has parked the outgoing workspace. A window list
+    /// read before that still has those windows on screen.
+    var windowsParked: () -> Void = { }
     /// Every window AX can see right now. A seam because the explicit
     /// revalidation attempt needs the destination's tenants, a switch picks
     /// the window to focus from it, and a test has no desktop to read them off.
@@ -354,9 +357,11 @@ final class WorkspaceOrchestrator {
     /// Two paths:
     /// - Already visible (on this or another screen): focus the best
     ///   window on it and warp the cursor; no hide/show needed.
-    /// - Not visible: hide the displaced workspace's windows, restore
-    ///   floating frames on the incoming workspace, retile, then focus
-    ///   the best new window.
+    /// - Not visible: restore floating frames on the incoming workspace,
+    ///   retile, park the displaced workspace's windows, then focus the
+    ///   best new window. The displaced windows stay up until the incoming
+    ///   ones are placed, so the wallpaper does not show in between (#101).
+    ///   A switch to a workspace with nothing to show parks first.
     ///
     /// Suppresses `activation-switch` and `mouse-focus` for the duration
     /// (and a tail) of the switch — `best.focus()` queues asynchronous
@@ -421,15 +426,28 @@ final class WorkspaceOrchestrator {
             return
         }
 
-        // batch: hide old + restore floating new in one tight pass
-        let parkStart = Date()
-        for wid in result.toHide {
-            if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
-                workspaceManager.hideInCorner(w, on: result.screen)
+        // a park is one position write that lands at once. the reveal moves,
+        // resizes and verifies each window in turn, so parking first showed
+        // the bare wallpaper for the whole reveal. the outgoing windows stay
+        // up as the backdrop until the incoming ones are placed. a workspace
+        // with nothing to show (empty, or only hidden windows) has nothing to
+        // wait for
+        let revealFirst = !result.toShow.subtracting(stateCache.hiddenWindowIDs).isEmpty
+        var parkStart = Date(), parkEnd = parkStart
+        func parkOutgoing() {
+            parkStart = Date()
+            for wid in result.toHide {
+                if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
+                    if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
+                    workspaceManager.hideInCorner(w, on: result.screen)
+                }
             }
+            parkEnd = Date()
+            // a window list read before this still has them on screen
+            windowsParked()
         }
-        let parkEnd = Date()
+        if !revealFirst { parkOutgoing() }
+
         var unrevealed: [CGWindowID] = []
         for wid in result.toShow where stateCache.floatingWindowIDs.contains(wid) {
             if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
@@ -447,13 +465,13 @@ final class WorkspaceOrchestrator {
             retryReveal(unrevealed)
         }
 
-        // retile immediately — no delay between hide and show. every write
-        // above dropped the cached frame it changed, and the pass captures
-        // live frames, so the walk from before the parks is valid input
+        // the pass captures live frames, and every write above dropped the
+        // cached frame it changed, so the switch's walk is valid input
         let tileStart = Date()
         tileAllVisibleSpaces(allWindows)
         let tileEnd = Date()
         let tileMS = Self.ms(since: tileStart)
+        if revealFirst { parkOutgoing() }
 
         // a tile whose app did not answer the walk kept its leaf and got no
         // frame: still in the hide corner on the workspace now showing
@@ -490,9 +508,8 @@ final class WorkspaceOrchestrator {
         // a slow switch holds the main thread, and with it a reveal retry
         // it scheduled; say where the time went
         let totalMS = Self.ms(since: switchStart)
-        // the phases as spans from the switch's start. the screen shows
-        // neither workspace between the end of the park and the end of the
-        // retile when the park runs first
+        // the phases as spans from the switch's start. a park that ends
+        // before the retile does leaves the screen bare in between
         let at = { (date: Date) in Self.ms(between: switchStart, and: date) }
         let phases = "park \(result.toHide.count) \(at(parkStart))-\(at(parkEnd))ms, "
             + "retile \(at(tileStart))-\(at(tileEnd))ms"

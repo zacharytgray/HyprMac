@@ -297,6 +297,9 @@ class WindowManager {
         self.workspaceOrchestrator.tileAllVisibleSpaces = { [weak self] windows in
             self?.tileAllVisibleSpaces(windows: windows)
         }
+        self.workspaceOrchestrator.windowsParked = { [weak self] in
+            self?.mouseTracker.invalidateWindowListCache()
+        }
         self.workspaceOrchestrator.retile = { [weak self] prepare, completion in
             self?.retile(prepare: prepare, completion: completion)
         }
