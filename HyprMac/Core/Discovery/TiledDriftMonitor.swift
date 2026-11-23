@@ -12,6 +12,9 @@ struct TiledDriftReading {
     let screen: NSScreen
     let actual: CGRect
     let intended: CGRect
+    /// whether the window is in native full screen. Asked only of a
+    /// drifted reading, since it costs an AX read
+    var isFullScreen: () -> Bool = { false }
 }
 
 /// What the monitor wants done about a drifted window.
@@ -78,10 +81,16 @@ final class TiledDriftMonitor {
     }
 
     private var states: [CGWindowID: State] = [:]
+    /// drifted windows last read in native full screen, so each stay is
+    /// logged once
+    private var fullScreenIDs: Set<CGWindowID> = []
 
     func forget(_ windowID: CGWindowID) { states.removeValue(forKey: windowID) }
 
-    func reset() { states.removeAll() }
+    func reset() {
+        states.removeAll()
+        fullScreenIDs.removeAll()
+    }
 
     /// Judge one poll's readings.
     ///
@@ -99,8 +108,20 @@ final class TiledDriftMonitor {
             present.insert(reading.windowID)
             guard Self.drifted(reading) else {
                 states.removeValue(forKey: reading.windowID)
+                fullScreenIDs.remove(reading.windowID)
                 continue
             }
+            // native full screen owns its frame, and a size write ends it
+            // (#104). its tile waits for it; leaving starts from scratch
+            if reading.isFullScreen() {
+                states.removeValue(forKey: reading.windowID)
+                if fullScreenIDs.insert(reading.windowID).inserted {
+                    hyprLog(.notice, .tiling, "tiled drift: \(reading.windowID) ws\(reading.workspace)"
+                            + " is in native full screen — left alone, its tile kept")
+                }
+                continue
+            }
+            fullScreenIDs.remove(reading.windowID)
             switch states[reading.windowID] {
             case nil:
                 states[reading.windowID] = .seen(reading.actual)
@@ -147,6 +168,7 @@ final class TiledDriftMonitor {
         }
 
         states = states.filter { present.contains($0.key) }
+        fullScreenIDs.formIntersection(present)
         return decisions
     }
 

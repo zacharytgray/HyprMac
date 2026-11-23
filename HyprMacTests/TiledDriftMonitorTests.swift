@@ -73,6 +73,42 @@ final class TiledDriftMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.note([reading(32913, at: fullScreen)]).count, 1)
     }
 
+    // MARK: - native full screen
+
+    /// issue #104: the green button put Chrome at the display's frame, two
+    /// polls agreed on it, and the re-apply's size write ended full screen
+    func testAWindowInNativeFullScreenIsNeverReapplied() {
+        var full = reading(32913, at: fullScreen)
+        full.isFullScreen = { true }
+
+        for _ in 0..<4 {
+            XCTAssertTrue(monitor.note([full]).isEmpty, "native full screen owns its frame")
+        }
+    }
+
+    func testLeavingFullScreenStartsAnyDriftFromScratch() {
+        var full = reading(32913, at: fullScreen)
+        full.isFullScreen = { true }
+        _ = monitor.note([full])
+        _ = monitor.note([full])
+
+        // out of full screen and still off its tile: two polls of its own
+        XCTAssertTrue(monitor.note([reading(32913, at: fullScreen)]).isEmpty)
+        XCTAssertEqual(monitor.note([reading(32913, at: fullScreen)]),
+                       [.reapply(workspace: 1, screen: screen, windowID: 32913)])
+    }
+
+    func testOnlyADriftedWindowIsAskedAboutFullScreen() {
+        var asked = 0
+        var onTile = reading(32913, at: tile)
+        onTile.isFullScreen = { asked += 1; return false }
+
+        _ = monitor.note([onTile])
+        _ = monitor.note([onTile])
+
+        XCTAssertEqual(asked, 0, "the AX read is spent only on a window off its tile")
+    }
+
     // MARK: - the bound
 
     func testOneDriftedPollAfterTheReapplyIsNotEnoughToStop() {
