@@ -305,9 +305,54 @@ final class TileAttemptChromeTests: XCTestCase {
         XCTAssertFalse(other.border || other.brackets)
     }
 
+    // Hypr+T again while the last refusal's red flash is still up: the flash
+    // would sit on the old spot while the window tries its slots
+    func testARedFlashOnThatWindowGoesToo() {
+        XCTAssertTrue(TileAttemptChrome.clearing(7, borderTrackedID: nil, bracketsTrackedID: nil,
+                                                 errorFlashID: 7, scrimShowing: false).errorFlash)
+        XCTAssertFalse(TileAttemptChrome.clearing(7, borderTrackedID: nil, bracketsTrackedID: nil,
+                                                  errorFlashID: 8, scrimShowing: false).errorFlash)
+    }
+
     // the scratchpad scrim covers the screen with no holes; nothing on it is stale
     func testTheScrimStays() {
         XCTAssertFalse(TileAttemptChrome.clearing(7, borderTrackedID: nil, bracketsTrackedID: nil,
                                                   scrimShowing: true).dim)
+    }
+}
+
+// the red flash goes where the window server draws the window, and follows
+// it while the window is still moving or resizing into place
+final class ErrorFlashFollowTests: XCTestCase {
+    private let start = CGRect(x: 100, y: 100, width: 400, height: 300)
+    private let landed = CGRect(x: 160, y: 140, width: 380, height: 320)
+
+    private func flashing() -> FocusBorder {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1000
+        border.flashError(around: start, windowID: 7)
+        return border
+    }
+
+    func testTheFlashNamesItsWindow() {
+        let border = flashing()
+        XCTAssertEqual(border.errorFeedbackTarget, 7)
+        border.hide(fade: false)
+        XCTAssertNil(border.errorFeedbackTarget)
+    }
+
+    func testTheFlashFollowsItsWindow() {
+        let border = flashing()
+        border.followErrorFlash(7, to: landed)
+        XCTAssertEqual(border.frame, landed)
+        XCTAssertTrue(border.isErrorFeedbackActive, "following does not end the flash")
+        border.hide(fade: false)
+    }
+
+    func testAnotherWindowsMoveLeavesTheFlash() {
+        let border = flashing()
+        border.followErrorFlash(8, to: landed)
+        XCTAssertEqual(border.frame, start)
+        border.hide(fade: false)
     }
 }

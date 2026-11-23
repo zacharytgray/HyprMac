@@ -1153,9 +1153,13 @@ move. A drag reads the list on every drag event; a mouse-up reads it once
 more, since the last event can land a step behind the window.
 
 A Hypr+T tile attempt on a floater blocks the main thread while the window
-tries its slots. Its outline, the border or brackets on it, and the dim go
-before the attempt and come back on the frames it settles on
-(`TileAttemptChrome`). The scratchpad scrim stays: it has no carves.
+tries its slots. Its outline, the border or brackets on it, the dim, and a
+red flash still up from the last refused Hypr+T on it go before the attempt
+and come back on the frames it settles on (`TileAttemptChrome`). The
+scratchpad scrim stays: it has no carves. The red flash for a refusal is
+drawn on the window-list frame and follows the window like the outline does,
+so it stays on the window while it moves and resizes back into place. A
+flash cleared by the next press logs `error feedback cancel: wid=<id>`.
 
 A refused attempt puts the floater back on the frame the window list had for
 it before Hypr+T, past a screen edge too. The verified layout's own rollback

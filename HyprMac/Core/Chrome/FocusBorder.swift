@@ -131,6 +131,8 @@ class FocusBorder {
     private var floatingPanels: [CGWindowID: BorderPanel] = [:]
     private var settleWork: DispatchWorkItem?
     private var shakeTimer: DispatchSourceTimer?
+    // the red panel's resting x; the shake steps around it
+    private var shakeBaseX: CGFloat = 0
     private var state: State = .hidden
     // pill shown centered in the error panel explaining a rejection.
     private var messageBanner: NSView?
@@ -546,6 +548,24 @@ class FocusBorder {
         CATransaction.commit()
     }
 
+    /// The window the red flash marks, nil when no flash is up.
+    var errorFeedbackTarget: CGWindowID? { errorFeedback.isActive ? errorFeedbackWindowID : nil }
+
+    /// Move the red flash with its window, which can still be moving or
+    /// resizing into the frame a rollback wrote. The shake keeps going around
+    /// the new spot.
+    func followErrorFlash(_ windowID: CGWindowID, to frame: CGRect) {
+        mainThreadOnly()
+        guard errorFeedbackTarget == windowID, let p = panel, trackedWindowFrame != frame else { return }
+        trackedWindowFrame = frame
+        var nsRect = panelRect(for: frame, expansion: Tuning.errorBorderWidth / 2)
+        let shakeOffset = p.frame.origin.x - shakeBaseX
+        shakeBaseX = nsRect.origin.x
+        if shakeTimer != nil { nsRect.origin.x += shakeOffset }
+        p.setFrame(nsRect, display: false)
+        positionGlowView(in: p)
+    }
+
     /// Where `windowID`'s floater outline sits now (CG), nil without one.
     func floaterOutlineFrame(_ windowID: CGWindowID) -> CGRect? {
         floatingPanels[windowID] == nil ? nil : floaterFrames[windowID]
@@ -689,7 +709,7 @@ class FocusBorder {
 
         // shake only the overlay; moving the AX window would invalidate the
         // verified frame that the rejected transaction just restored.
-        let panelBaseX = nsRect.origin.x
+        shakeBaseX = nsRect.origin.x
         restoreShakenWindow = { [weak self] in self?.onShakeRestore() }
         let offsets = Tuning.shakeOffsets
         let stepDuration = Tuning.shakeStepDurationSec
@@ -704,7 +724,7 @@ class FocusBorder {
             if step < offsets.count {
                 let offset = offsets[step]
                 var frame = p.frame
-                frame.origin.x = panelBaseX + offset
+                frame.origin.x = self.shakeBaseX + offset
                 p.setFrame(frame, display: false)
                 step += 1
             } else {

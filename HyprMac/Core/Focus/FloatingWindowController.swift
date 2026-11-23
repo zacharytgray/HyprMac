@@ -133,18 +133,20 @@ extension HyprWindow {
 /// nothing can redraw, so every mark drawn on those frames would sit on the
 /// old spots until it ends: the floater's outline, the border or brackets
 /// on it, and the dim, whose layers follow each tile and carve each
-/// floater. The scratchpad scrim covers whole screens with no carves, so it
-/// stays.
+/// floater. A red flash still up from the last refused Hypr+T on the same
+/// window goes too: the next press can come before it ends. The scratchpad
+/// scrim covers whole screens with no carves, so it stays.
 struct TileAttemptChrome: Equatable {
     var outline: Bool
     var border: Bool
     var brackets: Bool
     var dim: Bool
+    var errorFlash: Bool = false
 
     static func clearing(_ id: CGWindowID, borderTrackedID: CGWindowID?, bracketsTrackedID: CGWindowID?,
-                         scrimShowing: Bool) -> Self {
+                         errorFlashID: CGWindowID? = nil, scrimShowing: Bool) -> Self {
         Self(outline: true, border: borderTrackedID == id, brackets: bracketsTrackedID == id,
-             dim: !scrimShowing)
+             dim: !scrimShowing, errorFlash: errorFlashID == id)
     }
 }
 

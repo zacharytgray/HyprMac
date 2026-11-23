@@ -551,7 +551,10 @@ class WindowManager {
             self.updateFocusBorder(for: w)
         }
         floatingController.rejectFloatToTile = { [weak self] w, reason in
-            guard let self, let frame = w.frame ?? self.stateCache.cachedWindows[w.windowID]?.frame else { return }
+            // where the window is drawn now; the flash follows it from there
+            // while it settles into the rollback's frame
+            guard let self, let frame = w.onScreenFrame()
+                    ?? self.stateCache.cachedWindows[w.windowID]?.frame else { return }
             self.focusBorder.flashError(around: frame, windowID: w.windowID,
                                         message: FloatToTileRejectionMessage.text(for: reason))
         }
@@ -1568,6 +1571,7 @@ class WindowManager {
         return stateCache.floatingWindowIDs.contains(id)
             || focusBorder.trackedWindowID == id
             || (focusBrackets.isVisible && focusBrackets.trackedWindowID == id)
+            || focusBorder.errorFeedbackTarget == id
     }
 
     /// Move the marks on each window to where the window server draws it
@@ -1583,7 +1587,8 @@ class WindowManager {
             // where each mark on the window sits now
             let drawn = [focusBorder.floaterOutlineFrame(id),
                          focusBorder.trackedWindowID == id ? focusBorder.frame : nil,
-                         focusBrackets.isVisible && focusBrackets.trackedWindowID == id ? focusBrackets.frame : nil]
+                         focusBrackets.isVisible && focusBrackets.trackedWindowID == id ? focusBrackets.frame : nil,
+                         focusBorder.errorFeedbackTarget == id ? focusBorder.frame : nil]
             guard drawn.contains(where: { $0 != nil }) else { continue }
             guard drawn.contains(where: { $0 != nil && $0 != frame }) else {
                 notMoved.append(id)
@@ -1592,6 +1597,7 @@ class WindowManager {
             if drawn[0] != nil { focusBorder.followFloater(id, to: frame) }
             if drawn[1] != nil { focusBorder.updatePosition(frame) }
             if drawn[2] != nil { focusBrackets.updatePosition(frame) }
+            if drawn[3] != nil { focusBorder.followErrorFlash(id, to: frame) }
         }
         return notMoved
     }
@@ -1617,9 +1623,11 @@ class WindowManager {
         let id = window.windowID
         let plan = TileAttemptChrome.clearing(id, borderTrackedID: focusBorder.trackedWindowID,
                                               bracketsTrackedID: focusBrackets.trackedWindowID,
+                                              errorFlashID: focusBorder.errorFeedbackTarget,
                                               scrimShowing: scratchpad.isVisible)
         if plan.outline { focusBorder.dropFloatingBorder(for: id) }
-        if plan.border { focusBorder.hide(fade: false) }
+        // the red flash is the focused panel too; hiding it ends the flash
+        if plan.border || plan.errorFlash { focusBorder.hide(fade: false) }
         if plan.brackets { focusBrackets.hide(fade: false) }
         if plan.dim { dimmingOverlay.hideImmediately() }
         // AppKit hands window ordering to the window server with the
