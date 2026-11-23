@@ -210,8 +210,8 @@ class WindowManager {
     private var lastSystemInterruptionAt = Date.distantPast
     /// a keyboard the system makes after the last remap write has no copy
     /// of it (#103); each arrival checks the remap like a wake does
-    private lazy var keyboardArrivals = KeyboardArrivalWatcher {
-        hyprLog(.notice, .lifecycle, "keyboard arrived — checking the Caps Lock remap")
+    private lazy var keyboardArrivals = KeyboardArrivalWatcher { reason in
+        hyprLog(.notice, .lifecycle, "\(reason) — checking the Caps Lock remap")
         KeyRemapper.reassertHyprKey(UserConfig.shared.hyprKey, enabled: UserConfig.shared.enabled)
     }
     /// Pending destroy notifications whose poll has not yet seen the close.

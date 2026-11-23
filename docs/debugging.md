@@ -1713,6 +1713,7 @@ write. All `[lifecycle]`:
 
 ```
 keyboard arrived — checking the Caps Lock remap                 (.notice)
+keyboard watch started — checking the Caps Lock remap           (.notice)
 keyboard <name> (0x…) had no UserKeyMapping, so Caps Lock on it
   was still Caps Lock — gave it the list (N entries)            (.notice)
 keyboard <name> (0x…) has no UserKeyMapping and didn't take the
@@ -1720,7 +1721,9 @@ keyboard <name> (0x…) has no UserKeyMapping and didn't take the
 could not watch for keyboards arriving (<code>)                 (.error)
 kept keyboard <name>'s own UserKeyMapping (N entries)           (.notice)
 keyboard <name> (0x…) didn't take its own UserKeyMapping back;
-  it has the list now                                           (.error)
+  it has the list until the next check tries again              (.error)
+keyboard <name> (0x…) is gone; its own UserKeyMapping went
+  with it                                                       (.notice)
 keyboard <name> (0x…) had its own UserKeyMapping that HyprMac
   can't read; the write replaced it with the list               (.error)
 ```

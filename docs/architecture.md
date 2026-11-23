@@ -1151,8 +1151,10 @@ four seconds after keyboards stop arriving (`KeyboardArrivalWatcher`, a
 registry notification on `IOHIDEventService` with keyboard usage, started
 and stopped with `WindowManager`). The second look catches a keyboard the
 event system lists late, or one that refused the list the first time; a
-burst of arrivals replaces the checks still waiting. Pinned by the #103
-tests in `KeyRemapperTests`.
+burst of arrivals replaces the checks still waiting. Starting the watcher
+runs one check too: a keyboard plugged in between the launch write and the
+registration is no arrival. Pinned by the #103 tests in
+`KeyRemapperTests`.
 
 A service client works only while the event system client that listed it
 is alive. A call on one after its client is released aborts the process
@@ -1169,6 +1171,13 @@ write, exactly as it was, so install, remove and the wake check change
 only HyprMac's entry. A keyboard with no copy isn't one of them; the write
 gives it the list. An own mapping HyprMac can't parse is replaced, and
 that logs at `.error`.
+
+A put-back is confirmed by reading it back. One the keyboard refuses stays
+owed in `PendingOwnMappings`. Every later check (the 4 s arrival check,
+wake, unlock, session active, paused or not) and every later write try it
+again. Only reading it back, or the keyboard going away (its own mapping
+goes with its service), clears it. The store lives in memory: a put-back
+still owed when HyprMac quits is lost.
 
 Checked on the hub (macOS 15.8, 2026-11-23): an unentitled process can set
 and read back one keyboard's copy, and the set leaves the other keyboard

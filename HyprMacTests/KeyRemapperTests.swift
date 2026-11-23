@@ -21,11 +21,13 @@ final class KeyRemapperTests: XCTestCase {
 
     private var defaults: UserDefaults!
     private var suiteName: String!
+    private var pending: PendingOwnMappings!
 
     override func setUp() {
         super.setUp()
         suiteName = "KeyRemapperTests.\(UUID().uuidString)"
         defaults = UserDefaults(suiteName: suiteName)
+        pending = PendingOwnMappings()
     }
 
     override func tearDown() {
@@ -117,7 +119,8 @@ final class KeyRemapperTests: XCTestCase {
             key, enabled: enabled, read: { raw }, write: { w.append($0); return true },
             defaults: defaults, capsLockOff: {},
             keyboards: { reads += 1; return keyboards },
-            pushToKeyboard: { p.append(KeyboardPush(id: $0, mapping: $1)); return pushSucceeds })
+            pushToKeyboard: { p.append(KeyboardPush(id: $0, mapping: $1)); return pushSucceeds },
+            pending: pending)
         written += w
         pushes += p
         keyboardReads += reads
@@ -408,6 +411,8 @@ final class KeyRemapperTests: XCTestCase {
         var capsLockOffCalls = 0
         var keyboards: [HIDKeyboardMapping] = []
         var pushes: [KeyboardPush] = []
+        /// pushes each keyboard refuses before it takes one
+        var refusals: [UInt64: Int] = [:]
 
         func read() -> Any? { current }
 
@@ -423,6 +428,11 @@ final class KeyRemapperTests: XCTestCase {
 
         func push(_ id: UInt64, _ mapping: [HIDKeyMapping]) -> Bool {
             pushes.append(KeyboardPush(id: id, mapping: mapping))
+            guard keyboards.contains(where: { $0.id == id }) else { return false }
+            if let left = refusals[id], left > 0 {
+                refusals[id] = left - 1
+                return false
+            }
             keyboards = keyboards.map {
                 $0.id == id ? HIDKeyboardMapping(id: id, name: $0.name, hasList: true, list: mapping) : $0
             }
@@ -437,13 +447,13 @@ final class KeyRemapperTests: XCTestCase {
     private func update(_ op: KeyMappingMerge.Operation, _ hid: FakeHID) {
         KeyRemapper.update(op, read: hid.read, write: hid.write, defaults: defaults,
                            capsLockOff: { hid.capsLockOffCalls += 1 },
-                           keyboards: hid.readKeyboards, pushToKeyboard: hid.push)
+                           keyboards: hid.readKeyboards, pushToKeyboard: hid.push, pending: pending)
     }
 
     private func apply(_ key: HyprKey, enabled: Bool, _ hid: FakeHID) {
         KeyRemapper.applyHyprKey(key, enabled: enabled, read: hid.read, write: hid.write,
                                  defaults: defaults, capsLockOff: { hid.capsLockOffCalls += 1 },
-                                 keyboards: hid.readKeyboards, pushToKeyboard: hid.push)
+                                 keyboards: hid.readKeyboards, pushToKeyboard: hid.push, pending: pending)
     }
 
     // MARK: - a keyboard's own mapping
@@ -464,7 +474,8 @@ final class KeyRemapperTests: XCTestCase {
         hid.keyboards = keyboards(following: [f20], own: [f19])
         XCTAssertTrue(KeyRemapper.reassertHyprKey(.capsLock, enabled: true, read: hid.read, write: hid.write,
                                                   defaults: defaults, capsLockOff: {},
-                                                  keyboards: hid.readKeyboards, pushToKeyboard: hid.push))
+                                                  keyboards: hid.readKeyboards, pushToKeyboard: hid.push,
+                                                  pending: pending))
         XCTAssertEqual(KeyMappingMerge.parse(hid.current), [f20, ours])
         XCTAssertEqual(hid.keyboard(1), [f20, ours])
         XCTAssertEqual(hid.keyboard(2), [f19], "own mapping put back as it was")
@@ -494,7 +505,71 @@ final class KeyRemapperTests: XCTestCase {
         XCTAssertTrue(hid.pushes.isEmpty)
     }
 
+    private func check(_ hid: FakeHID, enabled: Bool = true) {
+        KeyRemapper.reassertHyprKey(.capsLock, enabled: enabled, read: hid.read, write: hid.write,
+                                    defaults: defaults, capsLockOff: {},
+                                    keyboards: hid.readKeyboards, pushToKeyboard: hid.push, pending: pending)
+    }
+
+    /// keyboard 2 refuses its own mapping once after the install's write.
+    /// it now holds the list, so it looks like any other keyboard; the next
+    /// check must still give its mapping back
+    func testARefusedPutBackIsRetriedOnTheNextCheck() {
+        let hid = FakeHID()
+        hid.current = raw([f20])
+        hid.keyboards = keyboards(following: [f20], own: [f19])
+        hid.refusals = [2: 1]
+        apply(.capsLock, enabled: true, hid)
+        XCTAssertEqual(hid.keyboard(2), [f20, ours], "refused: it has the list for now")
+        check(hid)
+        XCTAssertEqual(hid.keyboard(2), [f19])
+        XCTAssertTrue(pending.isEmpty)
+        let pushes = hid.pushes.count
+        check(hid)
+        XCTAssertEqual(hid.pushes.count, pushes, "put back once, then left alone")
+    }
+
+    /// refused again by the pause's write: still kept, and the check while
+    /// paused puts it back
+    func testARefusedPutBackSurvivesAnotherWrite() {
+        let hid = FakeHID()
+        hid.current = raw([f20])
+        hid.keyboards = keyboards(following: [f20], own: [f19])
+        hid.refusals = [2: 2]
+        apply(.capsLock, enabled: true, hid)
+        apply(.capsLock, enabled: false, hid)
+        XCTAssertEqual(hid.keyboard(2), [f20], "refused twice")
+        check(hid, enabled: false)
+        XCTAssertEqual(hid.keyboard(2), [f19])
+        XCTAssertTrue(pending.isEmpty)
+    }
+
+    /// an unplugged keyboard's own mapping went with it; nothing to retry
+    func testAPendingPutBackForAGoneKeyboardIsDropped() {
+        let hid = FakeHID()
+        hid.current = raw([f20])
+        hid.keyboards = keyboards(following: [f20], own: [f19])
+        hid.refusals = [2: 1]
+        apply(.capsLock, enabled: true, hid)
+        hid.keyboards.removeAll { $0.id == 2 }
+        let pushes = hid.pushes.count
+        check(hid)
+        XCTAssertEqual(hid.pushes.count, pushes)
+        XCTAssertTrue(pending.isEmpty)
+    }
+
     // MARK: - keyboard arrivals
+
+    /// a keyboard plugged in between the launch write and the watcher's
+    /// registration is no arrival; starting the watcher checks once. the
+    /// registration is an IOKit registry notification, no permission
+    func testStartingTheWatcherChecksOnce() {
+        var reasons: [String] = []
+        let watcher = KeyboardArrivalWatcher(schedule: { _, _ in }, onCheck: { reasons.append($0) })
+        watcher.start()
+        watcher.stop()
+        XCTAssertEqual(reasons.count, 1)
+    }
 
     /// a keyboard the event system hasn't listed yet at the first check, or
     /// one that refused the list, gets one more look a few seconds later
@@ -502,7 +577,7 @@ final class KeyRemapperTests: XCTestCase {
         var scheduled: [(TimeInterval, DispatchWorkItem)] = []
         var checks = 0
         let watcher = KeyboardArrivalWatcher(schedule: { scheduled.append(($0, $1)) },
-                                             onArrival: { checks += 1 })
+                                             onCheck: { _ in checks += 1 })
         watcher.noteArrivals()
         watcher.noteArrivals()
         XCTAssertEqual(scheduled.map(\.0), [1, 4, 1, 4])
