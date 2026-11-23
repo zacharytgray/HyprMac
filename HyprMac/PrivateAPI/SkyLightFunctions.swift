@@ -190,6 +190,24 @@ enum WindowSpaces {
         return result
     }
 
+    /// Which of `ids` are on a native full-screen Space a display shows now.
+    /// One window-server question for the displays, and one per id only
+    /// while such a Space is shown. A failed question answers none.
+    static func onShownFullScreenSpace(_ ids: Set<CGWindowID>) -> Set<CGWindowID> {
+        guard !ids.isEmpty, let calls = SkyLightSpaceCalls.shared else { return [] }
+        let cid = calls.mainConnectionID()
+        guard let raw = calls.copyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]]
+        else { return [] }
+        let shown = Set(raw.compactMap(display(from:)).filter(\.currentIsFullScreen).map(\.current))
+        guard !shown.isEmpty else { return [] }
+        return ids.filter { id in
+            let list = [NSNumber(value: id)] as CFArray
+            guard let spaces = calls.copySpacesForWindows(cid, 0x7, list)?.takeRetainedValue() as? [NSNumber]
+            else { return false }
+            return !shown.isDisjoint(with: spaces.map(\.uint64Value))
+        }
+    }
+
     private static func display(from entry: [String: Any]) -> Display? {
         guard let current = entry["Current Space"] as? [String: Any],
               let currentID = (current["ManagedSpaceID"] as? NSNumber)?.uint64Value else { return nil }

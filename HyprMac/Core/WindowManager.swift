@@ -261,6 +261,7 @@ class WindowManager {
             workspaceManager: workspaceManager
         )
         self.discovery.windowSpaces = WindowSpaces.answers
+        self.discovery.windowsOnFullScreenSpaces = WindowSpaces.onShownFullScreenSpace
         self.floatingController = FloatingWindowController(
             stateCache: stateCache,
             suppressions: suppressions,

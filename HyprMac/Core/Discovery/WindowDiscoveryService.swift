@@ -239,6 +239,11 @@ final class WindowDiscoveryService {
     /// Known windows the last cycle held because a native full-screen Space
     /// is in front of their display. Held for as long as it is.
     private var heldBehindFullScreenIDs: Set<CGWindowID> = []
+    /// Known windows the last cycle read on a native full-screen Space a
+    /// display shows, kept while they are missing. Leaving full screen, the
+    /// app lists none of its windows for a moment (#104), and this is how
+    /// that gap is told from a close.
+    private var inFullScreenIDs: Set<CGWindowID> = []
 
     /// How long a window its app still lists is held after it leaves the
     /// screen. Long enough for a native full-screen excursion that lasts a
@@ -301,6 +306,10 @@ final class WindowDiscoveryService {
     /// on a Space their display does not show (`WindowSpaces.answers` in the
     /// app). Tests script it; the default answers nothing.
     var windowSpaces: (Set<CGWindowID>) -> SpaceAnswers = { _ in SpaceAnswers() }
+    /// Which of the given windows the window server has on a native
+    /// full-screen Space a display shows now (`WindowSpaces.onShownFullScreenSpace`
+    /// in the app). Tests script it; the default answers none.
+    var windowsOnFullScreenSpaces: (Set<CGWindowID>) -> Set<CGWindowID> = { _ in [] }
     /// Whether the window server still has the window, off screen, while
     /// its app has another ordinary window off screen: what a background
     /// tab looks like. A window its app destroyed is a close.
@@ -536,8 +545,11 @@ final class WindowDiscoveryService {
     /// taken out of its tree meanwhile expands its neighbour over the slot
     /// and comes back somewhere else. Held for `listedHoldSpan`; one still
     /// missing after that is hidden like any other gone window, with its reservation.
+    /// A window `leavingFullScreen` is held whatever AX says: it was on a
+    /// shown full-screen Space at the last cycle.
     private func listedButOffScreen(_ candidates: Set<CGWindowID>, runningPIDs: Set<pid_t>,
-                                    state: (CGWindowID, pid_t) -> AccessibilityManager.HiddenWindowState?)
+                                    state: (CGWindowID, pid_t) -> AccessibilityManager.HiddenWindowState?,
+                                    leavingFullScreen: Set<CGWindowID> = [])
         -> Set<CGWindowID> {
         let now = self.now()
         var held: Set<CGWindowID> = []
@@ -548,7 +560,7 @@ final class WindowDiscoveryService {
             guard let pid = stateCache.windowOwners[id], runningPIDs.contains(pid),
                   !quickLookPanelIDs.contains(id),
                   stateCache.cachedWindows[id]?.isQuickLookPanel != true,
-                  state(id, pid) == .present else {
+                  leavingFullScreen.contains(id) || state(id, pid) == .present else {
                 listedSince.removeValue(forKey: id)
                 continue
             }
@@ -696,9 +708,19 @@ final class WindowDiscoveryService {
             }
             .sorted { $0.hiddenID < $1.hiddenID }
         let switched = Set(pairs.map(\.hiddenID))
+        // the full-screen window itself, leaving full screen: its app lists
+        // nothing for a moment and AX reads it as closed. held like a window
+        // its app still lists, so a close still ends after the hold
+        let leavingFullScreen = missing.intersection(inFullScreenIDs)
         let listed = listedButOffScreen(missing.subtracting(unreadable).subtracting(switched)
                                             .subtracting(behindFullScreen),
-                                        runningPIDs: runningPIDs, state: hiddenState)
+                                        runningPIDs: runningPIDs, state: hiddenState,
+                                        leavingFullScreen: leavingFullScreen)
+        let leaving = listed.intersection(leavingFullScreen).subtracting(heldListedIDs)
+        if !leaving.isEmpty {
+            hyprLog(.notice, .discovery, "leaving native full screen: \(leaving.sorted()) — not listed by their app"
+                    + " for a moment; held in place, not a close")
+        }
         let tabs = tabHolds(for: leavers.filter { !switched.contains($0.windowID) && !listed.contains($0.windowID) },
                             arrivals: arrivals.filter { arrival in !pairs.contains { $0.shown.windowID == arrival.windowID } },
                             currentIDs: currentIDs, state: hiddenState)
@@ -880,6 +902,11 @@ final class WindowDiscoveryService {
             snapshot.filter { !shownTabs.contains($0.windowID) }, justReturned: reopened)
 
         quickLookPanelIDs = Set(snapshot.lazy.filter(\.isQuickLookPanel).map(\.windowID))
+        // one window-server question per cycle unless a full-screen Space is
+        // shown. a held window keeps its standing until it is back or gone
+        let readKnown = currentIDs.intersection(stateCache.knownWindowIDs)
+        inFullScreenIDs = (readKnown.isEmpty ? [] : windowsOnFullScreenSpaces(readKnown))
+            .union(inFullScreenIDs.intersection(stateCache.knownWindowIDs).subtracting(currentIDs))
         lastWalkFrames = lastWalkFrames.filter { stateCache.knownWindowIDs.contains($0.key) }
         for w in snapshot where stateCache.knownWindowIDs.contains(w.windowID) {
             if let frame = w.cachedFrame ?? w.frame { lastWalkFrames[w.windowID] = frame }

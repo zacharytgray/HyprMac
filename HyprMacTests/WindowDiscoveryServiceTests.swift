@@ -1124,6 +1124,68 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(scene.svc.heldWindowIDs.isEmpty)
     }
 
+    // issue #104 on a notched MacBook: leaving full screen, Dia listed none
+    // of its windows for half a second. the video was on the full-screen
+    // Space, not off it, and the transition window stood at (0,0,1512,982),
+    // 33 points off the video's last frame, so no tab hold caught it either.
+    // it was hidden as a close, and came back as a reopen: rules re-run,
+    // remembered slot forgotten
+    func testTheFullScreenWindowItselfIsHeldWhileItLeavesFullScreen() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        scene.svc.onScreenWindows = { [] }
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([30, 32, 33, 34]).map { ($0, .behindFullScreen) }), answered: ids)
+        }
+        scene.svc.windowsOnFullScreenSpaces = { $0.intersection([31]) }
+        let video = DiscoveryFramedWindow(id: 31, frame: CGRect(x: 0, y: 33, width: 1600, height: 967))
+        _ = compute(scene.svc, snapshot: [video], runningPIDs: [8500])
+
+        // the exit: nothing listed, the video on no hidden Space
+        for _ in 0..<3 {
+            now += 0.2
+            let leaving = compute(scene.svc, snapshot: [], runningPIDs: [8500])
+            XCTAssertTrue(leaving.goneIDs.isEmpty, "the video is leaving full screen, not closing")
+            XCTAssertFalse(scene.cache.hiddenWindowIDs.contains(31))
+            XCTAssertTrue(scene.svc.heldWindowIDs.contains(31), "its leaf is kept and written nothing")
+        }
+
+        scene.svc.windowSpaces = { ids in SpaceAnswers(answered: ids) }
+        scene.svc.windowsOnFullScreenSpaces = { _ in [] }
+        let back = compute(scene.svc, snapshot: [
+            DiscoveryFramedWindow(id: 30, frame: tileFrame), DiscoveryFramedWindow(id: 31, frame: tileFrame),
+            DiscoveryFramedWindow(id: 32, frame: parkedFrame), DiscoveryFramedWindow(id: 33, frame: parkedFrame),
+            DiscoveryFramedWindow(id: 34, frame: tileFrame),
+        ], runningPIDs: [8500])
+
+        XCTAssertTrue(back.returned.isEmpty)
+        XCTAssertTrue(back.reopenedAfterClose.isEmpty, "no reopen rules, its slot and hand choice stay")
+        XCTAssertFalse(back.needsRetile)
+        XCTAssertTrue(scene.svc.heldWindowIDs.isEmpty)
+    }
+
+    // a full-screen window closed for good is a close once the hold runs out
+    func testAFullScreenWindowThatStaysGoneIsClosedAfterTheHold() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        scene.svc.onScreenWindows = { [] }
+        scene.svc.windowSpaces = { ids in SpaceAnswers(answered: ids) }
+        scene.svc.windowsOnFullScreenSpaces = { $0.intersection([31]) }
+        let others = [30, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        _ = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 31, frame: CGRect(x: 0, y: 0, width: 1600, height: 1000))],
+                    runningPIDs: [8500])
+
+        XCTAssertTrue(compute(scene.svc, snapshot: others, runningPIDs: [8500]).goneIDs.isEmpty)
+        now += WindowDiscoveryService.listedHoldSpan + 1
+        let gone = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+
+        XCTAssertEqual(gone.goneIDs, [31])
+        XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(31), "AX says absent: a verified close")
+        XCTAssertTrue(scene.svc.heldWindowIDs.isEmpty)
+    }
+
     // a desktop Space switched away: hidden after the off-screen hold, with
     // its slot reserved, and back as the same window
     func testAWindowOnAnotherDesktopSpaceIsReservedAndComesBackTheSameWindow() {
