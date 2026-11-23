@@ -219,6 +219,9 @@ final class ActionDispatcher {
     var endDriftExemption: (CGWindowID) -> Void = { _ in }
     // drop a window's admission retry
     var cancelAdmissionRecovery: (CGWindowID, String) -> Void = { _, _ in }
+    // a layout key was refused: the window to shake, where it stands, the
+    // text. nil flashes through the focus border; tests replace it
+    var layoutRefused: ((CGWindowID, CGRect, String) -> Void)?
 
     /// A window this discovery pass sends to the cursor's monitor.
     struct CursorMove: Equatable {
@@ -1273,9 +1276,11 @@ final class ActionDispatcher {
               !stateCache.floatingWindowIDs.contains(focused.windowID),
               let (workspace, screen) = tilingContext(for: focused) else { return }
 
-        tilingEngine.resizeInDirection(focused, direction: direction, onWorkspace: workspace, screen: screen)
+        let outcome = tilingEngine.resizeInDirection(focused, direction: direction,
+                                                     onWorkspace: workspace, screen: screen)
         if workspace == ScratchpadController.workspace { scratchpadLayoutChanged() }
         updatePositionCache()
+        showRefusal(outcome, focused: focused, action: "resizeDirection")
     }
 
     /// Toggle the BSP split direction at the focused leaf's parent.
@@ -1285,9 +1290,69 @@ final class ActionDispatcher {
 
         hyprLog(.debug, .orchestration, "toggleSplit on '\(focused.title ?? "?")'")
 
-        tilingEngine.toggleSplit(focused, onWorkspace: workspace, screen: screen)
+        let outcome = tilingEngine.toggleSplit(focused, onWorkspace: workspace, screen: screen)
         if workspace == ScratchpadController.workspace { scratchpadLayoutChanged() }
         updatePositionCache()
+        showRefusal(outcome, focused: focused, action: "toggleSplit")
+    }
+
+    // MARK: - refused layout keys
+
+    /// The window to shake when a layout key's pass was refused, or nil.
+    ///
+    /// The window the failure names, when one window turned the layout
+    /// down. A pair that only failed together (an overlap, an eaten gap)
+    /// matched its own tiles one by one, so neither is the misfit: the
+    /// shake goes on the window the key acted on. Nothing for a timeout, a
+    /// gone or unreadable window, or a superseded pass: none of those is a
+    /// refusal, and the key may work on the next press. A rollback that
+    /// did not verify (`degraded`) still shakes; the layout was refused
+    /// all the same.
+    static func refusalTarget(_ outcome: TilingEngine.LayoutApplicationOutcome?,
+                              _ focusedID: CGWindowID) -> CGWindowID? {
+        let reason: FrameSizingFailure
+        switch outcome {
+        case nil, .accepted: return nil
+        case let .rejectedRestored(r, _, _): reason = r
+        case let .degraded(r, _, _, _, progress):
+            // an admission's timed-out pass kept in place. never a key's,
+            // but it refused nothing either
+            if progress.keptWithoutRollback { return nil }
+            reason = r
+        }
+        let named = reason.refusingWindowIDs
+        switch named.count {
+        case 0: return nil
+        case 1: return named[0]
+        default: return focusedID
+        }
+    }
+
+    /// One red shake for a layout key the engine refused and rolled back
+    /// (#102), on the window that did not fit, where it stands now. Only
+    /// the keys call this: background passes stay quiet.
+    private func showRefusal(_ outcome: TilingEngine.LayoutApplicationOutcome?,
+                             focused: HyprWindow, action: String) {
+        guard let outcome, let reason = TilingEngine.failure(of: outcome) else { return }
+        guard let id = Self.refusalTarget(outcome, focused.windowID) else {
+            hyprLog(.notice, .orchestration, "\(action) refused without a shake: reason=\(reason.trace)"
+                    + " — nothing turned the layout down")
+            return
+        }
+        let frame = outcome.actualFrames[id]
+            ?? stateCache.cachedWindows[id]?.frame
+            ?? (id == focused.windowID ? focused.frame : nil)
+        guard let frame else {
+            hyprLog(.notice, .orchestration, "\(action) refused: wid=\(id) reason=\(reason.trace) — no frame to shake")
+            return
+        }
+        hyprLog(.notice, .orchestration, "\(action) refused: shaking wid=\(id) reason=\(reason.trace)")
+        let message = "Won't fit this layout"
+        if let layoutRefused {
+            layoutRefused(id, frame, message)
+        } else {
+            focusBorder.flashError(around: frame, windowID: id, message: message)
+        }
     }
 }
 

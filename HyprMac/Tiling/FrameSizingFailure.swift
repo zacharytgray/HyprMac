@@ -89,6 +89,27 @@ extension FrameSizingFailure {
         }
     }
 
+    /// The windows that turned the layout down: one that answered with
+    /// another frame, or turned a setter down outright (Dia's -25205). Both
+    /// of an overlapping or gapless pair, in order. Empty when nothing
+    /// refused: a timeout, a gone window, a failed read, a superseded pass.
+    /// The red shake on a refused layout key reads it.
+    var refusingWindowIDs: [CGWindowID] {
+        switch self {
+        case let .cleanupFailed(_, primary, _):
+            return primary?.refusingWindowIDs ?? []
+        case let .writeFailed(id, error):
+            return isTimeout || error == .invalidUIElement ? [] : [id]
+        case let .geometryMismatch(id), let .outsideUsableFrame(id), let .noFittingSlot(id):
+            return [id]
+        case let .overlap(first, second), let .gapViolation(first, second):
+            return [first, second]
+        case .readFailed, .windowUnavailable, .duplicateWindowID, .invalidFrame,
+             .deadlineExceeded, .attemptsExhausted, .superseded:
+            return []
+        }
+    }
+
     /// The failure with raw AX codes. The synthesized description prints
     /// `__C.AXError`, which does not say which error it was.
     var trace: String {

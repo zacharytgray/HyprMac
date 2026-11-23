@@ -752,7 +752,7 @@ class TilingEngine {
         return max(maxLeafDepth(l, depth: depth + 1), maxLeafDepth(r, depth: depth + 1))
     }
 
-    private static func failure(of outcome: LayoutApplicationOutcome) -> FrameSizingFailure? {
+    static func failure(of outcome: LayoutApplicationOutcome) -> FrameSizingFailure? {
         switch outcome {
         case .accepted: return nil
         case let .rejectedRestored(reason, _, _): return reason
@@ -3368,8 +3368,11 @@ class TilingEngine {
         }
     }
 
-    /// Split-direction toggle for `window`'s parent node.
-    func toggleSplit(_ window: HyprWindow, onWorkspace workspace: Int, screen: NSScreen) {
+    /// Split-direction toggle for `window`'s parent node. Returns the
+    /// layout's outcome, so the key can say which window refused it.
+    @discardableResult
+    func toggleSplit(_ window: HyprWindow, onWorkspace workspace: Int,
+                     screen: NSScreen) -> LayoutApplicationOutcome {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = layoutRect(for: key, screen: screen)
@@ -3377,8 +3380,9 @@ class TilingEngine {
         let generation = beginLayoutGeneration()
         t.toggleSplit(for: window, in: rect, gap: gapSize, padding: outerPadding)
         let outcome = retile(key: key, screen: screen, generation: generation)
-        if case .accepted = outcome { return }
+        if case .accepted = outcome { return outcome }
         if layoutGeneration == generation { t.restore(snapshot) }
+        return outcome
     }
 
     /// Resize the focused window by moving the nearest matching-axis split
@@ -3386,13 +3390,16 @@ class TilingEngine {
     /// ancestor whose split direction matches the resize axis, then shifts
     /// its `splitRatio` by `resizeStep` toward the arrow. Flags the ancestor
     /// `userSetRatio = true` so the adjustment survives retiles.
+    ///
+    /// Returns the layout's outcome, or nil when no split moved.
+    @discardableResult
     func resizeInDirection(_ window: HyprWindow, direction: Direction,
-                           onWorkspace workspace: Int, screen: NSScreen) {
+                           onWorkspace workspace: Int, screen: NSScreen) -> LayoutApplicationOutcome? {
         let key = TilingKey(workspace: workspace, screen: screen)
         let t = tree(for: key)
         let rect = layoutRect(for: key, screen: screen)
 
-        guard let leaf = t.root.find(window) else { return }
+        guard let leaf = t.root.find(window) else { return nil }
         let snapshot = t.snapshot()
         let generation = beginLayoutGeneration()
 
@@ -3425,11 +3432,11 @@ class TilingEngine {
             break
         }
 
-        if didResize {
-            let outcome = retile(key: key, screen: screen, generation: generation)
-            if case .accepted = outcome { return }
-            if layoutGeneration == generation { t.restore(snapshot) }
-        }
+        guard didResize else { return nil }
+        let outcome = retile(key: key, screen: screen, generation: generation)
+        if case .accepted = outcome { return outcome }
+        if layoutGeneration == generation { t.restore(snapshot) }
+        return outcome
     }
 
     /// What an explicit user request should expect from `(workspace, screen)`.
@@ -4086,6 +4093,16 @@ extension TilingEngine.LayoutApplicationOutcome {
         case let .accepted(_, progress): return progress
         case let .rejectedRestored(_, _, progress): return progress
         case let .degraded(_, _, _, _, progress): return progress
+        }
+    }
+
+    /// The frames read back last: the candidate's when accepted, the
+    /// rollback's when it ran.
+    var actualFrames: [CGWindowID: CGRect] {
+        switch self {
+        case let .accepted(frames, _): return frames
+        case let .rejectedRestored(_, frames, _): return frames
+        case let .degraded(_, _, _, frames, _): return frames
         }
     }
 }
