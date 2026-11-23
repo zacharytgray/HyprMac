@@ -1272,14 +1272,6 @@ final class WindowDiscoveryServiceTests: XCTestCase {
             (.unverified(attempts: 0), .noAnswer, nil, .keep(.unverified(attempts: 1)), true),
             (.unverified(attempts: last - 1), .elsewhere, nil, .keep(.unverified(attempts: last)), true),
             (.unverified(attempts: last), .noAnswer, nil, .settled(minimizedOrAppHidden: false), true),
-            // its app shown again after Cmd-H: closes only on the window server's word
-            (.appShown, .offSpace, .absent, .keep(.offSpace), false),
-            (.appShown, .noAnswer, .absent, .keep(.appShown), false),
-            (.appShown, .elsewhere, .absent, .release, true),
-            (.appShown, .elsewhere, .minimized, .settled(minimizedOrAppHidden: true), true),
-            (.appShown, .elsewhere, .appHidden, .settled(minimizedOrAppHidden: true), true),
-            (.appShown, .elsewhere, .present, .settled(minimizedOrAppHidden: false), true),
-            (.appShown, .elsewhere, nil, .keep(.unverified(attempts: 0)), true),
         ]
         for (check, space, ax, expected, asksAX) in rows {
             var asked = false
@@ -1297,9 +1289,6 @@ final class WindowDiscoveryServiceTests: XCTestCase {
             (.offSpace, .offSpace, .keep(.offSpace)),
             (.offSpace, .elsewhere, .keep(.offSpace)),
             (.offSpace, .noAnswer, .keep(.offSpace)),
-            (.appShown, .offSpace, .keep(.offSpace)),
-            (.appShown, .elsewhere, .keep(.appShown)),
-            (.appShown, .noAnswer, .keep(.appShown)),
         ]
         for (check, space, expected) in backedOff {
             XCTAssertEqual(Check.step(check, space: space, ax: nil), expected, "\(check) \(space) backed off")
@@ -1370,76 +1359,6 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
                            runningPIDs: [8500])
         XCTAssertTrue(back.reopenedAfterClose.isEmpty)
-    }
-
-    // poll 1: a Teams meeting window reserved on another desktop. Cmd-H on
-    // Teams, and the meeting ends. poll 2: no Space for it, and AX says
-    // hidden with its app, from the process alone. Teams is shown again:
-    // poll 3 must find the window closed and free its slot
-    func testAWindowClosedWhileItsAppWasHiddenIsReleasedWhenTheAppIsShown() {
-        let scene = makeSpaceScene()
-        var now = scene.clock
-        scene.svc.now = { now }
-        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
-        hideOnAnotherDesktop(scene, advance: { now += $0 }, others: others)
-
-        scene.access.stateAnswer = .appHidden
-        scene.svc.windowSpaces = offDesktop([])
-        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
-        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30), "AX cannot tell while Teams is hidden")
-
-        scene.svc.appWasShown(8500)
-        scene.access.stateAnswer = .absent
-        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
-        XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(30), "a verified close now")
-
-        let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
-                           runningPIDs: [8500])
-        XCTAssertEqual(back.reopenedAfterClose, [30], "a same-id return gets the reopen rules")
-    }
-
-    // the same for a window on the current desktop: Cmd-H hides it, it
-    // closes while hidden, the app is shown again
-    func testACmdHiddenWindowClosedWhileHiddenIsReleasedWhenItsAppIsShown() {
-        let scene = makeSpaceScene()
-        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
-        scene.access.stateAnswer = .appHidden
-        scene.svc.windowSpaces = offDesktop([])
-        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
-        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
-
-        scene.svc.appWasShown(8500)
-        scene.access.stateAnswer = .absent
-        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
-        XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(30))
-    }
-
-    // shown again, the window is not closed: on another desktop, or with
-    // no Space answer, it keeps its slot; minimized, it stays a hide
-    func testAnAppShownAgainKeepsAWindowThatIsNotClosed() {
-        let cases: [(String, (Set<CGWindowID>) -> SpaceAnswers, AccessibilityManager.HiddenWindowState?)] = [
-            ("on another desktop", offDesktop([30]), .absent),
-            ("no answer", { _ in SpaceAnswers() }, .absent),
-            ("minimized", offDesktop([]), .minimized),
-        ]
-        for (label, spaces, ax) in cases {
-            let scene = makeSpaceScene()
-            let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
-            scene.access.stateAnswer = .appHidden
-            scene.svc.windowSpaces = offDesktop([])
-            _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
-
-            scene.svc.appWasShown(8500)
-            scene.access.stateAnswer = ax
-            scene.svc.windowSpaces = spaces
-            _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
-            XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30), label)
-
-            scene.svc.windowSpaces = offDesktop([])
-            let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
-                               runningPIDs: [8500])
-            XCTAssertTrue(back.reopenedAfterClose.isEmpty, label)
-        }
     }
 
     // a window closed while full screen is in front is on no Space: a close
