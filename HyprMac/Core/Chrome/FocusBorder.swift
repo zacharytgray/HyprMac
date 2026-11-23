@@ -899,6 +899,29 @@ class FocusBorder {
         return true
     }
 
+    /// Move the outline to `new` and fade it in there, for a window sent to
+    /// another screen, where `glide` can't follow.
+    @discardableResult
+    func arrive(at new: CGRect) -> Bool {
+        mainThreadOnly()
+        guard panel != nil, let glow = glowView, state != .hidden,
+              renderedWindowID != nil, !errorFeedback.isActive else { return false }
+        updatePosition(new)
+        // the old mask cut holes for the old screen's windows
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        glow.layer?.mask = nil
+        CATransaction.commit()
+        // the press's own show() for this frame keeps the fade running
+        glideTarget = new
+        glideOccluders = []
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in self?.finishGlide(at: new) }
+        fadeViewAlpha(glow, from: 0, to: 1, duration: fadeDurationSec)
+        CATransaction.commit()
+        return true
+    }
+
     private func isGliding(to rect: CGRect, windowID: CGWindowID?) -> Bool {
         guard let glideTarget, state != .hidden, windowID == renderedWindowID else { return false }
         return TeleportPlanner.travel(glideTarget, rect) < TeleportPlanner.minimumTravel
