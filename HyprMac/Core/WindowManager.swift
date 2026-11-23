@@ -3303,6 +3303,11 @@ class WindowManager {
     /// React to an app being hidden or unhidden (Cmd-H, Hide Others, etc.).
     /// Short delay lets AX settle before discovery picks up the change.
     @objc private func appVisibilityChanged(_ notification: Notification) {
+        // shown again: a window that closed while it was hidden still holds its slot
+        if notification.name == NSWorkspace.didUnhideApplicationNotification,
+           let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
+            discovery.appWasShown(app.processIdentifier)
+        }
         pollingScheduler.schedule(after: 0.3, trigger: .visibility)
     }
 

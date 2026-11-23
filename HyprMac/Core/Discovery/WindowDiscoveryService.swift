@@ -1207,6 +1207,19 @@ final class WindowDiscoveryService {
 
     // MARK: - private helpers
 
+    /// An app shown again after Cmd-H. While it was hidden AX answered
+    /// "hidden with its app" for every one of its windows, from the process
+    /// alone, so a window closed meanwhile kept its slot. Each of its
+    /// reservations no longer under a check is asked about again; a window
+    /// the window server places on no hidden Space that AX does not list is a
+    /// close. One under a check keeps it.
+    func appWasShown(_ pid: pid_t) {
+        for id in stateCache.reservedHiddenWindowIDs
+        where stateCache.windowOwners[id] == pid && reservationChecks[id] == nil {
+            reservationChecks[id] = .appShown
+        }
+    }
+
     /// Ask again about each reserved hidden id under a check, and apply
     /// `ReservationCheck.step`. A window back in this cycle's snapshot is the
     /// returned pass's. One the window server shows on screen that the walk
@@ -1237,7 +1250,7 @@ final class WindowDiscoveryService {
                 stateCache.reservedHiddenWindowIDs.remove(id)
                 userHiddenIDs.remove(id)
                 minimizedOrAppHiddenIDs.remove(id)
-                if check == .offSpace {
+                if check == .offSpace || check == .appShown {
                     hyprLog(.notice, .discovery, "hidden window \(id) is on no hidden Space and its app no longer"
                             + " lists it — verified closed, releasing its workspace reservation")
                 } else {
@@ -1414,6 +1427,8 @@ enum ReservationCheck: Equatable {
     /// the window server had it on a Space its display does not show, where
     /// AX cannot see it
     case offSpace
+    /// its app was shown again after Cmd-H, which hid this from AX
+    case appShown
 
     /// What the window server said of the window this cycle.
     enum SpaceRead: Equatable {
@@ -1442,7 +1457,8 @@ enum ReservationCheck: Equatable {
     static func step(_ check: ReservationCheck, space: SpaceRead,
                      ax: (() -> AccessibilityManager.HiddenWindowState?)?) -> Step {
         if space == .offSpace { return .keep(.offSpace) }
-        if check == .offSpace, space == .noAnswer { return .keep(.offSpace) }
+        // these two close only on the window server's word: no answer, no close
+        if check == .offSpace || check == .appShown, space == .noAnswer { return .keep(check) }
         guard let ax else { return .keep(check) }
         switch ax() {
         case .absent?: return .release
