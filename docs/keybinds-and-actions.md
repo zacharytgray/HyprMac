@@ -281,7 +281,7 @@ place, with no retry loop. Rules then leave that window alone: a rule edit
 skips it, the late-title re-check skips it, and Retile All keeps a window the
 user tiled by hand tiled. A window floated by hand goes back to tiling on
 Retile All, as it always did. The choice is forgotten when the window closes
-(fully forgotten, or reopened after a verified close).
+(fully forgotten, its app quit, or reopened after a verified close).
 
 A tile rule never tiles a window HyprMac can't resize. At admission it stays
 floating with one `.notice` line; from the overlay or the menu it gets the red
@@ -350,6 +350,16 @@ tile rule now covers, or whose float rule is gone, tiles if it can. A window
 with a hand choice, scratchpad members, hidden windows and windows on a
 disabled monitor keep what they have. A window on a hidden workspace changes
 state now and shows it on reveal.
+
+**Windows that hide on close.** Mail and Teams keep a closed window's id and
+show it again on reopen, so HyprMac sees it return, not arrive. Back after a
+verified close, it gets the current rules like a new window: a rule that
+floats it floats it, a tile rule tiles it when HyprMac can resize it, and the
+late-title re-check starts again, so a rule added while it was closed counts.
+With no rule it keeps what it had: one a since-removed float rule floated
+stays floating until Hypr+T or Retile All. A window back from a minimize,
+Cmd-H or another Space is the same window and keeps its state and the user's
+choice. Logs: `reopen: <id> <rule> — floating it` (or `tiling it`).
 
 **Late titles.** Apps often name a window a moment after it opens. A new
 window of an app with title rules, that no window rule matched at first sight,

@@ -2375,6 +2375,8 @@ class WindowManager {
         minimaRevalidation.forget(id)
         driftMonitor.forget(id)
         floatingController.forgetMaximized(id)
+        // gone for good, app quit included: its next life starts without it
+        floatingController.forgetManualChoice(id)
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
         scratchpad.forget(id)

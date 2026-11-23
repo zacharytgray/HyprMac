@@ -941,7 +941,10 @@ All (`autoFloatReason`), moves to a workspace, and the scratchpad
 (`floatRule(for:)` and `isNeverTile`). Above the book sits the user's hand
 choice (`FloatingWindowController.manualChoices`): Hypr+T, the scratchpad
 toggle and the dedicated workspace move record it, no
-rule refuses them, and rules skip that window until it closes.
+rule refuses them, and rules skip that window until it closes. A window back
+after a verified close with the same id (Mail, Teams) is a new life:
+discovery asks the book again (`reapplyRules(toReopened:)`) and the
+dispatcher forgets the old choice.
 
 `FloatingRuleSync` routes changes. An edit on this Mac (Settings, the menu,
 an action) reaches `FloatingWindowController.rulesChanged`, which measures from

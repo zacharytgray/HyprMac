@@ -301,7 +301,6 @@ final class ActionDispatcher {
         for id in changes.fullyForgottenIDs {
             tilingEngine.removeWindowID(id)
             applyForgottenIDCleanup(id)
-            floatingController.forgetManualChoice(id)
         }
 
         // proactively drop every gone window from its BSP tree. tileAllVisibleSpaces
@@ -317,7 +316,8 @@ final class ActionDispatcher {
         // no remembered slot, so smart insert tries the focused tile first
         for id in changes.reopenedAfterClose {
             tilingEngine.forgetRememberedSlot(id)
-            // closed and opened again: a hand choice belonged to its last life
+            // closed and opened again: a hand choice belonged to its last
+            // life. discovery already applied the current rules to it
             floatingController.forgetManualChoice(id)
         }
         // the workspace retile below skips the scratchpad's tree, so the layer

@@ -500,6 +500,10 @@ the request gets one attempt with them set aside. Look for what follows:
   (Teams does). `slot forgotten: <id> reopened after a close` (`.debug`,
   tiling) follows when the window had a remembered slot, and the retile
   places it like a new window instead of logging `slot restored:`.
+  `reopen: <id> <bundle> <match> — floating it` (or `tiling it`; notice,
+  discovery) is a rule applied to that reopen, as admission would. `reopen:
+  <id> a tile rule covers it but it is not resizable — stays floating` is the
+  refusal.
 - `drift: '<title>' (<id>) ws<A> → ws<B> (now on <screen>) [reopened onto
   hidden ws]` (notice, discovery) — that reopen came back while ws<A> was
   hidden, so it moves to ws<B>, the workspace visible where it opened. A

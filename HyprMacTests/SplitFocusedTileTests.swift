@@ -176,6 +176,7 @@ final class SplitFocusedTileTests: XCTestCase {
         let accessibility: FocusStubAccessibility
         let screen: NSScreen
         let config: UserConfig
+        let floating: FloatingWindowController
     }
 
     private var configDir: URL?
@@ -245,7 +246,7 @@ final class SplitFocusedTileTests: XCTestCase {
             focusController.lastFocusedID == 0 ? nil : focusController.lastFocusedID
         }
         return Harness(dispatcher: dispatcher, engine: engine, focus: focusController,
-                       accessibility: accessibility, screen: screen, config: config)
+                       accessibility: accessibility, screen: screen, config: config, floating: floating)
     }
 
     private func newWindows(_ windows: [HyprWindow]) -> WindowChanges {
@@ -323,6 +324,23 @@ final class SplitFocusedTileTests: XCTestCase {
         XCTAssertEqual(sibling(of: d.windowID, in: h.engine, screen: h.screen), c.windowID)
         XCTAssertEqual(h.engine.intendedTileRects(), before)
         XCTAssertEqual(h.focus.lastFocusedID, a.windowID)
+    }
+
+    // a hand choice lasts until the window closes: a minimize keeps it,
+    // a verified close and reopen drops it
+    func testOnlyAReopenAfterACloseDropsTheHandChoice() throws {
+        let h = try makeHarness()
+        let a = makeWindow(id: 7990), d = makeWindow(id: 7991)
+        _ = h.dispatcher.retile([a, d])
+        h.floating.noteManualChoice(d.windowID, floating: false)
+
+        _ = h.dispatcher.applyChanges(gone(d.windowID), allWindows: [a])
+        _ = h.dispatcher.applyChanges(returned(d, afterClose: false), allWindows: [a, d])
+        XCTAssertEqual(h.floating.manualChoice(for: d.windowID), false)
+
+        _ = h.dispatcher.applyChanges(gone(d.windowID), allWindows: [a])
+        _ = h.dispatcher.applyChanges(returned(d, afterClose: true), allWindows: [a, d])
+        XCTAssertNil(h.floating.manualChoice(for: d.windowID))
     }
 
     func testARefusedNewcomerLeavesTheRecordOnTheOldTile() throws {

@@ -358,13 +358,14 @@ final class FloatingRuleDiscoveryTests: XCTestCase {
 
     private func makeService(titles: @escaping (CGWindowID) -> String?,
                              settable: @escaping (CGWindowID) -> Bool? = { _ in true },
-                             bundleID: String)
+                             bundleID: String,
+                             accessibility: AccessibilityManager = AccessibilityManager())
         -> (WindowDiscoveryService, WindowStateCache, WorkspaceManager) {
         let display = DisplayManager()
         let workspaces = WorkspaceManager(displayManager: display)
         let cache = WindowStateCache()
         let service = WindowDiscoveryService(
-            stateCache: cache, accessibility: AccessibilityManager(), displayManager: display,
+            stateCache: cache, accessibility: accessibility, displayManager: display,
             workspaceManager: workspaces, bundleIDForPID: { _ in bundleID },
             isWindowSizeSettable: { settable($0.windowID) },
             windowTitle: { titles($0.windowID) })
@@ -563,6 +564,184 @@ final class FloatingRuleDiscoveryTests: XCTestCase {
         setTitle("Meeting")
         XCTAssertTrue(next().ruleFloated.isEmpty, "later title changes are ignored")
         XCTAssertFalse(cache.floatingWindowIDs.contains(5))
+    }
+}
+
+// MARK: - windows that hide on close and come back with the same id
+
+/// Mail and Teams keep a closed window's id and show it again on reopen.
+/// Discovery sees it return, not arrive, so admission never asked the rules.
+final class ReopenedWindowRuleTests: XCTestCase {
+
+    private let mail = "com.apple.mail"
+
+    private struct Reopen {
+        let service: WindowDiscoveryService
+        let cache: WindowStateCache
+        let window: HyprWindow
+        let setTitle: (String?) -> Void
+        /// the poll after the next due re-check
+        let next: () -> WindowChanges
+    }
+
+    /// window 5 open under `before`, hidden with the AX stub answering
+    /// `state` (`.absent` is a verified close), then back under `after`.
+    /// `handChoice` is the user's Hypr+T from before the hide
+    private func hideAndReturn(_ state: AccessibilityManager.HiddenWindowState?,
+                               before: [FloatingRule], after: [FloatingRule],
+                               floating: Bool = false, handChoice: Bool = false,
+                               title: String? = "Inbox", workspace: Int = 1)
+        -> (WindowChanges, Reopen) {
+        var currentTitle = title
+        let access = StubAccessibility()
+        access.stateAnswer = state
+        let display = DisplayManager()
+        let workspaces = WorkspaceManager(displayManager: display)
+        let cache = WindowStateCache()
+        let service = WindowDiscoveryService(
+            stateCache: cache, accessibility: access, displayManager: display,
+            workspaceManager: workspaces, bundleIDForPID: { [mail] _ in mail },
+            isWindowSizeSettable: { _ in true }, windowTitle: { _ in currentTitle })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        service.now = { clock }
+        var choice = handChoice
+        service.hasManualChoice = { _ in choice }
+        let w = makeWindow(id: 5, pid: 100)
+        let poll = { (snapshot: [HyprWindow], rules: [FloatingRule]) in
+            service.computeChanges(snapshot: snapshot, runningPIDs: [100], excludedBundleIDs: [],
+                                   floatingRules: rules, focusedWindowID: 0)
+        }
+        _ = poll([w], before)
+        workspaces.assignWindow(5, toWorkspace: workspace)
+        if floating { cache.setFloating(true, window: w) }
+        _ = poll([], before)
+        // a window its app still lists is held first; past the span it is hidden
+        clock += WindowDiscoveryService.listedHoldSpan + 1
+        _ = poll([], after)
+        XCTAssertTrue(cache.hiddenWindowIDs.contains(5))
+        let changes = poll([w], after)
+        // the dispatcher forgets the choice of a reopen in the same pass
+        if changes.reopenedAfterClose.contains(5) { choice = false }
+        let next = { () -> WindowChanges in
+            clock += service.secondsUntilARetryIsDue ?? 100
+            return poll([w], after)
+        }
+        return (changes, Reopen(service: service, cache: cache, window: w,
+                                setTitle: { currentTitle = $0 }, next: next))
+    }
+
+    func testAReopenedWindowGetsAFloatRuleAddedWhileItWasClosed() {
+        let rule = FloatingRule(bundleID: mail, action: .float, match: .titleContains("Inbox"))
+        let (changes, r) = hideAndReturn(.absent, before: [], after: [rule])
+        XCTAssertEqual(changes.reopenedAfterClose, [5])
+        XCTAssertEqual(changes.ruleFloated, [5])
+        XCTAssertTrue(r.cache.floatingWindowIDs.contains(5))
+    }
+
+    func testAReopenedWindowGetsAnAppFloatAddedWhileItWasClosed() {
+        let rule = FloatingRule(bundleID: mail, action: .float)
+        let (changes, r) = hideAndReturn(.absent, before: [], after: [rule])
+        XCTAssertEqual(changes.ruleFloated, [5])
+        XCTAssertTrue(r.cache.floatingWindowIDs.contains(5))
+    }
+
+    // the hand float belonged to the window's last life
+    func testAReopenedWindowFloatedByHandAgainstATileRuleComesBackTiled() {
+        let rule = FloatingRule(bundleID: mail, action: .tile)
+        let (changes, r) = hideAndReturn(.absent, before: [rule], after: [rule],
+                                         floating: true, handChoice: true)
+        XCTAssertEqual(changes.unfloated, [5])
+        XCTAssertFalse(r.cache.floatingWindowIDs.contains(5))
+    }
+
+    func testAReopenedWindowThatCannotResizeStaysFloatingUnderATileRule() {
+        let rule = FloatingRule(bundleID: mail, action: .tile)
+        let access = StubAccessibility()
+        access.stateAnswer = .absent
+        let display = DisplayManager()
+        let workspaces = WorkspaceManager(displayManager: display)
+        let cache = WindowStateCache()
+        let service = WindowDiscoveryService(
+            stateCache: cache, accessibility: access, displayManager: display,
+            workspaceManager: workspaces, bundleIDForPID: { [mail] _ in mail },
+            isWindowSizeSettable: { _ in false }, windowTitle: { _ in "Inbox" })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        service.now = { clock }
+        let w = makeWindow(id: 5, pid: 100)
+        let poll = { (snapshot: [HyprWindow]) in
+            service.computeChanges(snapshot: snapshot, runningPIDs: [100], excludedBundleIDs: [],
+                                   floatingRules: [rule], focusedWindowID: 0)
+        }
+        _ = poll([w])
+        workspaces.assignWindow(5, toWorkspace: 1)
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5))
+        _ = poll([])
+        clock += WindowDiscoveryService.listedHoldSpan + 1
+        _ = poll([])
+        let changes = poll([w])
+        XCTAssertEqual(changes.reopenedAfterClose, [5])
+        XCTAssertTrue(changes.unfloated.isEmpty)
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5))
+    }
+
+    // a minimize, Cmd-H or another Space is the same window: it keeps its
+    // state and the user's choice, whatever the rules say now
+    func testAWindowBackFromAHideKeepsItsState() {
+        let tile = FloatingRule(bundleID: mail, action: .tile)
+        let float = FloatingRule(bundleID: mail, action: .float)
+        for state: AccessibilityManager.HiddenWindowState? in [.minimized, .appHidden, .present, nil] {
+            let label = String(describing: state)
+            let (handFloated, r1) = hideAndReturn(state, before: [tile], after: [tile],
+                                                  floating: true, handChoice: true)
+            XCTAssertEqual(handFloated.reopenedAfterClose, [], label)
+            XCTAssertTrue(handFloated.unfloated.isEmpty, label)
+            XCTAssertTrue(r1.cache.floatingWindowIDs.contains(5), label)
+
+            let (ruleAdded, r2) = hideAndReturn(state, before: [], after: [float])
+            XCTAssertTrue(ruleAdded.ruleFloated.isEmpty, label)
+            XCTAssertFalse(r2.cache.floatingWindowIDs.contains(5), label)
+        }
+    }
+
+    // no rule: a reopen keeps what it had, as before
+    func testAReopenWithNoRuleKeepsItsState() {
+        let (floated, r1) = hideAndReturn(.absent, before: [], after: [], floating: true, handChoice: true)
+        XCTAssertTrue(floated.unfloated.isEmpty)
+        XCTAssertTrue(r1.cache.floatingWindowIDs.contains(5))
+        XCTAssertNil(r1.service.secondsUntilARetryIsDue, "no title re-check without title rules")
+        let (tiled, r2) = hideAndReturn(.absent, before: [], after: [])
+        XCTAssertTrue(tiled.ruleFloated.isEmpty)
+        XCTAssertFalse(r2.cache.floatingWindowIDs.contains(5))
+    }
+
+    // the scratchpad keeps its own members' state
+    func testAReopenOnTheScratchpadIsLeftToIt() {
+        let rule = FloatingRule(bundleID: mail, action: .float)
+        let (changes, r) = hideAndReturn(.absent, before: [], after: [rule],
+                                         workspace: ScratchpadController.workspace)
+        XCTAssertTrue(changes.ruleFloated.isEmpty)
+        XCTAssertFalse(r.cache.floatingWindowIDs.contains(5))
+    }
+
+    // Teams names a reopened chat a moment after it shows it
+    func testAReopenGetsTheLateTitleRecheck() throws {
+        let rule = FloatingRule(bundleID: mail, action: .float, match: .titleContains("Meeting"))
+        let (changes, r) = hideAndReturn(.absent, before: [], after: [rule], title: "")
+        XCTAssertTrue(changes.ruleFloated.isEmpty)
+        XCTAssertEqual(try XCTUnwrap(r.service.secondsUntilARetryIsDue), 0.5, accuracy: 0.001)
+        r.setTitle("Meeting with Sam")
+        XCTAssertEqual(r.next().ruleFloated, [5])
+        XCTAssertTrue(r.cache.floatingWindowIDs.contains(5))
+    }
+
+    // a Hypr+T after the window came back is the newest word
+    func testAHyprTAfterTheReopenBeatsTheLateTitle() {
+        let rule = FloatingRule(bundleID: mail, action: .float, match: .titleContains("Meeting"))
+        let (_, r) = hideAndReturn(.absent, before: [], after: [rule], title: "")
+        r.service.hasManualChoice = { _ in true }
+        r.setTitle("Meeting with Sam")
+        XCTAssertTrue(r.next().ruleFloated.isEmpty)
+        XCTAssertFalse(r.cache.floatingWindowIDs.contains(5))
     }
 }
 

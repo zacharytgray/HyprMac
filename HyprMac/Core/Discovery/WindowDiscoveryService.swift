@@ -730,6 +730,8 @@ final class WindowDiscoveryService {
         var newOnDisabled: Set<CGWindowID> = []
         var returned: [HyprWindow] = []
         var reopenedAfterClose: Set<CGWindowID> = []
+        var reopenFloated: Set<CGWindowID> = []
+        var reopenTiled: Set<CGWindowID> = []
         var goneIDs: Set<CGWindowID> = []
         var fullyForgotten: Set<CGWindowID> = []
 
@@ -750,9 +752,16 @@ final class WindowDiscoveryService {
             }
             // not reserved while hidden: a verified close, not a hide
             let afterClose = !stateCache.reservedHiddenWindowIDs.contains(w.windowID)
-            if afterClose { reopenedAfterClose.insert(w.windowID) }
             hyprLog(.notice, .discovery, "window returned: '\(w.title ?? "?")' (\(w.windowID))"
                     + (afterClose ? " — reopened after a close" : ""))
+            if afterClose {
+                reopenedAfterClose.insert(w.windowID)
+                switch reapplyRules(toReopened: w) {
+                case .float?: reopenFloated.insert(w.windowID)
+                case .tile?: reopenTiled.insert(w.windowID)
+                case nil: break
+                }
+            }
         }
 
         // new
@@ -764,7 +773,7 @@ final class WindowDiscoveryService {
 
         let unfloatedForSize = recheckFixedSize(snapshot)
         let titled = recheckTitleRules(snapshot)
-        let unfloated = unfloatedForSize.union(titled.tiled)
+        let unfloated = unfloatedForSize.union(titled.tiled).union(reopenTiled)
 
         // gone. the held ids stay out of this: they are still known
         let gone = apparentlyGone
@@ -869,7 +878,7 @@ final class WindowDiscoveryService {
             reopenedOntoHiddenWorkspace: reopenedOntoHidden,
             unfloated: unfloated
         )
-        changes.ruleFloated = titled.floated
+        changes.ruleFloated = titled.floated.union(reopenFloated)
         changes.reopenedAfterClose = reopenedAfterClose
         changes.tabSwitches = pairs
         return changes
@@ -938,6 +947,46 @@ final class WindowDiscoveryService {
         } else {
             hyprLog(.debug, .discovery, "new window: '\(w.title ?? "?")' (\(w.windowID))")
         }
+    }
+
+    /// A window back after a verified close starts a new life, so the rules
+    /// it missed while closed apply now, as at admission: a rule that
+    /// floats it floats it, a tile rule tiles it if HyprMac can resize it,
+    /// and the late-title re-check starts again. With no rule it keeps what
+    /// it had. Its hand choice belonged to the last life (the caller forgets
+    /// it), so it is not asked. The scratchpad and a disabled monitor keep
+    /// their own.
+    /// - Returns: the move it made, nil for none.
+    private func reapplyRules(toReopened w: HyprWindow) -> FloatingAdmissionPolicy.RuleStep? {
+        let id = w.windowID
+        guard !w.isQuickLookPanel, workspaceManager.workspaceFor(id) != ScratchpadController.workspace,
+              !(displayManager.screen(for: w).map(workspaceManager.isMonitorDisabled) ?? false)
+        else { return nil }
+        let bundleID = bundleIDForPID(w.ownerPID) ?? w.bundleID
+        let verdict = ruleBook.verdict(bundleID: bundleID, title: { self.windowTitle(w) })
+        let floating = stateCache.floatingWindowIDs.contains(id)
+        var step: FloatingAdmissionPolicy.RuleStep?
+        if let verdict, verdict.floats, !floating {
+            stateCache.setFloating(true, window: w)
+            step = .float
+        } else if let verdict, !verdict.floats, floating {
+            if FloatingAdmissionPolicy.reason(rule: verdict, isSizeSettable: isWindowSizeSettable(w)) == nil {
+                stateCache.setFloating(false, window: w)
+                step = .tile
+            } else {
+                hyprLog(.notice, .discovery, "reopen: \(id) a tile rule covers it but it is not resizable"
+                        + " — stays floating")
+            }
+        }
+        if let step, let verdict {
+            let rule = verdict.rule.map { "\($0.bundleID) \($0.matchDescription)" } ?? "Never tile"
+            hyprLog(.notice, .discovery, "reopen: \(id) \(rule) — \(step == .float ? "floating" : "tiling") it")
+        }
+        if verdict?.isWindowKind != true, ruleBook.hasTitleRules(bundleID: bundleID) {
+            titleRuleRechecks[id] = (0, now().addingTimeInterval(Self.titleRuleRecheckDelays[0]),
+                                     windowTitle(w), stateCache.floatingWindowIDs.contains(id))
+        }
+        return step
     }
 
     /// The admit-only diff a workspace switch's transition hold allows once
