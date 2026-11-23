@@ -1156,6 +1156,16 @@ A Hypr+T tile attempt on a floater blocks the main thread while the window
 tries its slots. Its outline, and the border or brackets on it, go before the
 attempt and come back on the frame it settles on.
 
+A refused attempt puts the floater back on the frame the window list had for
+it before Hypr+T, past a screen edge too. The verified layout's own rollback
+leaves a newcomer whose original lies off the screen where its slot put it,
+and a later slot try reads that as its original, so without this the floater
+came back resized and moved. The write logs:
+
+```
+[notice] [floating] floating frame write: wid=<id> reason=float→tile refused, back to its frame before Hypr+T from=… to=…
+```
+
 If an outline still lags, check that the app took the move subscriptions.
 An app that refuses them logs, after five tries:
 

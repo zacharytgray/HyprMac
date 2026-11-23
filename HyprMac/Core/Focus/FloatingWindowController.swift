@@ -346,6 +346,10 @@ final class FloatingWindowController {
     var willTryTile: (HyprWindow) -> Void = { _ in }
     // and come back on the frame the attempt left, tiled or floating
     var didTryTile: (HyprWindow) -> Void = { _ in }
+    // where the window server draws a window (the window list, not AX, which
+    // some apps leave stale), and the write that puts a refused floater back
+    var drawnFrame: (HyprWindow) -> CGRect? = { _ in nil }
+    var restoreFrame: (HyprWindow, CGRect) -> Void = { _, _ in }
 
     // same-stack-frame reentrancy guard for raiseBehind. paired with defer.
     // not a SuppressionRegistry key: not a time gate.
@@ -434,6 +438,10 @@ final class FloatingWindowController {
             // floating → tiled: retile so the surrounding windows make room.
             // reassign workspace in case the window was dragged to a different monitor while floating.
             workspaceManager.moveWindow(window.windowID, toWorkspace: workspace)
+            // read before anything moves: a rollback leaves a newcomer whose
+            // frame hangs off the screen where its slot put it, and a later
+            // slot try reads that as the window's original
+            let before = drawnFrame(window)
             willTryTile(window)
             retile { [self] in
                 stateCache.setFloating(false, window: window)
@@ -446,6 +454,9 @@ final class FloatingWindowController {
                     // the tree never took it, so it is still a floater. put
                     // both flags back the way they were and say so.
                     floatInPlace(window, reason: "float→tile refused: \(reason)")
+                    if let before, Self.moved(from: before, to: drawnFrame(window)) {
+                        restoreFrame(window, before)
+                    }
                     rejectFloatToTile?(window, reason)
                 }
             }
@@ -571,6 +582,14 @@ final class FloatingWindowController {
         hyprLog(.notice, .floating, "float→tile revalidation: \(window.windowID) ws\(workspace)")
         return tilingEngine.forceInsertWindow(window, toWorkspace: workspace, on: screen,
                                               bypassingLearnedMinima: true)
+    }
+
+    /// Whether a window read back at `after` is off `before` by more than a
+    /// point. An unreadable window counts as moved: the write is harmless.
+    static func moved(from before: CGRect, to after: CGRect?) -> Bool {
+        guard let after else { return true }
+        return abs(after.minX - before.minX) > 1 || abs(after.minY - before.minY) > 1
+            || abs(after.width - before.width) > 1 || abs(after.height - before.height) > 1
     }
 
     /// Leave `window` floating exactly where it is.

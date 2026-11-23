@@ -531,6 +531,19 @@ class WindowManager {
         floatingController.findPopup = { [weak self] windows, front in
             self?.mouseTracker.livePopup(in: windows, frontmostPID: front)
         }
+        floatingController.drawnFrame = { $0.onScreenFrame() }
+        floatingController.restoreFrame = { [weak self] w, frame in
+            guard let self else { return }
+            // exactly where it was, past a screen edge too: no clamp
+            let plan = FloatingFramePlacement.Plan(
+                requested: frame, target: frame,
+                source: self.displayManager.screen(containingMostOf: frame),
+                destination: self.displayManager.screen(containingMostOf: frame), usable: nil)
+            hyprLog(.notice, .floating, FloatingFramePlacement.logLine(
+                windowID: w.windowID, reason: "float→tile refused, back to its frame before Hypr+T",
+                from: w.frame, plan: plan))
+            w.setFrame(frame)
+        }
         floatingController.willTryTile = { [weak self] w in self?.clearMarksForTileAttempt(w) }
         floatingController.didTryTile = { [weak self] w in
             // a refusal's red flash holds the border; it re-shows when the flash ends

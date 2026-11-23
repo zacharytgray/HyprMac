@@ -939,6 +939,46 @@ final class FloatingRuleControllerTests: XCTestCase {
         XCTAssertEqual(steps, ["retile"], "a tile going floating has no floater marks yet")
     }
 
+    // the rollback leaves a floater whose frame hangs off the screen where the
+    // last slot put it, and each later slot try reads that as its original.
+    // a refusal puts it back on the window-list frame it had before Hypr+T
+    func testARefusedHyprTPutsTheFloaterBackWhereItWas() {
+        let h = Harness(refusing: true)
+        let before = CGRect(x: 349, y: 412, width: 1371, height: 728)
+        var reads: [CGRect?] = [before, CGRect(x: 612, y: 259, width: 1300, height: 728)]
+        var writes: [(CGWindowID, CGRect)] = []
+        h.controller.drawnFrame = { _ in reads.isEmpty ? nil : reads.removeFirst() }
+        h.controller.restoreFrame = { writes.append(($0.windowID, $1)) }
+        let w = h.window(1, bundleID: zoom, title: "Zoom", floating: true)
+        h.controller.toggle(w, on: h.screen, in: h.workspace)
+        XCTAssertTrue(h.cache.floatingWindowIDs.contains(1))
+        XCTAssertEqual(writes.map(\.0), [1])
+        XCTAssertEqual(writes.first?.1, before)
+    }
+
+    func testARefusedHyprTThatLeftTheFloaterInPlaceWritesNothing() {
+        let h = Harness(refusing: true)
+        let before = CGRect(x: 349, y: 412, width: 1371, height: 728)
+        var reads: [CGRect?] = [before, before]
+        var writes = 0
+        h.controller.drawnFrame = { _ in reads.isEmpty ? nil : reads.removeFirst() }
+        h.controller.restoreFrame = { _, _ in writes += 1 }
+        let w = h.window(1, bundleID: zoom, title: "Zoom", floating: true)
+        h.controller.toggle(w, on: h.screen, in: h.workspace)
+        XCTAssertEqual(writes, 0)
+    }
+
+    func testATiledHyprTWritesNoFloaterFrame() {
+        let h = Harness()
+        var writes = 0
+        h.controller.drawnFrame = { _ in CGRect(x: 10, y: 10, width: 300, height: 200) }
+        h.controller.restoreFrame = { _, _ in writes += 1 }
+        let w = h.window(1, bundleID: zoom, title: "Zoom", floating: true)
+        h.controller.toggle(w, on: h.screen, in: h.workspace)
+        XCTAssertFalse(h.cache.floatingWindowIDs.contains(1))
+        XCTAssertEqual(writes, 0)
+    }
+
     // only a window that can't take a tile still fails, with the shake
     func testHyprTOnAWindowThatCannotTileStillShakes() {
         let h = Harness(refusing: true)
