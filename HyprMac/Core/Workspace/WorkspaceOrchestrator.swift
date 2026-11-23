@@ -433,13 +433,18 @@ final class WorkspaceOrchestrator {
         // wait for
         let revealFirst = !result.toShow.subtracting(stateCache.hiddenWindowIDs).isEmpty
         var parkStart = Date(), parkEnd = parkStart
+        // the handles come from the walk, or the cache for a window whose app
+        // missed it. taken now: the retile rebuilds the cache with visible
+        // windows only, and a floater left on screen would be parked later
+        // by the park repair without its frame saved
+        let outgoing = result.toHide.compactMap { wid in
+            allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid]
+        }
         func parkOutgoing() {
             parkStart = Date()
-            for wid in result.toHide {
-                if let w = allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid] {
-                    if stateCache.floatingWindowIDs.contains(wid) { workspaceManager.saveFloatingFrame(w) }
-                    workspaceManager.hideInCorner(w, on: result.screen)
-                }
+            for w in outgoing {
+                if stateCache.floatingWindowIDs.contains(w.windowID) { workspaceManager.saveFloatingFrame(w) }
+                workspaceManager.hideInCorner(w, on: result.screen)
             }
             parkEnd = Date()
             // a window list read before this still has them on screen

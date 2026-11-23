@@ -554,6 +554,41 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertEqual(order, ["park:7405", "list dropped", "retile"])
     }
 
+    // the outgoing floater's app missed the switch's walk, so only the
+    // window cache has its handle. the retile rebuilds that cache from the
+    // walk with the now-visible windows only, so the park after it found no
+    // handle: the floater stayed on screen, the park repair later parked it
+    // without saving its frame, and it never came back from the corner
+    func testAnOutgoingFloaterTheWalkMissedIsStillParkedAndComesBack() {
+        let original = CGRect(x: 0, y: 0, width: 800, height: 1000)
+        let floater = onScreenWindow(id: 7408, on: visible, floating: true)
+        stateCache.cachedWindows[floater.windowID] = floater
+        let incoming = RevealWindow(id: 7409, frame: CGRect(origin: workspaceManager.hidePosition(),
+                                                            size: CGSize(width: 800, height: 1000)))
+        workspaceManager.assignWindow(incoming.windowID, toWorkspace: hidden)
+        orchestrator.allWindows = { [incoming] }
+        // what updatePositionCache does to the cache
+        orchestrator.tileAllVisibleSpaces = { [unowned self] walk in
+            self.order.append("retile")
+            self.stateCache.cachedWindows.removeAll()
+            for w in walk ?? [] where self.workspaceManager.isWindowVisible(w.windowID) {
+                self.stateCache.cachedWindows[w.windowID] = w
+            }
+        }
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(order, ["retile", "park:7408"], "parked after the retile all the same")
+        XCTAssertEqual(floater.storedFrame.origin, workspaceManager.hidePosition())
+        XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), original)
+
+        // back again: the app answers this walk
+        orchestrator.allWindows = { [floater, incoming] }
+        orchestrator.switchWorkspace(visible)
+
+        XCTAssertNil(workspaceManager.savedFloatingFrame(for: floater.windowID), "restored")
+    }
+
     // a workspace holding only a closed-but-alive window shows nothing
     func testAWorkspaceWithOnlyHiddenWindowsCountsAsEmpty() {
         let outgoing = onScreenWindow(id: 7406, on: visible)

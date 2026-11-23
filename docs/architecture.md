@@ -764,7 +764,11 @@ The reveal moves, resizes and verifies each window in turn. Parked first,
 the screen showed only the wallpaper for the whole reveal (#101). Now the
 outgoing windows stay up until the incoming ones are placed. A switch to a
 workspace with nothing to show (empty, or only hidden windows) parks first,
-since there is nothing to wait for. After the park the window-list cache is
+since there is nothing to wait for. The switch takes the outgoing windows'
+handles before the retile: the walk's, or the window cache's for a window
+whose app missed the walk. The retile rebuilds that cache with visible
+windows only. A floater left on screen would be parked later by the park
+repair, which saves no frame, so it never came back. After the park the window-list cache is
 dropped (`windowsParked`): a list read during the retile still has the
 outgoing windows on screen, and hover would hit them.
 
