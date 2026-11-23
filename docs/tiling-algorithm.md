@@ -898,7 +898,10 @@ neighbours keep their slots, and its tile is there when it comes back.
   leaves. `WorkspaceManager.hideInCorner` skips one in full screen: it lives
   on its own Space, and the park write can take it out of full screen. The
   park repair skips it too, so a full-screen window on a hidden workspace is
-  not re-parked every poll.
+  not re-parked every poll. A floater hidden in full screen keeps no saved
+  frame, and a reveal drops a saved frame instead of writing it while the
+  floater is in full screen. Out of full screen, macOS has already put it
+  back where it was.
 
 ### Forced insertion
 

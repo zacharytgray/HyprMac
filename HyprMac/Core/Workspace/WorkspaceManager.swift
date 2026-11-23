@@ -78,6 +78,9 @@ class WorkspaceManager {
     /// Whether a window is in native full screen. Wired by `WindowManager`
     /// to `AXFullScreen`.
     var isInNativeFullScreen: (HyprWindow) -> Bool = { _ in false }
+    /// Stands in for the reveal's floater write in tests. nil writes
+    /// through `placeFloating`.
+    var revealWrite: ((HyprWindow, CGRect) -> Void)?
 
     /// Localized names of monitors the user has excluded from tiling.
     /// Disabled monitors host floating windows only.
@@ -425,6 +428,12 @@ class WorkspaceManager {
     /// would strand the floater in the corner sliver on the next
     /// restore. Keeps any previously-saved on-screen frame instead.
     func saveFloatingFrame(_ window: HyprWindow) {
+        // not parked in full screen (`hideInCorner`), so nothing to put back.
+        // an older frame would undo where macOS puts it when it leaves
+        if isInNativeFullScreen(window) {
+            savedFloatingFrames.removeValue(forKey: window.windowID)
+            return
+        }
         guard let frame = window.frame else { return }
         let onScreen = displayManager.screens.contains { screen in
             frame.isSubstantiallyVisible(on: displayManager.cgRect(for: screen))
@@ -440,11 +449,20 @@ class WorkspaceManager {
     /// entry. No-op when no frame was captured.
     func restoreFloatingFrame(_ window: HyprWindow) {
         if let frame = savedFloatingFrames[window.windowID] {
+            savedFloatingFrames.removeValue(forKey: window.windowID)
+            // a write to a window in native full screen can take it out (#104)
+            if isInNativeFullScreen(window) {
+                hyprLog(.debug, .lifecycle, "reveal: \(window.windowID) in native full screen — saved frame dropped, not written")
+                return
+            }
             // the saved frame may belong to a screen layout that has since
             // changed, so it is clamped like every other floater write
-            window.placeFloating(frame, reason: "workspace reveal, saved frame",
-                                 displayManager: displayManager)
-            savedFloatingFrames.removeValue(forKey: window.windowID)
+            if let revealWrite {
+                revealWrite(window, frame)
+            } else {
+                window.placeFloating(frame, reason: "workspace reveal, saved frame",
+                                     displayManager: displayManager)
+            }
         }
     }
 

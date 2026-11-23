@@ -308,6 +308,43 @@ final class DisplayReturnTests: XCTestCase {
         XCTAssertEqual(writes, 1, "every other window is parked as before")
     }
 
+    /// a floater in native full screen is not parked, so a reveal has
+    /// nothing to put back. writing its saved frame can take it out of
+    /// full screen
+    func testARevealWritesNoSavedFrameToAFloaterInNativeFullScreen() {
+        let screen = DeskScreen(x: 0, width: 1400)
+        let workspaces = WorkspaceManager(displayManager: DisplayManager(screenSource: { [screen] }))
+        var written: [CGWindowID] = []
+        workspaces.revealWrite = { window, _ in written.append(window.windowID) }
+        let full = makeWindow(id: 4714), floater = makeWindow(id: 4715)
+        workspaces.isInNativeFullScreen = { $0.windowID == full.windowID }
+        let saved = CGRect(x: 100, y: 100, width: 600, height: 400)
+        workspaces.setSavedFloatingFrame(saved, for: full.windowID)
+        workspaces.setSavedFloatingFrame(saved, for: floater.windowID)
+
+        workspaces.restoreFloatingFrame(full)
+        workspaces.restoreFloatingFrame(floater)
+
+        XCTAssertEqual(written, [floater.windowID], "only the ordinary floater gets its frame back")
+        XCTAssertNil(workspaces.savedFloatingFrame(for: full.windowID),
+                     "nothing is left to write once it leaves full screen")
+    }
+
+    /// hidden while in full screen: the frame saved earlier is stale, and
+    /// writing it on a later reveal would undo where macOS puts the window
+    /// when it leaves full screen
+    func testHidingAFloaterInNativeFullScreenKeepsNoSavedFrame() {
+        let screen = DeskScreen(x: 0, width: 1400)
+        let workspaces = WorkspaceManager(displayManager: DisplayManager(screenSource: { [screen] }))
+        let full = makeWindow(id: 4716)
+        workspaces.isInNativeFullScreen = { $0.windowID == full.windowID }
+        workspaces.setSavedFloatingFrame(CGRect(x: 100, y: 100, width: 600, height: 400), for: full.windowID)
+
+        workspaces.saveFloatingFrame(full)
+
+        XCTAssertNil(workspaces.savedFloatingFrame(for: full.windowID))
+    }
+
     /// a stacked desk, two screens on one x: the primary display keeps the
     /// first homes, as it has, whatever its y
     func testAStackedDeskKeepsThePrimaryDisplaysHomesFirst() {
