@@ -3290,36 +3290,65 @@ class TilingEngine {
         case refused
     }
 
-    private func swapFit(_ a: HyprWindow, _ b: HyprWindow,
-                         onWorkspace workspace: Int, screen: NSScreen) -> SwapFit {
+    /// One side of a swap: the window and the `(workspace, screen)` tree it
+    /// tiles in. Both sides name the same tree for an ordinary swap.
+    private struct SwapSide {
+        let window: HyprWindow
+        let key: TilingKey
+        let screen: NSScreen
+        let tree: BSPTree
+    }
+
+    private func swapSide(_ window: HyprWindow, workspace: Int, screen: NSScreen) -> SwapSide {
         let key = TilingKey(workspace: workspace, screen: screen)
-        let t = tree(for: key)
+        return SwapSide(window: window, key: key, screen: screen, tree: tree(for: key))
+    }
+
+    /// Each distinct tree of a swap once: one for a same-tree swap, two
+    /// across screens.
+    private func swapTrees(_ a: SwapSide, _ b: SwapSide) -> [SwapSide] {
+        a.tree === b.tree ? [a] : [a, b]
+    }
+
+    /// Put each window on the other's leaf. On one tree this is `BSPTree.swap`.
+    private func exchangeLeaves(_ a: SwapSide, _ b: SwapSide) {
+        guard let nodeA = a.tree.root.find(a.window), let nodeB = b.tree.root.find(b.window) else { return }
+        nodeA.window = b.window
+        nodeB.window = a.window
+    }
+
+    private func swapFit(_ a: SwapSide, _ b: SwapSide) -> SwapFit {
+        let sides = swapTrees(a, b)
         // prime ALL tree windows, not just [a, b]. siblings still influence
         // whether adjustForMinSizes can resolve conflicts post-swap; if their
         // min sizes are stale or missing in the memory, the fit check produces
         // inconsistent rejections (e.g., a swap that should reject when a
         // sibling has a hard minimum sneaks through because its min wasn't
         // re-synced).
-        primeMinimumSizes(t.allWindows)
-        guard t.contains(a) && t.contains(b) else { return .refused }
+        for side in sides { primeMinimumSizes(side.tree.allWindows) }
+        guard a.tree.contains(a.window) && b.tree.contains(b.window) else { return .refused }
 
-        let snapshot = t.snapshot()
-        defer { t.restore(snapshot) }
+        let snapshots = sides.map { $0.tree.snapshot() }
+        defer { for (side, snapshot) in zip(sides, snapshots) { side.tree.restore(snapshot) } }
 
-        let rect = layoutRect(for: key, screen: screen)
         func trial() -> Bool {
-            t.restore(snapshot)
-            t.swap(a, b)
+            for (side, snapshot) in zip(sides, snapshots) { side.tree.restore(snapshot) }
+            exchangeLeaves(a, b)
             // clear userSetRatio + reset to 50/50 for the test layout: fit is judged
             // at default ratios. the real swap keeps its ratios and the verified
             // pass adjusts them.
-            t.root.clearUserSetRatios()
-            t.root.resetSplitRatios()
-            return layoutCanAccommodateKnownMinimums(t, rect: rect)
+            return sides.allSatisfy { side in
+                side.tree.root.clearUserSetRatios()
+                side.tree.root.resetSplitRatios()
+                return layoutCanAccommodateKnownMinimums(side.tree, rect: layoutRect(for: side.key, screen: side.screen))
+            }
         }
         if trial() { return .fits }
 
-        let bypass = revalidationBypass(incoming: [a.windowID, b.windowID], key: key)
+        var bypass: [CGWindowID: UInt64] = [:]
+        for side in sides {
+            bypass.merge(revalidationBypass(incoming: [a.window.windowID, b.window.windowID], key: side.key)) { $1 }
+        }
         return withMinimaBypass(bypass, trial) ? .revalidatable(bypass) : .refused
     }
 
@@ -3334,9 +3363,18 @@ class TilingEngine {
     /// min sizes still influence the post-swap fit decision.
     func canSwapWindows(_ a: HyprWindow, _ b: HyprWindow,
                         onWorkspace workspace: Int, screen: NSScreen) -> Bool {
-        if case .refused = swapFit(a, b, onWorkspace: workspace, screen: screen) {
-            return false
-        }
+        canSwapWindows(a, onWorkspace: workspace, screen: screen,
+                       with: b, onWorkspace: workspace, screen: screen)
+    }
+
+    /// `canSwapWindows` for two windows that may tile in different
+    /// `(workspace, screen)` trees: each side is judged on its own screen
+    /// with the other's window in its slot.
+    func canSwapWindows(_ a: HyprWindow, onWorkspace workspaceA: Int, screen screenA: NSScreen,
+                        with b: HyprWindow, onWorkspace workspaceB: Int, screen screenB: NSScreen) -> Bool {
+        let fit = swapFit(swapSide(a, workspace: workspaceA, screen: screenA),
+                          swapSide(b, workspace: workspaceB, screen: screenB))
+        if case .refused = fit { return false }
         return true
     }
 
@@ -3358,15 +3396,42 @@ class TilingEngine {
     /// moved.
     func swapWindowsOutcome(_ a: HyprWindow, _ b: HyprWindow, onWorkspace workspace: Int,
                             screen: NSScreen) -> LayoutApplicationOutcome? {
-        let fit = swapFit(a, b, onWorkspace: workspace, screen: screen)
-        if case .refused = fit { return nil }
-        return performSwap(a, b, fit: fit, onWorkspace: workspace, screen: screen)
+        swapWindowsOutcome(a, onWorkspace: workspace, screen: screen,
+                           with: b, onWorkspace: workspace, screen: screen)
     }
 
-    private func performSwap(_ a: HyprWindow, _ b: HyprWindow, fit: SwapFit,
-                             onWorkspace workspace: Int, screen: NSScreen) -> LayoutApplicationOutcome? {
-        let key = TilingKey(workspace: workspace, screen: screen)
-        let t = tree(for: key)
+    /// `swapWindows` for two windows that may tile in different
+    /// `(workspace, screen)` trees, as a keyboard swap past a monitor edge
+    /// does. Each window takes the other's leaf; both trees keep their shape.
+    /// Both screens are laid out in one generation, and a refusal on either
+    /// restores both trees and puts every window back. The engine's
+    /// admission identity follows the windows; workspace membership is the
+    /// caller's to move on `true`.
+    @discardableResult
+    func swapWindows(_ a: HyprWindow, onWorkspace workspaceA: Int, screen screenA: NSScreen,
+                     with b: HyprWindow, onWorkspace workspaceB: Int, screen screenB: NSScreen) -> Bool {
+        if case .accepted = swapWindowsOutcome(a, onWorkspace: workspaceA, screen: screenA,
+                                               with: b, onWorkspace: workspaceB, screen: screenB) {
+            return true
+        }
+        return false
+    }
+
+    /// The cross-tree `swapWindows` with the layout's outcome: the refusing
+    /// screen's when a layout failed, else the last screen's accepted one.
+    /// nil when the fit check refused before anything moved.
+    func swapWindowsOutcome(_ a: HyprWindow, onWorkspace workspaceA: Int, screen screenA: NSScreen,
+                            with b: HyprWindow, onWorkspace workspaceB: Int,
+                            screen screenB: NSScreen) -> LayoutApplicationOutcome? {
+        let sideA = swapSide(a, workspace: workspaceA, screen: screenA)
+        let sideB = swapSide(b, workspace: workspaceB, screen: screenB)
+        let fit = swapFit(sideA, sideB)
+        if case .refused = fit { return nil }
+        return performSwap(sideA, sideB, fit: fit)
+    }
+
+    private func performSwap(_ a: SwapSide, _ b: SwapSide, fit: SwapFit) -> LayoutApplicationOutcome? {
+        let sides = swapTrees(a, b)
 
         // swapFit uses the recorded min sizes which can be seeded
         // (AX-static) rather than confirmed via readback. for windows like
@@ -3374,28 +3439,59 @@ class TilingEngine {
         // values can be too small — swapFit accepts, but the real
         // pass-1 readback after the swap reveals overflow. snapshot the
         // tree first so we can revert on that case.
-        let snapshot = t.snapshot()
-        t.swap(a, b)
+        let snapshots = sides.map { $0.tree.snapshot() }
+        exchangeLeaves(a, b)
         // see swapFit — swap is a structural change, prior manual
         // ratios applied to the OLD occupant of a slot, not the new one.
-        t.root.clearUserSetRatios()
-        let rect = layoutRect(for: key, screen: screen)
+        for side in sides { side.tree.root.clearUserSetRatios() }
+        // a window arriving from the other screen still stands there when
+        // the pass captures it, so a rollback must reach that screen too
+        let reach: CGRect? = sides.count == 1 ? nil : sides
+            .map { restorationRect(for: layoutRect(for: $0.key, screen: $0.screen)) }
+            .reduce(CGRect.null) { $0.union($1) }
         let generation = beginLayoutGeneration()
-        let apply = { self.applyTrackedLayout(t, in: rect, generation: generation, key: key) }
-        let outcome: LayoutApplicationOutcome
-        switch fit {
-        case .fits:
-            outcome = apply()
-        case let .revalidatable(bypass):
-            outcome = withMinimaBypass(bypass, apply)
-        case .refused:
-            return nil
+        var accepted: LayoutApplicationOutcome?
+        for (index, side) in sides.enumerated() {
+            let rect = layoutRect(for: side.key, screen: side.screen)
+            let apply = {
+                self.applyTrackedLayout(side.tree, in: rect, generation: generation, key: side.key,
+                                        restorationUsableFrame: reach)
+            }
+            let outcome: LayoutApplicationOutcome
+            switch fit {
+            case .fits:
+                outcome = apply()
+            case let .revalidatable(bypass):
+                outcome = withMinimaBypass(bypass, apply)
+            case .refused:
+                return nil
+            }
+            switch outcome {
+            case .accepted:
+                accepted = outcome
+            case .rejectedRestored, .degraded:
+                guard layoutGeneration == generation else { return outcome }
+                hyprLog(.debug, .lifecycle, "swap frame application failed — restoring tree")
+                for (side, snapshot) in zip(sides, snapshots) { side.tree.restore(snapshot) }
+                // an earlier screen already took the incoming window; lay
+                // both out again so each window goes back to its own tree
+                if index > 0 {
+                    let again = beginLayoutGeneration()
+                    for side in sides {
+                        _ = applyTrackedLayout(side.tree, in: layoutRect(for: side.key, screen: side.screen),
+                                               generation: again, key: side.key, restorationUsableFrame: reach)
+                    }
+                }
+                return outcome
+            }
         }
-        if case .accepted = outcome { return outcome }
-        guard layoutGeneration == generation else { return outcome }
-        hyprLog(.debug, .lifecycle, "swap frame application failed — restoring tree")
-        t.restore(snapshot)
-        return outcome
+        if sides.count > 1 {
+            admit([a.window.windowID], toWorkspace: b.key.workspace)
+            admit([b.window.windowID], toWorkspace: a.key.workspace)
+            hyprLog(.notice, .tiling, "swap across screens: \(a.window.windowID)→ws\(b.key.workspace) "
+                    + "\(b.window.windowID)→ws\(a.key.workspace)")
+        }
+        return accepted
     }
 
     /// Split-direction toggle for `window`'s parent node. Returns the
