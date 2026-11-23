@@ -1433,6 +1433,18 @@ class TilingEngine {
                                       restorationUsableFrame suppliedRestorationFrame: CGRect? = nil,
                                       topologyRecoveryMaxDepth: Int? = nil,
                                       newcomerIDs: Set<CGWindowID> = []) -> LayoutApplicationOutcome {
+        // a member in native full screen stands at the display's frame, and
+        // a size write ends full screen (#104). it keeps its leaf and gets no
+        // frame, like a held member, until a pass finds it out again
+        let previousFullScreen = passFullScreenIDs
+        passFullScreenIDs = Set(tree.allWindows
+            .filter { !heldWindowIDs.contains($0.windowID) && isInNativeFullScreen($0) }
+            .map(\.windowID))
+        defer { passFullScreenIDs = previousFullScreen }
+        if !passFullScreenIDs.isEmpty {
+            hyprLog(.notice, .tiling, "layout: \(passFullScreenIDs.sorted()) in native full screen"
+                    + " — leaves kept, no frame written")
+        }
         let outcome = applyVerifiedLayoutAttempt(tree, in: rect, generation: generation,
                                                   originalFrames: suppliedOriginalFrames,
                                                   restorationUsableFrame: suppliedRestorationFrame,
@@ -3546,6 +3558,10 @@ class TilingEngine {
     /// read again.
     var heldWindowIDsSource: () -> Set<CGWindowID> = { [] }
 
+    /// Whether a member is in native full screen (green button, Ctrl-Cmd-F,
+    /// Split View). Wired by `WindowManager` to `AXFullScreen`.
+    var isInNativeFullScreen: (HyprWindow) -> Bool = { _ in false }
+
     /// The window HyprMac last focused, as the tile a new window splits.
     /// Wired by `WindowManager` to the focus record. nil splits by the
     /// right-to-left walk alone (see `splitTarget(in:)`).
@@ -3581,6 +3597,10 @@ class TilingEngine {
     /// The maximized window while `applyTrackedLayout` runs the tree's pass.
     private var passMaximizedID: CGWindowID?
     private var heldWindowIDs: Set<CGWindowID> { passHeldIDs ?? [] }
+    /// The members of the verified layout under way that are in native
+    /// full screen. Not a hold: the walk reads them, and no poll releases
+    /// them into a retile.
+    private var passFullScreenIDs: Set<CGWindowID> = []
 
     private func passHold(for windows: [HyprWindow]) -> Set<CGWindowID> {
         heldWindowIDsSource().subtracting(windows.map(\.windowID))
@@ -3620,11 +3640,13 @@ class TilingEngine {
 
     /// The targets of a pass without its held members: their leaves stay
     /// reserved, their frames are not written.
-    /// Windows a pass neither reads nor writes: the held ones, and the
-    /// maximized one, which `applyTrackedLayout` writes on its own.
+    /// Windows a pass neither reads nor writes: the held ones, the ones in
+    /// native full screen, and the maximized one, which `applyTrackedLayout`
+    /// writes on its own.
     private var unwrittenWindowIDs: Set<CGWindowID> {
-        guard let passMaximizedID else { return heldWindowIDs }
-        return heldWindowIDs.union([passMaximizedID])
+        let unwritten = heldWindowIDs.union(passFullScreenIDs)
+        guard let passMaximizedID else { return unwritten }
+        return unwritten.union([passMaximizedID])
     }
 
     private func writable(_ layouts: [(HyprWindow, CGRect)]) -> [(HyprWindow, CGRect)] {

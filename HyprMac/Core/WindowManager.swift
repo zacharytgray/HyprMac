@@ -3001,7 +3001,8 @@ class WindowManager {
                   let actual = window.cachedFrame ?? window.frame
             else { continue }
             readings.append(TiledDriftReading(windowID: window.windowID, workspace: workspace,
-                                              screen: screen, actual: actual, intended: rect))
+                                              screen: screen, actual: actual, intended: rect,
+                                              isFullScreen: { window.isFullscreen }))
         }
 
         for decision in driftMonitor.note(readings) {
@@ -3558,6 +3559,8 @@ private extension WindowManager {
                 .subtracting(self.stateCache.floatingWindowIDs)
                 .subtracting(self.stateCache.hiddenWindowIDs)
         }
+        // a write to a window in native full screen takes it out (#104)
+        tilingEngine.isInNativeFullScreen = { $0.isFullscreen }
         // a window sent to the cursor's monitor rolls back to where it opened
         tilingEngine.newcomerOriginSource = { [weak self] id in
             self?.actionDispatcher.cursorMoveOrigin(id)

@@ -143,6 +143,45 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertFalse(trace.written.contains(held.windowID), "nothing goes out to a window on another space")
     }
 
+    /// issue #104: a tile in native full screen stands at the display's
+    /// frame, and a size write ends full screen. the walk lists it, so it is
+    /// no hold, but every pass keeps its leaf and writes it nothing, and the
+    /// poll that reads it asks for no retile
+    func testAMemberInNativeFullScreenKeepsItsLeafAndIsNotWritten() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 981), b = makeWindow(id: 982), full = makeWindow(id: 983)
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in [a, b, full] { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows([a, b, full], onWorkspace: 1, screen: screen).published)
+        trace.written = []
+
+        // the green button: the window takes the whole display
+        trace.frames[full.windowID] = rect
+        engine.isInNativeFullScreen = { $0.windowID == full.windowID }
+        for id in [a.windowID, b.windowID] { trace.frames[id] = rect.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows([a, b, full], onWorkspace: 1, screen: screen).published)
+        XCTAssertTrue(engine.swapWindows(a, b, onWorkspace: 1, screen: screen))
+        engine.toggleSplit(a, onWorkspace: 1, screen: screen)
+
+        XCTAssertEqual(Set(engine.existingTree(forWorkspace: 1, screen: screen)?.allWindows.map(\.windowID) ?? []),
+                       [981, 982, 983])
+        XCTAssertTrue(engine.unverifiedLayouts.isEmpty, "the passes are accepted around it")
+        XCTAssertTrue(trace.written.contains(a.windowID))
+        XCTAssertFalse(trace.written.contains(full.windowID), "no write ends full screen")
+        XCTAssertEqual(trace.frames[full.windowID], rect)
+        XCTAssertNotNil(engine.intendedTileRects()[full.windowID], "it keeps a slot to come back to")
+        XCTAssertEqual(engine.releaseHeldWindows(readable: [981, 982, 983]), [],
+                       "a full-screen tile is not a hold the next poll releases into a retile")
+
+        // out of full screen, the next pass writes it like any member
+        engine.isInNativeFullScreen = { _ in false }
+        XCTAssertTrue(engine.tileWindows([a, b, full], onWorkspace: 1, screen: screen).published)
+        XCTAssertTrue(trace.written.contains(full.windowID))
+    }
+
     /// a window that rounds a cell wider than its slot passes its own match
     /// and eats the gap. the pass gets the adjusted layout with room for the
     /// rounding instead of rolling back, and learns no floor from it
