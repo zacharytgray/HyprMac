@@ -1149,7 +1149,8 @@ Each follow reads the window list, not AX. An app posts the move a few
 milliseconds before the window server has it, so a window the list still
 shows at the old spot is read again a frame later, up to six times. The
 occlusion masks and the dim's carves are cut again 0.12 s after the last
-move.
+move. A drag reads the list on every drag event; a mouse-up reads it once
+more, since the last event can land a step behind the window.
 
 If an outline still lags, check that the app took the move subscriptions.
 An app that refuses them logs, after five tries:

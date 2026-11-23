@@ -521,12 +521,12 @@ class FocusBorder {
     /// Move `windowID`'s outline to `frame` (CG), geometry only, when the
     /// window moved: the window list's frame after the app said so. Its
     /// occlusion mask was cut for the old frame, so it goes until the settle
-    /// refresh cuts a new one. A floater being dragged follows the drag
-    /// instead.
+    /// refresh cuts a new one. A dragged floater keeps the newer frame for
+    /// the drag too.
     func followFloater(_ windowID: CGWindowID, to frame: CGRect) {
         mainThreadOnly()
-        guard floaterDrag?.id != windowID, let border = floatingPanels[windowID],
-              floaterFrames[windowID] != frame else { return }
+        guard let border = floatingPanels[windowID], floaterFrames[windowID] != frame else { return }
+        if floaterDrag?.id == windowID { floaterDrag = (windowID, frame) }
         floaterFrames[windowID] = frame
         border.panel.setFrame(panelRect(for: frame, expansion: Self.floaterPanelExpansion), display: false)
         positionFloaterViews(border)

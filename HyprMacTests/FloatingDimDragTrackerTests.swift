@@ -4,14 +4,12 @@ import XCTest
 final class FloatingDimDragTrackerTests: XCTestCase {
     private var carves: [CGRect] = []
     private var cleared = 0
-    private var clock: TimeInterval = 100
     private var listFrame: CGRect?
     private var reads = 0
     private let start = CGRect(x: 100, y: 100, width: 400, height: 300)
 
     private func armed(startFrame: CGRect? = nil) -> FloatingDimDragTracker {
         let tracker = FloatingDimDragTracker(
-            now: { [unowned self] in self.clock },
             setCarve: { [unowned self] _, rect in self.carves.append(rect) },
             clearCarve: { [unowned self] in self.cleared += 1 })
         listFrame = start
@@ -54,22 +52,25 @@ final class FloatingDimDragTrackerTests: XCTestCase {
         XCTAssertEqual(reads, 2)
     }
 
-    func testConfirmedMoveTracksOffTheMouseDownPair() {
+    // the window server stops a dragged window at the menu bar and the Dock,
+    // and an app that drags its own window lags the cursor. the window list
+    // has where the window is; the cursor delta only says where it would be
+    func testConfirmedMoveFollowsTheWindowListNotTheCursor() {
         let tracker = armed()
-        listFrame = start.offsetBy(dx: 10, dy: 0) // behind the cursor, must not be used
+        listFrame = start.offsetBy(dx: 200, dy: 194) // held 6 pt above the Dock
         tracker.update(cursorCG: CGPoint(x: 350, y: 310))
-        let expected = start.offsetBy(dx: 200, dy: 200).insetBy(dx: -2, dy: -2)
-        XCTAssertEqual(carves, [expected])
+        XCTAssertEqual(carves, [start.offsetBy(dx: 200, dy: 194).insetBy(dx: -2, dy: -2)])
     }
 
-    func testStaysConfirmedWithoutAnotherRead() {
+    func testAMissedListReadFallsBackToTheCursorDelta() {
         let tracker = armed()
         listFrame = start.offsetBy(dx: 10, dy: 0)
         tracker.update(cursorCG: CGPoint(x: 160, y: 110))
         listFrame = nil
         tracker.update(cursorCG: CGPoint(x: 170, y: 110))
-        XCTAssertEqual(carves.count, 2)
-        XCTAssertEqual(reads, 1)
+        XCTAssertEqual(carves, [start.offsetBy(dx: 10, dy: 0).insetBy(dx: -2, dy: -2),
+                                start.offsetBy(dx: 20, dy: 0).insetBy(dx: -2, dy: -2)])
+        XCTAssertEqual(reads, 2)
     }
 
     func testEdgeResizeFollowsTheLiveFrame() {
@@ -79,24 +80,19 @@ final class FloatingDimDragTrackerTests: XCTestCase {
         XCTAssertEqual(carves, [listFrame!.insetBy(dx: -2, dy: -2)])
     }
 
-    func testSizeCheckIsThrottledOnceConfirmed() {
+    func testEveryConfirmedEventReadsTheList() {
         let tracker = armed()
         listFrame = start.offsetBy(dx: 10, dy: 0)
         tracker.update(cursorCG: CGPoint(x: 160, y: 110))
-        // inside 0.1 s the new size goes unread: still delta math
-        clock += 0.05
         listFrame = CGRect(x: 110, y: 100, width: 450, height: 300)
         tracker.update(cursorCG: CGPoint(x: 170, y: 110))
-        XCTAssertEqual(carves.last, start.offsetBy(dx: 20, dy: 0).insetBy(dx: -2, dy: -2))
-        clock += 0.06
-        tracker.update(cursorCG: CGPoint(x: 180, y: 110))
         XCTAssertEqual(carves.last, listFrame!.insetBy(dx: -2, dy: -2))
     }
 
-    func testResizeFallsBackToTheStartFrame() {
+    // one read per event: the read that confirms a resize is the frame drawn
+    func testAResizeIsDrawnFromTheReadThatConfirmedIt() {
         var answers: [CGRect?] = [CGRect(x: 100, y: 100, width: 450, height: 300), nil]
         let tracker = FloatingDimDragTracker(
-            now: { [unowned self] in self.clock },
             setCarve: { [unowned self] _, rect in self.carves.append(rect) },
             clearCarve: {})
         var armedYet = false
@@ -107,12 +103,12 @@ final class FloatingDimDragTrackerTests: XCTestCase {
                     },
                     startFrame: start, downPointCG: .zero)
         tracker.update(cursorCG: .zero)
-        XCTAssertEqual(carves, [start.insetBy(dx: -2, dy: -2)])
+        XCTAssertEqual(carves, [CGRect(x: 100, y: 100, width: 450, height: 300).insetBy(dx: -2, dy: -2)])
+        XCTAssertEqual(answers.count, 1)
     }
 
     func testAMissingListAtPressFallsBackToTheStartFrame() {
         let tracker = FloatingDimDragTracker(
-            now: { [unowned self] in self.clock },
             setCarve: { [unowned self] _, rect in self.carves.append(rect) },
             clearCarve: {})
         var answers: [CGRect?] = [nil, start.offsetBy(dx: 10, dy: 0)]
@@ -125,7 +121,6 @@ final class FloatingDimDragTrackerTests: XCTestCase {
     func testTheOutlineGetsTheLiveFrameWithoutTheCarveMargin() {
         var live: [CGRect] = []
         let tracker = FloatingDimDragTracker(
-            now: { [unowned self] in self.clock },
             setCarve: { [unowned self] _, rect in self.carves.append(rect) },
             setLiveFrame: { _, rect in live.append(rect) },
             clearCarve: {})
@@ -138,8 +133,8 @@ final class FloatingDimDragTrackerTests: XCTestCase {
 
         listFrame = start.offsetBy(dx: 40, dy: 0)
         tracker.update(cursorCG: CGPoint(x: 190, y: 120))
-        XCTAssertEqual(live, [start.offsetBy(dx: 40, dy: 10)])
-        XCTAssertEqual(carves, [start.offsetBy(dx: 40, dy: 10).insetBy(dx: -2, dy: -2)])
+        XCTAssertEqual(live, [start.offsetBy(dx: 40, dy: 0)])
+        XCTAssertEqual(carves, [start.offsetBy(dx: 40, dy: 0).insetBy(dx: -2, dy: -2)])
     }
 
     func testDisarmKeepsTheOverrideAndFinishClearsIt() {

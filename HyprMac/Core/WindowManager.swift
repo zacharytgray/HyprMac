@@ -1410,6 +1410,8 @@ class WindowManager {
             if self?.dimDrag.isArmed == true {
                 self?.dimDrag.finish()
             }
+            // the last drag event can read the list a step behind the window
+            if floaterDragged { self?.chromeFollow.noteFrameChange(draggedFloatingID) }
             if draggedFloatingID != 0 {
                 let noteDrag = floaterDragged
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
