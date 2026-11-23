@@ -391,13 +391,19 @@ and hidden once it passes; a tile pass in between keeps its
 leaf, so the excursion leaves the layout untouched, and the poll that
 ends the hold is asked for when it runs out. An app's AX window list holds
 only the current Space's windows, so a missing window AX calls absent is
-also asked of the window server (`WindowSpaces.offSpace`, SkyLight): one on
+also asked of the window server (`WindowSpaces.answers`, SkyLight): one on
 a Space its display does not show is not a close. Behind a native
 full-screen Space it is held for as long as that Space is in front; on
 another desktop Space it gets the five-second hold and is then hidden with
 its slot reserved. Either way it comes back as the same window: no
-reopen, no drift, its slot and hand choice kept. A window on no Space
-(ordered out, destroyed) is judged by AX as before. `TilingEngine` owns the
+reopen, no drift, its slot and hand choice kept. A reservation made that
+way is asked about each cycle; once the window server has the window on no
+hidden Space and AX does not list it, it is a close and the slot goes. A
+window on no Space (ordered out, destroyed) is judged by AX as before, and
+so is one the window server did not answer for: a failed query never reads
+as more closed than AX alone did before Spaces were asked. An expired
+five-second hold keeps its start time, so the mass-gone guard's skipped
+polls do not restart it. `TilingEngine` owns the
 hold: `heldWindowIDsSource` names the windows the walk could not hand
 over, every pass asks it and holds the members its list does not carry,
 so a retile, a move onto the workspace, a scratchpad show, the recovery's

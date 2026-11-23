@@ -616,14 +616,14 @@ final class ReopenedWindowRuleTests: XCTestCase {
         workspaces.assignWindow(5, toWorkspace: workspace)
         if floating { cache.setFloating(true, window: w) }
         // the window server has it on a Space its display does not show
-        service.offSpaceStanding = { ids in offSpace.map { [5: $0] } ?? [:] }
+        service.windowSpaces = { ids in SpaceAnswers(offSpace: offSpace.map { [5: $0] } ?? [:], answered: ids) }
         _ = poll([], before)
         // a window its app still lists is held first; past the span it is hidden
         clock += WindowDiscoveryService.listedHoldSpan + 1
         _ = poll([], after)
         // behind a full-screen Space it is held, not hidden
         XCTAssertEqual(cache.hiddenWindowIDs.contains(5), offSpace != .behindFullScreen)
-        service.offSpaceStanding = { _ in [:] }
+        service.windowSpaces = { ids in SpaceAnswers(answered: ids) }
         let changes = poll([w], after)
         // the dispatcher forgets the choice of a reopen in the same pass
         if changes.reopenedAfterClose.contains(5) { choice = false }
@@ -687,6 +687,45 @@ final class ReopenedWindowRuleTests: XCTestCase {
         XCTAssertEqual(changes.reopenedAfterClose, [5])
         XCTAssertTrue(changes.unfloated.isEmpty)
         XCTAssertTrue(cache.floatingWindowIDs.contains(5))
+    }
+
+    // admission asks again when a fixed-size window turns resizable; a
+    // reopen under a tile rule gets the same re-check
+    func testAReopenedFloaterUnderATileRuleTilesOnceItCanResize() {
+        let rule = FloatingRule(bundleID: mail, action: .tile)
+        let access = StubAccessibility()
+        access.stateAnswer = .absent
+        let display = DisplayManager()
+        let workspaces = WorkspaceManager(displayManager: display)
+        let cache = WindowStateCache()
+        var settable = false
+        let service = WindowDiscoveryService(
+            stateCache: cache, accessibility: access, displayManager: display,
+            workspaceManager: workspaces, bundleIDForPID: { [mail] _ in mail },
+            isWindowSizeSettable: { _ in settable }, windowTitle: { _ in "Inbox" })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        service.now = { clock }
+        let w = makeWindow(id: 5, pid: 100)
+        let poll = { (snapshot: [HyprWindow]) in
+            service.computeChanges(snapshot: snapshot, runningPIDs: [100], excludedBundleIDs: [],
+                                   floatingRules: [rule], focusedWindowID: 0)
+        }
+        _ = poll([w])
+        workspaces.assignWindow(5, toWorkspace: 1)
+        // its own fixed-size re-checks run out while it is open
+        for _ in 0..<4 { clock += 5; _ = poll([w]) }
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5))
+        _ = poll([])
+        clock += WindowDiscoveryService.listedHoldSpan + 1
+        _ = poll([])
+        let changes = poll([w])
+        XCTAssertEqual(changes.reopenedAfterClose, [5])
+        XCTAssertTrue(cache.floatingWindowIDs.contains(5), "not resizable yet")
+
+        settable = true
+        clock += service.secondsUntilARetryIsDue ?? 100
+        XCTAssertEqual(poll([w]).unfloated, [5])
+        XCTAssertFalse(cache.floatingWindowIDs.contains(5))
     }
 
     // a minimize, Cmd-H or another Space is the same window: it keeps its

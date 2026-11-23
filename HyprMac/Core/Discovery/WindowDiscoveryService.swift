@@ -146,6 +146,10 @@ final class WindowDiscoveryService {
     /// until AX gives a real answer or the budget runs out (then it stays
     /// reserved — the safe side).
     private var unverifiedReservedIDs: [CGWindowID: Int] = [:]
+    /// Reserved hidden ids that were on a Space their display did not show.
+    /// AX cannot see them there, so the window server is asked each cycle;
+    /// once it has the window on no such Space, AX decides as for any hide.
+    private var offSpaceReservedIDs: Set<CGWindowID> = []
     private static let maxReverifyAttempts = 5
 
     /// When each id went gone-but-pid-alive. A return within seconds is a
@@ -255,6 +259,7 @@ final class WindowDiscoveryService {
     var secondsUntilAHoldEnds: TimeInterval? {
         let now = self.now()
         let ends = listedSince.values.map { $0.addingTimeInterval(Self.listedHoldSpan) }
+            .filter { $0 > now }
             + tabHolds.values.map { $0.since.addingTimeInterval($0.reason.span) }
         return ends.min().map { max(0.1, $0.timeIntervalSince(now)) }
     }
@@ -293,10 +298,10 @@ final class WindowDiscoveryService {
     /// What the window server shows on screen, front to back. Asked only
     /// when a window left with nothing read in its frame.
     var onScreenWindows: () -> [StackedWindow] = { WindowStacking.onScreen() ?? [] }
-    /// Which of the given missing windows the window server keeps on a Space
-    /// its display does not show (`WindowSpaces.offSpace` in the app). Tests
-    /// script it; the default knows of none.
-    var offSpaceStanding: (Set<CGWindowID>) -> [CGWindowID: OffSpaceStanding] = { _ in [:] }
+    /// What the window server says of the given missing windows: which are
+    /// on a Space their display does not show (`WindowSpaces.answers` in the
+    /// app). Tests script it; the default answers nothing.
+    var windowSpaces: (Set<CGWindowID>) -> SpaceAnswers = { _ in SpaceAnswers() }
     /// Whether the window server still has the window, off screen, while
     /// its app has another ordinary window off screen: what a background
     /// tab looks like. A window its app destroyed is a close.
@@ -403,6 +408,7 @@ final class WindowDiscoveryService {
         stateCache.tiledPositions.removeValue(forKey: hiddenID)
         stateCache.cachedWindows.removeValue(forKey: hiddenID)
         userHiddenIDs.remove(hiddenID)
+        offSpaceReservedIDs.remove(hiddenID)
         minimizedOrAppHiddenIDs.remove(hiddenID)
         unverifiedReservedIDs[hiddenID] = nil
         hiddenAt.removeValue(forKey: hiddenID)
@@ -548,12 +554,12 @@ final class WindowDiscoveryService {
                 listedSince.removeValue(forKey: id)
                 continue
             }
+            // an expired hold keeps its start: a mass-gone skip of the poll
+            // that would hide it must not start it over
             let since = listedSince[id] ?? now
+            listedSince[id] = since
             if now.timeIntervalSince(since) < Self.listedHoldSpan {
-                listedSince[id] = since
                 held.insert(id)
-            } else {
-                listedSince.removeValue(forKey: id)
             }
         }
         return held
@@ -643,7 +649,9 @@ final class WindowDiscoveryService {
         // window on a Space its display does not show as closed. the window
         // server knows better: one question per missing window per cycle
         let spaceAsked = missing.subtracting(unreadable).union(unverifiedReservedIDs.keys)
-        let offSpace = spaceAsked.isEmpty ? [:] : offSpaceStanding(spaceAsked)
+            .union(offSpaceReservedIDs.subtracting(currentIDs))
+        let spaces = spaceAsked.isEmpty ? SpaceAnswers() : windowSpaces(spaceAsked)
+        let offSpace = spaces.offSpace
         // a native full-screen Space in front: the whole desktop behind it is
         // off the screen, held where it is until the display shows it again
         let behindFullScreen = Set(offSpace.filter { $0.value == .behindFullScreen }.keys)
@@ -725,6 +733,7 @@ final class WindowDiscoveryService {
         massGoneSkips = 0
 
         reverifyUnresolvedReservations(currentIDs: currentIDs, runningPIDs: runningPIDs, offSpace: offSpace)
+        reverifyOffSpaceReservations(currentIDs: currentIDs, runningPIDs: runningPIDs, spaces: spaces)
 
         var newWindows: [HyprWindow] = []
         var newOnDisabled: Set<CGWindowID> = []
@@ -809,6 +818,7 @@ final class WindowDiscoveryService {
                 if state != .absent {
                     stateCache.reservedHiddenWindowIDs.insert(id)
                     if state == nil { unverifiedReservedIDs[id] = 0 }
+                    if offSpace[id] != nil { offSpaceReservedIDs.insert(id) }
                 }
                 // on another Space keeps its workspace on return, as a hide does
                 if state == nil || state == .minimized || state == .appHidden || offSpace[id] != nil {
@@ -851,6 +861,7 @@ final class WindowDiscoveryService {
         stateCache.reservedHiddenWindowIDs.subtract(returned.map { $0.windowID })
         stateCache.reservedHiddenWindowIDs.formIntersection(stateCache.hiddenWindowIDs)
         unverifiedReservedIDs = unverifiedReservedIDs.filter { stateCache.hiddenWindowIDs.contains($0.key) }
+        offSpaceReservedIDs.formIntersection(stateCache.reservedHiddenWindowIDs)
         // a shown tab has no workspace of its own until the caller hands it
         // the hidden one's; a ghost's stale one says nothing
         let shownTabs = Set(pairs.map(\.shown.windowID))
@@ -974,8 +985,11 @@ final class WindowDiscoveryService {
                 stateCache.setFloating(false, window: w)
                 step = .tile
             } else {
+                // as at admission: some apps make a window resizable a
+                // moment after it shows
+                fixedSizeRechecks[id] = (0, now().addingTimeInterval(Self.fixedSizeRecheckDelays[0]))
                 hyprLog(.notice, .discovery, "reopen: \(id) a tile rule covers it but it is not resizable"
-                        + " — stays floating")
+                        + " — stays floating, re-checked")
             }
         }
         if let step, let verdict {
@@ -1181,6 +1195,38 @@ final class WindowDiscoveryService {
     }
 
     // MARK: - private helpers
+
+    /// Re-ask about hidden ids reserved while on another Space. Still there
+    /// (or no answer from the window server): kept. On no Space its display
+    /// hides, the window is AX's to judge again: absent is a close, which
+    /// releases the slot, and a same-id return is then a reopen.
+    private func reverifyOffSpaceReservations(currentIDs: Set<CGWindowID>, runningPIDs: Set<pid_t>,
+                                              spaces: SpaceAnswers) {
+        for id in offSpaceReservedIDs.sorted() {
+            guard stateCache.hiddenWindowIDs.contains(id), stateCache.reservedHiddenWindowIDs.contains(id) else {
+                offSpaceReservedIDs.remove(id)
+                continue
+            }
+            guard !currentIDs.contains(id), spaces.answered.contains(id), spaces.offSpace[id] == nil,
+                  let pid = stateCache.windowOwners[id], runningPIDs.contains(pid),
+                  !accessibility.isBackingOff(pid: pid) else { continue }
+            offSpaceReservedIDs.remove(id)
+            switch accessibility.hiddenWindowState(windowID: id, pid: pid) {
+            case .absent:
+                stateCache.reservedHiddenWindowIDs.remove(id)
+                userHiddenIDs.remove(id)
+                minimizedOrAppHiddenIDs.remove(id)
+                hyprLog(.notice, .discovery, "hidden window \(id) is on no hidden Space and its app no longer"
+                        + " lists it — verified closed, releasing its workspace reservation")
+            case .minimized, .appHidden:
+                minimizedOrAppHiddenIDs.insert(id)
+            case .present:
+                break
+            case nil:
+                unverifiedReservedIDs[id] = 0
+            }
+        }
+    }
 
     /// Re-ask AX about hidden ids whose reservation was a guess (the query
     /// returned nil when they vanished). A window the user actually closed

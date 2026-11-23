@@ -1093,8 +1093,8 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         let scene = makeSpaceScene()
         var now = scene.clock
         scene.svc.now = { now }
-        scene.svc.offSpaceStanding = { ids in
-            Dictionary(uniqueKeysWithValues: ids.intersection([30, 32, 33, 34]).map { ($0, .behindFullScreen) })
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([30, 32, 33, 34]).map { ($0, .behindFullScreen) }), answered: ids)
         }
         let video = DiscoveryFramedWindow(id: 31, frame: CGRect(x: 0, y: 0, width: 1600, height: 1000))
 
@@ -1109,7 +1109,7 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(scene.access.queries.isEmpty, "the window server answered; AX was not asked")
 
         // back on the desktop: 30 stands on screen, the others parked
-        scene.svc.offSpaceStanding = { _ in [:] }
+        scene.svc.windowSpaces = { ids in SpaceAnswers(answered: ids) }
         let back = compute(scene.svc, snapshot: [
             video, DiscoveryFramedWindow(id: 30, frame: tileFrame),
             DiscoveryFramedWindow(id: 32, frame: parkedFrame), DiscoveryFramedWindow(id: 33, frame: parkedFrame),
@@ -1130,8 +1130,8 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         let scene = makeSpaceScene()
         var now = scene.clock
         scene.svc.now = { now }
-        scene.svc.offSpaceStanding = { ids in
-            Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .onOtherDesktop) })
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .onOtherDesktop) }), answered: ids)
         }
         let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
 
@@ -1142,7 +1142,7 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertEqual(gone.goneIDs, [30])
         XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
 
-        scene.svc.offSpaceStanding = { _ in [:] }
+        scene.svc.windowSpaces = { ids in SpaceAnswers(answered: ids) }
         let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
                            runningPIDs: [8500])
         XCTAssertEqual(back.returned.map(\.windowID), [30])
@@ -1161,8 +1161,8 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
 
         scene.access.stateAnswer = .absent
-        scene.svc.offSpaceStanding = { ids in
-            Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .onOtherDesktop) })
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .onOtherDesktop) }), answered: ids)
         }
         _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
         XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
@@ -1171,8 +1171,8 @@ final class WindowDiscoveryServiceTests: XCTestCase {
     // a window closed while full screen is in front is on no Space: a close
     func testAWindowOnNoSpaceIsStillAClose() {
         let scene = makeSpaceScene()
-        scene.svc.offSpaceStanding = { ids in
-            Dictionary(uniqueKeysWithValues: ids.intersection([32, 33, 34]).map { ($0, .behindFullScreen) })
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([32, 33, 34]).map { ($0, .behindFullScreen) }), answered: ids)
         }
         let video = DiscoveryFramedWindow(id: 31, frame: CGRect(x: 0, y: 0, width: 1600, height: 1000))
 
@@ -1183,12 +1183,100 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(30), "a verified close")
         XCTAssertEqual(scene.svc.heldWindowIDs, [32, 33, 34])
 
-        scene.svc.offSpaceStanding = { _ in [:] }
+        scene.svc.windowSpaces = { ids in SpaceAnswers(answered: ids) }
         let desktop = [32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
         let back = compute(scene.svc, snapshot: [video, DiscoveryFramedWindow(id: 30, frame: tileFrame)] + desktop,
                            runningPIDs: [8500])
         XCTAssertEqual(back.reopenedAfterClose, [30])
         XCTAssertEqual(back.screenDrift.map(\.windowID), [30], "the recycled-id reopen still lands where it opened")
+    }
+
+    /// 30 hidden on another desktop Space with its slot reserved
+    private func hideOnAnotherDesktop(_ scene: SpaceScene, advance: (TimeInterval) -> Void, others: [HyprWindow]) {
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([30]).map { ($0, .onOtherDesktop) }),
+                         answered: ids)
+        }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        advance(WindowDiscoveryService.listedHoldSpan + 1)
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+    }
+
+    // closed while it sat on another Space (Teams ends a call there): the
+    // window server has it on no Space now, and AX has no word of it. the
+    // reservation goes, and a same-id return is a reopen with its rules
+    func testAWindowClosedWhileOnAnotherDesktopReleasesItsReservation() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        hideOnAnotherDesktop(scene, advance: { now += $0 }, others: others)
+
+        scene.svc.windowSpaces = { ids in SpaceAnswers(answered: ids) }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(30), "a verified close now")
+
+        let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
+                           runningPIDs: [8500])
+        XCTAssertEqual(back.reopenedAfterClose, [30])
+    }
+
+    // a window-server question that fails says nothing: the window stays
+    // reserved, it is not read as closed
+    func testAnOffSpaceReservationIsKeptWhenTheWindowServerDoesNotAnswer() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+        hideOnAnotherDesktop(scene, advance: { now += $0 }, others: others)
+
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        _ = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.contains(30))
+
+        // back on screen with no answer either: the same window, not a reopen
+        let back = compute(scene.svc, snapshot: others + [DiscoveryFramedWindow(id: 30, frame: tileFrame)],
+                           runningPIDs: [8500])
+        XCTAssertTrue(back.reopenedAfterClose.isEmpty)
+        XCTAssertTrue(back.screenDrift.isEmpty)
+    }
+
+    // with no answer at first sight, the verdict is AX's alone, as it was
+    // before the window server was asked: absent reads as a close
+    func testWithNoWindowServerAnswerAMissingWindowIsLeftToAX() {
+        let scene = makeSpaceScene()
+        scene.svc.windowSpaces = { _ in SpaceAnswers() }
+        let others = [31, 32, 33, 34].map { DiscoveryFramedWindow(id: CGWindowID($0), frame: parkedFrame) }
+
+        let changes = compute(scene.svc, snapshot: others, runningPIDs: [8500])
+
+        XCTAssertEqual(changes.goneIDs, [30])
+        XCTAssertFalse(scene.cache.reservedHiddenWindowIDs.contains(30))
+    }
+
+    // most of the desktop on another Space: the off-screen hold runs out,
+    // the mass-gone guard skips a few polls, then they are hidden with their
+    // slots. the hold must not start over after each skip
+    func testAMajorityOnAnotherDesktopIsHiddenOnceTheHoldAndGuardPass() {
+        let scene = makeSpaceScene()
+        var now = scene.clock
+        scene.svc.now = { now }
+        scene.svc.windowSpaces = { ids in
+            SpaceAnswers(offSpace: Dictionary(uniqueKeysWithValues: ids.intersection([30, 32, 33, 34]).map { ($0, .onOtherDesktop) }),
+                         answered: ids)
+        }
+        let video = DiscoveryFramedWindow(id: 31, frame: tileFrame)
+
+        for _ in 0..<12 {
+            _ = compute(scene.svc, snapshot: [video], runningPIDs: [8500])
+            now += 1
+        }
+
+        XCTAssertEqual(scene.cache.hiddenWindowIDs, [30, 32, 33, 34])
+        XCTAssertTrue(scene.cache.reservedHiddenWindowIDs.isSuperset(of: [30, 32, 33, 34]))
+        XCTAssertTrue(scene.svc.heldWindowIDs.isEmpty)
+        XCTAssertNil(scene.svc.secondsUntilAHoldEnds)
     }
 
     func testTheWindowServerStandingOfAWindow() {

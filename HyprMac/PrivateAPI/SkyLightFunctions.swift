@@ -135,6 +135,15 @@ enum OffSpaceStanding: Equatable {
     case onOtherDesktop
 }
 
+/// The window server's answer for some missing windows.
+struct SpaceAnswers: Equatable {
+    /// the ones on a Space their display does not show
+    var offSpace: [CGWindowID: OffSpaceStanding] = [:]
+    /// every id the window server answered for, wherever it is. One it did
+    /// not answer for is left to AX alone, as before Spaces were asked
+    var answered: Set<CGWindowID> = []
+}
+
 enum WindowSpaces {
     /// One display's Spaces: the current one, its type, and every Space it has.
     struct Display: Equatable {
@@ -156,23 +165,26 @@ enum WindowSpaces {
         return display.currentIsFullScreen ? .behindFullScreen : .onOtherDesktop
     }
 
-    /// The standing of each of `ids` that is on a Space its display does not
-    /// show. One window-server question per id, plus one for the displays.
-    static func offSpace(_ ids: Set<CGWindowID>) -> [CGWindowID: OffSpaceStanding] {
-        guard !ids.isEmpty, let calls = SkyLightSpaceCalls.shared else { return [:] }
+    /// Where each of `ids` is: off-Space, or answered and not. One
+    /// window-server question per id, plus one for the displays. A failed
+    /// question answers nothing.
+    static func answers(_ ids: Set<CGWindowID>) -> SpaceAnswers {
+        guard !ids.isEmpty, let calls = SkyLightSpaceCalls.shared else { return SpaceAnswers() }
         let cid = calls.mainConnectionID()
         guard let raw = calls.copyManagedDisplaySpaces(cid)?.takeRetainedValue() as? [[String: Any]]
-        else { return [:] }
+        else { return SpaceAnswers() }
         let displays = raw.compactMap(display(from:))
-        guard !displays.isEmpty else { return [:] }
-        var result: [CGWindowID: OffSpaceStanding] = [:]
+        // every display must read, or a current Space could be missed
+        guard !displays.isEmpty, displays.count == raw.count else { return SpaceAnswers() }
+        var result = SpaceAnswers()
         for id in ids {
             let list = [NSNumber(value: id)] as CFArray
             // 0x7: every Space the window is on, current or not
             guard let spaces = calls.copySpacesForWindows(cid, 0x7, list)?.takeRetainedValue() as? [NSNumber]
             else { continue }
+            result.answered.insert(id)
             if let standing = standing(windowSpaces: spaces.map(\.uint64Value), displays: displays) {
-                result[id] = standing
+                result.offSpace[id] = standing
             }
         }
         return result

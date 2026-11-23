@@ -502,8 +502,10 @@ the request gets one attempt with them set aside. Look for what follows:
   places it like a new window instead of logging `slot restored:`.
   `reopen: <id> <bundle> <match> — floating it` (or `tiling it`; notice,
   discovery) is a rule applied to that reopen, as admission would. `reopen:
-  <id> a tile rule covers it but it is not resizable — stays floating` is the
-  refusal.
+  <id> a tile rule covers it but it is not resizable — stays floating,
+  re-checked` is the refusal. It gets the fixed-size re-checks admission gives,
+  so a window that turns resizable a moment later is tiled then
+  (`auto-float re-check: … is resizable now — handing it back to tiling`).
 - `drift: '<title>' (<id>) ws<A> → ws<B> (now on <screen>) [reopened onto
   hidden ws]` (notice, discovery) — that reopen came back while ws<A> was
   hidden, so it moves to ws<B>, the workspace visible where it opened. A
@@ -1425,7 +1427,10 @@ server which Spaces such a window is on (`SLSCopySpacesForWindows`). The
 third line is every desktop window while a native full-screen app is in
 front: held, with no time limit, until the display shows their Space
 again. A window on another desktop Space gets the five-second hold and
-then `window hidden: <id> (<bundle>) — on another Space, reserved`. Neither
+then `window hidden: <id> (<bundle>) — on another Space, reserved`. If it
+is closed while it is there, `hidden window <id> is on no hidden Space and
+its app no longer lists it — verified closed, releasing its workspace
+reservation` follows once the window server has it on no hidden Space. Neither
 comes back as `reopened after a close`. Before this, each full-screen exit
 logged `window returned: … — reopened after a close` for every desktop
 window, and a window its app put back on screen was moved with `drift: …
