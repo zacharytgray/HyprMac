@@ -1344,7 +1344,11 @@ final class TilingEnginePassBudgetTests: XCTestCase {
             originals[window.windowID] = CGRect(x: 40 + 20 * index, y: 40 + 20 * index, width: 400, height: 300)
         }
         let trace = SlowAppTrace(frames: originals)
-        let engine = TilingEngine(displayManager: DisplayManager(),
+        // a screen well past the rect, so no target hangs off it and nothing
+        // is staged in place: the setter counts below would otherwise follow
+        // the host's screen and Dock
+        let screen = RoomyTestScreen()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
                                   frameSizingIOFactory: { _, generation in trace.io(generation) })
         return (engine, tree, trace, originals)
     }
@@ -1670,6 +1674,11 @@ final class TilingEngineInPlaceStagingTests: XCTestCase {
 
 private final class StagingTestScreen: SyntheticScreen {
     override var frame: NSRect { NSRect(x: 0, y: 0, width: 1600, height: 1000) }
+    override var visibleFrame: NSRect { frame }
+}
+
+private final class RoomyTestScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 0, y: 0, width: 2560, height: 1440) }
     override var visibleFrame: NSRect { frame }
 }
 
