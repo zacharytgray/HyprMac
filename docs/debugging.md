@@ -1688,6 +1688,38 @@ To see the monitor follow Accessibility, turn Accessibility off for the app
 and run the check (denied), then turn it back on (granted, and
 "physical key monitor started" within 5 s).
 
+### Caps Lock is plain Caps Lock after a wake (#103)
+
+`UserKeyMapping` lives in two places: the system-wide list, and a copy in
+each keyboard. Only the copy changes what a key does. A write copies the
+list into every keyboard present. A keyboard the system makes later (on
+wake, a plug-in, a Bluetooth reconnect) gets no copy, so the list reads
+fine while Caps Lock on that keyboard is still Caps Lock. Compare both:
+
+```bash
+hidutil property --get UserKeyMapping
+hidutil property --matching '{"PrimaryUsagePage":1,"PrimaryUsage":6}' --get UserKeyMapping
+```
+
+A keyboard showing `(null)` while the list has Caps Lock (30064771129) →
+F18 (30064771181) is the #103 state. HyprMac checks each keyboard after a
+wake, an unlock and the session becoming active, and one second after a
+keyboard arrives, and gives the list to a keyboard with `(null)` only.
+A keyboard showing its own list (even `()`) was set by someone with
+`hidutil --matching` or another tool, and HyprMac leaves it alone. All
+`[lifecycle]`:
+
+```
+keyboard arrived — checking the Caps Lock remap                 (.notice)
+keyboard <name> (0x…) had no UserKeyMapping, so Caps Lock on it
+  was still Caps Lock — gave it the list (N entries)            (.notice)
+keyboard <name> (0x…) has no UserKeyMapping and didn't take the
+  list; Caps Lock on it is still Caps Lock                      (.error)
+could not watch for keyboards arriving (<code>)                 (.error)
+```
+
+`hidutil list --matching keyboard` maps a RegistryID to a product name.
+
 ### HyprMac quit right after launch
 
 A copy that starts while another is running quits before it starts anything,

@@ -154,7 +154,7 @@ live for the entire app lifetime. The process-wide singletons are
 |---|---|
 | `WindowManager` | Orchestrator. Wires services, drives lifecycle, owns mouse monitors and observers, the display settle's timer, and the focus chrome refresh. |
 | `HotkeyManager` | Session-level CGEventTap on a dedicated thread. Translates Hypr-key chords into `Action` values, dispatched to main. |
-| `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. Adds and removes only its own `UserKeyMapping` entry (see "Caps Lock remap"). |
+| `KeyRemapper` | hidutil-driven Caps Lock → F18 remap so the Hypr key produces clean keyDown/keyUp events. Adds and removes only its own `UserKeyMapping` entry, and gives the list to a keyboard that arrived without a copy (see "Caps Lock remap"). |
 | `PhysicalKeyMonitor` | IOHIDManager read of the physical Caps Lock key, on the tap thread. Lets `HotkeyManager` ignore the F18 release macOS sends on Control up (see "Physical Caps Lock read"). Its keyboard access comes with Accessibility. |
 | `AccessibilityManager` | AX bridge. Enumerates windows, resolves the focused window, picks directional neighbors. |
 | `DisplayManager` | NSScreen tracking and CG ↔ NS coordinate conversion. |
@@ -1130,8 +1130,41 @@ its own displaced entry. Running one after the other while an entry is
 held can put back a mapping the user no longer has. Quit one variant
 before starting the other.
 
-Mappings set per keyboard with `hidutil --matching` are not in this list,
-and HyprMac does not read or change them.
+### Each keyboard's copy (#103)
+
+The list is not what a key reads. Each keyboard service holds its own
+copy, and only the copy changes what the key does. A system-wide write
+copies the list into every keyboard present. A keyboard the event system
+makes later (a plug-in, a Bluetooth reconnect, a keyboard rebuilt on wake)
+gets no copy, so its value reads `(null)` and Caps Lock on it is still
+Caps Lock, while the list still says Caps Lock → F18.
+
+`KeyRemapper.reassertHyprKey` checks each keyboard when the list already
+has our entry (`IOHIDEventSystemClientCopyServices`, keyboards only). A
+keyboard with no copy gets the current list through
+`IOHIDServiceClientSetProperty` on that keyboard alone, then reads it back.
+The system list and every other keyboard stay as they are. A keyboard with
+any list of its own, even an empty one or one without our entry, was set
+by someone (`hidutil --matching`, another tool), so it is left alone. It
+runs on the wake, unlock and session-active notifications, and one second
+after keyboards stop arriving (`KeyboardArrivalWatcher`, a registry
+notification on `IOHIDEventService` with keyboard usage, started and
+stopped with `WindowManager`). Pinned by the #103 tests in
+`KeyRemapperTests`.
+
+Per-keyboard mappings set with `hidutil --matching` are not in the list.
+HyprMac doesn't read them, but each system-wide write replaces them: on
+macOS 15.8 a write, even of an identical list, put the list over a
+keyboard's own mapping. So they last only until HyprMac's next install or
+remove.
+
+Checked on the hub (macOS 15.8, 2026-11-23): an unentitled process can set
+and read back one keyboard's copy, and the set leaves the other keyboard
+and the list untouched. A null value is refused, so the `(null)` state
+can't be made by hand; it needs a new keyboard service. Apple's TN2450
+says mappings go away when a keyboard service is removed; the issue's
+evidence shows a new service on wake with `(null)` beside older ones that
+kept the copy.
 
 ## Physical Caps Lock read
 
