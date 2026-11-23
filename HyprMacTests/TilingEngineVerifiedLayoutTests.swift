@@ -1496,7 +1496,8 @@ final class TilingEngineSlowWriteRollbackTests: XCTestCase {
             9903: CGRect(x: 820, y: 30, width: 760, height: 900)
         ]
         let trace = BusyAppTrace(frames: originals, slowWindowID: 9902, narrowingCost: 0.22)
-        let engine = TilingEngine(displayManager: DisplayManager(),
+        let screen = StagingTestScreen()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
                                   frameSizingIOFactory: { _, generation in trace.io(generation) })
         let targets = Dictionary(uniqueKeysWithValues: tree.layout(
             in: usable, gap: engine.gapSize, padding: engine.outerPadding
@@ -1590,6 +1591,177 @@ private final class BusyAppTrace {
         )
         // opening a window's writes reads its enhanced-UI flag: an AX call
         // like any other, and the one dex157's rollback timed out on
+        io.beginFrameWrite = { [self] id, timeout, _ in
+            let (answered, _) = call(id, timeout: timeout)
+            return answered ? .ready(.noop(windowID: id)) : .failed(.cannotComplete)
+        }
+        return io
+    }
+}
+
+/// Issue #99, part 2: a size written where a window stands is clamped at the
+/// screen's edge (AppKit does this to any window, seen on the hub), and an
+/// app like Telegram takes 32 pt off its height when a size write carries it
+/// across its layout switch. In the plain order the crossing write is the
+/// last one, so nothing puts the 32 pt back.
+final class TilingEngineInPlaceStagingTests: XCTestCase {
+    private let usable = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+
+    private func fixture() -> (engine: TilingEngine, tree: BSPTree, trace: ClampingAppTrace,
+                               originals: [CGWindowID: CGRect], targets: [CGWindowID: CGRect]) {
+        let tree = BSPTree()
+        for id in [CGWindowID(9911), 9912, 9913] { XCTAssertTrue(tree.insert(makeWindow(id: id), maxDepth: 3)) }
+        let screen = StagingTestScreen()
+        var trace: ClampingAppTrace!
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        // the stack is the target; the two right windows start as columns
+        let targets = Dictionary(uniqueKeysWithValues: tree.layout(
+            in: usable, gap: engine.gapSize, padding: engine.outerPadding
+        ).map { ($0.0.windowID, $0.1) })
+        let top = targets[9912]!, bottom = targets[9913]!
+        XCTAssertEqual(top.minX, bottom.minX, "a stack on the right")
+        let column = (top.width - engine.gapSize) / 2
+        let originals: [CGWindowID: CGRect] = [
+            9911: targets[9911]!,
+            9912: CGRect(x: top.minX, y: top.minY, width: column, height: bottom.maxY - top.minY),
+            9913: CGRect(x: top.maxX - column, y: top.minY, width: column, height: bottom.maxY - top.minY)
+        ]
+        trace = ClampingAppTrace(frames: originals, screen: usable, switchWindowID: 9913, switchWidth: 600)
+        return (engine, tree, trace, originals, targets)
+    }
+
+    /// back to a stack: the right column's target hangs off the screen from
+    /// where it stands, so it moves first, takes the crossing write there and
+    /// gets its height back from the last size
+    func testAWindowWhoseTargetHangsOffFromWhereItStandsIsStagedAndLands() {
+        let (engine, tree, trace, originals, targets) = fixture()
+
+        let outcome = engine.applyVerifiedLayout(tree, in: usable, generation: engine.beginLayoutGeneration(),
+                                                 originalFrames: originals)
+
+        guard case .accepted = outcome else {
+            return XCTFail("expected the staged write to land, got \(outcome)")
+        }
+        XCTAssertEqual(trace.frames, targets)
+        XCTAssertEqual(trace.writes[9913], ["position", "size", "position", "size"], "staged: moved first")
+        XCTAssertEqual(trace.writes[9912], ["size", "position", "size"], "fits from where it stands")
+    }
+
+    /// the window before it times out, so the layout is rolled back and
+    /// retried on the longer budget. the rollback put the column back where
+    /// its target hangs off again, so the retry stages it too
+    func testTheTimeoutRetryStagesAsTheFirstPassDid() {
+        let (engine, tree, trace, originals, targets) = fixture()
+        trace.slowFirstSize = (9912, 0.15)
+
+        let outcome = engine.applyVerifiedLayout(tree, in: usable, generation: engine.beginLayoutGeneration(),
+                                                 originalFrames: originals)
+
+        guard case .accepted = outcome else {
+            return XCTFail("expected the timeout retry to land, got \(outcome)")
+        }
+        XCTAssertEqual(trace.frames, targets)
+        // the rollback writes it first, in place: it fits from there
+        XCTAssertEqual(trace.writes[9913], ["size", "position", "size", "position", "size", "position", "size"],
+                       "rolled back in place, then the retry staged it")
+    }
+}
+
+private final class StagingTestScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 0, y: 0, width: 1600, height: 1000) }
+    override var visibleFrame: NSRect { frame }
+}
+
+/// Windows on a virtual clock that clamp a size at the screen's right and
+/// bottom edges from where they stand. `switchWindowID` loses 32 pt of height,
+/// bottom edge kept, when a size write takes it from under `switchWidth` to
+/// at least that. `slowFirstSize` makes one window's first size write busy
+/// its app for that long: past the call's timeout it answers -25204 and
+/// lands late, and every call to that window waits for it.
+private final class ClampingAppTrace {
+    var frames: [CGWindowID: CGRect]
+    var slowFirstSize: (CGWindowID, TimeInterval)?
+    private(set) var writes: [CGWindowID: [String]] = [:]
+    private var now: TimeInterval = 0
+    private var busyUntil: [CGWindowID: TimeInterval] = [:]
+    private var pending: [(at: TimeInterval, id: CGWindowID, size: CGSize)] = []
+    private let screen: CGRect
+    private let switchWindowID: CGWindowID
+    private let switchWidth: CGFloat
+
+    init(frames: [CGWindowID: CGRect], screen: CGRect, switchWindowID: CGWindowID, switchWidth: CGFloat) {
+        self.frames = frames
+        self.screen = screen
+        self.switchWindowID = switchWindowID
+        self.switchWidth = switchWidth
+    }
+
+    private func land() {
+        for change in pending where change.at <= now { resize(change.id, to: change.size) }
+        pending.removeAll { $0.at <= now }
+    }
+
+    private func resize(_ id: CGWindowID, to size: CGSize) {
+        guard var frame = frames[id] else { return }
+        let before = frame.width
+        frame.size = CGSize(width: min(size.width, screen.maxX - frame.minX),
+                            height: min(size.height, screen.maxY - frame.minY))
+        if id == switchWindowID, before < switchWidth, frame.width >= switchWidth {
+            frame.origin.y += 32
+            frame.size.height -= 32
+        }
+        frames[id] = frame
+    }
+
+    /// waits for the window's app, then spends `cost`. false when that runs
+    /// past `timeout`
+    private func call(_ id: CGWindowID, timeout: TimeInterval, cost: TimeInterval = 0) -> (Bool, TimeInterval) {
+        land()
+        let done = max(now, busyUntil[id] ?? 0) + cost
+        busyUntil[id] = done
+        if done - now > timeout {
+            now += timeout
+            land()
+            return (false, done)
+        }
+        now = done
+        land()
+        return (true, done)
+    }
+
+    func io(_ generation: @escaping () -> UInt64) -> FrameSizingIO {
+        var io = FrameSizingIO(
+            setMessagingTimeout: { _, _ in .success },
+            writeSize: { [self] id, size, timeout in
+                writes[id, default: []].append("size")
+                var cost: TimeInterval = 0
+                if let (slow, slowCost) = slowFirstSize, slow == id {
+                    cost = slowCost
+                    slowFirstSize = nil
+                }
+                let (answered, at) = call(id, timeout: timeout, cost: cost)
+                if answered { resize(id, to: size) } else { pending.append((at, id, size)) }
+                return answered ? .success : .cannotComplete
+            },
+            writePosition: { [self] id, position, timeout in
+                writes[id, default: []].append("position")
+                let (answered, _) = call(id, timeout: timeout)
+                if answered { frames[id]?.origin = position }
+                return answered ? .success : .cannotComplete
+            },
+            readPosition: { [self] id, timeout in
+                let (answered, _) = call(id, timeout: timeout)
+                return answered ? (.success, frames[id]?.origin) : (.cannotComplete, nil)
+            },
+            readSize: { [self] id, timeout in
+                let (answered, _) = call(id, timeout: timeout)
+                return answered ? (.success, frames[id]?.size) : (.cannotComplete, nil)
+            },
+            now: { [self] in now },
+            sleep: { [self] interval in now += interval; land() },
+            currentGeneration: generation
+        )
         io.beginFrameWrite = { [self] id, timeout, _ in
             let (answered, _) = call(id, timeout: timeout)
             return answered ? .ready(.noop(windowID: id)) : .failed(.cannotComplete)
