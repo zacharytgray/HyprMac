@@ -13,6 +13,7 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
     private var welcomeController: WelcomeWindowController?
+    private var tutorialController: TutorialWindowController?
     private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
@@ -253,8 +254,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Public entry for replaying the first-run tour from Settings.
     func showTour() {
         hyprLog(.debug, .lifecycle, "tutorial requested")
+        #if HYPRMAC_DEBUG_VARIANT
+        // the full-screen tutorial, one lesson so far: Debug app only, and
+        // only when launched with --new-tutorial
+        if CommandLine.arguments.contains("--new-tutorial") {
+            presentHyprKeyLesson()
+            return
+        }
+        #endif
         presentWelcome(mode: .firstRun)
     }
+
+    #if HYPRMAC_DEBUG_VARIANT
+    private func presentHyprKeyLesson() {
+        welcomeController?.dismiss()
+        let model = HyprKeyLessonModel()
+        let controller = TutorialWindowController()
+        let close = { [weak self, weak model] in
+            model?.stop()
+            self?.tutorialController?.dismiss()
+            self?.tutorialController = nil
+        }
+        controller.show(HyprKeyLessonView(model: model, onSkipTutorial: close, onNext: close))
+        model.start()
+        tutorialController = controller
+    }
+    #endif
 
     private func showWelcome(mode: WelcomeMode) {
         // small delay so tiling engine settles first

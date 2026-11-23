@@ -95,6 +95,58 @@ final class InterfaceSnapshotTests: XCTestCase {
                    size: CGSize(width: 520, height: 440))
     }
 
+    // every first-run page and the gate, both themes, for tutorial reviews
+    func testRenderTutorialScreens() throws {
+        UserConfig.shared.hyprKey = .capsLock
+        let names = ["hypr-key", "windows", "focus", "workspaces", "workspace-strip", "finish", "login-item"]
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            for (page, name) in names.enumerated() {
+                try render("tutorial-\(page + 1)-\(name)-\(mode)",
+                           TourView(mode: .firstRun, startPage: page, onDismiss: {}),
+                           size: CGSize(width: 520, height: 440), dark: dark)
+            }
+            try render("tutorial-gate-\(mode)",
+                       PermissionsGateView(model: PermissionsGateModel(), onQuit: {}),
+                       size: CGSize(width: 520, height: 530), dark: dark)
+        }
+    }
+
+    // the full-screen hypr key lesson at its three points, plus double-tap off
+    func testRenderHyprKeyLesson() throws {
+        UserConfig.shared.hyprKey = .capsLock
+        let savedDoubleTap = UserConfig.shared.doubleTapHyprTogglesCapsLock
+        defer { UserConfig.shared.doubleTapHyprTogglesCapsLock = savedDoubleTap }
+        let size = CGSize(width: 1440, height: 900)
+        func lesson(_ setup: (HyprKeyLessonModel) -> Void) -> some View {
+            let model = HyprKeyLessonModel()
+            setup(model)
+            return HyprKeyLessonView(model: model, onSkipTutorial: {}, onNext: {})
+        }
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            UserConfig.shared.doubleTapHyprTogglesCapsLock = true
+            try render("lesson-hypr-key-1-start-\(mode)", lesson { _ in }, size: size, dark: dark)
+            try render("lesson-hypr-key-2-held-\(mode)", lesson {
+                $0.hyprHeld = true
+                $0.heldOnce = true
+            }, size: size, dark: dark)
+            try render("lesson-hypr-key-3-capitals-on-\(mode)", lesson {
+                $0.heldOnce = true
+                $0.capsLockOn = true
+                $0.capsTurnedOn = true
+            }, size: size, dark: dark)
+            try render("lesson-hypr-key-4-done-\(mode)", lesson {
+                $0.heldOnce = true
+                $0.capsTurnedOn = true
+                $0.capsTurnedOff = true
+            }, size: size, dark: dark)
+            UserConfig.shared.doubleTapHyprTogglesCapsLock = false
+            try render("lesson-hypr-key-5-double-tap-off-\(mode)", lesson { $0.heldOnce = true },
+                       size: size, dark: dark)
+        }
+    }
+
     func testRenderKeybindChips() throws {
         UserConfig.shared.hyprKey = .capsLock
         let binds = [
