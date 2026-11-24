@@ -95,6 +95,7 @@
 		2F47E5364AA07C17F22F6067 /* MenuBarPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7D9E5B48B44818B3F7D68A7 /* MenuBarPresentationTests.swift */; };
 		2F7C20004633B3B6A8CCF6D6 /* Action.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B20DF87F29CD5B1164F1E80 /* Action.swift */; };
 		30437070AFBA3C86851B7644 /* OverlayGlassTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3824A8886FAAD2F04890108A /* OverlayGlassTests.swift */; };
+		30896A363C3B88027F183E32 /* ChromeCutMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AFE32F256947F9E2CE7412C /* ChromeCutMask.swift */; };
 		3106D31CBD97C1E1940BD4AE /* BundleIDPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */; };
 		31A76B46B1247AD77603445A /* MoveAroundLesson.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B6A5DAA2A32DA7E60FC90A /* MoveAroundLesson.swift */; };
 		321ED983E085852543CE66E5 /* TilingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */; };
@@ -202,6 +203,7 @@
 		6FFE4657B9BBBA48D441970F /* AXFrameWriteBatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = F128E4713D085AE80F3D5B0A /* AXFrameWriteBatch.swift */; };
 		708DEC88B3AD6B85E901ADBF /* CrossScreenWriteOrder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46201EFD7BEA95F414A2D2CF /* CrossScreenWriteOrder.swift */; };
 		71E1D8EEA0227CA75D63F04E /* WindowStacking.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2CF1D9358724AFE225566EE /* WindowStacking.swift */; };
+		72BF593D09448CE994A55913 /* ChromeCutMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AFE32F256947F9E2CE7412C /* ChromeCutMask.swift */; };
 		7350AB4A7C68F4970A52F4AA /* TilingEngineTypesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C37534AED88541088ACD12A3 /* TilingEngineTypesTests.swift */; };
 		741D2164F2BBFC88D543EBE9 /* ScreenshotPickerWatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 183602E03A997ED9810FD91E /* ScreenshotPickerWatcher.swift */; };
 		74EB88ADC96D2ACBC690C836 /* DimmingOverlayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 556C506B51F8050F6F5E22A4 /* DimmingOverlayTests.swift */; };
@@ -589,6 +591,7 @@
 		291B4FB1A55EDA7B77928527 /* FocusBorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusBorder.swift; sourceTree = "<group>"; };
 		298318CA91C080E2C130A4DE /* LayoutEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutEngineTests.swift; sourceTree = "<group>"; };
 		2AECFAE9BE1E8270FACA3F28 /* TiledDragEventTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragEventTests.swift; sourceTree = "<group>"; };
+		2AFE32F256947F9E2CE7412C /* ChromeCutMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeCutMask.swift; sourceTree = "<group>"; };
 		2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestroyRecheck.swift; sourceTree = "<group>"; };
 		2CFEA8374C63AC2FDFCAC4AE /* WindowManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowManager.swift; sourceTree = "<group>"; };
 		2D13627D56EAF1DA752EAAFC /* LayoutSnapshotStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutSnapshotStoreTests.swift; sourceTree = "<group>"; };
@@ -1208,6 +1211,7 @@
 		C00E5317C37384ADF9AD81B7 /* Chrome */ = {
 			isa = PBXGroup;
 			children = (
+				2AFE32F256947F9E2CE7412C /* ChromeCutMask.swift */,
 				005ED746E11CC8E270685E3E /* ChromeFrameFollow.swift */,
 				544EC7414BE17D884C97E6FD /* DimmingOverlay.swift */,
 				6535D4614E443F170C85C4DB /* FailedTilePrompt.swift */,
@@ -1504,6 +1508,7 @@
 				F2B3AC04608B7F92C811A44A /* BSPTree.swift in Sources */,
 				7FB049BFF3F0B8E61B5D9177 /* BundleIDPicker.swift in Sources */,
 				F2EFDD2E3E1E512D63BCCE74 /* BundleIDUtils.swift in Sources */,
+				30896A363C3B88027F183E32 /* ChromeCutMask.swift in Sources */,
 				C9F96439F513BD63CD4B0FD5 /* ChromeFrameFollow.swift in Sources */,
 				0086DBE1974C316B4B7AE242 /* ColorPickerRow.swift in Sources */,
 				0889F29E8566B49617B50DD1 /* CommandRunner.swift in Sources */,
@@ -1684,6 +1689,7 @@
 				7A3D3C9A4903361B3B292C7F /* BSPTree.swift in Sources */,
 				3106D31CBD97C1E1940BD4AE /* BundleIDPicker.swift in Sources */,
 				7F5A0952C75959ECEED45DF3 /* BundleIDUtils.swift in Sources */,
+				72BF593D09448CE994A55913 /* ChromeCutMask.swift in Sources */,
 				D8BFF4957AB60DE5006A5D12 /* ChromeFrameFollow.swift in Sources */,
 				49B97DA976D5A62FE5B243DC /* ColorPickerRow.swift in Sources */,
 				0E266E3F3EE50ECE4195CF23 /* CommandRunner.swift in Sources */,

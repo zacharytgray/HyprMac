@@ -175,4 +175,96 @@ final class FloaterStandInPlanTests: XCTestCase {
             at: CGPoint(x: 350, y: 380), in: stack, floaters: [10: insideA, 11: second],
             tiles: [1: tileA, 2: tileB], frontmostPID: tilePID, ownPID: ownPID)?.floaters, [10, 11])
     }
+
+    // MARK: two floaters over one tile (Zach's Calendar behind Orca)
+
+    private let tile = CGRect(x: 0, y: 0, width: 1600, height: 1000)
+    private let back = CGRect(x: 100, y: 100, width: 700, height: 500)
+    private let front = CGRect(x: 450, y: 350, width: 700, height: 450)
+
+    func testCase1BothRealTheBackOutlineStopsAtTheFrontFloater() {
+        let stack = [win(11, pid: floaterPID, front), win(10, pid: floaterPID, back), win(1, tile)]
+        let cuts = FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: front], tiles: [1: tile],
+                                                 standIns: [], in: stack)
+        XCTAssertEqual(cuts[10], [ChromeCut(rect: front, rounded: true)])
+        XCTAssertNil(cuts[11], "nothing is above the front one")
+    }
+
+    func testCase2ACoveredBackFloaterIsCutByTheRealOneInFront() {
+        // the front floater was raised over the tile; the back one stands in
+        let stack = [win(11, pid: floaterPID, front), win(1, tile), win(10, pid: floaterPID, back)]
+        let covered = FloaterStandInPlan.covered(floaters: [10: back, 11: front], tiles: [1: tile], in: stack)
+        XCTAssertEqual(covered, [10], "no stand-in over the real one on top")
+        let cuts = FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: front], tiles: [1: tile],
+                                                 standIns: covered, in: stack)
+        XCTAssertEqual(cuts[10], [ChromeCut(rect: front, rounded: true)],
+                       "the picture and outline leave the front floater out, the tile not")
+        XCTAssertNil(cuts[11])
+    }
+
+    func testCase3BothCoveredStackInTheirRealOrder() {
+        let stack = [win(1, tile), win(11, pid: floaterPID, front), win(10, pid: floaterPID, back)]
+        XCTAssertEqual(FloaterStandInPlan.floaterOrder([10, 11], in: stack), [11, 10])
+        let cuts = FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: front], tiles: [1: tile],
+                                                 standIns: [10, 11], in: stack)
+        XCTAssertEqual(cuts[10], [ChromeCut(rect: front, rounded: true)])
+        XCTAssertNil(cuts[11], "the front picture and outline draw whole, over the tile too")
+    }
+
+    func testCase4AFloaterChangingPlaceCutsAndIsCutUntilItLands() {
+        // the back one was pressed; the list still has the old order
+        let stack = [win(11, pid: floaterPID, front), win(10, pid: floaterPID, back), win(1, tile)]
+        let cuts = FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: front], tiles: [1: tile],
+                                                 standIns: [], unsettled: [10], in: stack)
+        XCTAssertEqual(cuts[10], [ChromeCut(rect: front, rounded: true)])
+        XCTAssertEqual(cuts[11], [ChromeCut(rect: back, rounded: true)], "neither order draws meanwhile")
+        XCTAssertFalse(FloaterStandInPlan.isAboveOverlappingFloaters(10, floaters: [10: back, 11: front], in: stack))
+
+        // the raise landed
+        let landed = [win(10, pid: floaterPID, back), win(11, pid: floaterPID, front), win(1, tile)]
+        XCTAssertTrue(FloaterStandInPlan.isAboveOverlappingFloaters(10, floaters: [10: back, 11: front], in: landed))
+        let after = FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: front], tiles: [1: tile],
+                                                  standIns: [], in: landed)
+        XCTAssertNil(after[10])
+        XCTAssertEqual(after[11], [ChromeCut(rect: back, rounded: true)])
+    }
+
+    func testAStandInIsNeverCutForAFloaterChangingPlace() {
+        // both stand in: a mutual cut would leave a hole showing the tile
+        let stack = [win(1, tile), win(11, pid: floaterPID, front), win(10, pid: floaterPID, back)]
+        let cuts = FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: front], tiles: [1: tile],
+                                                 standIns: [10, 11], unsettled: [10], in: stack)
+        XCTAssertNil(cuts[11])
+    }
+
+    func testAGlowThatOnlyTouchesAWindowInFrontIsCutToo() {
+        let beside = CGRect(x: 802, y: 100, width: 300, height: 300)
+        let stack = [win(11, pid: floaterPID, beside), win(10, pid: floaterPID, back)]
+        XCTAssertNil(FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: beside], tiles: [:],
+                                                   standIns: [], in: stack)[10])
+        XCTAssertEqual(FloaterStandInPlan.chromeCuts(floaters: [10: back, 11: beside], tiles: [:],
+                                                     standIns: [], reach: 4, in: stack)[10]?.count, 1)
+    }
+
+    func testARoundedCutLeavesTheFrontWindowsCornersToTheBackFloater() {
+        let cut = ChromeCut(rect: front, rounded: true)
+        // just inside the front frame's corner, outside its rounded shape
+        let corner = CGPoint(x: front.minX + 1, y: front.minY + 1)
+        XCTAssertFalse(FloaterStandInPlan.isCut(corner, by: [cut], cornerRadius: 10))
+        XCTAssertTrue(FloaterStandInPlan.isCut(corner, by: [ChromeCut(rect: front, rounded: false)], cornerRadius: 10))
+        XCTAssertTrue(FloaterStandInPlan.isCut(CGPoint(x: front.midX, y: front.midY), by: [cut], cornerRadius: 10))
+    }
+
+    func testTheCutMaskIsClearInsideARoundedCutAndOpaqueAtItsCorner() throws {
+        let image = try XCTUnwrap(ChromeCutMask.image(
+            size: CGSize(width: 100, height: 100), topLeftCG: CGPoint(x: 0, y: 0),
+            cuts: [ChromeCut(rect: CGRect(x: 50, y: 50, width: 50, height: 50), rounded: true)],
+            cornerRadius: 12, scale: 1))
+        let data = try XCTUnwrap(image.dataProvider?.data)
+        let bytes = CFDataGetBytePtr(data)!
+        func alpha(_ x: Int, _ yFromTop: Int) -> UInt8 { bytes[yFromTop * image.bytesPerRow + x * 4 + 3] }
+        XCTAssertEqual(alpha(10, 10), 255, "outside the cut the chrome draws")
+        XCTAssertEqual(alpha(75, 75), 0, "inside the cut it doesn't")
+        XCTAssertEqual(alpha(51, 51), 255, "the cut's rounded corner leaves the chrome")
+    }
 }

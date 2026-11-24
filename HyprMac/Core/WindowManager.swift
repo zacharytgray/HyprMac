@@ -540,7 +540,11 @@ class WindowManager {
         floatingController.retile = { [weak self] prepare in
             self?.retile(prepare: prepare)
         }
-        floatingController.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+        floatingController.updateFocusBorder = { [weak self] w in
+            // a floater given focus here (Hypr+Shift+T) rises
+            self?.markFloaterOrderUnsettled(w.windowID, reason: "floater focus")
+            self?.updateFocusBorder(for: w)
+        }
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
@@ -1996,6 +2000,7 @@ class WindowManager {
         floaterStandIn.isOn = { [weak self] in self?.config.keepFloatingWindowsInFront ?? false }
         floaterStandIn.holdEnded = { [weak self] in self?.scheduleRestackRefresh(after: 0) }
         floaterStandIn.panelsChanged = { [weak self] in self?.updatePressZones() }
+        floaterStandIn.chromeChanged = { [weak self] in self?.refreshFloaterChromeNow() }
         standInPressTap.onPress = { [weak self] tile, ids, windowNumbers in
             guard let self else { return }
             if self.isRunning, let stack = self.mouseTracker.stackedWindows() {
@@ -2114,6 +2119,7 @@ class WindowManager {
         guard isRunning, floaterStandIn.isEnabled, !scratchpad.isVisible else { return }
         if stateCache.floatingWindowIDs.contains(target.windowID) {
             floaterStandIn.reveal(target.windowID, trigger: "\(trigger) of the floater")
+            markFloaterOrderUnsettled(target.windowID, reason: trigger)
             return
         }
         guard let stack = WindowStacking.onScreen() else { return }
@@ -2141,6 +2147,7 @@ class WindowManager {
     /// cycle does, which raises it over the tile.
     private func focusFloaterForStandIn(_ id: CGWindowID) -> Bool {
         guard isRunning, let w = stateCache.cachedWindows[id] else { return false }
+        markFloaterOrderUnsettled(id, reason: "hand-off")
         suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
         suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
         w.focus()
@@ -2882,6 +2889,8 @@ class WindowManager {
         mouseDownFloatingWindowID = pressed.id
         mouseDownFloatingFrame = pressed.frame
         mouseDownFloatingCursorCG = cursor
+        // the press raises it over the floaters in front of it
+        markFloaterOrderUnsettled(pressed.id, reason: "press")
     }
 
     /// One notice line per floater drag, read once the drop has settled,
@@ -3147,9 +3156,10 @@ class WindowManager {
                 frames,
                 color: config.resolvedFloatingBorderColor.cgColor
             )
-            refreshBorderOcclusion(floaterFrames: frames)
+            refreshFloaterChrome(outlineFrames: frames)
         } else {
             focusBorder.hideFloatingBorders()
+            refreshFloaterChrome(outlineFrames: [:])
         }
     }
 
@@ -3176,17 +3186,11 @@ class WindowManager {
     /// of every higher-z tracked window that overlaps the bordered
     /// window. The border layer's mask cuts those occluders out so the
     /// border does not draw over windows that are visually on top of it.
-    private func refreshBorderOcclusion(floaterFrames: [CGWindowID: CGRect]) {
+    private func refreshBorderOcclusion(stack: [StackedWindow], floaterFrames: [CGWindowID: CGRect],
+                                        floaterCuts: [CGWindowID: [ChromeCut]]) {
         guard floaterMarks != .none else { return }
-        guard let info = CGWindowListCopyWindowInfo(
-                [.optionOnScreenOnly, .excludeDesktopElements],
-                kCGNullWindowID) as? [[String: Any]] else { return }
-
         var zIndex: [CGWindowID: Int] = [:]
-        for (i, dict) in info.enumerated() {
-            guard let num = dict[kCGWindowNumber as String] as? Int else { continue }
-            zIndex[CGWindowID(num)] = i
-        }
+        for (i, window) in stack.enumerated() where zIndex[window.windowID] == nil { zIndex[window.windowID] = i }
         // a floater with a stand-in shows in front of every tile
         for id in floaterStandIn.shownIDs where zIndex[id] != nil { zIndex[id] = -1 }
 
@@ -3205,25 +3209,88 @@ class WindowManager {
                 if rect.intersects(focusedRect) { focusedOccluders.append(rect) }
             }
         }
+        focusBorder.applyOcclusion(focusedOccluders: focusedOccluders, floaterCuts: floaterCuts)
+    }
 
-        var floaterOccluders: [CGWindowID: [CGRect]] = [:]
-        // the floater's glow reaches past its frame, so a window in front
-        // that only touches the glow hides it too
-        let glowReach = FocusBorder.floaterPanelExpansion
-        for (fid, frect) in floaterFrames {
-            guard let fz = zIndex[fid] else { continue }
-            let panelRect = frect.insetBy(dx: -glowReach, dy: -glowReach)
-            var list: [CGRect] = []
-            for (id, rect) in trackedRects where id != fid {
-                guard let z = zIndex[id], z < fz else { continue }
-                if rect.intersects(panelRect) { list.append(rect) }
-            }
-            if !list.isEmpty { floaterOccluders[fid] = list }
+    // floaters changing place in the stack (a press, a focus) until the
+    // window list shows where they landed
+    private var floaterOrderUnsettled: [CGWindowID: Int] = [:]
+    private var floaterOrderGeneration = 0
+
+    /// Cut and stack every floater's chrome (outline, stand-in) by the real
+    /// stacking order, from one fresh window-list read: a window above a
+    /// floater cuts its outline and its picture, and the panels stack back
+    /// to front as the floaters do. The outlines' cuts go to the focus
+    /// border with the focused border's own occlusion.
+    ///
+    /// Ordering alone can't do it: a real floater in front is a normal
+    /// window, below every HyprMac panel. Cuts alone can't either: the
+    /// glow of a front outline reaches past its window, over the picture
+    /// of the one behind. So both.
+    private func refreshFloaterChrome(outlineFrames: [CGWindowID: CGRect]) {
+        guard isRunning, let stack = WindowStacking.onScreen() else { return }
+        let listed = Self.listedFrames(stack)
+        var floaters = outlineFrames
+        for (id, frame) in standInCandidates(windows: nil, listed: listed) where floaters[id] == nil {
+            floaters[id] = frame
         }
+        let cuts = FloaterStandInPlan.chromeCuts(
+            floaters: floaters, tiles: currentTiledRects(), standIns: floaterStandIn.shownIDs,
+            unsettled: Set(floaterOrderUnsettled.keys), reach: FocusBorder.floaterPanelExpansion, in: stack)
+        refreshBorderOcclusion(stack: stack, floaterFrames: outlineFrames, floaterCuts: cuts)
+        floaterStandIn.applyCuts(cuts)
+        // back to front: each floater's outline, its stand-in right below it
+        for id in FloaterStandInPlan.floaterOrder(Set(floaters.keys), in: stack).reversed() {
+            focusBorder.orderFloaterOutlineFront(id)
+            floaterStandIn.orderPanel(id, below: focusBorder.floaterOutlineWindowNumber(id))
+        }
+        CATransaction.flush()
+    }
 
-        focusBorder.applyOcclusion(
-            focusedOccluders: focusedOccluders,
-            floaterOccluders: floaterOccluders)
+    /// The chrome pass alone, from the floaters' last known frames.
+    private func refreshFloaterChromeNow() {
+        guard isRunning else { return }
+        let listed = WindowStacking.onScreen().map(Self.listedFrames) ?? [:]
+        var frames = floaterMarks != .none ? floatingFrames(from: Array(stateCache.cachedWindows.values), listed: listed) : [:]
+        if scratchpad.isVisible { frames = frames.filter { scratchpad.isSummoned($0.key) } }
+        refreshFloaterChrome(outlineFrames: frames)
+    }
+
+    /// `id` is about to change place among the floaters (a press on it, a
+    /// focus). Until the window list shows it above the floaters it
+    /// overlaps, it and they cut each other's chrome, so no frame shows the
+    /// old order or the new one ahead of the windows. Then one pass restacks.
+    private func markFloaterOrderUnsettled(_ id: CGWindowID, reason: String) {
+        guard isRunning, stateCache.floatingWindowIDs.contains(id),
+              let stack = WindowStacking.onScreen() else { return }
+        let frames = Self.listedFrames(stack).filter { stateCache.floatingWindowIDs.contains($0.key) }
+        guard let frame = frames[id],
+              frames.contains(where: { $0.key != id && WindowStacking.overlaps($0.value, frame) }),
+              !FloaterStandInPlan.isAboveOverlappingFloaters(id, floaters: frames, in: stack) else { return }
+        floaterOrderGeneration += 1
+        let generation = floaterOrderGeneration
+        floaterOrderUnsettled[id] = generation
+        hyprLog(.notice, .floating, "floater order unsettled wid=\(id) reason=\(reason)")
+        refreshFloaterChromeNow()
+        let started = CFAbsoluteTimeGetCurrent()
+        func watch() {
+            guard floaterOrderUnsettled[id] == generation else { return }
+            let elapsed = CFAbsoluteTimeGetCurrent() - started
+            var settled = false
+            if let stack = WindowStacking.onScreen() {
+                let frames = Self.listedFrames(stack).filter { stateCache.floatingWindowIDs.contains($0.key) }
+                settled = FloaterStandInPlan.isAboveOverlappingFloaters(id, floaters: frames, in: stack)
+            }
+            guard settled || elapsed >= 0.4 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + FloaterStandIn.poll) { watch() }
+                return
+            }
+            floaterOrderUnsettled[id] = nil
+            hyprLog(.notice, .floating, "floater order \(settled ? "settled" : "gave up") wid=\(id) after "
+                    + "\(Int(elapsed * 1000)) ms")
+            refreshFloaterChromeNow()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + FloaterStandIn.poll) { watch() }
     }
 
     /// Live overview: new windows, closes, moves and retiles show up while

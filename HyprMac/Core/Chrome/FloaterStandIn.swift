@@ -61,6 +61,9 @@ final class FloaterStandIn {
     var holdEnded: () -> Void = {}
     /// a panel went up or down, or one got a picture
     var panelsChanged: () -> Void = {}
+    /// a confirmed hide or an early show changed what is on top: cut and
+    /// order the floaters' chrome again, in the same pass
+    var chromeChanged: () -> Void = {}
     /// the Settings switch, "Keep floating windows in front"
     var isOn: () -> Bool = { false }
     var forcesCard: () -> Bool = { FloaterStandInMode.debugForcesCard() }
@@ -98,6 +101,10 @@ final class FloaterStandIn {
         var heldUntil: CFAbsoluteTime?
         // a confirm loop is reading the window list before a hide
         var confirming = false
+        // windows stacked above the floater: the picture leaves them out
+        var cuts: [ChromeCut] = []
+        // a touch on a cut part went through to the window in front
+        var passingThrough = false
         init(floater: Floater, panel: StandInPanel, view: StandInView) {
             self.floater = floater
             self.panel = panel
@@ -205,6 +212,7 @@ final class FloaterStandIn {
             show(entry, trigger: trigger)
         }
         guard held else { return }
+        chromeChanged()
         // the mouse-up's refresh decides; this one catches a guess that was
         // wrong when that refresh came inside the hold
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.pressHold + 0.02) { [weak self] in
@@ -271,10 +279,40 @@ final class FloaterStandIn {
         if resized { entry.stream?.resize(to: frame.size, scale: scale(for: frame)) }
     }
 
-    /// The floater whose panel is up under `point` (CG), nil when none.
+    /// The floater whose panel is up under `point` (CG), nil when none. A
+    /// part cut for a window in front is that window's.
     func floater(at point: CGPoint) -> CGWindowID? {
-        entries.values.first { $0.shown && $0.floater.id != handOff?.id && $0.floater.frame.contains(point) }?
-            .floater.id
+        entries.values.first {
+            $0.shown && $0.floater.id != handOff?.id && $0.floater.frame.contains(point)
+                && !FloaterStandInPlan.isCut(point, by: $0.cuts, cornerRadius: WindowCornerRadius.global)
+        }?.floater.id
+    }
+
+    /// The windows stacked above each floater, from
+    /// `FloaterStandInPlan.chromeCuts`: each picture leaves them out.
+    func applyCuts(_ cuts: [CGWindowID: [ChromeCut]]) {
+        mainThreadOnly()
+        for (id, entry) in entries {
+            let mine = cuts[id] ?? []
+            entry.cuts = mine
+            guard let layer = entry.view.layer else { continue }
+            ChromeCutMask.apply(to: layer, size: entry.view.bounds.size, topLeftCG: entry.floater.frame.origin,
+                                cuts: mine, cornerRadius: WindowCornerRadius.global,
+                                scale: entry.panel.backingScaleFactor)
+            entry.panel.invalidateShadow()
+        }
+    }
+
+    /// Put `id`'s panel just below `windowNumber` (its outline), or in
+    /// front of the floating level without one. Called back to front.
+    func orderPanel(_ id: CGWindowID, below windowNumber: Int?) {
+        mainThreadOnly()
+        guard let entry = entries[id] else { return }
+        if let windowNumber {
+            entry.panel.order(.below, relativeTo: windowNumber)
+        } else {
+            entry.panel.orderFrontRegardless()
+        }
     }
 
     /// The window numbers the mouse tap raised that are not up here. The
@@ -326,7 +364,7 @@ final class FloaterStandIn {
         if let outline = outlineWindowNumber(entry.floater.id) {
             entry.panel.order(.below, relativeTo: outline)
         }
-        entry.panel.ignoresMouseEvents = false
+        entry.panel.ignoresMouseEvents = entry.passingThrough
         entry.panel.alphaValue = 1
         // on screen before the app that is about to raise gets its turn
         CATransaction.flush()
@@ -381,6 +419,7 @@ final class FloaterStandIn {
                 entry.confirming = false
                 let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
                 hide(entry, trigger: (state == .gone ? "gone" : "confirmed-on-top") + " after \(trigger), \(ms) ms")
+                chromeChanged()
                 return
             }
             guard polls < Self.confirmLimit else {
@@ -400,6 +439,10 @@ final class FloaterStandIn {
     /// the same point.
     private func touched(_ id: CGWindowID, touch: Touch, at point: CGPoint) {
         guard handOff == nil, let entry = entries[id], entry.shown else { return }
+        if FloaterStandInPlan.isCut(point, by: entry.cuts, cornerRadius: WindowCornerRadius.global) {
+            passThrough(entry, touch: touch, at: point)
+            return
+        }
         let started = CFAbsoluteTimeGetCurrent()
         handOff = (id, started)
         entry.confirming = false
@@ -435,6 +478,7 @@ final class FloaterStandIn {
             }
             if let entry = self.entries[id], entry.shown {
                 self.hide(entry, trigger: "confirmed-on-top after hand-off, \(ms) ms")
+                self.chromeChanged()
             }
             guard touch == .click else {
                 hyprLog(.notice, .floating, "stand-in hand-off wid=\(id) real window up after \(ms) ms; nothing passed on")
@@ -451,6 +495,34 @@ final class FloaterStandIn {
                 self?.handOffFinished()
             }
         }
+    }
+
+    /// A touch on a part of the panel cut for a window in front: that
+    /// window is real and on top there, so the touch is its. The panel
+    /// lets the mouse through and the click is posted again at the point;
+    /// it takes the mouse back once the button is up.
+    private func passThrough(_ entry: Entry, touch: Touch, at point: CGPoint) {
+        guard !entry.passingThrough else { return }
+        entry.passingThrough = true
+        entry.panel.ignoresMouseEvents = true
+        let id = entry.floater.id
+        hyprLog(.notice, .floating, "stand-in wid=\(id) touch=\(touch.rawValue) on a cut part, passed through "
+                + "at=(\(Int(point.x)),\(Int(point.y)))")
+        if touch == .click {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.passOnDelay) {
+                Self.postClick(at: point, held: NSEvent.pressedMouseButtons & 1 != 0)
+            }
+        }
+        func restore() {
+            guard let entry = entries[id] else { return }
+            guard NSEvent.pressedMouseButtons == 0 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { restore() }
+                return
+            }
+            entry.passingThrough = false
+            entry.panel.ignoresMouseEvents = !entry.shown
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { restore() }
     }
 
     /// The window a click at `point` reaches, for the log. Our own panels
