@@ -41,6 +41,8 @@ final class WorkspaceOrchestrator {
     /// a switch put the incoming floaters back, before the retile brings
     /// the tiles back over them
     var didRevealFloaters: (Set<CGWindowID>) -> Void = { _ in }
+    /// right before the outgoing windows park: their chrome goes now
+    var willParkOutgoing: (Set<CGWindowID>) -> Void = { _ in }
     /// right before a switch focuses (and raises) its pick
     var willFocusSwitchPick: (HyprWindow) -> Void = { _ in }
     var warpToWindow: (HyprWindow) -> Void = { _ in }
@@ -343,6 +345,8 @@ final class WorkspaceOrchestrator {
         focusBorder.beginInstantSwitch(outgoing: sourceIDs.subtracting([focused.windowID]))
         defer { dimmingOverlay.endInstantSwitch(); focusBorder.endInstantSwitch() }
         for window in parked { focusBorder.dropFloatingBorder(for: window.windowID) }
+        willParkOutgoing(Set(parked.map(\.windowID)))
+        CATransaction.flush()
 
         focusTransferredWindow(focused)
         warpToWindow(focused)
@@ -483,6 +487,13 @@ final class WorkspaceOrchestrator {
             allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid]
         }
         func parkOutgoing() {
+            // the outgoing chrome (outlines, stand-ins) goes in the same
+            // frame as the windows: off screen before the parks land, and
+            // flushed, since the main thread stays busy (focus, warp, the
+            // refresh) until the switch ends and nothing would draw it away
+            for w in outgoing { focusBorder.dropFloatingBorder(for: w.windowID) }
+            willParkOutgoing(result.toHide)
+            CATransaction.flush()
             parkStart = Date()
             for w in outgoing {
                 if stateCache.floatingWindowIDs.contains(w.windowID) { workspaceManager.saveFloatingFrame(w) }

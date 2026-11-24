@@ -321,7 +321,6 @@ class WindowManager {
         }
         // the HUD goes up before the hide/retile/focus pass, not after it
         self.workspaceOrchestrator.onWillSwitch = { [weak self] workspace, screen in
-            self?.floaterStandIn.hideAll(reason: "workspace switch")
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
         self.workspaceOrchestrator.didRevealFloaters = { [weak self] ids in
@@ -329,6 +328,11 @@ class WindowManager {
             // the last picture, up before the tiles can land on the floater
             self.floaterStandIn.showKept(ids.intersection(self.stateCache.floatingWindowIDs),
                                          trigger: "workspace reveal")
+        }
+        // the outgoing stand-ins go with their windows, not before: the
+        // windows stay up as the backdrop until the incoming ones are placed
+        self.workspaceOrchestrator.willParkOutgoing = { [weak self] ids in
+            for id in ids { self?.floaterStandIn.hide(id, reason: "workspace switch") }
         }
         self.workspaceOrchestrator.willFocusSwitchPick = { [weak self] w in
             self?.showStandInsBeforeFocus(w, trigger: "switch focus")
