@@ -391,7 +391,7 @@ struct PauseLessonBar: View {
 
     private var resumeNote: String {
         let place = menuBarStyle == .hidden
-            ? "the HyprMac switch in Settings → General"
+            ? "the Tiling switch in Settings → General"
             : "the Tiling switch in HyprMac's menu bar item"
         return "While paused, \(config.hyprKey.displayName) is a normal key again. Resume here, or later with \(place)."
     }

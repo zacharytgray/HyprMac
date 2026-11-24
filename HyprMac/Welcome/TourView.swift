@@ -498,7 +498,7 @@ private struct TourFocusPage: View {
         if config.focusFollowsMouse {
             result.append(("cursorarrow.motionlines", "Move the pointer over a window to focus it."))
         } else {
-            result.append(("cursorarrow.motionlines", "Turn on focus follows the mouse in General settings, then move the pointer over a window to focus it."))
+            result.append(("cursorarrow.motionlines", "Turn on focus follows the mouse in Settings → Mouse, then move the pointer over a window to focus it."))
         }
         if config.focusBracketStyle != .off {
             result.append(("rectangle.dashed", "Hold \(config.hyprKey.displayName) to show corner marks on the focused window."))
