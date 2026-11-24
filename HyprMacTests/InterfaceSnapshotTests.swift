@@ -222,6 +222,11 @@ final class InterfaceSnapshotTests: XCTestCase {
             UserDefaults.standard.set(MenuBarStyle.compact.rawValue, forKey: UserConfig.menuBarStyleKey)
             try render("onboarding-3-make-it-yours-changed-\(mode)",
                        MakeItYoursView(onBack: {}, onSkipTutorial: {}, onTakeTutorial: {}), size: size, dark: dark)
+            FocusIndicatorChoice.border.apply(to: config)
+            config.dimInactiveWindows = true
+            UserDefaults.standard.set(MenuBarStyle.hidden.rawValue, forKey: UserConfig.menuBarStyleKey)
+            try render("onboarding-3-make-it-yours-menu-bar-off-\(mode)",
+                       MakeItYoursView(onBack: {}, onSkipTutorial: {}, onTakeTutorial: {}), size: size, dark: dark)
         }
     }
 

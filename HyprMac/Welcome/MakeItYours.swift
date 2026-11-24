@@ -118,8 +118,19 @@ struct MakeItYoursView: View {
             divider
             choiceRow("Menu bar",
                       detail: "Full shows every workspace in use. Compact shows only the current one.") {
-                segmented([("Full", MenuBarStyle.full), ("Compact", MenuBarStyle.compact)],
-                          selection: menuBarStyle) { menuBarStyle = $0 }
+                VStack(alignment: .leading, spacing: 7) {
+                    segmented([("Full", MenuBarStyle.full), ("Compact", MenuBarStyle.compact),
+                               ("Off", MenuBarStyle.hidden)],
+                              selection: menuBarStyle) { menuBarStyle = $0 }
+                    if menuBarStyle == .hidden {
+                        // what the app really offers with no menu bar item
+                        Label("Without it, open HyprMac again from Spotlight or Applications to get Settings. Hypr+K has the tutorial.",
+                              systemImage: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(TutorialStageColor.cyan)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             divider
             choiceRow("Launch at login",
@@ -205,15 +216,28 @@ struct MakeItYoursView: View {
 
 // MARK: - preview
 
-/// A small drawn desktop: a menu bar and three tiles. The big tile is
+/// A small drawn desktop: a menu bar and three tiles, at half size. The
+/// marks, border, window corners, dim and gaps come from the same code and
+/// config values HyprMac draws the real ones with, scaled. The big tile is
 /// focused, or, with focus following the mouse, the tile under the pointer.
 struct MiniDesktopPreview: View {
+    @ObservedObject var config: UserConfig = .shared
     let focusFollowsMouse: Bool
     let indicator: FocusIndicatorChoice
     let dim: Bool
     let menuBar: MenuBarStyle
 
-    private let gap: CGFloat = 6
+    /// the preview is a half-size screen
+    private let scale: CGFloat = 0.5
+
+    init(config: UserConfig = .shared, focusFollowsMouse: Bool, indicator: FocusIndicatorChoice,
+         dim: Bool, menuBar: MenuBarStyle) {
+        self.config = config
+        self.focusFollowsMouse = focusFollowsMouse
+        self.indicator = indicator
+        self.dim = dim
+        self.menuBar = menuBar
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -235,20 +259,24 @@ struct MiniDesktopPreview: View {
     }
 
     private var focused: Int { focusFollowsMouse ? 2 : 1 }
+    private var gap: CGFloat { config.gapSize * scale }
+    private var padding: CGFloat { config.outerPadding * scale }
+    private var windowRadius: CGFloat { config.windowCornerRadius * scale }
 
     private var screen: some View {
         VStack(spacing: 0) {
             menuBarStrip
             GeometryReader { geo in
-                let w = geo.size.width - gap * 3
-                let h = geo.size.height - gap * 2
+                let w = geo.size.width - padding * 2 - gap
+                let h = geo.size.height - padding * 2
+                let rightX = padding + w * 0.55 + gap
+                let halfH = (h - gap) / 2
                 ZStack(alignment: .topLeading) {
-                    tile(1, CGRect(x: gap, y: gap, width: w * 0.55, height: h))
-                    tile(2, CGRect(x: gap * 2 + w * 0.55, y: gap, width: w * 0.45, height: (h - gap) / 2))
-                    tile(3, CGRect(x: gap * 2 + w * 0.55, y: gap * 2 + (h - gap) / 2,
-                                   width: w * 0.45, height: (h - gap) / 2))
+                    tile(1, CGRect(x: padding, y: padding, width: w * 0.55, height: h))
+                    tile(2, CGRect(x: rightX, y: padding, width: w * 0.45, height: halfH))
+                    tile(3, CGRect(x: rightX, y: padding + halfH + gap, width: w * 0.45, height: halfH))
                     pointer
-                        .position(x: gap * 2 + w * 0.55 + w * 0.3, y: gap + (h - gap) * 0.32)
+                        .position(x: rightX + w * 0.3, y: padding + halfH * 0.62)
                 }
             }
         }
@@ -261,22 +289,25 @@ struct MiniDesktopPreview: View {
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(TutorialStageColor.line))
     }
 
-    // the HyprMac item on the right, Full or Compact
+    // HyprMac's item as the real menu bar draws it: the workspace glyphs,
+    // or the compact numbered square
     private var menuBarStrip: some View {
         HStack(spacing: 6) {
             Image(systemName: "apple.logo").font(.system(size: 8))
             RoundedRectangle(cornerRadius: 2).fill(Color.white.opacity(0.25)).frame(width: 34, height: 4)
             RoundedRectangle(cornerRadius: 2).fill(Color.white.opacity(0.18)).frame(width: 22, height: 4)
             Spacer()
-            Text(menuBar == .full
-                 ? "\(HyprGlyph.workspaceShown) \(HyprGlyph.workspaceWaiting) \(HyprGlyph.workspaceWaiting)"
-                 : "1")
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                .foregroundStyle(TutorialStageColor.text)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
-                .background(Color.white.opacity(menuBar == .full ? 0 : 0.18),
-                            in: RoundedRectangle(cornerRadius: 3))
+            Group {
+                if menuBar == .hidden {
+                    EmptyView()
+                } else if menuBar == .compact {
+                    Image(systemName: "1.square").font(.system(size: 10, weight: .medium))
+                } else {
+                    Text(MenuBarPresentation.workspaceGlyphs(active: [1], occupied: [1, 2], floating: []))
+                        .font(.system(size: 9, weight: .medium))
+                }
+            }
+            .foregroundStyle(TutorialStageColor.text)
         }
         .foregroundStyle(Color.white.opacity(0.7))
         .padding(.horizontal, 8)
@@ -286,7 +317,8 @@ struct MiniDesktopPreview: View {
 
     private func tile(_ number: Int, _ frame: CGRect) -> some View {
         let isFocused = number == focused
-        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: windowRadius, style: .continuous)
+        let markColor = config.resolvedFocusBracketColor
         return ZStack {
             shape.fill(Color(red: 0.86, green: 0.88, blue: 0.93))
             VStack(spacing: 0) {
@@ -296,7 +328,8 @@ struct MiniDesktopPreview: View {
                     }
                     Spacer()
                 }
-                .padding(5)
+                .padding(.leading, max(5, windowRadius * 0.7))
+                .padding(.top, 5)
                 Spacer()
                 Text("\(number)")
                     .font(.system(size: 22, weight: .semibold, design: .rounded))
@@ -304,15 +337,22 @@ struct MiniDesktopPreview: View {
                 Spacer()
             }
             if dim && !isFocused {
-                shape.fill(Color.black.opacity(0.32))
+                shape.fill(Color.black.opacity(config.dimIntensity))
             }
             if isFocused && indicator.hasBorder {
-                shape.strokeBorder(TutorialStageColor.cyan, lineWidth: 2)
+                shape.strokeBorder(Color(nsColor: config.resolvedFocusBorderColor),
+                                   lineWidth: max(1, FocusBorder.settledBorderWidth * scale))
             }
             if isFocused && indicator.hasCorners {
-                CornerMarks().stroke(Color.black, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .overlay(CornerMarks().stroke(Color.white, style: StrokeStyle(lineWidth: 1, lineCap: .round)))
-                    .padding(-3)
+                let marks = FocusMarksShape(inset: CornerMarkGeometry.focusMarkInset * scale,
+                                            radius: config.resolvedFocusBracketRadius * scale,
+                                            length: config.resolvedFocusBracketLength * scale)
+                let thickness = config.resolvedFocusBracketThickness * scale
+                marks
+                    .stroke(Color(cgColor: FocusBrackets.contrastOutlineColor(for: markColor.cgColor)),
+                            style: StrokeStyle(lineWidth: thickness + 1, lineCap: .round, lineJoin: .round))
+                    .overlay(marks.stroke(Color(nsColor: markColor),
+                                          style: StrokeStyle(lineWidth: thickness, lineCap: .round, lineJoin: .round)))
             }
         }
         .frame(width: frame.width, height: frame.height)
@@ -326,21 +366,21 @@ struct MiniDesktopPreview: View {
             .foregroundStyle(.black)
             .shadow(color: .white, radius: 0.5)
     }
+}
 
-    /// Four short L shapes at the corners, like HyprMac's focus brackets.
-    private struct CornerMarks: Shape {
-        func path(in rect: CGRect) -> Path {
-            let l: CGFloat = 10
-            var p = Path()
-            p.move(to: CGPoint(x: rect.minX, y: rect.minY + l)); p.addLine(to: rect.origin)
-            p.addLine(to: CGPoint(x: rect.minX + l, y: rect.minY))
-            p.move(to: CGPoint(x: rect.maxX - l, y: rect.minY)); p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-            p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY + l))
-            p.move(to: CGPoint(x: rect.maxX, y: rect.maxY - l)); p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-            p.addLine(to: CGPoint(x: rect.maxX - l, y: rect.maxY))
-            p.move(to: CGPoint(x: rect.minX + l, y: rect.maxY)); p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
-            p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY - l))
-            return p
+/// The Hypr-key focus marks, built by the same `CornerMarkGeometry` the
+/// real marks use. Its corners are symmetric, so the y flip between AppKit
+/// and SwiftUI only swaps which path is which.
+struct FocusMarksShape: Shape {
+    let inset: CGFloat
+    let radius: CGFloat
+    let length: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        for corner in CornerMarkGeometry.paths(in: rect, inset: inset, radius: radius, legLength: length) {
+            path.addPath(Path(corner))
         }
+        return path
     }
 }

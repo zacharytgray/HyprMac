@@ -271,7 +271,7 @@ class FocusBrackets {
     /// Pick a contrasting outline color for `accent`. Dark accents get a
     /// white outline; light accents get a black one. Falls back to black
     /// for colors whose components can't be resolved.
-    private static func contrastOutlineColor(for accent: CGColor) -> CGColor {
+    static func contrastOutlineColor(for accent: CGColor) -> CGColor {
         guard let ns = NSColor(cgColor: accent)?
                 .usingColorSpace(.deviceRGB) else {
             return NSColor.black.cgColor
