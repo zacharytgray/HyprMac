@@ -207,7 +207,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         #if HYPRMAC_DEBUG_VARIANT
         if Self.usesNewTutorial {
-            presentStage(.onboarding(accessGranted: false))
+            presentStage(.onboarding(accessGranted: false, practiceHost: practiceHost))
             return
         }
         #endif
@@ -266,7 +266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // the full-screen tutorial, one lesson so far: Debug app only, and
         // only when launched with --new-tutorial
         if Self.usesNewTutorial {
-            presentStage(.tutorial())
+            presentStage(.tutorial(practiceHost: practiceHost))
             return
         }
         #endif
@@ -275,6 +275,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     #if HYPRMAC_DEBUG_VARIANT
     private static var usesNewTutorial: Bool { CommandLine.arguments.contains("--new-tutorial") }
+
+    /// the window manager starts after access, so look it up late
+    private var practiceHost: PracticeHost { LatePracticeHost { [weak self] in self?.windowManager } }
 
     /// The full-screen stage. Onboarding runs from the launch gate (or the
     /// first-run decision when access was already there); a replay opens
@@ -304,7 +307,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #if HYPRMAC_DEBUG_VARIANT
         // the first-run decision lands here too; the tutorial already covers it
         if Self.usesNewTutorial, mode == .firstRun {
-            presentStage(.onboarding(accessGranted: true))
+            presentStage(.onboarding(accessGranted: true, practiceHost: practiceHost))
             return
         }
         #endif

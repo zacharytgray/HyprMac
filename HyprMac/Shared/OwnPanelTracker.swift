@@ -20,6 +20,12 @@ final class OwnPanelTracker {
         windows.append(WeakWindow(window))
     }
 
+    /// Stop tracking `window`, e.g. the tutorial stage while it sits behind
+    /// the practice windows.
+    func untrack(_ window: NSWindow) {
+        windows.removeAll { $0.window == nil || $0.window === window }
+    }
+
     var isAnyOpen: Bool {
         windows.contains { $0.window?.isVisible == true }
     }

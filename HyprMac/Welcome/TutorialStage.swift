@@ -77,6 +77,24 @@ enum TutorialStageColor {
     static let surface = Color.white.opacity(0.06)
 }
 
+// MARK: - backdrop
+
+/// Navy with a faint cyan and magenta glow in opposite corners. Alone, it is
+/// the desktop behind the practice windows.
+struct StageBackdrop: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [TutorialStageColor.navyTop, TutorialStageColor.navyBottom],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [TutorialStageColor.cyan.opacity(0.16), .clear],
+                           center: .topLeading, startRadius: 0, endRadius: 700)
+            RadialGradient(colors: [TutorialStageColor.magenta.opacity(0.14), .clear],
+                           center: .bottomTrailing, startRadius: 0, endRadius: 760)
+        }
+        .ignoresSafeArea()
+    }
+}
+
 // MARK: - shell
 
 struct TutorialStage<Step: StageStep, Content: View>: View {
@@ -105,22 +123,9 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             bottomBar
         }
-        .background(backdrop)
+        .background(StageBackdrop())
         // one look in light and dark: system controls on the stage draw dark
         .environment(\.colorScheme, .dark)
-    }
-
-    // navy with a faint cyan and magenta glow in opposite corners
-    private var backdrop: some View {
-        ZStack {
-            LinearGradient(colors: [TutorialStageColor.navyTop, TutorialStageColor.navyBottom],
-                           startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [TutorialStageColor.cyan.opacity(0.16), .clear],
-                           center: .topLeading, startRadius: 0, endRadius: 700)
-            RadialGradient(colors: [TutorialStageColor.magenta.opacity(0.14), .clear],
-                           center: .bottomTrailing, startRadius: 0, endRadius: 760)
-        }
-        .ignoresSafeArea()
     }
 
     // MARK: top: lockup · step rail · counter
@@ -552,7 +557,61 @@ final class TutorialWindowController {
     }
 
     func dismiss() {
+        hideBar()
         window?.close()
         window = nil
+    }
+
+    // MARK: practice lessons
+
+    private var bar: NSPanel?
+
+    /// just above the desktop icons: behind every app window
+    static let backdropLevel = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+
+    /// The stage drops behind the practice windows and lets the mouse
+    /// through, so they can be focused, hovered and dragged. It stops
+    /// counting as an open HyprMac panel, which would turn hover focus off.
+    func setPracticeMode(_ on: Bool, level: NSWindow.Level) {
+        guard let window else { return }
+        window.level = on ? Self.backdropLevel : level
+        window.ignoresMouseEvents = on
+        if on {
+            OwnPanelTracker.shared.untrack(window)
+            window.orderBack(nil)
+        } else {
+            OwnPanelTracker.shared.track(window)
+            bringToFront()
+        }
+    }
+
+    /// The lesson bar along the bottom edge, above the practice windows. A
+    /// non-activating panel, so keys keep going to the focused window.
+    func showBar<V: View>(_ view: V) {
+        hideBar()
+        guard let screen = window?.screen ?? NSScreen.main else { return }
+        let hosting = NSHostingView(rootView: view)
+        let width = screen.visibleFrame.width - 32
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: 10)
+        let height = hosting.fittingSize.height
+        let panel = NSPanel(contentRect: NSRect(x: screen.visibleFrame.minX + 16, y: screen.visibleFrame.minY + 16,
+                                                width: width, height: height),
+                            styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
+        panel.contentView = hosting
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = Constants.interfaceWindowLevel
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
+        panel.appearance = NSAppearance(named: .darkAqua)
+        panel.orderFrontRegardless()
+        bar = panel
+    }
+
+    func hideBar() {
+        bar?.close()
+        bar = nil
     }
 }

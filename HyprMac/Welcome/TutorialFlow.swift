@@ -16,28 +16,39 @@ final class StageSession: ObservableObject {
     let access = AccessStepModel()
     let hyprKeyLesson = HyprKeyLessonModel()
     let hyprKeyHold = HyprKeyHoldWatcher()
+    let practice: PracticeSession
+    let moveAround: MoveAroundLessonModel
 
     static let builtOnboarding: [OnboardingStep] = [.access, .hyprKey, .makeItYours]
-    static let builtLessons: [TutorialLesson] = [.hyprKey]
+    static let builtLessons: [TutorialLesson] = [.hyprKey, .moveAround]
+    /// lessons done on the practice windows
+    static let practiceLessons: Set<TutorialLesson> = [.moveAround, .workspaces, .floating, .fixWindow, .menuBarAndKeys]
 
     private let controller = TutorialWindowController()
     var onClose: () -> Void = {}
     var onQuit: () -> Void = {}
 
     /// Onboarding starts at Access only while access is missing.
-    static func onboarding(accessGranted: Bool) -> StageSession {
+    static func onboarding(accessGranted: Bool, practiceHost: PracticeHost? = nil) -> StageSession {
         let first = accessGranted ? builtOnboarding.first { $0 != .access } ?? .makeItYours : .access
-        let session = StageSession(screen: .onboarding(first))
+        let session = StageSession(screen: .onboarding(first), practiceHost: practiceHost)
         if accessGranted { session.onboardingDone.insert(.access) }
         return session
     }
 
-    static func tutorial() -> StageSession {
-        StageSession(screen: .tutorial(builtLessons[0]))
+    static func tutorial(practiceHost: PracticeHost? = nil) -> StageSession {
+        StageSession(screen: .tutorial(builtLessons[0]), practiceHost: practiceHost)
     }
 
-    init(screen: StageScreen) {
+    init(screen: StageScreen, practiceHost: PracticeHost? = nil) {
         self.screen = screen
+        practice = PracticeSession(host: practiceHost)
+        moveAround = MoveAroundLessonModel(practice: practice)
+    }
+
+    private var isPractice: Bool {
+        if case let .tutorial(lesson) = screen { return Self.practiceLessons.contains(lesson) }
+        return false
     }
 
     var isShowing: Bool { controller.window != nil }
@@ -109,6 +120,7 @@ final class StageSession: ObservableObject {
 
     func close() {
         stopScreen()
+        practice.end()
         controller.dismiss()
         onClose()
     }
@@ -116,20 +128,39 @@ final class StageSession: ObservableObject {
     // MARK: switching
 
     private func go(to next: StageScreen) {
+        let wasPractice = isPractice
         stopScreen()
         screen = next
-        controller.window?.level = level
+        if isPractice, !wasPractice {
+            controller.setPracticeMode(true, level: level)
+            practice.begin()
+        } else if !isPractice, wasPractice {
+            practice.end()
+            controller.setPracticeMode(false, level: level)
+        } else if !isPractice {
+            controller.window?.level = level
+        }
         startScreen()
     }
 
     private func startScreen() {
-        if screen == .tutorial(.hyprKey) { hyprKeyLesson.start() }
-        if screen == .onboarding(.hyprKey) { hyprKeyHold.start() }
+        switch screen {
+        case .tutorial(.hyprKey): hyprKeyLesson.start()
+        case .onboarding(.hyprKey): hyprKeyHold.start()
+        case .tutorial(.moveAround):
+            moveAround.start()
+            controller.showBar(MoveAroundLessonBar(model: moveAround,
+                                                   onExit: { [weak self] in self?.close() },
+                                                   onNext: { [weak self] in self?.nextLesson() }))
+        default: break
+        }
     }
 
     private func stopScreen() {
         hyprKeyLesson.stop()
         hyprKeyHold.stop()
+        moveAround.stop()
+        controller.hideBar()
     }
 }
 
@@ -153,6 +184,9 @@ struct StageFlowView: View {
                             onBack: session.canGoBack ? { session.previousOnboardingStep() } : nil,
                             onSkipTutorial: { session.finishOnboarding(takeTutorial: false) },
                             onTakeTutorial: { session.finishOnboarding(takeTutorial: true) })
+        case .tutorial(let lesson) where StageSession.practiceLessons.contains(lesson):
+            // behind the practice windows; the lesson is on the bar
+            StageBackdrop()
         case .tutorial:
             HyprKeyLessonView(model: session.hyprKeyLesson,
                               completed: session.lessonsDone,

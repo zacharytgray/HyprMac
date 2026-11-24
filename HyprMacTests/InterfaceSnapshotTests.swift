@@ -171,6 +171,38 @@ final class InterfaceSnapshotTests: XCTestCase {
                    width: AccessibilityDragHelperPlacement.panelWidth, dark: false)
     }
 
+    // lesson 2 as it looks on screen: the backdrop, three practice windows
+    // tiled with the real gaps, marks and dim, and the lesson bar
+    func testRenderMoveAroundLesson() throws {
+        let savedKey = UserConfig.shared.hyprKey
+        defer { UserConfig.shared.hyprKey = savedKey }
+        let size = CGSize(width: 1440, height: 900)
+        func scene(focused: Int, setup: (MoveAroundLessonModel) -> Void) -> some View {
+            let model = MoveAroundLessonModel(practice: PracticeSession(host: nil))
+            setup(model)
+            return PracticeSceneMock(focused: focused) {
+                MoveAroundLessonBar(model: model, onExit: {}, onNext: {})
+            }
+        }
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            UserConfig.shared.hyprKey = .capsLock
+            try render("tutorial-2-move-around-1-start-\(mode)", scene(focused: 1) { _ in }, size: size, dark: dark)
+            try render("tutorial-2-move-around-2-focused-\(mode)", scene(focused: 2) {
+                $0.focusedAway = true
+            }, size: size, dark: dark)
+            try render("tutorial-2-move-around-3-done-\(mode)", scene(focused: 1) {
+                $0.focusedAway = true
+                $0.focusedBack = true
+                $0.swapped = true
+            }, size: size, dark: dark)
+            // the chips follow the picked key
+            UserConfig.shared.hyprKey = .rightOption
+            try render("tutorial-2-move-around-4-right-option-\(mode)", scene(focused: 1) { _ in },
+                       size: size, dark: dark)
+        }
+    }
+
     // onboarding's hypr key step: caps lock (recommended), a function key,
     // right option, and caps lock held
     func testRenderHyprKeyPicker() throws {
@@ -410,5 +442,80 @@ final class InterfaceSnapshotTests: XCTestCase {
             if let found = firstScrollView(in: subview) { return found }
         }
         return nil
+    }
+}
+
+// stand-in for the practice helper's windows, tiled as HyprMac would: the
+// same look as HyprMacPractice, the config's gaps, corner radius, marks and dim
+private struct PracticeSceneMock<Bar: View>: View {
+    let focused: Int
+    @ViewBuilder let bar: Bar
+    private let config = UserConfig.shared
+
+    private let tints: [Color] = [
+        Color(red: 0x56/255, green: 0xD8/255, blue: 0xF0/255),
+        Color(red: 0xE8/255, green: 0x4B/255, blue: 0xCB/255),
+        Color(red: 0x8B/255, green: 0x9C/255, blue: 0xFF/255),
+    ]
+
+    var body: some View {
+        GeometryReader { geo in
+            let pad = config.outerPadding, gap = config.gapSize
+            let top: CGFloat = 25 + pad
+            let w = geo.size.width - pad * 2 - gap
+            let h = geo.size.height - top - pad
+            let rightX = pad + w * 0.5 + gap
+            let halfH = (h - gap) / 2
+            ZStack(alignment: .topLeading) {
+                StageBackdrop()
+                window(1, CGRect(x: pad, y: top, width: w * 0.5, height: h))
+                window(2, CGRect(x: rightX, y: top, width: w * 0.5, height: halfH))
+                window(3, CGRect(x: rightX, y: top + halfH + gap, width: w * 0.5, height: halfH))
+                VStack { Spacer(); bar }.padding(16)
+            }
+        }
+    }
+
+    private func window(_ number: Int, _ frame: CGRect) -> some View {
+        let shape = RoundedRectangle(cornerRadius: config.windowCornerRadius, style: .continuous)
+        let tint = tints[(number - 1) % tints.count]
+        return ZStack {
+            LinearGradient(colors: [TutorialStageColor.navyTop, TutorialStageColor.navyBottom],
+                           startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [tint.opacity(0.28), .clear], center: .center, startRadius: 0, endRadius: 320)
+            VStack(spacing: 6) {
+                Text("\(number)").font(.system(size: 96, weight: .bold, design: .rounded)).foregroundStyle(tint)
+                Text("Practice window \(number)").font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.6))
+            }
+            VStack {
+                HStack(spacing: 8) {
+                    ForEach([Color.red, .yellow, .green], id: \.self) { Circle().fill($0).frame(width: 12, height: 12) }
+                    Spacer()
+                    Text("Practice \(number)").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
+                    Spacer()
+                }
+                .padding(.horizontal, 14).frame(height: 30)
+                Spacer()
+            }
+            if config.dimInactiveWindows, number != focused {
+                Color.black.opacity(config.dimIntensity)
+            }
+            if number == focused, config.focusBracketStyle != .off {
+                let marks = FocusMarksShape(inset: CornerMarkGeometry.focusMarkInset,
+                                            radius: config.resolvedFocusBracketRadius,
+                                            length: config.resolvedFocusBracketLength)
+                let color = config.resolvedFocusBracketColor
+                marks.stroke(Color(cgColor: FocusBrackets.contrastOutlineColor(for: color.cgColor)),
+                             style: StrokeStyle(lineWidth: config.resolvedFocusBracketThickness + 2,
+                                                lineCap: .round, lineJoin: .round))
+                    .overlay(marks.stroke(Color(nsColor: color),
+                                          style: StrokeStyle(lineWidth: config.resolvedFocusBracketThickness,
+                                                             lineCap: .round, lineJoin: .round)))
+            }
+        }
+        .clipShape(shape)
+        .frame(width: frame.width, height: frame.height)
+        .offset(x: frame.minX, y: frame.minY)
     }
 }
