@@ -20,6 +20,25 @@ final class StageSessionTests: XCTestCase {
         XCTAssertNotEqual(session.screen, .onboarding(.access))
     }
 
+    func testOnboardingRunsAccessThenHyprKeyThenMakeItYours() {
+        let session = StageSession.onboarding(accessGranted: false)
+        session.nextOnboardingStep()
+        XCTAssertEqual(session.screen, .onboarding(.hyprKey))
+        XCTAssertFalse(session.canGoBack)
+        session.nextOnboardingStep()
+        XCTAssertEqual(session.screen, .onboarding(.makeItYours))
+        XCTAssertTrue(session.canGoBack)
+        session.previousOnboardingStep()
+        XCTAssertEqual(session.screen, .onboarding(.hyprKey))
+        session.close()
+    }
+
+    func testEveryOfferedHyprKeyHasANote() {
+        for key in HyprKey.pickerChoices {
+            XCTAssertFalse(key.onboardingNote.isEmpty, "\(key)")
+        }
+    }
+
     func testTakingTheTutorialMovesToItsFirstLesson() {
         let session = StageSession.onboarding(accessGranted: true)
         session.finishOnboarding(takeTutorial: true)

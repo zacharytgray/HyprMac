@@ -445,6 +445,50 @@ struct StageKeyHint: View {
     }
 }
 
+/// A chord as key chips, with the user's own Hypr key in the cyan chip
+/// (e.g. "Right Option" "T"), so every lesson shows the key they picked.
+struct StageChord: View {
+    let bind: Keybind
+    let hyprKey: HyprKey
+
+    private var otherLabels: [String] {
+        let labels = bind.badgeLabels()
+        return bind.modifiers.contains(.hypr) ? Array(labels.dropFirst()) : labels
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if bind.modifiers.contains(.hypr) {
+                Text(hyprKey.displayName)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(TutorialStageColor.cyan)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(TutorialStageColor.cyan.opacity(0.10),
+                                in: RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .strokeBorder(TutorialStageColor.cyan.opacity(0.5), lineWidth: 1))
+            }
+            ForEach(Array(otherLabels.enumerated()), id: \.offset) { _, label in
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(TutorialStageColor.text)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .frame(minWidth: 24)
+                    .background(TutorialStageColor.surface,
+                                in: RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 1))
+            }
+        }
+        .fixedSize()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(([bind.modifiers.contains(.hypr) ? hyprKey.displayName : nil].compactMap { $0 }
+                             + otherLabels).joined(separator: " "))
+    }
+}
+
 /// A rounded chip with a live state, e.g. "Capitals on".
 struct StageStatusChip: View {
     let icon: String

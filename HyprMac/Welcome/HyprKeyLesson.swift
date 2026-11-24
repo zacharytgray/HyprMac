@@ -164,7 +164,7 @@ struct HyprKeyLessonView: View {
 // MARK: - keycap
 
 /// A large key that presses in and lights up while the Hypr key is down.
-private struct LessonKeycap: View {
+struct LessonKeycap: View {
     let label: String
     let glyph: String?
     let held: Bool

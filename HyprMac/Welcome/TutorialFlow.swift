@@ -15,8 +15,9 @@ final class StageSession: ObservableObject {
     @Published private(set) var lessonsDone: Set<TutorialLesson> = []
     let access = AccessStepModel()
     let hyprKeyLesson = HyprKeyLessonModel()
+    let hyprKeyHold = HyprKeyHoldWatcher()
 
-    static let builtOnboarding: [OnboardingStep] = [.access, .makeItYours]
+    static let builtOnboarding: [OnboardingStep] = [.access, .hyprKey, .makeItYours]
     static let builtLessons: [TutorialLesson] = [.hyprKey]
 
     private let controller = TutorialWindowController()
@@ -123,10 +124,12 @@ final class StageSession: ObservableObject {
 
     private func startScreen() {
         if screen == .tutorial(.hyprKey) { hyprKeyLesson.start() }
+        if screen == .onboarding(.hyprKey) { hyprKeyHold.start() }
     }
 
     private func stopScreen() {
         hyprKeyLesson.stop()
+        hyprKeyHold.stop()
     }
 }
 
@@ -141,6 +144,10 @@ struct StageFlowView: View {
                            onQuit: { session.onQuit() },
                            onNext: { session.nextOnboardingStep() },
                            nextTitle: "Next: \(nextOnboardingLabel)")
+        case .onboarding(.hyprKey):
+            HyprKeyPickerView(watcher: session.hyprKeyHold,
+                              completed: session.onboardingDone,
+                              onNext: { session.nextOnboardingStep() })
         case .onboarding:
             MakeItYoursView(completed: session.onboardingDone,
                             onBack: session.canGoBack ? { session.previousOnboardingStep() } : nil,

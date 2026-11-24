@@ -171,6 +171,31 @@ final class InterfaceSnapshotTests: XCTestCase {
                    width: AccessibilityDragHelperPlacement.panelWidth, dark: false)
     }
 
+    // onboarding's hypr key step: caps lock (recommended), a function key,
+    // right option, and caps lock held
+    func testRenderHyprKeyPicker() throws {
+        let saved = (UserConfig.shared.hyprKey, UserConfig.shared.doubleTapHyprTogglesCapsLock)
+        defer { (UserConfig.shared.hyprKey, UserConfig.shared.doubleTapHyprTogglesCapsLock) = saved }
+        UserConfig.shared.doubleTapHyprTogglesCapsLock = true
+        let size = CGSize(width: 1440, height: 900)
+        func picker(held: Bool = false) -> some View {
+            let watcher = HyprKeyHoldWatcher()
+            watcher.held = held
+            watcher.heldOnce = held
+            return HyprKeyPickerView(watcher: watcher, onNext: {})
+        }
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            UserConfig.shared.hyprKey = .capsLock
+            try render("onboarding-2-hypr-key-caps-lock-\(mode)", picker(), size: size, dark: dark)
+            try render("onboarding-2-hypr-key-caps-lock-held-\(mode)", picker(held: true), size: size, dark: dark)
+            UserConfig.shared.hyprKey = .f18
+            try render("onboarding-2-hypr-key-f18-\(mode)", picker(), size: size, dark: dark)
+            UserConfig.shared.hyprKey = .rightOption
+            try render("onboarding-2-hypr-key-right-option-\(mode)", picker(), size: size, dark: dark)
+        }
+    }
+
     // onboarding's last step, at the defaults and at the other picks
     func testRenderMakeItYours() throws {
         let config = UserConfig.shared
