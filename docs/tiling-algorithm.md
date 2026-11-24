@@ -930,7 +930,11 @@ neighbours keep their slots, and its tile is there when it comes back.
   the app does not answer the `AXFullScreen` read in time (`-25204`, a busy
   app), no write goes out on the guess: the park counts as failed, logs
   `full screen unknown, no write`, and the repair poll tries again. A window
-  with no such attribute answers no and is parked as before. The
+  with no such attribute answers no and is parked as before. The reveal and
+  the tutorial's desk restore follow the same rule: a reveal keeps the saved
+  frame and asks for a poll, whose reveal repair tries again, and the desk
+  restore waits for the next poll, up to three times, then leaves that
+  window alone like a full-screen one. The
   park repair skips a full-screen window too, so a full-screen window on a hidden workspace is
   not re-parked every poll. A floater hidden in full screen keeps no saved
   frame, and a reveal drops a saved frame instead of writing it while the

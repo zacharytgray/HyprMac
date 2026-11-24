@@ -130,6 +130,20 @@ final class RelaunchHandoffTests: XCTestCase {
                        "no tile captured, as in a maximized layout")
     }
 
+    // an app that could not say whether its window is in full screen holds
+    // the restore for a poll, a few times; then that window is left alone
+    // like a full-screen one. a window the user moved holds nothing up
+    func testAnUnknownFullScreenReadHoldsTheDeskRestoreForTheNextPoll() {
+        let states: [(CGWindowID, Bool?)] = [(1, false), (2, nil), (3, true), (4, nil)]
+        XCTAssertEqual(WindowManager.deskRestoreGate(fullScreen: states, touched: [4], attempts: 0, retries: 3),
+                       .wait(unknown: [2]))
+        XCTAssertEqual(WindowManager.deskRestoreGate(fullScreen: states, touched: [4], attempts: 3, retries: 3),
+                       .proceed(fullScreen: [2, 3, 4]), "out of retries: no write to the unknown ones")
+        XCTAssertEqual(WindowManager.deskRestoreGate(fullScreen: [(1, false), (3, true)], touched: [],
+                                                     attempts: 0, retries: 3),
+                       .proceed(fullScreen: [3]))
+    }
+
     // full-screen windows and the user's own get no restore write
     func testTheRestoreSkipsFullScreenAndTheUsersWindows() {
         XCTAssertEqual(WindowManager.restorableIDs([1, 2, 3, 4], touched: [2], fullScreen: [3]), [1, 4])

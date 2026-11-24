@@ -351,6 +351,33 @@ final class DisplayReturnTests: XCTestCase {
                      "nothing is left to write once it leaves full screen")
     }
 
+    /// a reveal whose full-screen read fails writes nothing and keeps the
+    /// saved frame, so the reveal repair can try again; once the app says
+    /// no, the frame goes back
+    func testARevealWhoseFullScreenReadFailsKeepsTheFrameForTheRepair() {
+        let screen = DeskScreen(x: 0, width: 1400)
+        let workspaces = WorkspaceManager(displayManager: DisplayManager(screenSource: { [screen] }))
+        var written: [CGWindowID] = []
+        var requests = 0
+        workspaces.revealWrite = { window, _ in written.append(window.windowID) }
+        workspaces.onRevealDeferred = { requests += 1 }
+        let floater = makeWindow(id: 4718)
+        var answer: Bool? = nil
+        workspaces.isInNativeFullScreen = { _ in answer }
+        let saved = CGRect(x: 100, y: 100, width: 600, height: 400)
+        workspaces.setSavedFloatingFrame(saved, for: floater.windowID)
+
+        for _ in 0..<(WorkspaceManager.parkRepairRequests + 2) { workspaces.restoreFloatingFrame(floater) }
+        XCTAssertTrue(written.isEmpty, "no write on a guess")
+        XCTAssertEqual(workspaces.savedFloatingFrame(for: floater.windowID), saved, "kept for the repair")
+        XCTAssertEqual(requests, WorkspaceManager.parkRepairRequests, "a few repair polls, not one per poll forever")
+
+        answer = false
+        workspaces.restoreFloatingFrame(floater)
+        XCTAssertEqual(written, [floater.windowID])
+        XCTAssertNil(workspaces.savedFloatingFrame(for: floater.windowID))
+    }
+
     /// hidden while in full screen: the frame saved earlier is stale, and
     /// writing it on a later reveal would undo where macOS puts the window
     /// when it leaves full screen

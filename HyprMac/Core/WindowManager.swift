@@ -264,6 +264,7 @@ class WindowManager {
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
         self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .park) }
+        self.workspaceManager.onRevealDeferred = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
         self.tilingEngine = TilingEngine(displayManager: displayManager)
         self.tilingEngine.keepFixedSizeHints(in: .shared)
         self.discovery = WindowDiscoveryService(
@@ -2335,6 +2336,7 @@ class WindowManager {
     func snapshotDeskForTutorial() {
         guard isRunning else { return }
         tutorialTouched = []
+        pendingDeskRestore = nil
         let desk = currentDesk()
         do {
             try RelaunchHandoffStore.tutorialDesk.write(desk)
@@ -2352,9 +2354,53 @@ class WindowManager {
     /// stay where they are, closed ones are skipped. An unchanged desk isn't
     /// touched, so nothing flickers. Only placement: settings stay as picked.
     func restoreDeskAfterTutorial() {
-        let key = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
         let touched = tutorialTouched ?? []
         tutorialTouched = nil
+        putDeskBack(touched: touched, attempts: 0)
+    }
+
+    /// A desk restore waiting for an app that could not say whether its
+    /// window is in full screen. The next poll runs it again.
+    private var pendingDeskRestore: (touched: Set<CGWindowID>, attempts: Int)?
+    static let deskRestoreFullScreenRetries = 3
+
+    /// Whether the desk restore goes ahead now, and which windows it leaves
+    /// alone as full screen. A window whose app could not say (nil) makes it
+    /// wait for the next poll, up to `retries` times; after that, it is left
+    /// alone like a full-screen one. A window the user moved is left alone
+    /// anyway, so it holds nothing up.
+    enum DeskRestoreGate: Equatable {
+        case wait(unknown: [CGWindowID])
+        case proceed(fullScreen: Set<CGWindowID>)
+    }
+
+    static func deskRestoreGate(fullScreen states: [(CGWindowID, Bool?)], touched: Set<CGWindowID>,
+                                attempts: Int, retries: Int) -> DeskRestoreGate {
+        let unknown = states.filter { $0.1 == nil && !touched.contains($0.0) }.map(\.0)
+        if !unknown.isEmpty, attempts < retries { return .wait(unknown: unknown) }
+        return .proceed(fullScreen: Set(states.filter { $0.1 != false }.map(\.0)))
+    }
+
+    private func putDeskBack(touched: Set<CGWindowID>, attempts: Int) {
+        pendingDeskRestore = nil
+        let key = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        // a window in native full screen (or its Space) gets no write: one
+        // would take it out of full screen (#104). read before the desk is
+        // taken, so a wait keeps it for the retry
+        let all = accessibility.getAllWindows()
+        let states = all.map { ($0.windowID, workspaceManager.isInNativeFullScreen($0)) }
+        let fullScreen: Set<CGWindowID>
+        switch Self.deskRestoreGate(fullScreen: states, touched: touched, attempts: attempts,
+                                    retries: Self.deskRestoreFullScreenRetries) {
+        case let .wait(unknown):
+            guard isRunning else { return }
+            hyprLog(.notice, .lifecycle, "tutorial desk: full screen unknown for \(unknown.sorted()), no write — retrying at the next poll")
+            pendingDeskRestore = (touched, attempts + 1)
+            pollingScheduler.schedule(after: 0.5, trigger: .reveal)
+            return
+        case let .proceed(ids):
+            fullScreen = ids
+        }
         guard let saved = RelaunchHandoffStore.tutorialDesk.take(displayKey: key, maxAge: nil) else { return }
         guard isRunning else { return }
         if Self.sameDesk(saved, currentDesk()) {
@@ -2364,10 +2410,6 @@ class WindowManager {
         hyprLog(.notice, .lifecycle, "tutorial desk: putting the user's windows back")
         // never undo the user: a window they moved, sent, floated or
         // dragged on purpose stays; only what HyprMac moved goes back
-        // and a window in native full screen (or its Space) gets no write:
-        // one would take it out of full screen (#104)
-        let all = accessibility.getAllWindows()
-        let fullScreen = Set(all.filter { workspaceManager.isInNativeFullScreen($0) == true }.map(\.windowID))
         let keep = Set(Self.restorableIDs(all.map(\.windowID), touched: touched, fullScreen: fullScreen))
         let windows = all.filter { keep.contains($0.windowID) }
         if !fullScreen.isEmpty { hyprLog(.notice, .lifecycle, "tutorial desk: leaving \(fullScreen.count) full-screen window(s) alone") }
@@ -3132,6 +3174,11 @@ class WindowManager {
         // question for a poll that changed nothing.
         if !retiled { applyTiledDrift(allWindows) }
         if returnTarget == nil { placement.repairParkedWindows(allWindows) }
+        // a desk restore that waited on a full-screen read runs once this poll is done
+        if let pending = pendingDeskRestore {
+            pendingDeskRestore = nil
+            DispatchQueue.main.async { [weak self] in self?.putDeskBack(touched: pending.touched, attempts: pending.attempts) }
+        }
         tiledDragFeedback.reconcile(with: retileResults, allWindows: allWindows)
         refreshWorkspaceOverview(windows: allWindows)
         // a guarded cycle diffed nothing, so it can't have seen the close —

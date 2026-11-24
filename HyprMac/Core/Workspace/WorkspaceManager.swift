@@ -74,6 +74,11 @@ class WorkspaceManager {
     /// that repairs it. A window left visible on a hidden workspace is a
     /// ghost over the tiles until then.
     var onParkFailed: (() -> Void)?
+    /// A reveal kept a floater's saved frame because its app could not say
+    /// whether it is in full screen. Wired to a poll, whose reveal repair
+    /// tries again. Asked at most `parkRepairRequests` times in a row.
+    var onRevealDeferred: (() -> Void)?
+    private var revealDeferrals: [CGWindowID: Int] = [:]
 
     /// Whether a window is in native full screen, nil when its app could not
     /// say in time. Wired by `WindowManager` to `AXFullScreen`.
@@ -470,12 +475,28 @@ class WorkspaceManager {
     /// entry. No-op when no frame was captured.
     func restoreFloatingFrame(_ window: HyprWindow) {
         if let frame = savedFloatingFrames[window.windowID] {
-            savedFloatingFrames.removeValue(forKey: window.windowID)
             // a write to a window in native full screen can take it out (#104)
-            if isInNativeFullScreen(window) == true {
+            switch isInNativeFullScreen(window) {
+            case true?:
+                savedFloatingFrames.removeValue(forKey: window.windowID)
+                revealDeferrals.removeValue(forKey: window.windowID)
                 hyprLog(.debug, .lifecycle, "reveal: \(window.windowID) in native full screen — saved frame dropped, not written")
                 return
+            case nil:
+                // its app did not say. no write on a guess: the frame stays
+                // saved, and the reveal repair tries again
+                let deferrals = (revealDeferrals[window.windowID] ?? 0) + 1
+                revealDeferrals[window.windowID] = deferrals
+                let asks = deferrals <= Self.parkRepairRequests
+                hyprLog(.notice, .lifecycle, "reveal: \(window.windowID) full screen unknown, saved frame kept, no write"
+                        + (asks ? " — repair poll requested" : " — \(deferrals) in a row, the ordinary poll retries"))
+                if asks { onRevealDeferred?() }
+                return
+            case false?:
+                break
             }
+            savedFloatingFrames.removeValue(forKey: window.windowID)
+            revealDeferrals.removeValue(forKey: window.windowID)
             // the saved frame may belong to a screen layout that has since
             // changed, so it is clamped like every other floater write
             if let revealWrite {
