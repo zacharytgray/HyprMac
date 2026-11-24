@@ -1405,7 +1405,15 @@ their settings. Every launch then writes `hasSeenOnboarding` and
 menu bar, Hypr+K's Tutorial button and Settings → General's Replay the
 tutorial, all through `AppDelegate.showTutorial`. It runs on the HyprMac
 Practice helper's windows (`Contents/Helpers`) and leaves the user's own
-windows alone. In the Debug app, `--force-onboarding` runs onboarding on a
+windows alone. Practice starts only on an empty workspace of the pointer's
+screen, and lesson 3 sends to a second empty one; without them, lessons 2
+to 5 show why in place of their tasks, and each later lesson tries again.
+Lesson 7 records whether tiling was on when it opened. Only an on-to-off
+change during it is its own, kept in local defaults
+(`tutorialPausedTiling`, never the synced config). Ending the tutorial,
+or the next launch after a crash, turns tiling back on only then.
+The stage fills the screen, but its bars and the lesson bar inset by the
+visible frame, so the Dock never covers them. In the Debug app, `--force-onboarding` runs onboarding on a
 Mac that's set up; Make it yours then writes real settings, so back up
 the config first.
 
