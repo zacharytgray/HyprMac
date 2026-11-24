@@ -3952,7 +3952,7 @@ private extension WindowManager {
                 .subtracting(self.stateCache.hiddenWindowIDs)
         }
         // a write to a window in native full screen takes it out (#104)
-        tilingEngine.isInNativeFullScreen = { $0.isFullscreen }
+        tilingEngine.isInNativeFullScreen = { $0.fullScreenState }
         workspaceManager.isInNativeFullScreen = { $0.fullScreenState }
         // a window sent to the cursor's monitor rolls back to where it opened
         tilingEngine.newcomerOriginSource = { [weak self] id in

@@ -923,7 +923,11 @@ neighbours keep their slots, and its tile is there when it comes back.
   of every member and leaves the ones in full screen out of the attempt
   (`unwrittenWindowIDs`), like a held member: nothing read, nothing written.
   It is not a hold. The walk reads the window, so no poll releases it into a
-  retile, and the next pass after it leaves writes it like any member.
+  retile, and the next pass after it leaves writes it like any member. A
+  member whose app could not answer the read in time (`-25204`) is left out
+  the same way, logged `full screen unknown — leaves kept, no frame written`,
+  and the next pass writes it once the app answers. This covers the pass that
+  ends the tutorial's desk restore, which tiles every member again.
 - **Parking.** A workspace switch parks the windows of the workspace it
   leaves. `WorkspaceManager.hideInCorner` skips one in full screen: it lives
   on its own Space, and the park write can take it out of full screen. When

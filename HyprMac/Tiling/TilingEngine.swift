@@ -1452,13 +1452,21 @@ class TilingEngine {
         // a member in native full screen stands at the display's frame, and
         // a size write ends full screen (#104). it keeps its leaf and gets no
         // frame, like a held member, until a pass finds it out again
+        // one whose app could not say gets no write on the guess either: the
+        // next pass writes it once the app answers
         let previousFullScreen = passFullScreenIDs
-        passFullScreenIDs = Set(tree.allWindows
-            .filter { !heldWindowIDs.contains($0.windowID) && isInNativeFullScreen($0) }
-            .map(\.windowID))
+        let states = tree.allWindows.filter { !heldWindowIDs.contains($0.windowID) }
+            .map { ($0.windowID, isInNativeFullScreen($0)) }
+        let unknown = states.filter { $0.1 == nil }.map(\.0)
+        passFullScreenIDs = Set(states.filter { $0.1 != false }.map(\.0))
         defer { passFullScreenIDs = previousFullScreen }
-        if !passFullScreenIDs.isEmpty {
-            hyprLog(.notice, .tiling, "layout: \(passFullScreenIDs.sorted()) in native full screen"
+        let full = passFullScreenIDs.subtracting(unknown)
+        if !full.isEmpty {
+            hyprLog(.notice, .tiling, "layout: \(full.sorted()) in native full screen"
+                    + " — leaves kept, no frame written")
+        }
+        if !unknown.isEmpty {
+            hyprLog(.notice, .tiling, "layout: \(unknown.sorted()) full screen unknown"
                     + " — leaves kept, no frame written")
         }
         let outcome = applyVerifiedLayoutAttempt(tree, in: rect, generation: generation,
@@ -3588,8 +3596,9 @@ class TilingEngine {
     var heldWindowIDsSource: () -> Set<CGWindowID> = { [] }
 
     /// Whether a member is in native full screen (green button, Ctrl-Cmd-F,
-    /// Split View). Wired by `WindowManager` to `AXFullScreen`.
-    var isInNativeFullScreen: (HyprWindow) -> Bool = { _ in false }
+    /// Split View), nil when its app could not say in time. Wired by
+    /// `WindowManager` to `AXFullScreen`.
+    var isInNativeFullScreen: (HyprWindow) -> Bool? = { _ in false }
 
     /// The window HyprMac last focused, as the tile a new window splits.
     /// Wired by `WindowManager` to the focus record. nil splits by the
