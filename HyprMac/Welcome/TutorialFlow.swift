@@ -27,6 +27,7 @@ final class StageSession: ObservableObject {
     /// access was lost on a Mac that's already set up: Access, then done
     let accessOnly: Bool
     private var escMonitor: Any?
+    private var localEscMonitor: Any?
 
     static let builtOnboarding: [OnboardingStep] = [.access, .hyprKey, .makeItYours]
     static let builtLessons: [TutorialLesson] = TutorialLesson.allCases
@@ -79,6 +80,7 @@ final class StageSession: ObservableObject {
 
     func show() {
         controller.show(StageFlowView(session: self), level: level)
+        addEscMonitor()
         startScreen()
     }
 
@@ -149,6 +151,7 @@ final class StageSession: ObservableObject {
     func close() {
         stopScreen()
         cleanUp()
+        removeEscMonitor()
         controller.dismiss()
         onClose()
     }
@@ -159,7 +162,6 @@ final class StageSession: ObservableObject {
         // windows on screen, and they should be the user's, not the practice
         practice.end()
         PauseLessonModel.resumeOwnedPause(config: .shared)
-        removeEscMonitor()
     }
 
     // MARK: switching
@@ -173,7 +175,6 @@ final class StageSession: ObservableObject {
             // the stage stays in front of the user's windows
             practice.begin()
             if practice.isActive { controller.setPracticeMode(true, level: level) }
-            addEscMonitor()
         } else if !isPractice, wasPractice {
             cleanUp()
             controller.setPracticeMode(false, level: level)
@@ -239,22 +240,46 @@ final class StageSession: ObservableObject {
         controller.hideBar()
     }
 
-    // Esc ends the tutorial. The lesson bar never takes keys, so watch for it
-    // while a practice window is in front. HyprMac's own panels (Hypr+K,
-    // Hypr+I) get their Esc as local events, which this never sees.
+    /// Esc ends the tutorial while a practice window or the stage itself has
+    /// the keys, practice running or not. Onboarding has no Esc, and Esc in
+    /// HyprMac's own panels (Hypr+K, Hypr+I) or another app stays theirs.
+    static func escEndsTutorial(screen: StageScreen, keyCode: UInt16,
+                                onStage: Bool, helperIsFront: Bool) -> Bool {
+        guard keyCode == 53, case .tutorial = screen else { return false }
+        return onStage || helperIsFront
+    }
+
+    // The lesson bar never takes keys. A practice window's keys go to the
+    // helper, seen here as global events; the stage's, while it's in front
+    // (practice blocked, lesson 1, the finish), are local ones.
     private func addEscMonitor() {
-        guard escMonitor == nil else { return }
-        escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard event.keyCode == 53,
-                  NSWorkspace.shared.frontmostApplication?.bundleIdentifier == PracticeSession.helperBundleID
-            else { return }
-            DispatchQueue.main.async { self?.close() }
+        if escMonitor == nil {
+            escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self,
+                      Self.escEndsTutorial(screen: self.screen, keyCode: event.keyCode, onStage: false,
+                                           helperIsFront: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                                               == PracticeSession.helperBundleID)
+                else { return }
+                DispatchQueue.main.async { self.close() }
+            }
+        }
+        if localEscMonitor == nil {
+            localEscMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self, let stage = self.controller.window,
+                      Self.escEndsTutorial(screen: self.screen, keyCode: event.keyCode,
+                                           onStage: event.window === stage, helperIsFront: false)
+                else { return event }
+                DispatchQueue.main.async { self.close() }
+                return nil
+            }
         }
     }
 
     private func removeEscMonitor() {
         if let escMonitor { NSEvent.removeMonitor(escMonitor) }
+        if let localEscMonitor { NSEvent.removeMonitor(localEscMonitor) }
         escMonitor = nil
+        localEscMonitor = nil
     }
 }
 

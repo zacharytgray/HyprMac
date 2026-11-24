@@ -163,6 +163,20 @@ final class MoveAroundLessonTests: XCTestCase {
         stage.practice.end()
     }
 
+    // Esc ends the tutorial from the stage or a practice window, practice
+    // running or not; never in onboarding, another key, or someone else's Esc
+    func testEscEndsTheTutorialFromTheStageOrAPracticeWindow() {
+        let lesson = StageScreen.tutorial(.moveAround)
+        XCTAssertTrue(StageSession.escEndsTutorial(screen: lesson, keyCode: 53, onStage: true, helperIsFront: false),
+                      "practice blocked: the stage has the keys")
+        XCTAssertTrue(StageSession.escEndsTutorial(screen: lesson, keyCode: 53, onStage: false, helperIsFront: true))
+        XCTAssertFalse(StageSession.escEndsTutorial(screen: lesson, keyCode: 53, onStage: false, helperIsFront: false),
+                       "Hypr+K, Hypr+I or another app keep their Esc")
+        XCTAssertFalse(StageSession.escEndsTutorial(screen: lesson, keyCode: 36, onStage: true, helperIsFront: false))
+        XCTAssertFalse(StageSession.escEndsTutorial(screen: .onboarding(.hyprKey), keyCode: 53,
+                                                    onStage: true, helperIsFront: false))
+    }
+
     // a refused switch leaves the user on their own workspace: no practice there
     func testARefusedSwitchStartsNoPractice() {
         let host = FakeHost()
