@@ -143,6 +143,9 @@ class MouseTrackingManager {
     var cachedWindow: (CGWindowID) -> HyprWindow? = { _ in nil }
     var tiledPositions: () -> [CGWindowID: CGRect] = { [:] }
     var onFocusForFFM: (HyprWindow) -> Void = { _ in }
+    // the floater whose stand-in panel is under a CG point. the hit test
+    // skips our own windows, so without this hover reaches the tile below
+    var standInFloaterAt: (CGPoint) -> CGWindowID? = { _ in nil }
     var onUpdateFocusBorder: (HyprWindow) -> Void = { _ in }
     // routed to `SuppressionKey.mouseFocus` by WindowManager
     var isMouseFocusSuppressed: () -> Bool = { false }
@@ -317,6 +320,12 @@ class MouseTrackingManager {
         let floating = floatingWindowIDs()
         let managed = tiledPositions()
 
+        // over a stand-in: hovering it is hovering its floater
+        if let stoodIn = standInFloaterAt(cgPoint) {
+            guard stoodIn != lastFocusedID(), let target = cachedWindow(stoodIn) else { return nil }
+            return FocusTarget(windowID: stoodIn, window: target, reason: "ffm-stand-in")
+        }
+
         let hit = hover(at: cgPoint)
         switch hit {
         case .blocked(let raised):
@@ -419,6 +428,8 @@ class MouseTrackingManager {
         let cgY = primaryScreenHeight() - mouseNS.y
         let cgPoint = CGPoint(x: mouseNS.x, y: cgY)
         let lastID = lastFocusedID()
+        // a stand-in covers the tile below; only hovering it moves focus
+        if standInFloaterAt(cgPoint) != nil { return }
 
         // the window list first, as hover does. the cached rects below can
         // be stale, and a refocus from them fought hover over two tiles on

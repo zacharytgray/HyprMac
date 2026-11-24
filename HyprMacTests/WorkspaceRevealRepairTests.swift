@@ -171,6 +171,34 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertNil(glow.animation(forKey: "fade"), "gone at once, no fade on the new workspace")
     }
 
+    // the outgoing chrome goes before the windows park, not after: a switch
+    // to a workspace with windows parks after its retile, and the main
+    // thread stays busy past that, so an outline dropped then stayed on
+    // the new workspace until the switch ended (Zach, 2026-11-24)
+    func testASwitchToAWorkspaceWithWindowsTakesTheOutgoingChromeBeforeThePark() throws {
+        try XCTSkipIf(ProcessInfo.processInfo.environment["HYPRMAC_HEADLESS_TESTS"] == "1",
+                      "hostless run excludes tests that create AppKit panels")
+        let floater = shownWindow(id: 7340, on: visible, floating: true)
+        let incoming = shownWindow(id: 7341, on: hidden, floating: false)
+        orchestrator.allWindows = { [floater, incoming] }
+        border.primaryScreenHeight = screen.frame.height
+        border.setFloaterMarks(.outline)
+        border.updateFloatingBorders([floater.windowID: saved], color: NSColor.systemPink.cgColor)
+        var atPark: (ids: Set<CGWindowID>, parked: Bool, outline: Bool)?
+        orchestrator.willParkOutgoing = { [unowned self] ids in
+            atPark = (ids, floater.storedFrame.origin == self.workspaceManager.hidePosition(),
+                      self.border.currentFloaterOutline(for: floater.windowID) != nil)
+        }
+
+        orchestrator.switchWorkspace(hidden)
+
+        let seen = try XCTUnwrap(atPark, "the switch told the stand-ins before the park")
+        XCTAssertTrue(seen.ids.contains(floater.windowID))
+        XCTAssertFalse(seen.parked, "told before the floater parks")
+        XCTAssertFalse(seen.outline, "its outline was already gone")
+        XCTAssertEqual(floater.storedFrame.origin, workspaceManager.hidePosition(), "parked")
+    }
+
     /// a window on `workspace`, on screen, floating or tiled
     private func shownWindow(id: CGWindowID, on workspace: Int, floating: Bool) -> RevealWindow {
         let window = RevealWindow(id: id, frame: saved)

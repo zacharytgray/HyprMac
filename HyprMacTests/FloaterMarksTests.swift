@@ -225,7 +225,8 @@ final class FloaterOutlinePanelTests: XCTestCase {
         let start = CGRect(x: 100, y: 100, width: 400, height: 300)
         border.updateFloatingBorders([42: start], color: NSColor.systemPink.cgColor)
         border.applyOcclusion(focusedOccluders: [],
-                              floaterOccluders: [42: [CGRect(x: 300, y: 100, width: 400, height: 300)]])
+                              floaterCuts: [42: [ChromeCut(rect: CGRect(x: 300, y: 100, width: 400, height: 300),
+                                                                   rounded: false)]])
         XCTAssertNotNil(border.currentFloaterGlowLayer(for: 42)?.mask)
 
         let moved = start.offsetBy(dx: 250, dy: 40)
@@ -238,7 +239,8 @@ final class FloaterOutlinePanelTests: XCTestCase {
         // a refresh mid-drag reads the lagging frame
         border.updateFloatingBorders([42: start], color: NSColor.systemPink.cgColor)
         border.applyOcclusion(focusedOccluders: [],
-                              floaterOccluders: [42: [CGRect(x: 300, y: 100, width: 400, height: 300)]])
+                              floaterCuts: [42: [ChromeCut(rect: CGRect(x: 300, y: 100, width: 400, height: 300),
+                                                                   rounded: false)]])
         XCTAssertEqual(border.currentFloaterOutline(for: 42)?.panel, expected)
         XCTAssertNil(border.currentFloaterGlowLayer(for: 42)?.mask)
 

@@ -38,6 +38,13 @@ final class WorkspaceOrchestrator {
     var currentFocusedWindow: () -> HyprWindow? = { nil }
     var actualFocusedWindow: () -> HyprWindow? = { nil }
     var focusTransferredWindow: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
+    /// a switch put the incoming floaters back, before the retile brings
+    /// the tiles back over them
+    var didRevealFloaters: (Set<CGWindowID>) -> Void = { _ in }
+    /// right before the outgoing windows park: their chrome goes now
+    var willParkOutgoing: (Set<CGWindowID>) -> Void = { _ in }
+    /// right before a switch focuses (and raises) its pick
+    var willFocusSwitchPick: (HyprWindow) -> Void = { _ in }
     var warpToWindow: (HyprWindow) -> Void = { _ in }
     var warpCursor: (CGPoint) -> Void = { _ in }
     /// Settings: leave the cursor alone on a workspace switch.
@@ -338,6 +345,8 @@ final class WorkspaceOrchestrator {
         focusBorder.beginInstantSwitch(outgoing: sourceIDs.subtracting([focused.windowID]))
         defer { dimmingOverlay.endInstantSwitch(); focusBorder.endInstantSwitch() }
         for window in parked { focusBorder.dropFloatingBorder(for: window.windowID) }
+        willParkOutgoing(Set(parked.map(\.windowID)))
+        CATransaction.flush()
 
         focusTransferredWindow(focused)
         warpToWindow(focused)
@@ -425,6 +434,8 @@ final class WorkspaceOrchestrator {
         let allWindows = self.allWindows()
         let walkMS = Self.ms(since: switchStart)
         let result = workspaceManager.switchWorkspace(number, cursorScreen: currentScreen)
+        // floaters are back on screen; the tiles come back with the retile below
+        if !result.alreadyVisible { didRevealFloaters(result.toShow) }
         // focusing another tile would raise it over the maximized one and end it
         let maximizedHere = tilingEngine.maximizedWindowID(onWorkspace: number)
 
@@ -435,6 +446,7 @@ final class WorkspaceOrchestrator {
                 ?? visibleWindows.first(where: { $0.windowID == maximizedHere })
                 ?? visibleWindows.first(where: { !stateCache.floatingWindowIDs.contains($0.windowID) })
                 ?? visibleWindows.first {
+                willFocusSwitchPick(best)
                 best.focus()
                 warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
                      placedFrame: preferredFrame, workspace: number, screen: result.screen,
@@ -475,6 +487,13 @@ final class WorkspaceOrchestrator {
             allWindows.first(where: { $0.windowID == wid }) ?? stateCache.cachedWindows[wid]
         }
         func parkOutgoing() {
+            // the outgoing chrome (outlines, stand-ins) goes in the same
+            // frame as the windows: off screen before the parks land, and
+            // flushed, since the main thread stays busy (focus, warp, the
+            // refresh) until the switch ends and nothing would draw it away
+            for w in outgoing { focusBorder.dropFloatingBorder(for: w.windowID) }
+            willParkOutgoing(result.toHide)
+            CATransaction.flush()
             parkStart = Date()
             for w in outgoing {
                 if stateCache.floatingWindowIDs.contains(w.windowID) { workspaceManager.saveFloatingFrame(w) }
@@ -539,6 +558,7 @@ final class WorkspaceOrchestrator {
         let maximized = newWorkspaceWindows.first { $0.windowID == maximizedHere }
         let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }
         if let best = preferred ?? departed ?? maximized ?? tiled ?? newWorkspaceWindows.first {
+            willFocusSwitchPick(best)
             best.focus()
             warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
                  placedFrame: preferredFrame, workspace: number, screen: result.screen,

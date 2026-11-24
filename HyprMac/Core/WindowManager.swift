@@ -34,6 +34,8 @@ class WindowManager {
     let focusBrackets = FocusBrackets()
     let dimmingOverlay = DimmingOverlay()
     let focusGlide = FocusGlide()
+    let floaterStandIn = FloaterStandIn()
+    private let standInPressTap = StandInPressTap()
     private let screenshotPicker = ScreenshotPickerWatcher()
     let mouseTracker = MouseTrackingManager()
     let keybindOverlay = KeybindOverlayController()
@@ -49,6 +51,7 @@ class WindowManager {
             publish: publisher.publish, clear: publisher.clear)
     }()
     private var statusConfigObservation: AnyCancellable?
+    private var standInSwitchObservation: AnyCancellable?
     // the float and tile rules: watched so a change, from the menu, an
     // action or Settings, reaches the open windows at once
     private var floatingRuleSync: FloatingRuleSync?
@@ -320,6 +323,20 @@ class WindowManager {
         self.workspaceOrchestrator.onWillSwitch = { [weak self] workspace, screen in
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
+        self.workspaceOrchestrator.didRevealFloaters = { [weak self] ids in
+            guard let self, self.isRunning, self.floaterStandIn.isEnabled, !self.scratchpad.isVisible else { return }
+            // the last picture, up before the tiles can land on the floater
+            self.floaterStandIn.showKept(ids.intersection(self.stateCache.floatingWindowIDs),
+                                         trigger: "workspace reveal")
+        }
+        // the outgoing stand-ins go with their windows, not before: the
+        // windows stay up as the backdrop until the incoming ones are placed
+        self.workspaceOrchestrator.willParkOutgoing = { [weak self] ids in
+            for id in ids { self?.floaterStandIn.hide(id, reason: "workspace switch") }
+        }
+        self.workspaceOrchestrator.willFocusSwitchPick = { [weak self] w in
+            self?.showStandInsBeforeFocus(w, trigger: "switch focus")
+        }
         self.workspaceOrchestrator.onRevealMissed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
         self.workspaceOrchestrator.onFloatersRevealed = { [weak self] windows in self?.markRevealedFloaters(windows) }
         self.workspaceOrchestrator.onDidSwitch = { [weak self] workspace, _ in
@@ -377,6 +394,7 @@ class WindowManager {
         }
         scratchpad.raiseScrim = { [weak self] in
             guard let self else { return }
+            self.floaterStandIn.hideAll(reason: "scratchpad")
             self.refreshDimming()
             self.dimmingOverlay.orderFrontAll()
         }
@@ -510,6 +528,8 @@ class WindowManager {
             return self.stateCache.tiledPositions.filter { self.scratchpad.isSummoned($0.key) }
         }
         mouseTracker.onFocusForFFM = { [weak self] w in self?.focusForFFM(w) }
+        // a floater's stand-in counts as the floater for hover
+        mouseTracker.standInFloaterAt = { [weak self] point in self?.floaterStandIn.floater(at: point) }
         mouseTracker.onUpdateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
         mouseTracker.isMouseFocusSuppressed = { [weak self] in self?.suppressions.isSuppressed(.mouseFocus) ?? false }
         mouseTracker.lastFocusedID = { [weak self] in self?.focusController.lastFocusedID ?? 0 }
@@ -524,7 +544,11 @@ class WindowManager {
         floatingController.retile = { [weak self] prepare in
             self?.retile(prepare: prepare)
         }
-        floatingController.updateFocusBorder = { [weak self] w in self?.updateFocusBorder(for: w) }
+        floatingController.updateFocusBorder = { [weak self] w in
+            // a floater given focus here (Hypr+Shift+T) rises
+            self?.markFloaterOrderUnsettled(w.windowID, reason: "floater focus")
+            self?.updateFocusBorder(for: w)
+        }
         floatingController.updatePositionCache = { [weak self] in self?.updatePositionCache() }
         floatingController.isMenuTracking = { [weak self] in self?.mouseTracker.menuTracking ?? false }
         floatingController.isScratchpadVisible = { [weak self] in self?.scratchpad.isVisible ?? false }
@@ -553,6 +577,7 @@ class WindowManager {
             w.setFrame(frame)
         }
         floatingController.willTryTile = { [weak self] w in self?.clearMarksForTileAttempt(w) }
+        wireFloaterStandIn()
         floatingController.didTryTile = { [weak self] w in
             // a refusal's red flash holds the border; it re-shows when the flash ends
             guard let self, self.isRunning else { return }
@@ -574,6 +599,8 @@ class WindowManager {
         // in admission recovery are drawn over the tiles like floaters, as in
         // clickFocusTarget, so they count as covers and not as tiles.
         tiledFocusRouter.raiseFloatersBeforeFocus = { [weak self] target in
+            // stand-ins first: up before the focus can raise the tile
+            self?.showStandInsBeforeFocus(target, trigger: "pre-raise")
             self?.floatingController.raiseFloatersBeforeFocus(target)
         }
         tiledFocusRouter.liftOverFloaters = { [weak self] target in
@@ -828,6 +855,16 @@ class WindowManager {
         statusConfigObservation = config.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in
             self?.statusExporter.noteChange()
         }
+        // the stand-in switch, from Settings or a reload: on asks for Screen
+        // Recording, either way the panels follow at once
+        standInSwitchObservation = config.$keepFloatingWindowsInFront.removeDuplicates().dropFirst()
+            .receive(on: DispatchQueue.main).sink { [weak self] on in
+                guard let self else { return }
+                hyprLog(.notice, .floating, "stand-in switch \(on ? "on" : "off")")
+                if on { self.floaterStandIn.askForCaptureIfNeeded() }
+                self.floaterStandIn.currentMode()
+                if self.isRunning { self.refreshFloatingBorders() }
+            }
         floatingController.markRulesApplied()
         // an edit here moves open windows; a reload (iCloud, Nix, a hand
         // edit) or a reset doesn't, as Never tile edits never did
@@ -1007,6 +1044,8 @@ class WindowManager {
         guard !isRunning else { return }
         isRunning = true
         lastDisplayFingerprint = displayFingerprint()
+        // on from the last session, or from a config file: macOS asks once
+        floaterStandIn.askForCaptureIfNeeded()
 
         // route AX notifications into the coalescing scheduler. these are the
         // primary discovery triggers; the scheduler's timer is a safety net.
@@ -1260,6 +1299,9 @@ class WindowManager {
         keyboardArrivals.stop()
         focusBorder.hide()
         focusBorder.hideFloatingBorders()
+        floaterStandIn.reset(reason: "stopped")
+        standInPressTap.stop()
+        standInStack = nil
         dimmingOverlay.hideAll()
         hyprLog(.debug, .lifecycle, "stopped")
     }
@@ -1383,6 +1425,9 @@ class WindowManager {
             // a click on a menu item or panel of the frontmost app is not a click
             // on the window under it.
             let hit = self.mouseTracker.hitTest(at: downCG, maxAge: 0)
+            if case .window = hit, !self.hyprHeld, !Self.isOwnSyntheticEvent(event) {
+                self.showStandInsForPress(at: downCG)
+            }
             if case .blocked = hit {
                 hyprLog(.debug, .mouse, "click on a raised window of the front app — focus tracker left alone")
             } else {
@@ -1589,7 +1634,7 @@ class WindowManager {
     /// own), one with it off, plus an AX frame read per tile.
     private func scheduleRestackRefresh(after delay: TimeInterval) {
         guard isRunning, !restackRefreshPending,
-              config.dimInactiveWindows || floaterMarks != .none,
+              config.dimInactiveWindows || floaterMarks != .none || floaterStandIn.isEnabled,
               stateCache.floatingWindowIDs.contains(where: workspaceManager.isWindowVisible) else { return }
         restackRefreshPending = true
         DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -1629,6 +1674,7 @@ class WindowManager {
         var notMoved: [CGWindowID] = []
         for id in ids where chromeTracks(id) {
             guard let frame = WindowStacking.bounds(of: id), frame.width > 1, frame.height > 1 else { continue }
+            floaterStandIn.follow(id, to: frame)
             // where each mark on the window sits now
             let drawn = [focusBorder.floaterOutlineFrame(id),
                          focusBorder.trackedWindowID == id ? focusBorder.frame : nil,
@@ -1671,6 +1717,7 @@ class WindowManager {
                                               errorFlashID: focusBorder.errorFeedbackTarget,
                                               scrimShowing: scratchpad.isVisible)
         if plan.outline { focusBorder.dropFloatingBorder(for: id) }
+        floaterStandIn.hide(id, reason: "tile attempt")
         // the red flash is the focused panel too; hiding it ends the flash
         if plan.border || plan.errorFlash { focusBorder.hide(fade: false) }
         if plan.brackets { focusBrackets.hide(fade: false) }
@@ -1739,6 +1786,7 @@ class WindowManager {
         if isFullscreenSuppressed(focused: window) {
             focusBorder.hide()
             focusBorder.hideFloatingBorders()
+            floaterStandIn.hideAll(reason: "full screen")
             focusBrackets.hide()
             dimmingOverlay.hideAll()
             return
@@ -1935,7 +1983,181 @@ class WindowManager {
                                   tiles: [CGWindowID: CGRect]) -> [CGWindowID: [CGRect]] {
         guard !floaters.isEmpty, config.dimInactiveWindows,
               let windows = mouseTracker.stackedWindows() else { return [:] }
+        // a floater with a stand-in keeps its whole cutout
+        let standIns = floaterStandIn.shownIDs
         return WindowStacking.occluders(ofFloaters: floaters, covers: tiles, in: windows)
+            .filter { !standIns.contains($0.key) }
+    }
+
+    // MARK: - floater stand-in
+
+    private func wireFloaterStandIn() {
+        floaterStandIn.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
+        floaterStandIn.outlineWindowNumber = { [weak self] id in self?.focusBorder.floaterOutlineWindowNumber(id) }
+        floaterStandIn.outlineColor = { [weak self] in
+            self?.config.resolvedFloatingBorderColor.cgColor ?? NSColor.systemPurple.cgColor
+        }
+        floaterStandIn.readTitle = { [weak self] id in self?.stateCache.cachedWindows[id]?.title }
+        floaterStandIn.focusFloater = { [weak self] id in self?.focusFloaterForStandIn(id) ?? false }
+        floaterStandIn.coverState = { [weak self] id in self?.standInCoverState(id) ?? .gone }
+        floaterStandIn.handOffFinished = { [weak self] in self?.scheduleRestackRefresh(after: 0.06) }
+        floaterStandIn.isOn = { [weak self] in self?.config.keepFloatingWindowsInFront ?? false }
+        floaterStandIn.holdEnded = { [weak self] in self?.scheduleRestackRefresh(after: 0) }
+        floaterStandIn.panelsChanged = { [weak self] in self?.updatePressZones() }
+        floaterStandIn.chromeChanged = { [weak self] in self?.refreshFloaterChromeNow() }
+        standInPressTap.onPress = { [weak self] tile, ids, windowNumbers in
+            guard let self else { return }
+            if self.isRunning, let stack = self.mouseTracker.stackedWindows() {
+                let frames = self.standInCandidates(windows: nil, listed: Self.listedFrames(stack))
+                self.floaterStandIn.showPredicted(ids, floaters: self.standInInfo(ids, frames: frames, windows: nil),
+                                                  trigger: "mouseDown on tile \(tile)")
+            }
+            // the tap set these in the window server; anything not up here goes back down
+            for number in self.floaterStandIn.panelsDown(among: windowNumbers) {
+                StandInPressTap.setAlpha(number, 0)
+            }
+        }
+        // with the stand-in up the old z-order repairs only churn: each one
+        // fronts the floater's app for a moment
+        floatingController.repairsSuspended = { [weak self] in
+            guard let self else { return false }
+            return self.floaterStandIn.isEnabled && !FloaterStandInMode.debugKeepsRepairs()
+        }
+    }
+
+    /// The visible floaters a stand-in may stand for, with their drawn
+    /// frames. Scratchpad members never: the scrim owns their stack. An
+    /// app's pop-up never either: it closes when anything else is touched (#114).
+    private func standInCandidates(windows: [HyprWindow]?, listed: [CGWindowID: CGRect])
+        -> [CGWindowID: CGRect] {
+        floatingFrames(from: windows ?? Array(stateCache.cachedWindows.values), listed: listed)
+            .filter { !scratchpad.contains($0.key) && !stateCache.popupWindowIDs.contains($0.key) }
+    }
+
+    private func standInInfo(_ ids: Set<CGWindowID>, frames: [CGWindowID: CGRect],
+                             windows: [HyprWindow]?) -> [CGWindowID: FloaterStandIn.Floater] {
+        var infos: [CGWindowID: FloaterStandIn.Floater] = [:]
+        for id in ids {
+            guard let frame = frames[id],
+                  let w = stateCache.cachedWindows[id] ?? windows?.first(where: { $0.windowID == id }) else { continue }
+            infos[id] = FloaterStandIn.Floater(id: id, frame: frame, pid: w.ownerPID, title: nil)
+        }
+        return infos
+    }
+
+    /// Tile frames from the window list, where the window server draws
+    /// them now, else the cached ones.
+    private func listedTiles(_ listed: [CGWindowID: CGRect]) -> [CGWindowID: CGRect] {
+        var tiles: [CGWindowID: CGRect] = [:]
+        for (id, cached) in stateCache.tiledPositions { tiles[id] = listed[id] ?? cached }
+        return tiles
+    }
+
+    // what the last refresh saw, for the mouse-down tap's zones
+    private var standInStack: (tiles: [CGWindowID: CGRect], frames: [CGWindowID: CGRect],
+                               atRisk: Set<CGWindowID>)?
+
+    /// A panel on each floater a tile covers, a stream on each one a tile
+    /// overlaps. Runs with every floater outline refresh.
+    private func refreshStandIns(windows: [HyprWindow]? = nil) {
+        guard floaterStandIn.isEnabled else {
+            if standInPressTap.isRunning { standInPressTap.stop() }
+            return
+        }
+        guard isRunning, !scratchpad.isVisible, !displayTransitionPending else {
+            floaterStandIn.hideAll(reason: scratchpad.isVisible ? "scratchpad" : "not running")
+            return
+        }
+        if !standInPressTap.isRunning { standInPressTap.start() }
+        guard let stack = mouseTracker.stackedWindows() else { return }
+        let frames = standInCandidates(windows: windows, listed: Self.listedFrames(stack))
+        let tiles = currentTiledRects()
+        let covered = FloaterStandInPlan.covered(floaters: frames, tiles: tiles, in: stack)
+        let atRisk = FloaterStandInPlan.atRisk(floaters: frames, tiles: tiles, in: stack)
+        standInStack = (tiles, frames, atRisk)
+        floaterStandIn.apply(covered: covered, atRisk: atRisk,
+                             floaters: standInInfo(covered.union(atRisk), frames: frames, windows: windows),
+                             known: stateCache.floatingWindowIDs)
+        updatePressZones()
+    }
+
+    /// The tiles whose press buries a floater with a panel down but ready.
+    private func updatePressZones() {
+        guard let seen = standInStack else { return }
+        let warm = floaterStandIn.warmPanels()
+        var zones: [StandInPressTap.Zone] = []
+        for (tile, tileFrame) in seen.tiles {
+            let ids = seen.atRisk.filter { id in
+                warm[id] != nil && seen.frames[id].map { WindowStacking.overlaps($0, tileFrame) } == true
+            }
+            guard !ids.isEmpty else { continue }
+            zones.append(.init(tileID: tile, tileFrame: tileFrame, floaterIDs: ids,
+                               windowNumbers: ids.compactMap { warm[$0] }))
+        }
+        standInPressTap.update(zones: zones, floaterIDs: Set(seen.frames.keys))
+    }
+
+    /// The press landed on a window: when it is a tile that overlaps a
+    /// floater, the tile is about to rise over it. Show the stand-in now.
+    /// The mouse-down tap usually got there first; this is the fallback.
+    private func showStandInsForPress(at point: CGPoint) {
+        guard isRunning, floaterStandIn.isEnabled, !scratchpad.isVisible,
+              let stack = mouseTracker.stackedWindows() else { return }
+        let listed = Self.listedFrames(stack)
+        let frames = standInCandidates(windows: nil, listed: listed)
+        guard !frames.isEmpty else { return }
+        guard let press = FloaterStandInPlan.coveredByPress(
+            at: point, in: stack, floaters: frames, tiles: listedTiles(listed),
+            frontmostPID: NSWorkspace.shared.frontmostApplication?.processIdentifier,
+            ownPID: getpid(), mouseTarget: mouseTracker.mouseTargetAt) else { return }
+        floaterStandIn.showPredicted(press.floaters,
+                                     floaters: standInInfo(press.floaters, frames: frames, windows: nil),
+                                     trigger: "press monitor on tile \(press.tile)")
+    }
+
+    /// HyprMac is about to focus `target`. A tile rises with its focus, so
+    /// the floaters it overlaps get their stand-ins first, before the focus
+    /// or the synthetic click goes out. A floater coming up has its panel
+    /// kept until the window list shows it on top.
+    private func showStandInsBeforeFocus(_ target: HyprWindow, trigger: String) {
+        guard isRunning, floaterStandIn.isEnabled, !scratchpad.isVisible else { return }
+        if stateCache.floatingWindowIDs.contains(target.windowID) {
+            floaterStandIn.reveal(target.windowID, trigger: "\(trigger) of the floater")
+            markFloaterOrderUnsettled(target.windowID, reason: trigger)
+            return
+        }
+        guard let stack = WindowStacking.onScreen() else { return }
+        let listed = Self.listedFrames(stack)
+        guard let tileFrame = listed[target.windowID] ?? target.cachedFrame else { return }
+        let onScreen = Set(stack.filter(\.isVisible).map(\.windowID))
+        let frames = standInCandidates(windows: nil, listed: listed)
+        let ids = Set(frames.filter { onScreen.contains($0.key) && WindowStacking.overlaps($0.value, tileFrame) }.keys)
+        guard !ids.isEmpty else { return }
+        floaterStandIn.showPredicted(ids, floaters: standInInfo(ids, frames: frames, windows: nil),
+                                     trigger: "\(trigger) of tile \(target.windowID)", requireWarm: true)
+    }
+
+    /// A fresh window-list read: is a tile stacked above the floater?
+    private func standInCoverState(_ id: CGWindowID) -> FloaterStandIn.CoverState {
+        guard let stack = WindowStacking.onScreen(),
+              let window = stack.first(where: { $0.windowID == id }), window.isVisible,
+              let frame = window.bounds else { return .gone }
+        let tiles = listedTiles(Self.listedFrames(stack))
+        return FloaterStandInPlan.covered(floaters: [id: frame], tiles: tiles, in: stack).contains(id)
+            ? .covered : .onTop
+    }
+
+    /// A touch on a stand-in: focus the real floater the way the floater
+    /// cycle does, which raises it over the tile.
+    private func focusFloaterForStandIn(_ id: CGWindowID) -> Bool {
+        guard isRunning, let w = stateCache.cachedWindows[id] else { return false }
+        markFloaterOrderUnsettled(id, reason: "hand-off")
+        suppressions.suppress(.mouseFocus, for: SuppressionDelay.mouseFocus)
+        suppressions.suppress(.activationSwitch, for: SuppressionDelay.activationSwitch)
+        w.focus()
+        focusController.recordFocus(id, reason: "stand-in")
+        updateFocusBorder(for: w)
+        return true
     }
 
     /// Read live AX frames for every visible tile before dim or border
@@ -2671,6 +2893,8 @@ class WindowManager {
         mouseDownFloatingWindowID = pressed.id
         mouseDownFloatingFrame = pressed.frame
         mouseDownFloatingCursorCG = cursor
+        // the press raises it over the floaters in front of it
+        markFloaterOrderUnsettled(pressed.id, reason: "press")
     }
 
     /// One notice line per floater drag, read once the drop has settled,
@@ -2768,6 +2992,7 @@ class WindowManager {
         tilingEngine.forgetMinimumSize(windowID: id)
         workspaceManager.removeWindow(id)
         scratchpad.forget(id)
+        floaterStandIn.forget(id, reason: "closed")
         if focusController.lastFocusedID == id {
             focusController.recordFocus(0, reason: "forgetWindow")
         }
@@ -2917,6 +3142,8 @@ class WindowManager {
     /// Corners mode too, with no focus border.
     private func refreshFloatingBorders(windows: [HyprWindow]? = nil,
                                         listed: [CGWindowID: CGRect]? = nil) {
+        // first: the outline and the dim read which floaters stand in
+        refreshStandIns(windows: windows)
         if floaterMarks != .none {
             let source = windows ?? Array(stateCache.cachedWindows.values)
             var frames = floatingFrames(from: source, listed: listed ?? listedFrames())
@@ -2933,9 +3160,10 @@ class WindowManager {
                 frames,
                 color: config.resolvedFloatingBorderColor.cgColor
             )
-            refreshBorderOcclusion(floaterFrames: frames)
+            refreshFloaterChrome(outlineFrames: frames)
         } else {
             focusBorder.hideFloatingBorders()
+            refreshFloaterChrome(outlineFrames: [:])
         }
     }
 
@@ -2962,17 +3190,13 @@ class WindowManager {
     /// of every higher-z tracked window that overlaps the bordered
     /// window. The border layer's mask cuts those occluders out so the
     /// border does not draw over windows that are visually on top of it.
-    private func refreshBorderOcclusion(floaterFrames: [CGWindowID: CGRect]) {
+    private func refreshBorderOcclusion(stack: [StackedWindow], floaterFrames: [CGWindowID: CGRect],
+                                        floaterCuts: [CGWindowID: [ChromeCut]]) {
         guard floaterMarks != .none else { return }
-        guard let info = CGWindowListCopyWindowInfo(
-                [.optionOnScreenOnly, .excludeDesktopElements],
-                kCGNullWindowID) as? [[String: Any]] else { return }
-
         var zIndex: [CGWindowID: Int] = [:]
-        for (i, dict) in info.enumerated() {
-            guard let num = dict[kCGWindowNumber as String] as? Int else { continue }
-            zIndex[CGWindowID(num)] = i
-        }
+        for (i, window) in stack.enumerated() where zIndex[window.windowID] == nil { zIndex[window.windowID] = i }
+        // a floater with a stand-in shows in front of every tile
+        for id in floaterStandIn.shownIDs where zIndex[id] != nil { zIndex[id] = -1 }
 
         var trackedRects: [CGWindowID: CGRect] = [:]
         // live tile frames — same staleness rationale as refreshDimming
@@ -2989,25 +3213,88 @@ class WindowManager {
                 if rect.intersects(focusedRect) { focusedOccluders.append(rect) }
             }
         }
+        focusBorder.applyOcclusion(focusedOccluders: focusedOccluders, floaterCuts: floaterCuts)
+    }
 
-        var floaterOccluders: [CGWindowID: [CGRect]] = [:]
-        // the floater's glow reaches past its frame, so a window in front
-        // that only touches the glow hides it too
-        let glowReach = FocusBorder.floaterPanelExpansion
-        for (fid, frect) in floaterFrames {
-            guard let fz = zIndex[fid] else { continue }
-            let panelRect = frect.insetBy(dx: -glowReach, dy: -glowReach)
-            var list: [CGRect] = []
-            for (id, rect) in trackedRects where id != fid {
-                guard let z = zIndex[id], z < fz else { continue }
-                if rect.intersects(panelRect) { list.append(rect) }
-            }
-            if !list.isEmpty { floaterOccluders[fid] = list }
+    // floaters changing place in the stack (a press, a focus) until the
+    // window list shows where they landed
+    private var floaterOrderUnsettled: [CGWindowID: Int] = [:]
+    private var floaterOrderGeneration = 0
+
+    /// Cut and stack every floater's chrome (outline, stand-in) by the real
+    /// stacking order, from one fresh window-list read: a window above a
+    /// floater cuts its outline and its picture, and the panels stack back
+    /// to front as the floaters do. The outlines' cuts go to the focus
+    /// border with the focused border's own occlusion.
+    ///
+    /// Ordering alone can't do it: a real floater in front is a normal
+    /// window, below every HyprMac panel. Cuts alone can't either: the
+    /// glow of a front outline reaches past its window, over the picture
+    /// of the one behind. So both.
+    private func refreshFloaterChrome(outlineFrames: [CGWindowID: CGRect]) {
+        guard isRunning, let stack = WindowStacking.onScreen() else { return }
+        let listed = Self.listedFrames(stack)
+        var floaters = outlineFrames
+        for (id, frame) in standInCandidates(windows: nil, listed: listed) where floaters[id] == nil {
+            floaters[id] = frame
         }
+        let cuts = FloaterStandInPlan.chromeCuts(
+            floaters: floaters, tiles: currentTiledRects(), standIns: floaterStandIn.shownIDs,
+            unsettled: Set(floaterOrderUnsettled.keys), reach: FocusBorder.floaterPanelExpansion, in: stack)
+        refreshBorderOcclusion(stack: stack, floaterFrames: outlineFrames, floaterCuts: cuts)
+        floaterStandIn.applyCuts(cuts)
+        // back to front: each floater's outline, its stand-in right below it
+        for id in FloaterStandInPlan.floaterOrder(Set(floaters.keys), in: stack).reversed() {
+            focusBorder.orderFloaterOutlineFront(id)
+            floaterStandIn.orderPanel(id, below: focusBorder.floaterOutlineWindowNumber(id))
+        }
+        CATransaction.flush()
+    }
 
-        focusBorder.applyOcclusion(
-            focusedOccluders: focusedOccluders,
-            floaterOccluders: floaterOccluders)
+    /// The chrome pass alone, from the floaters' last known frames.
+    private func refreshFloaterChromeNow() {
+        guard isRunning else { return }
+        let listed = WindowStacking.onScreen().map(Self.listedFrames) ?? [:]
+        var frames = floaterMarks != .none ? floatingFrames(from: Array(stateCache.cachedWindows.values), listed: listed) : [:]
+        if scratchpad.isVisible { frames = frames.filter { scratchpad.isSummoned($0.key) } }
+        refreshFloaterChrome(outlineFrames: frames)
+    }
+
+    /// `id` is about to change place among the floaters (a press on it, a
+    /// focus). Until the window list shows it above the floaters it
+    /// overlaps, it and they cut each other's chrome, so no frame shows the
+    /// old order or the new one ahead of the windows. Then one pass restacks.
+    private func markFloaterOrderUnsettled(_ id: CGWindowID, reason: String) {
+        guard isRunning, stateCache.floatingWindowIDs.contains(id),
+              let stack = WindowStacking.onScreen() else { return }
+        let frames = Self.listedFrames(stack).filter { stateCache.floatingWindowIDs.contains($0.key) }
+        guard let frame = frames[id],
+              frames.contains(where: { $0.key != id && WindowStacking.overlaps($0.value, frame) }),
+              !FloaterStandInPlan.isAboveOverlappingFloaters(id, floaters: frames, in: stack) else { return }
+        floaterOrderGeneration += 1
+        let generation = floaterOrderGeneration
+        floaterOrderUnsettled[id] = generation
+        hyprLog(.notice, .floating, "floater order unsettled wid=\(id) reason=\(reason)")
+        refreshFloaterChromeNow()
+        let started = CFAbsoluteTimeGetCurrent()
+        func watch() {
+            guard floaterOrderUnsettled[id] == generation else { return }
+            let elapsed = CFAbsoluteTimeGetCurrent() - started
+            var settled = false
+            if let stack = WindowStacking.onScreen() {
+                let frames = Self.listedFrames(stack).filter { stateCache.floatingWindowIDs.contains($0.key) }
+                settled = FloaterStandInPlan.isAboveOverlappingFloaters(id, floaters: frames, in: stack)
+            }
+            guard settled || elapsed >= 0.4 else {
+                DispatchQueue.main.asyncAfter(deadline: .now() + FloaterStandIn.poll) { watch() }
+                return
+            }
+            floaterOrderUnsettled[id] = nil
+            hyprLog(.notice, .floating, "floater order \(settled ? "settled" : "gave up") wid=\(id) after "
+                    + "\(Int(elapsed * 1000)) ms")
+            refreshFloaterChromeNow()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + FloaterStandIn.poll) { watch() }
     }
 
     /// Live overview: new windows, closes, moves and retiles show up while
@@ -3614,6 +3901,7 @@ class WindowManager {
         if isFullscreenSuppressed(focused: focusResolver.currentFocusedWindow()) {
             focusBorder.hide()
             focusBorder.hideFloatingBorders()
+            floaterStandIn.hideAll(reason: "full screen")
             dimmingOverlay.hideAll()
         } else if let w = focusResolver.currentFocusedWindow() {
             updateFocusBorder(for: w)
@@ -3739,6 +4027,7 @@ class WindowManager {
         // the scratchpad can't survive a topology change — reconcile would
         // park its visible members under a live scrim
         scratchpad.hide(reason: .displayChange)
+        floaterStandIn.reset(reason: "displays changed")
         // hold discovery off through the settle window. a poll between the
         // topology change and the reconcile below reads windows at their
         // OS-shuffled positions and drift-reassigns them to whatever

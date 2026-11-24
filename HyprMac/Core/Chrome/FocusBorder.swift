@@ -593,6 +593,13 @@ class FocusBorder {
         positionGlowView(in: p)
     }
 
+    /// The window number of `windowID`'s outline panel while it is on
+    /// screen. The floater stand-in orders itself just below it.
+    func floaterOutlineWindowNumber(_ windowID: CGWindowID) -> Int? {
+        guard let panel = floatingPanels[windowID]?.panel, panel.isVisible else { return nil }
+        return panel.windowNumber
+    }
+
     /// Where `windowID`'s floater outline sits now (CG), nil without one.
     func floaterOutlineFrame(_ windowID: CGWindowID) -> CGRect? {
         floatingPanels[windowID] == nil ? nil : floaterFrames[windowID]
@@ -794,62 +801,46 @@ class FocusBorder {
     ///
     /// - Parameter focusedOccluders: rects of higher-z windows
     ///   overlapping the focused border.
-    /// - Parameter floaterOccluders: per-window occluder rects for
-    ///   floating borders.
-    func applyOcclusion(focusedOccluders: [CGRect], floaterOccluders: [CGWindowID: [CGRect]]) {
+    /// - Parameter floaterCuts: per floater, the windows above it
+    ///   (`FloaterStandInPlan.chromeCuts`), a floater's rounded.
+    func applyOcclusion(focusedOccluders: [CGRect], floaterCuts: [CGWindowID: [ChromeCut]]) {
         mainThreadOnly()
         if glideTarget != nil {
             glideOccluders = focusedOccluders
         } else if let frame = trackedWindowFrame, let glow = glowView {
             applyMask(to: glow, windowCGRect: frame,
                       expansion: Tuning.activeBorderWidth / 2,
-                      occluders: focusedOccluders)
+                      cuts: focusedOccluders.map { ChromeCut(rect: $0, rounded: false) })
         }
         for (wid, border) in floatingPanels {
             guard let frame = floaterFrames[wid] else { continue }
-            // the dragged floater is in front; the occluders came from a stale list
-            let occluders = wid == floaterDrag?.id ? [] : floaterOccluders[wid] ?? []
+            // the dragged floater is in front; the cuts came from a stale list
+            let cuts = wid == floaterDrag?.id ? [] : floaterCuts[wid] ?? []
             applyMask(to: border.glowView, windowCGRect: frame,
-                      expansion: Self.floaterPanelExpansion,
-                      occluders: occluders)
+                      expansion: Self.floaterPanelExpansion, cuts: cuts)
         }
     }
 
     private func applyMask(to glow: NSView, windowCGRect: CGRect, expansion: CGFloat, occluders: [CGRect]) {
+        applyMask(to: glow, windowCGRect: windowCGRect, expansion: expansion,
+                  cuts: occluders.map { ChromeCut(rect: $0, rounded: false) })
+    }
+
+    /// Leave the cuts out of the panel: the glow view covers the window
+    /// plus `expansion` on every side.
+    private func applyMask(to glow: NSView, windowCGRect: CGRect, expansion: CGFloat, cuts: [ChromeCut]) {
         guard let layer = glow.layer else { return }
-        if occluders.isEmpty {
-            layer.mask = nil
-            return
-        }
+        ChromeCutMask.apply(to: layer, size: layer.bounds.size,
+                            topLeftCG: CGPoint(x: windowCGRect.minX - expansion, y: windowCGRect.minY - expansion),
+                            cuts: cuts, cornerRadius: WindowCornerRadius.global,
+                            scale: glow.window?.backingScaleFactor ?? 2)
+    }
 
-        // visible region in glow-local NS coords (lower-left origin).
-        // glow.bounds is the panel's content rect — `expansion` larger
-        // than the window on every side. translate each occluder from
-        // CG (top-down, screen origin) into glow-local NS:
-        //   x_local = occCG.minX - (windowCG.minX - expansion)
-        //   y_local = (windowCG.maxY + expansion) - occCG.maxY
-        var pieces: [NSRect] = [layer.bounds]
-        for occCG in occluders {
-            let occLocal = NSRect(
-                x: occCG.origin.x - (windowCGRect.origin.x - expansion),
-                y: (windowCGRect.maxY + expansion) - occCG.maxY,
-                width: occCG.width,
-                height: occCG.height)
-            pieces = pieces.flatMap { WindowStacking.subtract(occLocal, from: $0) }
-        }
-
-        let path = CGMutablePath()
-        for piece in pieces { path.addRect(piece) }
-
-        let mask = CAShapeLayer()
-        mask.frame = layer.bounds
-        mask.path = path
-        mask.fillColor = NSColor.white.cgColor
-        // disable implicit animations — mask updates can flicker otherwise
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        layer.mask = mask
-        CATransaction.commit()
+    /// Put `windowID`'s outline in front of every other floating-level
+    /// panel. Called back to front to stack the floaters' chrome.
+    func orderFloaterOutlineFront(_ windowID: CGWindowID) {
+        mainThreadOnly()
+        floatingPanels[windowID]?.panel.orderFront(nil)
     }
 
     // returns up to 4 strips representing `rect` minus `hole`.
