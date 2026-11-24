@@ -349,16 +349,48 @@ struct MenuBarAndKeysLessonBar: View {
 final class PauseLessonModel: PracticeLessonModel {
     @Published var paused = false
     @Published var resumed = false
-    /// the lesson saw tiling go off; the tutorial turns it back on if it ends paused
-    private(set) var pausedHere = false
+
+    /// Set while tiling is off because this lesson turned it off. Local
+    /// defaults, not the synced config, so a crash mid-lesson can't leave
+    /// another Mac paused; the next launch resumes and clears it.
+    static let ownedPauseKey = "tutorialPausedTiling"
+
+    private let defaults: UserDefaults
+    /// tiling was on when the lesson opened; started paused, it's never ours
+    private var startedOn = true
+    private var lastEnabled = true
+
+    init(practice: PracticeSession, config: UserConfig = .shared, defaults: UserDefaults = .standard,
+         now: @escaping () -> Date = Date.init) {
+        self.defaults = defaults
+        super.init(practice: practice, config: config, now: now)
+    }
+
+    override func didStart() {
+        startedOn = config.enabled
+        lastEnabled = config.enabled
+    }
 
     override func evaluate() {
-        if !config.enabled {
-            pausedHere = true
+        let on = config.enabled
+        // only an on → off during the lesson is ours, and off → on settles it
+        if startedOn, lastEnabled, !on { defaults.set(true, forKey: Self.ownedPauseKey) }
+        if !lastEnabled, on { defaults.removeObject(forKey: Self.ownedPauseKey) }
+        lastEnabled = on
+        if !on {
             mark(self, \.paused)
         } else if paused {
             mark(self, \.resumed)
         }
+    }
+
+    /// Tiling back on if this lesson paused it, then forget. Run when the
+    /// tutorial ends and at launch, for a tutorial a crash cut short.
+    static func resumeOwnedPause(config: UserConfig, defaults: UserDefaults = .standard) {
+        guard defaults.bool(forKey: ownedPauseKey) else { return }
+        defaults.removeObject(forKey: ownedPauseKey)
+        hyprLog(.notice, .lifecycle, "tutorial: resuming the pause lesson 7 left on")
+        if !config.enabled { config.enabled = true }
     }
 
     func resume() {

@@ -142,16 +142,70 @@ final class PracticeLessonsTests: XCTestCase {
 
     // MARK: 7 pause
 
-    func testPauseThenResume() {
-        let model = PauseLessonModel(practice: practice, config: config) { [unowned self] in self.clock }
+    private func pauseDefaults() throws -> UserDefaults {
+        let suite = "PracticeLessonsTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return defaults
+    }
+
+    private var owesResume: (UserDefaults) -> Bool { { $0.bool(forKey: PauseLessonModel.ownedPauseKey) } }
+
+    func testPauseThenResume() throws {
+        let defaults = try pauseDefaults()
+        let model = PauseLessonModel(practice: practice, config: config, defaults: defaults) { [unowned self] in self.clock }
+        model.didStart()
         config.enabled = false
         model.evaluate()
         XCTAssertTrue(model.paused)
-        XCTAssertTrue(model.pausedHere)
+        XCTAssertTrue(owesResume(defaults), "the lesson turned tiling off")
         model.resume()
         model.evaluate()
         XCTAssertTrue(model.resumed)
         XCTAssertTrue(config.enabled)
+        XCTAssertFalse(owesResume(defaults), "back on, nothing owed")
+    }
+
+    // the tutorial ends with tiling still off from the lesson: it goes back on
+    func testAPauseTheLessonMadeIsResumedWhenTheTutorialEnds() throws {
+        let defaults = try pauseDefaults()
+        let model = PauseLessonModel(practice: practice, config: config, defaults: defaults) { [unowned self] in self.clock }
+        model.didStart()
+        config.enabled = false
+        model.evaluate()
+        PauseLessonModel.resumeOwnedPause(config: config, defaults: defaults)
+        XCTAssertTrue(config.enabled)
+        XCTAssertFalse(owesResume(defaults))
+    }
+
+    // paused before the tutorial: the user's choice, never turned on for them
+    func testAPauseFromBeforeTheTutorialIsLeftAlone() throws {
+        let defaults = try pauseDefaults()
+        config.enabled = false
+        let model = PauseLessonModel(practice: practice, config: config, defaults: defaults) { [unowned self] in self.clock }
+        model.didStart()
+        model.evaluate()
+        XCTAssertTrue(model.paused)
+        config.enabled = true
+        model.evaluate()
+        config.enabled = false
+        model.evaluate()
+        XCTAssertFalse(owesResume(defaults))
+        PauseLessonModel.resumeOwnedPause(config: config, defaults: defaults)
+        XCTAssertFalse(config.enabled)
+    }
+
+    // a crash mid-lesson: the flag outlives the process, and the next launch
+    // turns tiling back on once
+    func testALaunchAfterACrashResumesTheLessonsPause() throws {
+        let defaults = try pauseDefaults()
+        defaults.set(true, forKey: PauseLessonModel.ownedPauseKey)
+        config.enabled = false
+        PauseLessonModel.resumeOwnedPause(config: config, defaults: defaults)
+        XCTAssertTrue(config.enabled)
+        config.enabled = false
+        PauseLessonModel.resumeOwnedPause(config: config, defaults: defaults)
+        XCTAssertFalse(config.enabled, "only once")
     }
 
     // MARK: stale keys

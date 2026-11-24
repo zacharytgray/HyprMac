@@ -158,7 +158,7 @@ final class StageSession: ObservableObject {
         // back on the user's own workspace first: resuming re-tiles the
         // windows on screen, and they should be the user's, not the practice
         practice.end()
-        if pause.pausedHere, !UserConfig.shared.enabled { UserConfig.shared.enabled = true }
+        PauseLessonModel.resumeOwnedPause(config: .shared)
         removeEscMonitor()
     }
 
