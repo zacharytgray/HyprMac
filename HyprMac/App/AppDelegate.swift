@@ -1,20 +1,19 @@
-// AppDelegate. Owns the AX permission gate, the `WindowManager`
-// instance, and the welcome / what's-new flow that runs at first
-// launch and across version bumps.
+// AppDelegate. Owns the `WindowManager` instance, the stage (onboarding,
+// the Access step and the tutorial) and the What's New window an update
+// shows.
 
 import Cocoa
 
 /// Application lifecycle delegate.
 ///
-/// At launch: gates on AX permission (prompting if missing), starts
-/// the `WindowManager`, and decides whether to show onboarding,
-/// welcome, or what's-new based on previous launch state. At quit:
-/// stops the manager and restores the Caps Lock remap.
+/// At launch: waits for AX permission on the stage when it's missing,
+/// starts the `WindowManager`, and decides between onboarding (fresh
+/// install only) and What's New (after an update). At quit: stops the
+/// manager and restores the Caps Lock remap.
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
-    private var welcomeController: WelcomeWindowController?
+    private var whatsNewController: WhatsNewWindowController?
     private var stage: StageSession?
-    private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
     private var dockIconObserver: NSObjectProtocol?
@@ -155,7 +154,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if AXIsProcessTrusted() {
             startAfterPermissionGranted()
         } else {
-            showPermissionsGate()
+            showAccessStage()
         }
     }
 
@@ -188,37 +187,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         startWindowManager()
     }
 
-    /// Show the non-modal permissions gate and poll for the AX grant
-    /// once per second. The gate shows live status with a Grant button;
-    /// on grant the poll live-starts HyprMac and dismisses the gate —
-    /// no relaunch, no further clicks. The gate's Quit button terminates.
-    private func showPermissionsGate() {
+    /// Access is missing: poll for the grant once per second and show the
+    /// stage. A fresh install gets all of onboarding from Access; a Mac
+    /// that's already set up gets the Access step alone. On grant the poll
+    /// live-starts HyprMac, with no relaunch.
+    private func showAccessStage() {
         let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
             guard AXIsProcessTrusted() else { return }
             hyprLog(.notice, .lifecycle, "AX permission granted — starting")
             self?.permissionPollTimer?.invalidate()
             self?.permissionPollTimer = nil
             self?.startAfterPermissionGranted()
-            self?.permissionsGate?.markAccessibilityGrantedAndDismiss()
             self?.stage?.noteAccessGranted()
         }
         RunLoop.main.add(timer, forMode: .common)
         permissionPollTimer = timer
 
-        #if HYPRMAC_DEBUG_VARIANT
-        if Self.usesNewTutorial {
+        if alreadyOnboarded {
+            presentStage(.accessOnly())
+        } else {
             presentStage(.onboarding(accessGranted: false, practiceHost: practiceHost))
-            return
         }
-        #endif
-
-        let gate = PermissionsGateWindowController()
-        gate.show { [weak self] in
-            self?.permissionPollTimer?.invalidate()
-            self?.permissionPollTimer = nil
-            NSApp.terminate(nil)
-        }
-        permissionsGate = gate
     }
 
     /// Construct `WindowManager`, start it when the user has not
@@ -232,7 +221,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         UpdateController.shared.windowManager = { [weak self] in self?.windowManager }
         #endif
         windowManager?.keybindOverlay.onShowTutorial = { [weak self] in
-            self?.showTour()
+            self?.showTutorial()
         }
         // a tutorial cut short by a crash can leave its practice app's rule
         PracticeSession.removeRules(bundleID: PracticeSession.helperBundleID, from: config)
@@ -242,51 +231,65 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         checkFirstLaunchOrUpdate()
     }
 
+    /// Read once per launch, before this launch writes its own flags.
+    private lazy var alreadyOnboarded: Bool = RuntimeVariant.alreadyOnboarded(
+        hasSeenOnboarding: RuntimeVariant.inheritedBool(forKey: "hasSeenOnboarding"),
+        lastVersion: UserDefaults.standard.string(forKey: "lastSeenVersion"),
+        hadConfigFile: UserConfig.shared.hadConfigFileAtLoad)
+
     private func checkFirstLaunchOrUpdate() {
-        let hasSeenOnboarding = RuntimeVariant.inheritedBool(forKey: "hasSeenOnboarding")
-        let lastVersion = UserDefaults.standard.string(forKey: "lastSeenVersion")
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        let mode = Self.forcesOnboarding ? .onboarding : RuntimeVariant.shouldShowWelcome(
+            alreadyOnboarded: alreadyOnboarded,
+            lastVersion: UserDefaults.standard.string(forKey: "lastSeenVersion"),
+            currentVersion: currentVersion)
 
-        if let mode = RuntimeVariant.shouldShowWelcome(
-            hasSeenOnboarding: hasSeenOnboarding,
-            lastVersion: lastVersion,
-            currentVersion: currentVersion
-        ) {
-            showWelcome(mode: mode)
+        if let mode {
+            // small delay so the tiling engine settles first
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.present(mode)
+            }
         }
-        if !hasSeenOnboarding {
-            UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
-        }
-
+        UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
     }
 
-    /// Public entry for replaying the first-run tour from Settings.
-    func showTour() {
-        hyprLog(.debug, .lifecycle, "tutorial requested")
+    /// Debug app only: `--force-onboarding` runs onboarding on a Mac that's
+    /// set up. Make it yours writes real settings, so back them up first.
+    private static var forcesOnboarding: Bool {
         #if HYPRMAC_DEBUG_VARIANT
-        // the full-screen tutorial, one lesson so far: Debug app only, and
-        // only when launched with --new-tutorial
-        if Self.usesNewTutorial {
-            presentStage(.tutorial(practiceHost: practiceHost))
-            return
-        }
+        return CommandLine.arguments.contains("--force-onboarding")
+        #else
+        return false
         #endif
-        presentWelcome(mode: .firstRun)
     }
 
-    #if HYPRMAC_DEBUG_VARIANT
-    private static var usesNewTutorial: Bool { CommandLine.arguments.contains("--new-tutorial") }
+    private func present(_ mode: WelcomeMode) {
+        switch mode {
+        case .onboarding:
+            // a fresh install without access is on the stage already
+            presentStage(.onboarding(accessGranted: true, practiceHost: practiceHost))
+        case .whatsNew:
+            whatsNewController?.dismiss()
+            let controller = WhatsNewWindowController()
+            whatsNewController = controller
+            controller.show()
+        }
+    }
+
+    /// The menu bar, Hypr+K and Settings → General open the tutorial here.
+    func showTutorial() {
+        hyprLog(.debug, .lifecycle, "tutorial requested")
+        presentStage(.tutorial(practiceHost: practiceHost))
+    }
 
     /// the window manager starts after access, so look it up late
     private var practiceHost: PracticeHost { LatePracticeHost { [weak self] in self?.windowManager } }
 
-    /// The full-screen stage. Onboarding runs from the launch gate (or the
-    /// first-run decision when access was already there); a replay opens
-    /// the tutorial. One stage at a time.
+    /// The full-screen stage, one at a time.
     private func presentStage(_ session: StageSession) {
         guard stage?.isShowing != true else { return }
-        welcomeController?.dismiss()
+        whatsNewController?.dismiss()
         session.onClose = { [weak self] in self?.stage = nil }
         session.onQuit = { [weak self] in
             self?.permissionPollTimer?.invalidate()
@@ -295,28 +298,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         stage = session
         session.show()
-    }
-    #endif
-
-    private func showWelcome(mode: WelcomeMode) {
-        // small delay so tiling engine settles first
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.presentWelcome(mode: mode)
-        }
-    }
-
-    private func presentWelcome(mode: WelcomeMode) {
-        #if HYPRMAC_DEBUG_VARIANT
-        // the first-run decision lands here too; the tutorial already covers it
-        if Self.usesNewTutorial, mode == .firstRun {
-            presentStage(.onboarding(accessGranted: true, practiceHost: practiceHost))
-            return
-        }
-        #endif
-        welcomeController?.dismiss()
-        let controller = WelcomeWindowController()
-        welcomeController = controller
-        controller.show(mode: mode)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

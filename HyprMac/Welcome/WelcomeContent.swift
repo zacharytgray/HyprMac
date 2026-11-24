@@ -55,23 +55,4 @@ enum WelcomeContent {
     static var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
-
-    /// The tour's pause line. Paused, a Hypr key that goes back to typing
-    /// (Caps Lock, Tab, backtick, backslash) can't press the shortcut again.
-    static func pauseInstruction(chord: String, hyprKey: HyprKey) -> String {
-        let pause = "If things get in your way, press \(chord) to pause tiling."
-        guard hyprKey.keepsShortcutsWhilePaused else {
-            return pause + " \(hyprKey.displayName) is a normal key again while paused, so resume from the menu bar."
-        }
-        return pause + " Press it again when you’re ready."
-    }
-
-    static func chord(
-        in keybinds: [Keybind],
-        hyprKey: HyprKey,
-        matching predicate: (Action) -> Bool
-    ) -> String? {
-        guard let bind = keybinds.first(where: { predicate($0.action) }) else { return nil }
-        return bind.badgeLabels().joined(separator: " ")
-    }
 }

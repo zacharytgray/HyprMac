@@ -114,25 +114,11 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("updates-managed-nix-dark", tab(ManagedUpdatesPanel(nixInstall: true)))
     }
 
-    func testRenderTourGateAndMenu() throws {
-        UserConfig.shared.hyprKey = .capsLock
-        try render("tour-hypr-key-dark", TourView(mode: .firstRun, onDismiss: {}),
+    func testRenderWhatsNewAndMenu() throws {
+        try render("whats-new-dark", WhatsNewView(onDismiss: {}),
                    size: CGSize(width: 520, height: 440))
-        try render("tour-hypr-key-light", TourView(mode: .firstRun, onDismiss: {}),
+        try render("whats-new-light", WhatsNewView(onDismiss: {}),
                    size: CGSize(width: 520, height: 440), dark: false)
-        try render("whats-new-dark", TourView(mode: .whatsNew, onDismiss: {}),
-                   size: CGSize(width: 520, height: 440))
-        try render("whats-new-light", TourView(mode: .whatsNew, onDismiss: {}),
-                   size: CGSize(width: 520, height: 440), dark: false)
-        // the floating bullet and the workspace strip legend
-        try render("tour-windows-dark", TourView(mode: .firstRun, startPage: 1, onDismiss: {}),
-                   size: CGSize(width: 520, height: 440))
-        try render("tour-workspace-strip-dark", TourView(mode: .firstRun, startPage: 4, onDismiss: {}),
-                   size: CGSize(width: 520, height: 440))
-        try render("tour-workspace-strip-light", TourView(mode: .firstRun, startPage: 4, onDismiss: {}),
-                   size: CGSize(width: 520, height: 440), dark: false)
-        try render("permissions-gate-dark",
-                   PermissionsGateView(model: PermissionsGateModel(), onGrant: {}, onQuit: {}), width: 520)
         try render("accessibility-drag-helper-dark", AccessibilityDragHelperView(onClose: {}),
                    width: AccessibilityDragHelperPlacement.panelWidth)
         try render("accessibility-drag-helper-light", AccessibilityDragHelperView(onClose: {}),
@@ -142,27 +128,6 @@ final class InterfaceSnapshotTests: XCTestCase {
         #if HYPRMAC_DEBUG_VARIANT
         try render("menu-bar-dark", MenuBarView(appDelegate: AppDelegate()), width: 320)
         #endif
-
-        UserConfig.shared.hyprKey = .tab
-        try render("tour-tab-dark", TourView(mode: .firstRun, onDismiss: {}),
-                   size: CGSize(width: 520, height: 440))
-    }
-
-    // every first-run page and the gate, both themes, for tutorial reviews
-    func testRenderTutorialScreens() throws {
-        UserConfig.shared.hyprKey = .capsLock
-        let names = ["hypr-key", "windows", "focus", "workspaces", "workspace-strip", "finish", "login-item"]
-        for dark in [true, false] {
-            let mode = dark ? "dark" : "light"
-            for (page, name) in names.enumerated() {
-                try render("tutorial-\(page + 1)-\(name)-\(mode)",
-                           TourView(mode: .firstRun, startPage: page, onDismiss: {}),
-                           size: CGSize(width: 520, height: 440), dark: dark)
-            }
-            try render("tutorial-gate-\(mode)",
-                       PermissionsGateView(model: PermissionsGateModel(), onGrant: {}, onQuit: {}),
-                       size: CGSize(width: 520, height: 530), dark: dark)
-        }
     }
 
     // the full-screen hypr key lesson at its three points, plus double-tap off
@@ -213,6 +178,11 @@ final class InterfaceSnapshotTests: XCTestCase {
             try render("onboarding-1-access-start-\(mode)", step(granted: false, waiting: false), size: size, dark: dark)
             try render("onboarding-1-access-waiting-\(mode)", step(granted: false, waiting: true), size: size, dark: dark)
             try render("onboarding-1-access-granted-\(mode)", step(granted: true, waiting: false), size: size, dark: dark)
+            // a Mac that's set up but lost access: the step alone
+            try render("access-only-start-\(mode)",
+                       AccessStepView(model: AccessStepModel(granted: false), onGrant: {}, onQuit: {}, onNext: {},
+                                      nextTitle: "Done", standalone: true),
+                       size: size, dark: dark)
         }
         // dex157's drag panel, which shows under System Settings meanwhile
         try render("onboarding-1-access-drag-panel-dark", AccessibilityDragHelperView(onClose: {}),

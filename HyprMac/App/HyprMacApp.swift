@@ -65,9 +65,9 @@ struct HyprMacApp: App {
 
         Window("HyprMac Settings", id: "settings") {
             #if HYPRMAC_DEBUG_VARIANT
-            SettingsView(showTutorial: { appDelegate.showTour() })
+            SettingsView(showTutorial: { appDelegate.showTutorial() })
             #else
-            SettingsView(showTutorial: { appDelegate.showTour() })
+            SettingsView(showTutorial: { appDelegate.showTutorial() })
                 .environment(\.updateController, updates)
             #endif
         }

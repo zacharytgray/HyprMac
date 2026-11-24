@@ -186,7 +186,7 @@ struct MenuBarView: View {
                 NSApp.activate(ignoringOtherApps: true)
             }
             MenuBarRow("Tutorial", icon: "sparkles") {
-                appDelegate.showTour()
+                appDelegate.showTutorial()
             }
             MenuBarRow("Retile all spaces", icon: "rectangle.3.group") {
                 NotificationCenter.default.post(name: .hyprMacRetileAll, object: nil)

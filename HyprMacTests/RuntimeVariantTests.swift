@@ -21,14 +21,29 @@ final class RuntimeVariantTests: XCTestCase {
 
     func testReleaseOnboardingPolicy() {
         XCTAssertEqual(RuntimeVariant.shouldShowWelcome(
-            hasSeenOnboarding: false, lastVersion: nil, currentVersion: "0.12.0",
-            debugApp: false), .firstRun)
+            alreadyOnboarded: false, lastVersion: nil, currentVersion: "0.12.0",
+            debugApp: false), .onboarding)
         XCTAssertEqual(RuntimeVariant.shouldShowWelcome(
-            hasSeenOnboarding: true, lastVersion: "0.11.0", currentVersion: "0.12.0",
+            alreadyOnboarded: true, lastVersion: "0.11.0", currentVersion: "0.12.0",
             debugApp: false), .whatsNew)
         XCTAssertNil(RuntimeVariant.shouldShowWelcome(
-            hasSeenOnboarding: true, lastVersion: "0.12.0", currentVersion: "0.12.0",
+            alreadyOnboarded: true, lastVersion: "0.12.0", currentVersion: "0.12.0",
             debugApp: false))
+    }
+
+    // only a Mac with none of the earlier launch's marks is fresh
+    func testAnySignOfAnEarlierLaunchSkipsOnboarding() {
+        XCTAssertFalse(RuntimeVariant.alreadyOnboarded(hasSeenOnboarding: false, lastVersion: nil, hadConfigFile: false))
+        XCTAssertTrue(RuntimeVariant.alreadyOnboarded(hasSeenOnboarding: true, lastVersion: nil, hadConfigFile: false))
+        XCTAssertTrue(RuntimeVariant.alreadyOnboarded(hasSeenOnboarding: false, lastVersion: "0.27.1", hadConfigFile: false))
+        XCTAssertTrue(RuntimeVariant.alreadyOnboarded(hasSeenOnboarding: false, lastVersion: nil, hadConfigFile: true))
+    }
+
+    // a 0.27.1 user updating gets What's New, never onboarding
+    func testUpgradeFrom0271ShowsWhatsNewNotOnboarding() {
+        let onboarded = RuntimeVariant.alreadyOnboarded(hasSeenOnboarding: true, lastVersion: "0.27.1", hadConfigFile: true)
+        XCTAssertEqual(RuntimeVariant.shouldShowWelcome(
+            alreadyOnboarded: onboarded, lastVersion: "0.27.1", currentVersion: "0.28.0", debugApp: false), .whatsNew)
     }
 
     func testReleaseDefaultsDoNotInheritAnotherDomain() throws {
@@ -93,7 +108,7 @@ final class RuntimeVariantTests: XCTestCase {
 
     func testDebugSkipsUpdateWelcomeForExistingReleaseUser() {
         XCTAssertNil(RuntimeVariant.shouldShowWelcome(
-            hasSeenOnboarding: true, lastVersion: nil,
+            alreadyOnboarded: true, lastVersion: nil,
             currentVersion: "0.12.0", debugApp: true))
     }
 

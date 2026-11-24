@@ -295,6 +295,9 @@ class UserConfig: ObservableObject {
     private var isReloading = false
 
     private let store: ConfigStore
+    /// config.json was there (readable or not) when this launch loaded it.
+    /// Onboarding shows only when it wasn't, among other signs.
+    let hadConfigFileAtLoad: Bool
 
     var configURL: URL { store.localConfigURL }
 
@@ -319,7 +322,10 @@ class UserConfig: ObservableObject {
         self.showDockIcon = showDockIcon
 
         let monitorConfig = store.loadSavedMonitorConfig()
-        let savedConfig = store.loadSavedConfig()
+        let savedRead = store.readSavedConfig()
+        let savedConfig = savedRead.value
+        // an unreadable file still means this Mac ran HyprMac before
+        if case .missing = savedRead { self.hadConfigFileAtLoad = false } else { self.hadConfigFileAtLoad = true }
         // local-only from the start, so the synced config has nothing to migrate.
         // set before the other stored properties: once init is complete, the
         // optional hook command goes through its setter and didSet saves

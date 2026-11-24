@@ -45,6 +45,8 @@ struct AccessStepView: View {
     let onQuit: () -> Void
     let onNext: () -> Void
     var nextTitle = "Next: \(OnboardingStep.hyprKey.railLabel)"
+    /// access alone, for a Mac that's already set up: no rail, no counter
+    var standalone = false
 
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -52,12 +54,13 @@ struct AccessStepView: View {
         TutorialStage(
             step: OnboardingStep.access,
             completed: model.granted ? [.access] : [],
-            counter: OnboardingStep.access.counterLabel,
+            counter: standalone ? "" : OnboardingStep.access.counterLabel,
             progress: model.granted ? "Access granted" : nil,
             canContinue: model.granted,
             // no esc: quitting by accident would lose the user
             exit: StageAction(title: "Quit HyprMac", action: onQuit),
-            next: StageAction(title: nextTitle, action: onNext)
+            next: StageAction(title: nextTitle, action: onNext),
+            showsRail: !standalone
         ) {
             VStack(spacing: 0) {
                 Text(model.granted ? "HyprMac can manage your windows" : "Let HyprMac move your windows")

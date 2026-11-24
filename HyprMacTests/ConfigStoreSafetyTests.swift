@@ -109,6 +109,18 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertEqual(store.loadSavedConfig()?.gapSize, 23)
     }
 
+    // MARK: onboarding sign
+
+    // any config.json, even one that can't be read, means this Mac ran
+    // HyprMac before, so onboarding stays away
+    func testAConfigFileAtLoadMarksTheMacAsSetUp() throws {
+        XCTAssertFalse(UserConfig(store: store, iCloudSyncEnabled: false).hadConfigFileAtLoad)
+        try good.write(to: local)
+        XCTAssertTrue(UserConfig(store: store, iCloudSyncEnabled: false).hadConfigFileAtLoad)
+        try garbage.write(to: local)
+        XCTAssertTrue(UserConfig(store: store, iCloudSyncEnabled: false).hadConfigFileAtLoad)
+    }
+
     // MARK: unreadable at launch
 
     func testUnreadableConfigIsLeftAloneUntilTheFirstSaveThenCopied() throws {

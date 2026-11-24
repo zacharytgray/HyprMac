@@ -1333,10 +1333,11 @@ on one Mac each run their own copy.
 - **Accessibility** (System Settings → Privacy → Accessibility) —
   required for AX queries and CGEventTap.
   `AppDelegate.applicationDidFinishLaunching` checks it. Without it, the
-  non-modal permissions gate (`App/PermissionsGate.swift`) opens and polls
-  once a second, and a grant starts HyprMac with no relaunch.
-  The gate's Grant never fires the system prompt (Settings → General's
-  Grant still does, until it moves to the same flow):
+  stage opens at its Access step (`Welcome/AccessStep.swift`, see "First
+  launch, updates and the tutorial") and AppDelegate polls once a second;
+  a grant starts HyprMac with no relaunch.
+  Grant, on the Access step or in Settings → General, never fires the
+  system prompt:
   `AccessibilityDragHelper` (`App/AccessibilityDragHelper.swift`) opens the
   Accessibility list and floats a small panel under the System Settings
   window, with the panel's icon in line with the icons in the list. That
@@ -1353,10 +1354,11 @@ on one Mac each run their own copy.
   Settings when its window first shows, and says it is waiting, with Open
   Again in place of Grant: a user who looked away comes back to it. On the
   grant the panel goes at once, and the rest waits 1 s so HyprMac can be
-  seen landing in the list: then that window comes to the front (the gate
-  with the check, for 1.2 s), and System Settings quits if Grant launched
-  it; a second Grant after × still counts that launch. AppDelegate's poll
-  leaves the gate alone while the flow runs.
+  seen landing in the list: then that window comes to the front with the
+  check, and System Settings quits if Grant launched it; a second Grant
+  after × still counts that launch. The Access step's own poll leaves the
+  check alone while the flow runs. The panel is navy in light and dark,
+  for every caller.
   Accessibility also covers the physical Caps Lock read above: macOS
   treats an app with Accessibility as having Input Monitoring, so there is
   no second permission to grant.
@@ -1370,8 +1372,8 @@ on one Mac each run their own copy.
   `docs/keybinds-and-actions.md`). Shift, Tab, backtick, backslash and
   F13–F20 are not in that pane. macOS exposes no supported way to read or change this,
   so HyprMac never claims it is verified: `HyprKeySystemGuidance`
-  supplies the copy and the deep link shown in the permissions gate,
-  the tour, and Settings → Keys.
+  supplies the copy and the deep link shown in onboarding's Hypr key step,
+  the tutorial's first lesson, and Settings → Keys.
 
 HyprMac runs without disabling SIP, but is not App Store compatible —
 it uses private SkyLight APIs (`_SLPSSetFrontProcessWithOptions`,
@@ -1379,6 +1381,33 @@ it uses private SkyLight APIs (`_SLPSSetFrontProcessWithOptions`,
 `DeclaredSizeLimits`, which only feed logs), a private AX API
 (`_AXUIElementGetWindow`), and runs `hidutil` as a process. The public API replacements do not exist.
 Only the standalone `tools/space-test.swift` probe calls the CGS Space functions.
+
+## First launch, updates and the tutorial
+
+`AppDelegate` decides once per launch, before it writes its own flags,
+whether this Mac is already set up (`RuntimeVariant.alreadyOnboarded`).
+Any one sign counts: `hasSeenOnboarding` (the Debug app also reads the
+release domain's), a `lastSeenVersion` from any earlier launch, or a
+config.json that was there when `UserConfig` loaded it
+(`UserConfig.hadConfigFileAtLoad`, true even for an unreadable file).
+
+| Launch | What shows |
+| --- | --- |
+| Fresh install, no access | The stage: onboarding from Access, then Hypr key, Make it yours, and the tutorial offer |
+| Fresh install, access already there | Onboarding from Hypr key |
+| Set up, no access (revoked, or a new copy) | The Access step alone (`StageSession.accessOnly`), with Done, then nothing else |
+| Set up, new version | What's New (`Welcome/WhatsNewView.swift`), release app only |
+| Set up, same version | Nothing |
+
+Upgraders never see Hypr key or Make it yours, so onboarding can't change
+their settings. Every launch then writes `hasSeenOnboarding` and
+`lastSeenVersion`. The tutorial (`StageSession.tutorial`) opens from the
+menu bar, Hypr+K's Tutorial button and Settings → General's Replay the
+tutorial, all through `AppDelegate.showTutorial`. It runs on the HyprMac
+Practice helper's windows (`Contents/Helpers`) and leaves the user's own
+windows alone. In the Debug app, `--force-onboarding` runs onboarding on a
+Mac that's set up; Make it yours then writes real settings, so back up
+the config first.
 
 ## Known limitations
 

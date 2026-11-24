@@ -1,6 +1,7 @@
-// One run of the stage window: onboarding (required, once) and then, if
-// the user takes it, the tutorial (optional, replayable). Steps not built
-// yet are passed over.
+// One run of the stage window: onboarding (required, once on a fresh
+// install) and then, if the user takes it, the tutorial (optional,
+// replayable). A Mac that ran HyprMac before but lost access gets the
+// Access step alone.
 
 import SwiftUI
 
@@ -23,6 +24,8 @@ final class StageSession: ObservableObject {
     let fixWindow: FixWindowLessonModel
     let menuBarAndKeys: MenuBarAndKeysLessonModel
     let pause: PauseLessonModel
+    /// access was lost on a Mac that's already set up: Access, then done
+    let accessOnly: Bool
     private var escMonitor: Any?
 
     static let builtOnboarding: [OnboardingStep] = [.access, .hyprKey, .makeItYours]
@@ -43,12 +46,19 @@ final class StageSession: ObservableObject {
         return session
     }
 
+    /// For a Mac that ran HyprMac before: just Access, never Hypr key or
+    /// Make it yours, so nothing the user set changes.
+    static func accessOnly() -> StageSession {
+        StageSession(screen: .onboarding(.access), accessOnly: true)
+    }
+
     static func tutorial(practiceHost: PracticeHost? = nil) -> StageSession {
         StageSession(screen: .tutorial(builtLessons[0]), practiceHost: practiceHost)
     }
 
-    init(screen: StageScreen, practiceHost: PracticeHost? = nil) {
+    init(screen: StageScreen, practiceHost: PracticeHost? = nil, accessOnly: Bool = false) {
         self.screen = screen
+        self.accessOnly = accessOnly
         practice = PracticeSession(host: practiceHost)
         moveAround = MoveAroundLessonModel(practice: practice)
         workspaces = WorkspacesLessonModel(practice: practice)
@@ -88,6 +98,7 @@ final class StageSession: ObservableObject {
     func nextOnboardingStep() {
         guard case let .onboarding(step) = screen else { return }
         onboardingDone.insert(step)
+        if accessOnly { return close() }
         let built = Self.builtOnboarding
         if let index = built.firstIndex(of: step), index + 1 < built.count {
             go(to: .onboarding(built[index + 1]))
@@ -236,7 +247,8 @@ struct StageFlowView: View {
                            onGrant: { session.grantAccess() },
                            onQuit: { session.onQuit() },
                            onNext: { session.nextOnboardingStep() },
-                           nextTitle: "Next: \(nextOnboardingLabel)")
+                           nextTitle: session.accessOnly ? "Done" : "Next: \(nextOnboardingLabel)",
+                           standalone: session.accessOnly)
         case .onboarding(.hyprKey):
             HyprKeyPickerView(watcher: session.hyprKeyHold,
                               completed: session.onboardingDone,

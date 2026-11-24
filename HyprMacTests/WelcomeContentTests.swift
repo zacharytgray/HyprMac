@@ -25,51 +25,6 @@ final class WelcomeContentTests: XCTestCase {
         XCTAssertEqual(requests, 2)
     }
 
-    func testTutorialChordUsesConfiguredHyprKeyAndSavedBinding() {
-        let binds = [Keybind(
-            keyCode: 40,
-            modifiers: [.hypr, .control, .shift],
-            action: .toggleFloating)]
-
-        let chord = WelcomeContent.chord(in: binds, hyprKey: .f15) {
-            if case .toggleFloating = $0 { return true }
-            return false
-        }
-
-        XCTAssertEqual(chord, "HYPR ⌃ ⇧ K")
-    }
-
-    func testPauseLineSendsATypingHyprKeyToTheMenuBar() {
-        // paused, Caps Lock is Caps Lock again and can't press the shortcut (#94)
-        let caps = WelcomeContent.pauseInstruction(chord: "HYPR P", hyprKey: .capsLock)
-        XCTAssertTrue(caps.contains("press HYPR P to pause tiling"))
-        XCTAssertTrue(caps.contains("resume from the menu bar"))
-        XCTAssertFalse(caps.contains("Press it again"))
-
-        let f13 = WelcomeContent.pauseInstruction(chord: "HYPR P", hyprKey: .f13)
-        XCTAssertTrue(f13.contains("Press it again"))
-    }
-
-    func testTutorialChordReturnsNilWhenActionWasRemoved() {
-        XCTAssertNil(WelcomeContent.chord(in: [], hyprKey: .capsLock) { _ in true })
-    }
-
-    func testTutorialUsesConfiguredMaximizeAndWorkspaceTenChords() {
-        let binds = [
-            Keybind(keyCode: UInt16(kVK_ANSI_F), modifiers: .hypr,
-                    action: .toggleMaximize),
-            Keybind(keyCode: UInt16(kVK_ANSI_0), modifiers: [.hypr, .shift],
-                    action: .switchWorkspace(10))
-        ]
-
-        XCTAssertEqual(WelcomeContent.chord(in: binds, hyprKey: .capsLock) {
-            $0 == .toggleMaximize
-        }, "HYPR F")
-        XCTAssertEqual(WelcomeContent.chord(in: binds, hyprKey: .capsLock) {
-            $0 == .switchWorkspace(10)
-        }, "HYPR ⇧ 0")
-    }
-
     func testOverlayGroupsOnlyCanonicalWorkspaceNumberKeys() {
         let canonical = Keybind(
             keyCode: UInt16(kVK_ANSI_3), modifiers: .hypr,

@@ -107,8 +107,9 @@ versions are on the [releases page][releases]. Using Nix or Home Manager on macO
 [Nix and Home Manager](docs/nix.md).
 
 Then follow the [install guide](https://hyprmac.app/guides/install/) for first-run setup,
-permissions, and the recommended macOS settings. A short tour on first launch walks you through
-the keys.
+permissions, and the recommended macOS settings. On first launch, a short setup grants access,
+picks your Hypr key and sets a few choices. An optional tutorial, about 5 minutes, then teaches the
+keys on practice windows, so your own windows aren't touched.
 
 **Requirements**
 

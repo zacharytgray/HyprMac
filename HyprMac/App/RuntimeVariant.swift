@@ -1,5 +1,12 @@
 import Foundation
 
+/// What a launch shows after access: onboarding on a fresh install, What's
+/// New after an update.
+enum WelcomeMode {
+    case onboarding
+    case whatsNew
+}
+
 enum RuntimeVariant {
     static let releaseBundleIdentifier = "com.zachgray.HyprMac"
 
@@ -49,11 +56,21 @@ enum RuntimeVariant {
             || folders.contains("Nix Apps") || folders.contains("Home Manager Apps")
     }
 
-    static func shouldShowWelcome(hasSeenOnboarding: Bool,
+    /// A Mac that ran HyprMac before is already set up: it has access, a
+    /// Hypr key and its settings. Any one sign counts: the old welcome's
+    /// `hasSeenOnboarding`, a `lastSeenVersion` from any earlier launch, or
+    /// a config.json that was there when this launch loaded it.
+    static func alreadyOnboarded(hasSeenOnboarding: Bool,
+                                 lastVersion: String?,
+                                 hadConfigFile: Bool) -> Bool {
+        hasSeenOnboarding || lastVersion != nil || hadConfigFile
+    }
+
+    static func shouldShowWelcome(alreadyOnboarded: Bool,
                                   lastVersion: String?,
                                   currentVersion: String?,
                                   debugApp: Bool = isDebugApp) -> WelcomeMode? {
-        if !hasSeenOnboarding { return .firstRun }
+        if !alreadyOnboarded { return .onboarding }
         if debugApp { return nil }
         if lastVersion == nil || lastVersion != currentVersion { return .whatsNew }
         return nil

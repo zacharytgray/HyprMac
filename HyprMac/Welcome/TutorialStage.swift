@@ -114,6 +114,7 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
     /// a quiet button before the primary one
     var secondary: StageAction? = nil
     let next: StageAction
+    var showsRail = true
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -134,7 +135,7 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
         HStack(spacing: 24) {
             HyprLockup(markSize: 20)
             Spacer(minLength: 0)
-            rail
+            if showsRail { rail }
             Spacer(minLength: 0)
             Text(counter)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
