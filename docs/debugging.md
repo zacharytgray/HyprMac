@@ -1070,16 +1070,18 @@ so its cutout is whole. Unmanaged layer-3 windows are still ignored, and a raise
 of the front app that we do not manage still blocks hover. Hovering a managed floater at
 layer 3 is a hit on that floater, and so is a click on it.
 
-### Floater stand-in (trial)
+### Keep floating windows in front (the floater stand-in)
 
 A clicked tile always rises over a floater, and HyprMac can't keep another app's window
-on top (see the section above). The stand-in hides that. While a tile covers a floater,
-`FloaterStandIn` puts a HyprMac panel on the floater's frame at the `.floating` level,
-above the tiles and the dim, just below the floater's outline. The floater looks like it
-stayed on top. `FloaterStandInPlan` decides which floaters get one: managed floaters on a
-visible workspace, not scratchpad members, with a tile stacked above them where they
-overlap. A press on a tile that overlaps a floater shows the panel on the mouse-down,
-before the tile rises; the restack refresh after the mouse-up corrects it.
+on top (see the section above). Settings → Tiling → "Keep floating windows in front"
+(`keepFloatingWindowsInFront`, off by default) hides that with a stand-in. While a tile
+covers a floater, `FloaterStandIn` puts a HyprMac panel on the floater's frame at the
+`.floating` level, above the tiles and the dim, just below the floater's outline. The
+floater looks like it stayed on top. `FloaterStandInPlan` decides which floaters get one:
+managed floaters on a visible workspace, not scratchpad members, not an app's pop-up
+(#114), with a tile stacked above them where they overlap. A press on a tile that overlaps
+a floater shows the panel on the mouse-down, before the tile rises; the restack refresh
+after the mouse-up corrects it. With the switch off there are no panels and no streams.
 
 Touching the panel hands off to the real window. A click focuses the floater the way the
 floater cycle does, waits up to 300 ms for the window list to show it uncovered, hides the
@@ -1094,27 +1096,32 @@ native full screen, when displays change, and when HyprMac pauses or quits. It f
 moves through the outline's hooks (`followMovedWindows`). While it shows, the dim keeps the
 floater's whole cutout and the outline draws whole.
 
-Two looks, set by the `floaterStandIn` user default, read live (no restart):
+Two looks. Screen Recording picks one; turning the switch on asks for it
+(`CGRequestScreenCaptureAccess`), and so does a launch with the switch on. macOS shows its
+prompt only once.
+
+- `live`: a ScreenCaptureKit picture of the floater, with Screen Recording. A stream runs
+  for each floater a tile overlaps, in front or behind, because the first picture takes
+  240 to 375 ms after a stream starts. A floater on a hidden workspace has no stream.
+  macOS marks a captured window (a purple badge in its title bar) and shows its recording
+  indicator while streams run.
+- `card`: the app icon and the window title on a quiet background tinted with the
+  floater color. No permission. It also shows in `live` until the first picture arrives.
+
+The permission is read again at most every 2 s, so a grant switches to `live` without a
+restart when macOS reports it to the running app. If it does not, quit and reopen.
+
+Debug builds only, to see the card on a Mac that granted Screen Recording:
 
 ```bash
-defaults write com.zachgray.HyprMac.debug floaterStandIn live   # or card, off
-defaults delete com.zachgray.HyprMac.debug floaterStandIn       # back to the default
+defaults write com.zachgray.HyprMac.debug floaterStandInLook card
+defaults delete com.zachgray.HyprMac.debug floaterStandInLook
 ```
-
-Unset, it is `live` in Debug builds and `off` in Release builds. Release reads
-`com.zachgray.HyprMac`.
-
-- `card`: the app icon and the window title on a quiet background tinted with the
-  floater color. No permission.
-- `live`: a ScreenCaptureKit picture of the floater. Needs Screen Recording. HyprMac asks
-  once per launch when the mode is `live` and it isn't granted, and shows the card until
-  it is. A stream runs for each floater a tile overlaps, in front or behind, because the
-  first picture takes 240 to 375 ms after a stream starts. macOS marks a captured window
-  and shows its recording indicator while streams run.
 
 Log lines, all `.notice` in the `floating` category:
 
 ```text
+stand-in switch on
 stand-in mode live
 stand-in screen recording granted
 stand-in shown wid=1234 reason=press on tile 567 look=live frame=(100,200 300x400)

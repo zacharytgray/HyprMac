@@ -4,7 +4,8 @@
 
 import Cocoa
 
-/// What the stand-in shows. Read from the `floaterStandIn` user default.
+/// What the stand-in shows. Settings → Tiling → "Keep floating windows in
+/// front" turns it on; Screen Recording decides the look.
 enum FloaterStandInMode: String, Equatable {
     case off
     /// app icon and title, no permission needed
@@ -12,24 +13,21 @@ enum FloaterStandInMode: String, Equatable {
     /// a ScreenCaptureKit picture of the floater; needs Screen Recording
     case live
 
-    static let defaultsKey = "floaterStandIn"
+    /// Debug builds only: `card` here shows the card with Screen Recording
+    /// granted, so both looks can be checked on one Mac.
+    static let debugLookKey = "floaterStandInLook"
 
-    /// Unset or unknown: `live` in Debug builds, `off` in Release builds.
-    static func resolve(_ raw: String?, isDebugBuild: Bool) -> FloaterStandInMode {
-        if let raw, let mode = FloaterStandInMode(rawValue: raw.lowercased()) { return mode }
-        return isDebugBuild ? .live : .off
+    static func resolve(on: Bool, captureGranted: Bool, forcesCard: Bool = false) -> FloaterStandInMode {
+        guard on else { return .off }
+        return captureGranted && !forcesCard ? .live : .card
     }
 
-    static var isDebugBuild: Bool {
+    static func debugForcesCard(_ defaults: UserDefaults = .standard) -> Bool {
         #if DEBUG
-        return true
+        return defaults.string(forKey: debugLookKey)?.lowercased() == "card"
         #else
         return false
         #endif
-    }
-
-    static func current(_ defaults: UserDefaults = .standard) -> FloaterStandInMode {
-        resolve(defaults.string(forKey: defaultsKey), isDebugBuild: isDebugBuild)
     }
 }
 

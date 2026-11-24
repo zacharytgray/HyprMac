@@ -41,13 +41,17 @@ final class FloaterStandIn {
     /// a fresh window-list read: does a tile still cover the floater
     var isCovered: (CGWindowID) -> Bool = { _ in false }
     var handOffFinished: () -> Void = {}
-    var readMode: () -> FloaterStandInMode = { .current() }
+    /// the Settings switch, "Keep floating windows in front"
+    var isOn: () -> Bool = { false }
+    var forcesCard: () -> Bool = { FloaterStandInMode.debugForcesCard() }
     var preflightCapture: () -> Bool = { CGPreflightScreenCaptureAccess() }
     var requestCapture: () -> Bool = { CGRequestScreenCaptureAccess() }
 
     /// how long a hand-off waits for the real window to come up
     static let handOffTimeout: CFAbsoluteTime = 0.3
     static let handOffPoll: TimeInterval = 0.01
+    /// how often a refresh asks again whether Screen Recording is granted
+    static let captureRecheck: CFAbsoluteTime = 2
 
     private final class Entry {
         var floater: Floater
@@ -66,18 +70,21 @@ final class FloaterStandIn {
 
     private var entries: [CGWindowID: Entry] = [:]
     private(set) var mode: FloaterStandInMode?
-    private var askedForCapture = false
     private var captureGranted: Bool?
+    private var captureCheckedAt: CFAbsoluteTime = -.infinity
     private var handOff: (id: CGWindowID, started: CFAbsoluteTime)?
 
     var shownIDs: Set<CGWindowID> { Set(entries.values.filter(\.shown).map(\.floater.id)) }
     var isEnabled: Bool { currentMode() != .off }
 
-    /// The mode, read live so `defaults write` lands without a restart. A
-    /// change tears down every panel and stream.
+    /// The mode from the switch and the permission, read on each refresh so
+    /// a grant is picked up without a restart when macOS allows it. A change
+    /// tears down every panel and stream.
     @discardableResult
     func currentMode() -> FloaterStandInMode {
-        let now = readMode()
+        let on = isOn()
+        let now = FloaterStandInMode.resolve(on: on, captureGranted: on && isCaptureGranted(),
+                                             forcesCard: forcesCard())
         if now != mode {
             if mode != nil { reset(reason: "mode \(now.rawValue)") }
             hyprLog(.notice, .floating, "stand-in mode \(now.rawValue)")
@@ -86,13 +93,26 @@ final class FloaterStandIn {
         return now
     }
 
+    /// The switch went on: ask for Screen Recording when it isn't granted.
+    /// macOS shows its prompt once; later asks return at once.
+    func askForCaptureIfNeeded() {
+        mainThreadOnly()
+        captureCheckedAt = -.infinity
+        guard isOn(), !isCaptureGranted() else { return }
+        hyprLog(.notice, .floating, "stand-in asking for screen recording")
+        let granted = requestCapture()
+        hyprLog(.notice, .floating, "stand-in screen recording request returned \(granted)")
+        captureCheckedAt = -.infinity
+    }
+
     /// Bring the panels and streams in line with the stack: a panel on each
     /// covered floater, a stream on each one a tile overlaps.
     func apply(covered: Set<CGWindowID>, atRisk: Set<CGWindowID>,
                floaters: [CGWindowID: Floater]) {
         mainThreadOnly()
-        guard currentMode() != .off else { return }
-        let live = liveAllowed()
+        let current = currentMode()
+        guard current != .off else { return }
+        let live = current == .live
         for id in covered.union(atRisk) {
             guard let floater = floaters[id] else { continue }
             entry(for: floater)
@@ -283,18 +303,16 @@ final class FloaterStandIn {
 
     // MARK: - capture
 
-    private func liveAllowed() -> Bool {
-        guard currentMode() == .live else { return false }
+    /// Screen Recording, asked again at most every `captureRecheck`.
+    private func isCaptureGranted() -> Bool {
+        let now = CFAbsoluteTimeGetCurrent()
+        if let granted = captureGranted, now - captureCheckedAt < Self.captureRecheck { return granted }
+        captureCheckedAt = now
         let granted = preflightCapture()
         if granted != captureGranted {
             captureGranted = granted
             hyprLog(.notice, .floating, "stand-in screen recording \(granted ? "granted" : "not granted")"
                     + (granted ? "" : ", card look until it is"))
-        }
-        if !granted, !askedForCapture {
-            askedForCapture = true
-            hyprLog(.notice, .floating, "stand-in asking for screen recording")
-            _ = requestCapture()
         }
         return granted
     }

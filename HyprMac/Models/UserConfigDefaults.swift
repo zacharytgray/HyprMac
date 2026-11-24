@@ -38,6 +38,8 @@ enum UserConfigDefaults {
     static let enabled: Bool = true
     static let focusFollowsMouse: Bool = true
     static let keepCursorOnWorkspaceSwitch: Bool = false
+    // a stand-in panel keeps a covered floater visible over the tiles
+    static let keepFloatingWindowsInFront: Bool = false
     // a saved config without the key predates double tap, so it stays off.
     // a Mac with no config at all, and every reset, start with it on
     static let doubleTapHyprTogglesCapsLock: Bool = false

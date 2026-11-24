@@ -913,6 +913,7 @@ struct SavedConfig: Codable {
     // nil = the brand cyan and magenta pair
     var overlayAccentHex: String? = nil
     var keepCursorOnWorkspaceSwitch: Bool? = nil
+    var keepFloatingWindowsInFront: Bool? = nil
     var animateFocusIndicator: Bool? = nil
     var focusBorderFlash: Bool? = nil
     var doubleTapHyprTogglesCapsLock: Bool? = nil
@@ -948,6 +949,7 @@ extension SavedConfig {
         case workspaceNames
         case overlayAccentHex
         case keepCursorOnWorkspaceSwitch
+        case keepFloatingWindowsInFront
         case animateFocusIndicator
         case focusBorderFlash
         case doubleTapHyprTogglesCapsLock
@@ -1023,6 +1025,7 @@ extension SavedConfig {
         self.workspaceNames = Self.tolerantWorkspaceNames(c)
         self.overlayAccentHex = Self.tolerant(c, .overlayAccentHex)
         self.keepCursorOnWorkspaceSwitch = Self.tolerant(c, .keepCursorOnWorkspaceSwitch)
+        self.keepFloatingWindowsInFront = Self.tolerant(c, .keepFloatingWindowsInFront)
         self.animateFocusIndicator = Self.tolerant(c, .animateFocusIndicator)
         self.focusBorderFlash = Self.tolerant(c, .focusBorderFlash)
         self.doubleTapHyprTogglesCapsLock = Self.tolerant(c, .doubleTapHyprTogglesCapsLock)

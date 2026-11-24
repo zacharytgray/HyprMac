@@ -47,6 +47,11 @@ class UserConfig: ObservableObject {
     @Published var keepCursorOnWorkspaceSwitch: Bool {
         didSet { persistRuntimeChange() }
     }
+    /// A covered floater shows through a HyprMac stand-in panel above the
+    /// tiles (`FloaterStandIn`). Off by default.
+    @Published var keepFloatingWindowsInFront: Bool {
+        didSet { persistRuntimeChange() }
+    }
     /// Two quick taps of the Hypr key alone toggle Caps Lock. Off by default.
     @Published var doubleTapHyprTogglesCapsLock: Bool {
         didSet { persistRuntimeChange() }
@@ -343,6 +348,7 @@ class UserConfig: ObservableObject {
             self.enabled = saved.enabled
             self.focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
+            self.keepFloatingWindowsInFront = saved.keepFloatingWindowsInFront ?? UserConfigDefaults.keepFloatingWindowsInFront
             self.doubleTapHyprTogglesCapsLock = saved.doubleTapHyprTogglesCapsLock ?? UserConfigDefaults.doubleTapHyprTogglesCapsLock
             self.animateFocusIndicator = saved.animateFocusIndicator ?? UserConfigDefaults.animateFocusIndicator
             self.mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz
@@ -379,6 +385,7 @@ class UserConfig: ObservableObject {
             self.enabled = UserConfigDefaults.enabled
             self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
+            self.keepFloatingWindowsInFront = UserConfigDefaults.keepFloatingWindowsInFront
             // no config.json: a new install, or an upgrader who never changed
             // a setting and so never had one. only the new install gets it on
             self.doubleTapHyprTogglesCapsLock = freshInstall
@@ -552,6 +559,7 @@ class UserConfig: ObservableObject {
             workspaceNames: workspaceNames.isEmpty ? nil : workspaceNames,
             overlayAccentHex: overlayAccentHex,
             keepCursorOnWorkspaceSwitch: keepCursorOnWorkspaceSwitch,
+            keepFloatingWindowsInFront: keepFloatingWindowsInFront,
             animateFocusIndicator: animateFocusIndicator,
             focusBorderFlash: focusBorderFlash,
             doubleTapHyprTogglesCapsLock: doubleTapHyprTogglesCapsLock)
@@ -569,6 +577,7 @@ class UserConfig: ObservableObject {
         enabled = UserConfigDefaults.enabled
         focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
         keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
+        keepFloatingWindowsInFront = UserConfigDefaults.keepFloatingWindowsInFront
         // a reset matches a new install
         doubleTapHyprTogglesCapsLock = UserConfigDefaults.freshInstallDoubleTapHyprTogglesCapsLock
         animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
@@ -671,6 +680,7 @@ class UserConfig: ObservableObject {
             outerPadding = UserConfigDefaults.outerPadding
             excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
             floatingRules = []
+            keepFloatingWindowsInFront = UserConfigDefaults.keepFloatingWindowsInFront
         case .workspaces:
             workspaceNames = [:]
             windowRules = []
@@ -755,6 +765,7 @@ class UserConfig: ObservableObject {
         enabled = saved.enabled
         focusFollowsMouse = saved.focusFollowsMouse ?? UserConfigDefaults.focusFollowsMouse
         keepCursorOnWorkspaceSwitch = saved.keepCursorOnWorkspaceSwitch ?? UserConfigDefaults.keepCursorOnWorkspaceSwitch
+        keepFloatingWindowsInFront = saved.keepFloatingWindowsInFront ?? UserConfigDefaults.keepFloatingWindowsInFront
         doubleTapHyprTogglesCapsLock = saved.doubleTapHyprTogglesCapsLock ?? UserConfigDefaults.doubleTapHyprTogglesCapsLock
         animateFocusIndicator = saved.animateFocusIndicator ?? UserConfigDefaults.animateFocusIndicator
         mouseHoverPollHz = saved.mouseHoverPollHz ?? UserConfigDefaults.mouseHoverPollHz

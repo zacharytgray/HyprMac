@@ -50,6 +50,7 @@ class WindowManager {
             publish: publisher.publish, clear: publisher.clear)
     }()
     private var statusConfigObservation: AnyCancellable?
+    private var standInSwitchObservation: AnyCancellable?
     // the float and tile rules: watched so a change, from the menu, an
     // action or Settings, reaches the open windows at once
     private var floatingRuleSync: FloatingRuleSync?
@@ -834,6 +835,16 @@ class WindowManager {
         statusConfigObservation = config.objectWillChange.receive(on: DispatchQueue.main).sink { [weak self] _ in
             self?.statusExporter.noteChange()
         }
+        // the stand-in switch, from Settings or a reload: on asks for Screen
+        // Recording, either way the panels follow at once
+        standInSwitchObservation = config.$keepFloatingWindowsInFront.removeDuplicates().dropFirst()
+            .receive(on: DispatchQueue.main).sink { [weak self] on in
+                guard let self else { return }
+                hyprLog(.notice, .floating, "stand-in switch \(on ? "on" : "off")")
+                if on { self.floaterStandIn.askForCaptureIfNeeded() }
+                self.floaterStandIn.currentMode()
+                if self.isRunning { self.refreshFloatingBorders() }
+            }
         floatingController.markRulesApplied()
         // an edit here moves open windows; a reload (iCloud, Nix, a hand
         // edit) or a reset doesn't, as Never tile edits never did
@@ -1013,6 +1024,8 @@ class WindowManager {
         guard !isRunning else { return }
         isRunning = true
         lastDisplayFingerprint = displayFingerprint()
+        // on from the last session, or from a config file: macOS asks once
+        floaterStandIn.askForCaptureIfNeeded()
 
         // route AX notifications into the coalescing scheduler. these are the
         // primary discovery triggers; the scheduler's timer is a safety net.
@@ -1966,14 +1979,16 @@ class WindowManager {
         floaterStandIn.focusFloater = { [weak self] id in self?.focusFloaterForStandIn(id) ?? false }
         floaterStandIn.isCovered = { [weak self] id in self?.isFloaterCovered(id) ?? false }
         floaterStandIn.handOffFinished = { [weak self] in self?.scheduleRestackRefresh(after: 0.06) }
+        floaterStandIn.isOn = { [weak self] in self?.config.keepFloatingWindowsInFront ?? false }
     }
 
     /// The visible floaters a stand-in may stand for, with their drawn
-    /// frames. Scratchpad members never: the scrim owns their stack.
+    /// frames. Scratchpad members never: the scrim owns their stack. An
+    /// app's pop-up never either: it closes when anything else is touched (#114).
     private func standInCandidates(windows: [HyprWindow]?, listed: [CGWindowID: CGRect])
         -> [CGWindowID: CGRect] {
         floatingFrames(from: windows ?? Array(stateCache.cachedWindows.values), listed: listed)
-            .filter { !scratchpad.contains($0.key) }
+            .filter { !scratchpad.contains($0.key) && !stateCache.popupWindowIDs.contains($0.key) }
     }
 
     private func standInInfo(_ ids: Set<CGWindowID>, frames: [CGWindowID: CGRect],

@@ -23,23 +23,31 @@ final class FloaterStandInPlanTests: XCTestCase {
 
     // MARK: mode
 
-    func testModeDefaultsToLiveInDebugAndOffInRelease() {
-        XCTAssertEqual(FloaterStandInMode.resolve(nil, isDebugBuild: true), .live)
-        XCTAssertEqual(FloaterStandInMode.resolve(nil, isDebugBuild: false), .off)
+    func testTheSwitchOffMeansNoStandInWhateverThePermission() {
+        XCTAssertEqual(FloaterStandInMode.resolve(on: false, captureGranted: true), .off)
+        XCTAssertEqual(FloaterStandInMode.resolve(on: false, captureGranted: false), .off)
     }
 
-    func testModeReadsTheThreeValuesAndIgnoresJunk() {
-        XCTAssertEqual(FloaterStandInMode.resolve("off", isDebugBuild: true), .off)
-        XCTAssertEqual(FloaterStandInMode.resolve("card", isDebugBuild: false), .card)
-        XCTAssertEqual(FloaterStandInMode.resolve("Live", isDebugBuild: false), .live)
-        XCTAssertEqual(FloaterStandInMode.resolve("yes", isDebugBuild: false), .off)
+    func testScreenRecordingPicksTheLook() {
+        XCTAssertEqual(FloaterStandInMode.resolve(on: true, captureGranted: true), .live)
+        XCTAssertEqual(FloaterStandInMode.resolve(on: true, captureGranted: false), .card)
+        XCTAssertEqual(FloaterStandInMode.resolve(on: true, captureGranted: true, forcesCard: true), .card)
     }
 
-    func testModeReadsTheDefaultsKey() {
+    func testTheSwitchIsOffByDefault() {
+        XCTAssertFalse(UserConfigDefaults.keepFloatingWindowsInFront)
+    }
+
+    func testTheDebugCardKnobReadsItsKey() {
         let defaults = UserDefaults(suiteName: "FloaterStandInPlanTests")!
         defer { defaults.removePersistentDomain(forName: "FloaterStandInPlanTests") }
-        defaults.set("card", forKey: FloaterStandInMode.defaultsKey)
-        XCTAssertEqual(FloaterStandInMode.current(defaults), .card)
+        XCTAssertFalse(FloaterStandInMode.debugForcesCard(defaults))
+        defaults.set("card", forKey: FloaterStandInMode.debugLookKey)
+        #if DEBUG
+        XCTAssertTrue(FloaterStandInMode.debugForcesCard(defaults))
+        #else
+        XCTAssertFalse(FloaterStandInMode.debugForcesCard(defaults))
+        #endif
     }
 
     // MARK: covered

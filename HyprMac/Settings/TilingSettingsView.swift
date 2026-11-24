@@ -10,9 +10,10 @@ struct TilingSettingsView: View {
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
             gapsCard
+            floatingCard
             rulesCard
             SectionResetFooter(title: "Reset Tiling to defaults",
-                               message: "Sets both gaps to \(Int(UserConfigDefaults.gapSize)) px and puts the rules back to the two defaults, FaceTime and System Settings floating. Rules you added are removed; a copy of your settings is kept beside config.json.") {
+                               message: "Sets both gaps to \(Int(UserConfigDefaults.gapSize)) px, turns off Keep floating windows in front, and puts the rules back to the two defaults, FaceTime and System Settings floating. Rules you added are removed; a copy of your settings is kept beside config.json.") {
                 config.resetToDefaults(.tiling)
             }
         }
@@ -60,6 +61,38 @@ struct TilingSettingsView: View {
                                           set: { value.wrappedValue = CGFloat($0) }),
                            range: 0...32, step: 2, label: { "\(Int($0)) px" }, width: 150)
                 .padding(.leading, 18 + HyprSpacing.sm)
+        }
+    }
+
+    // MARK: floating windows in front
+
+    // read when the card draws: Settings reopens after a grant
+    private var screenRecordingGranted: Bool { CGPreflightScreenCaptureAccess() }
+
+    private var floatingCard: some View {
+        SettingsCard("Floating windows") {
+            SettingsRow("Keep floating windows in front", icon: "square.stack.3d.up",
+                        subtitle: "Shows a live picture of a covered floating window. macOS asks for Screen Recording to do that.",
+                        divider: false) {
+                Toggle("", isOn: $config.keepFloatingWindowsInFront)
+                    .toggleStyle(HyprToggleStyle())
+                    .labelsHidden()
+            } detail: {
+                if config.keepFloatingWindowsInFront && !screenRecordingGranted {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Without Screen Recording it shows the app icon and title instead. After you allow it, quit and reopen HyprMac if the picture does not appear.")
+                            .font(.hyprCaption)
+                            .foregroundStyle(Color.settingsTextMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open Screen Recording Settings") {
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
+                        .buttonStyle(.settings)
+                    }
+                }
+            }
         }
     }
 

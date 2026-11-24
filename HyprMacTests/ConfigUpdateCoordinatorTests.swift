@@ -632,6 +632,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
             config.disabledMonitors = ["Screen"]
             config.focusFollowsMouse = false
             config.keepCursorOnWorkspaceSwitch = true
+            config.keepFloatingWindowsInFront = true
             config.dimIntensity = 0.2
             config.statusExportEnabled = true
             config.externalControlEnabled = true
@@ -645,6 +646,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
 
         dirty()
         config.resetToDefaults(.tiling)
+        XCTAssertFalse(config.keepFloatingWindowsInFront, "the switch is in Settings → Tiling")
         XCTAssertEqual(config.gapSize, UserConfigDefaults.gapSize)
         XCTAssertEqual(config.outerPadding, UserConfigDefaults.outerPadding)
         XCTAssertEqual(config.excludedBundleIDs, Set(UserConfig.defaultExcludedBundleIDs))
@@ -691,6 +693,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.mouseHoverPollHz = 33
         config.hyprKey = .leftOption
         config.doubleTapHyprTogglesCapsLock = false
+        config.keepFloatingWindowsInFront = true
         config.excludedBundleIDs = ["com.example.app"]
         config.showMenuBarIndicator = false
         config.overlayAppearance = .dark
@@ -731,6 +734,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(config.mouseHoverPollHz, UserConfigDefaults.mouseHoverPollHz)
         XCTAssertEqual(config.hyprKey, UserConfigDefaults.hyprKey)
         XCTAssertTrue(config.doubleTapHyprTogglesCapsLock, "a reset matches a new install")
+        XCTAssertFalse(config.keepFloatingWindowsInFront)
         XCTAssertEqual(config.excludedBundleIDs, Set(UserConfig.defaultExcludedBundleIDs))
         XCTAssertEqual(config.showMenuBarIndicator, UserConfigDefaults.showMenuBarIndicator)
         XCTAssertEqual(config.overlayAppearance, UserConfigDefaults.overlayAppearance)
