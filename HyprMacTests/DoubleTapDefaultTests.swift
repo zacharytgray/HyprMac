@@ -39,6 +39,15 @@ final class DoubleTapDefaultTests: XCTestCase {
         XCTAssertFalse(load().doubleTapHyprTogglesCapsLock)
     }
 
+    func testResetAllSettingsTurnsItOnLikeANewInstall() throws {
+        let config = load()
+        config.doubleTapHyprTogglesCapsLock = false
+        config.save()
+        let reloaded = load()
+        reloaded.resetToDefaults()
+        XCTAssertTrue(reloaded.doubleTapHyprTogglesCapsLock)
+    }
+
     func testSavedOffStaysOff() throws {
         let config = load()
         config.doubleTapHyprTogglesCapsLock = false
