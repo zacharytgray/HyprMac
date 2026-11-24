@@ -234,6 +234,45 @@ final class TiledDragTransactionTests: XCTestCase {
         }
     }
 
+    func testPointerCaptureInTheGapTakesTheNearerTileAndItsEdge() {
+        // macOS starts a resize a few points outside the window
+        let (tree, _, context) = fixture()
+        let frames = layoutFrames(tree, context)
+        let gapStart = frames[1]!.maxX
+        let y = frames[2]!.midY
+        let transaction = TiledDragTransaction(ioFactory: FakeAX(frames: frames).factory)
+        func capture(_ x: CGFloat) -> TiledDragCaptureResult {
+            transaction.capture(pointer: CGPoint(x: x, y: y), tree: tree, context: context,
+                                occludingWindows: [], generation: 1, currentContext: { context })
+        }
+        guard case let .captured(left) = capture(gapStart + 3) else {
+            return XCTFail("a press 3 pt right of tile 1 must capture it")
+        }
+        XCTAssertEqual(left.draggedID, 1)
+        XCTAssertEqual(left.pressedEdges, [.right])
+        guard case let .captured(right) = capture(gapStart + 5) else {
+            return XCTFail("a press 3 pt left of tile 2 must capture it")
+        }
+        XCTAssertEqual(right.draggedID, 2)
+        XCTAssertEqual(right.pressedEdges, [.left])
+        guard case .ineligible(.noTarget) = capture(gapStart + 4) else {
+            return XCTFail("the middle of the gap belongs to neither tile")
+        }
+    }
+
+    func testPointerCaptureInTheGapUnderAFloaterIsNotATilePress() {
+        let (tree, _, context) = fixture()
+        let floater = makeWindow(id: 40)
+        var frames = layoutFrames(tree, context)
+        let press = CGPoint(x: frames[1]!.maxX + 3, y: frames[2]!.midY)
+        frames[40] = CGRect(x: press.x - 50, y: press.y - 50, width: 100, height: 100)
+        guard case .ineligible(.noTarget) = TiledDragTransaction(ioFactory: FakeAX(frames: frames).factory)
+            .capture(pointer: press, tree: tree, context: context, occludingWindows: [floater],
+                     generation: 1, currentContext: { context }) else {
+            return XCTFail("a press on a floater over the gap must not capture a tile")
+        }
+    }
+
     func testPointerCaptureReadFailureIsUnknownAndDoesNotPublish() {
         let (tree, _, context) = fixture()
         let frames = layoutFrames(tree, context)
@@ -1367,7 +1406,10 @@ final class TiledDragTransactionTests: XCTestCase {
         XCTAssertEqual(edges(CGPoint(x: frame.maxX - 3, y: frame.midY)), [.right])
         XCTAssertEqual(edges(CGPoint(x: frame.midX, y: frame.maxY - 1)), [.bottom])
         XCTAssertEqual(edges(CGPoint(x: frame.maxX - 2, y: frame.maxY - 2)), [.right, .bottom])
-        XCTAssertEqual(edges(CGPoint(x: frame.midX, y: frame.minY - 3)), [], "outside is not a capture")
+        // the fixture's 8 pt gap gives a 4 pt band outside the frame
+        XCTAssertEqual(edges(CGPoint(x: frame.midX, y: frame.minY - 3)), [.top], "outside, in the band")
+        XCTAssertEqual(edges(CGPoint(x: frame.maxX + 4, y: frame.midY)), [.right], "the band's far side")
+        XCTAssertEqual(edges(CGPoint(x: frame.midX, y: frame.minY - 5)), [], "beyond the band")
         XCTAssertNil(edges(nil), "a capture by id does not know")
     }
 

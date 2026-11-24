@@ -85,6 +85,19 @@ final class TiledDragTargetTests: XCTestCase {
         XCTAssertNil(nearest(CGPoint(x: CGFloat.nan, y: 40)))
     }
 
+    func testNearestWithinABandNeedsOneTileInIt() {
+        func near(_ x: CGFloat, _ y: CGFloat, band: CGFloat = 5) -> CGWindowID? {
+            TiledDragTargetResolver.nearest(pointer: CGPoint(x: x, y: y), slots: slots, within: band)
+        }
+        XCTAssertEqual(near(102, 40), 1)
+        XCTAssertEqual(near(107, 40), 2)
+        XCTAssertEqual(near(50, 40), 1, "inside a tile")
+        XCTAssertEqual(near(103, 83), 1, "a corner, by straight-line distance")
+        XCTAssertNil(near(105, 40), "equally near")
+        XCTAssertNil(near(50, 90), "beyond the band")
+        XCTAssertNil(near(102, 40, band: 0), "no gap, no band")
+    }
+
     func testTraceListsEveryTileWithItsDistanceAndEdgeFractions() {
         let trace = TiledDragTargetResolver.trace(
             pointer: CGPoint(x: 205, y: 40),

@@ -32,9 +32,7 @@ struct TiledDragTargetResolver {
                 && frame.size.width.isFinite && frame.size.height.isFinite
                 && frame.size.width > 0 && frame.size.height > 0
         }.map { windowID, frame in
-            let dx = max(frame.minX - pointer.x, 0, pointer.x - frame.maxX)
-            let dy = max(frame.minY - pointer.y, 0, pointer.y - frame.maxY)
-            return (windowID: windowID, frame: frame, distance: (dx * dx + dy * dy).squareRoot())
+            (windowID: windowID, frame: frame, distance: distance(from: pointer, to: frame))
         }
         guard let best = ranked.min(by: {
             ($0.distance, $0.windowID) < ($1.distance, $1.windowID)
@@ -44,6 +42,28 @@ struct TiledDragTargetResolver {
         return TiledDragTarget(windowID: best.windowID, edge: edge(of: clamped, in: best.frame))
     }
 
+    /// The one tile within `band` of `pointer`, for a press that hit no
+    /// tile: macOS starts an edge resize just outside the window. Unlike
+    /// `nearest`, a tie picks none, so the middle of a gap belongs to
+    /// neither side.
+    static func nearest(pointer: CGPoint, slots: [CGWindowID: CGRect],
+                        within band: CGFloat) -> CGWindowID? {
+        guard band > 0 else { return nil }
+        let near = slots.map { (windowID: $0.key, distance: distance(from: pointer, to: $0.value)) }
+            .filter { $0.distance <= band }
+            .sorted { $0.distance < $1.distance }
+        guard let first = near.first else { return nil }
+        if near.count > 1, near[1].distance == first.distance { return nil }
+        return first.windowID
+    }
+
+    /// How far `pointer` is from `frame`: zero on or inside it.
+    static func distance(from pointer: CGPoint, to frame: CGRect) -> CGFloat {
+        let dx = max(frame.minX - pointer.x, 0, pointer.x - frame.maxX)
+        let dy = max(frame.minY - pointer.y, 0, pointer.y - frame.maxY)
+        return (dx * dx + dy * dy).squareRoot()
+    }
+
     /// Every tile `nearest` weighed, in id order: its frame, its distance
     /// from the pointer, and the normalized distance to each edge from the
     /// pointer clamped into it. For the drop decision's log line.
@@ -51,15 +71,13 @@ struct TiledDragTargetResolver {
         func number(_ value: CGFloat) -> String { String(format: "%g", Double(value)) }
         func fraction(_ value: CGFloat) -> String { String(format: "%.3f", Double(value)) }
         return slots.sorted { $0.key < $1.key }.map { windowID, frame in
-            let dx = max(frame.minX - pointer.x, 0, pointer.x - frame.maxX)
-            let dy = max(frame.minY - pointer.y, 0, pointer.y - frame.maxY)
             let clamped = CGPoint(x: min(max(pointer.x, frame.minX), frame.maxX),
                                   y: min(max(pointer.y, frame.minY), frame.maxY))
             let width = max(frame.width, 1)
             let height = max(frame.height, 1)
             return "\(windowID) frame=(\(number(frame.minX)),\(number(frame.minY)),"
                 + "\(number(frame.width)),\(number(frame.height))) "
-                + "dist=\(number((dx * dx + dy * dy).squareRoot())) "
+                + "dist=\(number(distance(from: pointer, to: frame))) "
                 + "l=\(fraction((clamped.x - frame.minX) / width)) "
                 + "r=\(fraction((frame.maxX - clamped.x) / width)) "
                 + "t=\(fraction((clamped.y - frame.minY) / height)) "

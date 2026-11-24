@@ -199,16 +199,23 @@ struct TiledDragTransaction {
               tree.structuralFingerprint() == context.fingerprint else {
             return .unknown(.superseded)
         }
-        let tiledHits = tiledWindows.filter {
+        var tiledHits = tiledWindows.filter {
             captured.actualFrames[$0.windowID]?.contains(pointer) == true
         }
         let occluded = occludingWindows.contains {
             captured.actualFrames[$0.windowID]?.contains(pointer) == true
         }
+        let originals = captured.actualFrames.filter { tiledIDs.contains($0.key) }
+        // a resize can start in the gap, just outside the tile's edge
+        if tiledHits.isEmpty, !occluded,
+           let near = TiledDragTargetResolver.nearest(
+               pointer: pointer, slots: originals,
+               within: TiledDragSnapshot.outsideBand(gap: context.gap)) {
+            tiledHits = tiledWindows.filter { $0.windowID == near }
+        }
         guard tiledHits.count == 1, !occluded, let dragged = tiledHits.first else {
             return .ineligible(.noTarget)
         }
-        let originals = captured.actualFrames.filter { tiledIDs.contains($0.key) }
         return .captured(TiledDragSnapshot(
             draggedID: dragged.windowID,
             sourceTree: tree,

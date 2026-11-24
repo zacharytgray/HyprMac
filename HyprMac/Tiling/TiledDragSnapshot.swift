@@ -13,12 +13,15 @@ struct TiledDragSnapshot {
     var pressPoint: CGPoint? = nil
 
     /// How far inside a frame's left, right or bottom edge a press grabs its
-    /// resize border. Inside only: a press has to land on a tile to be
-    /// captured at all.
+    /// resize border.
     static let resizeBorderBand: CGFloat = 8
     /// The top edge's band, narrower because the title bar starts right
     /// below it.
     static let resizeTopBorderBand: CGFloat = 4
+    /// How far outside a frame's edge a press still grabs it. macOS starts
+    /// a resize a few points outside the window, which is the gap between
+    /// tiles. `outsideBand(gap:)` caps it.
+    static let resizeOutsideBand: CGFloat = 5
     /// How far the edge opposite a grabbed one may drift and still count as
     /// held. A point of slack over the one-point readback tolerance, for an
     /// app that rounds its size to cells as it resizes.
@@ -27,13 +30,20 @@ struct TiledDragSnapshot {
     /// a resize rather than a move that barely started.
     static let resizeMinimumChange: CGFloat = 4
 
+    /// The outside band for `gap`: half the gap at most, so a press in the
+    /// gap belongs to one side.
+    static func outsideBand(gap: CGFloat) -> CGFloat {
+        max(0, min(resizeOutsideBand, gap / 2))
+    }
+
     /// The edges whose band holds the press, corners giving two. nil when
     /// the press point is not known.
     var pressedEdges: Set<BSPTargetEdge>? {
         guard let pressPoint else { return nil }
+        let band = Self.outsideBand(gap: context.gap)
         guard let frame = originalFrames[draggedID],
-              pressPoint.x >= frame.minX, pressPoint.x <= frame.maxX,
-              pressPoint.y >= frame.minY, pressPoint.y <= frame.maxY else { return [] }
+              pressPoint.x >= frame.minX - band, pressPoint.x <= frame.maxX + band,
+              pressPoint.y >= frame.minY - band, pressPoint.y <= frame.maxY + band else { return [] }
         var edges = Set<BSPTargetEdge>()
         if pressPoint.x - frame.minX < Self.resizeBorderBand { edges.insert(.left) }
         if frame.maxX - pressPoint.x < Self.resizeBorderBand { edges.insert(.right) }
