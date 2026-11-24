@@ -26,6 +26,11 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
+            icon: "graduationcap",
+            title: "New Tutorial",
+            description: "Seven short lessons, about 5 minutes, on practice windows, so yours aren't touched. Open it from the menu bar, Hypr+K or Settings → General."
+        ),
+        WhatsNewFeature(
             icon: "gearshape",
             title: "New Settings",
             description: "Eight sections with search: General, Keys, Tiling, Workspaces, Monitors, Mouse, Appearance and Advanced."

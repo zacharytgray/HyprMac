@@ -6,7 +6,7 @@ final class WelcomeContentTests: XCTestCase {
     func testWhatsNewDescribesOnlyThe0280Changes() {
         let features = WhatsNewFeatures.current
 
-        XCTAssertEqual(features.map(\.title), ["New Settings", "Drag to Grant Access", "Resets That Ask First", "Resume Keeps Windows"])
+        XCTAssertEqual(features.map(\.title), ["New Tutorial", "New Settings", "Drag to Grant Access", "Resets That Ask First", "Resume Keeps Windows"])
         XCTAssertEqual(features.compactMap(\.credit), ["dex157"])
         XCTAssertEqual(WelcomeContent.productURL.absoluteString, "https://hyprmac.app/")
     }
