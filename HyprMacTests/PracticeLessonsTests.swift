@@ -100,6 +100,48 @@ final class PracticeLessonsTests: XCTestCase {
         XCTAssertTrue(model.tiledBack)
     }
 
+    // with Keep floating windows in front on, the floaters stay in front of
+    // the tile, so it's float two, click the tile, tile one back
+    func testFloatersInFrontSkipsBringingThemBack() {
+        config.keepFloatingWindowsInFront = true
+        let model = FloatingLessonModel(practice: practice, config: config) { [unowned self] in self.clock }
+        windows([(1, 4, true), (2, 4, true), (3, 4, false)])
+        model.recorder.note("toggleFloating")
+        XCTAssertTrue(model.floatedTwo)
+
+        // tiling one back before the tile is clicked doesn't count
+        windows([(1, 4, false), (2, 4, true), (3, 4, false)])
+        model.recorder.note("toggleFloating")
+        XCTAssertFalse(model.tiledBack)
+        windows([(1, 4, true), (2, 4, true), (3, 4, false)])
+        model.recorder.note("toggleFloating")
+
+        practice.apply(["focused": 3, "order": [3, 1, 2]])
+        model.evaluate()
+        XCTAssertTrue(model.clickedTile)
+
+        windows([(1, 4, false), (2, 4, true), (3, 4, false)])
+        model.recorder.note("toggleFloating")
+        XCTAssertTrue(model.tiledBack)
+        XCTAssertFalse(model.broughtBack, "never asked for")
+    }
+
+    // without the helper, the keys alone count, in the same order
+    func testFloatersInFrontKeysAloneCount() {
+        config.keepFloatingWindowsInFront = true
+        let model = FloatingLessonModel(practice: PracticeSession(host: nil), config: config) { [unowned self] in self.clock }
+        model.noteAction("toggleFloating")
+        model.noteAction("toggleFloating")
+        XCTAssertTrue(model.floatedTwo)
+        model.noteAction("focusDirection")
+        XCTAssertTrue(model.clickedTile)
+        model.noteAction("focusFloating")
+        model.noteAction("focusFloating")
+        XCTAssertFalse(model.broughtBack)
+        model.noteAction("toggleFloating")
+        XCTAssertTrue(model.tiledBack)
+    }
+
     // a click on the tile before two float doesn't count
     func testClickingTheTileCountsOnlyWithTwoFloaters() {
         let model = FloatingLessonModel(practice: practice, config: config) { [unowned self] in self.clock }

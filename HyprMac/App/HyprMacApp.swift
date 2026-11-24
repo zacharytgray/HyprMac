@@ -40,6 +40,8 @@ struct HyprMacApp: App {
     }
 
     init() {
+        // a copy started only to answer whether Screen Recording is granted
+        ScreenRecordingAccess.answerFreshCheckIfAsked()
         // a second copy leaves here, before Sparkle or the menu bar item start
         SingleInstance.claimOrExit()
         // before the scene's storage is built, so it reads the migrated value

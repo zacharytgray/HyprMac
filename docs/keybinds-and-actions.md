@@ -792,7 +792,7 @@ Synced over iCloud when sync is on.
 | `focusFollowsMouse` | boolean | — | `true` | Mouse → Focus |
 | `mouseHoverPollHz` | integer (Hz) | 60, 120, 240; other values show as Custom, below 30 runs at 30 | 120 | Mouse → Focus → Hover speed |
 | `keepCursorOnWorkspaceSwitch` | boolean | — | `false` | Mouse → Pointer |
-| `keepFloatingWindowsInFront` | boolean | — | `false` | Tiling → Floating windows |
+| `keepFloatingWindowsInFront` | boolean | — | `false`; onboarding preselects it on, What's New offers Turn On | Tiling → Floating windows |
 | `excludedBundleIDs` | array of bundle IDs | — | `com.apple.FaceTime`, `com.apple.systempreferences` | Tiling → Float and tile rules (Always float an app) |
 | `floatingRules` | array of rules | see "Float and tile rules" | none | Tiling → Float and tile rules, the menu bar, Hypr+I |
 | `windowRules` | array of rules | see "Window rules" | none | Workspaces → Pin apps |

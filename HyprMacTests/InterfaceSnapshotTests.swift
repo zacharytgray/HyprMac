@@ -230,6 +230,10 @@ final class InterfaceSnapshotTests: XCTestCase {
         let saved = (config.hyprKey, config.enabled, config.focusFollowsMouse)
         defer { (config.hyprKey, config.enabled, config.focusFollowsMouse) = saved }
         config.hyprKey = .capsLock
+        // lesson 4 here is the switch-off version; testRenderFloatersInFront has the other
+        let savedInFront = config.keepFloatingWindowsInFront
+        defer { config.keepFloatingWindowsInFront = savedInFront }
+        config.keepFloatingWindowsInFront = false
         let size = CGSize(width: 1440, height: 900)
         let practice = PracticeSession(host: nil)
         practice.setWorkspacesForTesting(practice: 4, other: 5)
@@ -349,6 +353,101 @@ final class InterfaceSnapshotTests: XCTestCase {
         }
     }
 
+    // keep floating windows in front: the onboarding choice both ways, its
+    // Screen Recording step, the Settings row in each permission state,
+    // What's New before and after Turn On, and lesson 4 with the switch on
+    func testRenderFloatersInFront() throws {
+        let config = UserConfig.shared
+        let saved = (config.keepFloatingWindowsInFront, config.hyprKey, config.focusFollowsMouse,
+                     config.focusBracketStyle, config.showFocusBorder, config.dimInactiveWindows)
+        let shared = ScreenRecordingAccess.shared
+        let savedAccess = (shared.inProcess, shared.freshCheck)
+        defer {
+            (config.keepFloatingWindowsInFront, config.hyprKey, config.focusFollowsMouse,
+             config.focusBracketStyle, config.showFocusBorder, config.dimInactiveWindows) = saved
+            (shared.inProcess, shared.freshCheck) = savedAccess
+        }
+        config.hyprKey = .capsLock
+        config.focusFollowsMouse = true
+        FocusIndicatorChoice.corners.apply(to: config)
+        config.dimInactiveWindows = true
+        func access(_ state: ScreenRecordingAccess.State, _ target: ScreenRecordingAccess = ScreenRecordingAccess())
+            -> ScreenRecordingAccess {
+            target.inProcess = { state == .granted }
+            target.freshCheck = { $0(state == .needsReopen) }
+            target.refresh()
+            return target
+        }
+        let states: [(String, ScreenRecordingAccess.State)] = [("granted", .granted), ("not-granted", .notGranted),
+                                                               ("needs-reopen", .needsReopen)]
+        let stage = CGSize(width: 1440, height: 900)
+        let out = "floaters-in-front"
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            // onboarding
+            for (name, on) in [("on", true), ("off", false)] {
+                try render("\(out)-onboarding-make-it-yours-\(name)-\(mode)",
+                           MakeItYoursView(keepFloatersInFront: .constant(on), onBack: {},
+                                           onSkipTutorial: {}, onTakeTutorial: {}),
+                           size: stage, dark: dark)
+            }
+            for (name, state) in states {
+                try render("\(out)-onboarding-screen-recording-\(name)-\(mode)",
+                           ScreenRecordingStepView(access: access(state), takeTutorial: true,
+                                                   onBack: {}, onContinue: {}),
+                           size: stage, dark: dark)
+            }
+            // settings
+            config.keepFloatingWindowsInFront = false
+            try render("\(out)-settings-tiling-off-\(mode)",
+                       tab(TilingSettingsView(screenRecording: access(.notGranted))), dark: dark)
+            config.keepFloatingWindowsInFront = true
+            for (name, state) in states {
+                try render("\(out)-settings-tiling-\(name)-\(mode)",
+                           tab(TilingSettingsView(screenRecording: access(state))), dark: dark)
+            }
+            // what's new: Turn On, then each state once it's on
+            config.keepFloatingWindowsInFront = false
+            try render("\(out)-whats-new-\(mode)", WhatsNewView(onDismiss: {}),
+                       size: CGSize(width: 520, height: 440), dark: dark)
+            config.keepFloatingWindowsInFront = true
+            for (name, state) in states {
+                _ = access(state, shared)
+                try render("\(out)-whats-new-on-\(name)-\(mode)", WhatsNewView(onDismiss: {}),
+                           size: CGSize(width: 520, height: 440), dark: dark)
+            }
+        }
+
+        // lesson 4 with the switch on: float two, click the tile (they stay
+        // in front), tile one back
+        config.keepFloatingWindowsInFront = true
+        let size = CGSize(width: 1512, height: 982)
+        let practice = PracticeSession(host: nil)
+        practice.setWorkspacesForTesting(practice: 2, other: 3)
+        func room<Bar: View>(_ bar: Bar) -> CGFloat {
+            PracticeSession.cardInset(forCardHeight: NSHostingView(rootView: bar).fittingSize.height)
+        }
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            func shot(_ name: String, focused: Int, tiled: [Int], floaters: [Int],
+                      _ model: FloatingLessonModel) throws {
+                let bar = FloatingLessonBar(model: model, onExit: {}, onNext: {})
+                try render("\(out)-lesson-4-\(name)-\(mode)",
+                           PracticeSceneMock(focused: focused, tiled: tiled, floaters: floaters,
+                                             cardRoom: room(bar), dock: .bottom) { bar },
+                           size: size, dark: dark)
+            }
+            let floating = FloatingLessonModel(practice: practice)
+            try shot("1-start", focused: 1, tiled: [1, 2, 3], floaters: [], floating)
+            floating.floatedTwo = true
+            try shot("2-floated", focused: 2, tiled: [3], floaters: [1, 2], floating)
+            floating.clickedTile = true
+            try shot("3-clicked-tile", focused: 3, tiled: [3], floaters: [1, 2], floating)
+            floating.tiledBack = true
+            try shot("4-done", focused: 1, tiled: [1, 3], floaters: [2], floating)
+        }
+    }
+
     // the stage with the Dock on the bottom (the hub's 1920×1080 insets) and
     // on the left: the bars and the step stay clear of it. a gray block
     // stands in for the Dock
@@ -386,6 +485,10 @@ final class InterfaceSnapshotTests: XCTestCase {
         let saved = (config.hyprKey, config.enabled, config.focusFollowsMouse, config.doubleTapHyprTogglesCapsLock)
         defer { (config.hyprKey, config.enabled, config.focusFollowsMouse, config.doubleTapHyprTogglesCapsLock) = saved }
         config.hyprKey = .capsLock
+        // lesson 4 here is the switch-off version; testRenderFloatersInFront has the other
+        let savedInFront = config.keepFloatingWindowsInFront
+        defer { config.keepFloatingWindowsInFront = savedInFront }
+        config.keepFloatingWindowsInFront = false
         config.doubleTapHyprTogglesCapsLock = true
         config.focusFollowsMouse = true
         let size = CGSize(width: 1512, height: 982)

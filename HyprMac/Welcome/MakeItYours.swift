@@ -1,6 +1,8 @@
 // Onboarding's last step: a few choices that shape how HyprMac feels, with
 // a small drawn desktop that shows each one. Every choice writes the key
-// Settings uses. It ends on taking the tutorial or skipping it for now.
+// Settings uses, at once, except Keep floating windows in front, which
+// writes when the step ends so macOS asks for Screen Recording only then.
+// It ends on taking the tutorial or skipping it for now.
 
 import SwiftUI
 
@@ -44,6 +46,8 @@ struct MakeItYoursView: View {
     @AppStorage(UserConfig.menuBarStyleKey) private var menuBarStyle: MenuBarStyle = .full
     @StateObject private var loginItem = LoginItemController()
     var completed: Set<OnboardingStep> = [.access, .hyprKey]
+    /// the session's pick, written to the config when the step ends
+    var keepFloatersInFront: Binding<Bool> = .constant(true)
     /// nil when there's no step to go back to
     var onBack: (() -> Void)? = nil
     let onSkipTutorial: () -> Void
@@ -76,11 +80,12 @@ struct MakeItYoursView: View {
                     MiniDesktopPreview(focusFollowsMouse: config.focusFollowsMouse,
                                        indicator: indicator,
                                        dim: config.dimInactiveWindows,
-                                       menuBar: menuBarStyle)
+                                       menuBar: menuBarStyle,
+                                       floaterInFront: keepFloatersInFront.wrappedValue)
                 }
                 // the preview matches the choices' height
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 34)
+                .padding(.top, 26)
             }
             .frame(width: 900)
         }
@@ -116,6 +121,22 @@ struct MakeItYoursView: View {
                 }
             }
             divider
+            choiceRow("Keep floating windows in front", tag: "Recommended",
+                      detail: "Floating windows stay in front of your tiles. Off, they can slip behind the window you're working in.") {
+                VStack(alignment: .leading, spacing: 7) {
+                    segmented([("On", true), ("Off", false)], selection: keepFloatersInFront.wrappedValue) {
+                        keepFloatersInFront.wrappedValue = $0
+                    }
+                    if keepFloatersInFront.wrappedValue {
+                        Label("Needs Screen Recording, because macOS has no other way to do this. HyprMac shows a live picture of a covered floating window and never saves it. macOS asks when you continue.",
+                              systemImage: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundStyle(TutorialStageColor.cyan)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            divider
             choiceRow("Menu bar",
                       detail: "Full shows every workspace in use. Compact shows only the current one.") {
                 VStack(alignment: .leading, spacing: 7) {
@@ -147,13 +168,23 @@ struct MakeItYoursView: View {
         Rectangle().fill(TutorialStageColor.line).frame(height: 1)
     }
 
-    private func choiceRow<Control: View>(_ title: String, detail: String,
+    private func choiceRow<Control: View>(_ title: String, tag: String? = nil, detail: String,
                                           @ViewBuilder control: () -> Control) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(TutorialStageColor.text)
+                HStack(spacing: 7) {
+                    Text(title)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(TutorialStageColor.text)
+                    if let tag {
+                        Text(tag)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(TutorialStageColor.cyan)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .overlay(Capsule().strokeBorder(TutorialStageColor.cyan.opacity(0.6)))
+                    }
+                }
                 Text(detail)
                     .font(.system(size: 11))
                     .foregroundStyle(TutorialStageColor.quiet)
@@ -161,10 +192,10 @@ struct MakeItYoursView: View {
             }
             control()
         }
-        .padding(.vertical, 11)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(title)
+        .accessibilityLabel(tag.map { "\(title), \($0)" } ?? title)
     }
 
     /// Chips in a row; the picked one gets cyan text and a cyan outline,
@@ -214,29 +245,120 @@ struct MakeItYoursView: View {
     }
 }
 
+// MARK: - screen recording
+
+/// Make it yours ended with Keep floating windows in front on and Screen
+/// Recording not usable yet. macOS asked as the step ended; this shows the
+/// grant, then a reopen when the running copy can't see it. Going on
+/// without it keeps the switch on, with the icon-and-title card.
+struct ScreenRecordingStepView: View {
+    @ObservedObject var access: ScreenRecordingAccess
+    var completed: Set<OnboardingStep> = [.access, .hyprKey]
+    let takeTutorial: Bool
+    let onBack: () -> Void
+    let onContinue: () -> Void
+
+    private var state: ScreenRecordingAccess.State { access.state ?? .notGranted }
+
+    var body: some View {
+        TutorialStage(
+            step: OnboardingStep.makeItYours,
+            completed: completed,
+            counter: OnboardingStep.makeItYours.counterLabel,
+            note: state == .granted ? nil : "Settings → Tiling has this later",
+            canContinue: state != .notGranted,
+            exit: StageAction(title: "Back", action: onBack),
+            secondary: state == .granted ? nil : StageAction(title: "Continue Without It", action: onContinue),
+            next: next
+        ) {
+            VStack(spacing: 0) {
+                Text("One more step: Screen Recording")
+                    .font(.system(size: 30, weight: .semibold))
+                    .foregroundStyle(TutorialStageColor.text)
+                Text("Keeping floating windows in front needs Screen Recording, because macOS has no other way to do this. HyprMac shows a live picture of a covered floating window. It never saves that picture or sends it anywhere.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(TutorialStageColor.quiet)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+
+                TutorialTaskCard(tasks: tasks)
+                    .padding(.top, 34)
+
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(TutorialStageColor.faint)
+                        .accessibilityHidden(true)
+                    Text("Without it, a covered floating window shows its app icon and title instead. Turn the switch off in Settings → Tiling to keep the old behavior.")
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(TutorialStageColor.quiet)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 14)
+            }
+            .frame(width: 560)
+        }
+        .onAppear { access.startWatching() }
+        .onDisappear { access.stopWatching() }
+    }
+
+    private var finishTitle: String { takeTutorial ? "Take the Tutorial (about 5 min)" : "Done" }
+
+    private var next: StageAction {
+        switch state {
+        case .granted: return StageAction(title: finishTitle, action: onContinue)
+        case .needsReopen: return StageAction(title: "Reopen HyprMac", action: { access.reopen() })
+        case .notGranted: return StageAction(title: "Reopen HyprMac", action: {})
+        }
+    }
+
+    private var tasks: [TutorialTask] {
+        [
+            TutorialTask(title: "Turn on HyprMac in Screen Recording",
+                         detail: "macOS asked just now. Choose Open System Settings and turn on HyprMac. Missed it? Open the list here.",
+                         done: state != .notGranted,
+                         trailing: state == .notGranted
+                            ? AnyView(StageSecondaryButton("Open Screen Recording") { access.openSettings() })
+                            : nil),
+            TutorialTask(title: "Reopen HyprMac",
+                         detail: takeTutorial
+                            ? "HyprMac can use it after a reopen. Your windows stay put, and the tutorial opens again."
+                            : "HyprMac can use it after a reopen. Your windows stay put.",
+                         done: state == .granted),
+        ]
+    }
+}
+
 // MARK: - preview
 
-/// A small drawn desktop: a menu bar and three tiles, at half size. The
-/// marks, border, window corners, dim and gaps come from the same code and
-/// config values HyprMac draws the real ones with, scaled. The big tile is
-/// focused, or, with focus following the mouse, the tile under the pointer.
+/// A small drawn desktop: a menu bar, three tiles and a floating window,
+/// at half size. The marks, border, window corners, dim, gaps and floating
+/// outline come from the same code and config values HyprMac draws the
+/// real ones with, scaled. The big tile is focused, or, with focus
+/// following the mouse, the tile under the pointer. The floating window
+/// sits in front of the tiles, or behind the focused one without the switch.
 struct MiniDesktopPreview: View {
     @ObservedObject var config: UserConfig = .shared
     let focusFollowsMouse: Bool
     let indicator: FocusIndicatorChoice
     let dim: Bool
     let menuBar: MenuBarStyle
+    let floaterInFront: Bool
 
     /// the preview is a half-size screen
     private let scale: CGFloat = 0.5
 
     init(config: UserConfig = .shared, focusFollowsMouse: Bool, indicator: FocusIndicatorChoice,
-         dim: Bool, menuBar: MenuBarStyle) {
+         dim: Bool, menuBar: MenuBarStyle, floaterInFront: Bool = true) {
         self.config = config
         self.focusFollowsMouse = focusFollowsMouse
         self.indicator = indicator
         self.dim = dim
         self.menuBar = menuBar
+        self.floaterInFront = floaterInFront
     }
 
     var body: some View {
@@ -247,6 +369,11 @@ struct MiniDesktopPreview: View {
             screen
             Text(focusFollowsMouse ? "The pointer is over window 2, so window 2 has focus."
                  : "The pointer is over window 2, but window 1 keeps focus until you click.")
+                .font(.system(size: 11))
+                .foregroundStyle(TutorialStageColor.quiet)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(floaterInFront ? "The floating window stays in front of the tiles."
+                 : "The floating window slipped behind window \(focused), the one with focus.")
                 .font(.system(size: 11))
                 .foregroundStyle(TutorialStageColor.quiet)
                 .fixedSize(horizontal: false, vertical: true)
@@ -273,9 +400,15 @@ struct MiniDesktopPreview: View {
                 let halfH = (h - gap) / 2
                 ZStack(alignment: .topLeading) {
                     tile(1, CGRect(x: padding, y: padding, width: w * 0.55, height: h))
+                        .zIndex(focused == 1 ? 2 : 0)
                     tile(2, CGRect(x: rightX, y: padding, width: w * 0.45, height: halfH))
+                        .zIndex(focused == 2 ? 2 : 0)
                     tile(3, CGRect(x: rightX, y: padding + halfH + gap, width: w * 0.45, height: halfH))
+                    // across the line between windows 1 and 2, clear of the pointer
+                    floater(CGRect(x: rightX - 78, y: padding + halfH * 0.1, width: 128, height: halfH * 0.5))
+                        .zIndex(floaterInFront ? 3 : 1)
                     pointer
+                        .zIndex(4)
                         .position(x: rightX + w * 0.3, y: padding + halfH * 0.62)
                 }
             }
@@ -358,6 +491,34 @@ struct MiniDesktopPreview: View {
         .frame(width: frame.width, height: frame.height)
         .offset(x: frame.minX, y: frame.minY)
         .animation(HyprMotion.snap, value: isFocused)
+    }
+
+    // a small window with the floating outline
+    private func floater(_ frame: CGRect) -> some View {
+        let shape = RoundedRectangle(cornerRadius: windowRadius, style: .continuous)
+        return ZStack {
+            shape.fill(Color(red: 0.95, green: 0.95, blue: 0.97))
+            VStack(spacing: 0) {
+                HStack(spacing: 3) {
+                    ForEach([Color.red, .yellow, .green], id: \.self) {
+                        Circle().fill($0.opacity(0.8)).frame(width: 5, height: 5)
+                    }
+                    Spacer()
+                }
+                .padding(.leading, max(5, windowRadius * 0.7))
+                .padding(.top, 5)
+                Spacer()
+                Text("Floating")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.black.opacity(0.5))
+                Spacer()
+            }
+            shape.strokeBorder(Color(nsColor: config.resolvedFloatingBorderColor), lineWidth: 1)
+        }
+        .frame(width: frame.width, height: frame.height)
+        .shadow(color: .black.opacity(0.35), radius: 6, y: 3)
+        .offset(x: frame.minX, y: frame.minY)
+        .animation(HyprMotion.snap, value: floaterInFront)
     }
 
     private var pointer: some View {

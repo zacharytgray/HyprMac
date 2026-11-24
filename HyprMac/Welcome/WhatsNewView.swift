@@ -1,5 +1,6 @@
 // The What's New window an update shows once: the version, this release's
-// rows from WhatsNewFeatures, and Continue.
+// rows from WhatsNewFeatures, and Continue. A row can carry a button
+// (WhatsNewAction), for a new setting an upgrader would otherwise miss.
 
 import SwiftUI
 
@@ -72,6 +73,9 @@ private struct CyanButton: View {
 }
 
 private struct WhatsNewPage: View {
+    // a row's button flips a setting; its done state redraws from here
+    @ObservedObject var config: UserConfig = .shared
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("What's new")
@@ -127,6 +131,12 @@ private struct WhatsNewPage: View {
                         .foregroundStyle(tint.opacity(0.85))
                         .padding(.top, 3)
                 }
+                if let action = feature.action {
+                    // read here, where the config is observed: the closure
+                    // alone never tells SwiftUI the row changed
+                    WhatsNewActionView(action: action, done: action.isDone(), tint: tint)
+                        .padding(.top, 6)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -139,6 +149,69 @@ private struct WhatsNewPage: View {
             RoundedRectangle(cornerRadius: 9, style: .continuous)
                 .strokeBorder(Color.hyprTextPrimary.opacity(0.08), lineWidth: 1)
         )
+    }
+}
+
+/// A row's button, then its done state and detail.
+private struct WhatsNewActionView: View {
+    let action: WhatsNewAction
+    let done: Bool
+    let tint: Color
+
+    var body: some View {
+        if done {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(action.doneTitle, systemImage: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+                action.doneDetail?()
+            }
+        } else {
+            Button(action: action.perform) {
+                Text(action.title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(tint.opacity(0.12)))
+                    .overlay(Capsule().strokeBorder(tint.opacity(0.5), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Screen Recording under the floaters-in-front row once it's on.
+struct WhatsNewScreenRecordingStatus: View {
+    @ObservedObject var access: ScreenRecordingAccess
+
+    var body: some View {
+        // a stack even with no state yet: an empty view never appears, so it
+        // would never ask for one
+        VStack(alignment: .leading, spacing: 5) {
+            if let state = access.state {
+                Group {
+                    Text(state.message)
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.hyprTextPrimary.opacity(state == .granted ? 0.5 : 0.75))
+                        .fixedSize(horizontal: false, vertical: true)
+                    switch state {
+                    case .granted:
+                        EmptyView()
+                    case .notGranted:
+                        Button("Open Screen Recording Settings") { access.openSettings() }
+                            .buttonStyle(.link)
+                            .font(.system(size: 11, weight: .medium))
+                    case .needsReopen:
+                        Button("Reopen HyprMac") { access.reopen() }
+                            .buttonStyle(.link)
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+            }
+        }
+        .onAppear { access.startWatching() }
+        .onDisappear { access.stopWatching() }
     }
 }
 

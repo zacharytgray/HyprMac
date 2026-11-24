@@ -226,6 +226,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager?.keybindOverlay.onShowTutorial = { [weak self] in
             self?.showTutorial()
         }
+        ScreenRecordingAccess.shared.reopenApp = { [weak self] in self?.reopen() }
         // a tutorial cut short by a crash can leave its practice app's rule
         PracticeSession.removeRules(bundleID: PracticeSession.helperBundleID, from: config)
         // and its saved desk, which is dropped rather than put back
@@ -244,7 +245,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func checkFirstLaunchOrUpdate() {
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        let mode = Self.forcesOnboarding ? .onboarding : RuntimeVariant.shouldShowWelcome(
+        let mode = Self.forcesOnboarding ? .onboarding : Self.forcesWhatsNew ? .whatsNew : RuntimeVariant.shouldShowWelcome(
             alreadyOnboarded: alreadyOnboarded,
             lastVersion: UserDefaults.standard.string(forKey: "lastSeenVersion"),
             currentVersion: currentVersion)
@@ -254,6 +255,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
                 self?.present(mode)
             }
+        } else if UserDefaults.standard.bool(forKey: Self.tutorialAfterReopenKey) {
+            // onboarding reopened HyprMac for Screen Recording on its way
+            // into the tutorial, or macOS's own Quit & Reopen did
+            UserDefaults.standard.removeObject(forKey: Self.tutorialAfterReopenKey)
+            showTutorialOnceSettled()
         }
         UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
@@ -264,6 +270,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private static var forcesOnboarding: Bool {
         #if HYPRMAC_DEBUG_VARIANT
         return CommandLine.arguments.contains("--force-onboarding")
+        #else
+        return false
+        #endif
+    }
+
+    /// Debug app only: `--force-whats-new` shows What's New, which the Debug
+    /// app otherwise never does, to check an upgrader's view.
+    private static var forcesWhatsNew: Bool {
+        #if HYPRMAC_DEBUG_VARIANT
+        return CommandLine.arguments.contains("--force-whats-new")
         #else
         return false
         #endif
@@ -280,6 +296,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             whatsNewController = controller
             controller.show()
         }
+    }
+
+    /// The tutorial after a reopen waits for the first tile and the desk
+    /// restore. Before that every workspace looks empty, so practice could
+    /// take one the user's windows are about to come back to.
+    private func showTutorialOnceSettled(waited: TimeInterval = 0) {
+        let settled = windowManager?.hasSettledAfterLaunch == true || !UserConfig.shared.enabled
+        guard settled || waited >= 10 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.showTutorialOnceSettled(waited: waited + 0.25)
+            }
+            return
+        }
+        hyprLog(.notice, .lifecycle, "tutorial after reopen: opening, \(settled ? "settled" : "gave up waiting") after \(waited) s")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.showTutorial() }
+    }
+
+    /// Set while onboarding waits on Screen Recording with the tutorial
+    /// picked, so a reopen in between lands in it.
+    static let tutorialAfterReopenKey = "openTutorialAfterReopen"
+
+    /// Quit and open again, for a Screen Recording grant the running copy
+    /// can't see. The desk is written down first, as for an update, and a
+    /// shell waits for this process to end before it opens the app.
+    func reopen() {
+        windowManager?.saveRelaunchHandoff()
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "while /bin/kill -0 \"$1\" 2>/dev/null; do /bin/sleep 0.1; done; /usr/bin/open \"$2\"",
+                             "reopen", "\(getpid())", Bundle.main.bundlePath]
+        do {
+            try process.run()
+        } catch {
+            hyprLog(.warning, .lifecycle, "reopen: could not start the relaunch shell: \(error)")
+            return
+        }
+        hyprLog(.notice, .lifecycle, "reopen: quitting, \(Bundle.main.bundlePath) opens once this copy is gone")
+        NSApp.terminate(nil)
     }
 
     /// The menu bar, Hypr+K and Settings → General open the tutorial here.
