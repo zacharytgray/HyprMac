@@ -251,12 +251,15 @@ final class StageSession: ObservableObject {
 
     // The lesson bar never takes keys. A practice window's keys go to the
     // helper, seen here as global events; the stage's, while it's in front
-    // (practice blocked, lesson 1, the finish), are local ones.
+    // (practice blocked, lesson 1, the finish), are local ones. While the
+    // stage covers the screen another app can still be active behind it, as
+    // after Hypr+K closes; its Esc is the tutorial's too.
     private func addEscMonitor() {
         if escMonitor == nil {
             escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 guard let self,
-                      Self.escEndsTutorial(screen: self.screen, keyCode: event.keyCode, onStage: false,
+                      Self.escEndsTutorial(screen: self.screen, keyCode: event.keyCode,
+                                           onStage: self.controller.coversScreen,
                                            helperIsFront: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
                                                == PracticeSession.helperBundleID)
                 else { return }

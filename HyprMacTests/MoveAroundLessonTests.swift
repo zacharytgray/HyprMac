@@ -175,6 +175,7 @@ final class MoveAroundLessonTests: XCTestCase {
         XCTAssertFalse(StageSession.escEndsTutorial(screen: lesson, keyCode: 36, onStage: true, helperIsFront: false))
         XCTAssertFalse(StageSession.escEndsTutorial(screen: .onboarding(.hyprKey), keyCode: 53,
                                                     onStage: true, helperIsFront: false))
+        XCTAssertFalse(TutorialWindowController().coversScreen, "no stage, nothing to cover")
     }
 
     // a refused switch leaves the user on their own workspace: no practice there

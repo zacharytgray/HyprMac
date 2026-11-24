@@ -605,6 +605,12 @@ final class TutorialWindowController {
         }
     }
 
+    /// In front of every window, not dropped behind the practice windows
+    var coversScreen: Bool {
+        guard let window, window.isVisible else { return false }
+        return !window.ignoresMouseEvents
+    }
+
     func bringToFront() {
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
