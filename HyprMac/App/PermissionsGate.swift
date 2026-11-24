@@ -6,20 +6,6 @@
 
 import SwiftUI
 
-// MARK: - grant flow
-
-/// Fire the system Accessibility prompt and open the deep link as a
-/// fallback in case the prompt was dismissed. Also adds HyprMac to the
-/// Accessibility list so the toggle is there to flip.
-enum AccessibilityGrantFlow {
-    static func promptThenOpen() {
-        AccessibilityManager.promptForAccessibility()
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-}
-
 // MARK: - permission row
 
 /// One permission line: icon tile · name + requirement tag + live detail ·
@@ -30,6 +16,8 @@ struct PermissionStatusRow: View {
     let required: Bool
     let detail: String
     let granted: Bool
+    /// "Grant", or "Open Again" while the drag panel waits
+    var actionTitle = "Grant"
     let onGrant: () -> Void
 
     private var tint: Color { granted ? .hyprCyan : .hyprTextSecondary }
@@ -86,7 +74,7 @@ struct PermissionStatusRow: View {
                 .background(Capsule().fill(Color.hyprCyan.opacity(0.1)))
                 .overlay(Capsule().strokeBorder(Color.hyprCyan.opacity(0.5), lineWidth: 1))
             } else {
-                Button("Grant", action: onGrant)
+                Button(actionTitle, action: onGrant)
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             }
@@ -172,6 +160,9 @@ struct ModifierKeysCheckRow: View {
 /// 1 Hz poll and stamped granted by the AppDelegate poll when AX lands.
 final class PermissionsGateModel: ObservableObject {
     @Published var axGranted = AccessibilityManager.isAccessibilityEnabled()
+    /// Grant pressed: System Settings and the drag panel are up, and the
+    /// gate waits beside them until the flow ends.
+    @Published var waitingForDrag = false
     /// nil when the selected Hypr key can't be remapped in Modifier Keys
     @Published var modifierGuidance = HyprKeySystemGuidance.forKey(UserConfig.shared.hyprKey)
 
@@ -186,6 +177,7 @@ final class PermissionsGateModel: ObservableObject {
 /// owns the poll that live-starts and dismisses this once AX lands.
 struct PermissionsGateView: View {
     @ObservedObject var model: PermissionsGateModel
+    let onGrant: () -> Void
     let onQuit: () -> Void
 
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
@@ -194,10 +186,14 @@ struct PermissionsGateView: View {
         VStack(spacing: 0) {
             header
             content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 20)
+                .padding(.bottom, 28)
             footer
         }
-        .frame(width: 520, height: 530)
+        // as tall as its content; the window follows it
+        .frame(width: 520)
+        .fixedSize(horizontal: false, vertical: true)
         .background(Color.hyprBackground)
         .onReceive(poll) { _ in model.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -241,9 +237,12 @@ struct PermissionsGateView: View {
                 required: true,
                 detail: model.axGranted
                     ? "HyprMac can manage your windows."
-                    : "HyprMac can't manage windows without it.",
+                    : model.waitingForDrag
+                        ? "Drag HyprMac from the panel into the list in System Settings."
+                        : "HyprMac can't manage windows without it.",
                 granted: model.axGranted,
-                onGrant: { AccessibilityGrantFlow.promptThenOpen() }
+                actionTitle: model.waitingForDrag ? "Open Again" : "Grant",
+                onGrant: onGrant
             )
             .frame(maxWidth: 420)
             .padding(.top, 18)
@@ -253,16 +252,6 @@ struct PermissionsGateView: View {
                     .frame(maxWidth: 420)
                     .padding(.top, 10)
             }
-
-            // rebuilds/updates invalidate the grant; the stale-toggle caveat
-            // is shown as a caption.
-            Text("Toggle already on? Turn it off and back on — macOS invalidates the grant when the app is updated. Remove stale HyprMac entries with the − button.")
-                .font(.system(size: 10.5))
-                .lineSpacing(3)
-                .foregroundStyle(Color.hyprTextPrimary.opacity(0.35))
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 400)
-                .padding(.top, 14)
         }
         .padding(.horizontal, 40)
     }
@@ -294,7 +283,9 @@ struct PermissionsGateView: View {
             Spacer()
 
             if !model.axGranted {
-                Text("Accessibility is required to continue")
+                Text(model.waitingForDrag
+                     ? "Waiting for HyprMac in the Accessibility list"
+                     : "Accessibility is required to continue")
                     .font(.system(size: 10.5))
                     .foregroundStyle(Color.hyprTextPrimary.opacity(0.35))
             }
@@ -308,32 +299,62 @@ struct PermissionsGateView: View {
 
 /// NSWindow lifecycle for the launch gate. Same recipe as the welcome
 /// window minus a close button — the only exits are granting Accessibility
-/// (auto-close) or Quit.
+/// (auto-close) or Quit. Normal level, so it never covers System Settings
+/// while the drag panel waits.
 final class PermissionsGateWindowController {
+    /// How long the gate stays up with the check once access lands.
+    private static let grantedBeat: TimeInterval = 1.2
+
     private var window: NSWindow?
+    private var dismissing = false
     let model = PermissionsGateModel()
 
     func show(onQuit: @escaping () -> Void) {
-        let view = PermissionsGateView(model: model, onQuit: onQuit)
+        let view = PermissionsGateView(model: model, onGrant: { [weak self] in self?.grant() }, onQuit: onQuit)
         let hosting = NSHostingController(rootView: view)
+        // the window takes the view's height, and follows it when the
+        // Modifier Keys row comes or goes
+        hosting.sizingOptions = [.preferredContentSize]
         let win = NSWindow(contentViewController: hosting)
         win.styleMask = [.titled, .fullSizeContentView]
         win.titlebarAppearsTransparent = true
         win.titleVisibility = .hidden
         win.isMovableByWindowBackground = true
-        win.level = .floating
+        win.setContentSize(hosting.view.fittingSize)
         win.center()
-        win.setContentSize(NSSize(width: 520, height: 530))
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
         window = win
+        bringToFront()
     }
 
-    /// AX landed: reflect it, then close after a short beat so the check
-    /// is visible before the window goes away.
+    private func bringToFront() {
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    /// The gate stays on screen, moved beside System Settings, so a user who
+    /// looked away comes back to it. Pressed again, it reopens the flow.
+    private func grant() {
+        model.waitingForDrag = true
+        AccessibilityDragHelper.shared.start(beside: window) { [weak self] granted in
+            self?.model.waitingForDrag = false
+            if granted {
+                self?.markAccessibilityGrantedAndDismiss()
+            } else {
+                self?.bringToFront()
+            }
+        }
+    }
+
+    /// AX landed: bring the gate to the front with the check, then close it
+    /// after a beat long enough to read. AppDelegate's poll calls this too;
+    /// while the drag panel's flow runs, its end does it instead, after the
+    /// user has seen HyprMac land in the list.
     func markAccessibilityGrantedAndDismiss() {
         model.axGranted = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+        guard !model.waitingForDrag, !dismissing else { return }
+        dismissing = true
+        bringToFront()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.grantedBeat) { [weak self] in
             self?.dismiss()
         }
     }

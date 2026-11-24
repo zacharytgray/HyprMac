@@ -1322,6 +1322,28 @@ on one Mac each run their own copy.
   `AppDelegate.applicationDidFinishLaunching` checks it. Without it, the
   non-modal permissions gate (`App/PermissionsGate.swift`) opens and polls
   once a second, and a grant starts HyprMac with no relaunch.
+  The gate's Grant never fires the system prompt (Settings → General's
+  Grant still does, until it moves to the same flow):
+  `AccessibilityDragHelper` (`App/AccessibilityDragHelper.swift`) opens the
+  Accessibility list and floats a small panel under the System Settings
+  window, with the panel's icon in line with the icons in the list. That
+  window is the largest one of System Settings in the window list, so the
+  password dialog doesn't pull the panel away. The link is sent
+  again when that window first shows, since a System Settings still
+  launching can drop it and open on Wi-Fi. The panel's HyprMac icon drags
+  the app bundle's file URL, so dropping it on the list adds HyprMac
+  switched on. It follows the window while System Settings is in front.
+  The flow ends on the grant, or gives up on the panel's ×, when System
+  Settings quits, or after 15 s with no System Settings window on screen.
+  The panel flies in from the Grant click on its first show. The window
+  that pressed Grant stays on screen, moved beside System
+  Settings when its window first shows, and says it is waiting, with Open
+  Again in place of Grant: a user who looked away comes back to it. On the
+  grant the panel goes at once, and the rest waits 1 s so HyprMac can be
+  seen landing in the list: then that window comes to the front (the gate
+  with the check, for 1.2 s), and System Settings quits if Grant launched
+  it; a second Grant after × still counts that launch. AppDelegate's poll
+  leaves the gate alone while the flow runs.
   Accessibility also covers the physical Caps Lock read above: macOS
   treats an app with Accessibility as having Input Monitoring, so there is
   no second permission to grant.
