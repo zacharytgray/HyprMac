@@ -142,7 +142,7 @@ struct SettingsView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(selected.isRedesigned ? Color.settingsBackground : Color.hyprBackground)
+        .background(Color.settingsBackground)
     }
 
     private var appVersion: String {
@@ -228,8 +228,6 @@ enum SettingsSection: String, CaseIterable, Hashable {
         }
     }
 
-    // drawn in the navy style; the rest wait their turn
-    var isRedesigned: Bool { self != .keys }
 }
 
 // MARK: - search index
@@ -258,7 +256,7 @@ enum SettingsSearchIndex {
         // keys
         .init(title: "Hypr key", keywords: "caps lock modifier hyper key", section: .keys),
         .init(title: "Double-tap Hypr to toggle Caps Lock", keywords: "caps lock double tap", section: .keys),
-        .init(title: "Keybinds", keywords: "shortcut chord binding hotkey key", section: .keys),
+        .init(title: "Keybinds", keywords: "shortcut chord binding hotkey key reset", section: .keys),
         .init(title: "App launchers", keywords: "launch open app shortcut", section: .keys),
         .init(title: "Commands", keywords: "run command shell script", section: .keys),
         // tiling

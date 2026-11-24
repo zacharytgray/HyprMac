@@ -9,6 +9,8 @@ import SwiftUI
 struct KeybadgeView: View {
     let bind: Keybind
     var fontSize: CGFloat = 13
+    // light key caps for the navy settings cards
+    var softKeys = false
 
     private var otherLabels: [String] {
         let labels = bind.badgeLabels()
@@ -19,7 +21,7 @@ struct KeybadgeView: View {
         HStack(spacing: 3) {
             if bind.modifiers.contains(.hypr) { HyprKeyChip(fontSize: fontSize) }
             ForEach(Array(otherLabels.enumerated()), id: \.offset) { _, label in
-                KeyChip(label, fontSize: fontSize)
+                KeyChip(label, fontSize: fontSize, onGlass: softKeys)
             }
         }
         // chips never wrap; the row title gives way instead

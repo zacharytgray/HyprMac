@@ -690,6 +690,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         config.focusFollowsMouse = false
         config.mouseHoverPollHz = 33
         config.hyprKey = .leftOption
+        config.doubleTapHyprTogglesCapsLock = false
         config.excludedBundleIDs = ["com.example.app"]
         config.showMenuBarIndicator = false
         config.overlayAppearance = .dark
@@ -729,6 +730,7 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertEqual(config.focusFollowsMouse, UserConfigDefaults.focusFollowsMouse)
         XCTAssertEqual(config.mouseHoverPollHz, UserConfigDefaults.mouseHoverPollHz)
         XCTAssertEqual(config.hyprKey, UserConfigDefaults.hyprKey)
+        XCTAssertTrue(config.doubleTapHyprTogglesCapsLock, "a reset matches a new install")
         XCTAssertEqual(config.excludedBundleIDs, Set(UserConfig.defaultExcludedBundleIDs))
         XCTAssertEqual(config.showMenuBarIndicator, UserConfigDefaults.showMenuBarIndicator)
         XCTAssertEqual(config.overlayAppearance, UserConfigDefaults.overlayAppearance)

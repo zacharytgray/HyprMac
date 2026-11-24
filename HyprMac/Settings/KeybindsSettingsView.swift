@@ -1,10 +1,10 @@
-// "Keys" tab. Hypr hero panel, a search field + Add menu, and every
-// keybind (including app launchers) grouped by category.
+// "Keys" section of Settings: the Hypr key, a search field + Add menu, and
+// every keybind (including app launchers) grouped by category.
 
 import SwiftUI
 import Carbon
 
-/// "Keys" tab.
+/// "Keys" section.
 struct KeybindsSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @State private var selectedBindID: String?
@@ -46,19 +46,16 @@ struct KeybindsSettingsView: View {
                 if group.category == .workspaces {
                     workspacePanel(group.binds)
                 } else {
-                    HyprPanel(group.category.rawValue) {
+                    SettingsCard(group.category.rawValue) {
                         bindRows(group.binds)
                     }
                 }
             }
 
-            Button("Reset to defaults") {
+            SectionResetFooter(title: "Reset keybinds to defaults",
+                               message: "Puts every shortcut back and turns double-tap Caps Lock on, as on a new install. App launchers and commands you added are removed; a copy of your settings is kept beside config.json. The Hypr key stays as it is.") {
                 config.resetKeybindsToDefaults()
             }
-            .controlSize(.small)
-            .foregroundStyle(Color.hyprTextSecondary)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.horizontal, HyprSpacing.xs)
         }
         .sheet(isPresented: $showingAddKeybind) {
             KeybindEditorSheet(existingBind: nil, otherBinds: config.keybinds) { config.keybinds.append($0) }
@@ -107,7 +104,7 @@ struct KeybindsSettingsView: View {
         let collapsedIDs = Set(runs.values.flatMap { $0.map(\.id) })
         let exceptions = binds.filter { !collapsedIDs.contains($0.id) }
 
-        return HyprPanel("Workspaces", footer: "Keys 1–9 select workspaces 1–9; 0 selects workspace 10. Expand a group to edit individual bindings.") {
+        return SettingsCard("Workspaces", footer: "Keys 1–9 select workspaces 1–9; 0 selects workspace 10. Open a group to edit one bind.") {
             ForEach(families, id: \.self) { family in
                 if let run = runs[family] {
                     workspaceDisclosure(id: family.rawValue, title: family.title, binds: run)
@@ -131,12 +128,12 @@ struct KeybindsSettingsView: View {
                 HStack(spacing: HyprSpacing.md) {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Color.hyprTextSecondary)
+                        .foregroundStyle(Color.hyprCyan)
                         .rotationEffect(.degrees(expanded ? 90 : 0))
                         .frame(width: 16)
                     Text(title)
                         .font(.hyprBody)
-                        .foregroundStyle(Color.hyprTextPrimary)
+                        .foregroundStyle(Color.settingsText)
                     Spacer()
                     workspaceSummaryChord(for: binds[0])
                 }
@@ -153,8 +150,8 @@ struct KeybindsSettingsView: View {
             }
 
             Rectangle()
-                .fill(Color.hyprSeparator)
-                .frame(height: 0.5)
+                .fill(Color.settingsHairline.opacity(0.7))
+                .frame(height: 1)
                 .padding(.leading, HyprSpacing.md + 16 + HyprSpacing.md)
         }
     }
@@ -180,9 +177,9 @@ struct KeybindsSettingsView: View {
         let labels = Keybind(keyCode: bind.keyCode, modifiers: bind.modifiers.subtracting(.hypr),
                              action: bind.action).badgeLabels().dropLast()
         return HStack(spacing: 3) {
-            if bind.modifiers.contains(.hypr) { HyprKeyChip() }
-            ForEach(Array(labels.enumerated()), id: \.offset) { _, label in KeyChip(label) }
-            KeyChip("N")
+            if bind.modifiers.contains(.hypr) { HyprKeyChip(fontSize: 11) }
+            ForEach(Array(labels.enumerated()), id: \.offset) { _, label in KeyChip(label, fontSize: 11, onGlass: true) }
+            KeyChip("N", fontSize: 11, onGlass: true)
         }
     }
 
@@ -190,26 +187,24 @@ struct KeybindsSettingsView: View {
 
     private var headerRow: some View {
         HStack(spacing: HyprSpacing.sm) {
-            Spacer()
-
             HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 10))
-                    .foregroundStyle(Color.hyprTextTertiary)
-                TextField("Search actions…", text: $search)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Color.settingsTextFaint)
+                TextField("Search keybinds", text: $search)
                     .textFieldStyle(.plain)
                     .font(.hyprCaption)
+                    .foregroundStyle(Color.settingsText)
             }
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
-            .frame(width: 190)
             .background(
                 RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                    .fill(Color.hyprSurface)
+                    .fill(Color.settingsSurface)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                    .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)
+                    .strokeBorder(Color.settingsHairline, lineWidth: 0.5)
             )
 
             Menu {
@@ -217,167 +212,88 @@ struct KeybindsSettingsView: View {
                 Button("App launcher…") { showingAddLauncher = true }
                 Button("Command…") { showingAddCommand = true }
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 10, weight: .semibold))
-                    Text("Add")
-                        .font(.system(size: 11.5, weight: .medium))
-                }
-                .foregroundStyle(Color.hyprBackground)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                        .fill(Color.hyprCyan)
-                )
+                Label("Add", systemImage: "plus")
             }
             .menuStyle(.button)
-            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .buttonStyle(.settingsProminent)
             .fixedSize()
         }
-        .padding(.horizontal, HyprSpacing.xs)
     }
 
     // MARK: hypr hero
 
     private var hyprHeroPanel: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: HyprSpacing.md) {
-                HyprMark(size: 40)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text("Hypr key")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.hyprTextPrimary)
-                        HyprKeyChip(fontSize: 10)
-                    }
-                    Text("Hold it, then press a shortcut key.")
-                        .font(.hyprCaption)
-                        .foregroundStyle(Color.hyprTextSecondary)
-                }
-
-                Spacer(minLength: HyprSpacing.sm)
-
+        SettingsCard("Hypr key") {
+            SettingsRow("Hypr key", icon: "capslock", subtitle: "Hold it, then press a shortcut key.") {
                 // a saved key that is no longer offered keeps its row until
                 // the user picks another one
-                Picker("", selection: $config.hyprKey) {
-                    ForEach(HyprKey.pickerRows(for: config.hyprKey)) { key in
-                        Text(key.displayName).tag(key)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 150)
+                SettingsMenuPicker(options: HyprKey.pickerRows(for: config.hyprKey).map { ($0, $0.displayName) },
+                                   selection: $config.hyprKey)
             }
-            .padding(.horizontal, HyprSpacing.lg)
-            .padding(.vertical, HyprSpacing.md)
-
-            HStack(alignment: .center, spacing: HyprSpacing.md) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Double-tap Hypr to toggle Caps Lock")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Color.hyprTextPrimary)
-                    Text(HyprKey.doubleTapCapsLockNote)
-                        .font(.hyprCaption)
-                        .foregroundStyle(Color.hyprTextSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                // the toggle style carries its own spacer; fixedSize keeps
-                // it from taking half the row
+            SettingsRow("Double-tap Hypr to toggle Caps Lock", icon: "capslock.fill",
+                        subtitle: HyprKey.doubleTapCapsLockNote,
+                        divider: hasKeyNotes) {
                 Toggle("", isOn: $config.doubleTapHyprTogglesCapsLock)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
-                    .fixedSize()
             }
-            .padding(.horizontal, HyprSpacing.lg)
-            .padding(.vertical, HyprSpacing.md)
-            // an overlay, not a row of its own: a second half-point line in
-            // the stack rounds the next divider away
-            .overlay(alignment: .top) {
-                Rectangle()
-                    .fill(Color.hyprCyan.opacity(0.18))
-                    .frame(height: 0.5)
-            }
-
             if let note = config.hyprKey.notRecommendedNote {
-                Rectangle()
-                    .fill(Color.hyprCyan.opacity(0.18))
-                    .frame(height: 0.5)
                 keyNoteRow(note, icon: "exclamationmark.circle")
-                    .padding(.horizontal, HyprSpacing.lg)
-                    .padding(.vertical, HyprSpacing.sm)
             }
-
             if let note = config.hyprKey.leftModifierNote {
-                Rectangle()
-                    .fill(Color.hyprCyan.opacity(0.18))
-                    .frame(height: 0.5)
                 keyNoteRow(note, icon: "info.circle")
-                    .padding(.horizontal, HyprSpacing.lg)
-                    .padding(.vertical, HyprSpacing.sm)
             }
-
             if let guidance = HyprKeySystemGuidance.forKey(config.hyprKey) {
-                Rectangle()
-                    .fill(Color.hyprCyan.opacity(0.18))
-                    .frame(height: 0.5)
                 modifierKeysReminder(guidance)
-                    .padding(.horizontal, HyprSpacing.lg)
-                    .padding(.vertical, HyprSpacing.sm)
             }
         }
-        .background(
-            RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.hyprCyan.opacity(0.09), Color.hyprMagenta.opacity(0.07)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
-                .strokeBorder(Color.hyprCyan.opacity(0.22), lineWidth: 1)
-        )
+    }
+
+    private var hasKeyNotes: Bool {
+        config.hyprKey.notRecommendedNote != nil || config.hyprKey.leftModifierNote != nil
+            || HyprKeySystemGuidance.forKey(config.hyprKey) != nil
     }
 
     private func keyNoteRow(_ note: String, icon: String) -> some View {
-        HStack(spacing: HyprSpacing.sm) {
+        HStack(alignment: .firstTextBaseline, spacing: HyprSpacing.md) {
             Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundStyle(Color.hyprTextSecondary)
-                .frame(width: 40)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.hyprMagenta)
+                .frame(width: 18)
                 .accessibilityHidden(true)
             Text(note)
                 .font(.hyprCaption)
-                .foregroundStyle(Color.hyprTextSecondary)
+                .foregroundStyle(Color.settingsTextMuted)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, HyprSpacing.md)
+        .padding(.vertical, HyprSpacing.sm)
     }
 
     // one line + button; the full explanation sits behind the info button
     private func modifierKeysReminder(_ guidance: HyprKeySystemGuidance) -> some View {
-        HStack(spacing: HyprSpacing.sm) {
+        HStack(spacing: HyprSpacing.md) {
             Image(systemName: "keyboard")
-                .font(.system(size: 11))
-                .foregroundStyle(Color.hyprTextSecondary)
-                .frame(width: 40)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Color.hyprMagenta)
+                .frame(width: 18)
                 .accessibilityHidden(true)
             Text(guidance.title)
                 .font(.hyprCaption)
-                .foregroundStyle(Color.hyprTextSecondary)
+                .foregroundStyle(Color.settingsTextMuted)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: HyprSpacing.sm)
             GuidanceInfoButton(detail: guidance.detail)
             Button(HyprKeySystemGuidance.openButtonTitle + "…") {
                 HyprKeySystemGuidance.openKeyboardSettings()
             }
-            .controlSize(.small)
+            .buttonStyle(.settings)
             .fixedSize()
         }
+        .padding(.horizontal, HyprSpacing.md)
+        .padding(.vertical, HyprSpacing.sm)
         .help(guidance.detail)
     }
 }
@@ -391,7 +307,7 @@ private struct GuidanceInfoButton: View {
         Button { showing.toggle() } label: {
             Image(systemName: "info.circle")
                 .font(.system(size: 11))
-                .foregroundStyle(Color.hyprTextTertiary)
+                .foregroundStyle(Color.settingsTextFaint)
         }
         .buttonStyle(.plain)
         .accessibilityLabel("More about Modifier Keys")
@@ -433,9 +349,9 @@ private struct KeybindRow: View {
 
                 HStack(spacing: 5) {
                     Text(rowTitle)
-                        .font(.hyprBody)
+                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
                         .lineLimit(1)
-                        .foregroundStyle(Color.hyprTextPrimary)
+                        .foregroundStyle(Color.settingsText)
                     if showsFloatingMarker {
                         Text(HyprGlyph.floatingMarker)
                             .font(.system(size: 10))
@@ -445,14 +361,20 @@ private struct KeybindRow: View {
 
                 Spacer()
 
-                KeybadgeView(bind: bind)
+                KeybadgeView(bind: bind, fontSize: 11, softKeys: true)
             }
             .padding(.horizontal, HyprSpacing.md)
             .padding(.vertical, HyprSpacing.sm + 1)
             .contentShape(Rectangle())
-            .background(
-                isSelected ? Color.hyprCyan.opacity(0.10) : Color.clear
-            )
+            // selected: an inset bar, not a row fill
+            .overlay(alignment: .leading) {
+                if isSelected {
+                    Capsule()
+                        .fill(LinearGradient(colors: [.hyprMagenta, .hyprCyan], startPoint: .top, endPoint: .bottom))
+                        .frame(width: 3, height: 18)
+                        .padding(.leading, 3)
+                }
+            }
             .onTapGesture(count: 2) { onDoubleTap() }
             .onTapGesture(count: 1) { onTap() }
             .contextMenu {
@@ -463,8 +385,8 @@ private struct KeybindRow: View {
 
             if divider {
                 Rectangle()
-                    .fill(Color.hyprSeparator)
-                    .frame(height: 0.5)
+                    .fill(Color.settingsHairline.opacity(0.7))
+                    .frame(height: 1)
                     .padding(.leading, leadingInset)
             }
         }
@@ -479,7 +401,7 @@ private struct KeybindRow: View {
                 } else {
                     Image(systemName: "app")
                         .resizable()
-                        .foregroundStyle(Color.hyprTextTertiary)
+                        .foregroundStyle(Color.settingsTextFaint)
                         .padding(3)
                 }
             }
@@ -487,7 +409,7 @@ private struct KeybindRow: View {
         } else {
             Image(systemName: bind.actionIcon)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Color.hyprTextSecondary)
+                .foregroundStyle(Color.hyprCyan)
                 .frame(width: 16)
         }
     }

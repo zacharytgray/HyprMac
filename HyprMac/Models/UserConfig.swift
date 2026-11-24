@@ -555,7 +555,8 @@ class UserConfig: ObservableObject {
         enabled = UserConfigDefaults.enabled
         focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
         keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
-        doubleTapHyprTogglesCapsLock = UserConfigDefaults.doubleTapHyprTogglesCapsLock
+        // a reset matches a new install
+        doubleTapHyprTogglesCapsLock = UserConfigDefaults.freshInstallDoubleTapHyprTogglesCapsLock
         animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
         mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
         hyprKey = UserConfigDefaults.hyprKey
@@ -596,12 +597,15 @@ class UserConfig: ObservableObject {
         floatingRulesReloaded.send()
     }
 
-    // Keys → Reset to defaults. it drops every launcher and command bind with
-    // no confirmation, so keep config.json.replaced first, like resetToDefaults
+    // Keys → Reset keybinds. it drops every launcher and command bind, so
+    // keep config.json.replaced first, like resetToDefaults. double tap goes
+    // back on, as on a new install
     func resetKeybindsToDefaults() {
-        guard keybinds != Keybind.defaults,
+        let doubleTap = UserConfigDefaults.freshInstallDoubleTapHyprTogglesCapsLock
+        guard keybinds != Keybind.defaults || doubleTapHyprTogglesCapsLock != doubleTap,
               store.keepCopiesBeforeReset(includingMonitorConfig: false) else { return }
         keybinds = Keybind.defaults
+        doubleTapHyprTogglesCapsLock = doubleTap
     }
 
     /// Restore everything in Settings → Appearance, overlays included,
