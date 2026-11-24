@@ -36,6 +36,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
     private var visible: Int!
     private var hidden: Int!
     private var display: DisplayManager!
+    private var border: FocusBorder!
     private var suppressions: SuppressionRegistry!
     private var engine: TilingEngine!
     private let tileWrites = TileWrites()
@@ -51,6 +52,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         workspaceManager.initializeMonitors()
         stateCache = WindowStateCache()
         let border = FocusBorder()
+        self.border = border
         engine = TilingEngine(displayManager: display,
                               frameSizingIOFactory: { [tileWrites] _, generation in tileWrites.io(generation) })
         orchestrator = WorkspaceOrchestrator(
@@ -141,6 +143,30 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertTrue(marked.isEmpty, "nothing revealed, nothing to mark")
         XCTAssertEqual(revealMissed, 2, "the repair poll was asked for all along, and again on giving up")
         XCTAssertEqual(workspaceManager.savedFloatingFrame(for: floater.windowID), saved)
+    }
+
+    // the floater outline goes with its window when a switch parks it, like
+    // its dim, instead of fading on the workspace that replaced it. a switch
+    // to an empty workspace refreshes no outlines, so the park drops it
+    func testASwitchDropsTheOutlineOfAFloaterItParksAtOnce() throws {
+        try XCTSkipIf(ProcessInfo.processInfo.environment["HYPRMAC_HEADLESS_TESTS"] == "1",
+                      "hostless run excludes tests that create AppKit panels")
+        let floater = RevealWindow(id: 7320, frame: saved)
+        workspaceManager.assignWindow(floater.windowID, toWorkspace: visible)
+        stateCache.floatingWindowIDs.insert(floater.windowID)
+        stateCache.windowOwners[floater.windowID] = floater.ownerPID
+        floater.isFloating = true
+        orchestrator.allWindows = { [floater] }
+        border.primaryScreenHeight = screen.frame.height
+        border.setFloaterMarks(.outline)
+        border.updateFloatingBorders([floater.windowID: saved], color: NSColor.systemPink.cgColor)
+        let glow = try XCTUnwrap(border.currentFloaterGlowLayer(for: floater.windowID))
+
+        orchestrator.switchWorkspace(hidden)
+
+        XCTAssertEqual(floater.storedFrame.origin, workspaceManager.hidePosition(), "parked")
+        XCTAssertNil(border.currentFloaterOutline(for: floater.windowID))
+        XCTAssertNil(glow.animation(forKey: "fade"), "gone at once, no fade on the new workspace")
     }
 
     func testTheRetryDropsAFloaterWhoseWorkspaceWasHiddenAgain() {

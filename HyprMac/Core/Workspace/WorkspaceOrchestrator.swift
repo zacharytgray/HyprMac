@@ -331,7 +331,9 @@ final class WorkspaceOrchestrator {
         // the parked source windows lose their dim at once, like a switch
         dimmingOverlay.beginInstantSwitch(incoming: [focused.windowID],
                                           outgoing: sourceIDs.subtracting([focused.windowID]))
-        defer { dimmingOverlay.endInstantSwitch() }
+        focusBorder.beginInstantSwitch(outgoing: sourceIDs.subtracting([focused.windowID]))
+        defer { dimmingOverlay.endInstantSwitch(); focusBorder.endInstantSwitch() }
+        for window in parked { focusBorder.dropFloatingBorder(for: window.windowID) }
 
         focusTransferredWindow(focused)
         warpToWindow(focused)
@@ -431,7 +433,9 @@ final class WorkspaceOrchestrator {
 
         // the dim follows a switch at once, both ways
         dimmingOverlay.beginInstantSwitch(incoming: result.toShow, outgoing: result.toHide)
-        defer { dimmingOverlay.endInstantSwitch() }
+        // the outgoing floaters' outlines go with them, also at once
+        focusBorder.beginInstantSwitch(outgoing: result.toHide)
+        defer { dimmingOverlay.endInstantSwitch(); focusBorder.endInstantSwitch() }
 
         // a park is one position write that lands at once. the reveal moves,
         // resizes and verifies each window in turn, so parking first showed
@@ -453,6 +457,8 @@ final class WorkspaceOrchestrator {
             for w in outgoing {
                 if stateCache.floatingWindowIDs.contains(w.windowID) { workspaceManager.saveFloatingFrame(w) }
                 workspaceManager.hideInCorner(w, on: result.screen)
+                // a switch to an empty workspace refreshes no outlines
+                focusBorder.dropFloatingBorder(for: w.windowID)
             }
             parkEnd = Date()
             // a window list read before this still has them on screen
