@@ -335,7 +335,6 @@ struct MenuBarAndKeysLessonBar: View {
     let onNext: () -> Void
 
     var body: some View {
-        let jump = model.chordText { $0 == .focusMenuBar } ?? "Focus Menu Bar"
         LessonBar(
             lesson: .menuBarAndKeys,
             tasks: [
