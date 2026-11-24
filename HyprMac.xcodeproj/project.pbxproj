@@ -109,6 +109,7 @@
 		381F8B3911920F8BEF848FD2 /* GeneralSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */; };
 		38B8F142F4412C37698B6D81 /* FloatingRuleCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 364C2B96A50F127DC954E83A /* FloatingRuleCommands.swift */; };
 		39008CE23AB258754A5EB5BA /* WorkspaceDisplaySetMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDDC1BD10F1C0855FD5C0F0C /* WorkspaceDisplaySetMappingTests.swift */; };
+		394BD0248597A935DBCE8B8E /* FloaterStandInPlanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34D7A9E6DCDA304049A3BF91 /* FloaterStandInPlanTests.swift */; };
 		3955A053C485588A5CF09D76 /* TilingConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC47A2DE51571E5A9EEBE362 /* TilingConfig.swift */; };
 		39F4595FA15123DA0A281370 /* RelaunchHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5295C91AF924071646986BEB /* RelaunchHandoff.swift */; };
 		3AAB922B85C5906E5A96D580 /* TilingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772FFAF897AAC136F605737C /* TilingSettingsView.swift */; };
@@ -136,6 +137,7 @@
 		4C307BB05F3FA6FC89B4A9F5 /* FrameSizingTransactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7802C236774AA24452B3E1 /* FrameSizingTransactionTests.swift */; };
 		4CBAC337C07B929FD27142D9 /* WorkspaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB3EA6EA0A5100B595313570 /* WorkspaceManager.swift */; };
 		4CEDE06BF8322750204A2B36 /* ScreenshotPickerWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0394B5CB3AE82CEB9CC79BD /* ScreenshotPickerWatcherTests.swift */; };
+		4DB58E2DA168191A893B89D5 /* FloaterStandIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD0DDABEC4C3405804177E3 /* FloaterStandIn.swift */; };
 		4DF1281FF75CE2CFC8BABDAC /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E649F906CAB5EF25EFA837D6 /* AdvancedSettingsView.swift */; };
 		4DF9B222B3F178744C02A1CD /* TabSwitchPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A8208062F6237E946E82EF /* TabSwitchPairing.swift */; };
 		4E300C440FEF20C7DF664515 /* DestroyRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */; };
@@ -234,6 +236,7 @@
 		83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C7530C4625DFB387DEB0CF /* SuppressionRegistry.swift */; };
 		8456B287CD1B9AC9E86336E5 /* TileScratchpadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */; };
 		848C970251CC8C84BE604259 /* FloaterMarksTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D76ACDED6175BEEB777D8D4 /* FloaterMarksTests.swift */; };
+		851A1562F78F3FCE8F8670F4 /* FloaterStandInPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05717140826ED322F9963258 /* FloaterStandInPlan.swift */; };
 		860959AD6A92DB57753D655E /* ToggleSplitFallthroughRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC08AAC03ABC15E772214598 /* ToggleSplitFallthroughRegressionTests.swift */; };
 		8683B17E57E3DABFB9776F68 /* KeybindOverlayContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 735D2D29C87C520F2EDEEAF6 /* KeybindOverlayContentTests.swift */; };
 		86B3C95B411DB51B9AFBE08D /* WorkspacePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC4754A615E4871D79F5D066 /* WorkspacePicker.swift */; };
@@ -415,6 +418,7 @@
 		E94B82A62C0BFE40FA50BAC8 /* TiledDragTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC27FADCFF305913BD49A6CA /* TiledDragTransaction.swift */; };
 		E956D728AB7333590AB23CA6 /* TiledDragFeedbackCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9847CD6EC3473BF6D106B2A3 /* TiledDragFeedbackCoordinator.swift */; };
 		E9B464343591A43FD09B3807 /* KeyRemapperTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E2AB7E29CE5CACDE9EE308 /* KeyRemapperTests.swift */; };
+		E9B9A545BD953008B7AF47A5 /* FloaterStandInPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05717140826ED322F9963258 /* FloaterStandInPlan.swift */; };
 		EA0FCBAAE3BAE750A2FB2E5F /* AdjustedPassKnownFloorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C7692E57D849E1C7214BA9C /* AdjustedPassKnownFloorTests.swift */; };
 		EA8FC0F77CB146BAD8B35CBE /* WindowStateCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */; };
 		EABEFF5EE2EE6EEABE6956EB /* FrameSizingTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8F5AAFA837B55AEB2831E8 /* FrameSizingTransaction.swift */; };
@@ -464,6 +468,7 @@
 		FCAEB41890B6B555CBDC3082 /* PhysicalCapsLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508797A1BAD90161C6257D63 /* PhysicalCapsLockTests.swift */; };
 		FCBBBB0B82ACE2C6BDD79036 /* MouseSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B90521323BC1649072DD16 /* MouseSettingsView.swift */; };
 		FE2B90DEE536A947849AE92B /* RelaunchHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4797B15A67DA5E842F32DEAE /* RelaunchHandoffTests.swift */; };
+		FF1DCE61D080455BA566A288 /* FloaterStandIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AD0DDABEC4C3405804177E3 /* FloaterStandIn.swift */; };
 		FF545C88698CCEFDF156CDFF /* RetileAllPlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5211B4FC8814875264166E19 /* RetileAllPlanner.swift */; };
 		FFC928AF672970AB27D199D9 /* LayoutTreeCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5732D75E720237317C4CCD3 /* LayoutTreeCodec.swift */; };
 		FFE7A7B8F74696A93AFE0931 /* TiledDriftMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23F311BB92C52C2C1C3195E9 /* TiledDriftMonitorTests.swift */; };
@@ -524,6 +529,7 @@
 		030570BF9930192A6595BAF7 /* HyprKeyLessonModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprKeyLessonModelTests.swift; sourceTree = "<group>"; };
 		0340E39E1A2FD9BE5C2790F4 /* CursorMonitorPlacementTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CursorMonitorPlacementTests.swift; sourceTree = "<group>"; };
 		05236C590CE2E79BBC1E52ED /* FloatingRuleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingRuleTests.swift; sourceTree = "<group>"; };
+		05717140826ED322F9963258 /* FloaterStandInPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloaterStandInPlan.swift; sourceTree = "<group>"; };
 		05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngine.swift; sourceTree = "<group>"; };
 		0675BA00E19351F741399A5F /* TilingEngineVerifiedLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TilingEngineVerifiedLayoutTests.swift; sourceTree = "<group>"; };
 		075CB706E42649E175CB784A /* HoverResponseRateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverResponseRateTests.swift; sourceTree = "<group>"; };
@@ -590,6 +596,7 @@
 		314479E8E141C0265258525E /* OverlayPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPreview.swift; sourceTree = "<group>"; };
 		31EF3D85D0E0F9BCD33F6455 /* HyprWindowAXReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprWindowAXReadTests.swift; sourceTree = "<group>"; };
 		3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileScratchpadTests.swift; sourceTree = "<group>"; };
+		34D7A9E6DCDA304049A3BF91 /* FloaterStandInPlanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloaterStandInPlanTests.swift; sourceTree = "<group>"; };
 		355FCEA79CD98B91944BFA23 /* SwitchCoalescerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchCoalescerTests.swift; sourceTree = "<group>"; };
 		363DF605A792128B6321285B /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		364C2B96A50F127DC954E83A /* FloatingRuleCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingRuleCommands.swift; sourceTree = "<group>"; };
@@ -705,6 +712,7 @@
 		97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyBadgeViews.swift; sourceTree = "<group>"; };
 		9812349B328396A07257C085 /* TiledDragTransactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragTransactionTests.swift; sourceTree = "<group>"; };
 		9847CD6EC3473BF6D106B2A3 /* TiledDragFeedbackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragFeedbackCoordinator.swift; sourceTree = "<group>"; };
+		9AD0DDABEC4C3405804177E3 /* FloaterStandIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloaterStandIn.swift; sourceTree = "<group>"; };
 		9C217B7DF054756B5AFD7D9F /* HyprMac Debug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HyprMac Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		9E13F279EC80E5A7EA66A547 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		9EBC04818743A6F6231119AB /* WelcomeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeContent.swift; sourceTree = "<group>"; };
@@ -1088,6 +1096,7 @@
 				0C028A4FC146F3AF4E1304BD /* EngineTreeMutationTests.swift */,
 				076C54636990AFE32EBDED6B /* ExternalCommandTests.swift */,
 				1D76ACDED6175BEEB777D8D4 /* FloaterMarksTests.swift */,
+				34D7A9E6DCDA304049A3BF91 /* FloaterStandInPlanTests.swift */,
 				0E60B190E6D6E05532D6A7C6 /* FloatingDimDragTrackerTests.swift */,
 				5C3932D77600EA8C6056C2E3 /* FloatingFocusStackingTests.swift */,
 				05236C590CE2E79BBC1E52ED /* FloatingRuleTests.swift */,
@@ -1196,6 +1205,7 @@
 				005ED746E11CC8E270685E3E /* ChromeFrameFollow.swift */,
 				544EC7414BE17D884C97E6FD /* DimmingOverlay.swift */,
 				6535D4614E443F170C85C4DB /* FailedTilePrompt.swift */,
+				9AD0DDABEC4C3405804177E3 /* FloaterStandIn.swift */,
 				291B4FB1A55EDA7B77928527 /* FocusBorder.swift */,
 				3C70FBFE18821270521C4A4A /* FocusBrackets.swift */,
 				8B8B939AB298810BE8AB0E12 /* FocusGlide.swift */,
@@ -1222,6 +1232,7 @@
 		CA2C2082B183268D43644D3D /* Focus */ = {
 			isa = PBXGroup;
 			children = (
+				05717140826ED322F9963258 /* FloaterStandInPlan.swift */,
 				364C2B96A50F127DC954E83A /* FloatingRuleCommands.swift */,
 				DA7025F1F3F2A6B589919612 /* FloatingWindowController.swift */,
 				698B50B18F329E90E7674B02 /* FocusResolution.swift */,
@@ -1509,6 +1520,8 @@
 				EDF7475C7C9C832F709C57CC /* ExternalCommand.swift in Sources */,
 				F2677F698E89D8EEC66731C0 /* FailedTilePrompt.swift in Sources */,
 				8354BB31C14C19850B513212 /* FixedSizeHintStore.swift in Sources */,
+				FF1DCE61D080455BA566A288 /* FloaterStandIn.swift in Sources */,
+				E9B9A545BD953008B7AF47A5 /* FloaterStandInPlan.swift in Sources */,
 				2EDADD7B604F90778103F64C /* FloatingDimDragTracker.swift in Sources */,
 				22376A52337F662468144183 /* FloatingRule.swift in Sources */,
 				38B8F142F4412C37698B6D81 /* FloatingRuleCommands.swift in Sources */,
@@ -1686,6 +1699,8 @@
 				9423AAACF8F8D43A48B221C4 /* ExternalCommand.swift in Sources */,
 				9CABD3ECB2B199FFC83BA630 /* FailedTilePrompt.swift in Sources */,
 				D5C0537A5B108486E8EA70FB /* FixedSizeHintStore.swift in Sources */,
+				4DB58E2DA168191A893B89D5 /* FloaterStandIn.swift in Sources */,
+				851A1562F78F3FCE8F8670F4 /* FloaterStandInPlan.swift in Sources */,
 				9FCAC926BEA335F376C55022 /* FloatingDimDragTracker.swift in Sources */,
 				5E4880A2B699C56D7AF36612 /* FloatingRule.swift in Sources */,
 				A42CF6F5A71F061532EA1BBF /* FloatingRuleCommands.swift in Sources */,
@@ -1844,6 +1859,7 @@
 				15920DF0FD6B5E4559618589 /* EngineTreeMutationTests.swift in Sources */,
 				A9D1967005A8FB8929DF5888 /* ExternalCommandTests.swift in Sources */,
 				848C970251CC8C84BE604259 /* FloaterMarksTests.swift in Sources */,
+				394BD0248597A935DBCE8B8E /* FloaterStandInPlanTests.swift in Sources */,
 				5EA7A728F801DE51D53DDAA0 /* FloatingDimDragTrackerTests.swift in Sources */,
 				BC3FDA5074F38001F6917FBB /* FloatingFocusStackingTests.swift in Sources */,
 				557A4528ACCE87054685FD99 /* FloatingRuleTests.swift in Sources */,

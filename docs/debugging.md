@@ -1070,6 +1070,68 @@ so its cutout is whole. Unmanaged layer-3 windows are still ignored, and a raise
 of the front app that we do not manage still blocks hover. Hovering a managed floater at
 layer 3 is a hit on that floater, and so is a click on it.
 
+### Floater stand-in (trial)
+
+A clicked tile always rises over a floater, and HyprMac can't keep another app's window
+on top (see the section above). The stand-in hides that. While a tile covers a floater,
+`FloaterStandIn` puts a HyprMac panel on the floater's frame at the `.floating` level,
+above the tiles and the dim, just below the floater's outline. The floater looks like it
+stayed on top. `FloaterStandInPlan` decides which floaters get one: managed floaters on a
+visible workspace, not scratchpad members, with a tile stacked above them where they
+overlap. A press on a tile that overlaps a floater shows the panel on the mouse-down,
+before the tile rises; the restack refresh after the mouse-up corrects it.
+
+Touching the panel hands off to the real window. A click focuses the floater the way the
+floater cycle does, waits up to 300 ms for the window list to show it uncovered, hides the
+panel, then posts the click at the same point. With the button still held only the
+mouse-down is posted, so a drag that started on the panel drags the window. A scroll or a
+right click brings the floater up without passing anything on. With focus follows mouse
+on, hovering the panel focuses the floater, which raises it and hides the panel.
+
+The panel goes away when the floater is no longer covered, is closed, minimized, hidden,
+parked or starts a tile attempt, on a workspace switch, when the scratchpad comes up, in
+native full screen, when displays change, and when HyprMac pauses or quits. It follows
+moves through the outline's hooks (`followMovedWindows`). While it shows, the dim keeps the
+floater's whole cutout and the outline draws whole.
+
+Two looks, set by the `floaterStandIn` user default, read live (no restart):
+
+```bash
+defaults write com.zachgray.HyprMac.debug floaterStandIn live   # or card, off
+defaults delete com.zachgray.HyprMac.debug floaterStandIn       # back to the default
+```
+
+Unset, it is `live` in Debug builds and `off` in Release builds. Release reads
+`com.zachgray.HyprMac`.
+
+- `card`: the app icon and the window title on a quiet background tinted with the
+  floater color. No permission.
+- `live`: a ScreenCaptureKit picture of the floater. Needs Screen Recording. HyprMac asks
+  once per launch when the mode is `live` and it isn't granted, and shows the card until
+  it is. A stream runs for each floater a tile overlaps, in front or behind, because the
+  first picture takes 240 to 375 ms after a stream starts. macOS marks a captured window
+  and shows its recording indicator while streams run.
+
+Log lines, all `.notice` in the `floating` category:
+
+```text
+stand-in mode live
+stand-in screen recording granted
+stand-in shown wid=1234 reason=press on tile 567 look=live frame=(100,200 300x400)
+stand-in shown wid=1234 reason=covered look=card frame=...
+stand-in hidden wid=1234 reason=uncovered        # or hand-off, workspace switch, ...
+stand-in stream started wid=1234 in 120 ms 600x800
+stand-in stream first picture wid=1234 after 310 ms
+stand-in stream stopped wid=1234 reason=no overlap
+stand-in hand-off wid=1234 touch=click at=(150,260)
+stand-in hand-off wid=1234 real window up after 140 ms; click passed on
+```
+
+```bash
+/usr/bin/log show --last 10m --info --predicate \
+  'subsystem BEGINSWITH "com.zachgray.HyprMac" AND eventMessage CONTAINS "stand-in"'
+```
+
 ### A floater changed size or left the screen
 
 HyprMac writes no frame for a plain title-bar drag of a floater: the drag

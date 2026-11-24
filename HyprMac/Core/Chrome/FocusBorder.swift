@@ -569,6 +569,13 @@ class FocusBorder {
         positionGlowView(in: p)
     }
 
+    /// The window number of `windowID`'s outline panel while it is on
+    /// screen. The floater stand-in orders itself just below it.
+    func floaterOutlineWindowNumber(_ windowID: CGWindowID) -> Int? {
+        guard let panel = floatingPanels[windowID]?.panel, panel.isVisible else { return nil }
+        return panel.windowNumber
+    }
+
     /// Where `windowID`'s floater outline sits now (CG), nil without one.
     func floaterOutlineFrame(_ windowID: CGWindowID) -> CGRect? {
         floatingPanels[windowID] == nil ? nil : floaterFrames[windowID]
