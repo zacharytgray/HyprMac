@@ -564,7 +564,7 @@ struct CardHost<Content: View>: View {
 
     var body: some View {
         content
-            .fixedSize(horizontal: false, vertical: true)
+            .fixedSize()
             .background(GeometryReader { geo in
                 Color.clear
                     .onAppear { onSize(geo.size) }
@@ -676,12 +676,15 @@ final class TutorialWindowController {
     /// practice windows. A non-activating panel, so keys keep going to the
     /// focused window. `onHeight` hears the card's height as it changes, so
     /// the practice tiles can make room for it.
-    func showBar<V: View>(_ view: V, onHeight: @escaping (CGFloat) -> Void = { _ in }) {
+    func showBar<V: View>(_ view: V, onHeight: @escaping (CGFloat) -> Void = { _ in },
+                          confirmation: LeaveConfirmation = LeaveConfirmation(),
+                          actions: LessonCardActions = LessonCardActions()) {
         hideBar()
         guard let screen = window?.screen ?? NSScreen.main else { return }
         let panel = NSPanel(contentRect: .zero,
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
-        let hosting = NSHostingView(rootView: CardHost(content: view) { [weak self, weak panel] size in
+        let card = LeaveConfirmSwitch(confirmation: confirmation, actions: actions, content: view)
+        let hosting = NSHostingView(rootView: CardHost(content: card) { [weak self, weak panel] size in
             guard let self, let panel, let screen = self.window?.screen ?? NSScreen.main else { return }
             self.barSize = size
             self.place(panel, on: screen)
@@ -697,7 +700,8 @@ final class TutorialWindowController {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.appearance = NSAppearance(named: .darkAqua)
         let fit = hosting.fittingSize
-        barSize = CGSize(width: fit.width - 2 * CardHost<V>.shadowRoom, height: fit.height - 2 * CardHost<V>.shadowRoom)
+        let room = CardHost<EmptyView>.shadowRoom
+        barSize = CGSize(width: fit.width - 2 * room, height: fit.height - 2 * room)
         place(panel, on: screen)
         panel.orderFrontRegardless()
         bar = panel

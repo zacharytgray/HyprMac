@@ -283,7 +283,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// The menu bar, Hypr+K and Settings → General open the tutorial here.
     func showTutorial() {
         hyprLog(.debug, .lifecycle, "tutorial requested")
-        presentStage(.tutorial(practiceHost: practiceHost))
+        // back at the lesson a run was left on, if one was
+        presentStage(.tutorial(practiceHost: practiceHost, resume: TutorialResume.load()))
     }
 
     /// the window manager starts after access, so look it up late
@@ -305,7 +306,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard !diagnosticOnly else { return }
-        // the tutorial's helper, its rules and its workspace go first
+        // a lesson left by quitting is where the tutorial opens next time;
+        // then the helper, its rules and its workspace go
+        stage?.noteLeaving()
         stage?.cleanUp()
         windowManager?.stop(keepPauseShortcut: false)
         // restore caps lock to normal when quitting

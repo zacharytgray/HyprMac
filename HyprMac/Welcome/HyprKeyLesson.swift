@@ -86,6 +86,8 @@ struct HyprKeyLessonView: View {
     @ObservedObject var model: HyprKeyLessonModel
     @ObservedObject var config: UserConfig = .shared
     var completed: Set<TutorialLesson> = []
+    var leave = LeaveConfirmation()
+    var actions = LessonCardActions()
     let onExit: () -> Void
     let onNext: () -> Void
 
@@ -99,7 +101,7 @@ struct HyprKeyLessonView: View {
             exit: StageAction(title: "Skip Tutorial", shortcut: .cancelAction, action: onExit),
             skip: StageAction(title: "Skip Lesson", action: onNext),
             next: StageAction(title: TutorialLesson.hyprKey.nextTitle, action: onNext),
-            bottomCard: AnyView(card)
+            bottomCard: AnyView(LeaveConfirmSwitch(confirmation: leave, actions: actions, content: card))
         ) {
             VStack(spacing: 0) {
                 Text("\(keyName) is your Hypr key")

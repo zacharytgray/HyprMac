@@ -28,7 +28,7 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "graduationcap",
             title: "New Tutorial",
-            description: "Seven short lessons, about 5 minutes, on practice windows, so yours aren't touched. Open it from the menu bar, Hypr+K or Settings → General."
+            description: "Seven short lessons, about 5 minutes, on practice windows, so yours aren't touched. Leave any time and pick up where you left off. Open it from the menu bar, Hypr+K or Settings → General."
         ),
         WhatsNewFeature(
             icon: "gearshape",

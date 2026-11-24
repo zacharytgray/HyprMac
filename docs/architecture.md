@@ -1410,7 +1410,15 @@ screen that tiles at least four windows (Max splits, and the display tiling
 at all), and only once the switch there has landed. Lesson 3 sends to a
 second empty workspace, picked when lesson 3 opens. Without them, lessons 2
 to 5 show why in place of their tasks, and each later lesson tries again.
-Esc ends the tutorial from the stage or a practice window.
+Esc on a lesson asks first, in the card: "Leave the tutorial? You can pick
+up here later." Keep Going (Return) or Esc again carries on; Leave exits.
+Esc in Hypr+K or Hypr+I only closes that panel. Leaving early (Leave, Skip
+Tutorial, or HyprMac quitting mid-lesson) keeps the lesson in local
+defaults (`tutorialResumeLesson`, never the synced config), and the
+tutorial opens there next time with a Start over link. Done clears it.
+Each lesson can start on its own: practice opens its windows, and a
+practice window the user closes opens again (window 4 floating, in
+lesson 5).
 Lesson 7 records whether tiling was on when it opened. Only an on-to-off
 change during it is its own, kept in local defaults
 (`tutorialPausedTiling`, never the synced config). Ending the tutorial,

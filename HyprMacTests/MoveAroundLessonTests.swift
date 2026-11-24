@@ -168,19 +168,103 @@ final class MoveAroundLessonTests: XCTestCase {
         stage.practice.end()
     }
 
-    // Esc ends the tutorial from the stage or a practice window, practice
-    // running or not; never in onboarding, another key, or someone else's Esc
-    func testEscEndsTheTutorialFromTheStageOrAPracticeWindow() {
+    // Esc asks to leave from the stage or a practice window, practice
+    // running or not; never in onboarding, on the finish, another key, or
+    // someone else's Esc
+    func testEscAsksToLeaveFromTheStageOrAPracticeWindow() {
         let lesson = StageScreen.tutorial(.moveAround)
-        XCTAssertTrue(StageSession.escEndsTutorial(screen: lesson, keyCode: 53, onStage: true, helperIsFront: false),
+        XCTAssertTrue(StageSession.escAsksToLeave(screen: lesson, keyCode: 53, onStage: true, helperIsFront: false),
                       "practice blocked: the stage has the keys")
-        XCTAssertTrue(StageSession.escEndsTutorial(screen: lesson, keyCode: 53, onStage: false, helperIsFront: true))
-        XCTAssertFalse(StageSession.escEndsTutorial(screen: lesson, keyCode: 53, onStage: false, helperIsFront: false),
+        XCTAssertTrue(StageSession.escAsksToLeave(screen: lesson, keyCode: 53, onStage: false, helperIsFront: true))
+        XCTAssertFalse(StageSession.escAsksToLeave(screen: lesson, keyCode: 53, onStage: false, helperIsFront: false),
                        "Hypr+K, Hypr+I or another app keep their Esc")
-        XCTAssertFalse(StageSession.escEndsTutorial(screen: lesson, keyCode: 36, onStage: true, helperIsFront: false))
-        XCTAssertFalse(StageSession.escEndsTutorial(screen: .onboarding(.hyprKey), keyCode: 53,
+        XCTAssertFalse(StageSession.escAsksToLeave(screen: lesson, keyCode: 36, onStage: true, helperIsFront: false))
+        XCTAssertFalse(StageSession.escAsksToLeave(screen: .onboarding(.hyprKey), keyCode: 53,
+                                                    onStage: true, helperIsFront: false))
+        XCTAssertFalse(StageSession.escAsksToLeave(screen: .tutorial(.finish), keyCode: 53,
                                                     onStage: true, helperIsFront: false))
         XCTAssertFalse(TutorialWindowController().coversScreen, "no stage, nothing to cover")
+        XCTAssertTrue(StageSession.returnKeepsGoing(asking: true, keyCode: 36, onStage: false, helperIsFront: true))
+        XCTAssertFalse(StageSession.returnKeepsGoing(asking: false, keyCode: 36, onStage: true, helperIsFront: false))
+    }
+
+    private func resumeDefaults() throws -> UserDefaults {
+        let suite = "MoveAroundLessonTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        return defaults
+    }
+
+    // Esc shows the question; Keep Going and a second Esc both keep the lesson
+    func testEscAsksAndKeepGoingOrASecondEscCarriesOn() throws {
+        let stage = StageSession.tutorial(practiceHost: FakeHost())
+        stage.resumeDefaults = try resumeDefaults()
+        stage.escPressed()
+        XCTAssertTrue(stage.leaveConfirmation.isAsking)
+        stage.keepGoing()
+        XCTAssertFalse(stage.leaveConfirmation.isAsking)
+        XCTAssertEqual(stage.screen, .tutorial(.hyprKey))
+        stage.escPressed()
+        stage.escPressed()
+        XCTAssertFalse(stage.leaveConfirmation.isAsking, "Esc again keeps going")
+        XCTAssertEqual(stage.screen, .tutorial(.hyprKey))
+        XCTAssertNil(TutorialResume.load(stage.resumeDefaults))
+    }
+
+    // Leave runs the normal exit: practice ends, the user's workspace comes
+    // back, and the lesson is kept for next time
+    func testLeaveCleansUpAndSavesTheResumePoint() throws {
+        let host = FakeHost()
+        let stage = StageSession.tutorial(practiceHost: host, resume: .floating)
+        let defaults = try resumeDefaults()
+        stage.resumeDefaults = defaults
+        stage.practice.begin()
+        XCTAssertTrue(stage.practice.isActive)
+        stage.escPressed()
+        stage.leaveEarly()
+        XCTAssertFalse(stage.practice.isActive)
+        XCTAssertEqual(host.current, 1, "back on the user's own workspace")
+        XCTAssertFalse(stage.leaveConfirmation.isAsking)
+        XCTAssertEqual(TutorialResume.load(defaults), .floating)
+    }
+
+    // the next run opens at the kept lesson with Start over; Done clears it
+    func testATutorialLeftEarlyResumesAndDoneClearsIt() throws {
+        let defaults = try resumeDefaults()
+        TutorialResume.save(.fixWindow, defaults)
+        let resumed = StageSession.tutorial(practiceHost: FakeHost(), resume: TutorialResume.load(defaults))
+        resumed.resumeDefaults = defaults
+        XCTAssertEqual(resumed.screen, .tutorial(.fixWindow))
+        XCTAssertNotNil(resumed.cardActions.startOver, "Start over on the lesson it resumed at")
+        resumed.finishTutorial()
+        XCTAssertNil(TutorialResume.load(defaults))
+
+        XCTAssertEqual(StageSession.tutorial(resume: nil).screen, .tutorial(.hyprKey))
+        XCTAssertEqual(StageSession.tutorial(resume: .finish).screen, .tutorial(.hyprKey), "never at the finish")
+        XCTAssertNil(StageSession.tutorial(resume: nil).cardActions.startOver)
+    }
+
+    // every lesson's card fits its row 1 inside the card: the plain row
+    // within the widest card, or the ⋯ row within it, also when asking to
+    // leave and with Start over
+    func testRowOneFitsTheCardForEveryLesson() {
+        let bind = Keybind(keyCode: 34, modifiers: .hypr, action: .showWindowRules)
+        for lesson in TutorialLesson.allCases where lesson != .finish {
+            let tasks = [BarTask(title: "A step", bind: bind, done: false, why: "Why it matters, in a short line."),
+                         BarTask(title: "Another", bind: nil, done: false)]
+            for startOver in [false, true] {
+                var actions = LessonCardActions()
+                if startOver { actions.startOver = {} }
+                let card = LessonBar(lesson: lesson, tasks: tasks, hyprKey: .capsLock, onExit: {}, onNext: {})
+                    .environment(\.lessonCardActions, actions)
+                let size = NSHostingView(rootView: card.fixedSize()).fittingSize
+                XCTAssertLessThanOrEqual(size.width, LessonBar.maxWidth + 0.5, "\(lesson) startOver=\(startOver)")
+                XCTAssertGreaterThanOrEqual(size.width, LessonBar.width - 0.5)
+                XCTAssertTrue(LessonBar.rowOneFits(lesson: lesson, taskCount: tasks.count), "\(lesson)")
+            }
+        }
+        let asking = NSHostingView(rootView: LeaveConfirmCard(onKeepGoing: {}, onLeave: {}).fixedSize()).fittingSize
+        XCTAssertLessThanOrEqual(asking.width, LessonBar.maxWidth + 0.5)
     }
 
     // the lesson card keeps room under the practice tiles, on the practice

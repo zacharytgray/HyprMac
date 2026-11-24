@@ -131,8 +131,11 @@ struct LessonBar: View {
     let onExit: () -> Void
     let onNext: () -> Void
 
+    /// at least this wide; wider, up to `maxWidth`, when row 1 needs it
     static let width: CGFloat = 380
+    static let maxWidth: CGFloat = 460
     static let cornerRadius: CGFloat = 14
+    @Environment(\.lessonCardActions) private var actions
 
     private var done: Int { tasks.filter(\.done).count }
     private var allDone: Bool { !tasks.isEmpty && done == tasks.count }
@@ -145,7 +148,7 @@ struct LessonBar: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 6) {
             header
             if let blocked {
                 Text(blocked)
@@ -157,23 +160,59 @@ struct LessonBar: View {
             } else if allDone {
                 allDoneRow
             }
-            if let whyLine {
-                Text(whyLine)
-                    .font(.system(size: 11))
-                    .foregroundStyle(TutorialStageColor.quiet)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+            if whyLine != nil || actions.startOver != nil {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let whyLine {
+                        Text(whyLine)
+                            .font(.system(size: 11))
+                            .foregroundStyle(TutorialStageColor.quiet)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: 0)
+                    // after a resume: back to lesson 1
+                    if let startOver = actions.startOver {
+                        Button("Start over", action: startOver)
+                            .buttonStyle(.plain)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(TutorialStageColor.cyan)
+                            .fixedSize()
+                    }
+                }
+                // the line wraps in the card's width; it never widens it
+                .frame(idealWidth: 0, maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(width: Self.width, alignment: .leading)
+        .padding(.vertical, 8)
+        .frame(minWidth: Self.width, maxWidth: Self.maxWidth, alignment: .leading)
         .background(Self.glass)
         .environment(\.colorScheme, .dark)
     }
 
-    // the lesson · dots · Skip Tutorial · Skip Lesson · Next
+    // the lesson · dots · Skip Tutorial · Skip Lesson · Next. Past the
+    // widest card, Skip Tutorial goes into a ⋯ menu so the row still fits
     private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            headerRow(menu: false)
+            headerRow(menu: true)
+        }
+    }
+
+    /// Row 1 fits inside the widest card: as it is, or with Skip Tutorial
+    /// in the ⋯ menu. Tests check it for every lesson.
+    static func rowOneFits(lesson: TutorialLesson, taskCount: Int) -> Bool {
+        let bar = LessonBar(lesson: lesson,
+                            tasks: Array(repeating: BarTask(title: "", bind: nil, done: false), count: taskCount),
+                            hyprKey: .capsLock, onExit: {}, onNext: {})
+        let room = maxWidth - 28
+        func width(_ menu: Bool) -> CGFloat {
+            NSHostingView(rootView: bar.headerRow(menu: menu).fixedSize()).fittingSize.width
+        }
+        return width(false) <= room || width(true) <= room
+    }
+
+    func headerRow(menu: Bool) -> some View {
         HStack(alignment: .center, spacing: 8) {
             Text("\(lesson.rawValue + 1) · \(lesson.railLabel)")
                 .font(.system(size: 12.5, weight: .semibold))
@@ -182,11 +221,26 @@ struct LessonBar: View {
             if blocked == nil, !tasks.isEmpty { dots }
             if let accessory { accessory }
             Spacer(minLength: 4)
-            Button("Skip Tutorial", action: onExit)
-                .buttonStyle(.plain)
-                .font(.system(size: 10.5))
-                .foregroundStyle(TutorialStageColor.faint)
+            if menu {
+                Menu {
+                    Button("Skip Tutorial", action: onExit)
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(TutorialStageColor.quiet)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
                 .fixedSize()
+                .help("More: Skip Tutorial")
+                .accessibilityLabel("More")
+            } else {
+                Button("Skip Tutorial", action: onExit)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(TutorialStageColor.faint)
+                    .fixedSize()
+            }
             if blocked != nil || !allDone {
                 StageQuietButton("Skip Lesson", action: onNext)
             }
