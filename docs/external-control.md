@@ -12,7 +12,7 @@ open -g 'hyprmac://action/cycleWorkspace?delta=1'
 
 ## Turning it on
 
-Settings → General → System → "Allow other apps to control HyprMac". It is
+Settings → Advanced → Other apps → "Allow other apps to control HyprMac". It is
 off by default. While it is off, every action link is ignored.
 
 The setting is per Mac. It is saved as `externalControlEnabled` in

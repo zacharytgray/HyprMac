@@ -830,13 +830,14 @@ Window ids come from the state dump above, or from
 ## Verbose logging in Release
 
 Trace-tier logs (`.debug`, `.info`) are gated off by default in
-Release builds. To enable for a support session:
+Release builds. To enable for a support session, turn on Settings →
+Advanced → "Detailed logging", or from a shell:
 
 ```
 defaults write com.zachgray.HyprMac HyprMacVerboseLogging -bool YES
 ```
 
-Relaunch HyprMac. The `LogConfig.verboseInRelease` getter reads the
+After the shell command, relaunch HyprMac. The `LogConfig.verboseInRelease` getter reads the
 `UserDefault` on every `hyprLog` call so the toggle takes effect on
 the next emission — no further configuration needed.
 

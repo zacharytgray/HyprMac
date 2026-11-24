@@ -277,7 +277,7 @@ Everything below is configurable in Settings → Keys. The full reference lives 
 <summary><b>Pinning apps to workspaces</b></summary>
 <br>
 
-Settings → General → "Pin apps" sends an app to a workspace of your choice, or to the scratchpad.
+Settings → Workspaces → "Pin apps" sends an app to a workspace of your choice, or to the scratchpad.
 Every new window of a pinned app opens there, and HyprMac shows it. An app pinned to the scratchpad
 also goes back there at launch and on **Hypr + R**, with the scratchpad left closed. If a pinned
 workspace is full, the window goes to the next one with room. **Hypr + R** (Retile all
@@ -290,7 +290,7 @@ can be pinned too: it goes to its workspace and stays floating.
 <summary><b>Float and tile rules</b></summary>
 <br>
 
-Settings → General → "Float and tile rules" lists which apps, and which kinds of window inside
+Settings → Tiling → "Float and tile rules" lists which apps, and which kinds of window inside
 an app, always float or always tile. A rule for one kind of window beats a rule for its app.
 Make one from the window itself with **Hypr + I**: a small panel over the focused window offers
 to always float or tile all of the app's windows, always float or tile
@@ -318,7 +318,7 @@ the layout was saved, restored, or only partly restored.
 
 HyprMac also saves on its own just before your displays change, and restores when you return to
 a display setup it has saved. To restore at launch too, turn on "Restore saved layout at launch"
-in Settings → General.
+in Settings → General → Startup.
 
 Saved layouts stay on this Mac in `~/Library/Application Support/HyprMac/layout-snapshots.json`.
 The file keeps window titles so it can tell windows apart. To clear it, quit HyprMac and delete
@@ -331,11 +331,12 @@ models at the same resolutions share one saved layout, however they are arranged
 <summary><b>Config file and updates</b></summary>
 <br>
 
-Everything, including the Hypr key itself, lives in Settings and is saved as JSON at
+Every setting, including the Hypr key itself, is in Settings. Search from the top of its
+sidebar. Most are saved as JSON at
 `~/Library/Application Support/HyprMac/config.json`. A config file HyprMac can't decode is
 copied to `config.json.unreadable` before a save overwrites it.
 
-HyprMac lives in the menu bar and stays out of the Dock. Settings → General → System can add a
+HyprMac lives in the menu bar and stays out of the Dock. Settings → General → Menu bar and Dock can add a
 Dock icon and pick the menu bar style. Full shows every workspace in use. Compact shows one
 workspace: the one you just switched to, then the focused window's workspace. With nothing
 focused, it shows the workspace on the monitor under the pointer. The badge shows the workspace

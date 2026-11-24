@@ -18,7 +18,7 @@ Higher rates permit more hit-test attempts while the pointer moves. This establi
 
 `mouseHoverPollHz` remains the stored integer. Existing 90, 150, 180, 210 Hz and manually configured values are not rounded to tiers. Selecting a tier explicitly replaces the value. Values below the pre-existing 30 Hz runtime floor remain stored and are labelled with their effective rate. File reloads apply the saved hover value as startup does.
 
-## Focus appearance
+## Focus appearance (Settings → Appearance)
 
 The default uses dimming and corner cues while the Hypr key is held. Persistent colored focus fills and full-window borders are off. The existing border renderer remains available as an opt-in because it also owns bounded red rejection feedback and existing users may deliberately use its colors.
 
@@ -33,7 +33,7 @@ The default uses dimming and corner cues while the Hypr key is held. Persistent 
 
 The 0–27% dim range puts the 13.5% default at the midpoint. Existing stronger saved amounts remain intact; opening settings does not clamp or rewrite them. The displayed percentage reports the saved amount, and using the slider chooses a value in the new range.
 
-Window shape and key-press marks have separate controls. **Window corner radius** keeps the existing `windowCornerRadius` override and shapes only dimming cut-outs and optional window borders. **Mark roundness** shapes only the four Hypr-key marks; zero gives square marks and higher values round their corner arcs. The marks default to 20-point roundness, 15-point straight segments, and 4.5-point thickness, matching the saved MacBook settings. Changing either radius updates only appearance. Color is independent of the persistent border and defaults to black with a white contrast stroke (4.5-point foreground, 6.5-point contrast). The fixed corner entrance/release timings remain unchanged; the fade slider controls borders, dimming, and the scratchpad scrim.
+Window shape and key-press marks have separate controls. **Window corner rounding** keeps the existing `windowCornerRadius` override and shapes only dimming cut-outs and optional window borders. **Corner marks → Roundness** shapes only the four Hypr-key marks; zero gives square marks and higher values round their corner arcs. The marks default to 20-point roundness, 15-point straight segments, and 4.5-point thickness, matching the saved MacBook settings. Changing either radius updates only appearance. Color is independent of the persistent border and defaults to black with a white contrast stroke (4.5-point foreground, 6.5-point contrast). The fixed corner entrance/release timings remain unchanged; the fade slider controls borders, dimming, and the scratchpad scrim.
 
 Explicit saved dimming, border, color, radius, and fade preferences remain authoritative. Missing fields, fresh configurations, and Reset to Defaults use the new baseline. Error feedback still shows a red overlay shake and message after rejection even when persistent borders or corner cues are off. It does not shake application windows.
 
@@ -55,10 +55,10 @@ The outline has a faint glow in the same color: a layer shadow with no offset, a
 | --- | --- | --- |
 | Corners | Outline | Floating color |
 | Window borders | Outline | n/a |
-| Both | Outline | Floating color |
+| Corners and borders | Outline | Floating color |
 | None | Nothing | n/a |
 
-In Corners mode the outline draws even though the focused-window border stays off. The window-border toggle only controls the focused-window border. Focus marks on a floater keep their configured length, thickness and contrast stroke; only the color changes. The Floating window color row shows in Corners mode too, inside the corner group. There is no separate toggle. Changing the indicator or color repaints the outlines without retiling, moving windows or changing focus.
+In Corners mode the outline draws even though the focused-window border stays off. The window-border toggle only controls the focused-window border. Focus marks on a floater keep their configured length, thickness and contrast stroke; only the color changes. Its color is the **Floating windows** row in Appearance → Colors, shown in every mode but None. There is no separate toggle. Changing the indicator or color repaints the outlines without retiling, moving windows or changing focus.
 
 ### Corner compatibility
 

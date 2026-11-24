@@ -784,8 +784,8 @@ Two screens on one x, a stacked desk, keep the order `NSScreen.screens`
 lists them in, which puts the primary display first, so a stacked desk
 keeps the homes it had. Retile All fills the screens in the same order.
 
-The user can put workspaces on monitors by name (Settings → Layout →
-Workspaces). The mapping is saved per set of connected displays
+The user can put workspaces on monitors by name (Settings → Monitors →
+Workspaces on this display). The mapping is saved per set of connected displays
 (`workspaceMonitorsPerDisplaySet` in `monitor-config.json`), so a laptop
 keeps one mapping docked and another on the road. A set is every connected
 display by name, disabled ones too, in any order; two displays of one model
@@ -1044,8 +1044,9 @@ Config safety, all in `ConfigStore`:
 | Enable sync that sets nothing up (an iCloud copy not downloaded, a write that fails) | The switch and its preference go back off |
 | Enable sync over an iCloud file that doesn't decode, or choosing this Mac's settings | The local file goes up. The bad iCloud file is copied to `config.json.replaced` first, and the local file goes only after iCloud holds its data |
 | Toggle sync on a private file | The mode carries across, so a 0600 file stays 0600 in iCloud and back |
-| Reset all settings | One update. The button has no confirmation, so both files are copied to `<name>.replaced` first. When a file is there and no copy can be kept, nothing resets and the log says why |
-| Keys → Reset to defaults | Replaces every keybind, launchers and commands too, with no confirmation. `config.json` is copied to `config.json.replaced` first; nothing is copied when the keybinds are already the defaults. No copy, no reset, as above |
+| Reset all settings | One update, after a confirmation in Settings → Advanced. Both files are copied to `<name>.replaced` first. When a file is there and no copy can be kept, nothing resets and the log says why. Double tap goes on, as on a new install |
+| Keys → Reset keybinds | Asks first, then replaces every keybind, launchers and commands too, and turns double tap on. `config.json` is copied to `config.json.replaced` first; nothing is copied when both are already the defaults. No copy, no reset, as above |
+| A section's reset (General, Tiling, Workspaces, Monitors, Mouse, Appearance) | Asks first. `UserConfig.resetToDefaults(_:)` (Appearance: `resetAppearanceToDefaults`) resets only that section's keys, after copying both files like Reset all. Per-Mac preferences (Dock, menu bar, login item, iCloud, updates, logging) are never reset |
 
 Copies live beside the local path and never sync. Each takes the mode of the
 file it copies, so a 0600 file gives a 0600 copy. An older copy is never

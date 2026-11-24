@@ -5,10 +5,12 @@ HyprMac can hand its workspace state to a status bar such as
 every change, a command run after each write, and `hyprmac://` links a bar's
 click handler opens. It is off by default.
 
-It is a power-user setting with no switch in Settings. It is set per Mac in
+Turn it on in Settings → Advanced → Other apps → "Status bar export". The
+command field, "Run after each change", shows while it is on and saves on
+Return or when you click away. Both are set per Mac in
 `~/Library/Application Support/HyprMac/monitor-config.json`, the local file
-that never syncs over iCloud. Add the two keys to the object already in that
-file and keep its other keys:
+that never syncs over iCloud. To set them by hand instead, add the two keys
+to the object already in that file and keep its other keys:
 
 ```json
 {
@@ -23,7 +25,7 @@ If the file is not there yet, an object with just the two keys works.
 
 HyprMac watches `monitor-config.json` and reloads it within about two
 seconds of an edit, so there is no need to quit first. To turn the export
-off, set `statusExportEnabled` to `false` or remove it, the same way. "Reset all settings…" in Settings → General also turns
+off, set `statusExportEnabled` to `false` or remove it, the same way. "Reset all settings" in Settings → Advanced also turns
 it off and clears the command.
 
 With `statusExportEnabled` off or missing, nothing below happens: no file, no
