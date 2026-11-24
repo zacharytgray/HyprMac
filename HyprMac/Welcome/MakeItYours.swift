@@ -58,7 +58,7 @@ struct MakeItYoursView: View {
             canContinue: true,
             exit: onBack.map { StageAction(title: "Back", action: $0) },
             secondary: StageAction(title: "Skip for Now", action: onSkipTutorial),
-            next: StageAction(title: "Take the Tutorial (about 6 min)", action: onTakeTutorial)
+            next: StageAction(title: "Take the Tutorial (about 5 min)", action: onTakeTutorial)
         ) {
             VStack(spacing: 0) {
                 Text("Make it yours")
