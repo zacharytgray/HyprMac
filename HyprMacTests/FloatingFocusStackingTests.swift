@@ -514,6 +514,68 @@ final class MouseTrackingPopupTests: XCTestCase {
         XCTAssertEqual(focused, [], "hovering the panel must not focus the tile under it")
     }
 
+    // #114: Outlook's text color grid floats as a fixed-size window on the
+    // normal layer, under the pointer as it leaves the dropdown button.
+    // focusing it (AX main write, synthetic click) closed it
+    func testHoverLeavesAnAppsPopupAlone() {
+        windows = [
+            win(12, CGRect(x: 40, y: 140, width: 230, height: 250)),
+            win(11, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+        ]
+        let tracker = makeTracker(cursor: CGPoint(x: 100, y: 150))
+        tracker.isPopupWindow = { $0 == 12 }
+
+        tracker.handleMouseMove()
+
+        XCTAssertEqual(focused, [], "focusing the pop-up closes it")
+        XCTAssertEqual(last, 11, "the tile under it keeps the focus record")
+        XCTAssertEqual(tracker.blockedReason, "pop-up 12 on top")
+    }
+
+    func testHoverStillFocusesAFloaterThatIsNotAPopup() {
+        windows = [
+            win(12, CGRect(x: 40, y: 140, width: 230, height: 250)),
+            win(11, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+        ]
+        let tracker = makeTracker(cursor: CGPoint(x: 100, y: 150))
+        tracker.isPopupWindow = { $0 == 99 }
+
+        tracker.handleMouseMove()
+
+        XCTAssertEqual(focused, [12])
+    }
+
+    func testAPopupOverAnotherTileDoesNotHandThatTileFocus() {
+        windows = [
+            win(12, CGRect(x: 900, y: 300, width: 230, height: 250)),
+            win(13, pid: otherPID, CGRect(x: 808, y: 0, width: 800, height: 1000)),
+            win(11, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+        ]
+        let tracker = makeTracker(cursor: CGPoint(x: 1000, y: 400))
+        tracker.isPopupWindow = { $0 == 12 }
+
+        tracker.handleMouseMove()
+
+        XCTAssertEqual(focused, [], "the tile under the pop-up is not the target either")
+    }
+
+    /// the refocus after a click would refocus the tile under an unmanaged
+    /// window, and so close the pop-up. it stops at the floater instead
+    func testRefocusLeavesAPopupOverATileAlone() {
+        windows = [
+            win(12, CGRect(x: 900, y: 300, width: 230, height: 250)),
+            win(13, pid: otherPID, CGRect(x: 808, y: 0, width: 800, height: 1000)),
+            win(11, CGRect(x: 0, y: 0, width: 800, height: 1000)),
+        ]
+        let tracker = makeTracker(cursor: CGPoint(x: 1000, y: 400))
+        tracker.isPopupWindow = { $0 == 12 }
+
+        tracker.refocusUnderCursor(afterMouseUp: true)
+
+        XCTAssertEqual(focused, [])
+        XCTAssertEqual(last, 11)
+    }
+
     func testRefocusUnderCursorLeavesAnOpenMenuAlone() {
         windows = [
             win(90, layer: 101, CGRect(x: 100, y: 100, width: 250, height: 500)),

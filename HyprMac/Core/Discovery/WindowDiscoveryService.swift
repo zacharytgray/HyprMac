@@ -215,7 +215,8 @@ final class WindowDiscoveryService {
          workspaceManager: WorkspaceManager,
          bundleIDForPID: @escaping (pid_t) -> String? = { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier },
          isWindowSizeSettable: @escaping (HyprWindow) -> Bool? = { $0.isSizeSettable },
-         windowTitle: @escaping (HyprWindow) -> String? = { $0.title }) {
+         windowTitle: @escaping (HyprWindow) -> String? = { $0.title },
+         hasCloseButton: @escaping (HyprWindow) -> Bool? = { $0.hasCloseButton }) {
         self.stateCache = stateCache
         self.accessibility = accessibility
         self.displayManager = displayManager
@@ -223,9 +224,11 @@ final class WindowDiscoveryService {
         self.bundleIDForPID = bundleIDForPID
         self.isWindowSizeSettable = isWindowSizeSettable
         self.windowTitle = windowTitle
+        self.hasCloseButton = hasCloseButton
     }
 
     private let windowTitle: (HyprWindow) -> String?
+    private let hasCloseButton: (HyprWindow) -> Bool?
 
     /// Known windows the last cycle held because AX could not read them.
     /// Kept so the outage is logged at its edges rather than every cycle.
@@ -953,25 +956,42 @@ final class WindowDiscoveryService {
         // but not a size HyprMac can't set
         let bundleID = bundleIDForPID(w.ownerPID) ?? w.bundleID
         let verdict = ruleBook.verdict(bundleID: bundleID, title: { self.windowTitle(w) })
+        let sizeSettable = isWindowSizeSettable(w)
+        // a recycled id starts over
+        stateCache.popupWindowIDs.remove(w.windowID)
         if let reason = FloatingAdmissionPolicy.reason(
             rule: verdict,
-            isSizeSettable: isWindowSizeSettable(w),
+            isSizeSettable: sizeSettable,
             isQuickLookPanel: w.isQuickLookPanel
         ) {
             stateCache.setFloating(true, window: w)
+            let title = windowTitle(w)
+            // one of the app's pop-ups, which hover must not focus (#114).
+            // Never tile floats them too, so any floating reason counts
+            let popup = !w.isQuickLookPanel && FloatingAdmissionPolicy.isPopup(
+                isSizeSettable: sizeSettable, title: title, hasCloseButton: { self.hasCloseButton(w) })
+            if popup { stateCache.popupWindowIDs.insert(w.windowID) }
             if reason == .fixedSize {
                 // read once, at first sight. some apps make a window
                 // resizable a moment after it opens, so ask again
                 fixedSizeRechecks[w.windowID] = (0, now().addingTimeInterval(Self.fixedSizeRecheckDelays[0]))
-                hyprLog(.notice, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")' (\(w.windowID))"
+                hyprLog(.notice, .discovery, "auto-float \(reason.rawValue): '\(title ?? "?")' (\(w.windowID))"
                         + " \(bundleIDForPID(w.ownerPID) ?? "pid \(w.ownerPID)") — re-checked"
                         + " \(Self.fixedSizeRecheckDelays.count) times over"
-                        + " \(Self.fixedSizeRecheckDelays.reduce(0, +))s")
+                        + " \(Self.fixedSizeRecheckDelays.reduce(0, +))s"
+                        + (popup ? "; a pop-up, hover leaves it alone" : ""))
             } else if reason == .floatRule, let rule = verdict?.rule {
                 hyprLog(.notice, .discovery, "auto-float float rule: \(w.windowID) \(rule.bundleID)"
                         + " \(rule.matchDescription)")
             } else {
-                hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(w.title ?? "?")'")
+                hyprLog(.debug, .discovery, "auto-float \(reason.rawValue): '\(title ?? "?")'")
+            }
+            if popup, reason != .fixedSize {
+                hyprLog(.notice, .discovery, "auto-float \(reason.rawValue): \(w.windowID) is a pop-up,"
+                        + " hover leaves it alone")
+                // apps often give a window its title or close button a moment
+                // after it opens, so the mark is asked again like a fixed size
+                fixedSizeRechecks[w.windowID] = (0, now().addingTimeInterval(Self.fixedSizeRecheckDelays[0]))
             }
         } else if case let .tile(rule)? = verdict, rule.match != nil {
             hyprLog(.notice, .discovery, "tile rule: \(w.windowID) \(rule.bundleID) \(rule.matchDescription)")
@@ -1085,6 +1105,11 @@ final class WindowDiscoveryService {
         !known.contains(id) && !hidden.contains(id) && !unreadable.contains(id) && !assigned
     }
 
+    private func clearPopupMark(_ id: CGWindowID, because reason: String) {
+        guard stateCache.popupWindowIDs.remove(id) != nil else { return }
+        hyprLog(.notice, .discovery, "pop-up re-check: \(id) \(reason) — hover focuses it again")
+    }
+
     /// Ask again whether the windows auto-floated as not resizable are.
     /// One that is now goes back to tiling: its floating flag clears and
     /// the caller's retile places it. One the user tiled meanwhile, one
@@ -1116,6 +1141,8 @@ final class WindowDiscoveryService {
             }
             if isWindowSizeSettable(w) == true {
                 fixedSizeRechecks[id] = nil
+                // a window HyprMac can size is no pop-up
+                clearPopupMark(id, because: "is resizable now")
                 // resizable now, but a float rule that matches it keeps it floating
                 if ruleBook.verdict(bundleID: bundleIDForPID(w.ownerPID) ?? w.bundleID,
                                     title: { self.windowTitle(w) })?
@@ -1131,6 +1158,13 @@ final class WindowDiscoveryService {
                 hyprLog(.notice, .discovery, "auto-float re-check: '\(w.title ?? "?")' (\(id)) is resizable now"
                         + " — handing it back to tiling")
                 continue
+            }
+            // still fixed size. a title or close button that arrived since
+            // means it is an ordinary floater after all
+            if stateCache.popupWindowIDs.contains(id),
+               !FloatingAdmissionPolicy.isPopup(isSizeSettable: false, title: windowTitle(w),
+                                                hasCloseButton: { self.hasCloseButton(w) }) {
+                clearPopupMark(id, because: "has a title or close button now")
             }
             let next = entry.attempts + 1
             if next < Self.fixedSizeRecheckDelays.count {

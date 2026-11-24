@@ -182,6 +182,34 @@ final class TilingEngineMembershipTransactionTests: XCTestCase {
         XCTAssertTrue(trace.written.contains(full.windowID))
     }
 
+    /// a member whose app could not say whether it is in full screen gets no
+    /// write on the guess: the pass keeps its leaf, as for full screen, and
+    /// the next pass writes it once the app answers. the tutorial's desk
+    /// restore ends in such a pass over every tile
+    func testAMemberWhoseFullScreenReadFailsIsNotWrittenUntilItsAppAnswers() {
+        let screen = MembershipTestScreen()
+        let trace = MembershipTrace()
+        let engine = TilingEngine(displayManager: DisplayManager(screenSource: { [screen] }),
+                                  frameSizingIOFactory: { _, generation in trace.io(generation) })
+        let a = makeWindow(id: 984), busy = makeWindow(id: 985)
+        let rect = engine.displayManager.cgRect(for: screen)
+        for w in [a, busy] { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        XCTAssertTrue(engine.tileWindows([a, busy], onWorkspace: 1, screen: screen).published)
+
+        trace.written = []
+        trace.frames[busy.windowID] = rect
+        for w in [a] { trace.frames[w.windowID] = rect.insetBy(dx: 100, dy: 100) }
+        engine.isInNativeFullScreen = { $0.windowID == busy.windowID ? nil : false }
+        XCTAssertTrue(engine.tileWindows([a, busy], onWorkspace: 1, screen: screen).published)
+        XCTAssertTrue(trace.written.contains(a.windowID))
+        XCTAssertFalse(trace.written.contains(busy.windowID), "no write on a guess")
+        XCTAssertEqual(trace.frames[busy.windowID], rect)
+
+        engine.isInNativeFullScreen = { _ in false }
+        XCTAssertTrue(engine.tileWindows([a, busy], onWorkspace: 1, screen: screen).published)
+        XCTAssertTrue(trace.written.contains(busy.windowID), "written once its app says no")
+    }
+
     /// a window that rounds a cell wider than its slot passes its own match
     /// and eats the gap. the pass gets the adjusted layout with room for the
     /// rounding instead of rolling back, and learns no floor from it

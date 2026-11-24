@@ -265,6 +265,7 @@ class WindowManager {
         self.focusController = FocusStateController(focusBorder: focusBorder)
         self.workspaceManager = WorkspaceManager(displayManager: displayManager)
         self.workspaceManager.onParkFailed = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .park) }
+        self.workspaceManager.onRevealDeferred = { [weak self] in self?.pollingScheduler.schedule(after: 0.3, trigger: .reveal) }
         self.tilingEngine = TilingEngine(displayManager: displayManager)
         self.tilingEngine.keepFixedSizeHints(in: .shared)
         self.discovery = WindowDiscoveryService(
@@ -500,6 +501,7 @@ class WindowManager {
         mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
         mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
         mouseTracker.floatingWindowIDs = { [weak self] in self?.stateCache.floatingWindowIDs ?? [] }
+        mouseTracker.isPopupWindow = { [weak self] wid in self?.stateCache.popupWindowIDs.contains(wid) ?? false }
         mouseTracker.isWindowVisible = { [weak self] wid in self?.focusResolver.isInteractive(wid) ?? false }
         // our own panels sit over other windows; hover must not reach through them
         mouseTracker.isOwnUIOpen = { OwnPanelTracker.shared.isAnyOpen }
@@ -1307,6 +1309,18 @@ class WindowManager {
             }
         }
 
+        // a floater whose reveal is still pending sits parked on a workspace
+        // that shows. it goes back to its saved frame, unless it reads on
+        // screen already
+        for wid in workspaceManager.pendingRevealFloaters(floating: stateCache.floatingWindowIDs) {
+            guard let window = allWindows.first(where: { $0.windowID == wid }),
+                  let saved = workspaceManager.savedFloatingFrame(for: wid) else { continue }
+            if let frame = window.frame, displayManager.screens.contains(where: {
+                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: $0))
+            }) { continue }
+            window.placeFloating(saved, reason: "stop, reveal still pending", displayManager: displayManager)
+        }
+
         hyprLog(.debug, .lifecycle, "all windows restored to visible positions")
     }
 
@@ -1440,7 +1454,9 @@ class WindowManager {
                 floaterDragged = isDrag && draggedFloatingID != 0
                 // a window dragged by hand during the tutorial stays where it's put
                 if isDrag {
-                    self.noteTutorialTouch(draggedFloatingID != 0 ? draggedFloatingID : self.focusController.lastFocusedID)
+                    self.noteTutorialTouch(Self.tutorialTouchTarget(draggedFloatingID: draggedFloatingID,
+                                                                    pressedTileID: self.tiledDrag.pressedTileID,
+                                                                    focusedID: self.focusController.lastFocusedID))
                 }
                 let release = TiledDragEvent.release(
                     event: event,
@@ -2409,6 +2425,16 @@ class WindowManager {
         ids.filter { !touched.contains($0) && !fullScreen.contains($0) }
     }
 
+    /// The window a drag by hand acted on: the floater it dragged, else the
+    /// tile its press captured, which need not be the focused one (a press in
+    /// the gap). A press that captured no tile (a maximized layout) falls
+    /// back to the focused window.
+    static func tutorialTouchTarget(draggedFloatingID: CGWindowID, pressedTileID: CGWindowID?,
+                                    focusedID: CGWindowID) -> CGWindowID {
+        if draggedFloatingID != 0 { return draggedFloatingID }
+        return pressedTileID ?? focusedID
+    }
+
     private static let untouchingActions: Set<String> = [
         "switchWorkspace", "cycleWorkspace", "focusDirection", "focusFloating", "focusMenuBar",
         "showKeybinds", "showWorkspaceOverview", "showWindowRules", "toggleTiling", "retileAll",
@@ -2428,6 +2454,7 @@ class WindowManager {
     func snapshotDeskForTutorial() {
         guard isRunning else { return }
         tutorialTouched = []
+        pendingDeskRestore = nil
         let desk = currentDesk()
         do {
             try RelaunchHandoffStore.tutorialDesk.write(desk)
@@ -2445,9 +2472,53 @@ class WindowManager {
     /// stay where they are, closed ones are skipped. An unchanged desk isn't
     /// touched, so nothing flickers. Only placement: settings stay as picked.
     func restoreDeskAfterTutorial() {
-        let key = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
         let touched = tutorialTouched ?? []
         tutorialTouched = nil
+        putDeskBack(touched: touched, attempts: 0)
+    }
+
+    /// A desk restore waiting for an app that could not say whether its
+    /// window is in full screen. The next poll runs it again.
+    private var pendingDeskRestore: (touched: Set<CGWindowID>, attempts: Int)?
+    static let deskRestoreFullScreenRetries = 3
+
+    /// Whether the desk restore goes ahead now, and which windows it leaves
+    /// alone as full screen. A window whose app could not say (nil) makes it
+    /// wait for the next poll, up to `retries` times; after that, it is left
+    /// alone like a full-screen one. A window the user moved is left alone
+    /// anyway, so it holds nothing up.
+    enum DeskRestoreGate: Equatable {
+        case wait(unknown: [CGWindowID])
+        case proceed(fullScreen: Set<CGWindowID>)
+    }
+
+    static func deskRestoreGate(fullScreen states: [(CGWindowID, Bool?)], touched: Set<CGWindowID>,
+                                attempts: Int, retries: Int) -> DeskRestoreGate {
+        let unknown = states.filter { $0.1 == nil && !touched.contains($0.0) }.map(\.0)
+        if !unknown.isEmpty, attempts < retries { return .wait(unknown: unknown) }
+        return .proceed(fullScreen: Set(states.filter { $0.1 != false }.map(\.0)))
+    }
+
+    private func putDeskBack(touched: Set<CGWindowID>, attempts: Int) {
+        pendingDeskRestore = nil
+        let key = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        // a window in native full screen (or its Space) gets no write: one
+        // would take it out of full screen (#104). read before the desk is
+        // taken, so a wait keeps it for the retry
+        let all = accessibility.getAllWindows()
+        let states = all.map { ($0.windowID, workspaceManager.isInNativeFullScreen($0)) }
+        let fullScreen: Set<CGWindowID>
+        switch Self.deskRestoreGate(fullScreen: states, touched: touched, attempts: attempts,
+                                    retries: Self.deskRestoreFullScreenRetries) {
+        case let .wait(unknown):
+            guard isRunning else { return }
+            hyprLog(.notice, .lifecycle, "tutorial desk: full screen unknown for \(unknown.sorted()), no write — retrying at the next poll")
+            pendingDeskRestore = (touched, attempts + 1)
+            pollingScheduler.schedule(after: 0.5, trigger: .reveal)
+            return
+        case let .proceed(ids):
+            fullScreen = ids
+        }
         guard let saved = RelaunchHandoffStore.tutorialDesk.take(displayKey: key, maxAge: nil) else { return }
         guard isRunning else { return }
         if Self.sameDesk(saved, currentDesk()) {
@@ -2457,10 +2528,6 @@ class WindowManager {
         hyprLog(.notice, .lifecycle, "tutorial desk: putting the user's windows back")
         // never undo the user: a window they moved, sent, floated or
         // dragged on purpose stays; only what HyprMac moved goes back
-        // and a window in native full screen (or its Space) gets no write:
-        // one would take it out of full screen (#104)
-        let all = accessibility.getAllWindows()
-        let fullScreen = Set(all.filter { workspaceManager.isInNativeFullScreen($0) }.map(\.windowID))
         let keep = Set(Self.restorableIDs(all.map(\.windowID), touched: touched, fullScreen: fullScreen))
         let windows = all.filter { keep.contains($0.windowID) }
         if !fullScreen.isEmpty { hyprLog(.notice, .lifecycle, "tutorial desk: leaving \(fullScreen.count) full-screen window(s) alone") }
@@ -3230,6 +3297,11 @@ class WindowManager {
         // question for a poll that changed nothing.
         if !retiled { applyTiledDrift(allWindows) }
         if returnTarget == nil { placement.repairParkedWindows(allWindows) }
+        // a desk restore that waited on a full-screen read runs once this poll is done
+        if let pending = pendingDeskRestore {
+            pendingDeskRestore = nil
+            DispatchQueue.main.async { [weak self] in self?.putDeskBack(touched: pending.touched, attempts: pending.attempts) }
+        }
         tiledDragFeedback.reconcile(with: retileResults, allWindows: allWindows)
         refreshWorkspaceOverview(windows: allWindows)
         // a guarded cycle diffed nothing, so it can't have seen the close —
@@ -3992,8 +4064,8 @@ private extension WindowManager {
                 .subtracting(self.stateCache.hiddenWindowIDs)
         }
         // a write to a window in native full screen takes it out (#104)
-        tilingEngine.isInNativeFullScreen = { $0.isFullscreen }
-        workspaceManager.isInNativeFullScreen = { $0.isFullscreen }
+        tilingEngine.isInNativeFullScreen = { $0.fullScreenState }
+        workspaceManager.isInNativeFullScreen = { $0.fullScreenState }
         // a window sent to the cursor's monitor rolls back to where it opened
         tilingEngine.newcomerOriginSource = { [weak self] id in
             self?.actionDispatcher.cursorMoveOrigin(id)

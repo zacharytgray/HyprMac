@@ -50,7 +50,9 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         cache: WindowStateCache = WindowStateCache(),
         accessibility: AccessibilityManager = AccessibilityManager(),
         bundleIDForPID: @escaping (pid_t) -> String? = { _ in nil },
-        isWindowSizeSettable: @escaping (HyprWindow) -> Bool? = { _ in true }
+        isWindowSizeSettable: @escaping (HyprWindow) -> Bool? = { _ in true },
+        windowTitle: @escaping (HyprWindow) -> String? = { $0.title },
+        hasCloseButton: @escaping (HyprWindow) -> Bool? = { $0.hasCloseButton }
     ) -> (WindowDiscoveryService, WindowStateCache, WorkspaceManager) {
         let display = DisplayManager()
         let workspaces = WorkspaceManager(displayManager: display)
@@ -61,7 +63,9 @@ final class WindowDiscoveryServiceTests: XCTestCase {
             displayManager: display,
             workspaceManager: workspaces,
             bundleIDForPID: bundleIDForPID,
-            isWindowSizeSettable: isWindowSizeSettable
+            isWindowSizeSettable: isWindowSizeSettable,
+            windowTitle: windowTitle,
+            hasCloseButton: hasCloseButton
         )
         return (svc, cache, workspaces)
     }
@@ -254,6 +258,137 @@ final class WindowDiscoveryServiceTests: XCTestCase {
 
         XCTAssertTrue(cache.floatingWindowIDs.contains(4))
         XCTAssertTrue(w.isFloating)
+    }
+
+    // MARK: - app pop-ups (#114)
+
+    func testPopupShapeNeedsAFixedSizeNoTitleAndNoCloseButton() {
+        XCTAssertTrue(FloatingAdmissionPolicy.isPopup(isSizeSettable: false, title: "", hasCloseButton: { false }))
+        XCTAssertTrue(FloatingAdmissionPolicy.isPopup(isSizeSettable: false, title: nil, hasCloseButton: { false }))
+        XCTAssertFalse(FloatingAdmissionPolicy.isPopup(isSizeSettable: true, title: "", hasCloseButton: { false }))
+        XCTAssertFalse(FloatingAdmissionPolicy.isPopup(isSizeSettable: nil, title: "", hasCloseButton: { false }))
+        XCTAssertFalse(FloatingAdmissionPolicy.isPopup(isSizeSettable: false, title: "Get Info", hasCloseButton: { false }))
+        XCTAssertFalse(FloatingAdmissionPolicy.isPopup(isSizeSettable: false, title: "", hasCloseButton: { true }))
+        XCTAssertFalse(FloatingAdmissionPolicy.isPopup(isSizeSettable: false, title: "", hasCloseButton: { nil }),
+                       "a close button that did not read is not missing")
+    }
+
+    func testAnUntitledFixedSizeWindowWithNoCloseButtonIsMarkedAsAPopup() {
+        let (svc, cache, _) = makeService(isWindowSizeSettable: { _ in false },
+                                          windowTitle: { _ in "" }, hasCloseButton: { _ in false })
+
+        _ = compute(svc, snapshot: [makeWindow(id: 2, pid: 100)])
+
+        XCTAssertTrue(cache.floatingWindowIDs.contains(2), "it still floats and stays managed")
+        XCTAssertEqual(cache.popupWindowIDs, [2])
+    }
+
+    func testATitledOrClosableFixedSizeWindowIsAnOrdinaryFloater() {
+        let (titled, titledCache, _) = makeService(isWindowSizeSettable: { _ in false },
+                                                   windowTitle: { _ in "Info" }, hasCloseButton: { _ in false })
+        _ = compute(titled, snapshot: [makeWindow(id: 2, pid: 100)])
+        XCTAssertTrue(titledCache.floatingWindowIDs.contains(2))
+        XCTAssertEqual(titledCache.popupWindowIDs, [])
+
+        let (closable, closableCache, _) = makeService(isWindowSizeSettable: { _ in false },
+                                                       windowTitle: { _ in "" }, hasCloseButton: { _ in true })
+        _ = compute(closable, snapshot: [makeWindow(id: 3, pid: 100)])
+        XCTAssertTrue(closableCache.floatingWindowIDs.contains(3))
+        XCTAssertEqual(closableCache.popupWindowIDs, [])
+    }
+
+    func testATiledWindowCostsNoCloseButtonRead() {
+        var reads = 0
+        let (svc, cache, _) = makeService(isWindowSizeSettable: { _ in true }, windowTitle: { _ in "" },
+                                          hasCloseButton: { _ in reads += 1; return false })
+
+        _ = compute(svc, snapshot: [makeWindow(id: 2, pid: 100)])
+
+        XCTAssertEqual(reads, 0)
+        XCTAssertEqual(cache.popupWindowIDs, [])
+    }
+
+    /// Never tile floats Outlook's windows before the size check, and its
+    /// pop-ups are still pop-ups
+    func testAPopupOfANeverTileAppIsStillMarked() {
+        let (svc, cache, _) = makeService(bundleIDForPID: { _ in "com.example.Mail" },
+                                          isWindowSizeSettable: { _ in false },
+                                          windowTitle: { _ in "" }, hasCloseButton: { _ in false })
+
+        _ = compute(svc, snapshot: [makeWindow(id: 2, pid: 100)], excluded: ["com.example.Mail"])
+
+        XCTAssertEqual(cache.popupWindowIDs, [2])
+    }
+
+    func testAPopupThatBecomesResizableLosesTheMark() {
+        var settable: Bool? = false
+        let (svc, cache, workspaces) = makeService(isWindowSizeSettable: { _ in settable },
+                                                   windowTitle: { _ in "" }, hasCloseButton: { _ in false })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 2, pid: 100)
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        workspaces.assignWindow(2, toWorkspace: 1)
+        XCTAssertEqual(cache.popupWindowIDs, [2])
+
+        settable = true
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        let changes = compute(svc, snapshot: [w], runningPIDs: [100])
+
+        XCTAssertEqual(changes.unfloated, [2])
+        XCTAssertEqual(cache.popupWindowIDs, [])
+    }
+
+    /// apps often set a window's title or add its close button a moment
+    /// after it opens. the fixed-size re-checks ask again, and a window that
+    /// is no pop-up after all gets hover focus back
+    func testAWindowThatGetsItsTitleLateLosesThePopupMark() {
+        var title = ""
+        let (svc, cache, workspaces) = makeService(isWindowSizeSettable: { _ in false },
+                                                   windowTitle: { _ in title }, hasCloseButton: { _ in false })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 2, pid: 100)
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        workspaces.assignWindow(2, toWorkspace: 1)
+        XCTAssertEqual(cache.popupWindowIDs, [2])
+
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        XCTAssertEqual(cache.popupWindowIDs, [2], "still untitled: still a pop-up")
+
+        title = "Settings"
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        XCTAssertEqual(cache.popupWindowIDs, [], "titled now")
+        XCTAssertTrue(cache.floatingWindowIDs.contains(2), "still a fixed-size floater")
+    }
+
+    /// the same for a Never tile app's window, which floats before the size
+    /// check: its close button arrives late
+    func testANeverTileWindowThatGetsItsCloseButtonLateLosesThePopupMark() {
+        var closable = false
+        let (svc, cache, workspaces) = makeService(bundleIDForPID: { _ in "com.example.Mail" },
+                                                   isWindowSizeSettable: { _ in false },
+                                                   windowTitle: { _ in "" }, hasCloseButton: { _ in closable })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 2, pid: 100)
+        _ = compute(svc, snapshot: [w], runningPIDs: [100], excluded: ["com.example.Mail"])
+        workspaces.assignWindow(2, toWorkspace: 1)
+        XCTAssertEqual(cache.popupWindowIDs, [2])
+
+        closable = true
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        _ = compute(svc, snapshot: [w], runningPIDs: [100], excluded: ["com.example.Mail"])
+        XCTAssertEqual(cache.popupWindowIDs, [])
+    }
+
+    func testForgettingAWindowDropsItsPopupMark() {
+        let cache = WindowStateCache()
+        cache.popupWindowIDs = [2]
+        cache.forget(2)
+        XCTAssertEqual(cache.popupWindowIDs, [])
     }
 
     // MARK: - gone (alive pid → hidden)

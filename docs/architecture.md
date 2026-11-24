@@ -471,6 +471,17 @@ gives up. `isSwitchSettled` stays false while a retry is pending. The
 switch's focus pick is unchanged: a held tile does not take focus when it
 comes back.
 
+The switch focuses, in order: the window the caller asked for
+(`preferredWindowID`), the floater that had focus when that workspace was
+last left (`departedFocusedFloater`), the maximized tile, the first tile, then
+any window. The floater comes back in front, the way the user left it. A tile
+focused when the workspace was left clears that entry, so the floaters tuck
+behind it as usual. A floater whose reveal kept its saved frame (its app could
+not say whether it is in full screen) is still parked, so the switch skips it
+and takes the usual pick. `stop()` puts such a floater back on its saved frame
+(`WorkspaceManager.pendingRevealFloaters`), the same as a window on a hidden
+workspace.
+
 ## Ownership rules
 
 - **`WindowStateCache`** is the only owner of window-keyed
@@ -1196,7 +1207,8 @@ and stopped with `WindowManager`). The second look catches a keyboard the
 event system lists late, or one that refused the list the first time; a
 burst of arrivals replaces the checks still waiting. Starting the watcher
 runs one check too: a keyboard plugged in between the launch write and the
-registration is no arrival. Pinned by the #103 tests in
+registration is no arrival. It also gets the same one- and four-second looks,
+for a keyboard already there that the event system lists late. Pinned by the #103 tests in
 `KeyRemapperTests`.
 
 A service client works only while the event system client that listed it

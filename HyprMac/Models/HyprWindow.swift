@@ -111,6 +111,16 @@ class HyprWindow: Equatable, Hashable {
         return value as? String
     }
 
+    /// Whether the window has a close button. nil when the app did not answer.
+    var hasCloseButton: Bool? {
+        var value: AnyObject?
+        switch AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &value) {
+        case .success: return value != nil
+        case .noValue, .attributeUnsupported: return false
+        default: return nil
+        }
+    }
+
     /// What the float and tile rules say about this window, nil when none
     /// covers it. The title is read only if a rule needs it.
     func floatingVerdict(_ book: FloatingRuleBook) -> FloatingRuleVerdict? {
@@ -124,9 +134,15 @@ class HyprWindow: Equatable, Hashable {
     /// its chrome (focus border, dim mask, floating outlines) while a
     /// fullscreen window is frontmost so it doesn't draw over a movie or
     /// fullscreen app.
-    var isFullscreen: Bool {
+    var isFullscreen: Bool { fullScreenState ?? false }
+
+    /// Like `isFullscreen`, but nil when the read could not complete: a busy
+    /// app that did not answer in time. A window with no such attribute
+    /// (the Finder desktop) answers no.
+    var fullScreenState: Bool? {
         var value: AnyObject?
         let err = AXUIElementCopyAttributeValue(element, "AXFullScreen" as CFString, &value)
+        if err == .cannotComplete { return nil }
         guard err == .success, let n = value as? NSNumber else { return false }
         return n.boolValue
     }

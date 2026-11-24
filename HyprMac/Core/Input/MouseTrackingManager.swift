@@ -137,6 +137,8 @@ class MouseTrackingManager {
     // the window the window server would give a click at a CG point
     var mouseTargetAt: ((CGPoint) -> CGWindowID)?
     var floatingWindowIDs: () -> Set<CGWindowID> = { [] }
+    // floaters that are an app's pop-up (WindowStateCache.popupWindowIDs)
+    var isPopupWindow: (CGWindowID) -> Bool = { _ in false }
     var isWindowVisible: (CGWindowID) -> Bool = { _ in false }
     var cachedWindow: (CGWindowID) -> HyprWindow? = { _ in nil }
     var tiledPositions: () -> [CGWindowID: CGRect] = { [:] }
@@ -333,6 +335,14 @@ class MouseTrackingManager {
             hyprLog(.debug, .mouse, "ffm-bail: over raised window \(raised.windowID) layer=\(raised.layer)")
             return nil
         case .window(let topmostID):
+            // an app's pop-up, such as Outlook's color grid: focusing it
+            // closes it (#114). like an unmanaged popover, it blocks the
+            // window below and takes no focus
+            if floating.contains(topmostID), isPopupWindow(topmostID) {
+                noteBlocked("pop-up \(topmostID) on top")
+                hyprLog(.debug, .mouse, "ffm-bail: topmost \(topmostID) is a pop-up")
+                return nil
+            }
             // focus the physical floater, including a sibling of the current tile
             if floating.contains(topmostID), isWindowVisible(topmostID) {
                 guard topmostID != lastFocusedID(), let target = cachedWindow(topmostID) else { return nil }
@@ -429,7 +439,9 @@ class MouseTrackingManager {
             // a panel of the frontmost app. the window below is not the target
             return
         case .window(let topmostID):
-            // a floater on top: refocusing the tile below would pull it above
+            // a floater on top: refocusing the tile below would pull it above.
+            // an app's pop-up stops here too, not at the unmanaged branch
+            // below: refocusing the tile under it would close it (#114)
             if floatingWindowIDs().contains(topmostID), isWindowVisible(topmostID) { return }
             let cached = tiledPositions()
             if let rect = cached[topmostID] {

@@ -36,6 +36,15 @@ enum FloatingAdmissionPolicy {
         }
     }
 
+    /// Whether a floater is one of its app's pop-ups: a size HyprMac can't
+    /// set, no title and no close button, like Outlook's text color grid.
+    /// Focusing one closes it, so hover leaves it alone (#114). A close
+    /// button that did not read is not taken as missing.
+    static func isPopup(isSizeSettable: Bool?, title: String?, hasCloseButton: () -> Bool?) -> Bool {
+        guard isSizeSettable == false, title?.isEmpty ?? true else { return false }
+        return hasCloseButton() == false
+    }
+
     /// What a rule change does to an open window.
     enum RuleStep: Equatable { case float, tile }
 

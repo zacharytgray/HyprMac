@@ -923,11 +923,23 @@ neighbours keep their slots, and its tile is there when it comes back.
   of every member and leaves the ones in full screen out of the attempt
   (`unwrittenWindowIDs`), like a held member: nothing read, nothing written.
   It is not a hold. The walk reads the window, so no poll releases it into a
-  retile, and the next pass after it leaves writes it like any member.
+  retile, and the next pass after it leaves writes it like any member. A
+  member whose app could not answer the read in time (`-25204`) is left out
+  the same way, logged `full screen unknown — leaves kept, no frame written`,
+  and the next pass writes it once the app answers. This covers the pass that
+  ends the tutorial's desk restore, which tiles every member again.
 - **Parking.** A workspace switch parks the windows of the workspace it
   leaves. `WorkspaceManager.hideInCorner` skips one in full screen: it lives
-  on its own Space, and the park write can take it out of full screen. The
-  park repair skips it too, so a full-screen window on a hidden workspace is
+  on its own Space, and the park write can take it out of full screen. When
+  the app does not answer the `AXFullScreen` read in time (`-25204`, a busy
+  app), no write goes out on the guess: the park counts as failed, logs
+  `full screen unknown, no write`, and the repair poll tries again. A window
+  with no such attribute answers no and is parked as before. The reveal and
+  the tutorial's desk restore follow the same rule: a reveal keeps the saved
+  frame and asks for a poll, whose reveal repair tries again, and the desk
+  restore waits for the next poll, up to three times, then leaves that
+  window alone like a full-screen one. The
+  park repair skips a full-screen window too, so a full-screen window on a hidden workspace is
   not re-parked every poll. A floater hidden in full screen keeps no saved
   frame, and a reveal drops a saved frame instead of writing it while the
   floater is in full screen. One that leaves full screen while its
@@ -1355,8 +1367,11 @@ its existing feedback behavior.
 
 `TiledDragHandler` owns a press snapshot and a deferred release. It captures
 the actual frames of the source tree and visible floating occluders once.
-A press must hit exactly one tile and no occluder. Floating and scratchpad
-presses do not start tiled insertion.
+A press must hit exactly one tile and no occluder. A press that hits no tile
+and no occluder takes the tile whose edge is within the outer band below,
+the nearest one when two are, and none when two are equally near. macOS
+starts an edge resize a few points outside the window, which is the gap
+between tiles. Floating and scratchpad presses do not start tiled insertion.
 
 The mouse-up event supplies the release point. The mouse lifecycle latches the
 logical Hypr key when it is held at press, pressed during the drag, or still
@@ -1369,8 +1384,10 @@ resize only when all three of these hold:
 - The press landed on the window's resize border. The border is a band just
   inside the captured frame: 8 points at the left, right and bottom edges and
   4 at the top, corners giving two edges. The top band is narrow because the
-  title bar starts right below it. There is no outer band: a press outside
-  the frame is not a tile press at all.
+  title bar starts right below it. An outer band of 5 points, capped at half
+  the gap so a press in the gap belongs to one side, counts the same as the
+  inner band (`TiledDragSnapshot.outsideBand`). With no gap there is no outer
+  band.
 - The edge opposite every grabbed edge stayed within 3 points: maxX for a
   left edge, minY for a bottom edge, and so on.
 - At least one grabbed axis changed size by more than 4 points.

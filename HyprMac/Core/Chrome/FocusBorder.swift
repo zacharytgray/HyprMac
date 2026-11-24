@@ -163,6 +163,9 @@ class FocusBorder {
     // the dragged floater's live frame. it wins over the lagging frame a
     // refresh reads, and the floater is in front of everything while it moves
     private var floaterDrag: (id: CGWindowID, frame: CGRect)?
+    // the floaters a running workspace switch takes away. their outlines go
+    // at once, like their dim. see `beginInstantSwitch`
+    private var switchOutgoing: Set<CGWindowID> = []
 
     private enum State { case active, settled, hidden }
     // a floater's glowView fills the panel and carries the fade and the
@@ -433,7 +436,14 @@ class FocusBorder {
         if let drag = floaterDrag, frames[drag.id] != nil { frames[drag.id] = drag.frame }
         let visibleIDs = Set(frames.keys)
         let staleIDs = floatingPanels.keys.filter { !visibleIDs.contains($0) }
-        for windowID in staleIDs { hideFloatingBorder(for: windowID) }
+        for windowID in staleIDs {
+            // a floater a switch parked is gone from the screen already
+            if switchOutgoing.contains(windowID) {
+                dropFloatingBorder(for: windowID)
+            } else {
+                hideFloatingBorder(for: windowID)
+            }
+        }
 
         floaterFrames = frames
         let expansion = Tuning.floatingBorderWidth / 2
@@ -512,6 +522,20 @@ class FocusBorder {
         floatingPanels.removeAll()
         floaterFrames.removeAll()
         for border in toFade { fadeOutAndOrderOut(border.panel, layer: border.glowView.layer, duration: fadeDurationSec) }
+    }
+
+    /// Start a workspace switch: until `endInstantSwitch`, the outline of a
+    /// floater in `outgoing` goes at once when a refresh no longer lists it,
+    /// instead of fading on the workspace that replaced it.
+    func beginInstantSwitch(outgoing: Set<CGWindowID>) {
+        mainThreadOnly()
+        switchOutgoing = outgoing
+    }
+
+    /// End the switch `beginInstantSwitch` started. Later removals fade.
+    func endInstantSwitch() {
+        mainThreadOnly()
+        switchOutgoing = []
     }
 
     /// Order out and forget the floating-border panel for `windowID`,

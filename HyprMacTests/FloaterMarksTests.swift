@@ -186,6 +186,27 @@ final class FloaterOutlinePanelTests: XCTestCase {
         XCTAssertNil(border.currentFloaterOutline(for: 42), "the glow goes with the outline")
     }
 
+    func testASwitchDropsTheOutgoingOutlinesAtOnceAndACloseStillFades() throws {
+        let border = FocusBorder()
+        border.primaryScreenHeight = 1080
+        border.setFloaterMarks(.outline)
+        let frames: [CGWindowID: CGRect] = [
+            42: CGRect(x: 100, y: 100, width: 400, height: 300),
+            43: CGRect(x: 600, y: 100, width: 400, height: 300),
+        ]
+        border.updateFloatingBorders(frames, color: NSColor.systemPink.cgColor)
+        let outgoing = try XCTUnwrap(border.currentFloaterGlowLayer(for: 42))
+        let closing = try XCTUnwrap(border.currentFloaterGlowLayer(for: 43))
+
+        border.beginInstantSwitch(outgoing: [42])
+        border.updateFloatingBorders([:], color: NSColor.systemPink.cgColor)
+        border.endInstantSwitch()
+
+        XCTAssertNil(border.currentFloaterOutline(for: 42))
+        XCTAssertNil(outgoing.animation(forKey: "fade"), "the switch took it away, so it goes at once")
+        XCTAssertNotNil(closing.animation(forKey: "fade"), "a floater outside the switch still fades")
+    }
+
     func testANewOutlineIsOnScreenAtOnceWithNoFadeIn() throws {
         let border = FocusBorder()
         border.primaryScreenHeight = 1080
