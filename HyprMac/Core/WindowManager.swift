@@ -2302,7 +2302,18 @@ class WindowManager {
             return
         }
         hyprLog(.notice, .lifecycle, "tutorial desk: putting the user's windows back")
-        restoreRelaunchHandoff(saved, windows: accessibility.getAllWindows())
+        let windows = accessibility.getAllWindows()
+        // a tiled window that floats now (Hypr+R pushed it onto a full
+        // workspace, where it floated in place) tiles again, so the restore
+        // can put it back in its tree
+        let savedFloaters = Set(saved.floaters.map(\.window.id))
+        let savedTiles = Set(saved.workspaces.flatMap(\.refs).compactMap(RelaunchHandoff.windowID))
+        for window in windows where savedTiles.contains(window.windowID)
+            && !savedFloaters.contains(window.windowID) && stateCache.floatingWindowIDs.contains(window.windowID) {
+            stateCache.setFloating(false, window: window)
+            floatingController.noteManualChoice(window.windowID, floating: false)
+        }
+        restoreRelaunchHandoff(saved, windows: windows)
     }
 
     /// A tutorial cut short by a crash: its desk is dropped at the next

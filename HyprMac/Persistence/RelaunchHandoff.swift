@@ -44,6 +44,12 @@ struct RelaunchHandoff: Codable, Equatable {
         SavedWindowRef(bundleID: "pid:\(pid)", title: "wid:\(id)")
     }
 
+    /// The window id a leaf written by `ref(id:pid:)` names.
+    static func windowID(_ ref: SavedWindowRef) -> CGWindowID? {
+        guard ref.title.hasPrefix("wid:") else { return nil }
+        return CGWindowID(ref.title.dropFirst(4))
+    }
+
     /// Fresh, from this build's schema, and for the displays connected now.
     func isUsable(now: Date, displayKey: String, maxAge: TimeInterval? = RelaunchHandoff.maxAge) -> Bool {
         let age = now.timeIntervalSince(savedAt)

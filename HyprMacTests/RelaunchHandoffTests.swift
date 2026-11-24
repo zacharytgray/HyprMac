@@ -101,6 +101,12 @@ final class RelaunchHandoffTests: XCTestCase {
         XCTAssertFalse(WindowManager.sameDesk(old, moved))
     }
 
+    // the restore reads back the window id each tiled leaf names
+    func testALeafGivesBackItsWindowID() {
+        XCTAssertEqual(RelaunchHandoff.windowID(RelaunchHandoff.ref(id: 8670, pid: 77)), 8670)
+        XCTAssertNil(RelaunchHandoff.windowID(SavedWindowRef(bundleID: "com.apple.Safari", title: "Start Page")))
+    }
+
     func testNoFileMeansNoHandoff() {
         XCTAssertNil(store.take(now: saved, displayKey: "Built-in:1512x982"))
     }
