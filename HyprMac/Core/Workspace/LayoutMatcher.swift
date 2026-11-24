@@ -34,7 +34,11 @@ enum LayoutMatcher {
     /// with the same bundle ID. Within a pass the window already on the
     /// leaf's workspace wins, then the lowest window ID, so a plan is
     /// deterministic.
-    static func plan(_ snapshot: LayoutSnapshot, candidates: [Candidate]) -> Plan {
+    /// `exactOnly` skips the second pass: a leaf takes only the window it
+    /// names. The tutorial's desk restore uses it, since window ids don't
+    /// change during a tutorial and a new window must never take an old
+    /// one's place.
+    static func plan(_ snapshot: LayoutSnapshot, candidates: [Candidate], exactOnly: Bool = false) -> Plan {
         let leaves: [(workspace: Int, ref: SavedWindowRef)] = snapshot.workspaces.flatMap { layout in
             layout.refs.map { (layout.workspace, $0) }
         }
@@ -57,7 +61,9 @@ enum LayoutMatcher {
         }
 
         for i in leaves.indices where !leaves[i].ref.title.isEmpty { claim(i, exactOnly: true) }
-        for i in leaves.indices where pick[i] == nil { claim(i, exactOnly: false) }
+        if !exactOnly {
+            for i in leaves.indices where pick[i] == nil { claim(i, exactOnly: false) }
+        }
 
         // assemble in leaf order so windowsByRef keeps leaf order
         var plan = Plan()

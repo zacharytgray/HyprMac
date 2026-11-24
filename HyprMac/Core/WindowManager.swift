@@ -2321,7 +2321,9 @@ class WindowManager {
             stateCache.setFloating(false, window: window)
             floatingController.noteManualChoice(window.windowID, floating: false)
         }
-        restoreRelaunchHandoff(saved, windows: windows)
+        // window ids hold for a tutorial: a window that closed is skipped,
+        // never stood in for by another window of its app
+        restoreRelaunchHandoff(saved, windows: windows, exactOnly: true)
     }
 
     /// A tutorial cut short by a crash: its desk is dropped at the next
@@ -2369,7 +2371,9 @@ class WindowManager {
 
     /// Put the desk back the way `saveRelaunchHandoff` found it. Runs once,
     /// right after the launch tile has spread the windows out on its own.
-    private func restoreRelaunchHandoff(_ handoff: RelaunchHandoff, windows allWindows: [HyprWindow]) {
+    /// `exactOnly`: the tutorial's restore, where a leaf takes only its own window.
+    private func restoreRelaunchHandoff(_ handoff: RelaunchHandoff, windows allWindows: [HyprWindow],
+                                        exactOnly: Bool = false) {
         let live = Dictionary(allWindows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
         // a window counts only if the same process still owns that id
         func window(_ key: RelaunchHandoff.WindowKey) -> HyprWindow? {
@@ -2420,7 +2424,7 @@ class WindowManager {
 
         // tiled windows: back to their workspaces, in the saved tree shapes
         let exact = layoutRestorer(ref: { RelaunchHandoff.ref(id: $0.windowID, pid: $0.ownerPID) })
-        let outcome = exact.restore(handoff.layoutSnapshot, windows: allWindows)
+        let outcome = exact.restore(handoff.layoutSnapshot, windows: allWindows, exactOnly: exactOnly)
         tileAllVisibleSpaces()
         updatePositionCache()
 

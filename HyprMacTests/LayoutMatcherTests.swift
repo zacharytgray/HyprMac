@@ -146,4 +146,19 @@ final class LayoutMatcherTests: XCTestCase {
         XCTAssertEqual(SavedWindowRef.normalizedTitle("Budget 2026 — 3×4 grid"), "Budget 2026 — 3×4 grid")
         XCTAssertEqual(SavedWindowRef.normalizedTitle("Notes"), "Notes")
     }
+
+    // the tutorial's restore: a window closed during the tutorial isn't
+    // replaced by a new window of the same app
+    func testExactOnlyNeverStandsInAnotherWindow() {
+        let leaf = RelaunchHandoff.ref(id: 10, pid: 77)
+        let snapshot = LayoutSnapshot(schemaVersion: LayoutSnapshot.currentSchemaVersion, displayKey: "k",
+                                      timestamp: Date(), isManual: false,
+                                      workspaces: [WorkspaceLayout(workspace: 2, root: .leaf(leaf), unplaced: [])])
+        let newcomer = LayoutMatcher.Candidate(windowID: 11, bundleID: leaf.bundleID, title: "wid:11", workspace: 1)
+        XCTAssertEqual(LayoutMatcher.plan(snapshot, candidates: [newcomer]).workspaceByWindow[11], 2,
+                       "the relaunch still falls back by app")
+        XCTAssertNil(LayoutMatcher.plan(snapshot, candidates: [newcomer], exactOnly: true).workspaceByWindow[11])
+        let same = LayoutMatcher.Candidate(windowID: 10, bundleID: leaf.bundleID, title: "wid:10", workspace: 1)
+        XCTAssertEqual(LayoutMatcher.plan(snapshot, candidates: [same, newcomer], exactOnly: true).workspaceByWindow[10], 2)
+    }
 }

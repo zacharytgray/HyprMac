@@ -162,7 +162,8 @@ struct LayoutRestorer {
         }
     }
 
-    func restore(_ snapshot: LayoutSnapshot?, windows allWindows: [HyprWindow]) -> LayoutRestoreOutcome {
+    func restore(_ snapshot: LayoutSnapshot?, windows allWindows: [HyprWindow],
+                 exactOnly: Bool = false) -> LayoutRestoreOutcome {
         guard let snapshot else { return .noSnapshot }
         var outcome = LayoutRestoreOutcome()
 
@@ -176,7 +177,7 @@ struct LayoutRestorer {
             return LayoutMatcher.Candidate(windowID: w.windowID, bundleID: ref.bundleID,
                                            title: ref.title, workspace: ws)
         }
-        let plan = LayoutMatcher.plan(snapshot, candidates: candidates)
+        let plan = LayoutMatcher.plan(snapshot, candidates: candidates, exactOnly: exactOnly)
         outcome.matched = plan.workspaceByWindow.count
         outcome.absent = plan.unmatchedRefs.count
 
