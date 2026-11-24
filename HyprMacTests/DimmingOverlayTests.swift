@@ -8,7 +8,8 @@ import AppKit
 // opacity changes synchronously inside `animateOpacity` (set right
 // before the CABasicAnimation is added), so we can assert on it without
 // waiting for the animation clock; `present` is left out of assertions
-// because it's tied to render-server timing.
+// because it's tied to render-server timing. A workspace switch sets
+// opacity with no animation; `animationKeys(for:)` tells the two apart.
 
 final class DimmingOverlayTests: XCTestCase {
 
@@ -132,7 +133,7 @@ final class DimmingOverlayTests: XCTestCase {
         XCTAssertEqual(s[b]?.target, 0, "after hideAll, B target should be 0")
     }
 
-    func testRemoveImmediatelyDropsOnlyThoseWindowsLayers() {
+    func testSwitchDropsTheOutgoingDimAtOnceAndACloseStillFades() {
         // a workspace switch drops the outgoing windows' dim with no fade
         let overlay = makeOverlay()
         let a: CGWindowID = 1, b: CGWindowID = 2, c: CGWindowID = 3
@@ -142,18 +143,22 @@ final class DimmingOverlayTests: XCTestCase {
             c: cgRectOnPrimary(x: 700, y: 100),
         ]
         overlay.update(focusedID: a, tiledRects: tiles, floatingRects: [:], screens: screens)
-        overlay.removeImmediately([b, c])
-        let s = overlay.currentStates()
-        XCTAssertNil(s[b], "B's layer is gone at once, not fading")
-        XCTAssertNil(s[c])
-        XCTAssertEqual(s[a]?.target, 0, "the rest is left alone")
-        XCTAssertFalse(overlay.visiblePanels.isEmpty)
+        XCTAssertEqual(overlay.attachedLayerCount(), 3)
+
+        overlay.beginInstantSwitch(incoming: [], outgoing: [b])
+        overlay.update(focusedID: a, tiledRects: tiles.filter { $0.key == a },
+                       floatingRects: [:], screens: screens)
+        overlay.endInstantSwitch()
+        XCTAssertNil(overlay.currentStates()[b])
+        XCTAssertEqual(overlay.attachedLayerCount(), 2,
+                       "B's layer is gone at once; C, which closed, is still fading out")
+        XCTAssertEqual(overlay.currentStates()[a]?.target, 0, "the rest is left alone")
         overlay.hideImmediately()
     }
 
-    func testShowImmediatelyChangesThoseWindowsAtOnceUntilReset() {
+    func testSwitchShowsTheIncomingDimAtOnceUnderItsOwnFocus() {
         // a workspace switch places its windows under the old focus, then
-        // moves focus onto one of them. neither change may fade
+        // moves focus onto one of them. no step may fade
         let overlay = makeOverlay()
         let old: CGWindowID = 9, a: CGWindowID = 1, b: CGWindowID = 2, c: CGWindowID = 3
         let rects: [CGWindowID: CGRect] = [
@@ -161,7 +166,7 @@ final class DimmingOverlayTests: XCTestCase {
             b: cgRectOnPrimary(x: 400, y: 100),
             c: cgRectOnPrimary(x: 700, y: 100),
         ]
-        overlay.showImmediately([a, b])
+        overlay.beginInstantSwitch(incoming: [a, b], outgoing: [])
         overlay.update(focusedID: old, tiledRects: rects.filter { $0.key != c },
                        floatingRects: [:], screens: screens)
         XCTAssertNil(overlay.currentStates()[a], "under the old focus the incoming windows wait")
@@ -169,17 +174,19 @@ final class DimmingOverlayTests: XCTestCase {
 
         overlay.update(focusedID: a, tiledRects: rects.filter { $0.key != c },
                        floatingRects: [:], screens: screens)
-        XCTAssertNil(overlay.fadeAnimation(for: a), "the switch's focus shows A bright at once")
-        XCTAssertNil(overlay.fadeAnimation(for: b), "and B dimmed at once")
+        XCTAssertEqual(overlay.animationKeys(for: a), [], "the switch's focus shows A bright at once")
+        XCTAssertEqual(overlay.animationKeys(for: b), [], "and B dimmed at once")
         XCTAssertEqual(overlay.currentStates()[a]?.model, 0)
         XCTAssertEqual(overlay.currentStates()[b]?.model, 1)
 
         overlay.update(focusedID: a, tiledRects: rects, floatingRects: [:], screens: screens)
-        XCTAssertNotNil(overlay.fadeAnimation(for: c), "a window outside the set still fades in")
+        XCTAssertEqual(overlay.animationKeys(for: c)?.contains("fade"), true,
+                       "a window outside the switch still fades in")
 
-        overlay.showImmediately([])
+        overlay.endInstantSwitch()
         overlay.update(focusedID: b, tiledRects: rects, floatingRects: [:], screens: screens)
-        XCTAssertNotNil(overlay.fadeAnimation(for: b), "after the switch, focus moves fade again")
+        XCTAssertEqual(overlay.animationKeys(for: b)?.contains("fade"), true,
+                       "after the switch, focus moves fade again")
         overlay.hideImmediately()
     }
 

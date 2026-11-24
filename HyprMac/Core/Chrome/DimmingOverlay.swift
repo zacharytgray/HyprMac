@@ -16,7 +16,9 @@ import Cocoa
 /// resizes, focus-region carve-outs, floater carve-outs) re-stamp the
 /// path inside `setDisableActions(true)` and are instant. Opacity
 /// changes (window becoming focused or unfocused, dim turning on or
-/// off) animate over `fadeDurationSec` with `easeInEaseOut`.
+/// off) animate over `fadeDurationSec` with `easeInEaseOut`, except
+/// during a workspace switch (`beginInstantSwitch`), when the windows it
+/// brings in and takes away change at once.
 ///
 /// A floater's carve-out covers only the part of it that is in front.
 /// The caller passes, per floater, the frames stacked above it (from the
@@ -32,6 +34,9 @@ import Cocoa
 /// window disappears   → animate 1 → 0, then remove from superlayer
 /// dim disabled        → every layer animates → 0, panel orderOuts
 /// dim re-enabled      → orderFront, every non-focused layer 0 → 1
+/// workspace switch    → outgoing: removed at once when they leave the
+///                       screen. incoming: created at their target at
+///                       once, after the switch's focus lands on one
 /// ```
 ///
 /// Threading: main-thread only.
@@ -66,9 +71,10 @@ class DimmingOverlay {
     // inside update() so a mid-drag full update doesn't stomp it, and
     // re-stamped path-only by setDragOverride at mouse-drag rate.
     private var dragOverride: (id: CGWindowID, rect: CGRect)?
-    // windows a running workspace switch brings in. their dim changes at
-    // once, with no fade. see `showImmediately`
-    private var immediateIDs: Set<CGWindowID> = []
+    // the windows a running workspace switch brings in and takes away.
+    // both change their dim at once. see `beginInstantSwitch`
+    private var switchIncoming: Set<CGWindowID> = []
+    private var switchOutgoing: Set<CGWindowID> = []
     // bumped on each hideAll; the deferred orderOut closure captures the
     // token at schedule time and aborts if `update()` re-enabled the panel
     // before the fade-out wall-clock window expired.
@@ -91,9 +97,10 @@ class DimmingOverlay {
     var panelLevel: NSWindow.Level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
 
     /// Fade duration for opacity transitions (focus traversal AND
-    /// enable/disable). `easeInEaseOut` (set in `animateOpacity`) spreads
-    /// the alpha ramp evenly so the small-delta dim reads as a fade
-    /// rather than a step — `.easeOut` packs the change into the first
+    /// enable/disable; a workspace switch takes none). `easeInEaseOut`
+    /// (set in `animateOpacity`) spreads the alpha ramp evenly so the
+    /// small-delta dim reads as a fade rather than a step — `.easeOut`
+    /// packs the change into the first
     /// ~30% of the duration and reads as a snap on a screen-spanning
     /// low-alpha overlay. Set by `WindowManager` from
     /// `config.chromeFadeDurationSec`.
@@ -192,7 +199,7 @@ class DimmingOverlay {
                 // a switch places its windows before it moves focus onto
                 // one. a layer made under the old focus dims the window
                 // about to be focused for that moment, so it waits
-                if immediateIDs.contains(wid), !immediateIDs.contains(focusedID),
+                if switchIncoming.contains(wid), !switchIncoming.contains(focusedID),
                    entry.windowLayers[wid] == nil { continue }
                 let isFocused = (wid == focusedID)
                 let target: Float = isFocused ? 0 : 1
@@ -222,31 +229,31 @@ class DimmingOverlay {
                 layer.path = path
                 CATransaction.commit()
 
-                // opacity: animate only on target change. fresh layers
-                // start at 0 (set in createWindowLayer) so the first
-                // animation here naturally fades them in.
+                // opacity: changes only on a target change. fresh layers
+                // start at 0 (set in createWindowLayer) and fade in, unless
+                // a workspace switch brought the window in: then it is set
                 if isNew { entry.lastTargets[wid] = 0 }
                 let lastTarget = entry.lastTargets[wid] ?? 0
-                if immediateIDs.contains(wid) {
-                    if isNew || lastTarget != target {
-                        CATransaction.begin()
-                        CATransaction.setDisableActions(true)
-                        layer.removeAnimation(forKey: "fade")
-                        layer.opacity = target
-                        CATransaction.commit()
-                        entry.lastTargets[wid] = target
+                if lastTarget != target {
+                    if switchIncoming.contains(wid) {
+                        setOpacityNow(layer, to: target)
+                    } else {
+                        animateOpacity(layer, to: target)
                     }
-                } else if lastTarget != target {
-                    animateOpacity(layer, to: target)
                     entry.lastTargets[wid] = target
                 }
             }
 
             // windows that left this screen — fade their layer out then
-            // remove it. catches both close (window gone for good) and
-            // workspace-switch (window parked off-screen).
+            // remove it. a close is gone for good; a window a workspace
+            // switch took away goes at once, the incoming windows now
+            // placed over it.
             for (wid, layer) in entry.windowLayers where !onScreenIDs.contains(wid) {
-                fadeOutAndRemove(wid: wid, layer: layer, from: entry)
+                if switchOutgoing.contains(wid) {
+                    removeNow(wid: wid, layer: layer, from: entry)
+                } else {
+                    fadeOutAndRemove(wid: wid, layer: layer, from: entry)
+                }
             }
 
             if !entry.panel.isVisible {
@@ -293,45 +300,35 @@ class DimmingOverlay {
         hideEpoch &+= 1
         for (_, entry) in panels {
             for (wid, layer) in entry.windowLayers {
-                layer.removeAllAnimations()
-                layer.opacity = 0
+                setOpacityNow(layer, to: 0)
                 entry.lastTargets[wid] = 0
             }
             entry.panel.orderOut(nil)
         }
     }
 
-    /// Drop the dim of `ids` now, with no fade. A workspace switch takes its
-    /// outgoing windows' dim down at once: under a long fade it lingered
-    /// over the incoming windows.
-    func removeImmediately(_ ids: Set<CGWindowID>) {
+    /// Start a workspace switch: until `endInstantSwitch`, the dim of the
+    /// windows it brings in and takes away changes at once. The fade is for
+    /// focus moving on screen; with a long fade, the outgoing windows' dim
+    /// lingered over the incoming ones and coming back faded the dim in.
+    ///
+    /// An outgoing window's layer goes when an update no longer has it on
+    /// screen: the switch places the incoming windows over the outgoing ones
+    /// before it parks them. An incoming window's layer waits for an update
+    /// whose focus is one of the incoming windows: the switch places them
+    /// before it moves focus, and a layer made under the old focus would dim
+    /// the window about to be focused for that moment.
+    func beginInstantSwitch(incoming: Set<CGWindowID>, outgoing: Set<CGWindowID>) {
         mainThreadOnly()
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for (_, entry) in panels {
-            for id in ids {
-                guard let layer = entry.windowLayers.removeValue(forKey: id) else { continue }
-                entry.lastTargets.removeValue(forKey: id)
-                layer.removeAllAnimations()
-                layer.removeFromSuperlayer()
-            }
-        }
-        CATransaction.commit()
-        for id in ids {
-            lastTiledRects.removeValue(forKey: id)
-            lastFloatingRects.removeValue(forKey: id)
-        }
+        switchIncoming = incoming
+        switchOutgoing = outgoing
     }
 
-    /// Change the dim of `ids` at once, with no fade, until the next call.
-    /// A workspace switch passes its incoming windows when it starts and an
-    /// empty set when it ends: the fade is for focus moving on screen, not
-    /// for a workspace coming back. The switch places the windows before it
-    /// moves focus, so their first update dims them all and the next one
-    /// brightens the focused one; both have to be instant.
-    func showImmediately(_ ids: Set<CGWindowID>) {
+    /// End the switch `beginInstantSwitch` started. Later changes fade.
+    func endInstantSwitch() {
         mainThreadOnly()
-        immediateIDs = ids
+        switchIncoming = []
+        switchOutgoing = []
     }
 
     /// Restack every panel above the tiles. Unconditional (not gated on
@@ -437,10 +434,16 @@ class DimmingOverlay {
         let present: Float
     }
 
-    /// The fade running on `wid`'s layer, nil when its opacity was set at
-    /// once. For tests.
-    func fadeAnimation(for wid: CGWindowID) -> CAAnimation? {
-        panels.values.lazy.compactMap { $0.windowLayers[wid]?.animation(forKey: "fade") }.first
+    /// The keys of the animations running on `wid`'s layer, empty when its
+    /// opacity was set at once, nil when it has no layer. For tests.
+    func animationKeys(for wid: CGWindowID) -> [String]? {
+        panels.values.lazy.compactMap { $0.windowLayers[wid].map { $0.animationKeys() ?? [] } }.first
+    }
+
+    /// How many dim layers the panels hold, a fading-out one included until
+    /// it is removed. For tests.
+    func attachedLayerCount() -> Int {
+        panels.values.reduce(0) { $0 + ($1.container.layer?.sublayers?.count ?? 0) }
     }
 
     /// Aggregated per-window state across every panel. Tests call this
@@ -523,6 +526,24 @@ class DimmingOverlay {
         DispatchQueue.main.asyncAfter(deadline: .now() + self.fadeDurationSec + 0.05) {
             layer.removeFromSuperlayer()
         }
+    }
+
+    private func removeNow(wid: CGWindowID, layer: CAShapeLayer, from entry: PanelEntry) {
+        entry.windowLayers.removeValue(forKey: wid)
+        entry.lastTargets.removeValue(forKey: wid)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAllAnimations()
+        layer.removeFromSuperlayer()
+        CATransaction.commit()
+    }
+
+    private func setOpacityNow(_ layer: CALayer, to target: Float) {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer.removeAllAnimations()
+        layer.opacity = target
+        CATransaction.commit()
     }
 
     /// Path for one window's dim region. See `dimPath`.

@@ -328,6 +328,10 @@ final class WorkspaceOrchestrator {
         // earliest point the switch is certain here — every guard above can
         // still reject the move, and a rejected move must not flash the HUD.
         onWillSwitch(destination, physicalScreen)
+        // the parked source windows lose their dim at once, like a switch
+        dimmingOverlay.beginInstantSwitch(incoming: [focused.windowID],
+                                          outgoing: sourceIDs.subtracting([focused.windowID]))
+        defer { dimmingOverlay.endInstantSwitch() }
 
         focusTransferredWindow(focused)
         warpToWindow(focused)
@@ -425,15 +429,16 @@ final class WorkspaceOrchestrator {
             return
         }
 
+        // the dim follows a switch at once, both ways
+        dimmingOverlay.beginInstantSwitch(incoming: result.toShow, outgoing: result.toHide)
+        defer { dimmingOverlay.endInstantSwitch() }
+
         // a park is one position write that lands at once. the reveal moves,
         // resizes and verifies each window in turn, so parking first showed
         // the bare wallpaper for the whole reveal. the outgoing windows stay
         // up as the backdrop until the incoming ones are placed. a workspace
         // with nothing to show (empty, or only hidden windows) has nothing to
         // wait for
-        // the dim follows a switch at once, both ways. reset below
-        dimmingOverlay.removeImmediately(result.toHide)
-        dimmingOverlay.showImmediately(result.toShow)
         let revealFirst = !result.toShow.subtracting(stateCache.hiddenWindowIDs).isEmpty
         var parkStart = Date(), parkEnd = parkStart
         // the handles come from the walk, or the cache for a window whose app
@@ -507,9 +512,9 @@ final class WorkspaceOrchestrator {
             updateFocusBorder(best)
         } else {
             warpToEmptyScreen(result.screen, cursorScreen: currentScreen)
-            focusBorder.hide(); dimmingOverlay.hideAll()
+            // the outgoing windows are parked: their dim goes at once
+            focusBorder.hide(); dimmingOverlay.hideImmediately()
         }
-        dimmingOverlay.showImmediately([])
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         onDidSwitch(number, result.screen)
