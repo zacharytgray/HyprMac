@@ -116,6 +116,7 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
     let next: StageAction
     var showsRail = true
     @ViewBuilder let content: Content
+    @Environment(\.stageInsets) private var insets
 
     var body: some View {
         VStack(spacing: 0) {
@@ -124,6 +125,10 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             bottomBar
         }
+        // the navy runs under the Dock; the bars and the step stay clear of it
+        .padding(.leading, insets.leading)
+        .padding(.trailing, insets.trailing)
+        .padding(.bottom, insets.bottom)
         .background(StageBackdrop())
         // one look in light and dark: system controls on the stage draw dark
         .environment(\.colorScheme, .dark)
@@ -142,7 +147,7 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
                 .foregroundStyle(TutorialStageColor.faint)
         }
         .padding(.horizontal, 28)
-        .padding(.top, 22)
+        .padding(.top, max(22, insets.top + 10))
         .padding(.bottom, 14)
         .overlay(alignment: .bottom) {
             Rectangle().fill(TutorialStageColor.line).frame(height: 1)
@@ -519,12 +524,48 @@ struct StageStatusChip: View {
     }
 }
 
+// MARK: - screen insets
+
+/// How far the menu bar and the Dock reach into the stage's screen, from
+/// its visible frame: the Dock on any side, shown or auto-hidden.
+private struct StageInsetsKey: EnvironmentKey {
+    static let defaultValue = EdgeInsets()
+}
+
+extension EnvironmentValues {
+    var stageInsets: EdgeInsets {
+        get { self[StageInsetsKey.self] }
+        set { self[StageInsetsKey.self] = newValue }
+    }
+}
+
+final class StageInsets: ObservableObject {
+    @Published var value = EdgeInsets()
+
+    static func of(_ screen: NSScreen) -> EdgeInsets {
+        let frame = screen.frame, visible = screen.visibleFrame
+        return EdgeInsets(top: frame.maxY - visible.maxY, leading: visible.minX - frame.minX,
+                          bottom: visible.minY - frame.minY, trailing: frame.maxX - visible.maxX)
+    }
+}
+
+private struct StageRoot<Content: View>: View {
+    @ObservedObject var insets: StageInsets
+    let content: Content
+
+    var body: some View {
+        content.environment(\.stageInsets, insets.value)
+    }
+}
+
 // MARK: - window
 
 /// One borderless window over the whole screen under the pointer.
 /// HyprMac never tiles its own windows.
 final class TutorialWindowController {
     private(set) var window: NSWindow?
+    private let insets = StageInsets()
+    private var screenObserver: NSObjectProtocol?
 
     private final class StageWindow: NSWindow {
         override var canBecomeKey: Bool { true }
@@ -542,7 +583,8 @@ final class TutorialWindowController {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         guard let frame = screen?.frame else { return }
         let win = StageWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
-        win.contentViewController = NSHostingController(rootView: view)
+        if let screen { insets.value = StageInsets.of(screen) }
+        win.contentViewController = NSHostingController(rootView: StageRoot(insets: insets, content: view))
         win.setFrame(frame, display: true)
         win.level = level
         win.appearance = NSAppearance(named: .darkAqua)
@@ -553,6 +595,14 @@ final class TutorialWindowController {
         bringToFront()
         // hover focus must not reach through the stage
         OwnPanelTracker.shared.track(win)
+        // the Dock moved, resized, or auto-hide changed
+        screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, let screen = self.window?.screen else { return }
+            self.insets.value = StageInsets.of(screen)
+            if let bar = self.bar { self.place(bar, on: screen) }
+        }
     }
 
     func bringToFront() {
@@ -562,6 +612,8 @@ final class TutorialWindowController {
 
     func dismiss() {
         hideBar()
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        screenObserver = nil
         window?.close()
         window = nil
     }
@@ -595,13 +647,10 @@ final class TutorialWindowController {
         hideBar()
         guard let screen = window?.screen ?? NSScreen.main else { return }
         let hosting = NSHostingView(rootView: view)
-        let width = screen.visibleFrame.width - 32
-        hosting.frame = NSRect(x: 0, y: 0, width: width, height: 10)
-        let height = hosting.fittingSize.height
-        let panel = NSPanel(contentRect: NSRect(x: screen.visibleFrame.minX + 16, y: screen.visibleFrame.minY + 16,
-                                                width: width, height: height),
+        let panel = NSPanel(contentRect: .zero,
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         panel.contentView = hosting
+        place(panel, on: screen)
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
@@ -612,6 +661,17 @@ final class TutorialWindowController {
         panel.appearance = NSAppearance(named: .darkAqua)
         panel.orderFrontRegardless()
         bar = panel
+    }
+
+    /// Along the bottom of the visible frame, so the Dock on any side, or
+    /// its auto-hide strip, never covers it.
+    private func place(_ panel: NSPanel, on screen: NSScreen) {
+        guard let hosting = panel.contentView else { return }
+        let visible = screen.visibleFrame
+        let width = visible.width - 32
+        hosting.frame = NSRect(x: 0, y: 0, width: width, height: 10)
+        let height = hosting.fittingSize.height
+        panel.setFrame(NSRect(x: visible.minX + 16, y: visible.minY + 16, width: width, height: height), display: true)
     }
 
     func hideBar() {

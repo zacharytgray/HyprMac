@@ -340,6 +340,35 @@ final class InterfaceSnapshotTests: XCTestCase {
         }
     }
 
+    // the stage with the Dock on the bottom (the hub's 1920×1080 insets) and
+    // on the left: the bars and the step stay clear of it. a gray block
+    // stands in for the Dock
+    func testRenderStageClearOfTheDock() throws {
+        UserConfig.shared.hyprKey = .capsLock
+        let size = CGSize(width: 1920, height: 1080)
+        func withDock<V: View>(_ view: V, _ insets: EdgeInsets) -> some View {
+            ZStack {
+                view.environment(\.stageInsets, insets)
+                Color.clear
+                    .overlay(alignment: insets.bottom > 30 ? .bottom : .leading) {
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(Color.white.opacity(0.3))
+                            .frame(width: insets.bottom > 30 ? 820 : insets.leading - 8,
+                                   height: insets.bottom > 30 ? insets.bottom - 8 : 640)
+                            .padding(insets.bottom > 30 ? .bottom : .leading, 4)
+                    }
+            }
+        }
+        let bottom = EdgeInsets(top: 25, leading: 0, bottom: 85, trailing: 0)
+        let left = EdgeInsets(top: 25, leading: 80, bottom: 4, trailing: 0)
+        try render("stage-dock-bottom-make-it-yours", withDock(
+            MakeItYoursView(onBack: {}, onSkipTutorial: {}, onTakeTutorial: {}), bottom), size: size)
+        try render("stage-dock-bottom-lesson-1", withDock(
+            HyprKeyLessonView(model: HyprKeyLessonModel(), onExit: {}, onNext: {}), bottom), size: size)
+        try render("stage-dock-left-make-it-yours", withDock(
+            MakeItYoursView(onBack: {}, onSkipTutorial: {}, onTakeTutorial: {}), left), size: size)
+    }
+
     func testRenderKeybindChips() throws {
         UserConfig.shared.hyprKey = .capsLock
         let binds = [
