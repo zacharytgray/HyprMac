@@ -29,9 +29,27 @@ struct ColorPickerRow: View {
                     .font(.hyprMonoXs)
                     .foregroundStyle(Color.settingsTextFaint)
             }
-            ColorPicker("", selection: $color, supportsOpacity: false)
-                .labelsHidden()
-                .fixedSize()
+            // a navy swatch; the system well sits on top, nearly clear, so
+            // a click still opens the color panel
+            RoundedRectangle(cornerRadius: HyprRadius.sm + 1, style: .continuous)
+                .fill(color)
+                .frame(width: 38, height: 20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: HyprRadius.sm + 1, style: .continuous)
+                        .strokeBorder(Color.settingsHairline, lineWidth: 1)
+                )
+                .padding(2)
+                .background(
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .fill(Color.settingsRaised)
+                )
+                .overlay {
+                    ColorPicker("", selection: $color, supportsOpacity: false)
+                        .labelsHidden()
+                        .frame(width: 42, height: 24)
+                        .opacity(0.02)
+                }
+                .accessibilityElement(children: .combine)
         }
     }
 }
