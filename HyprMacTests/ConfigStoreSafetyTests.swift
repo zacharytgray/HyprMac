@@ -121,6 +121,20 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertTrue(UserConfig(store: store, iCloudSyncEnabled: false).hadConfigFileAtLoad)
     }
 
+    // a new Mac with iCloud sync on links to another Mac's config: set up
+    func testAConfigTheICloudRelinkBringsInMarksTheMacAsSetUp() throws {
+        try putInICloud(good)
+        let config = UserConfig(store: store, iCloudSyncEnabled: true)
+        XCTAssertTrue(isLink(local))
+        XCTAssertTrue(config.hadConfigFileAtLoad)
+    }
+
+    // sync on with nothing in iCloud yet: the fresh copy HyprMac writes there
+    // isn't a sign of an earlier launch
+    func testAFreshICloudCopyIsNotASignOfAnEarlierLaunch() {
+        XCTAssertFalse(UserConfig(store: store, iCloudSyncEnabled: true).hadConfigFileAtLoad)
+    }
+
     // MARK: unreadable at launch
 
     func testUnreadableConfigIsLeftAloneUntilTheFirstSaveThenCopied() throws {

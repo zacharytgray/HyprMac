@@ -295,9 +295,10 @@ class UserConfig: ObservableObject {
     private var isReloading = false
 
     private let store: ConfigStore
-    /// config.json was there (readable or not) when this launch loaded it.
-    /// Onboarding shows only when it wasn't, among other signs.
-    let hadConfigFileAtLoad: Bool
+    /// config.json was there (readable or not) when this launch loaded it,
+    /// or the iCloud relink brought in one from another Mac. Onboarding shows
+    /// only when it wasn't, among other signs.
+    private(set) var hadConfigFileAtLoad: Bool
 
     var configURL: URL { store.localConfigURL }
 
@@ -429,6 +430,8 @@ class UserConfig: ObservableObject {
         // the values above came from the local file the link just replaced.
         // saving them would write old settings over iCloud
         if relinked {
+            // the link only lands on a copy already in iCloud: another Mac's
+            hadConfigFileAtLoad = true
             reloadFromDisk()
         }
 
