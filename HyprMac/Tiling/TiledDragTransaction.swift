@@ -152,6 +152,22 @@ struct TiledDragTransaction {
                                       recoveryAllowed: { budget.allowsRecovery(at: attempt.io.now()) })
     }
 
+    /// The one frame within `band` of `point`, the nearest when several are.
+    /// nil when none is, or when two are equally near.
+    static func nearestTile(to point: CGPoint, frames: [CGWindowID: CGRect],
+                            within band: CGFloat) -> CGWindowID? {
+        guard band > 0 else { return nil }
+        let near = frames.compactMap { id, frame -> (id: CGWindowID, distance: CGFloat)? in
+            let dx = max(frame.minX - point.x, 0, point.x - frame.maxX)
+            let dy = max(frame.minY - point.y, 0, point.y - frame.maxY)
+            let distance = hypot(dx, dy)
+            return distance <= band ? (id, distance) : nil
+        }.sorted { $0.distance < $1.distance }
+        guard let first = near.first else { return nil }
+        if near.count > 1, near[1].distance == first.distance { return nil }
+        return first.id
+    }
+
     func capture(pointer: CGPoint, tree: BSPTree, context: TiledDragContext,
                  occludingWindows: [HyprWindow], generation: UInt64,
                  currentContext: @escaping () -> TiledDragContext?,
@@ -199,11 +215,18 @@ struct TiledDragTransaction {
               tree.structuralFingerprint() == context.fingerprint else {
             return .unknown(.superseded)
         }
-        let tiledHits = tiledWindows.filter {
+        var tiledHits = tiledWindows.filter {
             captured.actualFrames[$0.windowID]?.contains(pointer) == true
         }
         let occluded = occludingWindows.contains {
             captured.actualFrames[$0.windowID]?.contains(pointer) == true
+        }
+        // a resize can start in the gap, just outside the tile's edge
+        if tiledHits.isEmpty, !occluded,
+           let near = Self.nearestTile(to: pointer,
+                                       frames: captured.actualFrames.filter { tiledIDs.contains($0.key) },
+                                       within: TiledDragSnapshot.outsideBand(gap: context.gap)) {
+            tiledHits = tiledWindows.filter { $0.windowID == near }
         }
         guard tiledHits.count == 1, !occluded, let dragged = tiledHits.first else {
             return .ineligible(.noTarget)
