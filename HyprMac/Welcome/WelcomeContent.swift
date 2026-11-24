@@ -26,30 +26,33 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "graduationcap",
-            title: "New Tutorial",
-            description: "Seven short lessons, about 5 minutes, on practice windows, so yours aren't touched. Leave any time and pick up where you left off. Open it from the menu bar, Hypr+K or Settings → General."
-        ),
-        WhatsNewFeature(
-            icon: "gearshape",
-            title: "New Settings",
-            description: "Eight sections with search: General, Keys, Tiling, Workspaces, Monitors, Mouse, Appearance and Advanced."
-        ),
-        WhatsNewFeature(
-            icon: "hand.draw",
-            title: "Drag to Grant Access",
-            description: "Grant Accessibility by dragging HyprMac into the list that opens. No hunting for the app.",
+            icon: "arrow.left.and.right",
+            title: "Resize From the Gap",
+            description: "Grab the gap between two tiles to resize them, the way macOS lets you grab just outside a window's edge.",
             credit: "dex157"
         ),
         WhatsNewFeature(
-            icon: "arrow.counterclockwise",
-            title: "Resets That Ask First",
-            description: "Each section has its own reset. Every reset asks first, keeps a copy of your settings and matches a new install."
+            icon: "circle.lefthalf.filled",
+            title: "Instant Dim on Switch",
+            description: "Switching workspaces changes the dim at once, with no fade over the new windows.",
+            credit: "dex157"
         ),
         WhatsNewFeature(
-            icon: "pause.circle",
-            title: "Resume Keeps Windows",
-            description: "Resuming from Pause keeps every window where it was, even with a full-screen video in front."
+            icon: "contextualmenu.and.cursorarrow",
+            title: "Pop-Ups Stay Open",
+            description: "Moving the pointer into an app's pop-up, like Outlook's color picker, no longer closes it.",
+            credit: "kenmencher"
+        ),
+        WhatsNewFeature(
+            icon: "macwindow.on.rectangle",
+            title: "Floaters Come Back in Front",
+            description: "Leave a workspace with a floating window focused, and it is focused and in front when you come back.",
+            tint: .magenta
+        ),
+        WhatsNewFeature(
+            icon: "arrow.up.left.and.arrow.down.right",
+            title: "Full Screen Stays Put",
+            description: "A switch no longer takes a busy app's window out of full screen."
         ),
     ]
 }
