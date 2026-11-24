@@ -26,34 +26,25 @@ enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
         WhatsNewFeature(
-            icon: "keyboard",
-            title: "Caps Lock After Sleep",
-            description: "Caps Lock works as the Hypr key again after a wake, and on keyboards you plug in.",
-            credit: "omeraloni"
+            icon: "gearshape",
+            title: "New Settings",
+            description: "Eight sections with search: General, Keys, Tiling, Workspaces, Monitors, Mouse, Appearance and Advanced."
         ),
         WhatsNewFeature(
-            icon: "arrow.up.left.and.arrow.down.right",
-            title: "Full Screen Sticks",
-            description: "Native full screen holds the first time, and HyprMac leaves full-screen windows alone.",
-            credit: "rangelkoli"
-        ),
-        WhatsNewFeature(
-            icon: "macwindow.on.rectangle",
-            title: "Outlines Follow Floaters",
-            description: "A floating window's outline stays on it as it moves. A refused Hypr+T puts it back where it was.",
-            tint: .magenta
-        ),
-        WhatsNewFeature(
-            icon: "rectangle.split.2x1",
-            title: "Shake on Refused Layout Keys",
-            description: "When togglesplit, a resize or a swap can't fit a window, that window shakes.",
+            icon: "hand.draw",
+            title: "Drag to Grant Access",
+            description: "Grant Accessibility by dragging HyprMac into the list that opens. No hunting for the app.",
             credit: "dex157"
         ),
         WhatsNewFeature(
-            icon: "photo",
-            title: "No Wallpaper Flash",
-            description: "Switching between workspaces with windows no longer flashes the desktop.",
-            credit: "emilnymann"
+            icon: "arrow.counterclockwise",
+            title: "Resets That Ask First",
+            description: "Each section has its own reset. Every reset asks first, keeps a copy of your settings and matches a new install."
+        ),
+        WhatsNewFeature(
+            icon: "pause.circle",
+            title: "Resume Keeps Windows",
+            description: "Resuming from Pause keeps every window where it was, even with a full-screen video in front."
         ),
     ]
 }
