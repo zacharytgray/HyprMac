@@ -369,6 +369,8 @@ final class PauseLessonModel: PracticeLessonModel {
     override func didStart() {
         startedOn = config.enabled
         lastEnabled = config.enabled
+        // opened paused: Pause is done and Resume Tiling shows at once
+        evaluate()
     }
 
     override func evaluate() {

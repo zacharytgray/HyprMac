@@ -184,8 +184,7 @@ final class PracticeLessonsTests: XCTestCase {
         config.enabled = false
         let model = PauseLessonModel(practice: practice, config: config, defaults: defaults) { [unowned self] in self.clock }
         model.didStart()
-        model.evaluate()
-        XCTAssertTrue(model.paused)
+        XCTAssertTrue(model.paused, "opened paused, the first task is done at once")
         config.enabled = true
         model.evaluate()
         config.enabled = false
