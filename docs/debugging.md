@@ -1042,7 +1042,7 @@ Log lines, all at notice level:
 |---|---|---|
 | `ffm paused: popup wid=<id> pid=<pid> layer=<n> bounds=<rect>` | mouse | hover focus stopped for an open menu |
 | `ffm resumed: popup <id> gone` | mouse | hover focus back |
-| `ffm blocked <n>s: <reason>` | mouse | hover refused for one reason for 5 s. The reason is a held button, a menu, the Dock, a HyprMac panel (the menu bar panel or an overlay, which the hit test sees through), the quiet window after an action, a raised window of the front app, or an unmanaged window on top |
+| `ffm blocked <n>s: <reason>` | mouse | hover refused for one reason for 5 s. The reason is a held button, a menu, the Dock, a HyprMac panel (the menu bar panel or an overlay, which the hit test sees through), the quiet window after an action, a raised window of the front app, an unmanaged window on top, or an app's pop-up on top (`pop-up <id> on top`) |
 | `ffm unblocked after <n>s: <reason>` | mouse | that reason ended |
 | `screenshot picker open\|closed: <reason>` | lifecycle | the dim comes down while macOS's picker is up. The picker stops at the dim panel over an inactive window, whatever its `ignoresMouseEvents` and `sharingType` say |
 | `press state stuck with no button held — clearing` | mouse | a mouse-up never arrived. Hover and window polling would have stood down until the next real click |
@@ -1676,6 +1676,20 @@ the next retile. Its `discovery retile:` line names it as `unfloated=[…]`.
 ```
 auto-float window is not resizable: 'Untitled' (4630) com.example.App — re-checked 3 times over 3.5s
 auto-float re-check: 'Untitled' (4630) is resizable now — handing it back to tiling
+```
+
+A floater whose size is not settable and that has no title and no close
+button is marked as one of its app's pop-ups, such as Outlook's text color
+grid (#114). It stays managed: outline and workspace hiding. Hover
+does not focus it, because the AX main write and the synthetic click close
+it. Hover over it is blocked as for an unmanaged popover, and the refocus
+after a click leaves it alone as for any floater on top. A click on it still
+records focus. The mark is made once, at first sight, and clears if the
+window becomes resizable and goes back to tiling.
+
+```
+auto-float window is not resizable: '' (9354) com.example.App — re-checked 3 times over 3.5s; a pop-up, hover leaves it alone
+auto-float excluded app: 9354 is a pop-up, hover leaves it alone
 ```
 
 The observer side retries each registration on its own. Every poll asks

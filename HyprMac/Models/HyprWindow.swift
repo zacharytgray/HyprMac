@@ -111,6 +111,16 @@ class HyprWindow: Equatable, Hashable {
         return value as? String
     }
 
+    /// Whether the window has a close button. nil when the app did not answer.
+    var hasCloseButton: Bool? {
+        var value: AnyObject?
+        switch AXUIElementCopyAttributeValue(element, kAXCloseButtonAttribute as CFString, &value) {
+        case .success: return value != nil
+        case .noValue, .attributeUnsupported: return false
+        default: return nil
+        }
+    }
+
     /// What the float and tile rules say about this window, nil when none
     /// covers it. The title is read only if a rule needs it.
     func floatingVerdict(_ book: FloatingRuleBook) -> FloatingRuleVerdict? {
