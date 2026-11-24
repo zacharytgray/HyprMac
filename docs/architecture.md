@@ -471,6 +471,13 @@ gives up. `isSwitchSettled` stays false while a retry is pending. The
 switch's focus pick is unchanged: a held tile does not take focus when it
 comes back.
 
+The switch focuses, in order: the window the caller asked for
+(`preferredWindowID`), the floater that had focus when that workspace was
+last left (`departedFocusedFloater`), the maximized tile, the first tile, then
+any window. The floater comes back in front, the way the user left it. A tile
+focused when the workspace was left clears that entry, so the floaters tuck
+behind it as usual.
+
 ## Ownership rules
 
 - **`WindowStateCache`** is the only owner of window-keyed

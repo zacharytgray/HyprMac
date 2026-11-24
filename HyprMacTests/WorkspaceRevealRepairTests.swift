@@ -37,6 +37,7 @@ final class WorkspaceRevealRepairTests: XCTestCase {
     private var hidden: Int!
     private var display: DisplayManager!
     private var border: FocusBorder!
+    private var focus: FocusStateController!
     private var suppressions: SuppressionRegistry!
     private var engine: TilingEngine!
     private let tileWrites = TileWrites()
@@ -53,13 +54,14 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         stateCache = WindowStateCache()
         let border = FocusBorder()
         self.border = border
+        focus = FocusStateController(focusBorder: border)
         engine = TilingEngine(displayManager: display,
                               frameSizingIOFactory: { [tileWrites] _, generation in tileWrites.io(generation) })
         orchestrator = WorkspaceOrchestrator(
             workspaceManager: workspaceManager, tilingEngine: engine,
             accessibility: AccessibilityManager(), displayManager: display,
             cursorManager: CursorManager(), stateCache: stateCache,
-            focusController: FocusStateController(focusBorder: border), focusBorder: border,
+            focusController: focus, focusBorder: border,
             dimmingOverlay: DimmingOverlay(), suppressions: suppressions,
             revalidation: MinimaRevalidation())
         orchestrator.screenUnderCursor = { [unowned self] in self.screen }
@@ -167,6 +169,52 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertEqual(floater.storedFrame.origin, workspaceManager.hidePosition(), "parked")
         XCTAssertNil(border.currentFloaterOutline(for: floater.windowID))
         XCTAssertNil(glow.animation(forKey: "fade"), "gone at once, no fade on the new workspace")
+    }
+
+    /// a window on `workspace`, on screen, floating or tiled
+    private func shownWindow(id: CGWindowID, on workspace: Int, floating: Bool) -> RevealWindow {
+        let window = RevealWindow(id: id, frame: saved)
+        workspaceManager.assignWindow(id, toWorkspace: workspace)
+        stateCache.windowOwners[id] = window.ownerPID
+        if floating {
+            stateCache.floatingWindowIDs.insert(id)
+            window.isFloating = true
+        }
+        return window
+    }
+
+    // the user left this workspace with a floater focused. coming back
+    // focuses that floater again, which raises it, instead of the first
+    // tile, which would tuck the floater behind it
+    func testComingBackFocusesTheFloaterThatHadFocusWhenTheWorkspaceWasLeft() {
+        let tile = shownWindow(id: 7330, on: visible, floating: false)
+        let floater = shownWindow(id: 7331, on: visible, floating: true)
+        orchestrator.allWindows = { [tile, floater] }
+        focus.recordFocus(floater.windowID, reason: "test")
+
+        orchestrator.switchWorkspace(hidden)
+        orchestrator.switchWorkspace(visible)
+
+        XCTAssertEqual(focus.lastFocusedID, floater.windowID)
+        XCTAssertTrue(orchestrator.departedFocusedFloater.isEmpty, "used once")
+    }
+
+    // a tile had focus when the user left: the floater tucking behind the
+    // focused tile is how floaters work, so the usual pick stands
+    func testComingBackWithATileFocusedKeepsTheUsualPick() {
+        let tile = shownWindow(id: 7332, on: visible, floating: false)
+        let floater = shownWindow(id: 7333, on: visible, floating: true)
+        orchestrator.allWindows = { [floater, tile] }
+        focus.recordFocus(floater.windowID, reason: "test")
+        orchestrator.switchWorkspace(hidden)
+        orchestrator.switchWorkspace(visible)
+        // now the tile has focus, and the next time the user leaves
+        focus.recordFocus(tile.windowID, reason: "test")
+
+        orchestrator.switchWorkspace(hidden)
+        orchestrator.switchWorkspace(visible)
+
+        XCTAssertEqual(focus.lastFocusedID, tile.windowID)
     }
 
     func testTheRetryDropsAFloaterWhoseWorkspaceWasHiddenAgain() {

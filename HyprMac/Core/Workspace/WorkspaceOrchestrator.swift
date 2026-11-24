@@ -101,6 +101,10 @@ final class WorkspaceOrchestrator {
     /// could not reveal is still being retried. A brand-new window may be
     /// tiled during the switch's transition hold only then.
     var isSwitchSettled: Bool { switchesInFlight == 0 && revealRetryPending.isEmpty }
+    /// Per workspace, the floater that had focus when a switch hid it. Coming
+    /// back focuses it again, in front, the way the user left it. A tile
+    /// focused at the switch clears the entry: the switch's usual pick stands.
+    private(set) var departedFocusedFloater: [Int: CGWindowID] = [:]
     // the rule that keeps a window floating (Never tile or a float rule),
     // nil when none does. FloatingWindowController.floatRule(for:)
     var floatRule: (HyprWindow) -> FloatingRuleVerdict? = { _ in nil }
@@ -345,6 +349,21 @@ final class WorkspaceOrchestrator {
         onDidSwitch(destination, physicalScreen)
     }
 
+    /// A switch is hiding `hiding`. When the focused window is among them,
+    /// remember it for that workspace if it floats, and forget any earlier
+    /// floater if a tile has focus. Focus on another screen says nothing
+    /// about this workspace, so the entry stays.
+    private func noteDepartedFocus(hiding: Set<CGWindowID>) {
+        let focused = focusController.lastFocusedID
+        guard focused != 0, hiding.contains(focused),
+              let workspace = workspaceManager.workspaceFor(focused) else { return }
+        if stateCache.floatingWindowIDs.contains(focused) {
+            departedFocusedFloater[workspace] = focused
+        } else {
+            departedFocusedFloater.removeValue(forKey: workspace)
+        }
+    }
+
     private func rejectTransfer(_ window: HyprWindow, message: String) {
         if let transferRejected {
             transferRejected(window, message)
@@ -431,6 +450,8 @@ final class WorkspaceOrchestrator {
             return
         }
 
+        noteDepartedFocus(hiding: result.toHide)
+
         // the dim follows a switch at once, both ways
         dimmingOverlay.beginInstantSwitch(incoming: result.toShow, outgoing: result.toHide)
         // the outgoing floaters' outlines go with them, also at once
@@ -507,9 +528,13 @@ final class WorkspaceOrchestrator {
         // any floating window before giving up. only warp+hide if truly empty.
         let newWorkspaceWindows = allWindows.filter { result.toShow.contains($0.windowID) }
         let preferred = newWorkspaceWindows.first { $0.windowID == preferredWindowID }
+        // the floater focused when this workspace was left, still floating here
+        let departed = departedFocusedFloater.removeValue(forKey: number).flatMap { id in
+            newWorkspaceWindows.first { $0.windowID == id && stateCache.floatingWindowIDs.contains(id) }
+        }
         let maximized = newWorkspaceWindows.first { $0.windowID == maximizedHere }
         let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }
-        if let best = preferred ?? maximized ?? tiled ?? newWorkspaceWindows.first {
+        if let best = preferred ?? departed ?? maximized ?? tiled ?? newWorkspaceWindows.first {
             best.focus()
             warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
                  placedFrame: preferredFrame, workspace: number, screen: result.screen,
