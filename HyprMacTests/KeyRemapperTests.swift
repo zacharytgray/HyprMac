@@ -571,6 +571,20 @@ final class KeyRemapperTests: XCTestCase {
         XCTAssertEqual(reasons.count, 1)
     }
 
+    /// a keyboard already present at the start that the event system lists
+    /// late misses the first check, so the start looks again like an arrival
+    func testStartingTheWatcherLooksAgainLater() {
+        var scheduled: [(TimeInterval, DispatchWorkItem)] = []
+        var reasons: [String] = []
+        let watcher = KeyboardArrivalWatcher(schedule: { scheduled.append(($0, $1)) },
+                                             onCheck: { reasons.append($0) })
+        watcher.start()
+        XCTAssertEqual(scheduled.map(\.0), KeyboardArrivalWatcher.checkDelays)
+        scheduled.forEach { $0.1.perform() }
+        XCTAssertEqual(reasons, Array(repeating: "keyboard watch started", count: 3))
+        watcher.stop()
+    }
+
     /// a keyboard the event system hasn't listed yet at the first check, or
     /// one that refused the list, gets one more look a few seconds later
     func testAnArrivalBurstChecksTwice() {

@@ -458,8 +458,11 @@ final class KeyboardArrivalWatcher {
         // the keyboards already here aren't arrivals, but draining arms it
         Self.drain(iterator)
         // one plugged in after the launch write but before this registered
-        // was no arrival; one check now covers it
+        // was no arrival; one check now covers it. a keyboard already in the
+        // iterator that the event system lists late misses that check, so it
+        // gets the same later looks an arrival gets
         onCheck("keyboard watch started")
+        scheduleChecks(reason: "keyboard watch started")
     }
 
     func stop() {
@@ -484,9 +487,13 @@ final class KeyboardArrivalWatcher {
 
     /// a new burst replaces the checks still waiting from the last one
     func noteArrivals() {
+        scheduleChecks(reason: "keyboard arrived")
+    }
+
+    private func scheduleChecks(reason: String) {
         pending.forEach { $0.cancel() }
         pending = Self.checkDelays.map { delay in
-            let work = DispatchWorkItem { [weak self] in self?.onCheck("keyboard arrived") }
+            let work = DispatchWorkItem { [weak self] in self?.onCheck(reason) }
             schedule(delay, work)
             return work
         }

@@ -1196,7 +1196,8 @@ and stopped with `WindowManager`). The second look catches a keyboard the
 event system lists late, or one that refused the list the first time; a
 burst of arrivals replaces the checks still waiting. Starting the watcher
 runs one check too: a keyboard plugged in between the launch write and the
-registration is no arrival. Pinned by the #103 tests in
+registration is no arrival. It also gets the same one- and four-second looks,
+for a keyboard already there that the event system lists late. Pinned by the #103 tests in
 `KeyRemapperTests`.
 
 A service client works only while the event system client that listed it
