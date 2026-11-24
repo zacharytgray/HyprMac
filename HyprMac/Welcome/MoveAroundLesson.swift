@@ -165,7 +165,7 @@ struct LessonBar: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .tutorialGlass(cornerRadius: 16)
+        .tutorialGlass(cornerRadius: 16, opaque: true)
         .environment(\.colorScheme, .dark)
     }
 

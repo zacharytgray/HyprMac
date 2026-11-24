@@ -317,7 +317,7 @@ struct MenuBarAndKeysLessonBar: View {
         LessonBar(
             lesson: .menuBarAndKeys,
             why: config.focusFollowsMouse
-                ? "With focus following the mouse, the trip up to the menu bar crosses other windows and switches it to their app. \(jump) goes straight there."
+                ? "With focus following the mouse, the trip up to the menu bar passes over other windows and changes the menu bar to their app. \(jump) jumps straight there."
                 : "\(jump) puts the pointer on the menu bar of the app you're in, with no trip across the screen.",
             tasks: [
                 BarTask(title: "Jump to the menu bar", bind: model.bind { $0 == .focusMenuBar }, done: model.jumped),

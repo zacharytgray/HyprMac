@@ -321,12 +321,15 @@ extension TutorialTaskCard where Accessory == EmptyView {
 extension View {
     /// Translucent navy with a light top edge: the overlay glass, tinted to
     /// the stage. Drawn, not blurred, so it looks the same in a snapshot.
-    func tutorialGlass(cornerRadius: CGFloat) -> some View {
+    /// `opaque` for the lesson bar, which sits over windows: nothing behind
+    /// it, like a tile's focus marks, may show through.
+    func tutorialGlass(cornerRadius: CGFloat, opaque: Bool = false) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        let alpha = opaque ? 1 : 0.86
         return self
             .background(
-                shape.fill(LinearGradient(colors: [TutorialStageColor.glassTop.opacity(0.86),
-                                                   TutorialStageColor.glassBottom.opacity(0.86)],
+                shape.fill(LinearGradient(colors: [TutorialStageColor.glassTop.opacity(alpha),
+                                                   TutorialStageColor.glassBottom.opacity(alpha)],
                                           startPoint: .top, endPoint: .bottom))
             )
             .overlay(
