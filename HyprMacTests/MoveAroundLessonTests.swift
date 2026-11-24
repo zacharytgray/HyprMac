@@ -11,7 +11,9 @@ final class MoveAroundLessonTests: XCTestCase {
         /// a refused switch, as mid display change
         var refuses = false
         var capacity = 8
+        var insets: [Int: CGFloat] = [:]
         func tileCapacity(of workspace: Int) -> Int { capacity }
+        func setBottomInset(_ inset: CGFloat?, workspace: Int) { insets[workspace] = inset }
         func currentWorkspace() -> Int? { current }
         func emptyWorkspaces() -> [Int] { empty }
         func switchToWorkspace(_ number: Int) {
@@ -176,6 +178,25 @@ final class MoveAroundLessonTests: XCTestCase {
         XCTAssertFalse(StageSession.escEndsTutorial(screen: .onboarding(.hyprKey), keyCode: 53,
                                                     onStage: true, helperIsFront: false))
         XCTAssertFalse(TutorialWindowController().coversScreen, "no stage, nothing to cover")
+    }
+
+    // the lesson card keeps room under the practice tiles, on the practice
+    // workspace only, and every way out of practice takes it away
+    func testTheCardsRoomIsOnThePracticeWorkspaceUntilPracticeEnds() {
+        let host = FakeHost()
+        let session = PracticeSession(host: host)
+        session.setCardHeight(150)
+        XCTAssertEqual(host.insets, [:], "no practice, no room")
+        session.begin()
+        session.setCardHeight(150)
+        XCTAssertEqual(host.insets[3], PracticeSession.cardInset(forCardHeight: 150))
+        XCTAssertEqual(host.insets[1], nil, "the user's own workspace keeps its tiles")
+        XCTAssertGreaterThanOrEqual(PracticeSession.cardInset(forCardHeight: 150), 150 + 16 + 8)
+        session.setCardHeight(190)
+        XCTAssertEqual(host.insets[3], PracticeSession.cardInset(forCardHeight: 190))
+        session.end()
+        XCTAssertNil(host.insets[3])
+        XCTAssertNil(session.cardInset)
     }
 
     // a refused switch leaves the user on their own workspace: no practice there

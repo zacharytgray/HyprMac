@@ -168,6 +168,24 @@ final class OuterPaddingOverrideTests: XCTestCase {
         }
     }
 
+    // the tutorial's lesson card: room under one workspace's tiles only,
+    // gone when cleared
+    func testABottomInsetRaisesOnlyItsWorkspacesTiles() {
+        let (engine, screen) = engineAndScreen()
+        engine.workspaceBottomInsets[2] = 150
+        let practice = makeWindow(id: 1)
+        let own = makeWindow(id: 2)
+
+        XCTAssertTrue(engine.tileWindows([practice], onWorkspace: 2, screen: screen).published)
+        XCTAssertTrue(engine.tileWindows([own], onWorkspace: 1, screen: screen).published)
+        XCTAssertEqual(engine.intendedTileRects()[practice.windowID], CGRect(x: 8, y: 8, width: 2384, height: 1434))
+        XCTAssertEqual(engine.intendedTileRects()[own.windowID], CGRect(x: 8, y: 8, width: 2384, height: 1584))
+
+        engine.workspaceBottomInsets[2] = nil
+        XCTAssertTrue(engine.tileWindows([practice], onWorkspace: 2, screen: screen).published)
+        XCTAssertEqual(engine.intendedTileRects()[practice.windowID], CGRect(x: 8, y: 8, width: 2384, height: 1584))
+    }
+
     func testEngineWithoutAnOverrideKeepsOuterPadding() {
         let (engine, screen) = engineAndScreen()
         engine.outerPaddingPerMonitor = ["Some other monitor": EdgePadding(top: 40)]

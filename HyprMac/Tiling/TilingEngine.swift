@@ -236,6 +236,22 @@ class TilingEngine {
         maxSplitsPerMonitor[screen.localizedName] ?? TilingConfig.defaultMaxDepth
     }
 
+    /// Extra room at the bottom of one workspace's tiles, in points. Only
+    /// the tutorial sets it, for its practice workspace, so the lesson card
+    /// covers no tile; it lives in memory and is cleared when practice ends.
+    var workspaceBottomInsets: [Int: CGFloat] = [:] {
+        didSet { if workspaceBottomInsets != oldValue { beginLayoutGeneration() } }
+    }
+
+    /// `rect` (CG, y down) with `bottom` taken off its lower edge, keeping
+    /// at least half its height.
+    static func insetBottom(_ rect: CGRect, by bottom: CGFloat?) -> CGRect {
+        guard let bottom, bottom > 0 else { return rect }
+        var out = rect
+        out.size.height -= min(bottom, rect.height / 2)
+        return out
+    }
+
     /// Per-screen outer padding overrides, keyed by `NSScreen.localizedName`.
     /// A side without one pads that edge with `outerPadding`.
     var outerPaddingPerMonitor: [String: EdgePadding] = [:] {
@@ -2943,8 +2959,9 @@ class TilingEngine {
         if key.workspace == Self.scratchpadWorkspace, let region = scratchpadRegions[key] {
             return region
         }
-        return Self.tilingRect(displayManager.cgRect(for: screen), outerPadding: outerPadding,
-                               padding: outerPaddingPerMonitor[screen.localizedName])
+        return Self.insetBottom(Self.tilingRect(displayManager.cgRect(for: screen), outerPadding: outerPadding,
+                                                padding: outerPaddingPerMonitor[screen.localizedName]),
+                                by: workspaceBottomInsets[key.workspace])
     }
 
     /// A padding override moves edges of `rect` off the usable frame,

@@ -34,6 +34,8 @@ protocol PracticeHost: AnyObject {
     func keybindSearchText() -> String
     /// every rule that names `bundleID`, from Hypr+I or Settings
     func removeRules(bundleID: String)
+    /// room under `workspace`'s tiles for the lesson card; nil removes it
+    func setBottomInset(_ inset: CGFloat?, workspace: Int)
 }
 
 extension PracticeHost {
@@ -41,6 +43,7 @@ extension PracticeHost {
     func floatPracticeWindow(pid: pid_t, number: Int) -> Bool { false }
     func keybindSearchText() -> String { "" }
     func removeRules(bundleID: String) {}
+    func setBottomInset(_ inset: CGFloat?, workspace: Int) {}
 }
 
 final class WindowManagerPracticeHost: PracticeHost {
@@ -102,6 +105,10 @@ final class WindowManagerPracticeHost: PracticeHost {
         PracticeSession.removeRules(bundleID: bundleID, from: UserConfig.shared)
     }
 
+    func setBottomInset(_ inset: CGFloat?, workspace: Int) {
+        windowManager?.setTutorialBottomInset(inset, workspace: workspace)
+    }
+
     /// "Practice 3" → 3
     private static func number(of window: HyprWindow) -> Int? {
         guard let title = window.title, title.hasPrefix("Practice ") else { return nil }
@@ -127,6 +134,7 @@ final class LatePracticeHost: PracticeHost {
     func floatPracticeWindow(pid: pid_t, number: Int) -> Bool { host.floatPracticeWindow(pid: pid, number: number) }
     func keybindSearchText() -> String { host.keybindSearchText() }
     func removeRules(bundleID: String) { host.removeRules(bundleID: bundleID) }
+    func setBottomInset(_ inset: CGFloat?, workspace: Int) { host.setBottomInset(inset, workspace: workspace) }
 }
 
 /// The helper's process: NSRunningApplication in the app, a fake in tests.
@@ -157,6 +165,8 @@ final class PracticeSession: ObservableObject {
     /// nil when the screen has no such workspace
     private(set) var practiceWorkspace: Int?
     private(set) var otherWorkspace: Int?
+    /// the room kept under the practice tiles for the lesson card
+    private(set) var cardInset: CGFloat?
     /// why practice didn't start, for the lesson bar
     @Published private(set) var unavailable: String?
 
@@ -264,6 +274,21 @@ final class PracticeSession: ObservableObject {
         helper = app
     }
 
+    /// The lesson card is `height` tall, 16 pt above the visible bottom:
+    /// the practice tiles end above it with a gap. In 8 pt steps, so a line
+    /// more or less of text doesn't retile.
+    func setCardHeight(_ height: CGFloat) {
+        guard isActive, let workspace = practiceWorkspace else { return }
+        let inset = Self.cardInset(forCardHeight: height)
+        guard inset != cardInset else { return }
+        cardInset = inset
+        host?.setBottomInset(inset, workspace: workspace)
+    }
+
+    static func cardInset(forCardHeight height: CGFloat) -> CGFloat {
+        ((height + 16 + 8) / 8).rounded(.up) * 8
+    }
+
     /// Lesson 3's send target: an empty workspace other than practice's,
     /// checked when the lesson opens, since windows may have moved since
     /// begin(). nil without one, and the lesson says so.
@@ -296,6 +321,8 @@ final class PracticeSession: ObservableObject {
         // a copy the open call didn't hand back goes too
         NSRunningApplication.runningApplications(withBundleIdentifier: Self.helperBundleID).forEach { $0.terminate() }
         host?.removeRules(bundleID: Self.helperBundleID)
+        if cardInset != nil, let workspace = practiceWorkspace { host?.setBottomInset(nil, workspace: workspace) }
+        cardInset = nil
         isRunning = false
         focused = nil
         order = []

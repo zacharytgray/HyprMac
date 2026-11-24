@@ -2427,6 +2427,14 @@ class WindowManager {
         return results
     }
 
+    /// The tutorial's lesson card: tiles on `workspace` end `inset` points
+    /// higher, so the card covers none. nil takes it away.
+    func setTutorialBottomInset(_ inset: CGFloat?, workspace: Int) {
+        guard tilingEngine.workspaceBottomInsets[workspace] != inset else { return }
+        tilingEngine.workspaceBottomInsets[workspace] = inset
+        if isRunning { retile() }
+    }
+
     /// Run `prepare`, retile every visible workspace, run `completion`.
     @discardableResult
     private func retile(
