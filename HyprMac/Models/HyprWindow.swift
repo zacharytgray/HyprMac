@@ -124,9 +124,15 @@ class HyprWindow: Equatable, Hashable {
     /// its chrome (focus border, dim mask, floating outlines) while a
     /// fullscreen window is frontmost so it doesn't draw over a movie or
     /// fullscreen app.
-    var isFullscreen: Bool {
+    var isFullscreen: Bool { fullScreenState ?? false }
+
+    /// Like `isFullscreen`, but nil when the read could not complete: a busy
+    /// app that did not answer in time. A window with no such attribute
+    /// (the Finder desktop) answers no.
+    var fullScreenState: Bool? {
         var value: AnyObject?
         let err = AXUIElementCopyAttributeValue(element, "AXFullScreen" as CFString, &value)
+        if err == .cannotComplete { return nil }
         guard err == .success, let n = value as? NSNumber else { return false }
         return n.boolValue
     }

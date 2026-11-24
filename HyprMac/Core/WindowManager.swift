@@ -2367,7 +2367,7 @@ class WindowManager {
         // and a window in native full screen (or its Space) gets no write:
         // one would take it out of full screen (#104)
         let all = accessibility.getAllWindows()
-        let fullScreen = Set(all.filter { workspaceManager.isInNativeFullScreen($0) }.map(\.windowID))
+        let fullScreen = Set(all.filter { workspaceManager.isInNativeFullScreen($0) == true }.map(\.windowID))
         let keep = Set(Self.restorableIDs(all.map(\.windowID), touched: touched, fullScreen: fullScreen))
         let windows = all.filter { keep.contains($0.windowID) }
         if !fullScreen.isEmpty { hyprLog(.notice, .lifecycle, "tutorial desk: leaving \(fullScreen.count) full-screen window(s) alone") }
@@ -3893,7 +3893,7 @@ private extension WindowManager {
         }
         // a write to a window in native full screen takes it out (#104)
         tilingEngine.isInNativeFullScreen = { $0.isFullscreen }
-        workspaceManager.isInNativeFullScreen = { $0.isFullscreen }
+        workspaceManager.isInNativeFullScreen = { $0.fullScreenState }
         // a window sent to the cursor's monitor rolls back to where it opened
         tilingEngine.newcomerOriginSource = { [weak self] id in
             self?.actionDispatcher.cursorMoveOrigin(id)

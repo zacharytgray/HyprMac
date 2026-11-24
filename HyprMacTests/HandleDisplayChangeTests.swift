@@ -308,6 +308,27 @@ final class DisplayReturnTests: XCTestCase {
         XCTAssertEqual(writes, 1, "every other window is parked as before")
     }
 
+    /// a busy app may not answer the full-screen read. a park write on that
+    /// guess can take a full-screen window out of full screen, so none goes
+    /// out: it is retried like a failed park, and parked once the app says no
+    func testAWindowWhoseFullScreenReadFailsIsNotParkedUntilItsAppAnswers() {
+        let screen = DeskScreen(x: 0, width: 1400)
+        let workspaces = WorkspaceManager(displayManager: DisplayManager(screenSource: { [screen] }))
+        var requests = 0
+        workspaces.onParkFailed = { requests += 1 }
+        let window = PositionWriteCountingWindow(id: 4717)
+        var answer: Bool? = nil
+        workspaces.isInNativeFullScreen = { _ in answer }
+
+        workspaces.hideInCorner(window, on: screen)
+        XCTAssertEqual(window.positionWrites, 0, "no write on a guess")
+        XCTAssertEqual(requests, 1, "the repair poll asks again")
+
+        answer = false
+        workspaces.hideInCorner(window, on: screen)
+        XCTAssertEqual(window.positionWrites, 1, "parked once its app says it is not in full screen")
+    }
+
     /// a floater in native full screen is not parked, so a reveal has
     /// nothing to put back. writing its saved frame can take it out of
     /// full screen
@@ -373,5 +394,17 @@ final class DisplayReturnTests: XCTestCase {
         XCTAssertNotEqual(a.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber,
                           a2.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)
         XCTAssertEqual(DisplayManager(screenSource: { [a2, b2] }).refreshedFingerprint(), forward)
+    }
+}
+
+/// counts the park's position writes, all of which succeed
+private final class PositionWriteCountingWindow: HyprWindow {
+    var positionWrites = 0
+    init(id: CGWindowID) {
+        super.init(element: AXUIElementCreateApplication(9878), windowID: id, ownerPID: 9878)
+    }
+    override func writePosition(_ point: CGPoint) -> AXError {
+        positionWrites += 1
+        return .success
     }
 }

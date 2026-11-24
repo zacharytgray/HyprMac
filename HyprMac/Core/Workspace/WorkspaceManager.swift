@@ -75,9 +75,9 @@ class WorkspaceManager {
     /// ghost over the tiles until then.
     var onParkFailed: (() -> Void)?
 
-    /// Whether a window is in native full screen. Wired by `WindowManager`
-    /// to `AXFullScreen`.
-    var isInNativeFullScreen: (HyprWindow) -> Bool = { _ in false }
+    /// Whether a window is in native full screen, nil when its app could not
+    /// say in time. Wired by `WindowManager` to `AXFullScreen`.
+    var isInNativeFullScreen: (HyprWindow) -> Bool? = { _ in false }
     /// Stands in for the reveal's floater write in tests. nil writes
     /// through `placeFloating`.
     var revealWrite: ((HyprWindow, CGRect) -> Void)?
@@ -409,27 +409,38 @@ class WorkspaceManager {
     func hideInCorner(_ window: HyprWindow, on screen: NSScreen) {
         // native full screen lives on its own Space, and a write to it can
         // take it out of full screen (#104). it is not parked
-        if isInNativeFullScreen(window) {
+        switch isInNativeFullScreen(window) {
+        case true?:
             parkFailures.removeValue(forKey: window.windowID)
             hyprLog(.debug, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) in native full screen — not parked")
             return
+        case nil:
+            // its app did not say whether it is in full screen. no write
+            // goes out on a guess; it is retried like a failed park
+            parkFailed(window, reason: "full screen unknown, no write")
+            return
+        case false?:
+            break
         }
         let pos = hidePosition()
         let rc = window.setPositionOnly(pos)
         guard rc == .success else {
-            // the window is still where it was, visible on a hidden
-            // workspace. the repair poll re-parks it, a bounded number of
-            // times per run of failures
-            let failures = (parkFailures[window.windowID] ?? 0) + 1
-            parkFailures[window.windowID] = failures
-            let asks = failures <= Self.parkRepairRequests
-            hyprLog(.notice, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) park write failed rc=\(rc.rawValue)"
-                    + (asks ? " — repair poll requested" : " — \(failures) in a row, the ordinary poll retries"))
-            if asks { onParkFailed?() }
+            parkFailed(window, reason: "park write failed rc=\(rc.rawValue)")
             return
         }
         parkFailures.removeValue(forKey: window.windowID)
         hyprLog(.debug, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) parked at (\(Int(pos.x)),\(Int(pos.y)))")
+    }
+
+    /// The window is still where it was, visible on a hidden workspace. The
+    /// repair poll re-parks it, a bounded number of times per run of failures.
+    private func parkFailed(_ window: HyprWindow, reason: String) {
+        let failures = (parkFailures[window.windowID] ?? 0) + 1
+        parkFailures[window.windowID] = failures
+        let asks = failures <= Self.parkRepairRequests
+        hyprLog(.notice, .lifecycle, "hide: '\(window.title ?? "?")' (\(window.windowID)) \(reason)"
+                + (asks ? " — repair poll requested" : " — \(failures) in a row, the ordinary poll retries"))
+        if asks { onParkFailed?() }
     }
 
     /// Capture `window`'s current frame so it can be restored after a
@@ -440,7 +451,7 @@ class WorkspaceManager {
     func saveFloatingFrame(_ window: HyprWindow) {
         // not parked in full screen (`hideInCorner`), so nothing to put back.
         // an older frame would undo where macOS puts it when it leaves
-        if isInNativeFullScreen(window) {
+        if isInNativeFullScreen(window) == true {
             savedFloatingFrames.removeValue(forKey: window.windowID)
             return
         }
@@ -461,7 +472,7 @@ class WorkspaceManager {
         if let frame = savedFloatingFrames[window.windowID] {
             savedFloatingFrames.removeValue(forKey: window.windowID)
             // a write to a window in native full screen can take it out (#104)
-            if isInNativeFullScreen(window) {
+            if isInNativeFullScreen(window) == true {
                 hyprLog(.debug, .lifecycle, "reveal: \(window.windowID) in native full screen — saved frame dropped, not written")
                 return
             }

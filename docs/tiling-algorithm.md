@@ -926,8 +926,12 @@ neighbours keep their slots, and its tile is there when it comes back.
   retile, and the next pass after it leaves writes it like any member.
 - **Parking.** A workspace switch parks the windows of the workspace it
   leaves. `WorkspaceManager.hideInCorner` skips one in full screen: it lives
-  on its own Space, and the park write can take it out of full screen. The
-  park repair skips it too, so a full-screen window on a hidden workspace is
+  on its own Space, and the park write can take it out of full screen. When
+  the app does not answer the `AXFullScreen` read in time (`-25204`, a busy
+  app), no write goes out on the guess: the park counts as failed, logs
+  `full screen unknown, no write`, and the repair poll tries again. A window
+  with no such attribute answers no and is parked as before. The
+  park repair skips a full-screen window too, so a full-screen window on a hidden workspace is
   not re-parked every poll. A floater hidden in full screen keeps no saved
   frame, and a reveal drops a saved frame instead of writing it while the
   floater is in full screen. One that leaves full screen while its
