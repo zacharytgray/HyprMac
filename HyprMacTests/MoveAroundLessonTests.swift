@@ -91,6 +91,40 @@ final class MoveAroundLessonTests: XCTestCase {
         XCTAssertEqual(host.switches, [3, 1])
     }
 
+    private final class FakeHelper: PracticeHelperProcess {
+        var processIdentifier: pid_t { 4242 }
+        var terminated = 0
+        func terminate() -> Bool { terminated += 1; return true }
+    }
+
+    // the open call can hand the helper back after the tutorial ended
+    func testAHelperThatOpensAfterTheEndIsQuit() {
+        let session = PracticeSession(host: FakeHost())
+        session.begin()
+        let launch = session.launch
+        session.end()
+        let late = FakeHelper()
+        session.adoptHelper(late, launch: launch)
+        XCTAssertEqual(late.terminated, 1)
+    }
+
+    // or after the session ended and began again: that one isn't ours either
+    func testAHelperFromAnEarlierBeginIsQuit() {
+        let session = PracticeSession(host: FakeHost())
+        session.begin()
+        let first = session.launch
+        session.end()
+        session.begin()
+        let stale = FakeHelper()
+        session.adoptHelper(stale, launch: first)
+        XCTAssertEqual(stale.terminated, 1)
+        let current = FakeHelper()
+        session.adoptHelper(current, launch: session.launch)
+        XCTAssertEqual(current.terminated, 0)
+        session.end()
+        XCTAssertEqual(current.terminated, 1, "end quits the helper it kept")
+    }
+
     func testPracticeStaysPutWithNoEmptyWorkspace() {
         let host = FakeHost()
         host.empty = nil

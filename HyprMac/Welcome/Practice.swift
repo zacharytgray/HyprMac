@@ -115,6 +115,14 @@ final class LatePracticeHost: PracticeHost {
     func removeRules(bundleID: String) { host.removeRules(bundleID: bundleID) }
 }
 
+/// The helper's process: NSRunningApplication in the app, a fake in tests.
+protocol PracticeHelperProcess: AnyObject {
+    var processIdentifier: pid_t { get }
+    func terminate() -> Bool
+}
+
+extension NSRunningApplication: PracticeHelperProcess {}
+
 final class PracticeSession: ObservableObject {
     /// the helper's focused window number, nil when none of its windows is
     @Published private(set) var focused: Int?
@@ -142,7 +150,9 @@ final class PracticeSession: ObservableObject {
     private let host: PracticeHost?
     private var startWorkspace: Int?
     private var observer: NSObjectProtocol?
-    private var helper: NSRunningApplication?
+    private var helper: PracticeHelperProcess?
+    /// counts begin() calls, so a late open from an earlier one is told apart
+    private(set) var launch = 0
     private var poll: Timer?
     /// a window to float as soon as HyprMac has it
     private var pendingFloat: (number: Int, deadline: Date)?
@@ -166,6 +176,7 @@ final class PracticeSession: ObservableObject {
     /// Move to an empty workspace and open the practice windows there.
     func begin(windows count: Int = 3) {
         guard !isActive else { return }
+        launch += 1
         startWorkspace = host?.currentWorkspace()
         if let empty = host?.emptyWorkspace() {
             host?.switchToWorkspace(empty)
@@ -190,12 +201,26 @@ final class PracticeSession: ObservableObject {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
         configuration.arguments = ["--windows", "\(count)", "--parent", "\(getpid())"]
+        let launch = launch
         NSWorkspace.shared.openApplication(at: Self.helperURL, configuration: configuration) { [weak self] app, error in
             DispatchQueue.main.async {
                 if let error { hyprLog(.notice, .lifecycle, "tutorial practice: helper did not open (\(error.localizedDescription))") }
-                self?.helper = app
+                guard let self else { _ = app?.terminate(); return }
+                self.adoptHelper(app, launch: launch)
             }
         }
+    }
+
+    /// The open call hands the helper back late. A session that ended
+    /// meanwhile, or began again, quits it instead of keeping it.
+    func adoptHelper(_ app: PracticeHelperProcess?, launch: Int) {
+        guard let app else { return }
+        guard isActive, launch == self.launch else {
+            hyprLog(.notice, .lifecycle, "tutorial practice: helper opened after the session ended, quitting it")
+            _ = app.terminate()
+            return
+        }
+        helper = app
     }
 
     /// Open one more practice window; with `floating`, HyprMac floats it as
@@ -215,7 +240,7 @@ final class PracticeSession: ObservableObject {
         poll?.invalidate()
         poll = nil
         pendingFloat = nil
-        helper?.terminate()
+        _ = helper?.terminate()
         helper = nil
         // a copy the open call didn't hand back goes too
         NSRunningApplication.runningApplications(withBundleIdentifier: Self.helperBundleID).forEach { $0.terminate() }
