@@ -200,10 +200,13 @@ final class FloatingLessonModel: PracticeLessonModel {
     // without the helper, the keys count
     private var floatKeys = 0
     private var forwardKeys = 0
-    private var setupCheck: DispatchWorkItem?
-    /// how long after the lesson opens the windows are checked: long enough
-    /// for HyprMac to see windows a fresh practice just opened
-    var setupDelay: TimeInterval = 1.5
+    private var setupChecks: [DispatchWorkItem] = []
+    /// windows found away or floating at the last check: one is put back
+    /// only when two checks in a row find it so, since a fresh practice's
+    /// windows take a moment to show up
+    private var suspects: Set<Int> = []
+    /// when after the lesson opens the windows are checked
+    var setupDelays: [TimeInterval] = [1.5, 3, 4.5]
 
     private var floating: [Int] {
         practice.windows.values
@@ -214,25 +217,32 @@ final class FloatingLessonModel: PracticeLessonModel {
     override func didStart() {
         // window 3 can still be on lesson 3's other workspace, or one may
         // float from before: start from three tiles
-        let check = DispatchWorkItem { [weak self] in self?.setUpWindows() }
-        setupCheck = check
-        DispatchQueue.main.asyncAfter(deadline: .now() + setupDelay, execute: check)
+        suspects = []
+        setupChecks = setupDelays.map { delay in
+            let check = DispatchWorkItem { [weak self] in self?.setUpWindows() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: check)
+            return check
+        }
     }
 
     override func stop() {
         super.stop()
-        setupCheck?.cancel()
-        setupCheck = nil
+        setupChecks.forEach { $0.cancel() }
+        setupChecks = []
     }
 
-    /// Each of windows 1 to 3 that's away, floating or closed comes back tiled.
+    /// One check: each of windows 1 to 3 that's away, floating or closed,
+    /// at this check and the one before, comes back tiled. Nothing happens
+    /// until HyprMac lists a practice window here.
     func setUpWindows() {
-        guard practice.isRunning else { return }
-        for number in Self.windowsNeeded {
+        guard practice.isRunning,
+              practice.windows.values.contains(where: { $0.workspace == practice.practiceWorkspace }) else { return }
+        let wrong = Set(Self.windowsNeeded.filter { number in
             let window = practice.windows[number]
-            let tiledHere = window.map { !$0.floating && $0.workspace == practice.practiceWorkspace } ?? false
-            if !tiledHere { practice.bringBackTiled(number) }
-        }
+            return !(window.map { !$0.floating && $0.workspace == practice.practiceWorkspace } ?? false)
+        })
+        for number in wrong.intersection(suspects).sorted() { practice.bringBackTiled(number) }
+        suspects = wrong.subtracting(suspects)
     }
 
     override func noteAction(_ action: String) {

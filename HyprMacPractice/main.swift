@@ -116,7 +116,9 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         report()
     }
 
-    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    // HyprMac closes windows to open them again, so stay up with none; the
+    // parent watch and HyprMac's own quit end it
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow else { return }

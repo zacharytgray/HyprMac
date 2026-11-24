@@ -336,6 +336,8 @@ final class MoveAroundLessonTests: XCTestCase {
                                      workspace: 3)
         let lesson = FloatingLessonModel(practice: session)
         lesson.setUpWindows()
+        XCTAssertEqual(closed, [], "once could be windows still showing up")
+        lesson.setUpWindows()
         XCTAssertEqual(closed, [2, 3], "the floater and the one away close, to open here")
         // the helper reports them closed: they open again, tiled
         session.apply(["focused": 1, "order": [1], "open": [1]])
@@ -346,6 +348,13 @@ final class MoveAroundLessonTests: XCTestCase {
         closed = []
         session.setWindowsForTesting((1...3).map { PracticeWindowState(number: $0, workspace: 3, floating: false) },
                                      workspace: 3)
+        lesson.setUpWindows()
+        lesson.setUpWindows()
+        XCTAssertEqual(closed, [])
+
+        // a fresh practice HyprMac hasn't listed yet: nothing closes
+        session.setWindowsForTesting([], workspace: 3)
+        lesson.setUpWindows()
         lesson.setUpWindows()
         XCTAssertEqual(closed, [])
         session.end()
