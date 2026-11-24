@@ -128,8 +128,8 @@ the keys.
 Settings → Keys offers 14 choices: Caps Lock, backslash, F13–F20, and Option or Command on
 either side.
 
-- Still want Caps Lock now and then? Turn on **Double-tap Hypr to toggle Caps Lock** in
-  Settings → Keys, then tap the Hypr key twice quickly. It does not work in password fields,
+- Still want Caps Lock now and then? Tap the Hypr key twice quickly. New installs have
+  **Double-tap Hypr to toggle Caps Lock** on; older setups turn it on in Settings → Keys. It does not work in password fields,
   where macOS hides keys from HyprMac. Pausing tiling also gives Caps Lock back.
 - If Option or Command is your Hypr key, leave it on its default in the Modifier Keys pane too.
   Backslash and F13–F20 are not in that pane and need nothing.

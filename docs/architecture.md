@@ -1135,7 +1135,8 @@ launch could not be turned off otherwise. An install that writes nothing
 leaves the lock alone.
 
 While HyprMac is active the only way to Caps Lock is the optional double
-tap of the Hypr key (`doubleTapHyprTogglesCapsLock`, off by default; see
+tap of the Hypr key (`doubleTapHyprTogglesCapsLock`, on for new installs, off for configs saved
+before it existed; see
 "Hypr key" in `keybinds-and-actions.md`).
 
 While paused the event tap also stops swallowing the Hypr key.

@@ -407,6 +407,7 @@
 		EDD88F4D1A8BDCF81D7842C9 /* DimmingOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544EC7414BE17D884C97E6FD /* DimmingOverlay.swift */; };
 		EDF1F6BE9094C220921182DC /* FocusStateControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 084CC77D9BC9594A5E7DE366 /* FocusStateControllerTests.swift */; };
 		EDF7475C7C9C832F709C57CC /* ExternalCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C7BF0EA50E0C6EF557B719 /* ExternalCommand.swift */; };
+		EEA5107BF0A25DA987C8F1F5 /* DoubleTapDefaultTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0B7A11C542ADAA5E4FD0D7 /* DoubleTapDefaultTests.swift */; };
 		EEAA0C0162FB6616B29B882F /* AdmissionRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14EDE284FED93137B1A0BADB /* AdmissionRecovery.swift */; };
 		EF5E84BE94D926986D99AF89 /* LayoutMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A885FA2020A2EFF24C41A7 /* LayoutMatcherTests.swift */; };
 		EF60D6F6EC01ADB59E9FDEB6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
@@ -603,6 +604,7 @@
 		7B9CD8207ACFADD7589D6BF1 /* AXPrivate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AXPrivate.h; sourceTree = "<group>"; };
 		7C20135BFA68C42326DDE511 /* ScratchpadPinTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScratchpadPinTests.swift; sourceTree = "<group>"; };
 		7D21846E7D9A34CB1271FE64 /* WindowAdmissionFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowAdmissionFilter.swift; sourceTree = "<group>"; };
+		7E0B7A11C542ADAA5E4FD0D7 /* DoubleTapDefaultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DoubleTapDefaultTests.swift; sourceTree = "<group>"; };
 		7EFFA31BF489F507434821D8 /* UpdateState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateState.swift; sourceTree = "<group>"; };
 		7FBC56CE152E1B13DCC947AD /* FocusResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusResolver.swift; sourceTree = "<group>"; };
 		80DEDE87B2D877B2B57C6767 /* MinSizeMemory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MinSizeMemory.swift; sourceTree = "<group>"; };
@@ -989,6 +991,7 @@
 				556C506B51F8050F6F5E22A4 /* DimmingOverlayTests.swift */,
 				2D4C2638F2735ACBB733C2C4 /* DirectionalFocusGeometryTests.swift */,
 				BAEBB2EAD6484E26F809E2EE /* DiscoveryFollowUpTests.swift */,
+				7E0B7A11C542ADAA5E4FD0D7 /* DoubleTapDefaultTests.swift */,
 				26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */,
 				0C028A4FC146F3AF4E1304BD /* EngineTreeMutationTests.swift */,
 				076C54636990AFE32EBDED6B /* ExternalCommandTests.swift */,
@@ -1679,6 +1682,7 @@
 				74EB88ADC96D2ACBC690C836 /* DimmingOverlayTests.swift in Sources */,
 				B1ACB629A1DDE243422217A9 /* DirectionalFocusGeometryTests.swift in Sources */,
 				BE19E12C9FCCB4AA75FF061E /* DiscoveryFollowUpTests.swift in Sources */,
+				EEA5107BF0A25DA987C8F1F5 /* DoubleTapDefaultTests.swift in Sources */,
 				7A66C97726B539669E56D8DD /* DwindleLayoutTests.swift in Sources */,
 				15920DF0FD6B5E4559618589 /* EngineTreeMutationTests.swift in Sources */,
 				A9D1967005A8FB8929DF5888 /* ExternalCommandTests.swift in Sources */,

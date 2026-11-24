@@ -729,9 +729,12 @@ Control for older configs.
 
 ### Double-tap Hypr to toggle Caps Lock
 
-`doubleTapHyprTogglesCapsLock` in `config.json`, off by default, is the
+`doubleTapHyprTogglesCapsLock` in `config.json` is the
 toggle of the same name in Settings → Keys. With Caps Lock as the Hypr key
 there is otherwise no way to turn Caps Lock on while HyprMac is active.
+A new install, with no `config.json` yet, starts with it on. A saved config
+without the key predates it and reads as off, and Reset to defaults turns
+it off.
 
 `HyprDoubleTap` (in `HotkeyManager.swift`) decides. A tap is a press and
 release of the Hypr key within 300 ms with no other key or modifier going
@@ -783,7 +786,7 @@ Synced over iCloud when sync is on.
 | `outerPadding` | number (px) | 0–32, step 2 | required; 8 | Layout → Gaps → Outer padding |
 | `enabled` | boolean | — | required; `true` | General → Status, the menu bar, Hypr+P |
 | `hyprKey` | string | `capsLock`, `backslash`, `f13`…`f20`, `leftOption`, `rightOption`, `leftCommand`, `rightCommand`; also `tab`, `grave`, `leftShift`, `rightShift`, `leftControl`, `rightControl` (not recommended) | `capsLock` | Keys → Hypr key |
-| `doubleTapHyprTogglesCapsLock` | boolean | — | `false` | Keys → Hypr key |
+| `doubleTapHyprTogglesCapsLock` | boolean | — | `true` for a new install; missing reads as `false` | Keys → Hypr key |
 | `focusFollowsMouse` | boolean | — | `true` | General → Mouse |
 | `mouseHoverPollHz` | integer (Hz) | 60, 120, 240; other values show as Custom, below 30 runs at 30 | 120 | General → Mouse → Hover response |
 | `keepCursorOnWorkspaceSwitch` | boolean | — | `false` | General → Mouse |

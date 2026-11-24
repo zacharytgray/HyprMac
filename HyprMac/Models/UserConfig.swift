@@ -371,7 +371,7 @@ class UserConfig: ObservableObject {
             self.enabled = UserConfigDefaults.enabled
             self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
-            self.doubleTapHyprTogglesCapsLock = UserConfigDefaults.doubleTapHyprTogglesCapsLock
+            self.doubleTapHyprTogglesCapsLock = UserConfigDefaults.freshInstallDoubleTapHyprTogglesCapsLock
             self.animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
             self.mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = UserConfigDefaults.hyprKey
