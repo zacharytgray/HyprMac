@@ -120,7 +120,7 @@ struct MakeItYoursView: View {
                       detail: "Full shows every workspace in use. Compact shows only the current one.") {
                 VStack(alignment: .leading, spacing: 7) {
                     segmented([("Full", MenuBarStyle.full), ("Compact", MenuBarStyle.compact),
-                               ("Off", MenuBarStyle.hidden)],
+                               ("Hidden", MenuBarStyle.hidden)],
                               selection: menuBarStyle) { menuBarStyle = $0 }
                     if menuBarStyle == .hidden {
                         // what the app really offers with no menu bar item

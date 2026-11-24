@@ -225,7 +225,7 @@ final class InterfaceSnapshotTests: XCTestCase {
             FocusIndicatorChoice.border.apply(to: config)
             config.dimInactiveWindows = true
             UserDefaults.standard.set(MenuBarStyle.hidden.rawValue, forKey: UserConfig.menuBarStyleKey)
-            try render("onboarding-3-make-it-yours-menu-bar-off-\(mode)",
+            try render("onboarding-3-make-it-yours-menu-bar-hidden-\(mode)",
                        MakeItYoursView(onBack: {}, onSkipTutorial: {}, onTakeTutorial: {}), size: size, dark: dark)
         }
     }
