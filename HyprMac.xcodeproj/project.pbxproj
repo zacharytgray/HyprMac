@@ -34,6 +34,7 @@
 		0B621FA3924502E4300929E5 /* UserConfigDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A04F6036754CB1510546DFC /* UserConfigDefaults.swift */; };
 		0BB1191A73B6843C0C5D3921 /* DiscoveryFollowUp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71CC5EC901778762C96E67D4 /* DiscoveryFollowUp.swift */; };
 		0C1DCEF374424D27DC57E262 /* AccessibilityDragHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F93F9B0BDFB0D1D4AE7757B5 /* AccessibilityDragHelper.swift */; };
+		0C91009344A11D2EB79B970C /* Practice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E07D23BE161589444BB90A /* Practice.swift */; };
 		0CFEDE16FAF291E190636DE2 /* ParkAttempt.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7BA6748D31B78A95CE18B0E /* ParkAttempt.swift */; };
 		0E266E3F3EE50ECE4195CF23 /* CommandRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74E97BACDC13D46810E508B8 /* CommandRunner.swift */; };
 		0FC4AF3EF564386A97DBECD0 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */; };
@@ -56,6 +57,7 @@
 		19AA6221B0B55BFAC6065DE0 /* CommandRunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D180FDED47AD57DF35C3858C /* CommandRunnerTests.swift */; };
 		1AB9B2043A23A0FB662ECB30 /* RuntimeVariant.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE740E91A8A260E9F899EB51 /* RuntimeVariant.swift */; };
 		1B637997E721C7D6BF0FC307 /* DirectionPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 301C7EDAAD234FC3DDCBAADC /* DirectionPicker.swift */; };
+		1B759693AE333E1FB270E350 /* MoveAroundLesson.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B6A5DAA2A32DA7E60FC90A /* MoveAroundLesson.swift */; };
 		1C09D1112018B2B6DDA753F3 /* WorkspaceSwitchAnnouncementTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3DB9C9425DBA2D12D58CAF7 /* WorkspaceSwitchAnnouncementTests.swift */; };
 		1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23220FDBA7BCF857E8EBC0F0 /* MenuBarView.swift */; };
 		1D5547D2D6368BB0D2355F0E /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E1DEE768A398E963AAB1CA /* DesignSystem.swift */; };
@@ -69,6 +71,7 @@
 		21A1415A1F03BBEE783D30A8 /* TiledDragPreviewSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30AEC105EA3C66B4DE85EB14 /* TiledDragPreviewSession.swift */; };
 		21B0A79C724A76D96120DA5A /* WindowStacking.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2CF1D9358724AFE225566EE /* WindowStacking.swift */; };
 		22376A52337F662468144183 /* FloatingRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53E344597DF39027C1C6772E /* FloatingRule.swift */; };
+		231337793C6A0AFFD0FADF56 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 363DF605A792128B6321285B /* main.swift */; };
 		2374FD719FBB656B3ADFE293 /* LayoutTreeSerializeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF39A8838941CCF925A14ECA /* LayoutTreeSerializeTests.swift */; };
 		2377B41C0D9C8575191E7B84 /* LayoutMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 704DCC0F96A16AC32FD1A5C0 /* LayoutMatcher.swift */; };
 		24B7D8F49D454A555DA8C744 /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F2CD3B4DEFD63B9135A3C6 /* AccessibilityManager.swift */; };
@@ -91,9 +94,11 @@
 		2F7C20004633B3B6A8CCF6D6 /* Action.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B20DF87F29CD5B1164F1E80 /* Action.swift */; };
 		30437070AFBA3C86851B7644 /* OverlayGlassTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3824A8886FAAD2F04890108A /* OverlayGlassTests.swift */; };
 		3106D31CBD97C1E1940BD4AE /* BundleIDPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */; };
+		31A76B46B1247AD77603445A /* MoveAroundLesson.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6B6A5DAA2A32DA7E60FC90A /* MoveAroundLesson.swift */; };
 		321ED983E085852543CE66E5 /* TilingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */; };
 		32F6911C6656248A6458CBC2 /* WorkspaceBatchMoveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 162A7BC992F18583B4289589 /* WorkspaceBatchMoveTests.swift */; };
 		32FE4EC6C39659FECEAC5CD6 /* WindowRulesOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9E521E29996B4D2933B8D4 /* WindowRulesOverlay.swift */; };
+		340046DC9ED0C04250B0D0A6 /* MoveAroundLessonTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8599394EC06E982CA25B13EE /* MoveAroundLessonTests.swift */; };
 		34C91590D4B60168E424EB08 /* AccessibilityDragHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = F93F9B0BDFB0D1D4AE7757B5 /* AccessibilityDragHelper.swift */; };
 		352216EF213AA412624CA34B /* RefusedLayoutFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 546FD17562ADE071E1C4E169 /* RefusedLayoutFeedbackTests.swift */; };
 		353758CC19312ED160662C49 /* LoginItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A202B01AD893174E99223B4E /* LoginItemController.swift */; };
@@ -238,6 +243,7 @@
 		8859E5F37EAB615E8AB5F3A8 /* AccessibilityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9F2CD3B4DEFD63B9135A3C6 /* AccessibilityManager.swift */; };
 		887C756C5FC1DD579E77523F /* FocusPollGate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F0266F4B35C59914C66A1E /* FocusPollGate.swift */; };
 		8AC03572304670759925C62A /* TeleportPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F954A265A2A01102DFAA38E6 /* TeleportPlannerTests.swift */; };
+		8AE6DFF8E255CD00D86E41F9 /* HyprMac Practice.app in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 8A56E9CD1FED7337F3238426 /* HyprMac Practice.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		8BEC65B84A975386F95AA087 /* TiledDragTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8049A0C6B0FBEF8B6ED25B /* TiledDragTarget.swift */; };
 		8C3306FE7A9CD13A28CA5C87 /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49CB059612127CA6F3E7766 /* SettingsComponents.swift */; };
 		8DBC52E0F9E7B680EDD2F573 /* PassBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28002D0AD1DFC9F02FBB78FC /* PassBudget.swift */; };
@@ -286,6 +292,7 @@
 		A7BBF6505B2DE609FB43CE08 /* MinSizeMemoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EEE26248F15BB9A567CA60E /* MinSizeMemoryTests.swift */; };
 		A8C00BD6AAB45FAA178A83B8 /* Constants.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF93D6331BC4826814BB7007 /* Constants.swift */; };
 		A9471E22495C47DF5C1041F3 /* RelaunchHandoff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5295C91AF924071646986BEB /* RelaunchHandoff.swift */; };
+		A969B0C1E662DA149636CD28 /* HyprMac Practice.app in Embed Dependencies */ = {isa = PBXBuildFile; fileRef = 8A56E9CD1FED7337F3238426 /* HyprMac Practice.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		A9D1967005A8FB8929DF5888 /* ExternalCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 076C54636990AFE32EBDED6B /* ExternalCommandTests.swift */; };
 		A9ECD1E0F463C484A59A501A /* Notifications.swift in Sources */ = {isa = PBXBuildFile; fileRef = F783363419470C0FFCA17D43 /* Notifications.swift */; };
 		AA1730447E62F6ED18EAE262 /* MakeItYours.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61FC8D30437B21C66B8F3A41 /* MakeItYours.swift */; };
@@ -420,6 +427,7 @@
 		EEAA0C0162FB6616B29B882F /* AdmissionRecovery.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14EDE284FED93137B1A0BADB /* AdmissionRecovery.swift */; };
 		EF5E84BE94D926986D99AF89 /* LayoutMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A885FA2020A2EFF24C41A7 /* LayoutMatcherTests.swift */; };
 		EF60D6F6EC01ADB59E9FDEB6 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */; };
+		F06BAB6ADAA9C707132CC4D4 /* Practice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E07D23BE161589444BB90A /* Practice.swift */; };
 		F085027AE374E48959DEEB48 /* BSPNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14B540996EBFC8839339556 /* BSPNode.swift */; };
 		F0CFEA06EED537EFEBB7D3B4 /* MinimaRevalidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16EBA7D483B97532F32D8BE /* MinimaRevalidationTests.swift */; };
 		F10860BD19A5F31447601D3C /* StatusExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF11879906CFAC20DB1166F /* StatusExportTests.swift */; };
@@ -453,6 +461,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		385F1CE9EBC3FA853FE6063B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ED0E463BAEA904F2D2E552E1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 24E7E35D6DB3051AC39BFDF7;
+			remoteInfo = "HyprMac Practice";
+		};
 		D73C8709633F66F7A69CD5C6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = ED0E463BAEA904F2D2E552E1 /* Project object */;
@@ -460,7 +475,39 @@
 			remoteGlobalIDString = 7B21C837222925403D932E64;
 			remoteInfo = HyprMac;
 		};
+		E12C6E63B00FFFA962BC1656 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = ED0E463BAEA904F2D2E552E1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 24E7E35D6DB3051AC39BFDF7;
+			remoteInfo = "HyprMac Practice";
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		3C9C957C9D48687BFDC47622 /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				A969B0C1E662DA149636CD28 /* HyprMac Practice.app in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E6F8EDBEB6D4AD4EF275800E /* Embed Dependencies */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				8AE6DFF8E255CD00D86E41F9 /* HyprMac Practice.app in Embed Dependencies */,
+			);
+			name = "Embed Dependencies";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		005ED746E11CC8E270685E3E /* ChromeFrameFollow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChromeFrameFollow.swift; sourceTree = "<group>"; };
@@ -532,6 +579,7 @@
 		31EF3D85D0E0F9BCD33F6455 /* HyprWindowAXReadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprWindowAXReadTests.swift; sourceTree = "<group>"; };
 		3246386B0F502F2D858B3033 /* TileScratchpadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TileScratchpadTests.swift; sourceTree = "<group>"; };
 		355FCEA79CD98B91944BFA23 /* SwitchCoalescerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwitchCoalescerTests.swift; sourceTree = "<group>"; };
+		363DF605A792128B6321285B /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		364C2B96A50F127DC954E83A /* FloatingRuleCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingRuleCommands.swift; sourceTree = "<group>"; };
 		37E7274A1B0A945CFD59F409 /* FloatingRuleRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingRuleRowView.swift; sourceTree = "<group>"; };
 		3824A8886FAAD2F04890108A /* OverlayGlassTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayGlassTests.swift; sourceTree = "<group>"; };
@@ -606,6 +654,7 @@
 		72035E79DADD52282DFEFA0E /* SkyLightFunctions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SkyLightFunctions.swift; sourceTree = "<group>"; };
 		728568405C25B4DD6E5EDD9B /* DestroyRecheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestroyRecheckTests.swift; sourceTree = "<group>"; };
 		72B6952D8617CE03DF8A8E96 /* TiledDragSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragSnapshot.swift; sourceTree = "<group>"; };
+		72E07D23BE161589444BB90A /* Practice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Practice.swift; sourceTree = "<group>"; };
 		735D2D29C87C520F2EDEEAF6 /* KeybindOverlayContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindOverlayContentTests.swift; sourceTree = "<group>"; };
 		7494EE86AE0F7C9129ADB20C /* FloatingDimDragTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingDimDragTracker.swift; sourceTree = "<group>"; };
 		74E97BACDC13D46810E508B8 /* CommandRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRunner.swift; sourceTree = "<group>"; };
@@ -623,9 +672,11 @@
 		83433C5EF00BCFF0E217D037 /* QuickLookPanelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookPanelTests.swift; sourceTree = "<group>"; };
 		84CBD2B2BF9D3574771BFEA3 /* TiledDropPreviewPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDropPreviewPanel.swift; sourceTree = "<group>"; };
 		857FCC6A226AFEECD7A199FC /* WindowDiscoveryServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDiscoveryServiceTests.swift; sourceTree = "<group>"; };
+		8599394EC06E982CA25B13EE /* MoveAroundLessonTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveAroundLessonTests.swift; sourceTree = "<group>"; };
 		85E2687861DA70718C132100 /* HyprKey.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HyprKey.swift; sourceTree = "<group>"; };
 		8665ECFAEE8AA274A2CD6635 /* TiledDragEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragEvent.swift; sourceTree = "<group>"; };
 		8A04F6036754CB1510546DFC /* UserConfigDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserConfigDefaults.swift; sourceTree = "<group>"; };
+		8A56E9CD1FED7337F3238426 /* HyprMac Practice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HyprMac Practice.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8AA15A4F2F4E52C239CCEFB7 /* TutorialStage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialStage.swift; sourceTree = "<group>"; };
 		8B20DF87F29CD5B1164F1E80 /* Action.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Action.swift; sourceTree = "<group>"; };
 		8B218B64E7BBDC96399E8FAB /* GeneralSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeneralSettingsView.swift; sourceTree = "<group>"; };
@@ -693,6 +744,7 @@
 		D380A3B0F4E82D06E495E8FB /* AccessStep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessStep.swift; sourceTree = "<group>"; };
 		D57A5F7275F7811802A7364A /* TabSwitchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchTests.swift; sourceTree = "<group>"; };
 		D69DC45709436657D8D4925A /* CrossMonitorMoveRecoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrossMonitorMoveRecoveryTests.swift; sourceTree = "<group>"; };
+		D6B6A5DAA2A32DA7E60FC90A /* MoveAroundLesson.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveAroundLesson.swift; sourceTree = "<group>"; };
 		D7B55D3C4457B095922C6112 /* LayoutPersistencePerformanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LayoutPersistencePerformanceTests.swift; sourceTree = "<group>"; };
 		D8425DC47E2604936890FF01 /* TiledDriftMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDriftMonitor.swift; sourceTree = "<group>"; };
 		DA7025F1F3F2A6B589919612 /* FloatingWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingWindowController.swift; sourceTree = "<group>"; };
@@ -896,6 +948,14 @@
 			path = State;
 			sourceTree = "<group>";
 		};
+		882FDED58C10650756967753 /* HyprMacPractice */ = {
+			isa = PBXGroup;
+			children = (
+				363DF605A792128B6321285B /* main.swift */,
+			);
+			path = HyprMacPractice;
+			sourceTree = "<group>";
+		};
 		887E2F29AFFCDBE5DADBF861 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
@@ -972,6 +1032,7 @@
 			isa = PBXGroup;
 			children = (
 				0111D90166A539E25441210C /* HyprMac */,
+				882FDED58C10650756967753 /* HyprMacPractice */,
 				B0A0AB76785D9D6DA70BB530 /* HyprMacTests */,
 				F96C1F1C8629A12425EBE5C6 /* Products */,
 			);
@@ -1043,6 +1104,7 @@
 				D16EBA7D483B97532F32D8BE /* MinimaRevalidationTests.swift */,
 				3EEE26248F15BB9A567CA60E /* MinSizeMemoryTests.swift */,
 				078A1208AA569E70DD703182 /* MonitorDirectionTests.swift */,
+				8599394EC06E982CA25B13EE /* MoveAroundLessonTests.swift */,
 				9F47AD9DDA5AE1B3A1C19F68 /* NativeTabRegressionTests.swift */,
 				96C6802CD77F6E1EFDFB3A9C /* OuterPaddingOverrideTests.swift */,
 				3824A8886FAAD2F04890108A /* OverlayGlassTests.swift */,
@@ -1158,6 +1220,8 @@
 				C9F346C43FBDC15C1DA4FB64 /* HyprKeyLesson.swift */,
 				22AF83997566CCA9748A0868 /* HyprKeyPicker.swift */,
 				61FC8D30437B21C66B8F3A41 /* MakeItYours.swift */,
+				D6B6A5DAA2A32DA7E60FC90A /* MoveAroundLesson.swift */,
+				72E07D23BE161589444BB90A /* Practice.swift */,
 				6EDEEE13B637CED75A9FD8A9 /* TourView.swift */,
 				DF261CA3C35CD24A5817A7DA /* TutorialFlow.swift */,
 				8AA15A4F2F4E52C239CCEFB7 /* TutorialStage.swift */,
@@ -1199,6 +1263,7 @@
 			isa = PBXGroup;
 			children = (
 				9C217B7DF054756B5AFD7D9F /* HyprMac Debug.app */,
+				8A56E9CD1FED7337F3238426 /* HyprMac Practice.app */,
 				E33C1B4E40A4FC68DD601FA8 /* HyprMac.app */,
 				E402467C270ED2039D610DC0 /* HyprMacTests.xctest */,
 			);
@@ -1228,6 +1293,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		24E7E35D6DB3051AC39BFDF7 /* HyprMac Practice */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 194AFBAAEF001B8AFC3A718C /* Build configuration list for PBXNativeTarget "HyprMac Practice" */;
+			buildPhases = (
+				B1E258BE153F358ACF12067F /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = "HyprMac Practice";
+			packageProductDependencies = (
+			);
+			productName = "HyprMac Practice";
+			productReference = 8A56E9CD1FED7337F3238426 /* HyprMac Practice.app */;
+			productType = "com.apple.product-type.application";
+		};
 		7B21C837222925403D932E64 /* HyprMac */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 8367B90EBF8EE3F79B18A95A /* Build configuration list for PBXNativeTarget "HyprMac" */;
@@ -1235,10 +1317,12 @@
 				6135DC9F53CE538E5EFC56CA /* Sources */,
 				65CC6060B45C643EEB641345 /* Resources */,
 				18CC93B88131AEEE2917F78A /* Frameworks */,
+				3C9C957C9D48687BFDC47622 /* Embed Dependencies */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				76CDC3A69D230B5A85F162AE /* PBXTargetDependency */,
 			);
 			name = HyprMac;
 			packageProductDependencies = (
@@ -1272,10 +1356,12 @@
 			buildPhases = (
 				BC2DA1C4E4305AE5FB047B34 /* Sources */,
 				A48596526FB4CF9E8D81ED1F /* Resources */,
+				E6F8EDBEB6D4AD4EF275800E /* Embed Dependencies */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				704D9D4F3D5098A61094D6AB /* PBXTargetDependency */,
 			);
 			name = "HyprMac Debug";
 			packageProductDependencies = (
@@ -1293,6 +1379,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					24E7E35D6DB3051AC39BFDF7 = {
+						DevelopmentTeam = "$(DEVELOPMENT_TEAM)";
+						ProvisioningStyle = Automatic;
+					};
 					7B21C837222925403D932E64 = {
 						DevelopmentTeam = "$(DEVELOPMENT_TEAM)";
 						ProvisioningStyle = Automatic;
@@ -1325,6 +1415,7 @@
 			targets = (
 				7B21C837222925403D932E64 /* HyprMac */,
 				F01122428D740F0FA1E61879 /* HyprMac Debug */,
+				24E7E35D6DB3051AC39BFDF7 /* HyprMac Practice */,
 				CD25E0B6DAB296F4334EFC3E /* HyprMacTests */,
 			);
 		};
@@ -1446,6 +1537,7 @@
 				C59F755D984292EB1E5B57CD /* MinSizeMemory.swift in Sources */,
 				27F175436F430C8EC82672E1 /* MinimaRevalidation.swift in Sources */,
 				8840D90CB5E41A31F8D27B3C /* MouseTrackingManager.swift in Sources */,
+				31A76B46B1247AD77603445A /* MoveAroundLesson.swift in Sources */,
 				168E8536EF9F93533C18DFBE /* NewcomerRefusal.swift in Sources */,
 				A9ECD1E0F463C484A59A501A /* Notifications.swift in Sources */,
 				0A72A984DC1426E0D57F9C7B /* OverlayPreview.swift in Sources */,
@@ -1455,6 +1547,7 @@
 				59A1C07CD47B837E7F59A2D7 /* PermissionsGate.swift in Sources */,
 				B6B470A396C5B7DFEE0D30A7 /* PhysicalKeyMonitor.swift in Sources */,
 				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
+				0C91009344A11D2EB79B970C /* Practice.swift in Sources */,
 				527D68624FC4FDB4EAF54FA8 /* ProbeFrame.swift in Sources */,
 				39F4595FA15123DA0A281370 /* RelaunchHandoff.swift in Sources */,
 				D849455C3C1CF4C164649D9A /* RetileAllPlanner.swift in Sources */,
@@ -1513,6 +1606,14 @@
 				41F7A1D74EE6F222740BA806 /* WorkspaceOverviewController.swift in Sources */,
 				86B3C95B411DB51B9AFBE08D /* WorkspacePicker.swift in Sources */,
 				F935DE4DE7E75B5409C3D539 /* WorkspaceStatusPresenter.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B1E258BE153F358ACF12067F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				231337793C6A0AFFD0FADF56 /* main.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1610,6 +1711,7 @@
 				ACF3A959B5C8C979F7C9169F /* MinSizeMemory.swift in Sources */,
 				017A249199B7F80BF9F3D051 /* MinimaRevalidation.swift in Sources */,
 				C1621C4239A1CD9F9E3A969D /* MouseTrackingManager.swift in Sources */,
+				1B759693AE333E1FB270E350 /* MoveAroundLesson.swift in Sources */,
 				BACD47346AB8972892D8DA10 /* NewcomerRefusal.swift in Sources */,
 				5068FB57709B16331D3D08BC /* Notifications.swift in Sources */,
 				7793CE22F8C896C0ABE2C306 /* OverlayPreview.swift in Sources */,
@@ -1619,6 +1721,7 @@
 				35764B87C3B878BA57801CA5 /* PermissionsGate.swift in Sources */,
 				DFCD23D134644697F8DCF3D8 /* PhysicalKeyMonitor.swift in Sources */,
 				DDF87D62ED61F50A5F0681B9 /* PollingScheduler.swift in Sources */,
+				F06BAB6ADAA9C707132CC4D4 /* Practice.swift in Sources */,
 				ED9AA2A6F6F62A2DBB5D3FF9 /* ProbeFrame.swift in Sources */,
 				A9471E22495C47DF5C1041F3 /* RelaunchHandoff.swift in Sources */,
 				FF545C88698CCEFDF156CDFF /* RetileAllPlanner.swift in Sources */,
@@ -1747,6 +1850,7 @@
 				A7BBF6505B2DE609FB43CE08 /* MinSizeMemoryTests.swift in Sources */,
 				F0CFEA06EED537EFEBB7D3B4 /* MinimaRevalidationTests.swift in Sources */,
 				5DC0653308BC85F658CCDC29 /* MonitorDirectionTests.swift in Sources */,
+				340046DC9ED0C04250B0D0A6 /* MoveAroundLessonTests.swift in Sources */,
 				60D77831579ACBABDA7ACA31 /* NativeTabRegressionTests.swift in Sources */,
 				462A219B116F901D7F783789 /* OuterPaddingOverrideTests.swift in Sources */,
 				30437070AFBA3C86851B7644 /* OverlayGlassTests.swift in Sources */,
@@ -1819,9 +1923,45 @@
 			target = 7B21C837222925403D932E64 /* HyprMac */;
 			targetProxy = D73C8709633F66F7A69CD5C6 /* PBXContainerItemProxy */;
 		};
+		704D9D4F3D5098A61094D6AB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 24E7E35D6DB3051AC39BFDF7 /* HyprMac Practice */;
+			targetProxy = E12C6E63B00FFFA962BC1656 /* PBXContainerItemProxy */;
+		};
+		76CDC3A69D230B5A85F162AE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 24E7E35D6DB3051AC39BFDF7 /* HyprMac Practice */;
+			targetProxy = 385F1CE9EBC3FA853FE6063B /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0588C212F61277D44C2342D3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "HyprMac Practice";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zachgray.HyprMac.practice;
+				PRODUCT_NAME = "HyprMac Practice";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+			};
+			name = Release;
+		};
 		12657B3B1CEC150F45C969F2 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2074,6 +2214,32 @@
 			};
 			name = Release;
 		};
+		EF7B083CDDE286CF14406C7A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "$(DEVELOPMENT_TEAM)";
+				ENABLE_HARDENED_RUNTIME = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "HyprMac Practice";
+				INFOPLIST_KEY_NSPrincipalClass = NSApplication;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.27.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zachgray.HyprMac.practice;
+				PRODUCT_NAME = "HyprMac Practice";
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+			};
+			name = Debug;
+		};
 		FCC84C781D79A9DFE025E096 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -2104,6 +2270,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		194AFBAAEF001B8AFC3A718C /* Build configuration list for PBXNativeTarget "HyprMac Practice" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EF7B083CDDE286CF14406C7A /* Debug */,
+				0588C212F61277D44C2342D3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		457BE11452CE21CE204DD157 /* Build configuration list for PBXNativeTarget "HyprMacTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

@@ -17,6 +17,7 @@ grep -q 'testWhatsNewDescribesOnlyThe${NEW_VERSION//./}Changes' "$SCRIPT"
 grep -q 'ARCHS="arm64 x86_64"' "$SCRIPT"
 grep -q 'ONLY_ACTIVE_ARCH=NO' "$SCRIPT"
 grep -q 'lipo -archs' "$SCRIPT"
+grep -q 'find "$APP_PATH/Contents/Helpers" -maxdepth 1 -name' "$SCRIPT"
 grep -q 'git commit -m "Released HyprMac v\$NEW_VERSION"' "$SCRIPT"
 grep -q 'git -C "$TEMP_TAP" commit -m "Updated HyprMac to v\$NEW_VERSION"' "$SCRIPT"
 if grep -Eq 'read .*Keychain password' "$SCRIPT"; then
