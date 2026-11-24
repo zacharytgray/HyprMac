@@ -321,6 +321,36 @@ final class MoveAroundLessonTests: XCTestCase {
         session.end()
     }
 
+    // lesson 4 starts from three tiles: window 3 left on lesson 3's other
+    // workspace, or a floater, comes back tiled; a fresh run is left alone
+    func testLessonFourBringsWindowThreeBackAndKeepsThreeTiles() {
+        let session = PracticeSession(host: FakeHost())
+        var closed: [Int] = [], opened: [Int] = []
+        session.sendClose = { closed.append($0) }
+        session.sendOpen = { opened.append($0) }
+        session.begin()
+        session.apply(["focused": 1, "order": [1, 2], "open": [1, 2, 3]])
+        // window 3 is on workspace 4, away from practice's 3; window 2 floats
+        session.setWindowsForTesting([PracticeWindowState(number: 1, workspace: 3, floating: false),
+                                      PracticeWindowState(number: 2, workspace: 3, floating: true)],
+                                     workspace: 3)
+        let lesson = FloatingLessonModel(practice: session)
+        lesson.setUpWindows()
+        XCTAssertEqual(closed, [2, 3], "the floater and the one away close, to open here")
+        // the helper reports them closed: they open again, tiled
+        session.apply(["focused": 1, "order": [1], "open": [1]])
+        XCTAssertEqual(opened.sorted(), [2, 3])
+        XCTAssertFalse(session.floatsOnReopen.contains(3))
+
+        // a resumed lesson 4: three tiles already, nothing to do
+        closed = []
+        session.setWindowsForTesting((1...3).map { PracticeWindowState(number: $0, workspace: 3, floating: false) },
+                                     workspace: 3)
+        lesson.setUpWindows()
+        XCTAssertEqual(closed, [])
+        session.end()
+    }
+
     // the line under the step is that step's own, not the lesson's first
     func testTheWhyLineFollowsTheCurrentStep() {
         func card(_ done: [Bool]) -> LessonBar {

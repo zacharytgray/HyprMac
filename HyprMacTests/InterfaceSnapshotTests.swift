@@ -421,8 +421,18 @@ final class InterfaceSnapshotTests: XCTestCase {
         try shot("card-lesson-3", WorkspacesLessonBar(model: workspaces, displayCount: 1, onExit: {}, onNext: {}))
 
         let floating = FloatingLessonModel(practice: practice)
+        try shot("card-lesson-4", FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
+        // lesson 4 step by step: float two; click the tile (they tuck behind);
+        // bring them back; tile one back
+        try shot("card-lesson-4-step1", FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
         floating.floatedTwo = true
-        try shot("card-lesson-4", focused: 2, tiled: [3], floaters: [1, 2],
+        try shot("card-lesson-4-step2", focused: 2, tiled: [3], floaters: [1, 2],
+                 FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
+        floating.clickedTile = true
+        try shot("card-lesson-4-step3", focused: 3, tiled: [3],
+                 FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
+        floating.broughtBack = true
+        try shot("card-lesson-4-step4", focused: 1, tiled: [3], floaters: [2, 1],
                  FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
 
         let fix = FixWindowLessonModel(practice: practice)

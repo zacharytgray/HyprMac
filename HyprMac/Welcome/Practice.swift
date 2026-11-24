@@ -326,6 +326,27 @@ final class PracticeSession: ObservableObject {
         host?.preselectTileRule(for: on ? Self.helperBundleID : nil)
     }
 
+    /// tells the helper to close a window; tests listen instead
+    var sendClose: (Int) -> Void = { number in
+        DistributedNotificationCenter.default().postNotificationName(
+            PracticeSession.commandNotification, object: nil, userInfo: ["close": number], deliverImmediately: true)
+    }
+
+    /// Puts practice window `number` back, tiled, on the practice workspace:
+    /// closed, it opens again there (see `reopenClosed`); not open, it opens.
+    func bringBackTiled(_ number: Int) {
+        floatsOnReopen.remove(number)
+        if openWindows.contains(number) {
+            hyprLog(.notice, .lifecycle, "tutorial practice: window \(number) is away or floating, opening it here again")
+            sendClose(number)
+        } else {
+            openWindow(number, floating: false)
+        }
+    }
+
+    /// the windows the helper has open, wherever they are
+    var openWindowNumbers: Set<Int> { openWindows }
+
     /// windows that open floating again if they're closed, e.g. lesson 5's 4
     var floatsOnReopen: Set<Int> = []
     /// the windows the helper last had open

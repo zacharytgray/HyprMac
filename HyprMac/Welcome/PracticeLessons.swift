@@ -187,18 +187,52 @@ struct WorkspacesLessonBar: View {
 
 final class FloatingLessonModel: PracticeLessonModel {
     @Published var floatedTwo = false
-    @Published var cycled = false
+    @Published var clickedTile = false
+    @Published var broughtBack = false
     @Published var tiledBack = false
 
+    /// lesson 4 teaches floating with exactly windows 1 to 3
+    static let windowsNeeded = [1, 2, 3]
+
     private var peak = 0
-    private var lastFocused: Int?
+    /// floaters focused by Hypr+Shift+T since the tile was clicked
+    private var forward: Set<Int> = []
     // without the helper, the keys count
     private var floatKeys = 0
+    private var forwardKeys = 0
+    private var setupCheck: DispatchWorkItem?
+    /// how long after the lesson opens the windows are checked: long enough
+    /// for HyprMac to see windows a fresh practice just opened
+    var setupDelay: TimeInterval = 1.5
 
     private var floating: [Int] {
         practice.windows.values
             .filter { $0.floating && $0.workspace == practice.practiceWorkspace }
             .map(\.number)
+    }
+
+    override func didStart() {
+        // window 3 can still be on lesson 3's other workspace, or one may
+        // float from before: start from three tiles
+        let check = DispatchWorkItem { [weak self] in self?.setUpWindows() }
+        setupCheck = check
+        DispatchQueue.main.asyncAfter(deadline: .now() + setupDelay, execute: check)
+    }
+
+    override func stop() {
+        super.stop()
+        setupCheck?.cancel()
+        setupCheck = nil
+    }
+
+    /// Each of windows 1 to 3 that's away, floating or closed comes back tiled.
+    func setUpWindows() {
+        guard practice.isRunning else { return }
+        for number in Self.windowsNeeded {
+            let window = practice.windows[number]
+            let tiledHere = window.map { !$0.floating && $0.workspace == practice.practiceWorkspace } ?? false
+            if !tiledHere { practice.bringBackTiled(number) }
+        }
     }
 
     override func noteAction(_ action: String) {
@@ -207,25 +241,34 @@ final class FloatingLessonModel: PracticeLessonModel {
         case "toggleFloating":
             floatKeys += 1
             if floatKeys >= 2 { mark(self, \.floatedTwo) }
-            if floatKeys >= 3 { mark(self, \.tiledBack) }
-        case "focusFloating" where floatedTwo:
-            mark(self, \.cycled)
+            if broughtBack { mark(self, \.tiledBack) }
+        case "focusDirection" where floatedTwo:
+            mark(self, \.clickedTile)
+        case "focusFloating" where clickedTile:
+            forwardKeys += 1
+            if forwardKeys >= 2 { mark(self, \.broughtBack) }
         default: break
         }
     }
 
     override func evaluate() {
-        let count = floating.count
+        let floaters = floating
+        let count = floaters.count
         if recorder.recent("toggleFloating") {
             if count >= 2 { mark(self, \.floatedTwo) }
-            if floatedTwo, count < peak { mark(self, \.tiledBack) }
+            if broughtBack, count < peak { mark(self, \.tiledBack) }
         }
         peak = max(peak, count)
-        if floatedTwo, !cycled, recorder.recent("focusFloating"),
-           let focused = practice.focused, focused != lastFocused, floating.contains(focused) {
-            mark(self, \.cycled)
+        guard let focused = practice.focused else { return }
+        // the floaters tuck behind the tile you go back to
+        if floatedTwo, !clickedTile, count >= 2,
+           let window = practice.windows[focused], !window.floating, window.workspace == practice.practiceWorkspace {
+            mark(self, \.clickedTile)
         }
-        lastFocused = practice.focused ?? lastFocused
+        if clickedTile, !broughtBack, recorder.recent("focusFloating"), floaters.contains(focused) {
+            forward.insert(focused)
+            if forward.isSuperset(of: Set(floaters)), forward.count >= 2 { mark(self, \.broughtBack) }
+        }
     }
 }
 
@@ -236,15 +279,18 @@ struct FloatingLessonBar: View {
     let onNext: () -> Void
 
     var body: some View {
+        let cycle = model.chordText { $0 == .focusFloating } ?? "Cycle Floating Windows"
         LessonBar(
             lesson: .floating,
             tasks: [
                 BarTask(title: "Float two windows", bind: model.bind { $0 == .toggleFloating }, done: model.floatedTwo,
-                        why: "Dialogs and small tools work better above the tiles."),
-                BarTask(title: "Bring each one forward", bind: model.bind { $0 == .focusFloating }, done: model.cycled,
-                        why: "Floaters can hide behind each other. This brings each one up."),
+                        why: "Dialogs and small tools work better floating above the tiles."),
+                BarTask(title: "Click the tiled window", bind: nil, done: model.clickedTile,
+                        why: "Or focus it with \(config.hyprKey.displayName)+arrows. Watch the floating windows."),
+                BarTask(title: "Bring them back", bind: model.bind { $0 == .focusFloating }, done: model.broughtBack,
+                        why: "They tucked behind the tile you're in, not gone. This brings each one up."),
                 BarTask(title: "Tile one back", bind: model.bind { $0 == .toggleFloating }, done: model.tiledBack,
-                        why: "The same key puts a floating window back in the tiles."),
+                        why: "Floaters stay in front while you use them. \(cycle) always finds them."),
             ],
             hyprKey: config.hyprKey,
             onExit: onExit,

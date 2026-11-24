@@ -68,7 +68,9 @@ final class PracticeLessonsTests: XCTestCase {
 
     // MARK: 4 floating
 
-    func testFloatTwoCycleAndTileOneBack() {
+    // float two, go back to the tile (the floaters tuck behind it), bring
+    // each forward, tile one back: each step only after the one before
+    func testFloatTuckBringBackAndTileOneBack() {
         let model = FloatingLessonModel(practice: practice, config: config) { [unowned self] in self.clock }
         windows([(1, 4, true), (2, 4, false), (3, 4, false)])
         model.recorder.note("toggleFloating")
@@ -77,13 +79,34 @@ final class PracticeLessonsTests: XCTestCase {
         model.recorder.note("toggleFloating")
         XCTAssertTrue(model.floatedTwo)
 
+        // a floater focused isn't the tile
+        practice.apply(["focused": 2, "order": [3, 1, 2]])
+        model.evaluate()
+        XCTAssertFalse(model.clickedTile)
+        practice.apply(["focused": 3, "order": [3, 1, 2]])
+        model.evaluate()
+        XCTAssertTrue(model.clickedTile)
+
+        // both floaters brought forward with the key
+        practice.apply(["focused": 1, "order": [3, 1, 2]])
+        model.recorder.note("focusFloating")
+        XCTAssertFalse(model.broughtBack, "one of two")
         practice.apply(["focused": 2, "order": [3, 1, 2]])
         model.recorder.note("focusFloating")
-        XCTAssertTrue(model.cycled)
+        XCTAssertTrue(model.broughtBack)
 
         windows([(1, 4, false), (2, 4, true), (3, 4, false)])
         model.recorder.note("toggleFloating")
         XCTAssertTrue(model.tiledBack)
+    }
+
+    // a click on the tile before two float doesn't count
+    func testClickingTheTileCountsOnlyWithTwoFloaters() {
+        let model = FloatingLessonModel(practice: practice, config: config) { [unowned self] in self.clock }
+        windows([(1, 4, false), (2, 4, false), (3, 4, false)])
+        practice.apply(["focused": 3, "order": [1, 2, 3]])
+        model.evaluate()
+        XCTAssertFalse(model.clickedTile)
     }
 
     func testFloatersOnAnotherWorkspaceDoNotCount() {

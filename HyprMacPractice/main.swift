@@ -14,7 +14,8 @@ enum Practice {
     /// none), "order" ([Int], left to right, then top to bottom), "open"
     /// ([Int], every window not closed, wherever it is).
     static let stateNotification = Notification.Name("com.zachgray.HyprMac.practice.state")
-    /// From HyprMac. userInfo: "open" (Int), a window number to open.
+    /// From HyprMac. userInfo: "open" (Int), a window number to open, or
+    /// "close" (Int), one to close.
     static let commandNotification = Notification.Name("com.zachgray.HyprMac.practice.command")
 
     static func argument(_ name: String) -> Int? {
@@ -65,6 +66,10 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         DistributedNotificationCenter.default().addObserver(
             forName: Practice.commandNotification, object: nil, queue: .main
         ) { [weak self] note in
+            if let number = note.userInfo?["close"] as? Int {
+                self?.windows.first { $0.title == "Practice \(number)" }?.close()
+                return
+            }
             guard let number = note.userInfo?["open"] as? Int, (1...4).contains(number) else { return }
             self?.open(number)
             NSApp.activate(ignoringOtherApps: true)

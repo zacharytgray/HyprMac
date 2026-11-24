@@ -1410,6 +1410,10 @@ screen that tiles at least four windows (Max splits, and the display tiling
 at all), and only once the switch there has landed. Lesson 3 sends to a
 second empty workspace, picked when lesson 3 opens. Without them, lessons 2
 to 5 show why in place of their tasks, and each later lesson tries again.
+Lesson 4 starts from three tiled practice windows: one away on lesson 3's
+other workspace, or floating, closes and opens again tiled. It teaches that
+floating windows tuck behind the tile you go back to, and that
+Hypr+Shift+T brings each one forward.
 Esc on a lesson asks first, in the card: "Leave the tutorial? You can pick
 up here later." Keep Going (Return) or Esc again carries on; Leave exits.
 Esc in Hypr+K or Hypr+I only closes that panel. Leaving early (Leave, Skip
