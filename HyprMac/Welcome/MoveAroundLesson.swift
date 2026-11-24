@@ -100,32 +100,31 @@ final class MoveAroundLessonModel: ObservableObject {
 
 // MARK: - lesson card
 
-/// One task on a lesson card: what to do, the user's chord for it, done.
+/// One task on a lesson card: what to do, the user's chord for it, done,
+/// and one short line on why, shown while it's the step to do.
 struct BarTask {
     let title: String
     let bind: Keybind?
     let done: Bool
     /// a button beside the task, e.g. Resume Tiling while paused
     var button: (title: String, action: () -> Void)? = nil
-    /// a short line under the task, e.g. lesson 1's "Press it and keep it down"
-    var detail: String? = nil
+    var why: String? = nil
 }
 
 /// The lesson as a small glass card at the bottom center, about 380 pt
-/// wide: the lesson, only the step to do now with its keys, the reason in
-/// a line or two, progress dots, and Skip / Next. Done and later steps fold
-/// into the dots. The practice workspace keeps room under its tiles for it,
-/// so it covers no window; it grows a little rather than cut the reason off.
+/// wide and under 100 tall. Row 1: the lesson, progress dots, Skip and
+/// Next. Row 2: only the step to do now, with its keys. Row 3: one short
+/// line on why. Done and later steps fold into the dots. The practice
+/// workspace keeps room under its tiles for it, so it covers no window.
 struct LessonBar: View {
     let lesson: TutorialLesson
-    let why: String
+    /// the line when no step has its own: a blocked lesson, all done
+    var why: String = ""
     let tasks: [BarTask]
     let hyprKey: HyprKey
-    /// a quieter line under the reason, e.g. the two-display key
-    var note: String? = nil
     /// why the lesson can't run; replaces the step, Skip still works
     var blocked: String? = nil
-    /// a live state beside the lesson name, e.g. lesson 1's Capitals chip
+    /// a live state beside the dots, e.g. lesson 1's Capitals chip
     var accessory: AnyView? = nil
     /// Return presses Next: only where the card's window takes keys (lesson 1)
     var nextIsDefault = false
@@ -133,17 +132,24 @@ struct LessonBar: View {
     let onNext: () -> Void
 
     static let width: CGFloat = 380
+    static let cornerRadius: CGFloat = 14
 
     private var done: Int { tasks.filter(\.done).count }
     private var allDone: Bool { !tasks.isEmpty && done == tasks.count }
     private var current: BarTask? { tasks.first { !$0.done } }
 
+    /// the line under the step: its own, else the lesson's
+    var whyLine: String? {
+        let line = blocked == nil ? (current?.why ?? why) : why
+        return line.isEmpty ? nil : line
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
             header
             if let blocked {
                 Text(blocked)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(TutorialStageColor.text)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let current {
@@ -151,55 +157,56 @@ struct LessonBar: View {
             } else if allDone {
                 allDoneRow
             }
-            if !why.isEmpty {
-                Text(why)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(TutorialStageColor.quiet)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let note {
-                Text(note)
+            if let whyLine {
+                Text(whyLine)
                     .font(.system(size: 11))
-                    .foregroundStyle(TutorialStageColor.faint)
+                    .foregroundStyle(TutorialStageColor.quiet)
+                    .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            footer
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 14)
-        .padding(.bottom, 12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
         .frame(width: Self.width, alignment: .leading)
-        .background(cardBackground)
+        .background(Self.glass)
         .environment(\.colorScheme, .dark)
     }
 
-    // lesson · name · dots
+    // the lesson · dots · Skip Tutorial · Skip Lesson · Next
     private var header: some View {
         HStack(alignment: .center, spacing: 8) {
-            Text(lesson.counterLabel)
-                .font(.system(size: 10.5, weight: .medium, design: .monospaced))
-                .foregroundStyle(TutorialStageColor.faint)
-                .fixedSize()
-            Text(lesson.railLabel)
-                .font(.system(size: 14, weight: .semibold))
+            Text("\(lesson.rawValue + 1) · \(lesson.railLabel)")
+                .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(TutorialStageColor.text)
                 .fixedSize()
-            Spacer(minLength: 6)
-            if let accessory { accessory }
             if blocked == nil, !tasks.isEmpty { dots }
+            if let accessory { accessory }
+            Spacer(minLength: 4)
+            Button("Skip Tutorial", action: onExit)
+                .buttonStyle(.plain)
+                .font(.system(size: 10.5))
+                .foregroundStyle(TutorialStageColor.faint)
+                .fixedSize()
+            if blocked != nil || !allDone {
+                StageQuietButton("Skip Lesson", action: onNext)
+            }
+            if blocked == nil {
+                Self.nextButton(lesson.next == .finish ? "Finish" : "Next", enabled: allDone,
+                                isDefault: nextIsDefault, action: onNext)
+            }
         }
     }
 
     // done: cyan; to do now: the brand gradient ring; later: faint
     private var dots: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
                 let isCurrent = index == tasks.firstIndex { !$0.done }
                 Circle()
                     .fill(task.done ? TutorialStageColor.cyan
                           : isCurrent ? Color.clear : TutorialStageColor.faint.opacity(0.6))
                     .overlay { if isCurrent { Circle().strokeBorder(Self.accent, lineWidth: 1.5) } }
-                    .frame(width: 7, height: 7)
+                    .frame(width: 6, height: 6)
             }
         }
         .accessibilityElement(children: .ignore)
@@ -208,24 +215,15 @@ struct LessonBar: View {
 
     // the step to do now: an inset accent bar, heavier text, its keys
     private func step(_ task: BarTask) -> some View {
-        HStack(alignment: .center, spacing: 9) {
+        HStack(alignment: .center, spacing: 8) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(Self.accent)
-                .frame(width: 3)
-                .frame(minHeight: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(task.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(TutorialStageColor.text)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let detail = task.detail {
-                    Text(detail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(TutorialStageColor.quiet)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .layoutPriority(1)
+                .frame(width: 3, height: 16)
+            Text(task.title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(TutorialStageColor.text)
+                .lineLimit(1)
+                .layoutPriority(1)
             Spacer(minLength: 4)
             if let bind = task.bind {
                 StageChord(bind: bind, hyprKey: hyprKey)
@@ -235,55 +233,58 @@ struct LessonBar: View {
                 StageSecondaryButton(button.title, action: button.action)
             }
         }
-        .fixedSize(horizontal: false, vertical: true)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("\(task.title), to do next")
     }
 
     private var allDoneRow: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 7) {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(TutorialStageColor.cyan)
             Text("All done")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(TutorialStageColor.text)
         }
     }
 
-    private var footer: some View {
-        HStack(spacing: 12) {
-            StageQuietButton("Skip Tutorial", action: onExit)
-            Spacer(minLength: 8)
-            if blocked != nil || !allDone {
-                StageQuietButton("Skip Lesson", action: onNext)
+    // a small Next: filled cyan once the steps are done, an outline before
+    private static func nextButton(_ title: String, enabled: Bool, isDefault: Bool,
+                                   action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(title)
+                Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold))
             }
-            if blocked == nil {
-                // the dots say where you are; a short title keeps one line
-                StagePrimaryButton(lesson.next == .finish ? "Finish" : "Next", enabled: allDone,
-                                   isDefault: nextIsDefault, action: onNext)
-                    .fixedSize()
-            }
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundStyle(enabled ? TutorialStageColor.navyTop : TutorialStageColor.faint)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                .fill(enabled ? TutorialStageColor.cyan : .clear))
+            .overlay(RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                .strokeBorder(enabled ? .clear : TutorialStageColor.faint, lineWidth: 1))
         }
-        .padding(.top, 2)
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .keyboardShortcut(isDefault ? .defaultAction : nil)
+        .fixedSize()
     }
 
-    // translucent navy glass with a pink-to-blue hairline along the top
-    private var cardBackground: some View {
-        let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-        return shape
-            .fill(LinearGradient(colors: [TutorialStageColor.glassTop.opacity(0.78),
-                                          TutorialStageColor.glassBottom.opacity(0.74)],
-                                 startPoint: .top, endPoint: .bottom))
-            .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.20), Color.white.opacity(0.06)],
+    // see-through navy glass: the desktop blurred behind it, a light navy
+    // tint, a hairline edge and a pink-to-blue line along the top
+    static var glass: some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .circular)
+        return BehindWindowBlur(cornerRadius: cornerRadius)
+            .overlay(shape.fill(LinearGradient(colors: [TutorialStageColor.glassTop.opacity(0.55),
+                                                        TutorialStageColor.glassBottom.opacity(0.48)],
+                                               startPoint: .top, endPoint: .bottom)))
+            .overlay(shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.22), Color.white.opacity(0.07)],
                                                        startPoint: .top, endPoint: .bottom), lineWidth: 1))
             .overlay(alignment: .top) {
-                Self.accent
-                    .frame(height: 1.5)
-                    .padding(.horizontal, 18)
-                    .opacity(0.8)
+                accent.frame(height: 1.5).padding(.horizontal, 16).opacity(0.85)
             }
-            .shadow(color: .black.opacity(0.35), radius: 20, y: 8)
+            .background(OuterShadow(shape: shape, color: .black.opacity(0.35)))
     }
 
     static let accent = LinearGradient(colors: [TutorialStageColor.magenta, TutorialStageColor.cyan],
@@ -299,15 +300,17 @@ struct MoveAroundLessonBar: View {
     var body: some View {
         LessonBar(
             lesson: .moveAround,
-            why: "Your hands stay on the keyboard. The focused window is the one your keys go to.",
             tasks: [
                 BarTask(title: "Focus the next window", bind: bind { $0 == .focusDirection(.right) },
-                        done: model.focusedAway),
+                        done: model.focusedAway,
+                        why: "The focused window is the one your keys go to."),
                 BarTask(title: "Focus back", bind: bind { $0 == .focusDirection(.left) },
-                        done: model.focusedBack),
+                        done: model.focusedBack,
+                        why: "Your hands stay on the keyboard, no trip to the mouse."),
                 // from window 1 on the left, the swap goes right
                 BarTask(title: "Swap two windows", bind: bind { $0 == .swapDirection(.right) },
-                        done: model.swapped),
+                        done: model.swapped,
+                        why: "Swap moves the window itself, not just the focus."),
             ],
             hyprKey: config.hyprKey,
             onExit: onExit,

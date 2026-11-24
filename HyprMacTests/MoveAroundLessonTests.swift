@@ -1,4 +1,5 @@
 import XCTest
+import SwiftUI
 @testable import HyprMac
 
 // lesson 2 on the practice windows: a task counts when its key ran and the
@@ -191,12 +192,42 @@ final class MoveAroundLessonTests: XCTestCase {
         session.setCardHeight(150)
         XCTAssertEqual(host.insets[3], PracticeSession.cardInset(forCardHeight: 150))
         XCTAssertEqual(host.insets[1], nil, "the user's own workspace keeps its tiles")
-        XCTAssertGreaterThanOrEqual(PracticeSession.cardInset(forCardHeight: 150), 150 + 16 + 8)
+        XCTAssertGreaterThanOrEqual(PracticeSession.cardInset(forCardHeight: 150), 150 + 12)
+        XCTAssertLessThan(PracticeSession.cardInset(forCardHeight: 150), 150 + 16, "the card and a gap, nothing more")
         session.setCardHeight(190)
         XCTAssertEqual(host.insets[3], PracticeSession.cardInset(forCardHeight: 190))
         session.end()
         XCTAssertNil(host.insets[3])
         XCTAssertNil(session.cardInset)
+    }
+
+    // the line under the step is that step's own, not the lesson's first
+    func testTheWhyLineFollowsTheCurrentStep() {
+        func card(_ done: [Bool]) -> LessonBar {
+            LessonBar(lesson: .menuBarAndKeys, why: "lesson line",
+                      tasks: [BarTask(title: "Jump", bind: nil, done: done[0], why: "jump why"),
+                              BarTask(title: "Open the key list", bind: nil, done: done[1], why: "list why"),
+                              BarTask(title: "Search", bind: nil, done: done[2])],
+                      hyprKey: .capsLock, onExit: {}, onNext: {})
+        }
+        XCTAssertEqual(card([false, false, false]).whyLine, "jump why")
+        XCTAssertEqual(card([true, false, false]).whyLine, "list why")
+        XCTAssertEqual(card([true, true, false]).whyLine, "lesson line", "a step without its own falls back")
+        let blocked = LessonBar(lesson: .moveAround, why: "lesson line", tasks: [BarTask(title: "x", bind: nil, done: false, why: "step")],
+                                hyprKey: .capsLock, blocked: "no room", onExit: {}, onNext: {})
+        XCTAssertEqual(blocked.whyLine, "lesson line")
+    }
+
+    // compact: under 100 pt tall with a step, its keys and a two-line why
+    func testTheCardStaysCompact() {
+        let bind = Keybind(keyCode: 34, modifiers: .hypr, action: .showWindowRules)
+        let card = LessonBar(lesson: .fixWindow,
+                             tasks: [BarTask(title: "Focus window 4, open its rules", bind: bind, done: false,
+                                             why: "Window 4 floats when it should tile. A rule fixes the whole app.")],
+                             hyprKey: .capsLock, onExit: {}, onNext: {})
+        let size = NSHostingView(rootView: card).fittingSize
+        XCTAssertEqual(size.width, LessonBar.width, accuracy: 1)
+        XCTAssertLessThanOrEqual(size.height, 100)
     }
 
     // a refused switch leaves the user on their own workspace: no practice there

@@ -133,7 +133,7 @@ struct HyprKeyLessonView: View {
 
     // the same card as the practice lessons, at the bottom of the stage
     private var card: LessonBar {
-        LessonBar(lesson: .hyprKey, why: "", tasks: tasks, hyprKey: config.hyprKey,
+        LessonBar(lesson: .hyprKey, tasks: tasks, hyprKey: config.hyprKey,
                   accessory: model.teachesDoubleTap ? AnyView(capitals) : nil,
                   nextIsDefault: true, onExit: onExit, onNext: onNext)
     }
@@ -147,12 +147,12 @@ struct HyprKeyLessonView: View {
 
     private var tasks: [BarTask] {
         var list = [BarTask(title: "Hold \(keyName)", bind: nil, done: model.heldOnce,
-                            detail: "Press it and keep it down for a moment.")]
+                            why: "Press it and keep it down for a moment.")]
         guard model.teachesDoubleTap else { return list }
         list.append(BarTask(title: "Tap \(keyName) twice to type in capitals", bind: nil, done: model.capsTurnedOn,
-                            detail: "Two quick taps, with no other key, turn Caps Lock on."))
+                            why: "Two quick taps, with no other key, turn Caps Lock on."))
         list.append(BarTask(title: "Tap it twice again to turn capitals off", bind: nil, done: model.capsTurnedOff,
-                            detail: "The same two taps turn Caps Lock back off."))
+                            why: "The same two taps turn Caps Lock back off."))
         return list
     }
 

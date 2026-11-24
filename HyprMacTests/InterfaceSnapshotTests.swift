@@ -677,7 +677,7 @@ private struct PracticeSceneMock<Bar: View>: View {
                 }
                 // the card at the bottom center of the visible frame
                 VStack { Spacer(); HStack { Spacer(); bar; Spacer() } }
-                    .padding(.bottom, 16 + dockBottom)
+                    .padding(.bottom, 8 + dockBottom)
                     .padding(.leading, dockLeft)
                 if let dock { dockMock(dock, in: geo.size) }
             }

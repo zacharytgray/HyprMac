@@ -274,9 +274,10 @@ final class PracticeSession: ObservableObject {
         helper = app
     }
 
-    /// The lesson card is `height` tall, 16 pt above the visible bottom:
-    /// the practice tiles end above it with a gap. In 8 pt steps, so a line
-    /// more or less of text doesn't retile.
+    /// The lesson card is `height` tall, 8 pt above the visible bottom, and
+    /// the tiles keep their outer padding: room of the card plus 12 pt puts
+    /// a 12 pt gap between the tiles and the card. In 4 pt steps, so a
+    /// wrapped line doesn't retile for nothing.
     func setCardHeight(_ height: CGFloat) {
         guard isActive, let workspace = practiceWorkspace else { return }
         let inset = Self.cardInset(forCardHeight: height)
@@ -286,7 +287,7 @@ final class PracticeSession: ObservableObject {
     }
 
     static func cardInset(forCardHeight height: CGFloat) -> CGFloat {
-        ((height + 16 + 8) / 8).rounded(.up) * 8
+        ((height + 12) / 4).rounded(.up) * 4
     }
 
     /// Lesson 3's send target: an empty workspace other than practice's,

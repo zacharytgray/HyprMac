@@ -159,27 +159,27 @@ struct WorkspacesLessonBar: View {
         let other = model.otherWorkspace ?? 0, home = model.practiceWorkspace
         LessonBar(
             lesson: .workspaces,
-            why: "Ten workspaces, each its own screen. Windows stay where you leave them.",
             tasks: [
                 BarTask(title: "Go to workspace \(other)", bind: model.bind { $0 == .switchWorkspace(other) },
-                        done: model.wentAway),
+                        done: model.wentAway,
+                        why: "Ten workspaces, each its own screen."),
                 BarTask(title: "Come back to \(home)", bind: model.bind { $0 == .switchWorkspace(home) },
-                        done: model.cameBack),
+                        done: model.cameBack,
+                        why: "Windows stay where you leave them."),
                 BarTask(title: "Send a window to \(other)", bind: model.bind { $0 == .moveToWorkspace(other) },
-                        done: model.sent),
+                        done: model.sent,
+                        why: sendWhy),
             ],
             hyprKey: config.hyprKey,
-            note: note,
             onExit: onExit,
             onNext: onNext)
     }
 
-    private var note: String {
-        var line = "The menu bar shows each workspace: \(HyprGlyph.workspaceShown) on screen, \(HyprGlyph.workspaceWaiting) windows waiting."
+    private var sendWhy: String {
         if displayCount > 1, let chord = model.chordText({ $0 == .moveWindowToMonitor(.right) }) {
-            line += " With two displays, \(chord) sends a window to the other one."
+            return "\(chord) sends one to your other display."
         }
-        return line
+        return "The menu bar shows each: \(HyprGlyph.workspaceShown) on screen, \(HyprGlyph.workspaceWaiting) windows waiting."
     }
 }
 
@@ -238,15 +238,15 @@ struct FloatingLessonBar: View {
     var body: some View {
         LessonBar(
             lesson: .floating,
-            why: "Dialogs, Picture in Picture and small tools work better above the tiles, so they float.",
             tasks: [
-                BarTask(title: "Float two windows", bind: model.bind { $0 == .toggleFloating }, done: model.floatedTwo),
-                BarTask(title: "Bring each one forward", bind: model.bind { $0 == .focusFloating }, done: model.cycled),
-                BarTask(title: "Tile one back", bind: model.bind { $0 == .toggleFloating }, done: model.tiledBack),
+                BarTask(title: "Float two windows", bind: model.bind { $0 == .toggleFloating }, done: model.floatedTwo,
+                        why: "Dialogs and small tools work better above the tiles."),
+                BarTask(title: "Bring each one forward", bind: model.bind { $0 == .focusFloating }, done: model.cycled,
+                        why: "Floaters can hide behind each other. This brings each one up."),
+                BarTask(title: "Tile one back", bind: model.bind { $0 == .toggleFloating }, done: model.tiledBack,
+                        why: "The same key puts a floating window back in the tiles."),
             ],
             hyprKey: config.hyprKey,
-            note: "Floating windows can end up behind the tiles or each other. "
-                + "\(model.chordText { $0 == .focusFloating } ?? "Cycle Floating Windows") brings each one forward in turn, so none gets lost.",
             onExit: onExit,
             onNext: onNext)
     }
@@ -287,15 +287,14 @@ struct FixWindowLessonBar: View {
     var body: some View {
         LessonBar(
             lesson: .fixWindow,
-            why: "Window 4 floats when it should tile. When an app does that, "
-                + "\(model.chordText { $0 == .showWindowRules } ?? "Show Window Rules") gives it a rule.",
             tasks: [
                 BarTask(title: "Focus window 4, open its rules", bind: model.bind { $0 == .showWindowRules },
-                        done: model.openedRules),
-                BarTask(title: "Pick “Always tile HyprMac Practice”", bind: nil, done: model.fixed),
+                        done: model.openedRules,
+                        why: "Window 4 floats when it should tile. A rule fixes the whole app."),
+                BarTask(title: "Pick “Always tile HyprMac Practice”", bind: nil, done: model.fixed,
+                        why: "It's already selected in the rules: press ↩."),
             ],
             hyprKey: config.hyprKey,
-            note: model.chordText { $0 == .retileAll }.map { "If the whole layout looks off, \($0) retiles everything." },
             onExit: onExit,
             onNext: onNext)
     }
@@ -329,16 +328,17 @@ struct MenuBarAndKeysLessonBar: View {
         let jump = model.chordText { $0 == .focusMenuBar } ?? "Focus Menu Bar"
         LessonBar(
             lesson: .menuBarAndKeys,
-            why: config.focusFollowsMouse
-                ? "With focus following the mouse, the trip up to the menu bar passes over other windows and changes the menu bar to their app. \(jump) jumps straight there."
-                : "\(jump) puts the pointer on the menu bar of the app you're in, with no trip across the screen.",
             tasks: [
-                BarTask(title: "Jump to the menu bar", bind: model.bind { $0 == .focusMenuBar }, done: model.jumped),
-                BarTask(title: "Open the key list", bind: model.bind { $0 == .showKeybinds }, done: model.openedKeys),
-                BarTask(title: "Search it for “float”", bind: nil, done: model.searched),
+                BarTask(title: "Jump to the menu bar", bind: model.bind { $0 == .focusMenuBar }, done: model.jumped,
+                        why: config.focusFollowsMouse
+                            ? "Moving the mouse up there changes the menu bar on the way. This doesn't."
+                            : "It puts the pointer on your app's menu bar, no trip across the screen."),
+                BarTask(title: "Open the key list", bind: model.bind { $0 == .showKeybinds }, done: model.openedKeys,
+                        why: "You don't need to remember every key. They're all in the list."),
+                BarTask(title: "Search it for “float”", bind: nil, done: model.searched,
+                        why: "Type to search. Esc closes the list."),
             ],
             hyprKey: config.hyprKey,
-            note: "You don't need to remember every key: the list has them all, and Esc closes it.",
             onExit: onExit,
             onNext: onNext)
     }
@@ -411,25 +411,23 @@ struct PauseLessonBar: View {
         let keyWorksPaused = config.hyprKey.keepsShortcutsWhilePaused
         LessonBar(
             lesson: .pause,
-            why: "For a game, a screen share, or an app that fights tiling: pause, and every window stays put.",
             tasks: [
-                BarTask(title: "Pause tiling", bind: model.bind { $0 == .toggleTiling }, done: model.paused),
+                BarTask(title: "Pause tiling", bind: model.bind { $0 == .toggleTiling }, done: model.paused,
+                        why: "For a game, a screen share, or an app that fights tiling."),
                 BarTask(title: "Resume it", bind: keyWorksPaused ? model.bind { $0 == .toggleTiling } : nil,
                         done: model.resumed,
                         button: !keyWorksPaused && model.paused && !model.resumed
-                            ? ("Resume Tiling", { model.resume() }) : nil),
+                            ? ("Resume Tiling", { model.resume() }) : nil,
+                        why: keyWorksPaused ? "Every window stays where it was." : resumeWhy),
             ],
             hyprKey: config.hyprKey,
-            note: keyWorksPaused ? nil : resumeNote,
             onExit: onExit,
             onNext: onNext)
     }
 
-    private var resumeNote: String {
-        let place = menuBarStyle == .hidden
-            ? "the Tiling switch in Settings → General"
-            : "the Tiling switch in HyprMac's menu bar item"
-        return "While paused, \(config.hyprKey.displayName) is a normal key again. Resume here, or later with \(place)."
+    private var resumeWhy: String {
+        let place = menuBarStyle == .hidden ? "Settings → General" : "the menu bar"
+        return "Paused, \(config.hyprKey.displayName) types normally. Resume here or from \(place)."
     }
 }
 

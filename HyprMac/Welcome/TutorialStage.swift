@@ -126,7 +126,7 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if let bottomCard {
-                bottomCard.padding(.bottom, 16)
+                bottomCard.padding(.bottom, 8)
             } else {
                 bottomBar
             }
@@ -707,14 +707,14 @@ final class TutorialWindowController {
     /// the card's size, with room around it for its shadow
     private var barSize: CGSize = .zero
 
-    /// Bottom center of the visible frame, so the Dock on any side, or its
+    /// Bottom center of the visible frame, 8 pt up, so the Dock on any side, or its
     /// auto-hide strip, never covers it.
     private func place(_ panel: NSPanel, on screen: NSScreen) {
         let visible = screen.visibleFrame
         let room = CardHost<EmptyView>.shadowRoom
         let size = CGSize(width: barSize.width + 2 * room, height: barSize.height + 2 * room)
         panel.setFrame(NSRect(x: visible.midX - size.width / 2,
-                              y: visible.minY + 16 - room,
+                              y: visible.minY + 8 - room,
                               width: size.width, height: size.height), display: true)
     }
 

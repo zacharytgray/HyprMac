@@ -246,7 +246,7 @@ struct OverlayGlassBackground: View {
 
 // a drop shadow that stays outside the shape, so it can't darken the
 // see-through middle
-private struct OuterShadow<S: Shape>: View {
+struct OuterShadow<S: Shape>: View {
     let shape: S
     let color: Color
 
@@ -266,7 +266,7 @@ private struct OuterShadow<S: Shape>: View {
 
 // NSVisualEffectView ignores layer corner radius for behind-window blur;
 // the window server only honors maskImage
-private struct BehindWindowBlur: NSViewRepresentable {
+struct BehindWindowBlur: NSViewRepresentable {
     let cornerRadius: CGFloat
 
     func makeNSView(context: Context) -> NSVisualEffectView {
