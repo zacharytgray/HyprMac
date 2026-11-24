@@ -245,7 +245,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func checkFirstLaunchOrUpdate() {
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
-        let mode = Self.forcesOnboarding ? .onboarding : RuntimeVariant.shouldShowWelcome(
+        let mode = Self.forcesOnboarding ? .onboarding : Self.forcesWhatsNew ? .whatsNew : RuntimeVariant.shouldShowWelcome(
             alreadyOnboarded: alreadyOnboarded,
             lastVersion: UserDefaults.standard.string(forKey: "lastSeenVersion"),
             currentVersion: currentVersion)
@@ -259,9 +259,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // onboarding reopened HyprMac for Screen Recording on its way
             // into the tutorial, or macOS's own Quit & Reopen did
             UserDefaults.standard.removeObject(forKey: Self.tutorialAfterReopenKey)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                self?.showTutorial()
-            }
+            showTutorialOnceSettled()
         }
         UserDefaults.standard.set(true, forKey: "hasSeenOnboarding")
         UserDefaults.standard.set(currentVersion, forKey: "lastSeenVersion")
@@ -272,6 +270,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private static var forcesOnboarding: Bool {
         #if HYPRMAC_DEBUG_VARIANT
         return CommandLine.arguments.contains("--force-onboarding")
+        #else
+        return false
+        #endif
+    }
+
+    /// Debug app only: `--force-whats-new` shows What's New, which the Debug
+    /// app otherwise never does, to check an upgrader's view.
+    private static var forcesWhatsNew: Bool {
+        #if HYPRMAC_DEBUG_VARIANT
+        return CommandLine.arguments.contains("--force-whats-new")
         #else
         return false
         #endif
@@ -288,6 +296,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             whatsNewController = controller
             controller.show()
         }
+    }
+
+    /// The tutorial after a reopen waits for the first tile and the desk
+    /// restore. Before that every workspace looks empty, so practice could
+    /// take one the user's windows are about to come back to.
+    private func showTutorialOnceSettled(waited: TimeInterval = 0) {
+        let settled = windowManager?.hasSettledAfterLaunch == true || !UserConfig.shared.enabled
+        guard settled || waited >= 10 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.showTutorialOnceSettled(waited: waited + 0.25)
+            }
+            return
+        }
+        hyprLog(.notice, .lifecycle, "tutorial after reopen: opening, \(settled ? "settled" : "gave up waiting") after \(waited) s")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.showTutorial() }
     }
 
     /// Set while onboarding waits on Screen Recording with the tutorial

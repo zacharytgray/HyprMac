@@ -132,7 +132,9 @@ private struct WhatsNewPage: View {
                         .padding(.top, 3)
                 }
                 if let action = feature.action {
-                    WhatsNewActionView(action: action, tint: tint)
+                    // read here, where the config is observed: the closure
+                    // alone never tells SwiftUI the row changed
+                    WhatsNewActionView(action: action, done: action.isDone(), tint: tint)
                         .padding(.top, 6)
                 }
             }
@@ -153,10 +155,11 @@ private struct WhatsNewPage: View {
 /// A row's button, then its done state and detail.
 private struct WhatsNewActionView: View {
     let action: WhatsNewAction
+    let done: Bool
     let tint: Color
 
     var body: some View {
-        if action.isDone() {
+        if done {
             VStack(alignment: .leading, spacing: 4) {
                 Label(action.doneTitle, systemImage: "checkmark")
                     .font(.system(size: 11, weight: .semibold))
@@ -183,9 +186,11 @@ struct WhatsNewScreenRecordingStatus: View {
     @ObservedObject var access: ScreenRecordingAccess
 
     var body: some View {
-        Group {
+        // a stack even with no state yet: an empty view never appears, so it
+        // would never ask for one
+        VStack(alignment: .leading, spacing: 5) {
             if let state = access.state {
-                VStack(alignment: .leading, spacing: 5) {
+                Group {
                     Text(state.message)
                         .font(.system(size: 11))
                         .foregroundStyle(Color.hyprTextPrimary.opacity(state == .granted ? 0.5 : 0.75))

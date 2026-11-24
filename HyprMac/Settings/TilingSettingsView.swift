@@ -181,9 +181,11 @@ struct ScreenRecordingStatusRow: View {
     @ObservedObject var access: ScreenRecordingAccess
 
     var body: some View {
-        Group {
+        // a stack even with no state yet: an empty view never appears, so it
+        // would never ask for one
+        VStack(alignment: .leading, spacing: 6) {
             if let state = access.state {
-                VStack(alignment: .leading, spacing: 6) {
+                Group {
                     Label(state.message, systemImage: icon(state))
                         .font(.hyprCaption)
                         .foregroundStyle(state == .granted ? Color.settingsTextMuted : Color.settingsText)

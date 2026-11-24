@@ -1459,7 +1459,8 @@ or the next launch after a crash, turns tiling back on only then.
 The stage fills the screen, but its bars and the lesson bar inset by the
 visible frame, so the Dock never covers them. In the Debug app, `--force-onboarding` runs onboarding on a
 Mac that's set up; Make it yours then writes real settings, so back up
-the config first.
+the config first. `--force-whats-new` shows What's New, which the Debug
+app otherwise never shows.
 
 ## Known limitations
 

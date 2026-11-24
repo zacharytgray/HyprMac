@@ -46,11 +46,31 @@ final class ScreenRecordingAccess: ObservableObject {
     }
 
     /// The in-process answer alone, for a quick yes.
-    var isGrantedHere: Bool { inProcess() }
+    var isGrantedHere: Bool { Self.pretended().map { $0 == .granted } ?? inProcess() }
+
+    /// Debug app only, to see each state on a Mac that granted it (the
+    /// stand-in itself still reads the real answer):
+    /// `defaults write com.zachgray.HyprMac.debug screenRecordingPretend notGranted|needsReopen|granted`
+    static func pretended(_ defaults: UserDefaults = .standard) -> State? {
+        #if HYPRMAC_DEBUG_VARIANT
+        switch defaults.string(forKey: "screenRecordingPretend") {
+        case "granted": return .granted
+        case "notGranted": return .notGranted
+        case "needsReopen": return .needsReopen
+        default: return nil
+        }
+        #else
+        return nil
+        #endif
+    }
 
     /// Ask again. A no here waits on a fresh process before it shows, so the
     /// state never flips from not granted to reopen.
     func refresh() {
+        if let pretend = Self.pretended() {
+            set(pretend)
+            return
+        }
         if inProcess() {
             set(.granted)
             return

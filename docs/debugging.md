@@ -1186,10 +1186,27 @@ runs `open` on the bundle. From the shell:
 "/Applications/HyprMac Debug.app/Contents/MacOS/HyprMac Debug" --check-screen-recording; echo $?
 ```
 
+Debug builds only, to see each state on a Mac that granted it (the stand-in still reads
+the real answer):
+
+```bash
+defaults write com.zachgray.HyprMac.debug screenRecordingPretend notGranted   # or needsReopen, granted
+defaults delete com.zachgray.HyprMac.debug screenRecordingPretend
+```
+
+macOS answers Screen Recording for the responsible process. A binary started from a
+shell inherits the terminal's grant, so it reads granted even when HyprMac has none; a
+copy opened through LaunchServices (Finder, `open`, Reopen HyprMac) reads its own and
+asks for itself at launch with the switch on. Check the real grant flow on an `open`ed
+copy.
+
 Log lines: `screen recording state granted|notGranted|needsReopen` (`floating`),
 `onboarding: floaters in front on, waiting on screen recording`,
-`what's new: keep floating windows in front turned on`, and
-`reopen: quitting, <path> opens once this copy is gone` (`lifecycle`).
+`what's new: keep floating windows in front turned on`,
+`reopen: quitting, <path> opens once this copy is gone`, and
+`tutorial after reopen: opening, settled after 1.0 s` (`lifecycle`). The tutorial after a
+reopen waits for the first tile and the relaunch handoff; before that every workspace
+looks empty and practice could take one the user's windows come back to.
 
 Debug builds only, to see the card on a Mac that granted Screen Recording:
 

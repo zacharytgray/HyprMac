@@ -243,6 +243,9 @@ class WindowManager {
     /// the launch restore. resuming from pause restarts the manager but is
     /// not a launch: it keeps every window where it was
     private var didRunInitialTile = false
+    /// The first tile and any relaunch handoff are done: a workspace's
+    /// windows are where they'll stay
+    var hasSettledAfterLaunch: Bool { didRunInitialTile }
     /// set by a resume: the poll that follows it retiles every visible
     /// workspace even when it finds nothing new
     private var retileAfterNextPoll = false
