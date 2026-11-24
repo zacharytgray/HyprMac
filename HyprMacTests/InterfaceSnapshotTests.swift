@@ -98,6 +98,19 @@ final class InterfaceSnapshotTests: XCTestCase {
                        size: CGSize(width: 780, height: 600), dark: dark)
             try render("redesign-managed-updates-\(mode)", navyTab(ManagedUpdatesPanel(nixInstall: true)), dark: dark)
         }
+        // names and a pin, so the filled rows show too
+        let namesWere = UserConfig.shared.workspaceNames
+        let pinsWere = UserConfig.shared.windowRules
+        UserConfig.shared.workspaceNames = ["1": "web", "2": "code", "9": "music"]
+        UserConfig.shared.windowRules = [WindowRule(bundleID: "com.apple.Safari", workspace: 1),
+                                         WindowRule(bundleID: "com.apple.Music", workspace: WindowRule.scratchpad)]
+        for dark in [true, false] {
+            try render("redesign-workspaces-filled-\(dark ? "dark" : "light")",
+                       navyTab(WorkspacesSettingsView()), dark: dark)
+        }
+        UserConfig.shared.workspaceNames = namesWere
+        UserConfig.shared.windowRules = pinsWere
+
         // the export's command field shows only while the export is on
         let exportWas = UserConfig.shared.statusExportEnabled
         let hookWas = UserConfig.shared.statusHookCommand

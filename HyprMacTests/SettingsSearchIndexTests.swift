@@ -20,7 +20,7 @@ final class SettingsSearchIndexTests: XCTestCase {
     }
 
     func testEveryWordMustMatch() {
-        XCTAssertEqual(SettingsSearchIndex.matches("scratchpad margin").map(\.title), ["Layer padding"])
+        XCTAssertEqual(SettingsSearchIndex.matches("layer padding").map(\.title), ["Scratchpad margin"])
         XCTAssertTrue(SettingsSearchIndex.matches("zzz").isEmpty)
         XCTAssertTrue(SettingsSearchIndex.matches("   ").isEmpty)
     }

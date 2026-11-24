@@ -111,7 +111,7 @@ struct TilingSettingsView: View {
 /// The old "Layout" tab's other panels, unchanged in look, shown in their
 /// new sections until each section gets its redesign.
 struct MovedLayoutPanels: View {
-    enum Panel { case focus, scratchpad, monitors }
+    enum Panel { case focus, monitors }
 
     let panels: [Panel]
     @ObservedObject var config = UserConfig.shared
@@ -122,7 +122,6 @@ struct MovedLayoutPanels: View {
             ForEach(Array(panels.enumerated()), id: \.offset) { _, panel in
                 switch panel {
                 case .focus: focusPanel
-                case .scratchpad: scratchpadPanel
                 case .monitors: monitorsPanel
                 }
             }
@@ -378,30 +377,6 @@ struct MovedLayoutPanels: View {
                     config.resetAppearanceToDefaults()
                 }
                 .controlSize(.small)
-            }
-        }
-    }
-
-    // MARK: scratchpad
-
-    private var scratchpadPanel: some View {
-        HyprPanel("Scratchpad",
-                  footer: "Padding insets the tiled region from the screen edges so the dimmed border stays visible — set it to 0% to maximize space. Windows that can't fit the tiled layout stay floating either way.") {
-            HyprRow("Tile sent windows", icon: "square.grid.2x2",
-                    subtitle: "Windows sent to the scratchpad tile into the layer instead of floating.",
-                    divider: true, floatingMarker: true) {
-                Toggle("", isOn: $config.scratchpadTileByDefault)
-                    .toggleStyle(HyprToggleStyle())
-                    .labelsHidden()
-            }
-            HyprRow("Layer padding", icon: "rectangle.center.inset.filled",
-                    divider: false, floatingMarker: true) {
-                HStack(spacing: HyprSpacing.sm) {
-                    Slider(value: $config.scratchpadRegionInset, in: 0...0.15, step: 0.01)
-                        .frame(width: 180)
-                    HyprChip(String(format: "%.0f%%", config.scratchpadRegionInset * 100))
-                        .frame(width: 56, alignment: .trailing)
-                }
             }
         }
     }

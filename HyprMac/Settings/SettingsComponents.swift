@@ -581,3 +581,45 @@ struct SettingsSlider: View {
         }
     }
 }
+
+/// A pop-up choice drawn as a navy button: the chosen label and a chevron.
+/// `nil` in the options draws a divider.
+struct SettingsMenuPicker<Value: Hashable>: View {
+    let options: [(value: Value, label: String)?]
+    @Binding var selection: Value
+
+    var body: some View {
+        Menu {
+            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                if let option {
+                    Button {
+                        selection = option.value
+                    } label: {
+                        if option.value == selection {
+                            Label(option.label, systemImage: "checkmark")
+                        } else {
+                            Text(option.label)
+                        }
+                    }
+                } else {
+                    Divider()
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Text(selectedLabel)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .foregroundStyle(Color.settingsTextMuted)
+            }
+        }
+        .menuStyle(.button)
+        .menuIndicator(.hidden)
+        .buttonStyle(.settings)
+        .fixedSize()
+    }
+
+    private var selectedLabel: String {
+        options.compactMap { $0 }.first { $0.value == selection }?.label ?? "—"
+    }
+}

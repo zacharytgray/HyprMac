@@ -189,135 +189,12 @@ struct GeneralSettingsView: View {
     }
 }
 
-/// The panels that left General, unchanged in look, shown in their new
-/// sections until each section gets its redesign.
+/// The overlay row that left General, unchanged in look, shown in
+/// Appearance until that section gets its redesign.
 struct MovedGeneralPanels: View {
-    enum Panel { case workspaceNames, pins, overlays }
-
-    let panels: [Panel]
     @ObservedObject var config = UserConfig.shared
-    @State private var showingWorkspaceNames = false
 
     var body: some View {
-        VStack(spacing: HyprSpacing.lg) {
-            ForEach(Array(panels.enumerated()), id: \.offset) { _, panel in
-                switch panel {
-                case .workspaceNames: workspaceNamesPanel
-                case .pins: workspacePinsPanel
-                case .overlays: overlaysPanel
-                }
-            }
-        }
-    }
-
-    // MARK: workspace names
-
-    private var workspaceNamesPanel: some View {
-        HyprPanel("Workspace names",
-                  footer: "Names replace the numbers in the switch HUD, the menu bar and the workspace pickers.") {
-            HyprRow("Names", icon: "character.cursor.ibeam",
-                    subtitle: workspaceNamesSummary, divider: false) {
-                Button("Rename…") { showingWorkspaceNames = true }
-                    .controlSize(.small)
-            }
-        }
-        .sheet(isPresented: $showingWorkspaceNames) {
-            WorkspaceNamesSheet(config: config)
-        }
-    }
-
-    // "None, ..." or "3 named: web, term, music"
-    private var workspaceNamesSummary: String {
-        let named = Constants.workspaceRange.compactMap { workspace -> String? in
-            let name = config.workspaceNames[String(workspace)]?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            return name.isEmpty ? nil : name
-        }
-        if named.isEmpty { return "None, workspaces show their numbers" }
-        let shown = named.prefix(4).joined(separator: ", ")
-        return "\(named.count) named: " + shown + (named.count > 4 ? ", …" : "")
-    }
-
-    // MARK: workspace pins
-
-    private var workspacePinsPanel: some View {
-        HyprPanel("Pin apps",
-                  footer: "New windows from these apps open on the chosen workspace or in the "
-                        + "scratchpad, and HyprMac shows it. Retile all spaces also moves their "
-                        + "open windows there, and a scratchpad pin applies at launch too.") {
-            if config.windowRules.isEmpty {
-                HyprRow("No pinned apps", icon: "pin.slash",
-                        subtitle: "New windows open on the display they appear on", divider: false) { EmptyView() }
-            } else {
-                let sorted = config.windowRules.sorted {
-                    appDisplayName(for: $0.bundleID).localizedCaseInsensitiveCompare(
-                        appDisplayName(for: $1.bundleID)) == .orderedAscending
-                }
-                ForEach(Array(sorted.enumerated()), id: \.element.id) { idx, rule in
-                    pinnedRow(rule: rule, isLast: idx == sorted.count - 1)
-                }
-            }
-            HyprRow("Add app", icon: "plus", divider: false) {
-                Button("Choose…") { pickPinnedApp() }
-                    .controlSize(.small)
-            }
-        }
-    }
-
-    private func pinnedRow(rule: WindowRule, isLast: Bool) -> some View {
-        HStack(spacing: HyprSpacing.md) {
-            if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: rule.bundleID) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
-                    .resizable()
-                    .frame(width: 22, height: 22)
-            } else {
-                Image(systemName: "app").font(.system(size: 16)).foregroundStyle(Color.hyprTextTertiary)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(appDisplayName(for: rule.bundleID)).font(.hyprBody)
-                Text(rule.bundleID).font(.hyprMonoXs).foregroundStyle(Color.hyprTextTertiary)
-            }
-            Spacer()
-            Picker("", selection: Binding(
-                get: { rule.workspace },
-                set: { setPinnedWorkspace($0, for: rule.bundleID) }
-            )) {
-                Text("Scratchpad").tag(WindowRule.scratchpad)
-                Divider()
-                ForEach(Constants.workspaceRange, id: \.self) {
-                    Text(UserConfig.workspaceDisplayName($0, names: config.workspaceNames)).tag($0)
-                }
-            }
-            .labelsHidden()
-            .fixedSize()
-            Button {
-                config.windowRules.removeAll { $0.bundleID == rule.bundleID }
-            } label: {
-                Image(systemName: "minus.circle.fill")
-                    .foregroundStyle(.red.opacity(0.75))
-            }
-            .buttonStyle(.borderless)
-        }
-        .padding(.horizontal, HyprSpacing.md)
-        .padding(.vertical, HyprSpacing.sm)
-        .overlay(alignment: .bottom) {
-            if !isLast {
-                Rectangle()
-                    .fill(Color.hyprSeparator)
-                    .frame(height: 0.5)
-                    .padding(.leading, HyprSpacing.md + 22 + HyprSpacing.md)
-            }
-        }
-    }
-
-    private func setPinnedWorkspace(_ workspace: Int, for bundleID: String) {
-        guard let index = config.windowRules.firstIndex(where: { $0.bundleID == bundleID }) else { return }
-        config.windowRules[index].workspace = workspace
-    }
-
-    // MARK: overlays
-
-    private var overlaysPanel: some View {
         HyprPanel("Overlays") {
             HyprRow("Overlay appearance", icon: "circle.lefthalf.filled", divider: false) {
                 Picker("", selection: $config.overlayAppearance) {
@@ -329,23 +206,6 @@ struct MovedGeneralPanels: View {
                 .frame(width: 120)
             }
         }
-    }
-
-    // MARK: helpers
-
-    // one rule per app: picking an app that already has one leaves it as is
-    private func pickPinnedApp() {
-        let panel = NSOpenPanel()
-        panel.title = "Select Applications to Pin"
-        panel.allowedContentTypes = [.application]
-        panel.allowsMultipleSelection = true
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.canChooseDirectories = false
-
-        guard panel.runModal() == .OK else { return }
-        let ids = panel.urls.compactMap { Bundle(url: $0)?.bundleIdentifier }
-        let added = WindowRule.newRules(forBundleIDs: ids, existing: config.windowRules)
-        if !added.isEmpty { config.windowRules.append(contentsOf: added) }
     }
 }
 

@@ -170,15 +170,14 @@ struct SettingsSectionContent: View {
         case .tiling:
             TilingSettingsView()
         case .workspaces:
-            MovedGeneralPanels(panels: [.workspaceNames, .pins])
-            MovedLayoutPanels(panels: [.scratchpad])
+            WorkspacesSettingsView()
         case .monitors:
             MovedLayoutPanels(panels: [.monitors])
         case .mouse:
             MouseSettingsView()
         case .appearance:
             MovedLayoutPanels(panels: [.focus])
-            MovedGeneralPanels(panels: [.overlays])
+            MovedGeneralPanels()
         case .advanced:
             AdvancedSettingsView()
         }
@@ -231,7 +230,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
     }
 
     // drawn in the navy style; the rest wait their turn
-    var isRedesigned: Bool { [.general, .tiling, .mouse, .advanced].contains(self) }
+    var isRedesigned: Bool { [.general, .tiling, .workspaces, .mouse, .advanced].contains(self) }
 }
 
 // MARK: - search index
@@ -270,8 +269,8 @@ enum SettingsSearchIndex {
         // workspaces
         .init(title: "Workspace names", keywords: "rename label workspace", section: .workspaces),
         .init(title: "Pin apps", keywords: "assign app workspace rule open on", section: .workspaces),
-        .init(title: "Tile sent windows", keywords: "scratchpad tile floating layer", section: .workspaces),
-        .init(title: "Layer padding", keywords: "scratchpad margin inset", section: .workspaces),
+        .init(title: "Tile windows in the scratchpad", keywords: "scratchpad tile sent floating layer", section: .workspaces),
+        .init(title: "Scratchpad margin", keywords: "scratchpad layer padding inset", section: .workspaces),
         // monitors
         .init(title: "Tile windows on a display", keywords: "monitor display disable tiling screen", section: .monitors),
         .init(title: "Max splits", keywords: "monitor depth tiles dwindle", section: .monitors),
