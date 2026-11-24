@@ -168,17 +168,16 @@ struct SettingsSectionContent: View {
         case .keys:
             KeybindsSettingsView()
         case .tiling:
-            TilingSettingsView(panels: [.gaps])
-            MovedGeneralPanels(panels: [.rules])
+            TilingSettingsView()
         case .workspaces:
             MovedGeneralPanels(panels: [.workspaceNames, .pins])
-            TilingSettingsView(panels: [.scratchpad])
+            MovedLayoutPanels(panels: [.scratchpad])
         case .monitors:
-            TilingSettingsView(panels: [.monitors])
+            MovedLayoutPanels(panels: [.monitors])
         case .mouse:
             MouseSettingsView()
         case .appearance:
-            TilingSettingsView(panels: [.focus])
+            MovedLayoutPanels(panels: [.focus])
             MovedGeneralPanels(panels: [.overlays])
         case .advanced:
             AdvancedSettingsView()
@@ -232,7 +231,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
     }
 
     // drawn in the navy style; the rest wait their turn
-    var isRedesigned: Bool { [.general, .mouse, .advanced].contains(self) }
+    var isRedesigned: Bool { [.general, .tiling, .mouse, .advanced].contains(self) }
 }
 
 // MARK: - search index
@@ -265,9 +264,9 @@ enum SettingsSearchIndex {
         .init(title: "App launchers", keywords: "launch open app shortcut", section: .keys),
         .init(title: "Commands", keywords: "run command shell script", section: .keys),
         // tiling
-        .init(title: "Inner gap", keywords: "gaps spacing between windows", section: .tiling),
-        .init(title: "Outer padding", keywords: "gaps screen edges margin", section: .tiling),
-        .init(title: "Float and tile rules", keywords: "never tile exclude always float app rule", section: .tiling),
+        .init(title: "Gap between windows", keywords: "gaps inner spacing", section: .tiling),
+        .init(title: "Gap at screen edges", keywords: "gaps outer padding margin", section: .tiling),
+        .init(title: "Float and tile rules", keywords: "never tile exclude always float app rule window title", section: .tiling),
         // workspaces
         .init(title: "Workspace names", keywords: "rename label workspace", section: .workspaces),
         .init(title: "Pin apps", keywords: "assign app workspace rule open on", section: .workspaces),

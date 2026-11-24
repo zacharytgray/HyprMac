@@ -149,7 +149,7 @@ struct AdvancedSettingsView: View {
                          icon: String = "doc", divider: Bool = true) -> some View {
         SettingsRow(title, icon: icon, subtitle: subtitle, divider: divider) {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                .controlSize(.small)
+                .buttonStyle(.settings)
         }
         .help(url.path)
     }
@@ -167,7 +167,7 @@ struct AdvancedSettingsView: View {
                         subtitle: "Every section at once. Copies of both files are kept first.",
                         divider: false) {
                 Button("Reset All…") { confirmingResetAll = true }
-                    .controlSize(.small)
+                    .buttonStyle(.settingsDestructive)
             }
         }
         .confirmationDialog("Reset all settings?", isPresented: $confirmingResetAll) {

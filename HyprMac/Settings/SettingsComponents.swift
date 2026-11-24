@@ -452,13 +452,132 @@ struct SectionResetFooter: View {
         HStack {
             Spacer()
             Button(title + "…") { confirming = true }
-                .controlSize(.small)
+                .buttonStyle(.settingsDestructive)
         }
         .confirmationDialog(title + "?", isPresented: $confirming) {
             Button("Reset", role: .destructive, action: action)
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(message)
+        }
+    }
+}
+
+/// The one button look on navy screens: a raised navy key with a hairline,
+/// cyan for the main action, red text for resets.
+struct SettingsButtonStyle: ButtonStyle {
+    enum Kind { case secondary, prominent, destructive }
+    var kind: Kind = .secondary
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        return configuration.label
+            .font(.system(size: 11.5, weight: .medium))
+            .lineLimit(1)
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                    .fill(fill.opacity(pressed ? 0.75 : 1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                    .strokeBorder(stroke, lineWidth: 0.5)
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+            .contentShape(Rectangle())
+            .animation(HyprMotion.snap, value: pressed)
+    }
+
+    private var foreground: Color {
+        switch kind {
+        case .secondary: return .settingsText
+        case .prominent: return .settingsBackground
+        case .destructive: return .red
+        }
+    }
+
+    private var fill: Color {
+        kind == .prominent ? .hyprCyan : .settingsRaised
+    }
+
+    private var stroke: Color {
+        switch kind {
+        case .secondary: return .settingsHairline
+        case .prominent: return .hyprCyan
+        case .destructive: return .red.opacity(0.45)
+        }
+    }
+}
+
+extension ButtonStyle where Self == SettingsButtonStyle {
+    static var settings: SettingsButtonStyle { SettingsButtonStyle() }
+    static var settingsProminent: SettingsButtonStyle { SettingsButtonStyle(kind: .prominent) }
+    static var settingsDestructive: SettingsButtonStyle { SettingsButtonStyle(kind: .destructive) }
+}
+
+/// "Pause or resume with [hypr][P]" under a row, from the user's own bind.
+/// Shows nothing when the action has no bind.
+struct ShortcutHint: View {
+    let lead: String
+    let action: Action
+    @ObservedObject private var config = UserConfig.shared
+
+    init(_ lead: String, action: Action) {
+        self.lead = lead
+        self.action = action
+    }
+
+    var body: some View {
+        if let bind = config.keybinds.first(where: { $0.action == action }) {
+            HStack(spacing: 6) {
+                Text(lead)
+                    .font(.hyprCaption)
+                    .foregroundStyle(Color.settingsTextMuted)
+                // light key caps, so the chord reads as a hint, not a control
+                HStack(spacing: 3) {
+                    let labels = bind.badgeLabels()
+                    if bind.modifiers.contains(.hypr) { HyprKeyChip(fontSize: 9.5) }
+                    ForEach(Array(labels.dropFirst(bind.modifiers.contains(.hypr) ? 1 : 0).enumerated()),
+                            id: \.offset) { _, label in
+                        KeyChip(label, fontSize: 9.5, onGlass: true)
+                    }
+                }
+                .fixedSize()
+            }
+            .padding(.top, 3)
+        }
+    }
+}
+
+/// Slider with its value in a small mono chip, on the navy cards.
+struct SettingsSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+    let label: (Double) -> String
+    var width: CGFloat = 170
+
+    var body: some View {
+        HStack(spacing: HyprSpacing.sm) {
+            // snapped in the binding: a stepped Slider draws a tick per step
+            Slider(value: Binding(get: { value },
+                                  set: { value = ($0 / step).rounded() * step }),
+                   in: range)
+                .tint(.hyprCyan)
+                .frame(width: width)
+            Text(label(value))
+                .font(.hyprMonoSm)
+                .foregroundStyle(Color.settingsText)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .frame(minWidth: 52)
+                .background(
+                    RoundedRectangle(cornerRadius: HyprRadius.sm, style: .continuous)
+                        .fill(Color.settingsRaised)
+                )
         }
     }
 }

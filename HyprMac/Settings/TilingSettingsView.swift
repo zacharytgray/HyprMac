@@ -1,15 +1,119 @@
-// Panels from the old "Layout" tab: window gaps, focus appearance, the
-// scratchpad, and per-monitor enable, max-splits, edge padding and
-// workspaces with a live dwindle preview.
+// "Tiling" section of Settings: the gaps with a live preview, and the
+// float and tile rules. Also, until their sections are redone, the old
+// Layout tab's focus appearance, scratchpad and per-monitor panels, plus
+// the editors and previews they share.
 
 import SwiftUI
 
-/// The old "Layout" tab's panels. Each new section shows the ones it took
-/// over, unchanged, until that section gets its redesign.
+/// "Tiling": space between tiles, and which apps float or tile.
 struct TilingSettingsView: View {
-    enum Panel { case gaps, focus, scratchpad, monitors }
+    @ObservedObject var config = UserConfig.shared
 
-    var panels: [Panel] = [.gaps, .focus, .scratchpad, .monitors]
+    var body: some View {
+        VStack(spacing: HyprSpacing.lg) {
+            gapsCard
+            rulesCard
+            SectionResetFooter(title: "Reset Tiling to defaults",
+                               message: "Sets both gaps to \(Int(UserConfigDefaults.gapSize)) px and puts the rules back to the two defaults, FaceTime and System Settings floating. Rules you added are removed; a copy of your settings is kept beside config.json.") {
+                config.resetToDefaults(.tiling)
+            }
+        }
+    }
+
+    // MARK: gaps: sliders left, live preview right
+
+    private var gapsCard: some View {
+        SettingsCard("Gaps") {
+            HStack(alignment: .center, spacing: HyprSpacing.lg) {
+                VStack(alignment: .leading, spacing: HyprSpacing.md) {
+                    gapSlider("Between windows", icon: "rectangle.split.2x1", value: $config.gapSize)
+                    gapSlider("Screen edges", icon: "rectangle.dashed", value: $config.outerPadding)
+                    Text("Monitors can change the edges one side at a time.")
+                        .font(.hyprCaption)
+                        .foregroundStyle(Color.settingsTextMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                DwindlePreview(windowCount: 4, aspectRatio: 16.0 / 10.0,
+                               gap: config.gapSize, padding: config.outerPadding)
+                    .frame(width: 220, height: 138)
+                    .background(
+                        RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                            .fill(Color.settingsBackground)
+                    )
+            }
+            .padding(HyprSpacing.md)
+        }
+    }
+
+    private func gapSlider(_ title: String, icon: String, value: Binding<CGFloat>) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: HyprSpacing.sm) {
+                Image(systemName: icon)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color.hyprCyan)
+                    .frame(width: 18)
+                Text(title)
+                    .font(.hyprBody)
+                    .foregroundStyle(Color.settingsText)
+            }
+            SettingsSlider(value: Binding(get: { Double(value.wrappedValue) },
+                                          set: { value.wrappedValue = CGFloat($0) }),
+                           range: 0...32, step: 2, label: { "\(Int($0)) px" }, width: 150)
+                .padding(.leading, 18 + HyprSpacing.sm)
+        }
+    }
+
+    // MARK: float and tile rules
+
+    // one list for every rule: an app in Never tile, an app tile rule, and
+    // the rules for one kind of window, made from the menu bar or an action
+    private var rulesCard: some View {
+        SettingsCard("Float and tile rules",
+                     footer: "A rule for one kind of window beats a rule for its app.") {
+            let rows = FloatingRuleRow.rows(excludedBundleIDs: config.excludedBundleIDs,
+                                            rules: config.floatingRules)
+            if rows.isEmpty {
+                SettingsRow("No rules", icon: "circle.dashed", tint: .settingsTextMuted,
+                            subtitle: "HyprMac decides what floats.") { EmptyView() }
+            } else {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { _, row in
+                    FloatingRuleRowView(row: row, config: config, isLast: false,
+                                        appName: appDisplayName(for: row.bundleID))
+                }
+            }
+            SettingsRow("Always float an app", icon: "plus.circle", divider: false) {
+                Button("Choose…") { pickAlwaysFloatApp() }
+                    .buttonStyle(.settings)
+            } detail: {
+                ShortcutHint("Or a rule for the focused window with", action: .showWindowRules)
+            }
+        }
+    }
+
+    private func pickAlwaysFloatApp() {
+        let panel = NSOpenPanel()
+        panel.title = "Select Application to Exclude"
+        panel.allowedContentTypes = [.application]
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = URL(fileURLWithPath: "/Applications")
+        panel.canChooseDirectories = false
+
+        if panel.runModal() == .OK, let url = panel.url,
+           let bundle = Bundle(url: url), let id = bundle.bundleIdentifier {
+            // through the rule path, so an app tile rule for it goes
+            config.addAlwaysFloatApp(id)
+        }
+    }
+}
+
+/// The old "Layout" tab's other panels, unchanged in look, shown in their
+/// new sections until each section gets its redesign.
+struct MovedLayoutPanels: View {
+    enum Panel { case focus, scratchpad, monitors }
+
+    let panels: [Panel]
     @ObservedObject var config = UserConfig.shared
     @State private var screens: [NSScreen] = NSScreen.screens
 
@@ -17,7 +121,6 @@ struct TilingSettingsView: View {
         VStack(spacing: HyprSpacing.lg) {
             ForEach(Array(panels.enumerated()), id: \.offset) { _, panel in
                 switch panel {
-                case .gaps: gapsPanel
                 case .focus: focusPanel
                 case .scratchpad: scratchpadPanel
                 case .monitors: monitorsPanel
@@ -26,67 +129,6 @@ struct TilingSettingsView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             screens = NSScreen.screens
-        }
-    }
-
-    // MARK: gaps hero — sliders left, live preview right
-
-    private var gapsPanel: some View {
-        VStack(alignment: .leading, spacing: HyprSpacing.sm) {
-            Text("Gaps")
-                .font(.hyprSection)
-                .foregroundStyle(Color.hyprTextSecondary)
-                .textCase(.uppercase)
-                .kerning(0.5)
-                .padding(.horizontal, HyprSpacing.md)
-
-            HStack(alignment: .top, spacing: HyprSpacing.lg + 2) {
-                VStack(alignment: .leading, spacing: HyprSpacing.md) {
-                    gapSlider(label: "Inner gap", value: $config.gapSize)
-                    gapSlider(label: "Outer padding", value: $config.outerPadding)
-                    Text("The preview updates as you drag.")
-                        .font(.hyprCaption)
-                        .foregroundStyle(Color.hyprTextTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                DwindlePreview(
-                    windowCount: 4,
-                    aspectRatio: 16.0 / 10.0,
-                    gap: config.gapSize,
-                    padding: config.outerPadding
-                )
-                .frame(width: 280, height: 175)
-                .background(
-                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                        .fill(Color.hyprBackground)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
-                        .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)
-                )
-            }
-            .padding(HyprSpacing.md + 2)
-            .background(
-                RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
-                    .fill(Color.hyprSurface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: HyprRadius.lg, style: .continuous)
-                    .strokeBorder(Color.hyprSeparator, lineWidth: 0.5)
-            )
-        }
-    }
-
-    private func gapSlider(label: String, value: Binding<CGFloat>) -> some View {
-        VStack(alignment: .leading, spacing: HyprSpacing.xs) {
-            HStack {
-                Text(label).font(.hyprBody)
-                Spacer()
-                HyprChip("\(Int(value.wrappedValue)) px")
-            }
-            Slider(value: value, in: 0...32, step: 2)
         }
     }
 
@@ -770,7 +812,7 @@ private struct MaxSplitsPicker: View {
 
 // MARK: - dwindle preview
 
-private struct DwindlePreview: View {
+struct DwindlePreview: View {
     let windowCount: Int
     let aspectRatio: CGFloat
     let gap: CGFloat
@@ -799,7 +841,7 @@ private struct DwindlePreview: View {
             let rects = DwindleLayout.rects(count: windowCount, in: innerRect, gap: scaledGap)
 
             RoundedRectangle(cornerRadius: 4)
-                .stroke(Color.hyprSeparator, lineWidth: 0.5)
+                .stroke(Color.settingsHairline, lineWidth: 0.5)
                 .frame(width: previewSize.width, height: previewSize.height)
                 .position(x: outerRect.midX, y: outerRect.midY)
 

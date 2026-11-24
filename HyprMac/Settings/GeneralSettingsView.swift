@@ -70,7 +70,7 @@ struct GeneralSettingsView: View {
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             } detail: {
-                shortcutLine("Pause or resume with", action: .toggleTiling)
+                ShortcutHint("Pause or resume with", action: .toggleTiling)
             }
             SettingsRow("Accessibility access", icon: accessibilityGranted ? "checkmark.shield" : "exclamationmark.shield",
                         tint: accessibilityGranted ? .hyprCyan : .hyprMagenta,
@@ -84,8 +84,7 @@ struct GeneralSettingsView: View {
                     SettingsStatusPill(text: "GRANTED")
                 } else {
                     Button(waitingForGrant ? "Open Again" : "Grant", action: grantAccessibility)
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
+                        .buttonStyle(.settingsProminent)
                 }
             }
         }
@@ -101,15 +100,15 @@ struct GeneralSettingsView: View {
                     HStack(spacing: HyprSpacing.sm) {
                         SettingsStatusPill(text: "ON")
                         Button("Manage…") { loginItem.openLoginItems() }
-                            .controlSize(.small)
+                            .buttonStyle(.settings)
                     }
                     .fixedSize()
                 case .notEnabled:
                     Button("Enable") { loginItem.enable() }
-                        .controlSize(.small)
+                        .buttonStyle(.settings)
                 case .requiresApproval, .failed:
                     Button("Open Login Items") { loginItem.openLoginItems() }
-                        .controlSize(.small)
+                        .buttonStyle(.settings)
                 }
             }
             SettingsRow("Restore saved layout at launch", icon: "arrow.counterclockwise",
@@ -119,7 +118,7 @@ struct GeneralSettingsView: View {
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             } detail: {
-                shortcutLine("Save a layout with", action: .saveLayout)
+                ShortcutHint("Save a layout with", action: .saveLayout)
             }
         }
     }
@@ -188,35 +187,12 @@ struct GeneralSettingsView: View {
             .buttonStyle(.plain)
         }
     }
-
-    // "Pause or resume with [hypr][P]", or nothing when the action has no bind
-    @ViewBuilder
-    private func shortcutLine(_ lead: String, action: Action) -> some View {
-        if let bind = config.keybinds.first(where: { $0.action == action }) {
-            HStack(spacing: 6) {
-                Text(lead)
-                    .font(.hyprCaption)
-                    .foregroundStyle(Color.settingsTextMuted)
-                // light key caps, so the chord reads as a hint, not a control
-                HStack(spacing: 3) {
-                    let labels = bind.badgeLabels()
-                    if bind.modifiers.contains(.hypr) { HyprKeyChip(fontSize: 9.5) }
-                    ForEach(Array(labels.dropFirst(bind.modifiers.contains(.hypr) ? 1 : 0).enumerated()),
-                            id: \.offset) { _, label in
-                        KeyChip(label, fontSize: 9.5, onGlass: true)
-                    }
-                }
-                .fixedSize()
-            }
-            .padding(.top, 3)
-        }
-    }
 }
 
 /// The panels that left General, unchanged in look, shown in their new
 /// sections until each section gets its redesign.
 struct MovedGeneralPanels: View {
-    enum Panel { case rules, workspaceNames, pins, overlays }
+    enum Panel { case workspaceNames, pins, overlays }
 
     let panels: [Panel]
     @ObservedObject var config = UserConfig.shared
@@ -226,36 +202,10 @@ struct MovedGeneralPanels: View {
         VStack(spacing: HyprSpacing.lg) {
             ForEach(Array(panels.enumerated()), id: \.offset) { _, panel in
                 switch panel {
-                case .rules: neverTilePanel
                 case .workspaceNames: workspaceNamesPanel
                 case .pins: workspacePinsPanel
                 case .overlays: overlaysPanel
                 }
-            }
-        }
-    }
-
-    // MARK: float and tile rules
-
-    // one list for every rule: an app in Never tile, an app tile rule, and
-    // the rules for one kind of window, made from the menu bar or an action
-    private var neverTilePanel: some View {
-        HyprPanel("Float and tile rules",
-                  footer: "A rule for one kind of window beats a rule for its app. Add window rules from the menu bar's Focused window section.") {
-            let rows = FloatingRuleRow.rows(excludedBundleIDs: config.excludedBundleIDs,
-                                            rules: config.floatingRules)
-            if rows.isEmpty {
-                HyprRow("No rules", icon: "circle.dashed",
-                        subtitle: "HyprMac decides what floats", divider: false) { EmptyView() }
-            } else {
-                ForEach(Array(rows.enumerated()), id: \.element.id) { idx, row in
-                    FloatingRuleRowView(row: row, config: config, isLast: idx == rows.count - 1,
-                                        appName: appDisplayName(for: row.bundleID))
-                }
-            }
-            HyprRow("Always float an app", icon: "plus", divider: false) {
-                Button("Choose…") { pickExcludedApp() }
-                    .controlSize(.small)
             }
         }
     }
@@ -383,21 +333,6 @@ struct MovedGeneralPanels: View {
 
     // MARK: helpers
 
-    private func pickExcludedApp() {
-        let panel = NSOpenPanel()
-        panel.title = "Select Application to Exclude"
-        panel.allowedContentTypes = [.application]
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: "/Applications")
-        panel.canChooseDirectories = false
-
-        if panel.runModal() == .OK, let url = panel.url,
-           let bundle = Bundle(url: url), let id = bundle.bundleIdentifier {
-            // through the rule path, so an app tile rule for it goes
-            config.addAlwaysFloatApp(id)
-        }
-    }
-
     // one rule per app: picking an app that already has one leaves it as is
     private func pickPinnedApp() {
         let panel = NSOpenPanel()
@@ -431,7 +366,7 @@ struct ManagedUpdatesPanel: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                     }
-                    .controlSize(.small)
+                    .buttonStyle(.settings)
                 }
             } detail: {
                 if let command {
