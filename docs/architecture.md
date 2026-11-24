@@ -883,10 +883,21 @@ first three failures in a row only; after that the ordinary poll retries.
 
 Workspace assignments and the floating set are preserved across a display
 change. Full redistribution (`distributeWindowsAcrossWorkspaces`) runs on
-every `start()`, which includes resuming from pause, on a Max Splits change,
-and on "Retile All". Discovery polling is
+the first `start()` of the process, on a Max Splits change, and on "Retile
+All". Discovery polling is
 suppressed through the settle window so drift detection cannot
 reassign windows from their OS-shuffled mid-transition positions.
+
+Resuming from pause keeps the desk too. `stop()` puts every window of a
+hidden workspace on screen (a floater at its saved frame) and leaves
+assignments, floating and hand choices, the scratchpad and the trees in
+place. `reconcileAfterResume` re-parks those windows on their workspaces
+and migrates trees if the displays changed while paused. Then one ordinary
+reconcile poll diffs the walk against the desk as it was at the pause: a
+window opened meanwhile is admitted on its screen's active workspace, a
+closed one is dropped, and one behind a native full-screen Space is held on
+its own workspace until the Space leaves. That poll always retiles the
+visible workspaces. The launch restore does not run on a resume.
 
 See `docs/desktop-switching-notes.md` for why workspaces are virtual.
 

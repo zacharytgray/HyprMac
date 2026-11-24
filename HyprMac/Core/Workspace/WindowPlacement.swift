@@ -87,9 +87,11 @@ final class WindowPlacement {
     ///
     /// Workspaces fill in numeric order, with each workspace's capacity
     /// derived from its statically anchored monitor. Anything that does not
-    /// fit even in the tenth workspace is auto-floated. Called from every
-    /// `start()` (including resume from pause), Retile All and a Max Splits
-    /// change, through `snapshotAndTile`.
+    /// fit even in the tenth workspace is auto-floated. Called from the
+    /// first `start()` in a process, Retile All and a Max Splits change,
+    /// through `snapshotAndTile`. A resume from Pause never runs it
+    /// (`prepareResume`): with a full-screen Space in front, the walk misses
+    /// every desktop window, and this moved them onto the visible workspace.
     func distributeWindowsAcrossWorkspaces(_ allWindows: [HyprWindow]) {
         hyprLog(.notice, .lifecycle, "distributeWindowsAcrossWorkspaces ENTER — full redistribute about to run (this rewrites workspace assignments)")
         // the homes' order, so a stacked desk fills the primary first here too
@@ -216,6 +218,21 @@ final class WindowPlacement {
             let ws = workspaceManager.workspaceForScreen(screen)
             workspaceManager.assignWindow(window.windowID, toWorkspace: ws)
         }
+    }
+
+    /// The resume half of placement. `stop()` put every listed window of a
+    /// hidden workspace back on screen, a floater at the frame it had saved.
+    /// Each goes back to the park corner on the workspace it had, and a
+    /// floater keeps the frame it has now for its next reveal. Nothing is
+    /// assigned, floated or unfloated: the poll that follows admits windows
+    /// opened while paused and drops closed ones.
+    func prepareResume(_ allWindows: [HyprWindow]) {
+        for w in allWindows where stateCache.floatingWindowIDs.contains(w.windowID) {
+            guard let ws = workspaceManager.workspaceFor(w.windowID),
+                  !workspaceManager.isWorkspaceVisible(ws) else { continue }
+            workspaceManager.saveFloatingFrame(w)
+        }
+        reparkHiddenWorkspaceWindows(allWindows)
     }
 
     /// Re-park every window assigned to a hidden workspace at the current

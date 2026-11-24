@@ -236,9 +236,13 @@ class WindowManager {
     /// notification of a transition files the departing layout under this
     /// key — by then `displayManager.screens` already reflects the new one.
     private var settledDisplayKey = ""
-    /// the launch restore runs once per process; resuming from pause
-    /// restarts the manager but is not a launch
-    private var didRunLaunchRestore = false
+    /// the first start in a process lays the desk out from scratch and runs
+    /// the launch restore. resuming from pause restarts the manager but is
+    /// not a launch: it keeps every window where it was
+    private var didRunInitialTile = false
+    /// set by a resume: the poll that follows it retiles every visible
+    /// workspace even when it finds nothing new
+    private var retileAfterNextPoll = false
     private let layoutStore = LayoutSnapshotStore.shared
     private let relaunchHandoffStore = RelaunchHandoffStore.shared
 
@@ -987,6 +991,11 @@ class WindowManager {
     /// initial tile so its discovery diff cannot race the snapshot and claim
     /// every window as new.
     ///
+    /// The first start in a process runs `snapshotAndTile` (a full
+    /// redistribute) and the launch restore. A later start is a resume from
+    /// Pause and runs `reconcileAfterResume` instead, which keeps every
+    /// workspace assignment and floating choice.
+    ///
     /// Side effects: subscribes to `NSWorkspace` activation/launch/terminate
     /// notifications, the `HIToolbox` menu-tracking notifications, screen
     /// parameter changes. Configuration observation is installed once in init.
@@ -1072,9 +1081,10 @@ class WindowManager {
             guard let self, self.isRunning else { return }
             self.workspaceManager.initializeMonitors()
             self.settledDisplayKey = LayoutSnapshotStore.displayKey(screens: self.displayManager.screens)
-            let initialWindows = self.snapshotAndTile()
-            if !self.didRunLaunchRestore {
-                self.didRunLaunchRestore = true
+            let resuming = self.didRunInitialTile
+            let initialWindows = resuming ? self.reconcileAfterResume() : self.snapshotAndTile()
+            if !resuming {
+                self.didRunInitialTile = true
                 // an update relaunch puts the desk back as it was. any
                 // other launch follows the Restore at launch setting
                 let key = LayoutSnapshotStore.displayKey(screens: self.displayManager.screens)
@@ -1099,7 +1109,15 @@ class WindowManager {
             // initial distribution. the timer is now a slow (10s) safety net;
             // AX notifications above are the primary trigger.
             self.pollingScheduler.start()
-            self.statusPresenter.dumpState(reason: "startup")
+            if resuming {
+                // the ordinary poll diffs against the desk as it was at the
+                // pause: windows opened meanwhile are admitted, closed ones
+                // dropped, and ones behind a full-screen Space held in place.
+                // its retile then lays out every visible workspace
+                self.retileAfterNextPoll = true
+                self.pollingScheduler.reconcileTick()
+            }
+            self.statusPresenter.dumpState(reason: resuming ? "resume" : "startup")
         }
 
         // SIGUSR1 dumps state on demand over ssh. the default handler
@@ -1259,8 +1277,13 @@ class WindowManager {
             guard let window = allWindows.first(where: { $0.windowID == wid }) else { continue }
 
             // once HyprMac stops every window is a free window, so these
-            // go through the same clamp as a floater
-            if let original = stateCache.originalFrames[wid] {
+            // go through the same clamp as a floater. a floater goes back to
+            // the frame it had before its workspace was hidden
+            if stateCache.floatingWindowIDs.contains(wid),
+               let saved = workspaceManager.savedFloatingFrame(for: wid) {
+                window.placeFloating(saved, reason: "stop, floating frame",
+                                     displayManager: displayManager)
+            } else if let original = stateCache.originalFrames[wid] {
                 window.placeFloating(original, reason: "stop, original frame",
                                      displayManager: displayManager)
             } else {
@@ -2074,10 +2097,11 @@ class WindowManager {
     ///    workspace.
     /// 5. Distribute and tile.
     ///
-    /// Called from `start()` after the initial AX-settle delay, from
-    /// menu-driven "Retile All", and on max-splits config changes. NOT
-    /// called on screen parameter changes — `reconcileAfterDisplayChange`
-    /// handles those without rewriting workspace assignments.
+    /// Called from the first `start()` in a process after the initial
+    /// AX-settle delay, from "Retile All" (menu and Hypr+R), and on
+    /// max-splits config changes. NOT called on a resume from Pause
+    /// (`reconcileAfterResume`) or on screen parameter changes
+    /// (`reconcileAfterDisplayChange`); both keep workspace assignments.
     @discardableResult
     func snapshotAndTile() -> [HyprWindow] {
         let allWindows = accessibility.getAllWindows()
@@ -2126,6 +2150,33 @@ class WindowManager {
         if restoreSavedLayout {
             restoreLayoutSnapshot(manual: false, windows: allWindows)
         }
+    }
+
+    /// Resume from Pause without rewriting the desk.
+    ///
+    /// `stop()` put every window of a hidden workspace on screen and left
+    /// workspace assignments, the floating set, the scratchpad and the
+    /// trees as they were. This re-parks those windows (and migrates trees
+    /// if the displays changed while paused), and nothing else. The
+    /// ordinary poll `start()` runs next does the rest: a window opened
+    /// while paused is admitted on its screen's active workspace, a closed
+    /// one is dropped, and one behind a native full-screen Space is held in
+    /// place on its own workspace. A full redistribute here moved those
+    /// off-Space windows onto the visible workspace.
+    ///
+    /// - Returns: the walk, for the initial AX subscriptions.
+    private func reconcileAfterResume() -> [HyprWindow] {
+        tilingEngine.handleDisplayChange(
+            currentScreens: displayManager.screens,
+            homeScreenForWorkspace: { [weak self] ws in
+                self?.workspaceManager.homeScreenForWorkspace(ws)
+            }
+        )
+        let allWindows = accessibility.getAllWindows()
+        placement.prepareResume(allWindows)
+        hyprLog(.notice, .lifecycle, "resume: \(allWindows.count) windows listed, workspaces kept"
+                + " — the next poll admits, drops and holds, then retiles")
+        return allWindows
     }
 
     // MARK: - layout snapshots
@@ -2899,6 +2950,13 @@ class WindowManager {
             hyprLog(.notice, .discovery, "held windows readable again: \(released.sorted()) — retiling")
             retile(windows: allWindows)
             retiled = true
+        }
+        if retileAfterNextPoll {
+            retileAfterNextPoll = false
+            if !retiled {
+                retile(windows: allWindows)
+                retiled = true
+            }
         }
         // a poll is the real event that says a window came back, became
         // readable, or went away — the only thing that can unblock a
