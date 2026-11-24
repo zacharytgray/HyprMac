@@ -6,14 +6,32 @@ import SwiftUI
 
 // MARK: - steps
 
-/// The tutorial's steps in order. Access is the permission; the lessons
-/// are done on real keys; Make it yours sets a few choices.
-enum TutorialLesson: Int, CaseIterable {
-    case access, hyprKey, moveAround, workspaces, floating, fixWindow, menuBarAndKeys, pause, makeItYours
+/// A step on a stage rail. Onboarding and the tutorial each have their own.
+protocol StageStep: Hashable, CaseIterable where AllCases == [Self] {
+    var railLabel: String { get }
+}
+
+/// Onboarding: required, runs once, no skip.
+enum OnboardingStep: Int, StageStep {
+    case access, hyprKey, makeItYours
 
     var railLabel: String {
         switch self {
         case .access: return "Access"
+        case .hyprKey: return "Hypr key"
+        case .makeItYours: return "Make it yours"
+        }
+    }
+
+    var counterLabel: String { "Setup · \(rawValue + 1) of \(Self.allCases.count)" }
+}
+
+/// The tutorial: optional, replayable, done on real keys.
+enum TutorialLesson: Int, StageStep {
+    case hyprKey, moveAround, workspaces, floating, fixWindow, menuBarAndKeys, pause, finish
+
+    var railLabel: String {
+        switch self {
         case .hyprKey: return "Hypr key"
         case .moveAround: return "Move around"
         case .workspaces: return "Workspaces"
@@ -21,20 +39,24 @@ enum TutorialLesson: Int, CaseIterable {
         case .fixWindow: return "Fix a window"
         case .menuBarAndKeys: return "Menu bar & keys"
         case .pause: return "Pause"
-        case .makeItYours: return "Make it yours"
+        case .finish: return "Finish"
         }
     }
 
     var next: TutorialLesson? { TutorialLesson(rawValue: rawValue + 1) }
 
-    /// "Lesson 2 of 7" for the lessons; the two ends say what they are
     var counterLabel: String {
-        switch self {
-        case .access: return "Before you start"
-        case .makeItYours: return "Last step"
-        default: return "Lesson \(rawValue) of \(TutorialLesson.pause.rawValue)"
-        }
+        self == .finish ? "Tutorial" : "Lesson \(rawValue + 1) of \(TutorialLesson.finish.rawValue)"
     }
+
+    var nextTitle: String { next.map { "Next: \($0.railLabel)" } ?? "Finish Tutorial" }
+}
+
+/// A labeled bottom-bar action.
+struct StageAction {
+    let title: String
+    var shortcut: KeyboardShortcut? = nil
+    let action: () -> Void
 }
 
 // MARK: - stage colors
@@ -57,18 +79,23 @@ enum TutorialStageColor {
 
 // MARK: - shell
 
-struct TutorialStage<Content: View>: View {
-    let lesson: TutorialLesson
-    let completed: Set<TutorialLesson>
-    /// e.g. "1 of 3 done"; nil hides it
-    let progress: String?
+struct TutorialStage<Step: StageStep, Content: View>: View {
+    let step: Step
+    let completed: Set<Step>
+    /// top right, e.g. "Lesson 2 of 7"
+    let counter: String
+    /// e.g. "1 of 3 done", in mono beside the buttons
+    var progress: String? = nil
+    /// a quiet sentence beside the buttons
+    var note: String? = nil
     let canContinue: Bool
-    /// bottom-left: "Skip Tutorial" on lessons, "Quit HyprMac" on Access
-    var exitTitle = "Skip Tutorial"
-    var canSkipLesson = true
-    let onExit: () -> Void
-    let onSkipLesson: () -> Void
-    let onNext: () -> Void
+    /// bottom left: Quit, Back or Skip Tutorial
+    var exit: StageAction? = nil
+    /// shown while the step isn't done
+    var skip: StageAction? = nil
+    /// a quiet button before the primary one
+    var secondary: StageAction? = nil
+    let next: StageAction
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -104,7 +131,7 @@ struct TutorialStage<Content: View>: View {
             Spacer(minLength: 0)
             rail
             Spacer(minLength: 0)
-            Text(lesson.counterLabel)
+            Text(counter)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(TutorialStageColor.faint)
         }
@@ -120,16 +147,16 @@ struct TutorialStage<Content: View>: View {
     // heavier text, never a filled chip
     private var rail: some View {
         HStack(spacing: 18) {
-            ForEach(TutorialLesson.allCases, id: \.self) { step in
-                let current = step == lesson
-                let done = completed.contains(step)
+            ForEach(Step.allCases, id: \.self) { item in
+                let current = item == step
+                let done = completed.contains(item)
                 VStack(spacing: 6) {
                     HStack(spacing: 5) {
                         Image(systemName: done ? "checkmark.circle.fill"
                               : current ? "circle.inset.filled" : "circle")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(done || current ? TutorialStageColor.cyan : TutorialStageColor.faint)
-                        Text(step.railLabel)
+                        Text(item.railLabel)
                             .font(.system(size: 11.5, weight: current ? .semibold : .regular))
                             .foregroundStyle(current ? TutorialStageColor.text
                                              : done ? TutorialStageColor.quiet : TutorialStageColor.faint)
@@ -143,51 +170,60 @@ struct TutorialStage<Content: View>: View {
                 // the bar matches the label; without this each step stretches
                 .fixedSize()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(step.railLabel), \(done ? "done" : current ? "current step" : "not started")")
+                .accessibilityLabel("\(item.railLabel), \(done ? "done" : current ? "current step" : "not started")")
             }
         }
     }
 
-    // MARK: bottom: exit · progress · skip lesson · next
+    // MARK: bottom: exit · note · progress · skip · secondary · next
 
     private var bottomBar: some View {
         HStack(spacing: 16) {
-            Button(action: onExit) {
-                HStack(spacing: 6) {
-                    Text(exitTitle)
-                    StageKeyHint("esc")
+            if let exit {
+                Button(action: exit.action) {
+                    HStack(spacing: 6) {
+                        Text(exit.title)
+                        if exit.shortcut == .cancelAction { StageKeyHint("esc") }
+                    }
                 }
+                .buttonStyle(.plain)
+                .font(.system(size: 12))
+                .foregroundStyle(TutorialStageColor.quiet)
+                .keyboardShortcut(exit.shortcut)
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12))
-            .foregroundStyle(TutorialStageColor.quiet)
-            .keyboardShortcut(.cancelAction)
 
             Spacer()
 
+            if let note {
+                Text(note)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(TutorialStageColor.faint)
+            }
             if let progress {
                 Text(progress)
                     .font(.system(size: 11.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(canContinue ? TutorialStageColor.cyan : TutorialStageColor.faint)
             }
-            if !canContinue, canSkipLesson {
-                Button("Skip Lesson", action: onSkipLesson)
+            if !canContinue, let skip {
+                Button(skip.title, action: skip.action)
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
                     .foregroundStyle(TutorialStageColor.quiet)
             }
-            StagePrimaryButton(nextTitle, enabled: canContinue, action: onNext)
+            if let secondary {
+                Button(secondary.title, action: secondary.action)
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundStyle(TutorialStageColor.quiet)
+                    .padding(.horizontal, 6)
+            }
+            StagePrimaryButton(next.title, enabled: canContinue, action: next.action)
         }
         .padding(.horizontal, 28)
         .padding(.vertical, 18)
         .overlay(alignment: .top) {
             Rectangle().fill(TutorialStageColor.line).frame(height: 1)
         }
-    }
-
-    private var nextTitle: String {
-        guard let next = lesson.next else { return "Finish Tutorial" }
-        return "Next: \(next.railLabel)"
     }
 }
 
@@ -443,9 +479,9 @@ final class TutorialWindowController {
     }
 
     /// Access sits at the normal level, so System Settings can come in
-    /// front of it. Lessons sit above passive chrome, like the old tour.
-    static func level(for step: TutorialLesson) -> NSWindow.Level {
-        step == .access ? .normal : Constants.interfaceWindowLevel
+    /// front of it. Everything else sits above passive chrome, like the old tour.
+    static func level(forAccess access: Bool) -> NSWindow.Level {
+        access ? .normal : Constants.interfaceWindowLevel
     }
 
     func show<V: View>(_ view: V, level: NSWindow.Level) {

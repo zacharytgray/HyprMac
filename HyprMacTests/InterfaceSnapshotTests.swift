@@ -129,23 +129,23 @@ final class InterfaceSnapshotTests: XCTestCase {
         for dark in [true, false] {
             let mode = dark ? "dark" : "light"
             UserConfig.shared.doubleTapHyprTogglesCapsLock = true
-            try render("lesson-hypr-key-1-start-\(mode)", lesson { _ in }, size: size, dark: dark)
-            try render("lesson-hypr-key-2-held-\(mode)", lesson {
+            try render("tutorial-1-hypr-key-1-start-\(mode)", lesson { _ in }, size: size, dark: dark)
+            try render("tutorial-1-hypr-key-2-held-\(mode)", lesson {
                 $0.hyprHeld = true
                 $0.heldOnce = true
             }, size: size, dark: dark)
-            try render("lesson-hypr-key-3-capitals-on-\(mode)", lesson {
+            try render("tutorial-1-hypr-key-3-capitals-on-\(mode)", lesson {
                 $0.heldOnce = true
                 $0.capsLockOn = true
                 $0.capsTurnedOn = true
             }, size: size, dark: dark)
-            try render("lesson-hypr-key-4-done-\(mode)", lesson {
+            try render("tutorial-1-hypr-key-4-done-\(mode)", lesson {
                 $0.heldOnce = true
                 $0.capsTurnedOn = true
                 $0.capsTurnedOff = true
             }, size: size, dark: dark)
             UserConfig.shared.doubleTapHyprTogglesCapsLock = false
-            try render("lesson-hypr-key-5-double-tap-off-\(mode)", lesson { $0.heldOnce = true },
+            try render("tutorial-1-hypr-key-5-double-tap-off-\(mode)", lesson { $0.heldOnce = true },
                        size: size, dark: dark)
         }
     }
@@ -160,15 +160,44 @@ final class InterfaceSnapshotTests: XCTestCase {
         }
         for dark in [true, false] {
             let mode = dark ? "dark" : "light"
-            try render("access-1-start-\(mode)", step(granted: false, waiting: false), size: size, dark: dark)
-            try render("access-2-waiting-\(mode)", step(granted: false, waiting: true), size: size, dark: dark)
-            try render("access-3-granted-\(mode)", step(granted: true, waiting: false), size: size, dark: dark)
+            try render("onboarding-1-access-start-\(mode)", step(granted: false, waiting: false), size: size, dark: dark)
+            try render("onboarding-1-access-waiting-\(mode)", step(granted: false, waiting: true), size: size, dark: dark)
+            try render("onboarding-1-access-granted-\(mode)", step(granted: true, waiting: false), size: size, dark: dark)
         }
         // dex157's drag panel, which shows under System Settings meanwhile
         try render("access-drag-panel-dark", AccessibilityDragHelperView(onClose: {}),
                    width: AccessibilityDragHelperPlacement.panelWidth)
         try render("access-drag-panel-light", AccessibilityDragHelperView(onClose: {}),
                    width: AccessibilityDragHelperPlacement.panelWidth, dark: false)
+    }
+
+    // onboarding's last step, at the defaults and at the other picks
+    func testRenderMakeItYours() throws {
+        let config = UserConfig.shared
+        let saved = (config.focusFollowsMouse, config.focusBracketStyle, config.showFocusBorder,
+                     config.dimInactiveWindows)
+        let savedStyle = UserDefaults.standard.string(forKey: UserConfig.menuBarStyleKey)
+        defer {
+            (config.focusFollowsMouse, config.focusBracketStyle, config.showFocusBorder,
+             config.dimInactiveWindows) = saved
+            UserDefaults.standard.set(savedStyle, forKey: UserConfig.menuBarStyleKey)
+        }
+        let size = CGSize(width: 1440, height: 900)
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            config.focusFollowsMouse = true
+            FocusIndicatorChoice.corners.apply(to: config)
+            config.dimInactiveWindows = true
+            UserDefaults.standard.set(MenuBarStyle.full.rawValue, forKey: UserConfig.menuBarStyleKey)
+            try render("onboarding-3-make-it-yours-defaults-\(mode)",
+                       MakeItYoursView(onSkipTutorial: {}, onTakeTutorial: {}), size: size, dark: dark)
+            config.focusFollowsMouse = false
+            FocusIndicatorChoice.cornersAndBorders.apply(to: config)
+            config.dimInactiveWindows = false
+            UserDefaults.standard.set(MenuBarStyle.compact.rawValue, forKey: UserConfig.menuBarStyleKey)
+            try render("onboarding-3-make-it-yours-changed-\(mode)",
+                       MakeItYoursView(onBack: {}, onSkipTutorial: {}, onTakeTutorial: {}), size: size, dark: dark)
+        }
     }
 
     func testRenderKeybindChips() throws {

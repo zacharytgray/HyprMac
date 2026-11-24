@@ -13,7 +13,7 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
     private var welcomeController: WelcomeWindowController?
-    private var tutorial: TutorialSession?
+    private var stage: StageSession?
     private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
@@ -200,14 +200,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.permissionPollTimer = nil
             self?.startAfterPermissionGranted()
             self?.permissionsGate?.markAccessibilityGrantedAndDismiss()
-            self?.tutorial?.noteAccessGranted()
+            self?.stage?.noteAccessGranted()
         }
         RunLoop.main.add(timer, forMode: .common)
         permissionPollTimer = timer
 
         #if HYPRMAC_DEBUG_VARIANT
         if Self.usesNewTutorial {
-            presentTutorial(startAt: .access)
+            presentStage(.onboarding(accessGranted: false))
             return
         }
         #endif
@@ -266,7 +266,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // the full-screen tutorial, one lesson so far: Debug app only, and
         // only when launched with --new-tutorial
         if Self.usesNewTutorial {
-            presentTutorial(startAt: .hyprKey)
+            presentStage(.tutorial())
             return
         }
         #endif
@@ -276,20 +276,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     #if HYPRMAC_DEBUG_VARIANT
     private static var usesNewTutorial: Bool { CommandLine.arguments.contains("--new-tutorial") }
 
-    /// The full-screen tutorial. A first run starts it at Access from the
-    /// launch gate, and Next carries on into the lessons; a replay starts
-    /// at the Hypr key.
-    private func presentTutorial(startAt step: TutorialLesson) {
-        guard tutorial?.isShowing != true else { return }
+    /// The full-screen stage. Onboarding runs from the launch gate (or the
+    /// first-run decision when access was already there); a replay opens
+    /// the tutorial. One stage at a time.
+    private func presentStage(_ session: StageSession) {
+        guard stage?.isShowing != true else { return }
         welcomeController?.dismiss()
-        let session = TutorialSession(startAt: step)
-        session.onClose = { [weak self] in self?.tutorial = nil }
+        session.onClose = { [weak self] in self?.stage = nil }
         session.onQuit = { [weak self] in
             self?.permissionPollTimer?.invalidate()
             self?.permissionPollTimer = nil
             NSApp.terminate(nil)
         }
-        tutorial = session
+        stage = session
         session.show()
     }
     #endif
@@ -305,7 +304,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #if HYPRMAC_DEBUG_VARIANT
         // the first-run decision lands here too; the tutorial already covers it
         if Self.usesNewTutorial, mode == .firstRun {
-            presentTutorial(startAt: .hyprKey)
+            presentStage(.onboarding(accessGranted: true))
             return
         }
         #endif

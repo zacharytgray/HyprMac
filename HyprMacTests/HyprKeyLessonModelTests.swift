@@ -47,6 +47,7 @@ final class HyprKeyLessonModelTests: XCTestCase {
     }
 
     func testSkippingDoubleTapLeavesOnlyTheHold() {
+        config.doubleTapHyprTogglesCapsLock = true
         let model = HyprKeyLessonModel(config: config)
         model.skipDoubleTap()
         XCTAssertEqual(model.taskCount, 1)
@@ -54,16 +55,12 @@ final class HyprKeyLessonModelTests: XCTestCase {
         XCTAssertTrue(model.isDone)
     }
 
-    func testDoubleTapOffListsTheHoldAndTheSwitchThenTheTaps() {
+    func testDoubleTapOffTeachesOnlyTheHold() {
         config.doubleTapHyprTogglesCapsLock = false
         let model = HyprKeyLessonModel(config: config)
+        XCTAssertEqual(model.taskCount, 1)
         model.heldOnce = true
-        XCTAssertEqual(model.taskCount, 2)
-        XCTAssertEqual(model.tasksDone, 1)
-        model.turnOnDoubleTap()
-        XCTAssertTrue(config.doubleTapHyprTogglesCapsLock)
-        XCTAssertEqual(model.taskCount, 3)
-        XCTAssertFalse(model.isDone)
+        XCTAssertTrue(model.isDone)
     }
 
     func testOtherHyprKeysTeachOnlyTheHold() {

@@ -1,32 +1,56 @@
-// One tutorial run: which step is up, what's done, and the window it lives
-// in. Built so far: Access and the Hypr key lesson; Next past the last
-// built step ends the run.
+// One run of the stage window: onboarding (required, once) and then, if
+// the user takes it, the tutorial (optional, replayable). Steps not built
+// yet are passed over.
 
 import SwiftUI
 
-final class TutorialSession: ObservableObject {
-    @Published private(set) var step: TutorialLesson
-    @Published private(set) var completed: Set<TutorialLesson> = []
-    let access = AccessStepModel()
-    let hyprKey = HyprKeyLessonModel()
+enum StageScreen: Equatable {
+    case onboarding(OnboardingStep)
+    case tutorial(TutorialLesson)
+}
 
-    private static let built: Set<TutorialLesson> = [.access, .hyprKey]
+final class StageSession: ObservableObject {
+    @Published private(set) var screen: StageScreen
+    @Published private(set) var onboardingDone: Set<OnboardingStep> = []
+    @Published private(set) var lessonsDone: Set<TutorialLesson> = []
+    let access = AccessStepModel()
+    let hyprKeyLesson = HyprKeyLessonModel()
+
+    static let builtOnboarding: [OnboardingStep] = [.access, .makeItYours]
+    static let builtLessons: [TutorialLesson] = [.hyprKey]
 
     private let controller = TutorialWindowController()
     var onClose: () -> Void = {}
     var onQuit: () -> Void = {}
 
-    init(startAt step: TutorialLesson) {
-        self.step = step
-        if step != .access { completed.insert(.access) }
+    /// Onboarding starts at Access only while access is missing.
+    static func onboarding(accessGranted: Bool) -> StageSession {
+        let first = accessGranted ? builtOnboarding.first { $0 != .access } ?? .makeItYours : .access
+        let session = StageSession(screen: .onboarding(first))
+        if accessGranted { session.onboardingDone.insert(.access) }
+        return session
+    }
+
+    static func tutorial() -> StageSession {
+        StageSession(screen: .tutorial(builtLessons[0]))
+    }
+
+    init(screen: StageScreen) {
+        self.screen = screen
     }
 
     var isShowing: Bool { controller.window != nil }
 
     func show() {
-        controller.show(TutorialFlowView(session: self), level: TutorialWindowController.level(for: step))
-        startStep()
+        controller.show(StageFlowView(session: self), level: level)
+        startScreen()
     }
+
+    private var level: NSWindow.Level {
+        TutorialWindowController.level(forAccess: screen == .onboarding(.access))
+    }
+
+    // MARK: onboarding
 
     func grantAccess() {
         access.grant(beside: controller.window) { [weak self] in self?.controller.bringToFront() }
@@ -35,48 +59,102 @@ final class TutorialSession: ObservableObject {
     /// The launch poll saw the grant.
     func noteAccessGranted() { access.refresh() }
 
-    func advance() {
-        stopStep()
-        completed.insert(step)
-        guard let next = step.next, Self.built.contains(next) else {
-            close()
-            return
+    func nextOnboardingStep() {
+        guard case let .onboarding(step) = screen else { return }
+        onboardingDone.insert(step)
+        let built = Self.builtOnboarding
+        if let index = built.firstIndex(of: step), index + 1 < built.count {
+            go(to: .onboarding(built[index + 1]))
         }
-        step = next
-        controller.window?.level = TutorialWindowController.level(for: next)
-        startStep()
+    }
+
+    var canGoBack: Bool {
+        guard case let .onboarding(step) = screen,
+              let index = Self.builtOnboarding.firstIndex(of: step), index > 0 else { return false }
+        return Self.builtOnboarding[index - 1] != .access
+    }
+
+    func previousOnboardingStep() {
+        guard case let .onboarding(step) = screen,
+              let index = Self.builtOnboarding.firstIndex(of: step), index > 0 else { return }
+        let previous = Self.builtOnboarding[index - 1]
+        // access can't be undone, so Back stops at the step after it
+        guard previous != .access else { return }
+        go(to: .onboarding(previous))
+    }
+
+    /// Onboarding's last choice.
+    func finishOnboarding(takeTutorial: Bool) {
+        onboardingDone.insert(.makeItYours)
+        if takeTutorial {
+            go(to: .tutorial(Self.builtLessons[0]))
+        } else {
+            close()
+        }
+    }
+
+    // MARK: tutorial
+
+    func nextLesson() {
+        guard case let .tutorial(lesson) = screen else { return }
+        lessonsDone.insert(lesson)
+        let built = Self.builtLessons
+        if let index = built.firstIndex(of: lesson), index + 1 < built.count {
+            go(to: .tutorial(built[index + 1]))
+        } else {
+            close()
+        }
     }
 
     func close() {
-        stopStep()
+        stopScreen()
         controller.dismiss()
         onClose()
     }
 
-    private func startStep() {
-        if step == .hyprKey { hyprKey.start() }
+    // MARK: switching
+
+    private func go(to next: StageScreen) {
+        stopScreen()
+        screen = next
+        controller.window?.level = level
+        startScreen()
     }
 
-    private func stopStep() {
-        hyprKey.stop()
+    private func startScreen() {
+        if screen == .tutorial(.hyprKey) { hyprKeyLesson.start() }
+    }
+
+    private func stopScreen() {
+        hyprKeyLesson.stop()
     }
 }
 
-struct TutorialFlowView: View {
-    @ObservedObject var session: TutorialSession
+struct StageFlowView: View {
+    @ObservedObject var session: StageSession
 
     var body: some View {
-        switch session.step {
-        case .access:
+        switch session.screen {
+        case .onboarding(.access):
             AccessStepView(model: session.access,
                            onGrant: { session.grantAccess() },
                            onQuit: { session.onQuit() },
-                           onNext: { session.advance() })
-        default:
-            HyprKeyLessonView(model: session.hyprKey,
-                              completed: session.completed,
+                           onNext: { session.nextOnboardingStep() },
+                           nextTitle: "Next: \(nextOnboardingLabel)")
+        case .onboarding:
+            MakeItYoursView(completed: session.onboardingDone,
+                            onBack: session.canGoBack ? { session.previousOnboardingStep() } : nil,
+                            onSkipTutorial: { session.finishOnboarding(takeTutorial: false) },
+                            onTakeTutorial: { session.finishOnboarding(takeTutorial: true) })
+        case .tutorial:
+            HyprKeyLessonView(model: session.hyprKeyLesson,
+                              completed: session.lessonsDone,
                               onExit: { session.close() },
-                              onNext: { session.advance() })
+                              onNext: { session.nextLesson() })
         }
+    }
+
+    private var nextOnboardingLabel: String {
+        StageSession.builtOnboarding.dropFirst().first?.railLabel ?? ""
     }
 }

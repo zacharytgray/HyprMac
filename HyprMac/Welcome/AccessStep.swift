@@ -44,20 +44,20 @@ struct AccessStepView: View {
     let onGrant: () -> Void
     let onQuit: () -> Void
     let onNext: () -> Void
+    var nextTitle = "Next: \(OnboardingStep.hyprKey.railLabel)"
 
     private let poll = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         TutorialStage(
-            lesson: .access,
+            step: OnboardingStep.access,
             completed: model.granted ? [.access] : [],
+            counter: OnboardingStep.access.counterLabel,
             progress: model.granted ? "Access granted" : nil,
             canContinue: model.granted,
-            exitTitle: "Quit HyprMac",
-            canSkipLesson: false,
-            onExit: onQuit,
-            onSkipLesson: {},
-            onNext: onNext
+            // no esc: quitting by accident would lose the user
+            exit: StageAction(title: "Quit HyprMac", action: onQuit),
+            next: StageAction(title: nextTitle, action: onNext)
         ) {
             VStack(spacing: 0) {
                 Text(model.granted ? "HyprMac can manage your windows" : "Let HyprMac move your windows")
