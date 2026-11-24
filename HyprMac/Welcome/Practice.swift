@@ -149,6 +149,7 @@ final class PracticeSession: ObservableObject {
     @Published private(set) var unavailable: String?
 
     static let needsEmptyWorkspace = "Practice needs one empty workspace. Move the windows off one, then try again."
+    static let switchRefused = "Practice couldn't move to an empty workspace just now. Wait a moment, then try again."
     static let needsSecondEmptyWorkspace = "This lesson needs a second empty workspace. Move the windows off one, then try again."
 
     static let stateNotification = Notification.Name("com.zachgray.HyprMac.practice.state")
@@ -191,10 +192,18 @@ final class PracticeSession: ObservableObject {
             hyprLog(.notice, .lifecycle, "tutorial practice: no empty workspace on this screen, not starting")
             return
         }
+        let start = host?.currentWorkspace()
+        host?.switchToWorkspace(home)
+        // a switch can be refused, as mid display change; the windows
+        // would then open on the user's own workspace
+        guard host?.currentWorkspace() == home else {
+            unavailable = Self.switchRefused
+            hyprLog(.notice, .lifecycle, "tutorial practice: the switch to ws\(home) didn't happen, not starting")
+            return
+        }
         unavailable = nil
         launch += 1
-        startWorkspace = host?.currentWorkspace()
-        host?.switchToWorkspace(home)
+        startWorkspace = start
         practiceWorkspace = home
         // picked before the windows open, so it's empty too; nil without one
         otherWorkspace = empty.dropFirst().first

@@ -8,11 +8,13 @@ final class MoveAroundLessonTests: XCTestCase {
         var current = 1
         var empty: [Int] = [3, 4]
         var switches: [Int] = []
+        /// a refused switch, as mid display change
+        var refuses = false
         func currentWorkspace() -> Int? { current }
         func emptyWorkspaces() -> [Int] { empty }
         func switchToWorkspace(_ number: Int) {
             switches.append(number)
-            current = number
+            if !refuses { current = number }
         }
     }
 
@@ -140,6 +142,24 @@ final class MoveAroundLessonTests: XCTestCase {
         XCTAssertNil(stage.practiceBlocked(.pause), "pause and the key list touch no windows")
         stage.practice.end()
         XCTAssertEqual(host.switches, [])
+    }
+
+    // a refused switch leaves the user on their own workspace: no practice there
+    func testARefusedSwitchStartsNoPractice() {
+        let host = FakeHost()
+        host.refuses = true
+        let stage = StageSession.tutorial(practiceHost: host)
+        stage.practice.begin()
+        XCTAssertFalse(stage.practice.isActive)
+        XCTAssertNil(stage.practice.practiceWorkspace)
+        XCTAssertEqual(stage.practiceBlocked(.moveAround), PracticeSession.switchRefused)
+        stage.practice.end()
+        XCTAssertEqual(host.switches, [3], "nothing to switch back from")
+
+        host.refuses = false
+        stage.practice.begin()
+        XCTAssertTrue(stage.practice.isActive, "the next lesson tries again")
+        stage.practice.end()
     }
 
     // lesson 3's send target is a second empty workspace, never an occupied one
