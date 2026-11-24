@@ -370,6 +370,7 @@
 		DFCD23D134644697F8DCF3D8 /* PhysicalKeyMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EEDEB39CC2B8A579809780E2 /* PhysicalKeyMonitor.swift */; };
 		DFE89755AA5CF65CC6319D33 /* HyprKeySystemGuidanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DE1252424844EA3C4E1B709 /* HyprKeySystemGuidanceTests.swift */; };
 		E0EC87378AAEFCEB313B283E /* TilingEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05FDF12C01F99F4A9DEAEB09 /* TilingEngine.swift */; };
+		E1398080B3AA150151CBFFE6 /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E13F279EC80E5A7EA66A547 /* AppearanceSettingsView.swift */; };
 		E25ABCCD628CDF38B9E06744 /* TiledDragSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72B6952D8617CE03DF8A8E96 /* TiledDragSnapshot.swift */; };
 		E29E31CB9C54A59EF1BA8F57 /* LayoutRestorer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62C7EA1B257E580577FE04BD /* LayoutRestorer.swift */; };
 		E3A98C82AA1D5F8A36D2EA4B /* TiledDragHandlerInsertionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7502D2FDDF687937DE908DD /* TiledDragHandlerInsertionTests.swift */; };
@@ -436,6 +437,7 @@
 		F9857D1EBAD4EB6F9113B6E1 /* FullscreenWorkspaceTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 56823428D522E6724F9CB840 /* FullscreenWorkspaceTransferTests.swift */; };
 		F9B5B6843894B0557303F503 /* ConfigMigration.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDAAA3743D0898468DBA8EBC /* ConfigMigration.swift */; };
 		F9DAC6038768E4C6FF5600CD /* LayoutMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 704DCC0F96A16AC32FD1A5C0 /* LayoutMatcher.swift */; };
+		FC42D68DA60F0858CC3396FA /* AppearanceSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E13F279EC80E5A7EA66A547 /* AppearanceSettingsView.swift */; };
 		FCAEB41890B6B555CBDC3082 /* PhysicalCapsLockTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 508797A1BAD90161C6257D63 /* PhysicalCapsLockTests.swift */; };
 		FCBBBB0B82ACE2C6BDD79036 /* MouseSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41B90521323BC1649072DD16 /* MouseSettingsView.swift */; };
 		FE2B90DEE536A947849AE92B /* RelaunchHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4797B15A67DA5E842F32DEAE /* RelaunchHandoffTests.swift */; };
@@ -631,6 +633,7 @@
 		9812349B328396A07257C085 /* TiledDragTransactionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragTransactionTests.swift; sourceTree = "<group>"; };
 		9847CD6EC3473BF6D106B2A3 /* TiledDragFeedbackCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragFeedbackCoordinator.swift; sourceTree = "<group>"; };
 		9C217B7DF054756B5AFD7D9F /* HyprMac Debug.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HyprMac Debug.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		9E13F279EC80E5A7EA66A547 /* AppearanceSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppearanceSettingsView.swift; sourceTree = "<group>"; };
 		9EBC04818743A6F6231119AB /* WelcomeContent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WelcomeContent.swift; sourceTree = "<group>"; };
 		9F1105FD856A5A007D619120 /* FrameReadbackPoller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameReadbackPoller.swift; sourceTree = "<group>"; };
 		9F47AD9DDA5AE1B3A1C19F68 /* NativeTabRegressionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeTabRegressionTests.swift; sourceTree = "<group>"; };
@@ -887,6 +890,7 @@
 			isa = PBXGroup;
 			children = (
 				E649F906CAB5EF25EFA837D6 /* AdvancedSettingsView.swift */,
+				9E13F279EC80E5A7EA66A547 /* AppearanceSettingsView.swift */,
 				C6D1C99A7D03B871E0141DF0 /* AppLauncherEditorSheet.swift */,
 				E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */,
 				65F2F88E3A815333F6542EEA /* ColorPickerRow.swift */,
@@ -1350,6 +1354,7 @@
 				29EF01F22534CC2B51FE0390 /* AppDelegate.swift in Sources */,
 				E916A4BC377A1C882DB198AD /* AppLauncherEditorSheet.swift in Sources */,
 				900370C44E733C22105F1B25 /* AppLauncherManager.swift in Sources */,
+				FC42D68DA60F0858CC3396FA /* AppearanceSettingsView.swift in Sources */,
 				F085027AE374E48959DEEB48 /* BSPNode.swift in Sources */,
 				F2B3AC04608B7F92C811A44A /* BSPTree.swift in Sources */,
 				7FB049BFF3F0B8E61B5D9177 /* BundleIDPicker.swift in Sources */,
@@ -1511,6 +1516,7 @@
 				4E6923775790B037E457881C /* AppDelegate.swift in Sources */,
 				75A6492EE898E858F5764C4D /* AppLauncherEditorSheet.swift in Sources */,
 				546A6FEDC646D3530194F2BC /* AppLauncherManager.swift in Sources */,
+				E1398080B3AA150151CBFFE6 /* AppearanceSettingsView.swift in Sources */,
 				D0F7E9093162AFE0D4B5AE56 /* BSPNode.swift in Sources */,
 				7A3D3C9A4903361B3B292C7F /* BSPTree.swift in Sources */,
 				3106D31CBD97C1E1940BD4AE /* BundleIDPicker.swift in Sources */,

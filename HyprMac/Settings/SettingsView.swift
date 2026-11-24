@@ -176,8 +176,7 @@ struct SettingsSectionContent: View {
         case .mouse:
             MouseSettingsView()
         case .appearance:
-            MovedLayoutPanels(panels: [.focus])
-            MovedGeneralPanels()
+            AppearanceSettingsView()
         case .advanced:
             AdvancedSettingsView()
         }
@@ -230,7 +229,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
     }
 
     // drawn in the navy style; the rest wait their turn
-    var isRedesigned: Bool { [.general, .tiling, .workspaces, .monitors, .mouse, .advanced].contains(self) }
+    var isRedesigned: Bool { self != .keys }
 }
 
 // MARK: - search index
@@ -283,21 +282,21 @@ enum SettingsSearchIndex {
         .init(title: "Swap tiles by dragging", keywords: "hypr drag mouse swap gesture", section: .mouse),
         // appearance
         .init(title: "Dim inactive windows", keywords: "dim darken unfocused", section: .appearance),
-        .init(title: "Dim intensity", keywords: "dim amount strength", section: .appearance),
-        .init(title: "Focus indicator", keywords: "corners borders brackets marks outline focus", section: .appearance),
+        .init(title: "Dim amount", keywords: "dim intensity strength", section: .appearance),
+        .init(title: "Focus indicator", keywords: "show focus corners borders both none brackets marks outline", section: .appearance),
         .init(title: "Flash on focus change", keywords: "flash tint border", section: .appearance),
         .init(title: "Animate focus moves", keywords: "animation glide motion", section: .appearance),
-        .init(title: "Mark roundness", keywords: "corner marks brackets radius", section: .appearance),
-        .init(title: "Mark length", keywords: "corner marks brackets size", section: .appearance),
-        .init(title: "Mark thickness", keywords: "corner marks brackets width stroke", section: .appearance),
-        .init(title: "Corner color", keywords: "marks brackets color colour", section: .appearance),
-        .init(title: "Tiled window color", keywords: "border color colour focus", section: .appearance),
+        .init(title: "Corner mark roundness", keywords: "marks brackets radius", section: .appearance),
+        .init(title: "Corner mark length", keywords: "marks brackets size", section: .appearance),
+        .init(title: "Corner mark thickness", keywords: "marks brackets width stroke", section: .appearance),
+        .init(title: "Corner mark color", keywords: "brackets color colour", section: .appearance),
+        .init(title: "Border color", keywords: "tiled window focus border color colour", section: .appearance),
         .init(title: "Floating window color", keywords: "outline floater color colour", section: .appearance),
-        .init(title: "Window corner radius", keywords: "rounding corners windows", section: .appearance),
+        .init(title: "Window corner rounding", keywords: "radius corners windows", section: .appearance),
         .init(title: "Fade duration", keywords: "fade speed animation", section: .appearance),
         .init(title: "Overlay accent", keywords: "overlay color accent keybind sheet", section: .appearance),
-        .init(title: "Overlay appearance", keywords: "overlay light dark theme", section: .appearance),
-        .init(title: "Reset all appearance defaults", keywords: "reset appearance", section: .appearance),
+        .init(title: "Overlay look", keywords: "overlay appearance light dark theme", section: .appearance),
+        .init(title: "Reset Appearance to defaults", keywords: "reset appearance", section: .appearance),
         // advanced
         .init(title: "Sync settings via iCloud", keywords: "icloud sync share macs", section: .advanced),
         .init(title: "Allow other apps to control HyprMac", keywords: "hyprmac links url bettertouchtool external", section: .advanced),

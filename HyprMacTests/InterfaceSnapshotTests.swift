@@ -111,6 +111,16 @@ final class InterfaceSnapshotTests: XCTestCase {
         UserConfig.shared.workspaceNames = namesWere
         UserConfig.shared.windowRules = pinsWere
 
+        // corners and borders together show every appearance row
+        let cornersWere = UserConfig.shared.focusBracketStyle != .off
+        let bordersWere = UserConfig.shared.showFocusBorder
+        UserConfig.shared.setFocusIndicators(showCorners: true, showBorders: true)
+        for dark in [true, false] {
+            try render("redesign-appearance-both-\(dark ? "dark" : "light")",
+                       navyTab(AppearanceSettingsView()), dark: dark)
+        }
+        UserConfig.shared.setFocusIndicators(showCorners: cornersWere, showBorders: bordersWere)
+
         // the export's command field shows only while the export is on
         let exportWas = UserConfig.shared.statusExportEnabled
         let hookWas = UserConfig.shared.statusHookCommand

@@ -1,5 +1,5 @@
-// Reusable color picker row used by the Layout tab for the focus
-// bracket, focus border, floating border and overlay accent colors.
+// Color picker used by Settings → Appearance for the corner marks, the
+// focus border, the floating outline and the overlay accent.
 
 import SwiftUI
 
@@ -17,15 +17,17 @@ struct ColorPickerRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(label)
-            Spacer()
+            if !label.isEmpty {
+                Text(label)
+                Spacer()
+            }
             if isCustom {
-                Button("Reset", action: onReset)
-                    .font(.caption)
+                Button("Default", action: onReset)
+                    .buttonStyle(.settings)
             } else if let defaultLabel {
                 Text(defaultLabel)
                     .font(.hyprMonoXs)
-                    .foregroundStyle(Color.hyprTextTertiary)
+                    .foregroundStyle(Color.settingsTextFaint)
             }
             ColorPicker("", selection: $color, supportsOpacity: false)
                 .labelsHidden()

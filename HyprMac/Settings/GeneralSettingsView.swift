@@ -1,5 +1,5 @@
-// "General" section of Settings, the first screen in the navy style, and
-// the panels that left General until their own sections are redone.
+// "General" section of Settings: tiling status, startup, the menu bar and
+// Dock, updates and the tutorial.
 
 import SwiftUI
 
@@ -185,26 +185,6 @@ struct GeneralSettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-        }
-    }
-}
-
-/// The overlay row that left General, unchanged in look, shown in
-/// Appearance until that section gets its redesign.
-struct MovedGeneralPanels: View {
-    @ObservedObject var config = UserConfig.shared
-
-    var body: some View {
-        HyprPanel("Overlays") {
-            HyprRow("Overlay appearance", icon: "circle.lefthalf.filled", divider: false) {
-                Picker("", selection: $config.overlayAppearance) {
-                    ForEach(OverlayAppearance.allCases) { appearance in
-                        Text(appearance.displayName).tag(appearance)
-                    }
-                }
-                .labelsHidden()
-                .frame(width: 120)
-            }
         }
     }
 }
