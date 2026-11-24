@@ -371,4 +371,3 @@ struct EdgePaddingEditor: View {
         }
     }
 }
-
