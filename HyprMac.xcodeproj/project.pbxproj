@@ -181,6 +181,7 @@
 		60D77831579ACBABDA7ACA31 /* NativeTabRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F47AD9DDA5AE1B3A1C19F68 /* NativeTabRegressionTests.swift */; };
 		61B6EAC180E12008C04C8D70 /* TiledDragTargetTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F2117AD40136A8602F18F8B /* TiledDragTargetTests.swift */; };
 		61FE0B502C7F761354726C8C /* RollbackPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = D241E41E02E376AC3FE573BA /* RollbackPlan.swift */; };
+		622952B39C3208C40DC27CBA /* FloaterStandInViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DEFD1FEE734748B3006B9D1D /* FloaterStandInViewTests.swift */; };
 		6279D0B4D84FFB3FBAE7C9ED /* LogFile.swift in Sources */ = {isa = PBXBuildFile; fileRef = E037AF7C84E48727003EE0D0 /* LogFile.swift */; };
 		62E1AE9E9DA9CCE74C22F796 /* ActionPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F91072F9102167BFF8BA3561 /* ActionPolicy.swift */; };
 		63156863AFDB39FBF469DFFE /* WindowStateCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AA39AE261654BF110E66771 /* WindowStateCache.swift */; };
@@ -784,6 +785,7 @@
 		DDDC1BD10F1C0855FD5C0F0C /* WorkspaceDisplaySetMappingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceDisplaySetMappingTests.swift; sourceTree = "<group>"; };
 		DE5C2D5C6BE675D940B28364 /* HyprMac-Release.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = "HyprMac-Release.entitlements"; sourceTree = "<group>"; };
 		DED0ED846596C3BB3FA7ECF4 /* StageSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StageSessionTests.swift; sourceTree = "<group>"; };
+		DEFD1FEE734748B3006B9D1D /* FloaterStandInViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloaterStandInViewTests.swift; sourceTree = "<group>"; };
 		DF261CA3C35CD24A5817A7DA /* TutorialFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TutorialFlow.swift; sourceTree = "<group>"; };
 		DF8049A0C6B0FBEF8B6ED25B /* TiledDragTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragTarget.swift; sourceTree = "<group>"; };
 		E037AF7C84E48727003EE0D0 /* LogFile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogFile.swift; sourceTree = "<group>"; };
@@ -1100,6 +1102,7 @@
 				076C54636990AFE32EBDED6B /* ExternalCommandTests.swift */,
 				1D76ACDED6175BEEB777D8D4 /* FloaterMarksTests.swift */,
 				34D7A9E6DCDA304049A3BF91 /* FloaterStandInPlanTests.swift */,
+				DEFD1FEE734748B3006B9D1D /* FloaterStandInViewTests.swift */,
 				0E60B190E6D6E05532D6A7C6 /* FloatingDimDragTrackerTests.swift */,
 				5C3932D77600EA8C6056C2E3 /* FloatingFocusStackingTests.swift */,
 				05236C590CE2E79BBC1E52ED /* FloatingRuleTests.swift */,
@@ -1866,6 +1869,7 @@
 				A9D1967005A8FB8929DF5888 /* ExternalCommandTests.swift in Sources */,
 				848C970251CC8C84BE604259 /* FloaterMarksTests.swift in Sources */,
 				394BD0248597A935DBCE8B8E /* FloaterStandInPlanTests.swift in Sources */,
+				622952B39C3208C40DC27CBA /* FloaterStandInViewTests.swift in Sources */,
 				5EA7A728F801DE51D53DDAA0 /* FloatingDimDragTrackerTests.swift in Sources */,
 				BC3FDA5074F38001F6917FBB /* FloatingFocusStackingTests.swift in Sources */,
 				557A4528ACCE87054685FD99 /* FloatingRuleTests.swift in Sources */,

@@ -324,6 +324,12 @@ class WindowManager {
             self?.floaterStandIn.hideAll(reason: "workspace switch")
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
+        self.workspaceOrchestrator.didRevealFloaters = { [weak self] ids in
+            guard let self, self.isRunning, self.floaterStandIn.isEnabled, !self.scratchpad.isVisible else { return }
+            // the last picture, up before the tiles can land on the floater
+            self.floaterStandIn.showKept(ids.intersection(self.stateCache.floatingWindowIDs),
+                                         trigger: "workspace reveal")
+        }
         self.workspaceOrchestrator.willFocusSwitchPick = { [weak self] w in
             self?.showStandInsBeforeFocus(w, trigger: "switch focus")
         }

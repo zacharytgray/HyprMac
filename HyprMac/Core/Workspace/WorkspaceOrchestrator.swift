@@ -38,6 +38,9 @@ final class WorkspaceOrchestrator {
     var currentFocusedWindow: () -> HyprWindow? = { nil }
     var actualFocusedWindow: () -> HyprWindow? = { nil }
     var focusTransferredWindow: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
+    /// a switch put the incoming floaters back, before the retile brings
+    /// the tiles back over them
+    var didRevealFloaters: (Set<CGWindowID>) -> Void = { _ in }
     /// right before a switch focuses (and raises) its pick
     var willFocusSwitchPick: (HyprWindow) -> Void = { _ in }
     var warpToWindow: (HyprWindow) -> Void = { _ in }
@@ -427,6 +430,8 @@ final class WorkspaceOrchestrator {
         let allWindows = self.allWindows()
         let walkMS = Self.ms(since: switchStart)
         let result = workspaceManager.switchWorkspace(number, cursorScreen: currentScreen)
+        // floaters are back on screen; the tiles come back with the retile below
+        if !result.alreadyVisible { didRevealFloaters(result.toShow) }
         // focusing another tile would raise it over the maximized one and end it
         let maximizedHere = tilingEngine.maximizedWindowID(onWorkspace: number)
 

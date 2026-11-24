@@ -984,6 +984,8 @@ The rule, decided November 2: the focused window sits above a floater wherever t
 overlap, and a floater is on top of every other tile. It applies to hover and click
 alike. True always-on-top isn't available: a window level needs SIP off, and raising
 the floater after each click blinked on every click and took the keyboard for a moment.
+With "Keep floating windows in front" on, the raises described below are off and
+stand-ins keep covered floaters visible instead (see the next section).
 
 Tried on 2026-11-22 and not shipped: keeping floaters that float on their own (fixed
 size, a float rule, Never tile) above tiles. Skipping the lift on hover and Hypr+Arrow
@@ -1079,30 +1081,71 @@ covers a floater, `FloaterStandIn` puts a HyprMac panel on the floater's frame a
 `.floating` level, above the tiles and the dim, just below the floater's outline. The
 floater looks like it stayed on top. `FloaterStandInPlan` decides which floaters get one:
 managed floaters on a visible workspace, not scratchpad members, not an app's pop-up
-(#114), with a tile stacked above them where they overlap. A press on a tile that overlaps
-a floater shows the panel on the mouse-down, before the tile rises. That panel stays up
-while the button is down and for at least 250 ms: a refresh during the press still sees
-the floater in front, and taking the panel down then blinked the floater. The restack
-refresh after the mouse-up, or the one when the hold runs out, corrects a wrong guess.
-With the switch off there are no panels and no streams.
+(#114), with a tile stacked above them where they overlap. With the switch off there are no
+panels, no streams and no mouse-down tap.
 
-The panel sets `ignoresMouseEvents = false` outright. A clear window otherwise lets a
-click through wherever its backing is clear, and the live picture is a layer, so on the
-hub a drag on the panel's title-bar strip went to the tile below.
+**The panel goes up before the tile rises, never after.** Every way a tile can rise has a
+hook that runs first:
+
+- HyprMac's own focus (hover, refocus under the cursor, Hypr+Arrow, the focus invariant)
+  goes through `TiledFocusRouter`, whose `raiseFloatersBeforeFocus` hook now puts up the
+  stand-ins of the floaters the tile overlaps first (`trigger=pre-raise`). On macOS 27 the
+  tile rises from `focusViaSyntheticClick`, 20 to 110 ms after the focus starts; the panel
+  is up before either goes out.
+- A real click: the NSEvent global monitor hears a mouse-down only after the clicked app
+  has it. `StandInPressTap` is an active event tap on its own thread that hears it first. It
+  hit-tests the press against a snapshot of tiles and ready panels, sets the panel's alpha
+  in the window server (`SLSSetWindowAlpha`), then hands the event on. The main thread
+  shows the panel properly right after (`trigger=mouseDown on tile N`). The monitor path
+  stays as a fallback (`trigger=press monitor`).
+- A workspace switch puts the floaters back before its retile brings the tiles back, so
+  their kept pictures go up right then (`trigger=workspace reveal`), and the switch's own
+  focus pick gets `trigger=switch focus`.
+
+A guess only goes up when the panel already has a real picture. It stays up while the
+button is down and for at least 250 ms, then the next refresh decides.
+
+**The panel comes down only once the real floater is on top.** Every hide that isn't
+forced (switch, full screen, closed) reads the window list each frame and needs two reads
+in a row with the floater above every tile it overlaps (`trigger=confirmed-on-top after
+…`). A cover seen in between keeps it up, so show, hide, show within a few frames can't
+happen. Hover onto the panel and a focus of the floater go through the same confirm.
+
+**No window churn.** Each floater's panel is made once, the first time a tile overlaps it,
+stays ordered in at the floating level, and is shown and hidden with its alpha and
+`ignoresMouseEvents`. It goes for good only when the window stops being a managed floater
+or the switch goes off. The stream's surfaces are reused, so when a stream stops the view
+keeps a copy of the last picture as a `CGImage`. A return to a workspace shows that
+picture at once, then the stream takes over. The picture keeps its shape during a resize
+(`contentsGravity = .resizeAspect`) until a frame of the new size arrives.
+
+**The old z-order repairs are off while the switch is on.** `raiseBehind`,
+`raiseFloatersBeforeFocus` and `liftOverFloaters` front the floater's app for a moment to
+restack the real windows. With stand-ins they only churned the stack: on the hub the same
+scripted session fronted the floater's app 20 times with them and 7 times without (6 of
+those 7 are hand-offs), and the floater stayed visible either way. Switch off, they run as
+before. Debug builds can keep them on to compare:
+
+```bash
+defaults write com.zachgray.HyprMac.debug floaterStandInKeepRepairs -bool YES
+defaults delete com.zachgray.HyprMac.debug floaterStandInKeepRepairs
+```
+
+The panel sets `ignoresMouseEvents = false` outright when shown. A clear window otherwise
+lets a click through wherever its backing is clear, and the live picture is a layer.
 
 Touching the panel hands off to the real window. A click focuses the floater the way the
-floater cycle does, waits up to 300 ms for the window list to show it uncovered, hides the
-panel, then posts the click at the same point 20 ms later. On the hub the real window was
-up 46 to 170 ms after the click. With the button still held only the
-mouse-down is posted, so a drag that started on the panel drags the window. A scroll or a
-right click brings the floater up without passing anything on. With focus follows mouse
-on, hovering the panel focuses the floater, which raises it and hides the panel.
+floater cycle does, waits up to 400 ms for two window-list reads with the floater on top,
+takes the panel down, then posts the click at the same point 20 ms later. With the button
+still held only the mouse-down is posted, so a drag that started on the panel drags the
+window. A scroll or a right click brings the floater up without passing anything on. With
+focus follows mouse on, hovering the panel focuses the floater like hovering it does.
 
-The panel goes away when the floater is no longer covered, is closed, minimized, hidden,
-parked or starts a tile attempt, on a workspace switch, when the scratchpad comes up, in
-native full screen, when displays change, and when HyprMac pauses or quits. It follows
-moves through the outline's hooks (`followMovedWindows`). While it shows, the dim keeps the
-floater's whole cutout and the outline draws whole.
+The panel also comes down when the floater is closed, minimized, hidden, parked or starts a
+tile attempt, on a workspace switch, when the scratchpad comes up, in native full screen,
+when displays change, and when HyprMac pauses or quits. It follows moves through the
+outline's hooks (`followMovedWindows`). While it shows, the dim keeps the floater's whole
+cutout and the outline draws whole.
 
 Two looks. Screen Recording picks one; turning the switch on asks for it
 (`CGRequestScreenCaptureAccess`), and so does a launch with the switch on. macOS shows its
@@ -1110,11 +1153,11 @@ prompt only once.
 
 - `live`: a ScreenCaptureKit picture of the floater, with Screen Recording. A stream runs
   for each floater a tile overlaps, in front or behind, because the first picture takes
-  240 to 375 ms after a stream starts. A floater on a hidden workspace has no stream.
-  macOS marks a captured window (a purple badge in its title bar) and shows its recording
-  indicator while streams run.
+  150 to 375 ms after a stream starts. A floater on a hidden workspace has no stream but
+  keeps its last picture. macOS marks a captured window (a purple badge in its title bar)
+  and shows its recording indicator while streams run.
 - `card`: the app icon and the window title on a quiet background tinted with the
-  floater color. No permission. It also shows in `live` until the first picture arrives.
+  floater color. No permission. In `live` it shows only before a floater's first picture.
 
 The permission is read again at most every 2 s, so a grant switches to `live` without a
 restart when macOS reports it to the running app. If it does not, quit and reopen.
@@ -1132,21 +1175,32 @@ Log lines, all `.notice` in the `floating` category:
 stand-in switch on
 stand-in mode live
 stand-in screen recording granted
-stand-in shown wid=1234 reason=press on tile 567 look=live frame=(100,200 300x400)
-stand-in shown wid=1234 reason=covered look=card frame=...
-stand-in hidden wid=1234 reason=uncovered        # or hand-off, workspace switch, ...
+stand-in mouse-down tap on
+stand-in shown wid=1234 trigger=pre-raise of tile 567 look=live frame=(100,200 300x400)
+stand-in shown wid=1234 trigger=mouseDown on tile 567 look=live frame=...
+stand-in shown wid=1234 trigger=workspace reveal look=live frame=...
+stand-in shown wid=1234 trigger=covered look=card frame=...
+stand-in hidden wid=1234 trigger=confirmed-on-top after pre-raise of the floater, 111 ms
+stand-in hidden wid=1234 trigger=workspace switch     # or full screen, closed, ...
 stand-in stream started wid=1234 in 120 ms 600x800
 stand-in stream first picture wid=1234 after 310 ms
-stand-in stream stopped wid=1234 reason=no overlap
+stand-in stream stopped wid=1234 reason=no overlap, picture kept
 stand-in hand-off wid=1234 touch=click at=(150,260)
-stand-in hand-off wid=1234 real window up after 140 ms; click passed on to wid=1234
-stand-in hand-off wid=1234 real window up after 67 ms; press passed on, button still down to wid=1234
+stand-in hidden wid=1234 trigger=confirmed-on-top after hand-off, 60 ms
+stand-in hand-off wid=1234 real window up after 60 ms; click passed on to wid=1234
 ```
 
 ```bash
 /usr/bin/log show --last 10m --info --predicate \
   'subsystem BEGINSWITH "com.zachgray.HyprMac" AND eventMessage CONTAINS "stand-in"'
 ```
+
+How it was measured (hub, 2026-11-24): `~/Scratch/hyprmac-floaters-on-top/standin/measure.sh`
+runs one scripted session with solid-color test windows and focus follows mouse on, and a
+ScreenCaptureKit stream of a 4×4 region inside the floater logs its color with wall-clock
+times (`tools/scpix`). `analyze2.py` sums, per event, the time the tile's color showed
+where the floater should be. ffmpeg on the hub captures only about 25 fps, so it is for
+looking, not counting.
 
 ### A floater changed size or left the screen
 

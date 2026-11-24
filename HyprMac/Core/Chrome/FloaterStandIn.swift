@@ -212,6 +212,17 @@ final class FloaterStandIn {
         }
     }
 
+    /// Floaters a workspace switch just put back, before its tiles come
+    /// back: each panel that kept a picture goes up at once on its last
+    /// frame. The refresh after the switch takes down the ones on top.
+    func showKept(_ ids: Set<CGWindowID>, trigger: String) {
+        mainThreadOnly()
+        var floaters: [CGWindowID: Floater] = [:]
+        for id in ids { if let entry = entries[id], entry.view.hasPicture { floaters[id] = entry.floater } }
+        guard !floaters.isEmpty else { return }
+        showPredicted(Set(floaters.keys), floaters: floaters, trigger: trigger, requireWarm: true)
+    }
+
     /// The real floater is being brought up (hover onto the panel, a focus
     /// of the floater). The panel stays until the window list shows it on top.
     func reveal(_ id: CGWindowID, trigger: String) {
