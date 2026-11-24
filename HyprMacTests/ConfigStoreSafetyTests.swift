@@ -662,12 +662,14 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertEqual(copy(local, "replaced"), withLauncher)
         XCTAssertNil(copy(monitor, "replaced"), "the keybind reset leaves the monitor file alone")
         XCTAssertEqual(config.gapSize, 23, "only the keybinds reset")
+        XCTAssertTrue(config.doubleTapHyprTogglesCapsLock, "double tap is on, as on a new install")
     }
 
     func testKeybindResetOnDefaultsKeepsNoCopy() throws {
         try good.write(to: local)
         let config = UserConfig(store: store, iCloudSyncEnabled: false)
         config.keybinds = Keybind.defaults
+        config.doubleTapHyprTogglesCapsLock = UserConfigDefaults.freshInstallDoubleTapHyprTogglesCapsLock
         config.resetKeybindsToDefaults()
         XCTAssertNil(copy(local, "replaced"))
     }

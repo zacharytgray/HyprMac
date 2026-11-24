@@ -173,7 +173,7 @@ dropped, with a beep, while a display transition is settling.
 ## Window rules
 
 `windowRules` in `config.json` pins an app to a workspace, or to the scratchpad
-with `"workspace": 0`. Settings → General → "Pin apps" edits it, one rule per
+with `"workspace": 0`. Settings → Workspaces → "Pin apps" edits it, one rule per
 app:
 
 ```
@@ -236,7 +236,7 @@ build with window rules. No `ConfigMigration` step is involved.
 
 ## Float and tile rules
 
-The user's word on what floats. Settings → General → "Float and tile rules"
+The user's word on what floats. Settings → Tiling → "Float and tile rules"
 lists every rule, with a Float/Tile switch and a remove button on each row.
 
 - **App float** is Never tile: the app's bundle id in `excludedBundleIDs`,
@@ -379,7 +379,7 @@ switch on a `match = null` instead (`docs/nix.md`).
 ## Workspace names
 
 `workspaceNames` in `config.json` gives workspaces 1–10 an optional name.
-Settings → General → "Workspace names" edits it:
+Settings → Workspaces → "Names" edits it:
 
 ```
 "workspaceNames": { "4": "term" }
@@ -576,15 +576,15 @@ Two on-disk files:
   used to live in `config.json`, but per-machine settings round-tripping
   through iCloud Drive clobbered each machine's setup. The status bar
   export keys `statusExportEnabled` and `statusHookCommand` live here
-  too, set by hand with no Settings UI (see [status-bar.md](status-bar.md)).
-  So does `externalControlEnabled`, which Settings → General → System turns
-  on and off (see [external-control.md](external-control.md)).
+  too, set in Settings → Advanced → Other apps (see [status-bar.md](status-bar.md)).
+  So does `externalControlEnabled`, which the same card turns on and off
+  (see [external-control.md](external-control.md)).
   HyprMac watches this file too and reloads it on change.
 
 A file HyprMac can't decode is copied to `<name>.unreadable` before a save
 overwrites it. A file that exists but won't open is not overwritten at all: the
 save is skipped until it opens again. `<name>.replaced` holds
-what iCloud set up or a reset replaced, including Keys → Reset to defaults. Reading never touches the file: HyprMac
+what iCloud set up or a reset replaced, including Keys → Reset keybinds and every section's reset. Reading never touches the file: HyprMac
 runs on defaults until a save would replace it. With iCloud sync on, a launch
 that can't read the linked file holds `config.json` saves instead. A launch can
 also replace a regular local file with the link, keeping it as `<name>.replaced`.
@@ -779,42 +779,41 @@ Synced over iCloud when sync is on.
 | --- | --- | --- | --- | --- |
 | `version` | integer | 2 | written as 2; missing reads as 1 | File only (see "Schema versioning") |
 | `keybinds` | array of keybinds | — | required; missing built-in binds are added at load | Keys |
-| `gapSize` | number (px) | 0–32, step 2 | required; 8 | Layout → Gaps → Inner gap |
-| `outerPadding` | number (px) | 0–32, step 2 | required; 8 | Layout → Gaps → Outer padding |
-| `enabled` | boolean | — | required; `true` | General → Status, the menu bar, Hypr+P |
+| `gapSize` | number (px) | 0–32, step 2 | required; 8 | Tiling → Gaps → Between windows |
+| `outerPadding` | number (px) | 0–32, step 2 | required; 8 | Tiling → Gaps → Screen edges |
+| `enabled` | boolean | — | required; `true` | General → Status → Tiling, the menu bar, Hypr+P |
 | `hyprKey` | string | `capsLock`, `backslash`, `f13`…`f20`, `leftOption`, `rightOption`, `leftCommand`, `rightCommand`; also `tab`, `grave`, `leftShift`, `rightShift`, `leftControl`, `rightControl` (not recommended) | `capsLock` | Keys → Hypr key |
-| `doubleTapHyprTogglesCapsLock` | boolean | — | `false` | Keys → Hypr key |
-| `focusFollowsMouse` | boolean | — | `true` | General → Mouse |
-| `mouseHoverPollHz` | integer (Hz) | 60, 120, 240; other values show as Custom, below 30 runs at 30 | 120 | General → Mouse → Hover response |
-| `keepCursorOnWorkspaceSwitch` | boolean | — | `false` | General → Mouse |
-| `excludedBundleIDs` | array of bundle IDs | — | `com.apple.FaceTime`, `com.apple.systempreferences` | General → Float and tile rules (Never tile) |
-| `floatingRules` | array of rules | see "Float and tile rules" | none | General → Float and tile rules, the menu bar, Hypr+I |
-| `windowRules` | array of rules | see "Window rules" | none | General → Pin apps |
-| `workspaceNames` | object, `"1"`…`"10"` → name | non-empty names | none | General → Workspace names |
-| `restoreLayoutOnLaunch` | boolean | — | `false` | General → Layouts |
-| `overlayAppearance` | string | `system`, `light`, `dark` | `system` | General → System |
-| `overlayAccentHex` | hex color | — | none (cyan and magenta) | Layout → Focus appearance |
-| `showFocusBorder` | boolean | — | `false` | Layout → Focus appearance → Focus indicator |
-| `focusBracketStyle` | string | `rounded`, `off` | `rounded` | Layout → Focus appearance → Focus indicator |
-| `focusBracketColorHex` | hex color | — | none (black) | Layout → Focus appearance |
-| `focusBracketRadius` | number (pt) | 0–32 | 20 | Layout → Focus appearance → Mark roundness |
-| `focusBracketThickness` | number (pt) | 1–6, step 0.5 | 4.5 | Layout → Focus appearance → Mark thickness |
-| `focusBracketLength` | number (pt) | 4–40; a file value is clamped to it | 15 | Layout → Focus appearance → Mark length |
-| `focusBorderColorHex` | hex color | — | none (cyan) | Layout → Focus appearance → Tiled window color |
-| `floatingBorderColorHex` | hex color | — | none (magenta) | Layout → Focus appearance → Floating window color |
-| `focusBorderFlash` | boolean | — | `true` | Layout → Focus appearance → Flash on focus change |
-| `animateFocusIndicator` | boolean | — | `true` | Layout → Focus appearance → Animate focus moves |
-| `dimInactiveWindows` | boolean | — | `true` | Layout → Focus appearance |
-| `dimIntensity` | number, 0–1 | 0–0.27; higher is file only | 0.135 | Layout → Focus appearance |
-| `chromeFadeDurationSec` | number (s) | 0–1 | 0.13 | Layout → Focus appearance → Fade duration |
-| `windowCornerRadius` | number (pt) | 0–32 | none (16 on macOS 26 and later, 10 before) | Layout → Focus appearance |
-| `scratchpadTileByDefault` | boolean | — | `true` | Layout → Scratchpad |
-| `scratchpadRegionInset` | number, fraction | 0–0.15 | 0.06 | Layout → Scratchpad → Layer padding |
+| `doubleTapHyprTogglesCapsLock` | boolean | — | `false`; a new install and every reset turn it on | Keys → Hypr key |
+| `focusFollowsMouse` | boolean | — | `true` | Mouse → Focus |
+| `mouseHoverPollHz` | integer (Hz) | 60, 120, 240; other values show as Custom, below 30 runs at 30 | 120 | Mouse → Focus → Hover speed |
+| `keepCursorOnWorkspaceSwitch` | boolean | — | `false` | Mouse → Pointer |
+| `excludedBundleIDs` | array of bundle IDs | — | `com.apple.FaceTime`, `com.apple.systempreferences` | Tiling → Float and tile rules (Always float an app) |
+| `floatingRules` | array of rules | see "Float and tile rules" | none | Tiling → Float and tile rules, the menu bar, Hypr+I |
+| `windowRules` | array of rules | see "Window rules" | none | Workspaces → Pin apps |
+| `workspaceNames` | object, `"1"`…`"10"` → name | non-empty names | none | Workspaces → Names |
+| `restoreLayoutOnLaunch` | boolean | — | `false` | General → Startup |
+| `overlayAppearance` | string | `system`, `light`, `dark` | `system` | Appearance → Overlays → Overlay look |
+| `overlayAccentHex` | hex color | — | none (cyan and magenta) | Appearance → Overlays → Overlay accent |
+| `showFocusBorder` | boolean | — | `false` | Appearance → Focus indicator |
+| `focusBracketStyle` | string | `rounded`, `off` | `rounded` | Appearance → Focus indicator |
+| `focusBracketColorHex` | hex color | — | none (black) | Appearance → Colors → Corner marks |
+| `focusBracketRadius` | number (pt) | 0–32 | 20 | Appearance → Corner marks → Roundness |
+| `focusBracketThickness` | number (pt) | 1–6, step 0.5 | 4.5 | Appearance → Corner marks → Thickness |
+| `focusBracketLength` | number (pt) | 4–40; a file value is clamped to it | 15 | Appearance → Corner marks → Length |
+| `focusBorderColorHex` | hex color | — | none (cyan) | Appearance → Colors → Border on tiled windows |
+| `floatingBorderColorHex` | hex color | — | none (magenta) | Appearance → Colors → Floating windows |
+| `focusBorderFlash` | boolean | — | `true` | Appearance → Focus indicator → Flash on focus change |
+| `animateFocusIndicator` | boolean | — | `true` | Appearance → Focus indicator → Animate focus moves |
+| `dimInactiveWindows` | boolean | — | `true` | Appearance → Dimming |
+| `dimIntensity` | number, 0–1 | 0–0.27; higher is file only | 0.135 | Appearance → Dimming → Amount |
+| `chromeFadeDurationSec` | number (s) | 0–1 | 0.13 | Appearance → Windows → Fade duration |
+| `windowCornerRadius` | number (pt) | 0–32 | none (16 on macOS 26 and later, 10 before) | Appearance → Windows → Window corner rounding |
+| `scratchpadTileByDefault` | boolean | — | `true` | Workspaces → Scratchpad → Tile windows in the scratchpad |
+| `scratchpadRegionInset` | number, fraction | 0–0.15 | 0.06 | Workspaces → Scratchpad → Scratchpad margin |
 | `showMenuBarIndicator` | boolean | — | `true` | Legacy. File only; read once to pick the first menu bar style, then ignored |
 
 Corners and window borders at once (`focusBracketStyle` `rounded` with
-`showFocusBorder` `true`) is file only. Settings keeps it and shows it as
-"Both (saved)".
+`showFocusBorder` `true`) is the "Corners and borders" choice.
 
 ### `monitor-config.json`
 
@@ -823,14 +822,14 @@ Settings shows them.
 
 | Key | Type | Range | Default | Changed in Settings |
 | --- | --- | --- | --- | --- |
-| `maxSplitsPerMonitor` | object, name → integer | 1–7 | 3 | Layout → Per-Monitor Settings → Max splits |
-| `disabledMonitors` | array of names | — | none | Layout → Per-Monitor Settings (the switch by each name) |
-| `outerPaddingPerMonitor` | object, name → `top`/`left`/`bottom`/`right` | each side optional | none (`outerPadding`) | Layout → Per-Monitor Settings → Edge padding |
-| `workspaceMonitorsPerDisplaySet` | array of `{displays, workspaceMonitors}` | workspaces 1–10 | none | Layout → Per-Monitor Settings → Workspaces |
-| `workspaceMonitors` | object, name → workspaces | 1–10 | none (formula homes) | File only; the fallback for display sets with no entry |
-| `externalControlEnabled` | boolean | — | `false` | General → System → Allow other apps to control HyprMac |
-| `statusExportEnabled` | boolean | — | `false` | File only (see [status-bar.md](status-bar.md)) |
-| `statusHookCommand` | string | — | none | File only (see [status-bar.md](status-bar.md)) |
+| `maxSplitsPerMonitor` | object, name → integer | 1–7 | 3 | Monitors → Max splits |
+| `disabledMonitors` | array of names | — | none | Monitors → Tile windows on this display |
+| `outerPaddingPerMonitor` | object, name → `top`/`left`/`bottom`/`right` | each side optional | none (`outerPadding`) | Monitors → Room for a bar or Dock |
+| `workspaceMonitorsPerDisplaySet` | array of `{displays, workspaceMonitors}` | workspaces 1–10 | none | Monitors → Workspaces on this display |
+| `workspaceMonitors` | object, name → workspaces | 1–10 | none (formula homes) | File only; the fallback for display sets with no entry. Monitors notes when the file has one |
+| `externalControlEnabled` | boolean | — | `false` | Advanced → Other apps → Allow other apps to control HyprMac |
+| `statusExportEnabled` | boolean | — | `false` | Advanced → Other apps → Status bar export (see [status-bar.md](status-bar.md)) |
+| `statusHookCommand` | string | — | none | Advanced → Other apps → Run after each change, while the export is on |
 
 Legacy keys, read for a one-time migration and never written:
 `maxSplitsPerMonitor` and `disabledMonitors` in `config.json` (see
@@ -844,8 +843,9 @@ live there too.
 
 | Key | Type | Range | Default | Changed in Settings |
 | --- | --- | --- | --- | --- |
-| `showDockIcon` | boolean | — | `false` | General → System → Show in Dock |
-| `menuBarStyle` | string | `full`, `compact`, `hidden` | `full` | General → System → Menu bar |
+| `showDockIcon` | boolean | — | `false` | General → Menu bar and Dock → Show in Dock |
+| `menuBarStyle` | string | `full`, `compact`, `hidden` | `full` | General → Menu bar and Dock → Menu bar item |
+| `HyprMacVerboseLogging` | boolean | — | `false` | Advanced → Files and logging → Detailed logging. Never reset |
 | `HyprMacUpdatesManagedExternally` | boolean | — | `false` | `defaults` only; read at launch. `true` turns off the in-app updater for a copy something else updates (see README) |
 
 ## Hand-editing config.json

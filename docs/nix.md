@@ -126,7 +126,7 @@ run `home-manager switch -b backup`. To carry your current settings over, copy
 values from the old file into `settings`.
 
 An iCloud sync link at `config.json` blocks the switch the same way. Turn off
-Settings → General → "Sync settings via iCloud" first. That puts a regular file
+Settings → Advanced → "Sync settings via iCloud" first. That puts a regular file
 back at the path, which you can then move aside as above.
 
 ## Caps Lock

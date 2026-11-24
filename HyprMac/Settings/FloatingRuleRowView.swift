@@ -1,4 +1,4 @@
-// One row of Settings > General > Float and tile rules, and the popover
+// One row of Settings → Tiling → Float and tile rules, and the popover
 // that edits a title rule.
 
 import SwiftUI
@@ -17,14 +17,14 @@ struct FloatingRuleRowView: View {
                     .resizable()
                     .frame(width: 22, height: 22)
             } else {
-                Image(systemName: "app").font(.system(size: 16)).foregroundStyle(Color.hyprTextTertiary)
+                Image(systemName: "app").font(.system(size: 16)).foregroundStyle(Color.settingsTextFaint)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(appName).font(.hyprBody)
+                Text(appName).font(.hyprBody).foregroundStyle(Color.settingsText)
                 HStack(spacing: 4) {
                     Text(row.matchDescription)
                         .font(.hyprMonoXs)
-                        .foregroundStyle(Color.hyprTextTertiary)
+                        .foregroundStyle(Color.settingsTextFaint)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if titleRule != nil {
@@ -43,20 +43,14 @@ struct FloatingRuleRowView: View {
                 }
             }
             Spacer()
-            Picker("", selection: Binding(get: { row.action },
-                                          set: { config.setAction($0, for: row) })) {
-                Text("Float").tag(FloatingRule.Action.float)
-                Text("Tile").tag(FloatingRule.Action.tile)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
+            SettingsSegmented(options: [(FloatingRule.Action.float, "Float"), (.tile, "Tile")],
+                              selection: Binding(get: { row.action },
+                                                 set: { config.setAction($0, for: row) }))
             Button {
                 config.remove(row)
             } label: {
                 Image(systemName: "minus.circle.fill")
-                    .foregroundStyle(.red.opacity(0.75))
+                    .foregroundStyle(Color.red.opacity(0.75))
             }
             .buttonStyle(.borderless)
             .help("Remove this rule")
@@ -66,8 +60,8 @@ struct FloatingRuleRowView: View {
         .overlay(alignment: .bottom) {
             if !isLast {
                 Rectangle()
-                    .fill(Color.hyprSeparator)
-                    .frame(height: 0.5)
+                    .fill(Color.settingsHairline.opacity(0.7))
+                    .frame(height: 1)
                     .padding(.leading, HyprSpacing.md + 22 + HyprSpacing.md)
             }
         }

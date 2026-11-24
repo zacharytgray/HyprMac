@@ -26,6 +26,18 @@ extension Color {
     static let hyprCyan = Color(nsColor: .hyprCyan)
     static let hyprMagenta = Color(nsColor: .hyprMagenta)
 
+    // settings chassis for redesigned screens: navy in dark mode, pale
+    // blue-gray with navy text in light. the old screens keep the system
+    // tokens above until their turn
+    static let settingsBackground = Color(nsColor: .settingsNavy(dark: 0x0B1020, light: 0xF3F5FA))
+    static let settingsSidebar    = Color(nsColor: .settingsNavy(dark: 0x0E1428, light: 0xE9EDF6))
+    static let settingsSurface    = Color(nsColor: .settingsNavy(dark: 0x141B35, light: 0xFFFFFF))
+    static let settingsRaised     = Color(nsColor: .settingsNavy(dark: 0x1C2546, light: 0xEEF1F8))
+    static let settingsHairline   = Color(nsColor: .settingsNavy(dark: 0x283258, light: 0xD9DEEB))
+    static let settingsText       = Color(nsColor: .settingsNavy(dark: 0xE8EBF7, light: 0x141A31))
+    static let settingsTextMuted  = Color(nsColor: .settingsNavy(dark: 0x9AA3C7, light: 0x56607F))
+    static let settingsTextFaint  = Color(nsColor: .settingsNavy(dark: 0x6A7398, light: 0x8A92AE))
+
     // overlay accents: the user's one accent when set, else the brand pair.
     // read per draw, so views observing UserConfig pick up a change at once
     static var overlayPrimary: Color {
@@ -48,6 +60,16 @@ extension NSColor {
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
             ? NSColor(red: 0x56/255.0, green: 0xD8/255.0, blue: 0xF0/255.0, alpha: 1)
             : NSColor(red: 0x00/255.0, green: 0x7A/255.0, blue: 0xAA/255.0, alpha: 1)
+    }
+
+    static func settingsNavy(dark: UInt32, light: UInt32) -> NSColor {
+        func rgb(_ hex: UInt32) -> NSColor {
+            NSColor(red: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
+                    blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
+        }
+        return NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? rgb(dark) : rgb(light)
+        }
     }
 
     static let hyprMagenta = NSColor(name: "hyprMagenta") { appearance in

@@ -38,7 +38,10 @@ enum UserConfigDefaults {
     static let enabled: Bool = true
     static let focusFollowsMouse: Bool = true
     static let keepCursorOnWorkspaceSwitch: Bool = false
+    // a saved config without the key predates double tap, so it stays off.
+    // only a Mac with no config at all starts with it on
     static let doubleTapHyprTogglesCapsLock: Bool = false
+    static let freshInstallDoubleTapHyprTogglesCapsLock: Bool = true
     static let animateFocusIndicator: Bool = true
     static let mouseHoverPollHz: Int = 120
     static let hyprKey: HyprKey = .capsLock

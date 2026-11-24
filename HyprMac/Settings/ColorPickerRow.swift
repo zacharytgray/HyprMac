@@ -1,5 +1,5 @@
-// Reusable color picker row used by the Layout tab for the focus
-// bracket, focus border, floating border and overlay accent colors.
+// Color picker used by Settings → Appearance for the corner marks, the
+// focus border, the floating outline and the overlay accent.
 
 import SwiftUI
 
@@ -17,19 +17,39 @@ struct ColorPickerRow: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(label)
-            Spacer()
+            if !label.isEmpty {
+                Text(label)
+                Spacer()
+            }
             if isCustom {
-                Button("Reset", action: onReset)
-                    .font(.caption)
+                Button("Default", action: onReset)
+                    .buttonStyle(.settings)
             } else if let defaultLabel {
                 Text(defaultLabel)
                     .font(.hyprMonoXs)
-                    .foregroundStyle(Color.hyprTextTertiary)
+                    .foregroundStyle(Color.settingsTextFaint)
             }
-            ColorPicker("", selection: $color, supportsOpacity: false)
-                .labelsHidden()
-                .fixedSize()
+            // a navy swatch; the system well sits on top, nearly clear, so
+            // a click still opens the color panel
+            RoundedRectangle(cornerRadius: HyprRadius.sm + 1, style: .continuous)
+                .fill(color)
+                .frame(width: 38, height: 20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: HyprRadius.sm + 1, style: .continuous)
+                        .strokeBorder(Color.settingsHairline, lineWidth: 1)
+                )
+                .padding(2)
+                .background(
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .fill(Color.settingsRaised)
+                )
+                .overlay {
+                    ColorPicker("", selection: $color, supportsOpacity: false)
+                        .labelsHidden()
+                        .frame(width: 42, height: 24)
+                        .opacity(0.02)
+                }
+                .accessibilityElement(children: .combine)
         }
     }
 }

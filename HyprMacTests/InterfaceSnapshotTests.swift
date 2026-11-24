@@ -35,14 +35,8 @@ final class InterfaceSnapshotTests: XCTestCase {
         UserConfig.shared.keybinds = savedKeybinds
     }
 
-    func testRenderSettingsTabs() throws {
-        UserConfig.shared.hyprKey = .capsLock
-        try render("keys-capslock-dark", tab(KeybindsSettingsView()))
-        try render("keys-capslock-light", tab(KeybindsSettingsView()), dark: false)
-        try render("general-dark", tab(GeneralSettingsView(showTutorial: {})))
-        try render("layout-dark", tab(TilingSettingsView()))
-        try render("settings-window-dark", SettingsView(showTutorial: {}), size: CGSize(width: 760, height: 600))
-
+    // the Keys card for each kind of saved Hypr key: notes and guidance
+    func testRenderHyprKeyVariants() throws {
         UserConfig.shared.hyprKey = .tab
         try render("keys-tab-dark", tab(KeybindsSettingsView()))
 
@@ -58,7 +52,63 @@ final class InterfaceSnapshotTests: XCTestCase {
         try render("keys-leftcommand-dark", tab(KeybindsSettingsView()))
     }
 
-    // the Updates panel when Nix or the defaults key manages updates
+    // every section in the window and full height, dark and light
+    func testRenderSettingsRedesign() throws {
+        UserConfig.shared.hyprKey = .capsLock
+        for section in SettingsSection.allCases {
+            for dark in [true, false] {
+                let mode = dark ? "dark" : "light"
+                try render("redesign-window-\(section.rawValue)-\(mode)",
+                           SettingsView(showTutorial: {}, initialSection: section),
+                           size: CGSize(width: 780, height: 760), dark: dark)
+                try render("redesign-\(section.rawValue)-\(mode)",
+                           tab(SettingsSectionContent(section: section, showTutorial: {})), dark: dark)
+            }
+        }
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            try render("redesign-search-\(mode)", SettingsView(showTutorial: {}, initialSearch: "dock"),
+                       size: CGSize(width: 780, height: 600), dark: dark)
+            try render("redesign-managed-updates-\(mode)", tab(ManagedUpdatesPanel(nixInstall: true)), dark: dark)
+        }
+        // names and a pin, so the filled rows show too
+        let namesWere = UserConfig.shared.workspaceNames
+        let pinsWere = UserConfig.shared.windowRules
+        UserConfig.shared.workspaceNames = ["1": "web", "2": "code", "9": "music"]
+        UserConfig.shared.windowRules = [WindowRule(bundleID: "com.apple.Safari", workspace: 1),
+                                         WindowRule(bundleID: "com.apple.Music", workspace: WindowRule.scratchpad)]
+        for dark in [true, false] {
+            try render("redesign-workspaces-filled-\(dark ? "dark" : "light")",
+                       tab(WorkspacesSettingsView()), dark: dark)
+        }
+        UserConfig.shared.workspaceNames = namesWere
+        UserConfig.shared.windowRules = pinsWere
+
+        // corners and borders together show every appearance row
+        let cornersWere = UserConfig.shared.focusBracketStyle != .off
+        let bordersWere = UserConfig.shared.showFocusBorder
+        UserConfig.shared.setFocusIndicators(showCorners: true, showBorders: true)
+        for dark in [true, false] {
+            try render("redesign-appearance-both-\(dark ? "dark" : "light")",
+                       tab(AppearanceSettingsView()), dark: dark)
+        }
+        UserConfig.shared.setFocusIndicators(showCorners: cornersWere, showBorders: bordersWere)
+
+        // the export's command field shows only while the export is on
+        let exportWas = UserConfig.shared.statusExportEnabled
+        let hookWas = UserConfig.shared.statusHookCommand
+        UserConfig.shared.statusExportEnabled = true
+        UserConfig.shared.statusHookCommand = "sketchybar --trigger hyprmac_change"
+        defer {
+            UserConfig.shared.statusExportEnabled = exportWas
+            UserConfig.shared.statusHookCommand = hookWas
+        }
+        for dark in [true, false] {
+            try render("redesign-advanced-export-on-\(dark ? "dark" : "light")",
+                       tab(AdvancedSettingsView()), dark: dark)
+        }
+    }
+
     func testRenderManagedUpdatesPanel() throws {
         try render("updates-managed-package-manager-dark", tab(ManagedUpdatesPanel(nixInstall: false)))
         try render("updates-managed-nix-dark", tab(ManagedUpdatesPanel(nixInstall: true)))
@@ -220,8 +270,9 @@ final class InterfaceSnapshotTests: XCTestCase {
             .padding(.horizontal, HyprSpacing.xl)
             .padding(.vertical, HyprSpacing.lg)
             .frame(width: 568)
-            .background(Color.hyprBackground)
+            .background(Color.settingsBackground)
     }
+
 
     private func render<V: View>(_ name: String, _ view: V, width: CGFloat = 568, dark: Bool = true) throws {
         try render(name, view, size: CGSize(width: width, height: 0), dark: dark)
