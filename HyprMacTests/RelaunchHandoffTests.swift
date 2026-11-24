@@ -120,6 +120,16 @@ final class RelaunchHandoffTests: XCTestCase {
         }
     }
 
+    // a drag marks the window it took hold of, not the focused one: a resize
+    // grabbed in the gap captures a tile focus never reached
+    func testADragMarksTheWindowItTookHoldOf() {
+        XCTAssertEqual(WindowManager.tutorialTouchTarget(draggedFloatingID: 0, pressedTileID: 7, focusedID: 8), 7,
+                       "the captured tile, not the focused one")
+        XCTAssertEqual(WindowManager.tutorialTouchTarget(draggedFloatingID: 9, pressedTileID: nil, focusedID: 8), 9)
+        XCTAssertEqual(WindowManager.tutorialTouchTarget(draggedFloatingID: 0, pressedTileID: nil, focusedID: 8), 8,
+                       "no tile captured, as in a maximized layout")
+    }
+
     // full-screen windows and the user's own get no restore write
     func testTheRestoreSkipsFullScreenAndTheUsersWindows() {
         XCTAssertEqual(WindowManager.restorableIDs([1, 2, 3, 4], touched: [2], fullScreen: [3]), [1, 4])

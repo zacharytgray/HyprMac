@@ -71,6 +71,8 @@ final class TiledDragController {
     }
 
     var isFinishingDrag: Bool { tiledDragHandler.isFinishingDrag }
+    /// The tile the current press captured, nil when it captured none.
+    var pressedTileID: CGWindowID? { tiledDragHandler.pressSnapshot?.draggedID }
 
     func handleMouseDown(at point: CGPoint) { tiledDragHandler.handleMouseDown(at: point) }
     func handleMouseUp(_ release: TiledDragRelease) { tiledDragHandler.handleMouseUp(release) }

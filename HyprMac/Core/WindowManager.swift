@@ -1430,7 +1430,9 @@ class WindowManager {
                 floaterDragged = isDrag && draggedFloatingID != 0
                 // a window dragged by hand during the tutorial stays where it's put
                 if isDrag {
-                    self.noteTutorialTouch(draggedFloatingID != 0 ? draggedFloatingID : self.focusController.lastFocusedID)
+                    self.noteTutorialTouch(Self.tutorialTouchTarget(draggedFloatingID: draggedFloatingID,
+                                                                    pressedTileID: self.tiledDrag.pressedTileID,
+                                                                    focusedID: self.focusController.lastFocusedID))
                 }
                 let release = TiledDragEvent.release(
                     event: event,
@@ -2302,6 +2304,16 @@ class WindowManager {
     static func restorableIDs(_ ids: [CGWindowID], touched: Set<CGWindowID>,
                               fullScreen: Set<CGWindowID>) -> [CGWindowID] {
         ids.filter { !touched.contains($0) && !fullScreen.contains($0) }
+    }
+
+    /// The window a drag by hand acted on: the floater it dragged, else the
+    /// tile its press captured, which need not be the focused one (a press in
+    /// the gap). A press that captured no tile (a maximized layout) falls
+    /// back to the focused window.
+    static func tutorialTouchTarget(draggedFloatingID: CGWindowID, pressedTileID: CGWindowID?,
+                                    focusedID: CGWindowID) -> CGWindowID {
+        if draggedFloatingID != 0 { return draggedFloatingID }
+        return pressedTileID ?? focusedID
     }
 
     private static let untouchingActions: Set<String> = [
