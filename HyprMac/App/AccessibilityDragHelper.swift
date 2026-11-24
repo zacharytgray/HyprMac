@@ -296,10 +296,10 @@ struct AccessibilityDragHelperView: View {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(Color.hyprCyan)
+                    .foregroundStyle(TutorialStageColor.cyan)
                 Text("Drag HyprMac to the list above")
                     .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Color.hyprTextPrimary)
+                    .foregroundStyle(TutorialStageColor.text)
                     .fixedSize()
             }
 
@@ -312,7 +312,7 @@ struct AccessibilityDragHelperView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .foregroundStyle(Color.hyprTextSecondary)
+            .foregroundStyle(TutorialStageColor.quiet)
             .focusable(false)
             .help("Hide")
             .accessibilityLabel("Hide")
@@ -320,14 +320,23 @@ struct AccessibilityDragHelperView: View {
         .padding(.horizontal, AccessibilityDragHelperPlacement.padding)
         .padding(.vertical, 10)
         .frame(width: AccessibilityDragHelperPlacement.panelWidth)
+        // the onboarding stage's navy, opaque over System Settings, so the
+        // panel reads as HyprMac's in light and dark
         .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.hyprBackground)
+            ZStack {
+                LinearGradient(colors: [TutorialStageColor.glassTop, TutorialStageColor.navyBottom],
+                               startPoint: .top, endPoint: .bottom)
+                RadialGradient(colors: [TutorialStageColor.cyan.opacity(0.14), .clear],
+                               center: .leading, startRadius: 0, endRadius: 160)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.hyprTextPrimary.opacity(0.1), lineWidth: 1)
+                .strokeBorder(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.06)],
+                                             startPoint: .top, endPoint: .bottom), lineWidth: 1)
         )
+        .environment(\.colorScheme, .dark)
     }
 }
 

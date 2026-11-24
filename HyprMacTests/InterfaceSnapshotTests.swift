@@ -165,9 +165,9 @@ final class InterfaceSnapshotTests: XCTestCase {
             try render("onboarding-1-access-granted-\(mode)", step(granted: true, waiting: false), size: size, dark: dark)
         }
         // dex157's drag panel, which shows under System Settings meanwhile
-        try render("access-drag-panel-dark", AccessibilityDragHelperView(onClose: {}),
+        try render("onboarding-1-access-drag-panel-dark", AccessibilityDragHelperView(onClose: {}),
                    width: AccessibilityDragHelperPlacement.panelWidth)
-        try render("access-drag-panel-light", AccessibilityDragHelperView(onClose: {}),
+        try render("onboarding-1-access-drag-panel-light", AccessibilityDragHelperView(onClose: {}),
                    width: AccessibilityDragHelperPlacement.panelWidth, dark: false)
     }
 
