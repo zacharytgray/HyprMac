@@ -497,6 +497,7 @@ class WindowManager {
         mouseTracker.primaryScreenHeight = { [weak self] in self?.displayManager.primaryScreenHeight ?? 0 }
         mouseTracker.screenAt = { [weak self] pt in self?.displayManager.screen(at: pt) }
         mouseTracker.floatingWindowIDs = { [weak self] in self?.stateCache.floatingWindowIDs ?? [] }
+        mouseTracker.isPopupWindow = { [weak self] wid in self?.stateCache.popupWindowIDs.contains(wid) ?? false }
         mouseTracker.isWindowVisible = { [weak self] wid in self?.focusResolver.isInteractive(wid) ?? false }
         // our own panels sit over other windows; hover must not reach through them
         mouseTracker.isOwnUIOpen = { OwnPanelTracker.shared.isAnyOpen }

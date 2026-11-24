@@ -15,6 +15,7 @@ import Cocoa
 /// What lives here:
 /// - `knownWindowIDs` — windows present in the last full cycle
 /// - `floatingWindowIDs` — windows excluded from tiling
+/// - `popupWindowIDs` — floaters shaped like an app's pop-up, left out of hover
 /// - `originalFrames` — pre-tile frames captured for float-toggle restore
 /// - `windowOwners` — `wid → pid`, used to distinguish closed-vs-hidden
 /// - `hiddenWindowIDs` — windows whose AX element is gone but pid is alive
@@ -67,6 +68,12 @@ final class WindowStateCache {
     /// Windows excluded from tiling. User-toggled via `Hypr+T` or
     /// auto-floated by depth, min-size, or excluded-app rules.
     var floatingWindowIDs: Set<CGWindowID> = []
+
+    /// Floaters marked at first sight as an app's pop-up: fixed size, no
+    /// title, no close button, like Outlook's text color grid. They float
+    /// and stay managed, but hover focus leaves them alone, because focusing
+    /// one closes it (#114).
+    var popupWindowIDs: Set<CGWindowID> = []
 
     /// A window's floating state lives in two places. Change them together.
     func setFloating(_ floating: Bool, window: HyprWindow) {
@@ -125,6 +132,7 @@ final class WindowStateCache {
         originalFrames.removeValue(forKey: id)
         windowOwners.removeValue(forKey: id)
         floatingWindowIDs.remove(id)
+        popupWindowIDs.remove(id)
         knownWindowIDs.remove(id)
     }
 }
