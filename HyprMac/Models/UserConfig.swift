@@ -617,6 +617,8 @@ class UserConfig: ObservableObject {
     /// Restore everything in Settings → Appearance, overlays included,
     /// without changing layout, keybind, monitor, or scratchpad preferences.
     func resetAppearanceToDefaults() {
+        // copies of both files first, like every other reset
+        guard store.keepCopiesBeforeReset() else { return }
         isReloading = true
         overlayAppearance = UserConfigDefaults.overlayAppearance
         animateFocusIndicator = UserConfigDefaults.animateFocusIndicator

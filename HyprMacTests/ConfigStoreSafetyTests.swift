@@ -677,6 +677,22 @@ final class ConfigStoreSafetyTests: XCTestCase {
         XCTAssertTrue(config.doubleTapHyprTogglesCapsLock, "double tap is on, as on a new install")
     }
 
+    // What's New and the notes promise every reset keeps a copy first
+    func testAppearanceResetKeepsCopiesFirst() throws {
+        try good.write(to: local)
+        try Data(#"{"maxSplitsPerMonitor":{"DELL":2}}"#.utf8).write(to: monitor)
+        let config = UserConfig(store: store, iCloudSyncEnabled: false)
+        config.dimIntensity = 0.2
+        let before = try Data(contentsOf: local)
+        let monitorBefore = try Data(contentsOf: monitor)
+
+        config.resetAppearanceToDefaults()
+
+        XCTAssertEqual(config.dimIntensity, UserConfigDefaults.dimIntensity)
+        XCTAssertEqual(copy(local, "replaced"), before)
+        XCTAssertEqual(copy(monitor, "replaced"), monitorBefore)
+    }
+
     func testKeybindResetOnDefaultsKeepsNoCopy() throws {
         try good.write(to: local)
         let config = UserConfig(store: store, iCloudSyncEnabled: false)
