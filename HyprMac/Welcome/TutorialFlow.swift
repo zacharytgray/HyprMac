@@ -18,11 +18,18 @@ final class StageSession: ObservableObject {
     let hyprKeyHold = HyprKeyHoldWatcher()
     let practice: PracticeSession
     let moveAround: MoveAroundLessonModel
+    let workspaces: WorkspacesLessonModel
+    let floating: FloatingLessonModel
+    let fixWindow: FixWindowLessonModel
+    let menuBarAndKeys: MenuBarAndKeysLessonModel
+    let pause: PauseLessonModel
+    private var escMonitor: Any?
 
     static let builtOnboarding: [OnboardingStep] = [.access, .hyprKey, .makeItYours]
-    static let builtLessons: [TutorialLesson] = [.hyprKey, .moveAround]
+    static let builtLessons: [TutorialLesson] = TutorialLesson.allCases
     /// lessons done on the practice windows
-    static let practiceLessons: Set<TutorialLesson> = [.moveAround, .workspaces, .floating, .fixWindow, .menuBarAndKeys]
+    static let practiceLessons: Set<TutorialLesson> = [.moveAround, .workspaces, .floating, .fixWindow,
+                                                       .menuBarAndKeys, .pause]
 
     private let controller = TutorialWindowController()
     var onClose: () -> Void = {}
@@ -44,7 +51,14 @@ final class StageSession: ObservableObject {
         self.screen = screen
         practice = PracticeSession(host: practiceHost)
         moveAround = MoveAroundLessonModel(practice: practice)
+        workspaces = WorkspacesLessonModel(practice: practice)
+        floating = FloatingLessonModel(practice: practice)
+        fixWindow = FixWindowLessonModel(practice: practice)
+        menuBarAndKeys = MenuBarAndKeysLessonModel(practice: practice)
+        pause = PauseLessonModel(practice: practice)
     }
+
+    private var lessonModels: [PracticeLessonModel] { [workspaces, floating, fixWindow, menuBarAndKeys, pause] }
 
     private var isPractice: Bool {
         if case let .tutorial(lesson) = screen { return Self.practiceLessons.contains(lesson) }
@@ -118,11 +132,21 @@ final class StageSession: ObservableObject {
         }
     }
 
+    /// Every way out ends here: Done, Skip Tutorial, Esc, Quit HyprMac.
+    /// The helper quits, its rules go, the workspace goes back, and tiling
+    /// resumes if the pause lesson left it paused. Safe to call twice.
     func close() {
         stopScreen()
-        practice.end()
+        cleanUp()
         controller.dismiss()
         onClose()
+    }
+
+    /// The part of `close` that must also run when HyprMac quits.
+    func cleanUp() {
+        if pause.pausedHere, !UserConfig.shared.enabled { UserConfig.shared.enabled = true }
+        practice.end()
+        removeEscMonitor()
     }
 
     // MARK: switching
@@ -134,8 +158,9 @@ final class StageSession: ObservableObject {
         if isPractice, !wasPractice {
             controller.setPracticeMode(true, level: level)
             practice.begin()
+            addEscMonitor()
         } else if !isPractice, wasPractice {
-            practice.end()
+            cleanUp()
             controller.setPracticeMode(false, level: level)
         } else if !isPractice {
             controller.window?.level = level
@@ -149,18 +174,53 @@ final class StageSession: ObservableObject {
         case .onboarding(.hyprKey): hyprKeyHold.start()
         case .tutorial(.moveAround):
             moveAround.start()
-            controller.showBar(MoveAroundLessonBar(model: moveAround,
-                                                   onExit: { [weak self] in self?.close() },
-                                                   onNext: { [weak self] in self?.nextLesson() }))
+            controller.showBar(MoveAroundLessonBar(model: moveAround, onExit: exit, onNext: next))
+        case .tutorial(.workspaces):
+            workspaces.start()
+            controller.showBar(WorkspacesLessonBar(model: workspaces, onExit: exit, onNext: next))
+        case .tutorial(.floating):
+            floating.start()
+            controller.showBar(FloatingLessonBar(model: floating, onExit: exit, onNext: next))
+        case .tutorial(.fixWindow):
+            fixWindow.start()
+            controller.showBar(FixWindowLessonBar(model: fixWindow, onExit: exit, onNext: next))
+        case .tutorial(.menuBarAndKeys):
+            menuBarAndKeys.start()
+            controller.showBar(MenuBarAndKeysLessonBar(model: menuBarAndKeys, onExit: exit, onNext: next))
+        case .tutorial(.pause):
+            pause.start()
+            controller.showBar(PauseLessonBar(model: pause, onExit: exit, onNext: next))
         default: break
         }
     }
+
+    private var exit: () -> Void { { [weak self] in self?.close() } }
+    private var next: () -> Void { { [weak self] in self?.nextLesson() } }
 
     private func stopScreen() {
         hyprKeyLesson.stop()
         hyprKeyHold.stop()
         moveAround.stop()
+        lessonModels.forEach { $0.stop() }
         controller.hideBar()
+    }
+
+    // Esc ends the tutorial. The lesson bar never takes keys, so watch for it
+    // while a practice window is in front. HyprMac's own panels (Hypr+K,
+    // Hypr+I) get their Esc as local events, which this never sees.
+    private func addEscMonitor() {
+        guard escMonitor == nil else { return }
+        escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 53,
+                  NSWorkspace.shared.frontmostApplication?.bundleIdentifier == PracticeSession.helperBundleID
+            else { return }
+            DispatchQueue.main.async { self?.close() }
+        }
+    }
+
+    private func removeEscMonitor() {
+        if let escMonitor { NSEvent.removeMonitor(escMonitor) }
+        escMonitor = nil
     }
 }
 
@@ -187,6 +247,8 @@ struct StageFlowView: View {
         case .tutorial(let lesson) where StageSession.practiceLessons.contains(lesson):
             // behind the practice windows; the lesson is on the bar
             StageBackdrop()
+        case .tutorial(.finish):
+            FinishView(completed: session.lessonsDone, onDone: { session.close() })
         case .tutorial:
             HyprKeyLessonView(model: session.hyprKeyLesson,
                               completed: session.lessonsDone,

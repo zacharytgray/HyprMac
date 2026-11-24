@@ -54,7 +54,7 @@ struct MakeItYoursView: View {
             step: OnboardingStep.makeItYours,
             completed: completed,
             counter: OnboardingStep.makeItYours.counterLabel,
-            note: "Later: menu bar → Tutorial, Hypr+K, or Settings → General",
+            note: "Later: menu bar → Tutorial, \(config.hyprKey.displayName)+K, or Settings → General",
             canContinue: true,
             exit: onBack.map { StageAction(title: "Back", action: $0) },
             secondary: StageAction(title: "Skip for Now", action: onSkipTutorial),
@@ -124,7 +124,7 @@ struct MakeItYoursView: View {
                               selection: menuBarStyle) { menuBarStyle = $0 }
                     if menuBarStyle == .hidden {
                         // what the app really offers with no menu bar item
-                        Label("Without it, open HyprMac again from Spotlight or Applications to get Settings. Hypr+K has the tutorial.",
+                        Label("Without it, open HyprMac again from Spotlight or Applications to get Settings. \(config.hyprKey.displayName)+K has the tutorial.",
                               systemImage: "info.circle")
                             .font(.system(size: 11))
                             .foregroundStyle(TutorialStageColor.cyan)

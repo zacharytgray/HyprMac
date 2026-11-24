@@ -247,6 +247,7 @@
 		8BEC65B84A975386F95AA087 /* TiledDragTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF8049A0C6B0FBEF8B6ED25B /* TiledDragTarget.swift */; };
 		8C3306FE7A9CD13A28CA5C87 /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49CB059612127CA6F3E7766 /* SettingsComponents.swift */; };
 		8DBC52E0F9E7B680EDD2F573 /* PassBudget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28002D0AD1DFC9F02FBB78FC /* PassBudget.swift */; };
+		8E330B5CBA7CACEB0A96BA58 /* PracticeLessons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 733496FB487464D6FCDEB043 /* PracticeLessons.swift */; };
 		8E3735550BDEEB9448C3C9DA /* WorkspaceMonitorMappingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E91BD79281123D28B840628 /* WorkspaceMonitorMappingTests.swift */; };
 		8EA72A706AB7A14A02BBE340 /* WorkspaceNamesSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1BA609BC69D65AB6F142683 /* WorkspaceNamesSheet.swift */; };
 		8EA7D7E44E6BB8896FC32580 /* DockAffordance.swift in Sources */ = {isa = PBXBuildFile; fileRef = B2E56F4F9D0F2FF63B8FF81F /* DockAffordance.swift */; };
@@ -363,6 +364,7 @@
 		D2364C0428C5CEDC5AF46D76 /* KeybindDisplayHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7681B5C6FAEC2BFB53A30743 /* KeybindDisplayHelpers.swift */; };
 		D380E4A1BDD2AD4281299E72 /* KeybindDecoderToleranceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3521F94E7B0FCC0E03B50D3 /* KeybindDecoderToleranceTests.swift */; };
 		D42C28555A078D585F2268A2 /* WindowRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66D21946C610CB845DEC5502 /* WindowRule.swift */; };
+		D4E82F5EBB1983404D9297E3 /* PracticeLessons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 733496FB487464D6FCDEB043 /* PracticeLessons.swift */; };
 		D58328860E2249DD694C36CA /* KeyCodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC469D5C5BC55B1A6D3CD7C2 /* KeyCodeUtils.swift */; };
 		D5C0537A5B108486E8EA70FB /* FixedSizeHintStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F1251E3F489A8D9DBD9866FE /* FixedSizeHintStore.swift */; };
 		D5C667FFA19E52C23C98E59B /* DisplayManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B33190C87FE4067512AEFD0 /* DisplayManager.swift */; };
@@ -442,6 +444,7 @@
 		F3955661BE1DE991B5D3743E /* AXNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */; };
 		F39E492F77CC07DAB25E06A4 /* FloatingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7025F1F3F2A6B589919612 /* FloatingWindowController.swift */; };
 		F45A09BF9AB37D5D533FE8FB /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53410A7A5185F2585DFFFB0A /* HotkeyManager.swift */; };
+		F4A1C0022D9624286599D7AB /* PracticeLessonsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9263EB4A70CF26F0E1AA0216 /* PracticeLessonsTests.swift */; };
 		F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772FFAF897AAC136F605737C /* TilingSettingsView.swift */; };
 		F5F1411E9DBF79CC9668CFCD /* FocusResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FBC56CE152E1B13DCC947AD /* FocusResolver.swift */; };
 		F612CAF50D72D30E4681155F /* KeybindEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1EEBDF9C15534D91607EC4 /* KeybindEditingTests.swift */; };
@@ -655,6 +658,7 @@
 		728568405C25B4DD6E5EDD9B /* DestroyRecheckTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DestroyRecheckTests.swift; sourceTree = "<group>"; };
 		72B6952D8617CE03DF8A8E96 /* TiledDragSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragSnapshot.swift; sourceTree = "<group>"; };
 		72E07D23BE161589444BB90A /* Practice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Practice.swift; sourceTree = "<group>"; };
+		733496FB487464D6FCDEB043 /* PracticeLessons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeLessons.swift; sourceTree = "<group>"; };
 		735D2D29C87C520F2EDEEAF6 /* KeybindOverlayContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeybindOverlayContentTests.swift; sourceTree = "<group>"; };
 		7494EE86AE0F7C9129ADB20C /* FloatingDimDragTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FloatingDimDragTracker.swift; sourceTree = "<group>"; };
 		74E97BACDC13D46810E508B8 /* CommandRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRunner.swift; sourceTree = "<group>"; };
@@ -685,6 +689,7 @@
 		8DD3672ACF5C926763242B56 /* WindowDiscoveryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowDiscoveryService.swift; sourceTree = "<group>"; };
 		901F153AA3906FE161498E58 /* WindowStateCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowStateCacheTests.swift; sourceTree = "<group>"; };
 		9239459CD4D9AAB78CBD4B80 /* TiledDragFeedbackCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragFeedbackCoordinatorTests.swift; sourceTree = "<group>"; };
+		9263EB4A70CF26F0E1AA0216 /* PracticeLessonsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeLessonsTests.swift; sourceTree = "<group>"; };
 		92C350B5FCD0242E1993F822 /* DebugLogFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugLogFileTests.swift; sourceTree = "<group>"; };
 		936B7CF6C89B974F27A4E2BC /* HoverResponseRate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HoverResponseRate.swift; sourceTree = "<group>"; };
 		96C6802CD77F6E1EFDFB3A9C /* OuterPaddingOverrideTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OuterPaddingOverrideTests.swift; sourceTree = "<group>"; };
@@ -1111,6 +1116,7 @@
 				E6798490199795350E25873F /* OverlayPreviewTests.swift */,
 				508797A1BAD90161C6257D63 /* PhysicalCapsLockTests.swift */,
 				18F440861EC1F33CEB326CB4 /* PollingSchedulerTests.swift */,
+				9263EB4A70CF26F0E1AA0216 /* PracticeLessonsTests.swift */,
 				5867C8BC4A0B38BC15E47DE2 /* ProbeFrameArgumentsTests.swift */,
 				83433C5EF00BCFF0E217D037 /* QuickLookPanelTests.swift */,
 				091BAD650A42E0A20E0E19BD /* RatioMemoryEngineTests.swift */,
@@ -1222,6 +1228,7 @@
 				61FC8D30437B21C66B8F3A41 /* MakeItYours.swift */,
 				D6B6A5DAA2A32DA7E60FC90A /* MoveAroundLesson.swift */,
 				72E07D23BE161589444BB90A /* Practice.swift */,
+				733496FB487464D6FCDEB043 /* PracticeLessons.swift */,
 				6EDEEE13B637CED75A9FD8A9 /* TourView.swift */,
 				DF261CA3C35CD24A5817A7DA /* TutorialFlow.swift */,
 				8AA15A4F2F4E52C239CCEFB7 /* TutorialStage.swift */,
@@ -1548,6 +1555,7 @@
 				B6B470A396C5B7DFEE0D30A7 /* PhysicalKeyMonitor.swift in Sources */,
 				87509383B627C5F0A3B32B23 /* PollingScheduler.swift in Sources */,
 				0C91009344A11D2EB79B970C /* Practice.swift in Sources */,
+				D4E82F5EBB1983404D9297E3 /* PracticeLessons.swift in Sources */,
 				527D68624FC4FDB4EAF54FA8 /* ProbeFrame.swift in Sources */,
 				39F4595FA15123DA0A281370 /* RelaunchHandoff.swift in Sources */,
 				D849455C3C1CF4C164649D9A /* RetileAllPlanner.swift in Sources */,
@@ -1722,6 +1730,7 @@
 				DFCD23D134644697F8DCF3D8 /* PhysicalKeyMonitor.swift in Sources */,
 				DDF87D62ED61F50A5F0681B9 /* PollingScheduler.swift in Sources */,
 				F06BAB6ADAA9C707132CC4D4 /* Practice.swift in Sources */,
+				8E330B5CBA7CACEB0A96BA58 /* PracticeLessons.swift in Sources */,
 				ED9AA2A6F6F62A2DBB5D3FF9 /* ProbeFrame.swift in Sources */,
 				A9471E22495C47DF5C1041F3 /* RelaunchHandoff.swift in Sources */,
 				FF545C88698CCEFDF156CDFF /* RetileAllPlanner.swift in Sources */,
@@ -1857,6 +1866,7 @@
 				E6260C2FFFD1E33423A2DA8C /* OverlayPreviewTests.swift in Sources */,
 				FCAEB41890B6B555CBDC3082 /* PhysicalCapsLockTests.swift in Sources */,
 				98D72FEBD5773242B4F199B7 /* PollingSchedulerTests.swift in Sources */,
+				F4A1C0022D9624286599D7AB /* PracticeLessonsTests.swift in Sources */,
 				557A617F0E258A3267E39BEC /* ProbeFrameArgumentsTests.swift in Sources */,
 				EDAF3848CD62189549EA91F6 /* QuickLookPanelTests.swift in Sources */,
 				953A5EFB15AA059279D52EFA /* RatioMemoryEngineTests.swift in Sources */,

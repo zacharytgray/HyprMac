@@ -234,6 +234,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager?.keybindOverlay.onShowTutorial = { [weak self] in
             self?.showTour()
         }
+        // a tutorial cut short by a crash can leave its practice app's rule
+        PracticeSession.removeRules(bundleID: PracticeSession.helperBundleID, from: config)
         if config.enabled {
             windowManager?.start()
         }
@@ -319,6 +321,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard !diagnosticOnly else { return }
+        // the tutorial's helper, its rules and its workspace go first
+        stage?.cleanUp()
         windowManager?.stop(keepPauseShortcut: false)
         // restore caps lock to normal when quitting
         KeyRemapper.restoreCapsLock()

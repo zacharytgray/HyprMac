@@ -203,6 +203,64 @@ final class InterfaceSnapshotTests: XCTestCase {
         }
     }
 
+    // lessons 3 to 7 and the finish, at the start and done, on the mock
+    // practice desktop
+    func testRenderPracticeLessons() throws {
+        let config = UserConfig.shared
+        let saved = (config.hyprKey, config.enabled, config.focusFollowsMouse)
+        defer { (config.hyprKey, config.enabled, config.focusFollowsMouse) = saved }
+        config.hyprKey = .capsLock
+        let size = CGSize(width: 1440, height: 900)
+        let practice = PracticeSession(host: nil)
+        practice.setWorkspacesForTesting(practice: 4, other: 5)
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            func shot<Bar: View>(_ name: String, focused: Int = 1, tiled: [Int] = [1, 2, 3],
+                                 floaters: [Int] = [], _ bar: Bar) throws {
+                try render("tutorial-\(name)-\(mode)",
+                           PracticeSceneMock(focused: focused, tiled: tiled, floaters: floaters) { bar },
+                           size: size, dark: dark)
+            }
+            let workspaces = WorkspacesLessonModel(practice: practice)
+            try shot("3-workspaces-1-start", WorkspacesLessonBar(model: workspaces, displayCount: 2, onExit: {}, onNext: {}))
+            workspaces.wentAway = true; workspaces.cameBack = true; workspaces.sent = true
+            try shot("3-workspaces-2-done", tiled: [1, 2],
+                     WorkspacesLessonBar(model: workspaces, displayCount: 1, onExit: {}, onNext: {}))
+
+            let floating = FloatingLessonModel(practice: practice)
+            try shot("4-floating-1-start", tiled: [1, 2],
+                     FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
+            floating.floatedTwo = true
+            try shot("4-floating-2-floated", focused: 2, tiled: [], floaters: [1, 2],
+                     FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
+
+            let fix = FixWindowLessonModel(practice: practice)
+            try shot("5-fix-a-window-1-start", focused: 4, tiled: [1, 2], floaters: [4],
+                     FixWindowLessonBar(model: fix, onExit: {}, onNext: {}))
+            fix.openedRules = true; fix.fixed = true
+            try shot("5-fix-a-window-2-done", focused: 4, tiled: [1, 2, 4],
+                     FixWindowLessonBar(model: fix, onExit: {}, onNext: {}))
+
+            config.focusFollowsMouse = true
+            let keys = MenuBarAndKeysLessonModel(practice: practice)
+            try shot("6-menu-bar-and-keys-1-start", tiled: [1, 2, 4],
+                     MenuBarAndKeysLessonBar(model: keys, onExit: {}, onNext: {}))
+            keys.jumped = true; keys.openedKeys = true
+            try shot("6-menu-bar-and-keys-2-searching", tiled: [1, 2, 4],
+                     MenuBarAndKeysLessonBar(model: keys, onExit: {}, onNext: {}))
+
+            let pause = PauseLessonModel(practice: practice)
+            try shot("7-pause-1-start", tiled: [1, 2, 4], PauseLessonBar(model: pause, onExit: {}, onNext: {}))
+            pause.paused = true
+            try shot("7-pause-2-paused-caps-lock", tiled: [1, 2, 4],
+                     PauseLessonBar(model: pause, onExit: {}, onNext: {}))
+
+            try render("tutorial-8-finish-\(mode)",
+                       FinishView(completed: Set(TutorialLesson.allCases.filter { $0 != .finish }), onDone: {}),
+                       size: size, dark: dark)
+        }
+    }
+
     // onboarding's hypr key step: caps lock (recommended), a function key,
     // right option, and caps lock held
     func testRenderHyprKeyPicker() throws {
@@ -449,6 +507,8 @@ final class InterfaceSnapshotTests: XCTestCase {
 // same look as HyprMacPractice, the config's gaps, corner radius, marks and dim
 private struct PracticeSceneMock<Bar: View>: View {
     let focused: Int
+    var tiled: [Int] = [1, 2, 3]
+    var floaters: [Int] = []
     @ViewBuilder let bar: Bar
     private let config = UserConfig.shared
 
@@ -466,14 +526,42 @@ private struct PracticeSceneMock<Bar: View>: View {
             let h = geo.size.height - top - pad
             let rightX = pad + w * 0.5 + gap
             let halfH = (h - gap) / 2
+            let frames: [CGRect] = {
+                switch tiled.count {
+                case 0: return []
+                case 1: return [CGRect(x: pad, y: top, width: w + gap, height: h)]
+                case 2: return [CGRect(x: pad, y: top, width: w * 0.5, height: h),
+                                CGRect(x: rightX, y: top, width: w * 0.5, height: h)]
+                default: return [CGRect(x: pad, y: top, width: w * 0.5, height: h),
+                                 CGRect(x: rightX, y: top, width: w * 0.5, height: halfH),
+                                 CGRect(x: rightX, y: top + halfH + gap, width: w * 0.5, height: halfH)]
+                }
+            }()
             ZStack(alignment: .topLeading) {
                 StageBackdrop()
-                window(1, CGRect(x: pad, y: top, width: w * 0.5, height: h))
-                window(2, CGRect(x: rightX, y: top, width: w * 0.5, height: halfH))
-                window(3, CGRect(x: rightX, y: top + halfH + gap, width: w * 0.5, height: halfH))
+                ForEach(Array(zip(tiled, frames)), id: \.0) { number, frame in
+                    window(number, frame)
+                }
+                // floating windows sit above the tiles with their outline
+                ForEach(Array(floaters.enumerated()), id: \.offset) { index, number in
+                    floater(number, index: index, in: geo.size)
+                }
                 VStack { Spacer(); bar }.padding(16)
             }
         }
+    }
+
+    private func floater(_ number: Int, index: Int, in screen: CGSize) -> some View {
+        let size = CGSize(width: 460, height: 330)
+        let x: CGFloat = screen.width / 2 - size.width / 2 + CGFloat(index) * 70 - 35
+        let y: CGFloat = screen.height / 2 - size.height / 2 - 90 + CGFloat(index) * 60
+        let outline = RoundedRectangle(cornerRadius: config.windowCornerRadius, style: .continuous)
+            .strokeBorder(Color(nsColor: config.resolvedFloatingBorderColor), lineWidth: 1.5)
+            .frame(width: size.width, height: size.height)
+            .offset(x: x, y: y)
+        return window(number, CGRect(x: x, y: y, width: size.width, height: size.height))
+            .overlay(outline, alignment: .topLeading)
+            .shadow(color: .black.opacity(0.45), radius: 22, y: 10)
     }
 
     private func window(_ number: Int, _ frame: CGRect) -> some View {

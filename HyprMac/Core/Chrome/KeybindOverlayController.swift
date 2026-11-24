@@ -24,6 +24,8 @@ class KeybindOverlayController {
 
     /// `true` when the overlay panel is on screen.
     var isShowing: Bool { panel != nil }
+    /// what the user typed in the search field; the tutorial reads it
+    var searchText: String { input.text }
 
     /// Show the overlay, or close it if already visible.
     func toggle(keybinds: [Keybind]) {

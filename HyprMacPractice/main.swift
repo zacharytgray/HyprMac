@@ -13,6 +13,8 @@ enum Practice {
     /// DistributedNotificationCenter name. userInfo: "focused" (Int, 0 for
     /// none), "order" ([Int], left to right, then top to bottom).
     static let stateNotification = Notification.Name("com.zachgray.HyprMac.practice.state")
+    /// From HyprMac. userInfo: "open" (Int), a window number to open.
+    static let commandNotification = Notification.Name("com.zachgray.HyprMac.practice.command")
 
     static func argument(_ name: String) -> Int? {
         let args = CommandLine.arguments
@@ -58,19 +60,13 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let count = max(1, min(4, Practice.argument("--windows") ?? 3))
-        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
-        for number in 1...count {
-            let window = NSWindow(
-                contentRect: NSRect(x: visible.minX + CGFloat(number) * 40, y: visible.maxY - 460 - CGFloat(number) * 30,
-                                    width: 520, height: 400),
-                styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                backing: .buffered, defer: false)
-            window.title = "Practice \(number)"
-            window.isReleasedWhenClosed = false
-            window.contentView = NSHostingView(rootView: PracticeWindowView(number: number))
-            window.delegate = self
-            window.makeKeyAndOrderFront(nil)
-            windows.append(window)
+        for number in 1...count { open(number) }
+        DistributedNotificationCenter.default().addObserver(
+            forName: Practice.commandNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let number = note.userInfo?["open"] as? Int, (1...4).contains(number) else { return }
+            self?.open(number)
+            NSApp.activate(ignoringOtherApps: true)
         }
         // lessons start on window 1, the left tile, so "the next window" is
         // to its right
@@ -89,6 +85,23 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.report() }
         }
+        report()
+    }
+
+    private func open(_ number: Int) {
+        guard !windows.contains(where: { $0.title == "Practice \(number)" }) else { return }
+        let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let window = NSWindow(
+            contentRect: NSRect(x: visible.minX + CGFloat(number) * 40, y: visible.maxY - 460 - CGFloat(number) * 30,
+                                width: 520, height: 400),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            backing: .buffered, defer: false)
+        window.title = "Practice \(number)"
+        window.isReleasedWhenClosed = false
+        window.contentView = NSHostingView(rootView: PracticeWindowView(number: number))
+        window.delegate = self
+        window.makeKeyAndOrderFront(nil)
+        windows.append(window)
         report()
     }
 

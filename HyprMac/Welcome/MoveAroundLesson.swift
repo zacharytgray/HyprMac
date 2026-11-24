@@ -105,6 +105,8 @@ struct BarTask {
     let title: String
     let bind: Keybind?
     let done: Bool
+    /// a button beside the task, e.g. Resume Tiling while paused
+    var button: (title: String, action: () -> Void)? = nil
 }
 
 /// The lesson as a slim bar along the bottom edge, above the practice
@@ -114,6 +116,8 @@ struct LessonBar: View {
     let why: String
     let tasks: [BarTask]
     let hyprKey: HyprKey
+    /// a quiet line under the tasks, e.g. the two-display key
+    var note: String? = nil
     let onExit: () -> Void
     let onNext: () -> Void
 
@@ -132,7 +136,8 @@ struct LessonBar: View {
                 Text(why)
                     .font(.system(size: 12.5))
                     .foregroundStyle(TutorialStageColor.quiet)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
                 Text("\(done) of \(tasks.count) done")
                     .font(.system(size: 11.5, weight: .medium, design: .monospaced))
@@ -149,6 +154,13 @@ struct LessonBar: View {
                 }
                 Spacer(minLength: 12)
                 StageQuietButton("Skip Tutorial", action: onExit)
+            }
+
+            if let note {
+                Text(note)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(TutorialStageColor.quiet)
+                    .padding(.leading, 4)
             }
         }
         .padding(.horizontal, 18)
@@ -172,6 +184,9 @@ struct LessonBar: View {
                 .fixedSize()
             if let bind = task.bind {
                 StageChord(bind: bind, hyprKey: hyprKey)
+            }
+            if let button = task.button {
+                StageSecondaryButton(button.title, action: button.action)
             }
         }
         .padding(.leading, 4)
