@@ -135,7 +135,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(spacing: HyprSpacing.lg) {
                     if config.isConfigReadOnly { ReadOnlyConfigNotice() }
-                    sectionContent
+                    SettingsSectionContent(section: selected, showTutorial: showTutorial)
                 }
                 .padding(.horizontal, HyprSpacing.xl)
                 .padding(.bottom, HyprSpacing.xl)
@@ -145,8 +145,24 @@ struct SettingsView: View {
         .background(selected.isRedesigned ? Color.settingsBackground : Color.hyprBackground)
     }
 
-    @ViewBuilder private var sectionContent: some View {
-        switch selected {
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+
+    private var appBuild: String? {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+    }
+}
+
+// MARK: - section content
+
+/// One section's panels, without the shell. Snapshot tests render it alone.
+struct SettingsSectionContent: View {
+    let section: SettingsSection
+    let showTutorial: () -> Void
+
+    var body: some View {
+        switch section {
         case .general:
             GeneralSettingsView(showTutorial: showTutorial)
         case .keys:
@@ -165,17 +181,10 @@ struct SettingsView: View {
             TilingSettingsView(panels: [.focus])
             MovedGeneralPanels(panels: [.overlays])
         case .advanced:
-            MovedGeneralPanels(panels: [.sync, .otherApps, .files, .reset])
+            AdvancedSettingsView()
         }
     }
 
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-    }
-
-    private var appBuild: String? {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String
-    }
 }
 
 // MARK: - sections
@@ -218,12 +227,12 @@ enum SettingsSection: String, CaseIterable, Hashable {
         case .monitors:   return "Tiling, splits, edge room and workspaces for each display."
         case .mouse:      return "Focus follows mouse, hover speed and the cursor on switches."
         case .appearance: return "Focus indicator, dimming, colors and overlays."
-        case .advanced:   return "iCloud sync, other apps, config files and reset."
+        case .advanced:   return "iCloud sync, other apps and status bars, files, logging and reset."
         }
     }
 
     // drawn in the navy style; the rest wait their turn
-    var isRedesigned: Bool { self == .general }
+    var isRedesigned: Bool { [.general, .advanced].contains(self) }
 }
 
 // MARK: - search index
@@ -294,7 +303,11 @@ enum SettingsSearchIndex {
         // advanced
         .init(title: "Sync settings via iCloud", keywords: "icloud sync share macs", section: .advanced),
         .init(title: "Allow other apps to control HyprMac", keywords: "hyprmac links url bettertouchtool external", section: .advanced),
-        .init(title: "Config files", keywords: "config json file finder path", section: .advanced),
+        .init(title: "Status bar export", keywords: "sketchybar state json bar widget", section: .advanced),
+        .init(title: "Run after each change", keywords: "status bar hook command sketchybar trigger", section: .advanced),
+        .init(title: "Config files", keywords: "config json file finder path monitor", section: .advanced),
+        .init(title: "Detailed logging", keywords: "verbose log debug bug report support", section: .advanced),
+        .init(title: "Log file", keywords: "log debug finder", section: .advanced),
         .init(title: "Reset all settings", keywords: "reset defaults", section: .advanced),
     ]
 

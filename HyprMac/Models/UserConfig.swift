@@ -604,11 +604,11 @@ class UserConfig: ObservableObject {
         keybinds = Keybind.defaults
     }
 
-    /// Restore the controls in Layout → Focus appearance without changing
-    /// layout, keybind, monitor, or scratchpad preferences. Overlay
-    /// appearance is in General → System, so it stays.
+    /// Restore everything in Settings → Appearance, overlays included,
+    /// without changing layout, keybind, monitor, or scratchpad preferences.
     func resetAppearanceToDefaults() {
         isReloading = true
+        overlayAppearance = UserConfigDefaults.overlayAppearance
         animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
         dimInactiveWindows = UserConfigDefaults.dimInactiveWindows
         dimIntensity = UserConfigDefaults.dimIntensity
@@ -627,6 +627,50 @@ class UserConfig: ObservableObject {
         isReloading = false
         save()
         didApplyRuntimeChange.send()
+    }
+
+    /// Settings sections with their own reset. Keys and Appearance have
+    /// theirs above; Advanced has Reset all.
+    enum ResetScope: CaseIterable {
+        case general, tiling, workspaces, monitors, mouse
+    }
+
+    /// Reset one Settings section. Per-Mac settings in UserDefaults (Dock,
+    /// menu bar, login item, iCloud, updates, logging) are never touched.
+    /// Copies of both files are kept first, as for Reset all, since a
+    /// section can hold lists the user built by hand.
+    func resetToDefaults(_ scope: ResetScope) {
+        guard store.keepCopiesBeforeReset() else { return }
+        isReloading = true
+        switch scope {
+        case .general:
+            enabled = UserConfigDefaults.enabled
+            restoreLayoutOnLaunch = UserConfigDefaults.restoreLayoutOnLaunch
+        case .tiling:
+            gapSize = UserConfigDefaults.gapSize
+            outerPadding = UserConfigDefaults.outerPadding
+            excludedBundleIDs = Set(Self.defaultExcludedBundleIDs)
+            floatingRules = []
+        case .workspaces:
+            workspaceNames = [:]
+            windowRules = []
+            scratchpadTileByDefault = UserConfigDefaults.scratchpadTileByDefault
+            scratchpadRegionInset = UserConfigDefaults.scratchpadRegionInset
+        case .monitors:
+            maxSplitsPerMonitor = [:]
+            disabledMonitors = []
+            outerPaddingPerMonitor = [:]
+            workspaceMonitors = [:]
+            workspaceMonitorsPerDisplaySet = []
+        case .mouse:
+            focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
+            mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
+            keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
+        }
+        isReloading = false
+        save()
+        didApplyRuntimeChange.send()
+        if scope == .tiling { floatingRulesReloaded.send() }
     }
 
     func setFocusIndicators(showCorners: Bool, showBorders: Bool) {

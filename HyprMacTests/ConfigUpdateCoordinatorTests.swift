@@ -606,7 +606,72 @@ final class ConfigUpdateCoordinatorTests: XCTestCase {
         XCTAssertTrue(config.focusBorderFlash)
         XCTAssertTrue(config.dimInactiveWindows)
         XCTAssertTrue(config.animateFocusIndicator, "Animate focus moves is in the same panel")
-        XCTAssertEqual(config.overlayAppearance, .dark, "overlay appearance is in General → System")
+        XCTAssertEqual(config.overlayAppearance, UserConfigDefaults.overlayAppearance,
+                       "overlay appearance is in Settings → Appearance")
+    }
+
+    func testSectionResetsTouchOnlyTheirSection() throws {
+        try requireIsolatedHome()
+        let configBefore = try? Data(contentsOf: ConfigStore.configPath)
+        let monitorBefore = try? Data(contentsOf: ConfigStore.monitorConfigPath)
+        defer {
+            restore(configBefore, to: ConfigStore.configPath)
+            restore(monitorBefore, to: ConfigStore.monitorConfigPath)
+        }
+        let config = UserConfig()
+        func dirty() {
+            config.enabled = false
+            config.restoreLayoutOnLaunch = true
+            config.gapSize = 30
+            config.outerPadding = 30
+            config.excludedBundleIDs = ["com.example.app"]
+            config.workspaceNames = ["1": "one"]
+            config.windowRules = [WindowRule(bundleID: "com.example.app", workspace: 2)]
+            config.scratchpadRegionInset = 0.1
+            config.maxSplitsPerMonitor = ["Screen": 2]
+            config.disabledMonitors = ["Screen"]
+            config.focusFollowsMouse = false
+            config.keepCursorOnWorkspaceSwitch = true
+            config.dimIntensity = 0.2
+            config.statusExportEnabled = true
+            config.externalControlEnabled = true
+        }
+
+        dirty()
+        config.resetToDefaults(.general)
+        XCTAssertTrue(config.enabled)
+        XCTAssertFalse(config.restoreLayoutOnLaunch)
+        XCTAssertEqual(config.gapSize, 30)
+
+        dirty()
+        config.resetToDefaults(.tiling)
+        XCTAssertEqual(config.gapSize, UserConfigDefaults.gapSize)
+        XCTAssertEqual(config.outerPadding, UserConfigDefaults.outerPadding)
+        XCTAssertEqual(config.excludedBundleIDs, Set(UserConfig.defaultExcludedBundleIDs))
+        XCTAssertEqual(config.workspaceNames, ["1": "one"])
+
+        dirty()
+        config.resetToDefaults(.workspaces)
+        XCTAssertEqual(config.workspaceNames, [:])
+        XCTAssertEqual(config.windowRules, [])
+        XCTAssertEqual(config.scratchpadRegionInset, UserConfigDefaults.scratchpadRegionInset)
+        XCTAssertEqual(config.disabledMonitors, ["Screen"])
+
+        dirty()
+        config.resetToDefaults(.monitors)
+        XCTAssertEqual(config.maxSplitsPerMonitor, [:])
+        XCTAssertEqual(config.disabledMonitors, [])
+        XCTAssertFalse(config.focusFollowsMouse)
+
+        dirty()
+        config.resetToDefaults(.mouse)
+        XCTAssertTrue(config.focusFollowsMouse)
+        XCTAssertFalse(config.keepCursorOnWorkspaceSwitch)
+        XCTAssertEqual(config.dimIntensity, 0.2)
+
+        // no section reset reaches the Advanced options
+        XCTAssertTrue(config.statusExportEnabled)
+        XCTAssertTrue(config.externalControlEnabled)
     }
 
     func testResetToDefaultsRestoresEverySetting() throws {

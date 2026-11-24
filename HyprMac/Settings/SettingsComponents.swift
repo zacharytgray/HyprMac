@@ -439,3 +439,26 @@ struct SettingsStatusPill: View {
             )
     }
 }
+
+/// "Reset Mouse to defaults…" at the foot of a section. Asks first, says
+/// what it resets, and keeps per-Mac settings out of it.
+struct SectionResetFooter: View {
+    let title: String
+    let message: String
+    let action: () -> Void
+    @State private var confirming = false
+
+    var body: some View {
+        HStack {
+            Spacer()
+            Button(title + "…") { confirming = true }
+                .controlSize(.small)
+        }
+        .confirmationDialog(title + "?", isPresented: $confirming) {
+            Button("Reset", role: .destructive, action: action)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(message)
+        }
+    }
+}

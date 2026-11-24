@@ -72,22 +72,44 @@ final class InterfaceSnapshotTests: XCTestCase {
         }
     }
 
-    // the redesigned sidebar and General, plus the sections still waiting
+    // redesigned sections in the window and full height, dark and light,
+    // plus the sections still waiting
     func testRenderSettingsRedesign() throws {
         UserConfig.shared.hyprKey = .capsLock
+        for section in SettingsSection.allCases {
+            guard section.isRedesigned else {
+                try render("redesign-interim-\(section.rawValue)-dark",
+                           SettingsView(showTutorial: {}, initialSection: section),
+                           size: CGSize(width: 780, height: 760))
+                continue
+            }
+            for dark in [true, false] {
+                let mode = dark ? "dark" : "light"
+                try render("redesign-window-\(section.rawValue)-\(mode)",
+                           SettingsView(showTutorial: {}, initialSection: section),
+                           size: CGSize(width: 780, height: 760), dark: dark)
+                try render("redesign-\(section.rawValue)-\(mode)",
+                           navyTab(SettingsSectionContent(section: section, showTutorial: {})), dark: dark)
+            }
+        }
         for dark in [true, false] {
             let mode = dark ? "dark" : "light"
-            try render("redesign-window-general-\(mode)", SettingsView(showTutorial: {}),
-                       size: CGSize(width: 780, height: 940), dark: dark)
-            try render("redesign-general-\(mode)", navyTab(GeneralSettingsView(showTutorial: {})), dark: dark)
             try render("redesign-search-\(mode)", SettingsView(showTutorial: {}, initialSearch: "dock"),
                        size: CGSize(width: 780, height: 600), dark: dark)
             try render("redesign-managed-updates-\(mode)", navyTab(ManagedUpdatesPanel(nixInstall: true)), dark: dark)
         }
-        for section in SettingsSection.allCases where !section.isRedesigned {
-            try render("redesign-interim-\(section.rawValue)-dark",
-                       SettingsView(showTutorial: {}, initialSection: section),
-                       size: CGSize(width: 780, height: 760))
+        // the export's command field shows only while the export is on
+        let exportWas = UserConfig.shared.statusExportEnabled
+        let hookWas = UserConfig.shared.statusHookCommand
+        UserConfig.shared.statusExportEnabled = true
+        UserConfig.shared.statusHookCommand = "sketchybar --trigger hyprmac_change"
+        defer {
+            UserConfig.shared.statusExportEnabled = exportWas
+            UserConfig.shared.statusHookCommand = hookWas
+        }
+        for dark in [true, false] {
+            try render("redesign-advanced-export-on-\(dark ? "dark" : "light")",
+                       navyTab(AdvancedSettingsView()), dark: dark)
         }
     }
 

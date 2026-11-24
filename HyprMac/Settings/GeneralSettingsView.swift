@@ -26,6 +26,10 @@ struct GeneralSettingsView: View {
             presenceCard
             updatesCard
             helpCard
+            SectionResetFooter(title: "Reset General to defaults",
+                               message: "Turns tiling on and stops restoring the saved layout at launch. This Mac's login item, menu bar, Dock and update settings stay as they are.") {
+                config.resetToDefaults(.general)
+            }
         }
         .background(HostWindowReader(host: hostWindow))
         .onAppear {
@@ -212,12 +216,11 @@ struct GeneralSettingsView: View {
 /// The panels that left General, unchanged in look, shown in their new
 /// sections until each section gets its redesign.
 struct MovedGeneralPanels: View {
-    enum Panel { case mouse, rules, workspaceNames, pins, overlays, sync, otherApps, files, reset }
+    enum Panel { case mouse, rules, workspaceNames, pins, overlays }
 
     let panels: [Panel]
     @ObservedObject var config = UserConfig.shared
     @State private var showingWorkspaceNames = false
-    @State private var choosingSyncSide = false
 
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
@@ -228,10 +231,6 @@ struct MovedGeneralPanels: View {
                 case .workspaceNames: workspaceNamesPanel
                 case .pins: workspacePinsPanel
                 case .overlays: overlaysPanel
-                case .sync: syncPanel
-                case .otherApps: otherAppsPanel
-                case .files: filesPanel
-                case .reset: resetPanel
                 }
             }
         }
@@ -399,30 +398,7 @@ struct MovedGeneralPanels: View {
         config.windowRules[index].workspace = workspace
     }
 
-    // MARK: sync, other apps, overlays, files
-
-    // turning sync on asks first when this Mac and iCloud disagree
-    private var iCloudSyncBinding: Binding<Bool> {
-        Binding(get: { config.iCloudSyncEnabled }, set: { on in
-            if on, config.iCloudCopyDiffersFromLocal {
-                choosingSyncSide = true
-            } else {
-                config.iCloudSyncEnabled = on
-            }
-        })
-    }
-
-    private var otherAppsPanel: some View {
-        HyprPanel("Other apps") {
-            HyprRow("Allow other apps to control HyprMac", icon: "link",
-                    subtitle: "Lets apps like BetterTouchTool run HyprMac actions with hyprmac:// links.",
-                    divider: false) {
-                Toggle("", isOn: $config.externalControlEnabled)
-                    .toggleStyle(HyprToggleStyle())
-                    .labelsHidden()
-            }
-        }
-    }
+    // MARK: overlays
 
     private var overlaysPanel: some View {
         HyprPanel("Overlays") {
@@ -435,69 +411,6 @@ struct MovedGeneralPanels: View {
                 .labelsHidden()
                 .frame(width: 120)
             }
-        }
-    }
-
-    private var syncPanel: some View {
-        HyprPanel("Sync") {
-            if config.isICloudDriveAvailable {
-                HyprRow("Sync settings via iCloud", icon: "icloud",
-                        subtitle: config.isICloudSyncLocked ? "Off while another tool manages the config file." : nil,
-                        divider: false) {
-                    Toggle("", isOn: iCloudSyncBinding)
-                        .toggleStyle(HyprToggleStyle())
-                        .labelsHidden()
-                }
-                .disabled(config.isICloudSyncLocked)
-                .opacity(config.isICloudSyncLocked ? 0.5 : 1)
-                .alert("iCloud has different settings", isPresented: $choosingSyncSide) {
-                    Button("Use the settings in iCloud") { config.turnOnICloudSync(usingThisMac: false) }
-                    Button("Use this Mac's settings") { config.turnOnICloudSync(usingThisMac: true) }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("The other settings are kept as a backup beside config.json.")
-                }
-            } else {
-                HyprRow("Sync settings via iCloud", icon: "xmark.icloud",
-                        subtitle: "Enable iCloud Drive in System Settings", divider: false) { EmptyView() }
-            }
-        }
-    }
-
-    // was the sidebar footer
-    private var filesPanel: some View {
-        HyprPanel("Files") {
-            let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-                .appendingPathComponent("HyprMac", isDirectory: true)
-            let files = ["config.json", "monitor-config.json"]
-            ForEach(Array(files.enumerated()), id: \.offset) { idx, name in
-                let url = support.appendingPathComponent(name)
-                HyprRow(name, icon: "doc", subtitle: Self.homeRelative(url.path),
-                        divider: idx < files.count - 1) {
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-                        .controlSize(.small)
-                }
-            }
-        }
-    }
-
-    private static func homeRelative(_ path: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
-    }
-
-    // MARK: reset
-
-    private var resetPanel: some View {
-        HyprPanel {
-            Button { config.resetToDefaults() } label: {
-                HyprRow("Reset all settings…",
-                        subtitle: "Restores the Hypr key, keybinds, rules, workspace names, layout, appearance and monitor settings, and turns off external control. Keeps this Mac's Show in Dock, Menu bar, Launch at login, iCloud sync and Updates.",
-                        divider: false) { EmptyView() }
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(.red)
         }
     }
 

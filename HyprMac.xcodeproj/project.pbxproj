@@ -131,6 +131,7 @@
 		4C307BB05F3FA6FC89B4A9F5 /* FrameSizingTransactionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7802C236774AA24452B3E1 /* FrameSizingTransactionTests.swift */; };
 		4CBAC337C07B929FD27142D9 /* WorkspaceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB3EA6EA0A5100B595313570 /* WorkspaceManager.swift */; };
 		4CEDE06BF8322750204A2B36 /* ScreenshotPickerWatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0394B5CB3AE82CEB9CC79BD /* ScreenshotPickerWatcherTests.swift */; };
+		4DF1281FF75CE2CFC8BABDAC /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E649F906CAB5EF25EFA837D6 /* AdvancedSettingsView.swift */; };
 		4DF9B222B3F178744C02A1CD /* TabSwitchPairing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23A8208062F6237E946E82EF /* TabSwitchPairing.swift */; };
 		4E300C440FEF20C7DF664515 /* DestroyRecheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2BA2DB7604ABD064933A5F4C /* DestroyRecheck.swift */; };
 		4E6923775790B037E457881C /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EA610EADBFADA21DC625C3 /* AppDelegate.swift */; };
@@ -271,6 +272,7 @@
 		A0AD7D87944C0A2CEFD20ECD /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE062173D513A1A60A3E704D /* ConfigStore.swift */; };
 		A103B6FAC1DFA16554F33D49 /* BSPTargetInsertionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 507967F2C119F4BD8E8201CF /* BSPTargetInsertionTests.swift */; };
 		A1945FBB6F6C5307CC809EA4 /* WorkspaceOverviewPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E6472ACE23C8EB1DC35E7F2 /* WorkspaceOverviewPresentationTests.swift */; };
+		A227BD40B8AF5DD67C4CCC74 /* AdvancedSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E649F906CAB5EF25EFA837D6 /* AdvancedSettingsView.swift */; };
 		A2D8487D35F26C5F4BCC84B2 /* FloatingRuleRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37E7274A1B0A945CFD59F409 /* FloatingRuleRowView.swift */; };
 		A30FF9351FAF87F25CA84476 /* FocusGlide.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B8B939AB298810BE8AB0E12 /* FocusGlide.swift */; };
 		A31A95999EE7ED3F72C1AD60 /* LayoutTreeCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5732D75E720237317C4CCD3 /* LayoutTreeCodec.swift */; };
@@ -697,6 +699,7 @@
 		E49CB059612127CA6F3E7766 /* SettingsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsComponents.swift; sourceTree = "<group>"; };
 		E5557F0D5040AE48CF5031E4 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E63DDE5C9FB47A25D46EA669 /* WindowCornerRadius.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowCornerRadius.swift; sourceTree = "<group>"; };
+		E649F906CAB5EF25EFA837D6 /* AdvancedSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedSettingsView.swift; sourceTree = "<group>"; };
 		E6798490199795350E25873F /* OverlayPreviewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayPreviewTests.swift; sourceTree = "<group>"; };
 		E7C20D0B0CD37E6DE7C8A1FE /* ScratchpadController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScratchpadController.swift; sourceTree = "<group>"; };
 		E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundleIDPicker.swift; sourceTree = "<group>"; };
@@ -877,6 +880,7 @@
 		887E2F29AFFCDBE5DADBF861 /* Settings */ = {
 			isa = PBXGroup;
 			children = (
+				E649F906CAB5EF25EFA837D6 /* AdvancedSettingsView.swift */,
 				C6D1C99A7D03B871E0141DF0 /* AppLauncherEditorSheet.swift */,
 				E87A74C0EE799AA06F213CCF /* BundleIDPicker.swift */,
 				65F2F88E3A815333F6542EEA /* ColorPickerRow.swift */,
@@ -1334,6 +1338,7 @@
 				4F7E79CBC44F654BDF24C05B /* ActionDispatcher.swift in Sources */,
 				C21980CF8184D4EE2C3E5D83 /* ActionPolicy.swift in Sources */,
 				EEAA0C0162FB6616B29B882F /* AdmissionRecovery.swift in Sources */,
+				A227BD40B8AF5DD67C4CCC74 /* AdvancedSettingsView.swift in Sources */,
 				29EF01F22534CC2B51FE0390 /* AppDelegate.swift in Sources */,
 				E916A4BC377A1C882DB198AD /* AppLauncherEditorSheet.swift in Sources */,
 				900370C44E733C22105F1B25 /* AppLauncherManager.swift in Sources */,
@@ -1492,6 +1497,7 @@
 				5AFC8BC241D0B3F109BA1E55 /* ActionDispatcher.swift in Sources */,
 				62E1AE9E9DA9CCE74C22F796 /* ActionPolicy.swift in Sources */,
 				B3B976E2663A1446F4D9A7A3 /* AdmissionRecovery.swift in Sources */,
+				4DF1281FF75CE2CFC8BABDAC /* AdvancedSettingsView.swift in Sources */,
 				4E6923775790B037E457881C /* AppDelegate.swift in Sources */,
 				75A6492EE898E858F5764C4D /* AppLauncherEditorSheet.swift in Sources */,
 				546A6FEDC646D3530194F2BC /* AppLauncherManager.swift in Sources */,
