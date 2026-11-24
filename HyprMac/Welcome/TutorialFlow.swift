@@ -144,8 +144,10 @@ final class StageSession: ObservableObject {
 
     /// The part of `close` that must also run when HyprMac quits.
     func cleanUp() {
-        if pause.pausedHere, !UserConfig.shared.enabled { UserConfig.shared.enabled = true }
+        // back on the user's own workspace first: resuming re-tiles the
+        // windows on screen, and they should be the user's, not the practice
         practice.end()
+        if pause.pausedHere, !UserConfig.shared.enabled { UserConfig.shared.enabled = true }
         removeEscMonitor()
     }
 

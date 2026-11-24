@@ -49,6 +49,16 @@ final class PracticeLessonsTests: XCTestCase {
         XCTAssertTrue(model.sent)
     }
 
+    // a window parked on another workspace drops out of the list entirely
+    func testSendCountsWhenAWindowLeavesThePracticeWorkspace() {
+        let model = WorkspacesLessonModel(practice: practice, config: config) { [unowned self] in self.clock }
+        windows([(1, 4, false), (2, 4, false), (3, 4, false)], on: 4)
+        model.evaluate()
+        windows([(2, 4, false), (3, 4, false)], on: 4)
+        model.recorder.note("moveToWorkspace")
+        XCTAssertTrue(model.sent)
+    }
+
     func testComingBackFirstDoesNotCount() {
         let model = WorkspacesLessonModel(practice: practice, config: config) { [unowned self] in self.clock }
         windows([], on: 4)

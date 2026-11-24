@@ -118,6 +118,11 @@ final class WorkspacesLessonModel: PracticeLessonModel {
     @Published var cameBack = false
     @Published var sent = false
 
+    /// practice windows last seen on the practice workspace. A window parked
+    /// on another workspace drops out of what HyprMac reports, so a send
+    /// shows as one of these going missing.
+    private var lastHome: Set<Int> = []
+
     var practiceWorkspace: Int { practice.practiceWorkspace ?? 1 }
     var otherWorkspace: Int { practice.otherWorkspace ?? (practiceWorkspace % 10) + 1 }
 
@@ -130,8 +135,14 @@ final class WorkspacesLessonModel: PracticeLessonModel {
         let switched = recorder.recent("switchWorkspace")
         if !wentAway, switched, practice.workspace == otherWorkspace { mark(self, \.wentAway) }
         if wentAway, !cameBack, switched, practice.workspace == practiceWorkspace { mark(self, \.cameBack) }
-        if !sent, recorder.recent("moveToWorkspace"),
-           practice.windows.values.contains(where: { $0.workspace == otherWorkspace }) { mark(self, \.sent) }
+        let home = Set(practice.windows.values.filter { $0.workspace == practiceWorkspace }.map(\.number))
+        if !sent, recorder.recent("moveToWorkspace") {
+            let arrived = practice.windows.values.contains { $0.workspace == otherWorkspace }
+            let left = practice.workspace == practiceWorkspace && !lastHome.isEmpty && home.count < lastHome.count
+            if arrived || left { mark(self, \.sent) }
+        }
+        // only while on the practice workspace: away, nothing is listed
+        if practice.workspace == practiceWorkspace { lastHome = home }
     }
 }
 

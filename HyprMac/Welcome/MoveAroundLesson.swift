@@ -172,6 +172,20 @@ struct LessonBar: View {
     // the next task: an inset accent bar, a colored icon and heavier text
     private func taskView(_ task: BarTask, current: Bool) -> some View {
         HStack(spacing: 8) {
+            taskLabel(task, current: current)
+            // outside the combined label, so VoiceOver and AX can press it
+            if let button = task.button {
+                StageSecondaryButton(button.title, action: button.action)
+            }
+        }
+        .padding(.leading, 4)
+        .padding(.trailing, 10)
+        .padding(.vertical, 7)
+        .background(TutorialStageColor.surface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+    }
+
+    private func taskLabel(_ task: BarTask, current: Bool) -> some View {
+        HStack(spacing: 8) {
             RoundedRectangle(cornerRadius: 1.5)
                 .fill(current ? TutorialStageColor.cyan : .clear)
                 .frame(width: 3, height: 16)
@@ -185,14 +199,7 @@ struct LessonBar: View {
             if let bind = task.bind {
                 StageChord(bind: bind, hyprKey: hyprKey)
             }
-            if let button = task.button {
-                StageSecondaryButton(button.title, action: button.action)
-            }
         }
-        .padding(.leading, 4)
-        .padding(.trailing, 10)
-        .padding(.vertical, 7)
-        .background(TutorialStageColor.surface, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityValue(task.done ? "done" : current ? "to do next" : "to do")
     }

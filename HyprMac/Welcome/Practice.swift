@@ -60,7 +60,9 @@ final class WindowManagerPracticeHost: PracticeHost {
 
     func practiceWindows(pid: pid_t) -> [PracticeWindowState] {
         guard let wm = windowManager, let workspaces = wm.workspaceManager else { return [] }
-        return wm.stateCache.cachedWindows.values.compactMap { window in
+        let found = wm.stateCache.cachedWindows.values.filter { $0.ownerPID == pid }
+        if found.isEmpty { hyprLog(.debug, .lifecycle, "tutorial practice: no cached windows for pid \(pid)") }
+        return found.compactMap { window in
             guard window.ownerPID == pid, let number = Self.number(of: window) else { return nil }
             return PracticeWindowState(number: number,
                                        workspace: workspaces.workspaceFor(window.windowID),
@@ -155,6 +157,12 @@ final class PracticeSession: ObservableObject {
 
     var isActive: Bool { observer != nil }
 
+    /// the helper this session opened, or any running copy of it
+    private var helperPID: pid_t? {
+        helper?.processIdentifier
+            ?? NSRunningApplication.runningApplications(withBundleIdentifier: Self.helperBundleID).first?.processIdentifier
+    }
+
     /// Move to an empty workspace and open the practice windows there.
     func begin(windows count: Int = 3) {
         guard !isActive else { return }
@@ -209,6 +217,8 @@ final class PracticeSession: ObservableObject {
         pendingFloat = nil
         helper?.terminate()
         helper = nil
+        // a copy the open call didn't hand back goes too
+        NSRunningApplication.runningApplications(withBundleIdentifier: Self.helperBundleID).forEach { $0.terminate() }
         host?.removeRules(bundleID: Self.helperBundleID)
         isRunning = false
         focused = nil
@@ -240,9 +250,14 @@ final class PracticeSession: ObservableObject {
         if search != keybindSearch { keybindSearch = search }
         let front = NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Self.helperBundleID
         if front != helperIsFront { helperIsFront = front }
-        guard let pid = helper?.processIdentifier else { return }
+        guard let pid = helperPID else { return }
         let states = Dictionary(host.practiceWindows(pid: pid).map { ($0.number, $0) }, uniquingKeysWith: { a, _ in a })
-        if states != windows { windows = states }
+        if states != windows {
+            windows = states
+            let line = states.values.sorted { $0.number < $1.number }
+                .map { "\($0.number):ws\($0.workspace.map(String.init) ?? "-")\($0.floating ? " floating" : "")" }
+            hyprLog(.notice, .lifecycle, "tutorial practice windows: \(line.joined(separator: ", "))")
+        }
         if let pending = pendingFloat {
             if host.floatPracticeWindow(pid: pid, number: pending.number) || Date() > pending.deadline {
                 pendingFloat = nil
