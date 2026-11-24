@@ -10,6 +10,10 @@ struct GeneralSettingsView: View {
     @ObservedObject var config = UserConfig.shared
     @AppStorage(UserConfig.menuBarStyleKey) private var menuBarStyle: MenuBarStyle = .full
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
+    /// Grant pressed and the drag panel up
+    @State private var waitingForGrant = false
+    /// The window this view sits in, for Grant to move and lower
+    @State private var hostWindow = HostWindow()
     @StateObject private var loginItem = LoginItemController()
     #if !HYPRMAC_DEBUG_VARIANT
     @Environment(\.updateController) private var updates
@@ -23,6 +27,7 @@ struct GeneralSettingsView: View {
             updatesCard
             helpCard
         }
+        .background(HostWindowReader(host: hostWindow))
         .onAppear {
             accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
             loginItem.refresh()
@@ -34,6 +39,22 @@ struct GeneralSettingsView: View {
     }
 
     // MARK: status
+
+    /// This window floats above System Settings, so while the drag panel is
+    /// up it drops to the normal level and waits beside System Settings. It
+    /// comes back to the front showing the result.
+    private func grantAccessibility() {
+        let window = hostWindow.window
+        window?.level = .normal
+        waitingForGrant = true
+        AccessibilityDragHelper.shared.start(beside: window) { _ in
+            waitingForGrant = false
+            accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
+            window?.level = Constants.interfaceWindowLevel
+            window?.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
 
     private var statusCard: some View {
         SettingsCard("Status") {
@@ -51,12 +72,14 @@ struct GeneralSettingsView: View {
                         tint: accessibilityGranted ? .hyprCyan : .hyprMagenta,
                         subtitle: accessibilityGranted
                             ? "Lets HyprMac move and resize windows."
+                            : waitingForGrant
+                            ? "Drag HyprMac from the panel into the list in System Settings."
                             : "Required. HyprMac can't move windows without it.",
                         divider: false) {
                 if accessibilityGranted {
                     SettingsStatusPill(text: "GRANTED")
                 } else {
-                    Button("Grant…") { AccessibilityManager.promptForAccessibility() }
+                    Button(waitingForGrant ? "Open Again" : "Grant", action: grantAccessibility)
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }
@@ -573,3 +596,30 @@ private struct UpdateSettingsPanel: View {
     }
 }
 #endif
+
+/// Holds this view's window without making SwiftUI redraw when it is set.
+private final class HostWindow {
+    weak var window: NSWindow?
+}
+
+/// Reports the window the settings view lands in.
+private struct HostWindowReader: NSViewRepresentable {
+    let host: HostWindow
+
+    func makeNSView(context: Context) -> ReaderView { ReaderView(host: host) }
+    func updateNSView(_ nsView: ReaderView, context: Context) {}
+
+    final class ReaderView: NSView {
+        let host: HostWindow
+        init(host: HostWindow) {
+            self.host = host
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError("not used") }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            host.window = window
+        }
+    }
+}
