@@ -172,7 +172,7 @@ struct SettingsSectionContent: View {
         case .workspaces:
             WorkspacesSettingsView()
         case .monitors:
-            MovedLayoutPanels(panels: [.monitors])
+            MonitorsSettingsView()
         case .mouse:
             MouseSettingsView()
         case .appearance:
@@ -230,7 +230,7 @@ enum SettingsSection: String, CaseIterable, Hashable {
     }
 
     // drawn in the navy style; the rest wait their turn
-    var isRedesigned: Bool { [.general, .tiling, .workspaces, .mouse, .advanced].contains(self) }
+    var isRedesigned: Bool { [.general, .tiling, .workspaces, .monitors, .mouse, .advanced].contains(self) }
 }
 
 // MARK: - search index
@@ -272,10 +272,10 @@ enum SettingsSearchIndex {
         .init(title: "Tile windows in the scratchpad", keywords: "scratchpad tile sent floating layer", section: .workspaces),
         .init(title: "Scratchpad margin", keywords: "scratchpad layer padding inset", section: .workspaces),
         // monitors
-        .init(title: "Tile windows on a display", keywords: "monitor display disable tiling screen", section: .monitors),
+        .init(title: "Tile windows on this display", keywords: "monitor display disable tiling screen", section: .monitors),
         .init(title: "Max splits", keywords: "monitor depth tiles dwindle", section: .monitors),
-        .init(title: "Edge padding", keywords: "monitor bar dock room side padding", section: .monitors),
-        .init(title: "Workspaces on each display", keywords: "monitor home workspace screen", section: .monitors),
+        .init(title: "Room for a bar or Dock", keywords: "monitor edge padding side sketchybar", section: .monitors),
+        .init(title: "Workspaces on this display", keywords: "monitor home workspace screen", section: .monitors),
         // mouse
         .init(title: "Focus follows mouse", keywords: "hover pointer focus", section: .mouse),
         .init(title: "Hover speed", keywords: "hover response rate hz pointer", section: .mouse),

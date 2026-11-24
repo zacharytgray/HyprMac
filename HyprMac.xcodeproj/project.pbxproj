@@ -82,6 +82,7 @@
 		28BD7C8DD76D02FBC83769F7 /* KeyBadgeViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97B8B2C68D268341AC86BF4B /* KeyBadgeViews.swift */; };
 		29D1197BE751C398FCF8059E /* FocusStateController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 224E549E7B5AB91A44E11544 /* FocusStateController.swift */; };
 		29EF01F22534CC2B51FE0390 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54EA610EADBFADA21DC625C3 /* AppDelegate.swift */; };
+		2A17CEDE41A4DBF10F37360C /* MonitorsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4B6B7421732AF9680D933A /* MonitorsSettingsView.swift */; };
 		2A235468195A778CCCA51C70 /* DefaultKeybindsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B23E3313247FD77173D35DD /* DefaultKeybindsTests.swift */; };
 		2B9592F87F7A2A89B8A9F7AE /* LayoutSnapshotStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D8522F7A5DE8D91C7F61FFF /* LayoutSnapshotStore.swift */; };
 		2E6C16379DEF137CFA2FF2D4 /* WindowAdmissionFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D21846E7D9A34CB1271FE64 /* WindowAdmissionFilter.swift */; };
@@ -423,6 +424,7 @@
 		F3955661BE1DE991B5D3743E /* AXNotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F441CA0A6C21E8CB97A3EB0D /* AXNotificationService.swift */; };
 		F39E492F77CC07DAB25E06A4 /* FloatingWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA7025F1F3F2A6B589919612 /* FloatingWindowController.swift */; };
 		F45A09BF9AB37D5D533FE8FB /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53410A7A5185F2585DFFFB0A /* HotkeyManager.swift */; };
+		F473CA5CE23F114D3ACCB554 /* MonitorsSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4B6B7421732AF9680D933A /* MonitorsSettingsView.swift */; };
 		F55FE608F36B5FFDC07D1A22 /* TilingSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 772FFAF897AAC136F605737C /* TilingSettingsView.swift */; };
 		F5F1411E9DBF79CC9668CFCD /* FocusResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FBC56CE152E1B13DCC947AD /* FocusResolver.swift */; };
 		F612CAF50D72D30E4681155F /* KeybindEditingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A1EEBDF9C15534D91607EC4 /* KeybindEditingTests.swift */; };
@@ -548,6 +550,7 @@
 		4DE4B38D2D91458BAC30BCFB /* ProbeFrame.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProbeFrame.swift; sourceTree = "<group>"; };
 		4EE53329CB188DC5E31735E1 /* PermissionsGate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsGate.swift; sourceTree = "<group>"; };
 		4F2117AD40136A8602F18F8B /* TiledDragTargetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDragTargetTests.swift; sourceTree = "<group>"; };
+		4F4B6B7421732AF9680D933A /* MonitorsSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonitorsSettingsView.swift; sourceTree = "<group>"; };
 		4F9E521E29996B4D2933B8D4 /* WindowRulesOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowRulesOverlay.swift; sourceTree = "<group>"; };
 		507967F2C119F4BD8E8201CF /* BSPTargetInsertionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BSPTargetInsertionTests.swift; sourceTree = "<group>"; };
 		508797A1BAD90161C6257D63 /* PhysicalCapsLockTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhysicalCapsLockTests.swift; sourceTree = "<group>"; };
@@ -896,6 +899,7 @@
 				17ABB08FA82CF475A82AB3C5 /* KeybindEditorViewModel.swift */,
 				0B9CF795BFCF2AE866D59470 /* KeybindsSettingsView.swift */,
 				F397ECC53628484AA2EBD5A2 /* KeyRecorderView.swift */,
+				4F4B6B7421732AF9680D933A /* MonitorsSettingsView.swift */,
 				41B90521323BC1649072DD16 /* MouseSettingsView.swift */,
 				E49CB059612127CA6F3E7766 /* SettingsComponents.swift */,
 				5627CA2ADE2AA85B3372EB81 /* SettingsView.swift */,
@@ -1420,6 +1424,7 @@
 				1CE8BFDB73C690ADABECD3C3 /* MenuBarView.swift in Sources */,
 				C59F755D984292EB1E5B57CD /* MinSizeMemory.swift in Sources */,
 				27F175436F430C8EC82672E1 /* MinimaRevalidation.swift in Sources */,
+				F473CA5CE23F114D3ACCB554 /* MonitorsSettingsView.swift in Sources */,
 				FCBBBB0B82ACE2C6BDD79036 /* MouseSettingsView.swift in Sources */,
 				8840D90CB5E41A31F8D27B3C /* MouseTrackingManager.swift in Sources */,
 				168E8536EF9F93533C18DFBE /* NewcomerRefusal.swift in Sources */,
@@ -1580,6 +1585,7 @@
 				0FC4AF3EF564386A97DBECD0 /* MenuBarView.swift in Sources */,
 				ACF3A959B5C8C979F7C9169F /* MinSizeMemory.swift in Sources */,
 				017A249199B7F80BF9F3D051 /* MinimaRevalidation.swift in Sources */,
+				2A17CEDE41A4DBF10F37360C /* MonitorsSettingsView.swift in Sources */,
 				D747D276615FACA5FE6BE2CE /* MouseSettingsView.swift in Sources */,
 				C1621C4239A1CD9F9E3A969D /* MouseTrackingManager.swift in Sources */,
 				BACD47346AB8972892D8DA10 /* NewcomerRefusal.swift in Sources */,
