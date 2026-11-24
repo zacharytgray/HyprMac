@@ -1111,6 +1111,22 @@ in a row with the floater above every tile it overlaps (`trigger=confirmed-on-to
 …`). A cover seen in between keeps it up, so show, hide, show within a few frames can't
 happen. Hover onto the panel and a focus of the floater go through the same confirm.
 
+**Overlapping floaters follow the real order.** `FloaterStandInPlan.chromeCuts` decides what
+each floater's outline and picture leave out: the tiles above it (unless it stands in) and
+every floater above it, cut by its rounded frame, so no corner of a back outline shows around
+a rounded front window. `refreshFloaterChrome` applies the cuts from one fresh window-list
+read and stacks the panels back to front: back picture, back outline, front picture, front
+outline. A stand-in never goes over a floater that is really on top; where a picture is cut
+for a real window in front, a click passes through to that window. A floater changing place
+(a press on it, a focus, Hypr+Shift+T, a hand-off) and the real floaters it overlaps cut each
+other until the window list shows where it landed (`floater order unsettled` / `settled` in
+the log), so no frame draws the old order or the new one ahead of the windows.
+
+**A switch takes the outgoing chrome down with its windows.** Right before the park writes,
+the outgoing outlines are dropped and the outgoing stand-ins go, flushed: the main thread
+stays busy until the switch ends, and an outline dropped without a flush stayed on the new
+workspace that long. The incoming kept pictures still go up at the reveal.
+
 **No window churn.** Each floater's panel is made once, the first time a tile overlaps it,
 stays ordered in at the floating level, and is shown and hidden with its alpha and
 `ignoresMouseEvents`. It goes for good only when the window stops being a managed floater
