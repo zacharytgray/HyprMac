@@ -98,7 +98,8 @@ struct HyprKeyLessonView: View {
             canContinue: model.isDone,
             exit: StageAction(title: "Skip Tutorial", shortcut: .cancelAction, action: onExit),
             skip: StageAction(title: "Skip Lesson", action: onNext),
-            next: StageAction(title: TutorialLesson.hyprKey.nextTitle, action: onNext)
+            next: StageAction(title: TutorialLesson.hyprKey.nextTitle, action: onNext),
+            bottomCard: AnyView(card)
         ) {
             VStack(spacing: 0) {
                 Text("\(keyName) is your Hypr key")
@@ -119,9 +120,6 @@ struct HyprKeyLessonView: View {
                 }
                 .padding(.top, 34)
 
-                LessonTaskCard(model: model, keyName: keyName)
-                    .padding(.top, 34)
-
                 if let guidance = HyprKeySystemGuidance.forKey(config.hyprKey) {
                     modifierKeysHelp(guidance)
                         .padding(.top, 14)
@@ -132,6 +130,31 @@ struct HyprKeyLessonView: View {
     }
 
     private var keyName: String { config.hyprKey.displayName }
+
+    // the same card as the practice lessons, at the bottom of the stage
+    private var card: LessonBar {
+        LessonBar(lesson: .hyprKey, why: "", tasks: tasks, hyprKey: config.hyprKey,
+                  accessory: model.teachesDoubleTap ? AnyView(capitals) : nil,
+                  nextIsDefault: true, onExit: onExit, onNext: onNext)
+    }
+
+    // live Caps Lock state, so the taps show at once
+    private var capitals: some View {
+        StageStatusChip(icon: model.capsLockOn ? "capslock.fill" : "capslock",
+                        label: model.capsLockOn ? "Capitals on" : "Capitals off",
+                        lit: model.capsLockOn)
+    }
+
+    private var tasks: [BarTask] {
+        var list = [BarTask(title: "Hold \(keyName)", bind: nil, done: model.heldOnce,
+                            detail: "Press it and keep it down for a moment.")]
+        guard model.teachesDoubleTap else { return list }
+        list.append(BarTask(title: "Tap \(keyName) twice to type in capitals", bind: nil, done: model.capsTurnedOn,
+                            detail: "Two quick taps, with no other key, turn Caps Lock on."))
+        list.append(BarTask(title: "Tap it twice again to turn capitals off", bind: nil, done: model.capsTurnedOff,
+                            detail: "The same two taps turn Caps Lock back off."))
+        return list
+    }
 
     private var glyph: String? {
         let badge = config.hyprKey.badgeLabel
@@ -287,39 +310,5 @@ private struct CapsLockCorner: View {
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.035)))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
-    }
-}
-
-// MARK: - task card
-
-/// The lesson's checklist. With double-tap off, the taps wait behind one
-/// row that turns it on.
-private struct LessonTaskCard: View {
-    @ObservedObject var model: HyprKeyLessonModel
-    let keyName: String
-
-    var body: some View {
-        TutorialTaskCard(tasks: tasks) {
-            if model.teachesDoubleTap {
-                // live Caps Lock state, so the taps show at once
-                StageStatusChip(icon: model.capsLockOn ? "capslock.fill" : "capslock",
-                                label: model.capsLockOn ? "Capitals on" : "Capitals off",
-                                lit: model.capsLockOn)
-            }
-        }
-    }
-
-    private var tasks: [TutorialTask] {
-        var list = [TutorialTask(title: "Hold \(keyName)",
-                                 detail: "Press it and keep it down for a moment.",
-                                 done: model.heldOnce)]
-        guard model.teachesDoubleTap else { return list }
-        list.append(TutorialTask(title: "Tap \(keyName) twice to type in capitals",
-                                 detail: "Two quick taps, with no other key, turn Caps Lock on.",
-                                 done: model.capsTurnedOn))
-        list.append(TutorialTask(title: "Tap it twice again to turn capitals off",
-                                 detail: "The same two taps turn Caps Lock back off.",
-                                 done: model.capsTurnedOff))
-        return list
     }
 }

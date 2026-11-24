@@ -115,6 +115,8 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
     var secondary: StageAction? = nil
     let next: StageAction
     var showsRail = true
+    /// a lesson card in place of the bottom bar, at the bottom center
+    var bottomCard: AnyView? = nil
     @ViewBuilder let content: Content
     @Environment(\.stageInsets) private var insets
 
@@ -123,7 +125,11 @@ struct TutorialStage<Step: StageStep, Content: View>: View {
             topBar
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            bottomBar
+            if let bottomCard {
+                bottomCard.padding(.bottom, 16)
+            } else {
+                bottomBar
+            }
         }
         // the navy runs under the Dock; the bars and the step stay clear of it
         .padding(.leading, insets.leading)
@@ -549,6 +555,25 @@ final class StageInsets: ObservableObject {
     }
 }
 
+/// The lesson card in its panel: reports its size as it changes, with
+/// clear room around it for the shadow.
+struct CardHost<Content: View>: View {
+    static var shadowRoom: CGFloat { 28 }
+    let content: Content
+    let onSize: (CGSize) -> Void
+
+    var body: some View {
+        content
+            .fixedSize(horizontal: false, vertical: true)
+            .background(GeometryReader { geo in
+                Color.clear
+                    .onAppear { onSize(geo.size) }
+                    .onChange(of: geo.size) { onSize($0) }
+            })
+            .padding(Self.shadowRoom)
+    }
+}
+
 private struct StageRoot<Content: View>: View {
     @ObservedObject var insets: StageInsets
     let content: Content
@@ -647,37 +672,50 @@ final class TutorialWindowController {
         }
     }
 
-    /// The lesson bar along the bottom edge, above the practice windows. A
-    /// non-activating panel, so keys keep going to the focused window.
-    func showBar<V: View>(_ view: V) {
+    /// The lesson card at the bottom center of the visible frame, above the
+    /// practice windows. A non-activating panel, so keys keep going to the
+    /// focused window. `onHeight` hears the card's height as it changes, so
+    /// the practice tiles can make room for it.
+    func showBar<V: View>(_ view: V, onHeight: @escaping (CGFloat) -> Void = { _ in }) {
         hideBar()
         guard let screen = window?.screen ?? NSScreen.main else { return }
-        let hosting = NSHostingView(rootView: view)
         let panel = NSPanel(contentRect: .zero,
                             styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
+        let hosting = NSHostingView(rootView: CardHost(content: view) { [weak self, weak panel] size in
+            guard let self, let panel, let screen = self.window?.screen ?? NSScreen.main else { return }
+            self.barSize = size
+            self.place(panel, on: screen)
+            onHeight(size.height)
+        })
         panel.contentView = hosting
-        place(panel, on: screen)
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.level = Constants.interfaceWindowLevel
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.appearance = NSAppearance(named: .darkAqua)
+        let fit = hosting.fittingSize
+        barSize = CGSize(width: fit.width - 2 * CardHost<V>.shadowRoom, height: fit.height - 2 * CardHost<V>.shadowRoom)
+        place(panel, on: screen)
         panel.orderFrontRegardless()
         bar = panel
+        onHeight(barSize.height)
     }
 
-    /// Along the bottom of the visible frame, so the Dock on any side, or
-    /// its auto-hide strip, never covers it.
+    /// the card's size, with room around it for its shadow
+    private var barSize: CGSize = .zero
+
+    /// Bottom center of the visible frame, so the Dock on any side, or its
+    /// auto-hide strip, never covers it.
     private func place(_ panel: NSPanel, on screen: NSScreen) {
-        guard let hosting = panel.contentView else { return }
         let visible = screen.visibleFrame
-        let width = visible.width - 32
-        hosting.frame = NSRect(x: 0, y: 0, width: width, height: 10)
-        let height = hosting.fittingSize.height
-        panel.setFrame(NSRect(x: visible.minX + 16, y: visible.minY + 16, width: width, height: height), display: true)
+        let room = CardHost<EmptyView>.shadowRoom
+        let size = CGSize(width: barSize.width + 2 * room, height: barSize.height + 2 * room)
+        panel.setFrame(NSRect(x: visible.midX - size.width / 2,
+                              y: visible.minY + 16 - room,
+                              width: size.width, height: size.height), display: true)
     }
 
     func hideBar() {

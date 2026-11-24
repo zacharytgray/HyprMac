@@ -201,7 +201,7 @@ final class StageSession: ObservableObject {
             controller.showBar(LessonBar(lesson: lesson,
                                          why: "This lesson runs on practice windows, never on yours.",
                                          tasks: [], hyprKey: UserConfig.shared.hyprKey, blocked: reason,
-                                         onExit: exit, onNext: next))
+                                         onExit: exit, onNext: next), onHeight: cardHeight)
             return
         }
         switch screen {
@@ -209,27 +209,29 @@ final class StageSession: ObservableObject {
         case .onboarding(.hyprKey): hyprKeyHold.start()
         case .tutorial(.moveAround):
             moveAround.start()
-            controller.showBar(MoveAroundLessonBar(model: moveAround, onExit: exit, onNext: next))
+            controller.showBar(MoveAroundLessonBar(model: moveAround, onExit: exit, onNext: next), onHeight: cardHeight)
         case .tutorial(.workspaces):
             workspaces.start()
-            controller.showBar(WorkspacesLessonBar(model: workspaces, onExit: exit, onNext: next))
+            controller.showBar(WorkspacesLessonBar(model: workspaces, onExit: exit, onNext: next), onHeight: cardHeight)
         case .tutorial(.floating):
             floating.start()
-            controller.showBar(FloatingLessonBar(model: floating, onExit: exit, onNext: next))
+            controller.showBar(FloatingLessonBar(model: floating, onExit: exit, onNext: next), onHeight: cardHeight)
         case .tutorial(.fixWindow):
             fixWindow.start()
-            controller.showBar(FixWindowLessonBar(model: fixWindow, onExit: exit, onNext: next))
+            controller.showBar(FixWindowLessonBar(model: fixWindow, onExit: exit, onNext: next), onHeight: cardHeight)
         case .tutorial(.menuBarAndKeys):
             menuBarAndKeys.start()
-            controller.showBar(MenuBarAndKeysLessonBar(model: menuBarAndKeys, onExit: exit, onNext: next))
+            controller.showBar(MenuBarAndKeysLessonBar(model: menuBarAndKeys, onExit: exit, onNext: next), onHeight: cardHeight)
         case .tutorial(.pause):
             pause.start()
-            controller.showBar(PauseLessonBar(model: pause, onExit: exit, onNext: next))
+            controller.showBar(PauseLessonBar(model: pause, onExit: exit, onNext: next), onHeight: cardHeight)
         default: break
         }
     }
 
     private var exit: () -> Void { { [weak self] in self?.close() } }
+    /// the card's height, so the practice tiles end above it
+    private var cardHeight: (CGFloat) -> Void { { [weak self] in self?.practice.setCardHeight($0) } }
     private var next: () -> Void { { [weak self] in self?.nextLesson() } }
 
     private func stopScreen() {

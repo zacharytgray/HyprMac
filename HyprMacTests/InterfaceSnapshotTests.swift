@@ -378,6 +378,68 @@ final class InterfaceSnapshotTests: XCTestCase {
             MakeItYoursView(onBack: {}, onSkipTutorial: {}, onTakeTutorial: {}), left), size: size)
     }
 
+    // the compact lesson card on every lesson, dark, with the Dock at the
+    // bottom; lesson 5 again with the Dock on the left. the practice tiles
+    // end above the card
+    func testRenderLessonCards() throws {
+        let config = UserConfig.shared
+        let saved = (config.hyprKey, config.enabled, config.focusFollowsMouse, config.doubleTapHyprTogglesCapsLock)
+        defer { (config.hyprKey, config.enabled, config.focusFollowsMouse, config.doubleTapHyprTogglesCapsLock) = saved }
+        config.hyprKey = .capsLock
+        config.doubleTapHyprTogglesCapsLock = true
+        config.focusFollowsMouse = true
+        let size = CGSize(width: 1512, height: 982)
+        let practice = PracticeSession(host: nil)
+        practice.setWorkspacesForTesting(practice: 2, other: 3)
+
+        func room<Bar: View>(_ bar: Bar) -> CGFloat {
+            PracticeSession.cardInset(forCardHeight: NSHostingView(rootView: bar).fittingSize.height)
+        }
+        func shot<Bar: View>(_ name: String, focused: Int = 1, tiled: [Int] = [1, 2, 3], floaters: [Int] = [],
+                             dock: PracticeSceneMock<Bar>.Dock = .bottom, _ bar: Bar) throws {
+            try render(name, PracticeSceneMock(focused: focused, tiled: tiled, floaters: floaters,
+                                               cardRoom: room(bar), dock: dock) { bar }, size: size)
+        }
+
+        let one = HyprKeyLessonModel()
+        one.heldOnce = true
+        try render("card-lesson-1",
+                   HyprKeyLessonView(model: one, onExit: {}, onNext: {})
+                       .environment(\.stageInsets, EdgeInsets(top: 25, leading: 0,
+                                                              bottom: PracticeSceneMock<EmptyView>.dockSize, trailing: 0))
+                       .overlay(alignment: .bottom) {
+                           RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.white.opacity(0.22))
+                               .frame(width: 760, height: PracticeSceneMock<EmptyView>.dockSize - 10).padding(.bottom, 5)
+                       },
+                   size: size)
+
+        let move = MoveAroundLessonModel(practice: practice)
+        move.focusedAway = true
+        try shot("card-lesson-2", focused: 2, MoveAroundLessonBar(model: move, onExit: {}, onNext: {}))
+
+        let workspaces = WorkspacesLessonModel(practice: practice)
+        try shot("card-lesson-3", WorkspacesLessonBar(model: workspaces, displayCount: 1, onExit: {}, onNext: {}))
+
+        let floating = FloatingLessonModel(practice: practice)
+        floating.floatedTwo = true
+        try shot("card-lesson-4", focused: 2, tiled: [3], floaters: [1, 2],
+                 FloatingLessonBar(model: floating, onExit: {}, onNext: {}))
+
+        let fix = FixWindowLessonModel(practice: practice)
+        try shot("card-lesson-5", focused: 4, tiled: [1, 2, 3], floaters: [4],
+                 FixWindowLessonBar(model: fix, onExit: {}, onNext: {}))
+        try shot("card-lesson-5-dock-left", focused: 4, tiled: [1, 2, 3], floaters: [4], dock: .left,
+                 FixWindowLessonBar(model: fix, onExit: {}, onNext: {}))
+
+        let keys = MenuBarAndKeysLessonModel(practice: practice)
+        keys.jumped = true
+        try shot("card-lesson-6", MenuBarAndKeysLessonBar(model: keys, onExit: {}, onNext: {}))
+
+        let pause = PauseLessonModel(practice: practice)
+        pause.paused = true
+        try shot("card-lesson-7", PauseLessonBar(model: pause, onExit: {}, onNext: {}))
+    }
+
     func testRenderKeybindChips() throws {
         UserConfig.shared.hyprKey = .capsLock
         let binds = [
@@ -565,10 +627,16 @@ final class InterfaceSnapshotTests: XCTestCase {
 // stand-in for the practice helper's windows, tiled as HyprMac would: the
 // same look as HyprMacPractice, the config's gaps, corner radius, marks and dim
 private struct PracticeSceneMock<Bar: View>: View {
+    enum Dock { case bottom, left }
     let focused: Int
     var tiled: [Int] = [1, 2, 3]
     var floaters: [Int] = []
+    /// the room the practice workspace keeps under its tiles for the card
+    var cardRoom: CGFloat = 0
+    var dock: Dock? = nil
     @ViewBuilder let bar: Bar
+
+    static var dockSize: CGFloat { 72 }
     private let config = UserConfig.shared
 
     private let tints: [Color] = [
@@ -581,19 +649,21 @@ private struct PracticeSceneMock<Bar: View>: View {
         GeometryReader { geo in
             let pad = config.outerPadding, gap = config.gapSize
             let top: CGFloat = 25 + pad
-            let w = geo.size.width - pad * 2 - gap
-            let h = geo.size.height - top - pad
+            let dockBottom: CGFloat = dock == .bottom ? Self.dockSize : 0
+            let dockLeft: CGFloat = dock == .left ? Self.dockSize : 0
+            let w = geo.size.width - dockLeft - pad * 2 - gap
+            let h = geo.size.height - top - pad - dockBottom - cardRoom
             let rightX = pad + w * 0.5 + gap
             let halfH = (h - gap) / 2
             let frames: [CGRect] = {
                 switch tiled.count {
                 case 0: return []
-                case 1: return [CGRect(x: pad, y: top, width: w + gap, height: h)]
-                case 2: return [CGRect(x: pad, y: top, width: w * 0.5, height: h),
-                                CGRect(x: rightX, y: top, width: w * 0.5, height: h)]
-                default: return [CGRect(x: pad, y: top, width: w * 0.5, height: h),
-                                 CGRect(x: rightX, y: top, width: w * 0.5, height: halfH),
-                                 CGRect(x: rightX, y: top + halfH + gap, width: w * 0.5, height: halfH)]
+                case 1: return [CGRect(x: dockLeft + pad, y: top, width: w + gap, height: h)]
+                case 2: return [CGRect(x: dockLeft + pad, y: top, width: w * 0.5, height: h),
+                                CGRect(x: dockLeft + rightX, y: top, width: w * 0.5, height: h)]
+                default: return [CGRect(x: dockLeft + pad, y: top, width: w * 0.5, height: h),
+                                 CGRect(x: dockLeft + rightX, y: top, width: w * 0.5, height: halfH),
+                                 CGRect(x: dockLeft + rightX, y: top + halfH + gap, width: w * 0.5, height: halfH)]
                 }
             }()
             ZStack(alignment: .topLeading) {
@@ -605,9 +675,24 @@ private struct PracticeSceneMock<Bar: View>: View {
                 ForEach(Array(floaters.enumerated()), id: \.offset) { index, number in
                     floater(number, index: index, in: geo.size)
                 }
-                VStack { Spacer(); bar }.padding(16)
+                // the card at the bottom center of the visible frame
+                VStack { Spacer(); HStack { Spacer(); bar; Spacer() } }
+                    .padding(.bottom, 16 + dockBottom)
+                    .padding(.leading, dockLeft)
+                if let dock { dockMock(dock, in: geo.size) }
             }
         }
+    }
+
+    // a stand-in Dock: a glass strip where the real one sits
+    private func dockMock(_ dock: Dock, in screen: CGSize) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        let long: CGFloat = 760, short = Self.dockSize - 10
+        return shape.fill(Color.white.opacity(0.22))
+            .overlay(shape.strokeBorder(Color.white.opacity(0.3), lineWidth: 1))
+            .frame(width: dock == .bottom ? long : short, height: dock == .bottom ? short : long * 0.7)
+            .offset(x: dock == .bottom ? (screen.width - long) / 2 : 5,
+                    y: dock == .bottom ? screen.height - short - 5 : (screen.height - long * 0.7) / 2)
     }
 
     private func floater(_ number: Int, index: Int, in screen: CGSize) -> some View {
