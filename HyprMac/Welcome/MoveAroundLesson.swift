@@ -25,7 +25,7 @@ final class MoveAroundLessonModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
     private var observer: NSObjectProtocol?
 
-    init(practice: PracticeSession, window: TimeInterval = 1.5, now: @escaping () -> Date = Date.init) {
+    init(practice: PracticeSession, window: TimeInterval = 2.5, now: @escaping () -> Date = Date.init) {
         self.practice = practice
         self.window = window
         self.now = now
@@ -198,7 +198,8 @@ struct MoveAroundLessonBar: View {
                         done: model.focusedAway),
                 BarTask(title: "Focus back", bind: bind { $0 == .focusDirection(.left) },
                         done: model.focusedBack),
-                BarTask(title: "Swap two windows", bind: bind { $0 == .swapDirection(.left) },
+                // from window 1 on the left, the swap goes right
+                BarTask(title: "Swap two windows", bind: bind { $0 == .swapDirection(.right) },
                         done: model.swapped),
             ],
             hyprKey: config.hyprKey,

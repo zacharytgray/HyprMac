@@ -72,6 +72,9 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
             window.makeKeyAndOrderFront(nil)
             windows.append(window)
         }
+        // lessons start on window 1, the left tile, so "the next window" is
+        // to its right
+        windows.first?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         // quit with HyprMac, even if it crashed
