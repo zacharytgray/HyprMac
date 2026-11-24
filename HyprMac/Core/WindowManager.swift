@@ -2464,6 +2464,8 @@ class WindowManager {
     /// Takes the event's click location so a fast post-click drag can't
     /// move the hit test off the clicked window, and the window-list hit at
     /// that point, which knows when a tile has buried a floater.
+    /// When the click changes focus it also redraws the border and dim on
+    /// the clicked window.
     private func syncFocusTrackerToCursor(at mouseNS: NSPoint, hit: WindowStacking.Hit) {
         let cgPoint = displayManager.flippedY(mouseNS)
 
@@ -2483,8 +2485,10 @@ class WindowManager {
                                                  stackHit: stackHit) else { return }
         let changed = focusController.lastFocusedID != target.id
         focusController.recordFocus(target.id, reason: target.reason)
-        // nothing else redraws the border and dim after a click when FFM is off
-        if changed, let window = stateCache.cachedWindows[target.id] {
+        // the mouse-up redraw skips workspaces without a visible floater.
+        // a click outside the scratchpad layer dismisses it, so no chrome there.
+        if changed, !scratchpad.isVisible || scratchpad.isSummoned(target.id),
+           let window = stateCache.cachedWindows[target.id] {
             updateFocusBorder(for: window)
         }
     }
