@@ -1302,6 +1302,18 @@ class WindowManager {
             }
         }
 
+        // a floater whose reveal is still pending sits parked on a workspace
+        // that shows. it goes back to its saved frame, unless it reads on
+        // screen already
+        for wid in workspaceManager.pendingRevealFloaters(floating: stateCache.floatingWindowIDs) {
+            guard let window = allWindows.first(where: { $0.windowID == wid }),
+                  let saved = workspaceManager.savedFloatingFrame(for: wid) else { continue }
+            if let frame = window.frame, displayManager.screens.contains(where: {
+                frame.isSubstantiallyVisible(on: displayManager.cgRect(for: $0))
+            }) { continue }
+            window.placeFloating(saved, reason: "stop, reveal still pending", displayManager: displayManager)
+        }
+
         hyprLog(.debug, .lifecycle, "all windows restored to visible positions")
     }
 

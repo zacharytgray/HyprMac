@@ -508,6 +508,16 @@ class WorkspaceManager {
         }
     }
 
+    /// Floaters on a workspace that shows that still hold a saved frame: a
+    /// reveal kept it because the app could not say whether the window is in
+    /// full screen, so the window is still parked. A reveal that went through
+    /// consumed the frame.
+    func pendingRevealFloaters(floating: Set<CGWindowID>) -> [CGWindowID] {
+        windowWorkspaces.filter { id, ws in
+            floating.contains(id) && isWorkspaceVisible(ws) && savedFloatingFrames[id] != nil
+        }.map(\.key).sorted()
+    }
+
     /// Peek without consuming — the scratchpad computes carry geometry
     /// from the intended frame instead of a laggy AX read.
     func savedFloatingFrame(for id: CGWindowID) -> CGRect? {

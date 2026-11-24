@@ -476,7 +476,11 @@ The switch focuses, in order: the window the caller asked for
 last left (`departedFocusedFloater`), the maximized tile, the first tile, then
 any window. The floater comes back in front, the way the user left it. A tile
 focused when the workspace was left clears that entry, so the floaters tuck
-behind it as usual.
+behind it as usual. A floater whose reveal kept its saved frame (its app could
+not say whether it is in full screen) is still parked, so the switch skips it
+and takes the usual pick. `stop()` puts such a floater back on its saved frame
+(`WorkspaceManager.pendingRevealFloaters`), the same as a window on a hidden
+workspace.
 
 ## Ownership rules
 

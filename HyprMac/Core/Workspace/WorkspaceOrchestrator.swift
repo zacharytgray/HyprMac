@@ -528,9 +528,12 @@ final class WorkspaceOrchestrator {
         // any floating window before giving up. only warp+hide if truly empty.
         let newWorkspaceWindows = allWindows.filter { result.toShow.contains($0.windowID) }
         let preferred = newWorkspaceWindows.first { $0.windowID == preferredWindowID }
-        // the floater focused when this workspace was left, still floating here
+        // the floater focused when this workspace was left, still floating
+        // here, and back on screen: a reveal that kept its saved frame (its
+        // app could not say whether it is in full screen) left it parked
         let departed = departedFocusedFloater.removeValue(forKey: number).flatMap { id in
-            newWorkspaceWindows.first { $0.windowID == id && stateCache.floatingWindowIDs.contains(id) }
+            newWorkspaceWindows.first { $0.windowID == id && stateCache.floatingWindowIDs.contains(id)
+                && workspaceManager.savedFloatingFrame(for: id) == nil }
         }
         let maximized = newWorkspaceWindows.first { $0.windowID == maximizedHere }
         let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }

@@ -199,6 +199,26 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertTrue(orchestrator.departedFocusedFloater.isEmpty, "used once")
     }
 
+    // the floater's reveal kept its saved frame (its app could not say
+    // whether it is in full screen), so it is still parked: the return must
+    // not focus a window off screen, and takes the usual pick
+    func testComingBackDoesNotFocusADepartedFloaterThatIsStillParked() {
+        let tile = shownWindow(id: 7334, on: visible, floating: false)
+        let floater = shownWindow(id: 7335, on: visible, floating: true)
+        orchestrator.allWindows = { [floater, tile] }
+        focus.recordFocus(floater.windowID, reason: "test")
+        orchestrator.switchWorkspace(hidden)
+        XCTAssertNotNil(workspaceManager.savedFloatingFrame(for: floater.windowID), "parked with its frame")
+
+        workspaceManager.isInNativeFullScreen = { $0.windowID == floater.windowID ? nil : false }
+        orchestrator.switchWorkspace(visible)
+
+        XCTAssertNotNil(workspaceManager.savedFloatingFrame(for: floater.windowID), "reveal deferred")
+        XCTAssertEqual(focus.lastFocusedID, tile.windowID)
+        XCTAssertEqual(workspaceManager.pendingRevealFloaters(floating: stateCache.floatingWindowIDs),
+                       [floater.windowID], "a quit now puts it back")
+    }
+
     // a tile had focus when the user left: the floater tucking behind the
     // focused tile is how floaters work, so the usual pick stands
     func testComingBackWithATileFocusedKeepsTheUsualPick() {
