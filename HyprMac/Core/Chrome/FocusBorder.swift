@@ -25,15 +25,20 @@ enum FloaterOutlineGeometry {
         (glowRadius * 3).rounded(.up)
     }
 
-    /// how far the panel reaches past the window on each side
+    /// How far the panel reaches past the window on each side: half the
+    /// stroke plus the glow room, up to a whole point. A window in whole
+    /// points then gets a panel in whole points, which AppKit keeps on any
+    /// display. A fractional panel was moved onto the pixel grid, and on a
+    /// 1x screen that left the stroke a quarter point outward on each side.
     static func panelExpansion(borderWidth: CGFloat, glowRadius: CGFloat) -> CGFloat {
-        borderWidth / 2 + glowRoom(glowRadius: glowRadius)
+        (borderWidth / 2 + glowRoom(glowRadius: glowRadius)).rounded(.up)
     }
 
-    /// the outline layer's frame in the panel's content bounds
-    static func outlineFrame(inPanelBounds bounds: CGRect, glowRadius: CGFloat) -> CGRect {
-        let room = glowRoom(glowRadius: glowRadius)
-        return bounds.insetBy(dx: room, dy: room)
+    /// the outline layer's frame in the panel's content bounds: half the
+    /// stroke past the window edge
+    static func outlineFrame(inPanelBounds bounds: CGRect, borderWidth: CGFloat, glowRadius: CGFloat) -> CGRect {
+        let inset = panelExpansion(borderWidth: borderWidth, glowRadius: glowRadius) - borderWidth / 2
+        return bounds.insetBy(dx: inset, dy: inset)
     }
 
     /// The ring a `CALayer` border paints: `borderWidth` inside `bounds`,
@@ -1095,14 +1100,15 @@ class FocusBorder {
         glow.frame = content.bounds
     }
 
-    /// Fill the floater panel with its glow view and inset the outline by
-    /// the glow room, so the stroke stays centered on the window edge.
+    /// Fill the floater panel with its glow view and inset the outline so
+    /// the stroke stays centered on the window edge.
     private func positionFloaterViews(_ border: BorderPanel) {
         positionGlowView(border.glowView, in: border.panel)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         border.outline.frame = FloaterOutlineGeometry.outlineFrame(
-            inPanelBounds: border.glowView.bounds, glowRadius: Tuning.floatingGlowRadius)
+            inPanelBounds: border.glowView.bounds, borderWidth: Tuning.floatingBorderWidth,
+            glowRadius: Tuning.floatingGlowRadius)
         stampOutlineShape(border.outline, cornerRadius: border.outline.cornerRadius)
         CATransaction.commit()
     }

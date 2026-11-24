@@ -53,13 +53,13 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "circle.lefthalf.filled",
             title: "Cleaner Dim on Switch",
-            description: "The old workspace's dim no longer fades over the new one's windows when you switch.",
+            description: "The old workspace's dim no longer fades over the new one's windows when you switch. The new windows' dim still fades in.",
             credit: "dex157"
         ),
         WhatsNewFeature(
             icon: "contextualmenu.and.cursorarrow",
             title: "Pop-Ups Stay Open",
-            description: "Moving the pointer into an app's pop-up, like Outlook's color picker, no longer closes it.",
+            description: "Moving the pointer into an app's pop-up, like Outlook's color picker, no longer closes it. A window that gets its title a moment late gets hover focus again.",
             credit: "kenmencher"
         ),
         WhatsNewFeature(
@@ -71,7 +71,18 @@ enum WhatsNewFeatures {
         WhatsNewFeature(
             icon: "arrow.up.left.and.arrow.down.right",
             title: "Full Screen Stays Put",
-            description: "A switch no longer takes a busy app's window out of full screen."
+            description: "A switch, a retile or the tutorial's cleanup no longer takes a busy app's window out of full screen."
+        ),
+        WhatsNewFeature(
+            icon: "rectangle.dashed",
+            title: "Outlines Leave With Their Windows",
+            description: "A floating window's outline goes with it when you switch away, instead of lingering over the next workspace.",
+            tint: .magenta
+        ),
+        WhatsNewFeature(
+            icon: "keyboard",
+            title: "Caps Lock on Every Keyboard",
+            description: "A keyboard macOS finds a moment after HyprMac starts gets the Hypr key too, with no replugging."
         ),
     ]
 }

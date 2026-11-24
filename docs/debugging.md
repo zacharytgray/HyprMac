@@ -1374,8 +1374,10 @@ An app that refuses them logs, after five tries:
 ```
 
 To measure, sample the window list from outside: HyprMac's floater panel
-sits 9.75 pt outside the window on every side (`floaterPanelExpansion`), so
-its bounds minus that should equal the window's. On the hub, 2026-11-23, with
+sits 10 pt outside the window on every side (`floaterPanelExpansion`: half the
+1.5 pt stroke plus 9 pt of glow room, up to a whole point so AppKit never snaps
+the panel to the pixel grid), so its bounds minus that should equal the
+window's. The outline layer sits 9.25 pt in, 0.75 pt past the window edge. On the hub, 2026-11-23, with
 a test window: an app's own jump and another tool's AX write were followed
 within one 25–40 ms sample (before: not until the next unrelated refresh,
 seconds later), and the outline was off the window for 0 samples during a

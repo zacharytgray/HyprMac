@@ -106,16 +106,24 @@ final class CornerMarkGeometryTests: XCTestCase {
 
 final class FloaterOutlineGeometryTests: XCTestCase {
     func testThePanelGrowsByTheGlowRoomAndTheOutlineStaysPut() {
-        // 3 pt blur: 9 pt of room past the outline, plus half the stroke
+        // 3 pt blur: 9 pt of room past the outline, plus half the stroke,
+        // up to a whole point so the panel needs no pixel snapping
         XCTAssertEqual(FloaterOutlineGeometry.glowRoom(glowRadius: 3), 9)
-        XCTAssertEqual(FloaterOutlineGeometry.panelExpansion(borderWidth: 1.5, glowRadius: 3), 9.75)
-        XCTAssertEqual(FocusBorder.floaterPanelExpansion, 9.75)
+        XCTAssertEqual(FloaterOutlineGeometry.panelExpansion(borderWidth: 1.5, glowRadius: 3), 10)
+        XCTAssertEqual(FocusBorder.floaterPanelExpansion, 10)
 
         // window at 100,100 400x300: the outline still reaches 0.75 pt past it
         let e = FocusBorder.floaterPanelExpansion
         let panel = CGRect(x: 0, y: 0, width: 400 + e * 2, height: 300 + e * 2)
-        let outline = FloaterOutlineGeometry.outlineFrame(inPanelBounds: panel, glowRadius: 3)
-        XCTAssertEqual(outline, CGRect(x: 9, y: 9, width: 401.5, height: 301.5))
+        let outline = FloaterOutlineGeometry.outlineFrame(inPanelBounds: panel, borderWidth: 1.5, glowRadius: 3)
+        XCTAssertEqual(outline, CGRect(x: 9.25, y: 9.25, width: 401.5, height: 301.5))
+    }
+
+    // a window in whole points gets a panel in whole points: nothing for
+    // AppKit to snap on a 1x or a 2x screen
+    func testAWholePointWindowGetsAWholePointPanel() {
+        let e = FocusBorder.floaterPanelExpansion
+        XCTAssertEqual(e, e.rounded())
     }
 
     func testTheGlowPathIsTheStrokesRing() {
@@ -171,7 +179,7 @@ final class FloaterOutlinePanelTests: XCTestCase {
         let e = FocusBorder.floaterPanelExpansion
         XCTAssertEqual(o.panel, NSRect(x: 100 - e, y: 1080 - 400 - e, width: 400 + e * 2, height: 300 + e * 2))
         // the stroke sits where it always did: 0.75 pt past the window edge
-        XCTAssertEqual(o.outline, CGRect(x: 9, y: 9, width: 401.5, height: 301.5))
+        XCTAssertEqual(o.outline, CGRect(x: 9.25, y: 9.25, width: 401.5, height: 301.5))
         XCTAssertEqual(o.cornerRadius, WindowCornerRadius.resolve(for: 42) + 0.75)
         XCTAssertEqual(o.glowRadius, 3)
         XCTAssertEqual(o.glowOpacity, 0.45)

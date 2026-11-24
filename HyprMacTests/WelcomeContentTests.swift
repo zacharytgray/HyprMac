@@ -6,7 +6,7 @@ final class WelcomeContentTests: XCTestCase {
     func testWhatsNewDescribesOnlyThe0290Changes() {
         let features = WhatsNewFeatures.current
 
-        XCTAssertEqual(features.map(\.title), ["Floating Windows Stay in Front", "Resize From the Gap", "Cleaner Dim on Switch", "Pop-Ups Stay Open", "Floaters Come Back in Front", "Full Screen Stays Put"])
+        XCTAssertEqual(features.map(\.title), ["Floating Windows Stay in Front", "Resize From the Gap", "Cleaner Dim on Switch", "Pop-Ups Stay Open", "Floaters Come Back in Front", "Full Screen Stays Put", "Outlines Leave With Their Windows", "Caps Lock on Every Keyboard"])
         XCTAssertEqual(features.compactMap(\.credit), ["dex157", "dex157", "kenmencher"])
         // only the top row has a button: Turn On for floaters in front
         XCTAssertEqual(features.compactMap { $0.action?.title }, ["Turn On"])

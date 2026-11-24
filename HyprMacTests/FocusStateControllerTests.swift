@@ -131,10 +131,15 @@ final class FocusBorderCornerRadiusTests: XCTestCase {
         let frame = CGRect(x: 100, y: 100, width: 400, height: 300)
 
         border.show(around: frame, windowID: 41)
-        border.updateFloatingBorders([42: frame], color: NSColor.systemPink.cgColor)
         border.flashInfo(message: "→ scratchpad", around: frame, windowID: 43)
 
         XCTAssertNil(border.trackedWindowID)
+        XCTAssertEqual(border.visibleOwnedPanelCount, 0)
+
+        // a floater's outline follows the floater marks, not the focus
+        // border (testCornersModeOutlinesFloatersWithTheBorderOff)
+        border.setFloaterMarks(.none)
+        border.updateFloatingBorders([42: frame], color: NSColor.systemPink.cgColor)
         XCTAssertEqual(border.visibleOwnedPanelCount, 0)
     }
 
