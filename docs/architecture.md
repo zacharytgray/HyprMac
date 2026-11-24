@@ -1406,8 +1406,11 @@ menu bar, Hypr+K's Tutorial button and Settings → General's Replay the
 tutorial, all through `AppDelegate.showTutorial`. It runs on the HyprMac
 Practice helper's windows (`Contents/Helpers`) and leaves the user's own
 windows alone. Practice starts only on an empty workspace of the pointer's
-screen, and lesson 3 sends to a second empty one; without them, lessons 2
+screen that tiles at least four windows (Max splits, and the display tiling
+at all), and only once the switch there has landed. Lesson 3 sends to a
+second empty workspace, picked when lesson 3 opens. Without them, lessons 2
 to 5 show why in place of their tasks, and each later lesson tries again.
+Esc ends the tutorial from the stage or a practice window.
 Lesson 7 records whether tiling was on when it opened. Only an on-to-off
 change during it is its own, kept in local defaults
 (`tutorialPausedTiling`, never the synced config). Ending the tutorial,
