@@ -16,11 +16,12 @@ final class DoubleTapDefaultTests: XCTestCase {
         try? FileManager.default.removeItem(at: dir)
     }
 
-    private func load() -> UserConfig {
+    private func load(freshInstall: Bool = true) -> UserConfig {
         let store = ConfigStore(localConfigURL: configURL,
                                 monitorConfigURL: dir.appendingPathComponent("monitors.json"),
                                 iCloudRootURL: dir.appendingPathComponent("icloud"))
-        return UserConfig(store: store, iCloudSyncEnabled: false, showDockIcon: false, repairsOnLaunch: false)
+        return UserConfig(store: store, iCloudSyncEnabled: false, showDockIcon: false, repairsOnLaunch: false,
+                          freshInstall: freshInstall)
     }
 
     func testNewInstallStartsOnAndSavesIt() throws {
@@ -28,6 +29,35 @@ final class DoubleTapDefaultTests: XCTestCase {
         XCTAssertTrue(config.doubleTapHyprTogglesCapsLock)
         config.save()
         XCTAssertTrue(load().doubleTapHyprTogglesCapsLock)
+    }
+
+    // an upgrader who never changed a setting has no config.json, but has
+    // the earlier launch's defaults: their Caps Lock stays as it was
+    func testAnUpgraderWithNoConfigFileKeepsItOff() throws {
+        XCTAssertFalse(load(freshInstall: false).doubleTapHyprTogglesCapsLock)
+    }
+
+    // ...and both resets still turn it on, as on a new install
+    func testResetsTurnItOnForAnUpgraderToo() throws {
+        let config = load(freshInstall: false)
+        config.resetToDefaults()
+        XCTAssertTrue(config.doubleTapHyprTogglesCapsLock)
+        let other = load(freshInstall: false)
+        other.doubleTapHyprTogglesCapsLock = false
+        other.resetKeybindsToDefaults()
+        XCTAssertTrue(other.doubleTapHyprTogglesCapsLock)
+    }
+
+    func testFreshInstallMeansNoEarlierLaunchInDefaults() throws {
+        let suite = "DoubleTapDefaultTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(RuntimeVariant.looksLikeFreshInstall(standard: defaults, debugApp: false))
+        defaults.set("0.27.1", forKey: "lastSeenVersion")
+        XCTAssertFalse(RuntimeVariant.looksLikeFreshInstall(standard: defaults, debugApp: false))
+        defaults.removeObject(forKey: "lastSeenVersion")
+        defaults.set(true, forKey: "hasSeenOnboarding")
+        XCTAssertFalse(RuntimeVariant.looksLikeFreshInstall(standard: defaults, debugApp: false))
     }
 
     func testConfigFromBeforeTheKeyStaysOff() throws {

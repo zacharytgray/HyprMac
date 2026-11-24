@@ -317,7 +317,8 @@ class UserConfig: ObservableObject {
     init(store: ConfigStore = ConfigStore(),
          iCloudSyncEnabled: Bool = RuntimeVariant.inheritedBool(forKey: "iCloudSyncEnabled"),
          showDockIcon: Bool = RuntimeVariant.inheritedBool(forKey: UserConfig.showDockIconKey),
-         repairsOnLaunch: Bool = true) {
+         repairsOnLaunch: Bool = true,
+         freshInstall: Bool = RuntimeVariant.looksLikeFreshInstall()) {
         self.store = store
         self.iCloudSyncEnabled = iCloudSyncEnabled && !store.isLinkedByAnotherTool
         self.showDockIcon = showDockIcon
@@ -378,7 +379,11 @@ class UserConfig: ObservableObject {
             self.enabled = UserConfigDefaults.enabled
             self.focusFollowsMouse = UserConfigDefaults.focusFollowsMouse
             self.keepCursorOnWorkspaceSwitch = UserConfigDefaults.keepCursorOnWorkspaceSwitch
-            self.doubleTapHyprTogglesCapsLock = UserConfigDefaults.freshInstallDoubleTapHyprTogglesCapsLock
+            // no config.json: a new install, or an upgrader who never changed
+            // a setting and so never had one. only the new install gets it on
+            self.doubleTapHyprTogglesCapsLock = freshInstall
+                ? UserConfigDefaults.freshInstallDoubleTapHyprTogglesCapsLock
+                : UserConfigDefaults.doubleTapHyprTogglesCapsLock
             self.animateFocusIndicator = UserConfigDefaults.animateFocusIndicator
             self.mouseHoverPollHz = UserConfigDefaults.mouseHoverPollHz
             self.hyprKey = UserConfigDefaults.hyprKey

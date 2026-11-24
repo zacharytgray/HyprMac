@@ -66,6 +66,15 @@ enum RuntimeVariant {
         hasSeenOnboarding || lastVersion != nil || hadConfigFile
     }
 
+    /// No sign in defaults of an earlier launch. A missing config.json
+    /// alone isn't one: it's only written on a change, so an upgrader who
+    /// never changed a setting has none.
+    static func looksLikeFreshInstall(standard: UserDefaults = .standard,
+                                      debugApp: Bool = isDebugApp) -> Bool {
+        !inheritedBool(forKey: "hasSeenOnboarding", standard: standard, debugApp: debugApp)
+            && standard.string(forKey: "lastSeenVersion") == nil
+    }
+
     static func shouldShowWelcome(alreadyOnboarded: Bool,
                                   lastVersion: String?,
                                   currentVersion: String?,
