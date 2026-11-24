@@ -2481,7 +2481,12 @@ class WindowManager {
                                                  tiledPositions: stateCache.tiledPositions,
                                                  recoveryIDs: admissionRecovery.pendingWindowIDs,
                                                  stackHit: stackHit) else { return }
+        let changed = focusController.lastFocusedID != target.id
         focusController.recordFocus(target.id, reason: target.reason)
+        // nothing else redraws the border and dim after a click when FFM is off
+        if changed, let window = stateCache.cachedWindows[target.id] {
+            updateFocusBorder(for: window)
+        }
     }
 
     /// Engine/workspace/focus half of forgetting an id. Drops engine
