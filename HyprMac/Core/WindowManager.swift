@@ -2273,6 +2273,14 @@ class WindowManager {
 
     // MARK: - the tutorial's desk
 
+    /// The tutorial ended: HyprMac's own panels it may have opened close
+    /// with it (the Hypr+K list, the Hypr+I rules, the workspace overview).
+    func closeOwnPanels() {
+        keybindOverlay.close()
+        windowRulesOverlay.close(restoringFocus: false)
+        workspaceOverview.close()
+    }
+
     /// The tutorial is about to start: write down the user's desk, as an
     /// update relaunch does, so every way out of the tutorial puts it back.
     func snapshotDeskForTutorial() {

@@ -38,6 +38,8 @@ protocol PracticeHost: AnyObject {
     func setBottomInset(_ inset: CGFloat?, workspace: Int)
     /// Hypr+I on `bundleID`'s windows starts on its app tile row; nil stops it
     func preselectTileRule(for bundleID: String?)
+    /// close the Hypr+K list, the Hypr+I rules and the workspace overview
+    func closeHyprMacPanels()
 }
 
 extension PracticeHost {
@@ -47,6 +49,7 @@ extension PracticeHost {
     func removeRules(bundleID: String) {}
     func setBottomInset(_ inset: CGFloat?, workspace: Int) {}
     func preselectTileRule(for bundleID: String?) {}
+    func closeHyprMacPanels() {}
 }
 
 final class WindowManagerPracticeHost: PracticeHost {
@@ -116,6 +119,10 @@ final class WindowManagerPracticeHost: PracticeHost {
         windowManager?.windowRulesOverlay.preselectsTileFor = bundleID
     }
 
+    func closeHyprMacPanels() {
+        windowManager?.closeOwnPanels()
+    }
+
     /// "Practice 3" → 3
     private static func number(of window: HyprWindow) -> Int? {
         guard let title = window.title, title.hasPrefix("Practice ") else { return nil }
@@ -143,6 +150,7 @@ final class LatePracticeHost: PracticeHost {
     func removeRules(bundleID: String) { host.removeRules(bundleID: bundleID) }
     func setBottomInset(_ inset: CGFloat?, workspace: Int) { host.setBottomInset(inset, workspace: workspace) }
     func preselectTileRule(for bundleID: String?) { host.preselectTileRule(for: bundleID) }
+    func closeHyprMacPanels() { host.closeHyprMacPanels() }
 }
 
 /// The helper's process: NSRunningApplication in the app, a fake in tests.
@@ -319,6 +327,10 @@ final class PracticeSession: ObservableObject {
         DistributedNotificationCenter.default().postNotificationName(
             PracticeSession.commandNotification, object: nil, userInfo: ["open": number], deliverImmediately: true)
     }
+
+    /// HyprMac's own panels a lesson may have opened (Hypr+K, Hypr+I, the
+    /// overview) close when the tutorial does.
+    func closeHyprMacPanels() { host?.closeHyprMacPanels() }
 
     /// Lesson 5 only: Hypr+I on a practice window starts on "Always tile
     /// HyprMac Practice", so ↩ does the lesson's step.

@@ -17,6 +17,8 @@ final class MoveAroundLessonTests: XCTestCase {
         func setBottomInset(_ inset: CGFloat?, workspace: Int) { insets[workspace] = inset }
         var preselected: String?
         func preselectTileRule(for bundleID: String?) { preselected = bundleID }
+        var panelsClosed = 0
+        func closeHyprMacPanels() { panelsClosed += 1 }
         func currentWorkspace() -> Int? { current }
         func emptyWorkspaces() -> [Int] { empty }
         func switchToWorkspace(_ number: Int) {
@@ -393,14 +395,26 @@ final class MoveAroundLessonTests: XCTestCase {
             stage.resumeDefaults = try resumeDefaults()
             stage.practice.begin()
             var practiceOverAtClose: Bool?
-            stage.onClose = { practiceOverAtClose = !stage.practice.isActive && host.current == 1 }
+            var panelsClosedAtClose = 0
+            stage.onClose = {
+                practiceOverAtClose = !stage.practice.isActive && host.current == 1
+                panelsClosedAtClose = host.panelsClosed
+            }
             switch exit {
             case "done": stage.finishTutorial()
             case "skip": stage.leaveEarly()
             default: stage.escPressed(); stage.leaveEarly()
             }
             XCTAssertEqual(practiceOverAtClose, true, exit)
+            XCTAssertGreaterThan(panelsClosedAtClose, 0, "Hypr+K or Hypr+I left open closes before the desk restore: \(exit)")
         }
+        // HyprMac quitting mid-lesson runs the same cleanup
+        let host = FakeHost()
+        let stage = StageSession.tutorial(practiceHost: host, resume: .menuBarAndKeys)
+        stage.resumeDefaults = try resumeDefaults()
+        stage.noteLeaving()
+        stage.cleanUp()
+        XCTAssertGreaterThan(host.panelsClosed, 0)
     }
 
     // the line under the step is that step's own, not the lesson's first

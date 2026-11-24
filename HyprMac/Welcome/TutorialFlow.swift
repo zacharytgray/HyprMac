@@ -221,6 +221,9 @@ final class StageSession: ObservableObject {
 
     /// The part of `close` that must also run when HyprMac quits.
     func cleanUp() {
+        // the Hypr+K list or the Hypr+I rules a lesson opened go first, before
+        // the practice ends and the desk goes back
+        practice.closeHyprMacPanels()
         // back on the user's own workspace first: resuming re-tiles the
         // windows on screen, and they should be the user's, not the practice
         practice.end()
