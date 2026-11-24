@@ -212,6 +212,7 @@
 		7786D1CCB8F91E102903C66B /* HyprMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16BDB1D1140B2A75DE224930 /* HyprMark.swift */; };
 		7793CE22F8C896C0ABE2C306 /* OverlayPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 314479E8E141C0265258525E /* OverlayPreview.swift */; };
 		78F04ED8784D47C00CF40356 /* StateDumpFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB8DE37F0110F3E975EE8BB9 /* StateDumpFormatterTests.swift */; };
+		7A2CB4B0C3033E5D674FA838 /* StandInPressTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F2D048E5BA649348D6C49C /* StandInPressTap.swift */; };
 		7A3D3C9A4903361B3B292C7F /* BSPTree.swift in Sources */ = {isa = PBXBuildFile; fileRef = DBF9449D559067A61BBA8394 /* BSPTree.swift */; };
 		7A55BA1F7EFA4F7177CE7F1E /* StateDump.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07F2DB0FB7A2441364DD7616 /* StateDump.swift */; };
 		7A66C97726B539669E56D8DD /* DwindleLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26E5C6E3F03B5BD56771D741 /* DwindleLayoutTests.swift */; };
@@ -439,6 +440,7 @@
 		F06BAB6ADAA9C707132CC4D4 /* Practice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E07D23BE161589444BB90A /* Practice.swift */; };
 		F085027AE374E48959DEEB48 /* BSPNode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D14B540996EBFC8839339556 /* BSPNode.swift */; };
 		F0CFEA06EED537EFEBB7D3B4 /* MinimaRevalidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D16EBA7D483B97532F32D8BE /* MinimaRevalidationTests.swift */; };
+		F0DEAFCB9B15CF5EE279DFF0 /* StandInPressTap.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F2D048E5BA649348D6C49C /* StandInPressTap.swift */; };
 		F10860BD19A5F31447601D3C /* StatusExportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF11879906CFAC20DB1166F /* StatusExportTests.swift */; };
 		F138E48253F73312CA570322 /* HyprMark.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16BDB1D1140B2A75DE224930 /* HyprMark.swift */; };
 		F1A48B9952EDF68FE436A6AF /* ConfigStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE062173D513A1A60A3E704D /* ConfigStore.swift */; };
@@ -574,6 +576,7 @@
 		23A8208062F6237E946E82EF /* TabSwitchPairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabSwitchPairing.swift; sourceTree = "<group>"; };
 		23F311BB92C52C2C1C3195E9 /* TiledDriftMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledDriftMonitorTests.swift; sourceTree = "<group>"; };
 		24E5597A91D2868D1D6DA3AD /* RetileAllPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RetileAllPlannerTests.swift; sourceTree = "<group>"; };
+		24F2D048E5BA649348D6C49C /* StandInPressTap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandInPressTap.swift; sourceTree = "<group>"; };
 		255663CB55BC64C1ACCE94C5 /* TiledFocusRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TiledFocusRouter.swift; sourceTree = "<group>"; };
 		267A55058037FE2910A9DBB5 /* SingleInstanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleInstanceTests.swift; sourceTree = "<group>"; };
 		269859599A7D70B7780BE2F2 /* GeometryLedger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GeometryLedger.swift; sourceTree = "<group>"; };
@@ -1311,6 +1314,7 @@
 				40D33713C81721E9590DB1A5 /* KeyRemapper.swift */,
 				10694681DB82FF2083F59195 /* MouseTrackingManager.swift */,
 				EEDEB39CC2B8A579809780E2 /* PhysicalKeyMonitor.swift */,
+				24F2D048E5BA649348D6C49C /* StandInPressTap.swift */,
 				A194058EE23D3120273CA8EA /* SwitchCoalescer.swift */,
 				1CE7C605576D58BB77A314D0 /* TiledDragController.swift */,
 				8665ECFAEE8AA274A2CD6635 /* TiledDragEvent.swift */,
@@ -1597,6 +1601,7 @@
 				B6C40B2479058C399AD8153B /* SettingsView.swift in Sources */,
 				F88CDEEAA0BE7493465412AF /* SingleInstance.swift in Sources */,
 				AFDFFD00A9BBCC444E730DEB /* SkyLightFunctions.swift in Sources */,
+				F0DEAFCB9B15CF5EE279DFF0 /* StandInPressTap.swift in Sources */,
 				81B6D88FB529B805CC664324 /* StateDump.swift in Sources */,
 				C9E5DAE2D8BD6D6C0985D5E1 /* StatusExport.swift in Sources */,
 				83DB4D81A39D7AE50E5AA639 /* SuppressionRegistry.swift in Sources */,
@@ -1776,6 +1781,7 @@
 				EF60D6F6EC01ADB59E9FDEB6 /* SettingsView.swift in Sources */,
 				C0AC3C2494704A27A5435C60 /* SingleInstance.swift in Sources */,
 				44D934B1E2A8BF1D2B4FE0DB /* SkyLightFunctions.swift in Sources */,
+				7A2CB4B0C3033E5D674FA838 /* StandInPressTap.swift in Sources */,
 				7A55BA1F7EFA4F7177CE7F1E /* StateDump.swift in Sources */,
 				4FC8C5B7AAFD12D0F4ADCFF0 /* StatusExport.swift in Sources */,
 				532AEB9F865B40C952760ECF /* SuppressionRegistry.swift in Sources */,

@@ -38,6 +38,8 @@ final class WorkspaceOrchestrator {
     var currentFocusedWindow: () -> HyprWindow? = { nil }
     var actualFocusedWindow: () -> HyprWindow? = { nil }
     var focusTransferredWindow: (HyprWindow) -> Void = { $0.focusWithoutRaise() }
+    /// right before a switch focuses (and raises) its pick
+    var willFocusSwitchPick: (HyprWindow) -> Void = { _ in }
     var warpToWindow: (HyprWindow) -> Void = { _ in }
     var warpCursor: (CGPoint) -> Void = { _ in }
     /// Settings: leave the cursor alone on a workspace switch.
@@ -435,6 +437,7 @@ final class WorkspaceOrchestrator {
                 ?? visibleWindows.first(where: { $0.windowID == maximizedHere })
                 ?? visibleWindows.first(where: { !stateCache.floatingWindowIDs.contains($0.windowID) })
                 ?? visibleWindows.first {
+                willFocusSwitchPick(best)
                 best.focus()
                 warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
                      placedFrame: preferredFrame, workspace: number, screen: result.screen,
@@ -539,6 +542,7 @@ final class WorkspaceOrchestrator {
         let maximized = newWorkspaceWindows.first { $0.windowID == maximizedHere }
         let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }
         if let best = preferred ?? departed ?? maximized ?? tiled ?? newWorkspaceWindows.first {
+            willFocusSwitchPick(best)
             best.focus()
             warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
                  placedFrame: preferredFrame, workspace: number, screen: result.screen,

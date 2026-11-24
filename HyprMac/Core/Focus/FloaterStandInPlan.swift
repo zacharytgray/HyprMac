@@ -22,6 +22,19 @@ enum FloaterStandInMode: String, Equatable {
         return captureGranted && !forcesCard ? .live : .card
     }
 
+    /// Debug builds only: keep the old z-order repairs (raise behind, raise
+    /// before focus, lift over floaters) running with the switch on, to
+    /// compare. They are off with the switch on otherwise.
+    static let debugKeepRepairsKey = "floaterStandInKeepRepairs"
+
+    static func debugKeepsRepairs(_ defaults: UserDefaults = .standard) -> Bool {
+        #if DEBUG
+        return defaults.bool(forKey: debugKeepRepairsKey)
+        #else
+        return false
+        #endif
+    }
+
     static func debugForcesCard(_ defaults: UserDefaults = .standard) -> Bool {
         #if DEBUG
         return defaults.string(forKey: debugLookKey)?.lowercased() == "card"

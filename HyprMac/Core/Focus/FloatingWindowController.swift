@@ -314,6 +314,9 @@ final class FloatingWindowController {
     var updatePositionCache: (() -> Void)?
     var isMenuTracking: () -> Bool = { false }
     var isScratchpadVisible: () -> Bool = { false }
+    /// "Keep floating windows in front" is on: its stand-ins keep covered
+    /// floaters visible, so the raises below would only churn the stack
+    var repairsSuspended: () -> Bool = { false }
     // the Never tile list and the float and tile rules, read live so a
     // settings change applies at once
     var excludedBundleIDs: () -> Set<String> = { [] }
@@ -723,6 +726,7 @@ final class FloatingWindowController {
     /// mouse press. With anything else in front it stays a plain raise, which
     /// can't take focus from an app HyprMac doesn't manage.
     func raiseBehind() {
+        guard !repairsSuspended() else { return }
         guard !isRaising else { return }
         // scratchpad is quasimodal: it owns the level-0 stack (scrim below,
         // members raised above) and the post-raise focus restore would
@@ -895,6 +899,7 @@ final class FloatingWindowController {
     /// over the window taking focus. Skipped work is picked up by `raiseBehind`
     /// after the activation.
     func raiseFloatersBeforeFocus(_ target: HyprWindow) {
+        guard !repairsSuspended() else { return }
         guard !stateCache.floatingWindowIDs.contains(target.windowID),
               !isScratchpadVisible(), !isMenuTracking(), !isMouseDown(),
               stateCache.floatingWindowIDs.contains(where: workspaceManager.isWindowVisible),
@@ -922,6 +927,7 @@ final class FloatingWindowController {
     /// was fronted by the focus, so the AXRaise lands. An app can take a moment to
     /// come to the front, so it checks again once if focus hasn't moved on.
     func liftOverFloaters(_ target: HyprWindow, retrying: Bool = true) {
+        guard !repairsSuspended() else { return }
         guard !stateCache.floatingWindowIDs.contains(target.windowID),
               !isScratchpadVisible(), !isMenuTracking(),
               focusController.lastFocusedID == target.windowID else { return }

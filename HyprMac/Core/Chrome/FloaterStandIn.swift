@@ -8,7 +8,12 @@
 // Two looks: `card` (app icon and title, no permission) and `live` (a
 // ScreenCaptureKit picture, needs Screen Recording). A live floater keeps
 // its stream running while any tile overlaps it, so the picture is ready
-// the moment a click buries it.
+// the moment a click buries it, and keeps its last picture after that.
+//
+// No window churn: each floater's panel is made once, stays ordered in at
+// the floating level, and is shown and hidden with its alpha. A panel goes
+// up before a tile can rise (`showPredicted`) and comes down only once the
+// window list says the real floater is on top twice in a row.
 
 import Cocoa
 import ScreenCaptureKit
@@ -29,6 +34,16 @@ final class FloaterStandIn {
         case click, scroll, rightClick = "right click"
     }
 
+    /// Where the real floater is, from a fresh window-list read.
+    enum CoverState {
+        /// a tile is stacked above it where they overlap
+        case covered
+        /// above every tile it overlaps
+        case onTop
+        /// not on screen
+        case gone
+    }
+
     // wired by WindowManager
     var primaryScreenHeight: () -> CGFloat = { NSScreen.screens.first?.frame.height ?? 0 }
     /// the floater outline's panel, so the stand-in goes just below it
@@ -38,13 +53,14 @@ final class FloaterStandIn {
     var readTitle: (CGWindowID) -> String? = { _ in nil }
     /// gives the real floater focus and raises it. false when it is gone
     var focusFloater: (CGWindowID) -> Bool = { _ in false }
-    /// a fresh window-list read: does a tile still cover the floater
-    var isCovered: (CGWindowID) -> Bool = { _ in false }
+    var coverState: (CGWindowID) -> CoverState = { _ in .gone }
     var handOffFinished: () -> Void = {}
-    /// the mouse button is down: a panel shown on the press stays up
+    /// the mouse button is down: a panel shown on a press stays up
     var isPressDown: () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 }
     /// a press hold ran out: refresh so a wrong guess comes down
     var holdEnded: () -> Void = {}
+    /// a panel went up or down, or one got a picture
+    var panelsChanged: () -> Void = {}
     /// the Settings switch, "Keep floating windows in front"
     var isOn: () -> Bool = { false }
     var forcesCard: () -> Bool = { FloaterStandInMode.debugForcesCard() }
@@ -52,14 +68,20 @@ final class FloaterStandIn {
     var requestCapture: () -> Bool = { CGRequestScreenCaptureAccess() }
 
     /// how long a hand-off waits for the real window to come up
-    static let handOffTimeout: CFAbsoluteTime = 0.3
-    static let handOffPoll: TimeInterval = 0.01
-    /// the least time a panel shown on a press stays up, for a click shorter
-    /// than the clicked app's raise
+    static let handOffTimeout: CFAbsoluteTime = 0.4
+    /// one display frame
+    static let poll: TimeInterval = 1.0 / 60
+    /// the least time a panel shown ahead of a raise stays up, for a click
+    /// shorter than the clicked app's raise
     static let pressHold: CFAbsoluteTime = 0.25
     /// after the panel goes, before the click is passed on, so the window
     /// server routes it to the real window and not to the panel
     static let passOnDelay: TimeInterval = 0.02
+    /// window-list reads in a row that must show the real floater on top
+    /// before a panel comes down. one read can be a frame early
+    static let confirmReads = 2
+    /// polls before a confirm gives up and leaves the panel to the next refresh
+    static let confirmLimit = 30
     /// how often a refresh asks again whether Screen Recording is granted
     static let captureRecheck: CFAbsoluteTime = 2
 
@@ -71,9 +93,11 @@ final class FloaterStandIn {
         // a stream that failed is not retried before this
         var streamRetryAfter: CFAbsoluteTime = 0
         var shown = false
-        // shown on a press, before the tile rose. a refresh during the press
-        // still sees the floater in front and must not take it down
+        // shown ahead of a raise. a refresh in between still sees the
+        // floater in front and must not take it down
         var heldUntil: CFAbsoluteTime?
+        // a confirm loop is reading the window list before a hide
+        var confirming = false
         init(floater: Floater, panel: StandInPanel, view: StandInView) {
             self.floater = floater
             self.panel = panel
@@ -118,14 +142,25 @@ final class FloaterStandIn {
         captureCheckedAt = -.infinity
     }
 
-    /// Bring the panels and streams in line with the stack: a panel on each
-    /// covered floater, a stream on each one a tile overlaps.
+    /// Panels that are down but could go up with a real picture at once
+    /// (any card in the card look), by floater, with their window numbers.
+    func warmPanels() -> [CGWindowID: Int] {
+        var result: [CGWindowID: Int] = [:]
+        for (id, entry) in entries where !entry.shown && id != handOff?.id && hasLook(entry) {
+            result[id] = entry.panel.windowNumber
+        }
+        return result
+    }
+
+    /// Bring the panels and streams in line with the stack: a panel up on
+    /// each covered floater, a stream on each one a tile overlaps. `known`
+    /// is every managed floater; a panel for anything else goes for good.
     func apply(covered: Set<CGWindowID>, atRisk: Set<CGWindowID>,
-               floaters: [CGWindowID: Floater]) {
+               floaters: [CGWindowID: Floater], known: Set<CGWindowID>) {
         mainThreadOnly()
         let current = currentMode()
         guard current != .off else { return }
-        let live = current == .live
+        for (id, entry) in entries where !known.contains(id) { destroy(entry, reason: "not a floater") }
         for id in covered.union(atRisk) {
             guard let floater = floaters[id] else { continue }
             entry(for: floater)
@@ -134,13 +169,14 @@ final class FloaterStandIn {
         for entry in entries.values where entry.floater.id != handOff?.id {
             if covered.contains(entry.floater.id) {
                 entry.heldUntil = nil
-                show(entry, reason: "covered")
+                show(entry, trigger: "covered")
             } else if entry.shown {
                 if let held = entry.heldUntil, now < held || isPressDown() { continue }
                 entry.heldUntil = nil
-                hide(entry, reason: "uncovered")
+                confirmThenHide(entry, trigger: "refresh")
             }
         }
+        let live = current == .live
         for (id, entry) in entries {
             if live, atRisk.contains(id) || covered.contains(id) {
                 startStream(entry)
@@ -148,26 +184,25 @@ final class FloaterStandIn {
                 stopStream(entry, reason: live ? "no overlap" : "not live")
             }
         }
-        for (id, entry) in entries where !entry.shown && entry.stream == nil && id != handOff?.id {
-            entry.panel.orderOut(nil)
-            entries[id] = nil
-        }
     }
 
-    /// A press on a tile is about to bury these. Up on the mouse-down; the
-    /// restack refresh after the mouse-up corrects it.
-    func showPredicted(_ ids: Set<CGWindowID>, floaters: [CGWindowID: Floater], tile: CGWindowID) {
+    /// A tile is about to rise over these: up now, before the raise. With
+    /// `requireWarm` only panels that have a real picture go up; a guess is
+    /// worth making only when it can't show the wrong thing.
+    func showPredicted(_ ids: Set<CGWindowID>, floaters: [CGWindowID: Floater], trigger: String,
+                       requireWarm: Bool = false) {
         mainThreadOnly()
         guard currentMode() != .off else { return }
         var held = false
         for id in ids where id != handOff?.id {
             guard let floater = floaters[id] else { continue }
             let entry = entry(for: floater)
+            if requireWarm, !hasLook(entry) { continue }
             if !entry.shown {
                 entry.heldUntil = CFAbsoluteTimeGetCurrent() + Self.pressHold
                 held = true
             }
-            show(entry, reason: "press on tile \(tile)")
+            show(entry, trigger: trigger)
         }
         guard held else { return }
         // the mouse-up's refresh decides; this one catches a guess that was
@@ -177,27 +212,40 @@ final class FloaterStandIn {
         }
     }
 
+    /// The real floater is being brought up (hover onto the panel, a focus
+    /// of the floater). The panel stays until the window list shows it on top.
+    func reveal(_ id: CGWindowID, trigger: String) {
+        mainThreadOnly()
+        guard let entry = entries[id], entry.shown else { return }
+        entry.heldUntil = nil
+        confirmThenHide(entry, trigger: trigger)
+    }
+
+    /// Down now, for a reason that leaves nothing to confirm.
     func hide(_ id: CGWindowID, reason: String) {
         mainThreadOnly()
-        guard let entry = entries[id] else { return }
-        if entry.shown { hide(entry, reason: reason) }
+        guard let entry = entries[id], entry.shown else { return }
+        hide(entry, trigger: reason)
     }
 
-    /// Order out every panel. Streams stay; the next refresh stops the ones
-    /// no longer needed.
+    /// Every panel down. Panels and streams stay; the next refresh stops
+    /// the streams no longer needed.
     func hideAll(reason: String) {
         mainThreadOnly()
-        for entry in entries.values where entry.shown { hide(entry, reason: reason) }
+        for entry in entries.values where entry.shown { hide(entry, trigger: reason) }
     }
 
-    /// Order out every panel and stop every stream.
+    /// The floater is gone for good: its panel and stream go.
+    func forget(_ id: CGWindowID, reason: String) {
+        mainThreadOnly()
+        guard let entry = entries[id] else { return }
+        destroy(entry, reason: reason)
+    }
+
+    /// Every panel and stream gone.
     func reset(reason: String) {
         mainThreadOnly()
-        for entry in entries.values {
-            if entry.shown { hide(entry, reason: reason) }
-            if entry.stream != nil { stopStream(entry, reason: reason) }
-            entry.panel.orderOut(nil)
-        }
+        for entry in entries.values { destroy(entry, reason: reason) }
         entries.removeAll()
         handOff = nil
     }
@@ -208,17 +256,28 @@ final class FloaterStandIn {
         guard let entry = entries[id], entry.floater.frame != frame else { return }
         let resized = entry.floater.frame.size != frame.size
         entry.floater.frame = frame
-        if entry.shown { place(entry) }
+        place(entry)
         if resized { entry.stream?.resize(to: frame.size, scale: scale(for: frame)) }
     }
 
-    /// The floater whose panel is under `point` (CG), nil when none.
+    /// The floater whose panel is up under `point` (CG), nil when none.
     func floater(at point: CGPoint) -> CGWindowID? {
         entries.values.first { $0.shown && $0.floater.id != handOff?.id && $0.floater.frame.contains(point) }?
             .floater.id
     }
 
+    /// The window numbers the mouse tap raised that are not up here. The
+    /// tap set the window server's alpha behind AppKit's back.
+    func panelsDown(among windowNumbers: [Int]) -> [Int] {
+        let up = Set(entries.values.filter(\.shown).map(\.panel.windowNumber))
+        return windowNumbers.filter { !up.contains($0) }
+    }
+
     // MARK: - panels
+
+    private func hasLook(_ entry: Entry) -> Bool {
+        mode == .card || entry.view.hasPicture
+    }
 
     @discardableResult
     private func entry(for floater: Floater) -> Entry {
@@ -235,32 +294,50 @@ final class FloaterStandIn {
         let id = floater.id
         view.onTouch = { [weak self] touch, point in self?.touched(id, touch: touch, at: point) }
         entries[id] = entry
+        // ordered in once, invisible; shown and hidden with its alpha
+        place(entry)
+        panel.alphaValue = 0
+        panel.ignoresMouseEvents = true
+        panel.orderFrontRegardless()
+        if let outline = outlineWindowNumber(id) { panel.order(.below, relativeTo: outline) }
         return entry
     }
 
-    private func show(_ entry: Entry, reason: String) {
+    private func show(_ entry: Entry, trigger: String) {
         place(entry)
         if !entry.shown { entry.floater.title = readTitle(entry.floater.id) }
         entry.view.showCard(icon: NSRunningApplication(processIdentifier: entry.floater.pid)?.icon,
                             title: entry.floater.title, tint: outlineColor(),
                             cornerRadius: WindowCornerRadius.resolve(for: entry.floater.id))
-        entry.view.setLive(mode == .live && entry.stream != nil)
+        entry.view.setLive(mode == .live)
         guard !entry.shown else { return }
         entry.shown = true
         if let outline = outlineWindowNumber(entry.floater.id) {
             entry.panel.order(.below, relativeTo: outline)
-        } else {
-            entry.panel.orderFrontRegardless()
         }
-        hyprLog(.notice, .floating, "stand-in shown wid=\(entry.floater.id) reason=\(reason) "
+        entry.panel.ignoresMouseEvents = false
+        entry.panel.alphaValue = 1
+        // on screen before the app that is about to raise gets its turn
+        CATransaction.flush()
+        hyprLog(.notice, .floating, "stand-in shown wid=\(entry.floater.id) trigger=\(trigger) "
                 + "look=\(entry.view.showsLivePicture ? "live" : "card") frame=\(Self.describe(entry.floater.frame))")
+        panelsChanged()
     }
 
-    private func hide(_ entry: Entry, reason: String) {
-        entry.panel.orderOut(nil)
+    private func hide(_ entry: Entry, trigger: String) {
+        entry.panel.alphaValue = 0
+        entry.panel.ignoresMouseEvents = true
         entry.shown = false
         entry.heldUntil = nil
-        hyprLog(.notice, .floating, "stand-in hidden wid=\(entry.floater.id) reason=\(reason)")
+        hyprLog(.notice, .floating, "stand-in hidden wid=\(entry.floater.id) trigger=\(trigger)")
+        panelsChanged()
+    }
+
+    private func destroy(_ entry: Entry, reason: String) {
+        if entry.shown { hide(entry, trigger: reason) }
+        if entry.stream != nil { stopStream(entry, reason: reason, keepPicture: false) }
+        entry.panel.orderOut(nil)
+        entries[entry.floater.id] = nil
     }
 
     private func place(_ entry: Entry) {
@@ -269,43 +346,84 @@ final class FloaterStandIn {
         if entry.panel.frame != rect { entry.panel.setFrame(rect, display: true) }
     }
 
+    /// Down once the window list shows the real floater on top (or gone)
+    /// `confirmReads` times in a row, one frame apart. A cover seen in
+    /// between keeps it up: show, hide, show within a few frames can't happen.
+    private func confirmThenHide(_ entry: Entry, trigger: String) {
+        guard !entry.confirming else { return }
+        entry.confirming = true
+        let id = entry.floater.id
+        let started = CFAbsoluteTimeGetCurrent()
+        var reads = 0
+        var polls = 0
+        func step() {
+            guard let entry = entries[id], entry.confirming else { return }
+            guard entry.shown, handOff?.id != id else { entry.confirming = false; return }
+            polls += 1
+            let state = coverState(id)
+            if state == .covered {
+                reads = 0
+            } else {
+                reads += 1
+            }
+            if reads >= Self.confirmReads {
+                entry.confirming = false
+                let ms = Int((CFAbsoluteTimeGetCurrent() - started) * 1000)
+                hide(entry, trigger: (state == .gone ? "gone" : "confirmed-on-top") + " after \(trigger), \(ms) ms")
+                return
+            }
+            guard polls < Self.confirmLimit else {
+                // stays up; the next refresh asks again
+                entry.confirming = false
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.poll) { step() }
+        }
+        step()
+    }
+
     // MARK: - hand-off
 
-    /// A touch on the panel: focus the real floater, wait for it to come
-    /// up, hide the panel, then pass a click on at the same point.
+    /// A touch on the panel: focus the real floater, wait for the window
+    /// list to show it on top, take the panel down, then pass a click on at
+    /// the same point.
     private func touched(_ id: CGWindowID, touch: Touch, at point: CGPoint) {
         guard handOff == nil, let entry = entries[id], entry.shown else { return }
         let started = CFAbsoluteTimeGetCurrent()
         handOff = (id, started)
+        entry.confirming = false
         hyprLog(.notice, .floating, "stand-in hand-off wid=\(id) touch=\(touch.rawValue) at=(\(Int(point.x)),\(Int(point.y)))")
         guard focusFloater(id) else {
             handOff = nil
-            hide(entry, reason: "hand-off: floater gone")
+            hide(entry, trigger: "hand-off: floater gone")
             return
         }
-        pollHandOff(id, touch: touch, at: point, started: started)
+        pollHandOff(id, touch: touch, at: point, started: started, reads: 0)
     }
 
-    private func pollHandOff(_ id: CGWindowID, touch: Touch, at point: CGPoint, started: CFAbsoluteTime) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.handOffPoll) { [weak self] in
+    private func pollHandOff(_ id: CGWindowID, touch: Touch, at point: CGPoint, started: CFAbsoluteTime,
+                             reads: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.poll) { [weak self] in
             guard let self, self.handOff?.id == id else { return }
             let elapsed = CFAbsoluteTimeGetCurrent() - started
-            let covered = self.isCovered(id)
-            guard !covered || elapsed >= Self.handOffTimeout else {
-                self.pollHandOff(id, touch: touch, at: point, started: started)
+            let state = self.coverState(id)
+            let onTopReads = state == .covered ? 0 : reads + 1
+            guard onTopReads >= Self.confirmReads || elapsed >= Self.handOffTimeout else {
+                self.pollHandOff(id, touch: touch, at: point, started: started, reads: onTopReads)
                 return
             }
             self.handOff = nil
-            if let entry = self.entries[id], entry.shown {
-                self.hide(entry, reason: covered ? "hand-off timed out" : "hand-off")
-            }
+            let covered = state == .covered
             let ms = Int(elapsed * 1000)
-            // still covered, a click would land on the tile
+            // still covered, a click would land on the tile: the panel stays
             guard !covered else {
                 hyprLog(.notice, .floating, "stand-in hand-off wid=\(id) gave up after \(ms) ms, still covered; "
                         + "touch not passed on")
                 self.handOffFinished()
                 return
+            }
+            if let entry = self.entries[id], entry.shown {
+                self.hide(entry, trigger: "confirmed-on-top after hand-off, \(ms) ms")
             }
             guard touch == .click else {
                 hyprLog(.notice, .floating, "stand-in hand-off wid=\(id) real window up after \(ms) ms; nothing passed on")
@@ -370,28 +488,30 @@ final class FloaterStandIn {
         let stream = StandInStream(windowID: id)
         stream.onFrame = { [weak self, weak entry, weak stream] surface in
             guard let self, let entry, let stream, entry.stream === stream else { return }
+            let first = !entry.view.hasPicture
             entry.view.setSurface(surface)
             entry.view.setLive(self.mode == .live)
+            if first { self.panelsChanged() }
         }
         stream.onStop = { [weak entry, weak stream] why in
             guard let entry, let stream, entry.stream === stream else { return }
             entry.stream = nil
             entry.streamRetryAfter = CFAbsoluteTimeGetCurrent() + 5
-            entry.view.setSurface(nil)
-            entry.view.setLive(false)
+            entry.view.freezePicture()
             hyprLog(.notice, .floating, "stand-in stream stopped wid=\(id) reason=\(why)")
         }
         entry.stream = stream
         stream.start(size: entry.floater.frame.size, scale: scale(for: entry.floater.frame))
     }
 
-    private func stopStream(_ entry: Entry, reason: String) {
+    /// The stream stops; its last picture stays, copied, for the next show.
+    private func stopStream(_ entry: Entry, reason: String, keepPicture: Bool = true) {
         guard let stream = entry.stream else { return }
         entry.stream = nil
+        if keepPicture { entry.view.freezePicture() }
         stream.stop()
-        entry.view.setSurface(nil)
-        entry.view.setLive(false)
-        hyprLog(.notice, .floating, "stand-in stream stopped wid=\(entry.floater.id) reason=\(reason)")
+        hyprLog(.notice, .floating, "stand-in stream stopped wid=\(entry.floater.id) reason=\(reason)"
+                + (keepPicture && entry.view.hasPicture ? ", picture kept" : ""))
     }
 
     private func scale(for frame: CGRect) -> CGFloat {
@@ -425,8 +545,8 @@ final class StandInPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         hidesOnDeactivate = false
-        // set outright: a clear window passes clicks through wherever its
-        // backing is clear, and the live picture is a layer, not the backing
+        // set outright when shown: a clear window passes clicks through
+        // wherever its backing is clear, and the picture is a layer
         ignoresMouseEvents = false
         becomesKeyOnlyIfNeeded = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
@@ -447,8 +567,12 @@ final class StandInView: NSView {
     private let iconView = NSImageView()
     private let titleField = NSTextField(labelWithString: "")
     private var surface: IOSurface?
+    // the last picture, copied: the stream reuses its surfaces
+    private var frozen: CGImage?
     private(set) var showsLivePicture = false
     private var liveState: Bool?
+
+    var hasPicture: Bool { surface != nil || frozen != nil }
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -468,7 +592,8 @@ final class StandInView: NSView {
         titleField.lineBreakMode = .byTruncatingTail
         titleField.maximumNumberOfLines = 1
         addSubview(titleField)
-        liveLayer.contentsGravity = .resize
+        // a picture of the old size keeps its shape until the new size comes
+        liveLayer.contentsGravity = .resizeAspect
         liveLayer.isHidden = true
         layer?.addSublayer(liveLayer)
     }
@@ -504,17 +629,30 @@ final class StandInView: NSView {
         needsLayout = true
     }
 
-    func setSurface(_ surface: IOSurface?) {
+    func setSurface(_ surface: IOSurface) {
         self.surface = surface
+        frozen = nil
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         liveLayer.contents = surface
         CATransaction.commit()
     }
 
-    /// The picture shows once the stream has one; until then the card does.
+    /// The stream is stopping: keep a copy of its last picture.
+    func freezePicture() {
+        guard let surface else { return }
+        self.surface = nil
+        frozen = Self.image(from: surface)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        liveLayer.contents = frozen
+        CATransaction.commit()
+        if frozen == nil { setLive(false) }
+    }
+
+    /// The picture shows once there is one; until then the card does.
     func setLive(_ live: Bool) {
-        let showLive = live && surface != nil
+        let showLive = live && hasPicture
         guard showLive != liveState else { return }
         liveState = showLive
         showsLivePicture = showLive
@@ -525,6 +663,22 @@ final class StandInView: NSView {
         background.isHidden = showLive
         iconView.isHidden = showLive
         needsLayout = true
+    }
+
+    /// A copy of a BGRA surface the stream may write into again.
+    private static func image(from surface: IOSurface) -> CGImage? {
+        surface.lock(options: .readOnly, seed: nil)
+        defer { surface.unlock(options: .readOnly, seed: nil) }
+        let width = surface.width, height = surface.height, bytesPerRow = surface.bytesPerRow
+        guard width > 0, height > 0 else { return nil }
+        let data = Data(bytes: surface.baseAddress, count: bytesPerRow * height)
+        guard let provider = CGDataProvider(data: data as CFData),
+              let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        let info = CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue
+                                    | CGBitmapInfo.byteOrder32Little.rawValue)
+        return CGImage(width: width, height: height, bitsPerComponent: 8, bitsPerPixel: 32,
+                       bytesPerRow: bytesPerRow, space: space, bitmapInfo: info, provider: provider,
+                       decode: nil, shouldInterpolate: true, intent: .defaultIntent)
     }
 
     override func layout() {
