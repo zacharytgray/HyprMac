@@ -36,6 +36,8 @@ protocol PracticeHost: AnyObject {
     func removeRules(bundleID: String)
     /// room under `workspace`'s tiles for the lesson card; nil removes it
     func setBottomInset(_ inset: CGFloat?, workspace: Int)
+    /// Hypr+I on `bundleID`'s windows starts on its app tile row; nil stops it
+    func preselectTileRule(for bundleID: String?)
 }
 
 extension PracticeHost {
@@ -44,6 +46,7 @@ extension PracticeHost {
     func keybindSearchText() -> String { "" }
     func removeRules(bundleID: String) {}
     func setBottomInset(_ inset: CGFloat?, workspace: Int) {}
+    func preselectTileRule(for bundleID: String?) {}
 }
 
 final class WindowManagerPracticeHost: PracticeHost {
@@ -109,6 +112,10 @@ final class WindowManagerPracticeHost: PracticeHost {
         windowManager?.setTutorialBottomInset(inset, workspace: workspace)
     }
 
+    func preselectTileRule(for bundleID: String?) {
+        windowManager?.windowRulesOverlay.preselectsTileFor = bundleID
+    }
+
     /// "Practice 3" → 3
     private static func number(of window: HyprWindow) -> Int? {
         guard let title = window.title, title.hasPrefix("Practice ") else { return nil }
@@ -135,6 +142,7 @@ final class LatePracticeHost: PracticeHost {
     func keybindSearchText() -> String { host.keybindSearchText() }
     func removeRules(bundleID: String) { host.removeRules(bundleID: bundleID) }
     func setBottomInset(_ inset: CGFloat?, workspace: Int) { host.setBottomInset(inset, workspace: workspace) }
+    func preselectTileRule(for bundleID: String?) { host.preselectTileRule(for: bundleID) }
 }
 
 /// The helper's process: NSRunningApplication in the app, a fake in tests.
@@ -302,9 +310,42 @@ final class PracticeSession: ObservableObject {
     /// Open one more practice window; with `floating`, HyprMac floats it as
     /// soon as it has it, as if the window had landed wrong.
     func openWindow(_ number: Int, floating: Bool) {
-        DistributedNotificationCenter.default().postNotificationName(
-            Self.commandNotification, object: nil, userInfo: ["open": number], deliverImmediately: true)
+        sendOpen(number)
         if floating { pendingFloat = (number, Date().addingTimeInterval(5)) }
+    }
+
+    /// tells the helper to open a window; tests listen instead
+    var sendOpen: (Int) -> Void = { number in
+        DistributedNotificationCenter.default().postNotificationName(
+            PracticeSession.commandNotification, object: nil, userInfo: ["open": number], deliverImmediately: true)
+    }
+
+    /// Lesson 5 only: Hypr+I on a practice window starts on "Always tile
+    /// HyprMac Practice", so ↩ does the lesson's step.
+    func preselectTileRule(_ on: Bool) {
+        host?.preselectTileRule(for: on ? Self.helperBundleID : nil)
+    }
+
+    /// windows that open floating again if they're closed, e.g. lesson 5's 4
+    var floatsOnReopen: Set<Int> = []
+    /// the windows the helper last had open
+    private var openWindows: Set<Int> = []
+    /// when each closed window was last asked back, so one that won't open
+    /// isn't asked every report
+    private var reopenAsked: [Int: Date] = [:]
+    private let now: () -> Date = Date.init
+
+    /// A lesson needs its windows: one the user closes opens again, in the
+    /// state the lesson needs it, floating or not.
+    private func reopenClosed(_ open: Set<Int>) {
+        defer { openWindows = open }
+        guard isActive else { return }
+        for number in openWindows.subtracting(open).sorted() {
+            if let asked = reopenAsked[number], now().timeIntervalSince(asked) < 2 { continue }
+            reopenAsked[number] = now()
+            hyprLog(.notice, .lifecycle, "tutorial practice: window \(number) closed, opening it again")
+            openWindow(number, floating: floatsOnReopen.contains(number))
+        }
     }
 
     /// Quit the helper, drop any rule made for it, and go back to where the
@@ -324,6 +365,10 @@ final class PracticeSession: ObservableObject {
         host?.removeRules(bundleID: Self.helperBundleID)
         if cardInset != nil, let workspace = practiceWorkspace { host?.setBottomInset(nil, workspace: workspace) }
         cardInset = nil
+        openWindows = []
+        reopenAsked = [:]
+        floatsOnReopen = []
+        host?.preselectTileRule(for: nil)
         isRunning = false
         focused = nil
         order = []
@@ -343,6 +388,7 @@ final class PracticeSession: ObservableObject {
         let number = info["focused"] as? Int ?? 0
         focused = number > 0 ? number : nil
         order = info["order"] as? [Int] ?? order
+        if let open = info["open"] as? [Int] { reopenClosed(Set(open)) }
     }
 
     /// The window manager's side, four times a second; also called by tests.

@@ -15,6 +15,8 @@ final class MoveAroundLessonTests: XCTestCase {
         var insets: [Int: CGFloat] = [:]
         func tileCapacity(of workspace: Int) -> Int { capacity }
         func setBottomInset(_ inset: CGFloat?, workspace: Int) { insets[workspace] = inset }
+        var preselected: String?
+        func preselectTileRule(for bundleID: String?) { preselected = bundleID }
         func currentWorkspace() -> Int? { current }
         func emptyWorkspaces() -> [Int] { empty }
         func switchToWorkspace(_ number: Int) {
@@ -199,6 +201,40 @@ final class MoveAroundLessonTests: XCTestCase {
         session.end()
         XCTAssertNil(host.insets[3])
         XCTAssertNil(session.cardInset)
+    }
+
+    // a practice window the user closes opens again, floating if the lesson
+    // needs it floating, and only while practice runs
+    func testAClosedPracticeWindowOpensAgain() {
+        let session = PracticeSession(host: FakeHost())
+        var opened: [Int] = []
+        session.sendOpen = { opened.append($0) }
+        session.begin()
+        session.apply(["focused": 1, "order": [1, 2, 3], "open": [1, 2, 3, 4]])
+        session.apply(["focused": 1, "order": [1, 2, 3], "open": [1, 2, 3]])
+        XCTAssertEqual(opened, [4])
+        session.apply(["focused": 1, "order": [1, 2, 3], "open": [1, 2, 3]])
+        XCTAssertEqual(opened, [4], "asked once, not every report")
+        session.apply(["focused": 1, "order": [1, 2, 3], "open": [1, 2, 3, 4]])
+        session.end()
+        session.apply(["focused": 0, "order": [], "open": []])
+        XCTAssertEqual(opened, [4], "practice over, nothing reopens")
+    }
+
+    // lesson 5: window 4 reopens floating, and Hypr+I starts on the tile row,
+    // only while the lesson runs
+    func testLessonFiveReopensWindowFourFloatingAndPreselectsTile() {
+        let host = FakeHost()
+        let session = PracticeSession(host: host)
+        session.sendOpen = { _ in }
+        session.begin()
+        let lesson = FixWindowLessonModel(practice: session)
+        lesson.start()
+        XCTAssertTrue(session.floatsOnReopen.contains(FixWindowLessonModel.floatingWindow))
+        XCTAssertEqual(host.preselected, PracticeSession.helperBundleID)
+        lesson.stop()
+        XCTAssertNil(host.preselected, "other lessons and the rest of HyprMac keep the normal first row")
+        session.end()
     }
 
     // the line under the step is that step's own, not the lesson's first

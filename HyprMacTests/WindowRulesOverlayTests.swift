@@ -5,6 +5,15 @@ import XCTest
 
 final class WindowRulesOverlayTests: XCTestCase {
 
+    // lesson 5 starts on the app tile row, so ↩ does its step; nothing else does
+    func testOnlyAPreferenceStartsOnTheAppTileRow() {
+        XCTAssertEqual(WindowRulesOverlayModel(target: info(floating: true)).selection, .floatApp)
+        XCTAssertEqual(WindowRulesOverlayModel(target: info(floating: true), prefersTile: true).selection, .tileApp)
+        // the app already tiles by rule: the row isn't offered, so the first row stays
+        let tiles = WindowRulesOverlayModel(target: info(appTiles: true), prefersTile: true)
+        XCTAssertEqual(tiles.selection, tiles.rows[0])
+    }
+
     private func info(title: String = "Chat | Someone", rule: String? = nil, appFloats: Bool = false,
                       appTiles: Bool = false, floating: Bool = false) -> FocusedWindowRuleInfo {
         FocusedWindowRuleInfo(windowID: 8905, appName: "Microsoft Teams", bundleID: "com.microsoft.teams2",

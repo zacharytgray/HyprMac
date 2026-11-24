@@ -11,7 +11,8 @@ import SwiftUI
 
 enum Practice {
     /// DistributedNotificationCenter name. userInfo: "focused" (Int, 0 for
-    /// none), "order" ([Int], left to right, then top to bottom).
+    /// none), "order" ([Int], left to right, then top to bottom), "open"
+    /// ([Int], every window not closed, wherever it is).
     static let stateNotification = Notification.Name("com.zachgray.HyprMac.practice.state")
     /// From HyprMac. userInfo: "open" (Int), a window number to open.
     static let commandNotification = Notification.Name("com.zachgray.HyprMac.practice.command")
@@ -88,7 +89,12 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         report()
     }
 
+    private func number(of window: NSWindow) -> Int {
+        Int(window.title.dropFirst("Practice ".count)) ?? 0
+    }
+
     private func open(_ number: Int) {
+        // a closed window leaves the list, so it can open again
         guard !windows.contains(where: { $0.title == "Practice \(number)" }) else { return }
         let visible = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
         let window = NSWindow(
@@ -107,6 +113,12 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
 
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow else { return }
+        windows.removeAll { $0 === window }
+        report()
+    }
+
     func windowDidBecomeKey(_ notification: Notification) { report() }
     func windowDidResignKey(_ notification: Notification) { report() }
     func windowDidMove(_ notification: Notification) { report() }
@@ -119,17 +131,18 @@ final class PracticeAppDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self else { return }
             self.pendingReport = false
-            let focused = NSApp.isActive ? (self.windows.firstIndex { $0.isKeyWindow }.map { $0 + 1 } ?? 0) : 0
-            let order = self.windows.enumerated()
-                .filter { $0.element.isVisible }
+            let focused = NSApp.isActive ? (self.windows.first { $0.isKeyWindow }.map(self.number) ?? 0) : 0
+            let order = self.windows
+                .filter { $0.isVisible }
                 .sorted { a, b in
-                    let fa = a.element.frame, fb = b.element.frame
+                    let fa = a.frame, fb = b.frame
                     return abs(fa.minX - fb.minX) > 20 ? fa.minX < fb.minX : fa.maxY > fb.maxY
                 }
-                .map { $0.offset + 1 }
+                .map(self.number)
+            let open = self.windows.map(self.number).sorted()
             DistributedNotificationCenter.default().postNotificationName(
                 Practice.stateNotification, object: nil,
-                userInfo: ["focused": focused, "order": order], deliverImmediately: true)
+                userInfo: ["focused": focused, "order": order, "open": open], deliverImmediately: true)
         }
     }
 }

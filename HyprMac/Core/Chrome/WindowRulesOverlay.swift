@@ -24,10 +24,13 @@ final class WindowRulesOverlayModel: ObservableObject {
     /// edited only while a title row is picked
     @Published var text: String
 
-    init(target: FocusedWindowRuleInfo) {
+    /// `prefersTile` starts on the app tile row when it's offered: the
+    /// tutorial's lesson 5, where ↩ should do the lesson's step
+    init(target: FocusedWindowRuleInfo, prefersTile: Bool = false) {
         self.target = target
         self.text = target.title
-        self.selection = Self.rows(for: target)[0]
+        let rows = Self.rows(for: target)
+        self.selection = prefersTile && rows.contains(.tileApp) ? .tileApp : rows[0]
     }
 
     /// The rows in order. The app rule already in effect isn't offered
@@ -309,6 +312,9 @@ final class WindowRulesOverlayController {
     private var targetPID: pid_t?
 
     var isShowing: Bool { panel != nil }
+    /// While set, the overlay on this app's windows starts on its app tile
+    /// row. Only the tutorial's lesson 5 sets it, and clears it after.
+    var preselectsTileFor: String?
     /// the window it was opened on, while it is open
     var targetWindowID: CGWindowID? { model?.target.windowID }
 
@@ -350,7 +356,7 @@ final class WindowRulesOverlayController {
     func show(_ info: FocusedWindowRuleInfo, ownerPID: pid_t? = nil, over frame: CGRect?, icon: NSImage?) {
         mainThreadOnly()
         close(restoringFocus: false)
-        let model = WindowRulesOverlayModel(target: info)
+        let model = WindowRulesOverlayModel(target: info, prefersTile: info.bundleID == preselectsTileFor)
         self.model = model
         targetPID = ownerPID
         let hosting = NSHostingView(rootView: WindowRulesOverlayView(model: model, icon: icon) { [weak self] row in

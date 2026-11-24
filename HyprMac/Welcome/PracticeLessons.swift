@@ -261,8 +261,16 @@ final class FixWindowLessonModel: PracticeLessonModel {
     static let floatingWindow = 4
 
     override func didStart() {
-        // a window that landed wrong, on purpose
+        // a window that landed wrong, on purpose; closed, it lands wrong again
+        practice.floatsOnReopen.insert(Self.floatingWindow)
         practice.openWindow(Self.floatingWindow, floating: true)
+        practice.preselectTileRule(true)
+    }
+
+    override func stop() {
+        super.stop()
+        // the normal first row everywhere else
+        practice.preselectTileRule(false)
     }
 
     override func noteAction(_ action: String) {
@@ -275,6 +283,8 @@ final class FixWindowLessonModel: PracticeLessonModel {
         }
         let windowFloats = practice.windows[Self.floatingWindow]?.floating ?? false
         if ruled, !windowFloats { mark(self, \.fixed) }
+        // fixed, it tiles if it opens again
+        if fixed { practice.floatsOnReopen.remove(Self.floatingWindow) }
     }
 }
 
