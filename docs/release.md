@@ -14,7 +14,11 @@ Update `WhatsNewFeatures.current` in `HyprMac/Welcome/WelcomeContent.swift`
 from `git log v<previous>..HEAD --oneline`. List user-facing changes only.
 Each entry needs an SF Symbol, a short title, a one-line description, and a
 tint (`.cyan` by default, `.magenta` for floating or scratchpad). Add
-`credit:` with the GitHub handle of an outside contributor. Update
+`credit:` with the GitHub handle of an outside contributor. A new setting
+that's off by default can get a button on its row with `action:` (a
+`WhatsNewAction`: title, done title, `isDone`, `perform`, and an optional
+detail under the row once it's done), since upgraders never see onboarding.
+Update
 `WelcomeContentTests.testWhatsNewDescribesOnlyThe<version>Changes` to match,
 with the dots removed from the version (`0201` for 0.20.1). The script refuses
 to start if that test is missing, and the test gate fails if it does not match. Commit and push this before starting the

@@ -20,11 +20,30 @@ struct WhatsNewFeature {
     var tint: WhatsNewTint = .cyan
     /// github handle of an outside contributor, shown under the description
     var credit: String? = nil
+    /// a button on the row, for a new setting that's off by default
+    var action: WhatsNewAction? = nil
+}
+
+/// A row's button. Once `isDone`, the row shows `doneTitle` in its place,
+/// and `doneDetail` under the description.
+struct WhatsNewAction {
+    let title: String
+    let doneTitle: String
+    let isDone: () -> Bool
+    let perform: () -> Void
+    var doneDetail: (() -> AnyView)? = nil
 }
 
 enum WhatsNewFeatures {
     // update this before each release — see docs/release.md
     static let current: [WhatsNewFeature] = [
+        WhatsNewFeature(
+            icon: "square.stack.3d.up",
+            title: "Floating Windows Stay in Front",
+            description: "Floating windows can now stay in front of your tiles, instead of slipping behind the window you're working in. Recommended. It needs Screen Recording, because macOS has no other way to do this, and HyprMac never saves the picture. Leave it off to keep the old behavior.",
+            tint: .magenta,
+            action: keepFloatersInFront()
+        ),
         WhatsNewFeature(
             icon: "arrow.left.and.right",
             title: "Resize From the Gap",
@@ -55,6 +74,23 @@ enum WhatsNewFeatures {
             description: "A switch no longer takes a busy app's window out of full screen."
         ),
     ]
+}
+
+extension WhatsNewFeatures {
+    /// Turns on Keep floating windows in front. The switch asks macOS for
+    /// Screen Recording as it goes on; the row then shows the grant.
+    static func keepFloatersInFront(config: UserConfig = .shared,
+                                    access: ScreenRecordingAccess = .shared) -> WhatsNewAction {
+        WhatsNewAction(
+            title: "Turn On",
+            doneTitle: "On",
+            isDone: { config.keepFloatingWindowsInFront },
+            perform: {
+                hyprLog(.notice, .lifecycle, "what's new: keep floating windows in front turned on")
+                config.keepFloatingWindowsInFront = true
+            },
+            doneDetail: { AnyView(WhatsNewScreenRecordingStatus(access: access)) })
+    }
 }
 
 enum WelcomeContent {

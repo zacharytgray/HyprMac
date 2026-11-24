@@ -185,6 +185,10 @@ struct WorkspacesLessonBar: View {
 
 // MARK: - 4 floating
 
+/// Lesson 4. With Keep floating windows in front on, floaters stay in front
+/// of the tile you click, so it's float two, click the tile, tile one back.
+/// Off, they tuck behind it, so bringing each back with Hypr+Shift+T comes
+/// before tiling one back.
 final class FloatingLessonModel: PracticeLessonModel {
     @Published var floatedTwo = false
     @Published var clickedTile = false
@@ -207,6 +211,12 @@ final class FloatingLessonModel: PracticeLessonModel {
     private var suspects: Set<Int> = []
     /// when after the lesson opens the windows are checked
     var setupDelays: [TimeInterval] = [1.5, 3, 4.5]
+
+    /// Floaters stay in front of the tiles, so nothing needs bringing back.
+    var floatersStayInFront: Bool { config.keepFloatingWindowsInFront }
+
+    /// the step before tiling one back is done
+    private var readyToTileBack: Bool { floatersStayInFront ? clickedTile : broughtBack }
 
     private var floating: [Int] {
         practice.windows.values
@@ -250,11 +260,11 @@ final class FloatingLessonModel: PracticeLessonModel {
         switch action {
         case "toggleFloating":
             floatKeys += 1
+            if readyToTileBack { mark(self, \.tiledBack) }
             if floatKeys >= 2 { mark(self, \.floatedTwo) }
-            if broughtBack { mark(self, \.tiledBack) }
         case "focusDirection" where floatedTwo:
             mark(self, \.clickedTile)
-        case "focusFloating" where clickedTile:
+        case "focusFloating" where clickedTile && !floatersStayInFront:
             forwardKeys += 1
             if forwardKeys >= 2 { mark(self, \.broughtBack) }
         default: break
@@ -266,16 +276,16 @@ final class FloatingLessonModel: PracticeLessonModel {
         let count = floaters.count
         if recorder.recent("toggleFloating") {
             if count >= 2 { mark(self, \.floatedTwo) }
-            if broughtBack, count < peak { mark(self, \.tiledBack) }
+            if readyToTileBack, count < peak { mark(self, \.tiledBack) }
         }
         peak = max(peak, count)
         guard let focused = practice.focused else { return }
-        // the floaters tuck behind the tile you go back to
+        // back on the tile: the floaters stay in front of it, or tuck behind
         if floatedTwo, !clickedTile, count >= 2,
            let window = practice.windows[focused], !window.floating, window.workspace == practice.practiceWorkspace {
             mark(self, \.clickedTile)
         }
-        if clickedTile, !broughtBack, recorder.recent("focusFloating"), floaters.contains(focused) {
+        if !floatersStayInFront, clickedTile, !broughtBack, recorder.recent("focusFloating"), floaters.contains(focused) {
             forward.insert(focused)
             if forward.isSuperset(of: Set(floaters)), forward.count >= 2 { mark(self, \.broughtBack) }
         }
@@ -290,18 +300,28 @@ struct FloatingLessonBar: View {
 
     var body: some View {
         let cycle = model.chordText { $0 == .focusFloating } ?? "Cycle Floating Windows"
+        let float = BarTask(title: "Float two windows", bind: model.bind { $0 == .toggleFloating }, done: model.floatedTwo,
+                            why: "Dialogs and small tools work better floating above the tiles.")
+        let tileBack = { (why: String) in
+            BarTask(title: "Tile one back", bind: model.bind { $0 == .toggleFloating }, done: model.tiledBack, why: why)
+        }
         LessonBar(
             lesson: .floating,
-            tasks: [
-                BarTask(title: "Float two windows", bind: model.bind { $0 == .toggleFloating }, done: model.floatedTwo,
-                        why: "Dialogs and small tools work better floating above the tiles."),
-                BarTask(title: "Click the tiled window", bind: nil, done: model.clickedTile,
-                        why: "Or focus it with \(config.hyprKey.displayName)+arrows. Watch the floating windows."),
-                BarTask(title: "Bring them back", bind: model.bind { $0 == .focusFloating }, done: model.broughtBack,
-                        why: "They tucked behind the tile you're in, not gone. This brings each one up."),
-                BarTask(title: "Tile one back", bind: model.bind { $0 == .toggleFloating }, done: model.tiledBack,
-                        why: "Floaters stay in front while you use them. \(cycle) always finds them."),
-            ],
+            tasks: model.floatersStayInFront
+                ? [
+                    float,
+                    BarTask(title: "Click the tiled window", bind: nil, done: model.clickedTile,
+                            why: "Or focus it with \(config.hyprKey.displayName)+arrows. The floating windows stay in front."),
+                    tileBack("Floaters stay in front of your tiles. If one ever gets lost, \(cycle) brings each one up."),
+                ]
+                : [
+                    float,
+                    BarTask(title: "Click the tiled window", bind: nil, done: model.clickedTile,
+                            why: "Or focus it with \(config.hyprKey.displayName)+arrows. Watch the floating windows."),
+                    BarTask(title: "Bring them back", bind: model.bind { $0 == .focusFloating }, done: model.broughtBack,
+                            why: "They tucked behind the tile you're in, not gone. This brings each one up."),
+                    tileBack("Floaters stay in front while you use them. \(cycle) always finds them."),
+                ],
             hyprKey: config.hyprKey,
             onExit: onExit,
             onNext: onNext)

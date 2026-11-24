@@ -3,12 +3,34 @@ import XCTest
 import Carbon
 
 final class WelcomeContentTests: XCTestCase {
-    func testWhatsNewDescribesOnlyThe0281Changes() {
+    func testWhatsNewDescribesOnlyThe0290Changes() {
         let features = WhatsNewFeatures.current
 
-        XCTAssertEqual(features.map(\.title), ["Resize From the Gap", "Cleaner Dim on Switch", "Pop-Ups Stay Open", "Floaters Come Back in Front", "Full Screen Stays Put"])
+        XCTAssertEqual(features.map(\.title), ["Floating Windows Stay in Front", "Resize From the Gap", "Cleaner Dim on Switch", "Pop-Ups Stay Open", "Floaters Come Back in Front", "Full Screen Stays Put"])
         XCTAssertEqual(features.compactMap(\.credit), ["dex157", "dex157", "kenmencher"])
+        // only the top row has a button: Turn On for floaters in front
+        XCTAssertEqual(features.compactMap { $0.action?.title }, ["Turn On"])
+        XCTAssertTrue(features[0].description.contains("Screen Recording"))
         XCTAssertEqual(WelcomeContent.productURL.absoluteString, "https://hyprmac.app/")
+    }
+
+    // Turn On flips the switch, which asks macOS for Screen Recording, and
+    // the row then shows the grant
+    func testTurnOnFlipsKeepFloatingWindowsInFront() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ConfigStore(localConfigURL: dir.appendingPathComponent("config.json"),
+                                monitorConfigURL: dir.appendingPathComponent("monitors.json"),
+                                iCloudRootURL: dir.appendingPathComponent("icloud"))
+        let config = UserConfig(store: store, iCloudSyncEnabled: false, showDockIcon: false, repairsOnLaunch: false)
+        let action = WhatsNewFeatures.keepFloatersInFront(config: config, access: ScreenRecordingAccess(state: .notGranted))
+        XCTAssertFalse(action.isDone())
+        action.perform()
+        XCTAssertTrue(config.keepFloatingWindowsInFront)
+        XCTAssertTrue(action.isDone())
+        XCTAssertEqual(action.doneTitle, "On")
+        XCTAssertNotNil(action.doneDetail)
     }
 
     func testTutorialRequestUsesInjectedRouteAfterClosingHelp() {

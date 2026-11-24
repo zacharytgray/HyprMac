@@ -3,6 +3,7 @@
 // replayable). A Mac that ran HyprMac before but lost access gets the
 // Access step alone.
 
+import Combine
 import SwiftUI
 
 enum StageScreen: Equatable {
@@ -34,6 +35,16 @@ final class StageSession: ObservableObject {
     private(set) var resumedAt: TutorialLesson?
     /// where the resume point lives: local defaults, never the synced config
     var resumeDefaults: UserDefaults = .standard
+    /// Make it yours' Keep floating windows in front, preselected on. It
+    /// writes the config only when onboarding ends, so macOS asks for
+    /// Screen Recording then and not while the step is open
+    @Published var keepFloatersInFront = true
+    /// onboarding ended with the switch on and Screen Recording missing:
+    /// the step shows the permission, holding whether the tutorial was picked
+    @Published private(set) var awaitingScreenRecording: Bool?
+    var config: UserConfig = .shared
+    var screenRecording: ScreenRecordingAccess = .shared
+    private var screenRecordingWatch: AnyCancellable?
 
     static let builtOnboarding: [OnboardingStep] = [.access, .hyprKey, .makeItYours]
     static let builtLessons: [TutorialLesson] = TutorialLesson.allCases
@@ -108,7 +119,8 @@ final class StageSession: ObservableObject {
     }
 
     private var level: NSWindow.Level {
-        TutorialWindowController.level(forAccess: screen == .onboarding(.access))
+        // System Settings has to come up over the stage for either grant
+        TutorialWindowController.level(forAccess: screen == .onboarding(.access) || awaitingScreenRecording != nil)
     }
 
     // MARK: onboarding
@@ -145,8 +157,46 @@ final class StageSession: ObservableObject {
         go(to: .onboarding(previous))
     }
 
-    /// Onboarding's last choice.
+    /// Onboarding's last choice. With Keep floating windows in front on and
+    /// Screen Recording not usable yet, the step shows the permission first.
     func finishOnboarding(takeTutorial: Bool) {
+        config.keepFloatingWindowsInFront = keepFloatersInFront
+        if keepFloatersInFront, !screenRecording.isGrantedHere {
+            hyprLog(.notice, .lifecycle, "onboarding: floaters in front on, waiting on screen recording")
+            awaitingScreenRecording = takeTutorial
+            controller.window?.level = level
+            // back in front once System Settings has turned it on
+            screenRecordingWatch = screenRecording.$state.dropFirst().removeDuplicates()
+                .filter { $0 == .granted || $0 == .needsReopen }
+                .sink { [weak self] _ in self?.controller.bringToFront() }
+            // a reopen on the way, ours or macOS's own, lands in the tutorial
+            if takeTutorial { resumeDefaults.set(true, forKey: AppDelegate.tutorialAfterReopenKey) }
+            return
+        }
+        completeOnboarding(takeTutorial: takeTutorial)
+    }
+
+    /// Past the Screen Recording question: granted, or going on without it.
+    /// The switch stays on; a covered floater shows a card until the grant.
+    func continuePastScreenRecording() {
+        guard let takeTutorial = awaitingScreenRecording else { return }
+        completeOnboarding(takeTutorial: takeTutorial)
+    }
+
+    /// Back to the choices from the Screen Recording question.
+    func backFromScreenRecording() {
+        stopAwaitingScreenRecording()
+    }
+
+    private func stopAwaitingScreenRecording() {
+        awaitingScreenRecording = nil
+        screenRecordingWatch = nil
+        controller.window?.level = level
+        resumeDefaults.removeObject(forKey: AppDelegate.tutorialAfterReopenKey)
+    }
+
+    private func completeOnboarding(takeTutorial: Bool) {
+        stopAwaitingScreenRecording()
         onboardingDone.insert(.makeItYours)
         if takeTutorial {
             noteTutorialStart()
@@ -403,10 +453,19 @@ struct StageFlowView: View {
                               completed: session.onboardingDone,
                               onNext: { session.nextOnboardingStep() })
         case .onboarding:
-            MakeItYoursView(completed: session.onboardingDone,
-                            onBack: session.canGoBack ? { session.previousOnboardingStep() } : nil,
-                            onSkipTutorial: { session.finishOnboarding(takeTutorial: false) },
-                            onTakeTutorial: { session.finishOnboarding(takeTutorial: true) })
+            if let takeTutorial = session.awaitingScreenRecording {
+                ScreenRecordingStepView(access: session.screenRecording,
+                                        completed: session.onboardingDone,
+                                        takeTutorial: takeTutorial,
+                                        onBack: { session.backFromScreenRecording() },
+                                        onContinue: { session.continuePastScreenRecording() })
+            } else {
+                MakeItYoursView(completed: session.onboardingDone,
+                                keepFloatersInFront: $session.keepFloatersInFront,
+                                onBack: session.canGoBack ? { session.previousOnboardingStep() } : nil,
+                                onSkipTutorial: { session.finishOnboarding(takeTutorial: false) },
+                                onTakeTutorial: { session.finishOnboarding(takeTutorial: true) })
+            }
         case .tutorial(let lesson) where StageSession.practiceLessons.contains(lesson):
             // behind the practice windows; the lesson is on the bar
             StageBackdrop()

@@ -1,11 +1,13 @@
-// "Tiling" section of Settings: the gaps with a live preview, and the
-// float and tile rules. Also the dwindle preview Monitors shares.
+// "Tiling" section of Settings: the gaps with a live preview, Keep floating
+// windows in front with its Screen Recording state, and the float and tile
+// rules. Also the dwindle preview Monitors shares.
 
 import SwiftUI
 
 /// "Tiling": space between tiles, and which apps float or tile.
 struct TilingSettingsView: View {
     @ObservedObject var config = UserConfig.shared
+    var screenRecording: ScreenRecordingAccess = .shared
 
     var body: some View {
         VStack(spacing: HyprSpacing.lg) {
@@ -66,31 +68,18 @@ struct TilingSettingsView: View {
 
     // MARK: floating windows in front
 
-    // read when the card draws: Settings reopens after a grant
-    private var screenRecordingGranted: Bool { CGPreflightScreenCaptureAccess() }
-
     private var floatingCard: some View {
         SettingsCard("Floating windows") {
             SettingsRow("Keep floating windows in front", icon: "square.stack.3d.up",
-                        subtitle: "Shows a live picture of a covered floating window. macOS asks for Screen Recording to do that.",
+                        subtitle: "Recommended for a better experience. Needs Screen Recording, because macOS has no other way to do this. Turn it off to keep the old behavior.",
                         divider: false) {
                 Toggle("", isOn: $config.keepFloatingWindowsInFront)
                     .toggleStyle(HyprToggleStyle())
                     .labelsHidden()
             } detail: {
-                if config.keepFloatingWindowsInFront && !screenRecordingGranted {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Without Screen Recording it shows the app icon and title instead. After you allow it, quit and reopen HyprMac if the picture does not appear.")
-                            .font(.hyprCaption)
-                            .foregroundStyle(Color.settingsTextMuted)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Button("Open Screen Recording Settings") {
-                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                                NSWorkspace.shared.open(url)
-                            }
-                        }
-                        .buttonStyle(.settings)
-                    }
+                if config.keepFloatingWindowsInFront {
+                    ScreenRecordingStatusRow(access: screenRecording)
+                        .padding(.top, 4)
                 }
             }
         }
@@ -180,6 +169,47 @@ struct DwindlePreview: View {
                     .frame(width: rect.width, height: rect.height)
                     .position(x: rect.midX, y: rect.midY)
             }
+        }
+    }
+}
+
+// MARK: - screen recording state
+
+/// Under Keep floating windows in front: whether Screen Recording is on,
+/// with the one button each state needs.
+struct ScreenRecordingStatusRow: View {
+    @ObservedObject var access: ScreenRecordingAccess
+
+    var body: some View {
+        Group {
+            if let state = access.state {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label(state.message, systemImage: icon(state))
+                        .font(.hyprCaption)
+                        .foregroundStyle(state == .granted ? Color.settingsTextMuted : Color.settingsText)
+                        .fixedSize(horizontal: false, vertical: true)
+                    switch state {
+                    case .granted:
+                        EmptyView()
+                    case .notGranted:
+                        Button("Open Screen Recording Settings") { access.openSettings() }
+                            .buttonStyle(.settings)
+                    case .needsReopen:
+                        Button("Reopen HyprMac") { access.reopen() }
+                            .buttonStyle(.settings)
+                    }
+                }
+            }
+        }
+        .onAppear { access.startWatching() }
+        .onDisappear { access.stopWatching() }
+    }
+
+    private func icon(_ state: ScreenRecordingAccess.State) -> String {
+        switch state {
+        case .granted: return "checkmark.circle"
+        case .notGranted: return "exclamationmark.circle"
+        case .needsReopen: return "arrow.clockwise"
         }
     }
 }

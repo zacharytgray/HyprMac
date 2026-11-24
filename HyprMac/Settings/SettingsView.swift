@@ -262,6 +262,7 @@ enum SettingsSearchIndex {
         // tiling
         .init(title: "Gap between windows", keywords: "gaps inner spacing", section: .tiling),
         .init(title: "Gap at screen edges", keywords: "gaps outer padding margin", section: .tiling),
+        .init(title: "Keep floating windows in front", keywords: "floater on top above stand-in screen recording permission", section: .tiling),
         .init(title: "Float and tile rules", keywords: "never tile exclude always float app rule window title", section: .tiling),
         // workspaces
         .init(title: "Workspace names", keywords: "rename label workspace", section: .workspaces),

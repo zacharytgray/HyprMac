@@ -175,6 +175,7 @@ live for the entire app lifetime. The process-wide singletons are
 | `FloatingRuleCommands` | The rule edits behind the window rules overlay (Hypr+I), the menu bar's "Focused window" section and the failed-tile prompt. Each acts on the window id it was opened for. Edits the config only; `WindowManager` watches the rule lists and re-applies (see "Float and tile rules"). |
 | `WindowRulesOverlayController` | The Hypr+I card over one window. `WindowRulesOverlayModel` holds its rows and keyboard and click state. |
 | `FailedTilePromptController` | The once-per-app offer after admission recovery floated a new window in place. `FailedTilePromptPolicy` decides. |
+| `ScreenRecordingAccess` | Screen Recording for Keep floating windows in front, as onboarding, Settings and What's New show it: granted, not granted, or granted but waiting on a reopen (a fresh `--check-screen-recording` copy of the binary answers that). Holds the Reopen HyprMac hook `AppDelegate.reopen` sets. |
 | `OwnPanelTracker` | HyprMac's own panels (menu bar panel, rules overlay); hover focus pauses while one is visible. |
 | `MouseTrackingManager` | Focus-follows-mouse, refocus-under-cursor, menu and popup suppression. |
 | `TiledFocusRouter` | Focus for hover, Hypr+Arrow, Hypr keydown and the focus invariant. Puts floaters an old tile covers back on top, then focuses and lifts the target. |
@@ -1423,9 +1424,16 @@ at all), and only once the switch there has landed. Lesson 3 sends to a
 second empty workspace, picked when lesson 3 opens. Without them, lessons 2
 to 5 show why in place of their tasks, and each later lesson tries again.
 Lesson 4 starts from three tiled practice windows: one away on lesson 3's
-other workspace, or floating, closes and opens again tiled. It teaches that
-floating windows tuck behind the tile you go back to, and that
-Hypr+Shift+T brings each one forward.
+other workspace, or floating, closes and opens again tiled. It follows
+Keep floating windows in front. On, it's float two, click the tile (they
+stay in front), tile one back. Off, the floaters tuck behind the tile you
+go back to, so bringing each back with Hypr+Shift+T comes before tiling one
+back. The last why line names Hypr+Shift+T either way.
+Make it yours preselects Keep floating windows in front and writes it as
+onboarding ends, so macOS asks for Screen Recording then; without a usable
+grant the step shows the permission first (see docs/debugging.md, "Keep
+floating windows in front"). Upgraders get it from What's New's Turn On
+button (`WhatsNewAction`).
 When the tutorial starts (a replay, or onboarding leading into it),
 `WindowManager.snapshotDeskForTutorial` writes the user's desk the way an
 update relaunch does (`tutorial-desk.json` in Application Support): trees,

@@ -1076,7 +1076,7 @@ layer 3 is a hit on that floater, and so is a click on it.
 
 A clicked tile always rises over a floater, and HyprMac can't keep another app's window
 on top (see the section above). Settings → Tiling → "Keep floating windows in front"
-(`keepFloatingWindowsInFront`, off by default) hides that with a stand-in. While a tile
+(`keepFloatingWindowsInFront`, off by default, on from onboarding) hides that with a stand-in. While a tile
 covers a floater, `FloaterStandIn` puts a HyprMac panel on the floater's frame at the
 `.floating` level, above the tiles and the dim, just below the floater's outline. The
 floater looks like it stayed on top. `FloaterStandInPlan` decides which floaters get one:
@@ -1161,6 +1161,35 @@ prompt only once.
 
 The permission is read again at most every 2 s, so a grant switches to `live` without a
 restart when macOS reports it to the running app. If it does not, quit and reopen.
+
+Where the switch gets turned on, and what each place shows (`ScreenRecordingAccess`):
+
+- Onboarding's Make it yours has it preselected on, marked Recommended. It writes the
+  config only when the step ends, so macOS asks for Screen Recording then. Without a
+  usable grant the step turns into "One more step: Screen Recording" (the stage drops to
+  the normal level so System Settings shows), with Back, Continue Without It, and Reopen
+  HyprMac. Picking the tutorial sets `openTutorialAfterReopen` in local defaults, so a
+  reopen, ours or macOS's own Quit & Reopen, lands in it.
+- Settings → Tiling shows the state under the switch while it's on.
+- What's New has a Turn On button for upgraders, who never see onboarding.
+
+The three states are `granted` (this copy reads yes), `notGranted`, and `needsReopen`.
+A running copy can keep reading no after the grant, so on a no HyprMac runs its own
+binary again with `--check-screen-recording`. That copy exits 0 or 1 in
+`HyprMacApp.init`, before the single-instance lock or anything else starts, and its
+answer is fresh. Yes there and no here is `needsReopen`. The views ask again every 2 s
+while shown and whenever HyprMac comes to the front. Reopen HyprMac writes the relaunch
+handoff, as an update does, and a `/bin/sh` child waits for this pid to end before it
+runs `open` on the bundle. From the shell:
+
+```bash
+"/Applications/HyprMac Debug.app/Contents/MacOS/HyprMac Debug" --check-screen-recording; echo $?
+```
+
+Log lines: `screen recording state granted|notGranted|needsReopen` (`floating`),
+`onboarding: floaters in front on, waiting on screen recording`,
+`what's new: keep floating windows in front turned on`, and
+`reopen: quitting, <path> opens once this copy is gone` (`lifecycle`).
 
 Debug builds only, to see the card on a Mac that granted Screen Recording:
 
