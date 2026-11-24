@@ -351,6 +351,49 @@ final class MoveAroundLessonTests: XCTestCase {
         session.end()
     }
 
+    // the desk is written once when the tutorial starts, before practice
+    // (also for a run resumed at a practice lesson), and only tutorials do it
+    func testTheDeskIsSavedOnceWhenTheTutorialStarts() {
+        let host = FakeHost()
+        let stage = StageSession.tutorial(practiceHost: host, resume: .floating)
+        var saves: [Bool] = []
+        stage.onTutorialStart = { saves.append(stage.practice.isActive) }
+        stage.show()
+        XCTAssertEqual(saves, [false], "written before practice moved anything")
+        XCTAssertTrue(stage.tutorialStarted)
+        stage.close()
+
+        let onboarding = StageSession.onboarding(accessGranted: true)
+        var onboardingSaves = 0
+        onboarding.onTutorialStart = { onboardingSaves += 1 }
+        onboarding.finishOnboarding(takeTutorial: false)
+        XCTAssertEqual(onboardingSaves, 0, "setup alone never touches the desk")
+        let leading = StageSession.onboarding(accessGranted: true)
+        leading.onTutorialStart = { onboardingSaves += 1 }
+        leading.finishOnboarding(takeTutorial: true)
+        XCTAssertEqual(onboardingSaves, 1)
+        leading.close()
+    }
+
+    // every way out ends in onClose after the practice cleanup, where the
+    // app puts the desk back: Done, Skip Tutorial, Leave
+    func testEveryExitClosesAfterThePracticeCleanup() throws {
+        for exit in ["done", "skip", "leave"] {
+            let host = FakeHost()
+            let stage = StageSession.tutorial(practiceHost: host, resume: .workspaces)
+            stage.resumeDefaults = try resumeDefaults()
+            stage.practice.begin()
+            var practiceOverAtClose: Bool?
+            stage.onClose = { practiceOverAtClose = !stage.practice.isActive && host.current == 1 }
+            switch exit {
+            case "done": stage.finishTutorial()
+            case "skip": stage.leaveEarly()
+            default: stage.escPressed(); stage.leaveEarly()
+            }
+            XCTAssertEqual(practiceOverAtClose, true, exit)
+        }
+    }
+
     // the line under the step is that step's own, not the lesson's first
     func testTheWhyLineFollowsTheCurrentStep() {
         func card(_ done: [Bool]) -> LessonBar {

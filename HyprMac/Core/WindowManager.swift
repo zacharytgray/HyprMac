@@ -2259,6 +2259,69 @@ class WindowManager {
     /// workspaces and trees are still live.
     func saveRelaunchHandoff() {
         guard isRunning else { return }
+        let handoff = currentDesk()
+        do {
+            try relaunchHandoffStore.write(handoff)
+            let tiled = handoff.workspaces.reduce(0) { $0 + $1.refs.count }
+            hyprLog(.notice, .lifecycle, "relaunch handoff saved: \(tiled) tiled on \(handoff.workspaces.count) workspaces,"
+                    + " \(handoff.floaters.count) floating, \(handoff.scratchpad.count) in the scratchpad,"
+                    + " showing \(handoff.visibleWorkspaces)")
+        } catch {
+            hyprLog(.warning, .lifecycle, "relaunch handoff not written: \(error)")
+        }
+    }
+
+    // MARK: - the tutorial's desk
+
+    /// The tutorial is about to start: write down the user's desk, as an
+    /// update relaunch does, so every way out of the tutorial puts it back.
+    func snapshotDeskForTutorial() {
+        guard isRunning else { return }
+        let desk = currentDesk()
+        do {
+            try RelaunchHandoffStore.tutorialDesk.write(desk)
+            hyprLog(.notice, .lifecycle, "tutorial desk saved: \(desk.workspaces.reduce(0) { $0 + $1.refs.count }) tiled,"
+                    + " \(desk.floaters.count) floating, \(desk.scratchpad.count) in the scratchpad, showing \(desk.visibleWorkspaces)")
+        } catch {
+            hyprLog(.warning, .lifecycle, "tutorial desk not written: \(error)")
+        }
+    }
+
+    /// The tutorial ended (Done, Skip Tutorial, Leave, or HyprMac quitting),
+    /// after its practice cleanup: windows that still exist go back to their
+    /// workspace, tree place, float and frame; each screen shows its
+    /// workspace again; the focused window gets focus. Windows opened since
+    /// stay where they are, closed ones are skipped. An unchanged desk isn't
+    /// touched, so nothing flickers. Only placement: settings stay as picked.
+    func restoreDeskAfterTutorial() {
+        let key = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        guard let saved = RelaunchHandoffStore.tutorialDesk.take(displayKey: key, maxAge: nil) else { return }
+        guard isRunning else { return }
+        if Self.sameDesk(saved, currentDesk()) {
+            hyprLog(.notice, .lifecycle, "tutorial desk unchanged, nothing to put back")
+            return
+        }
+        hyprLog(.notice, .lifecycle, "tutorial desk: putting the user's windows back")
+        restoreRelaunchHandoff(saved, windows: accessibility.getAllWindows())
+    }
+
+    /// A tutorial cut short by a crash: its desk is dropped at the next
+    /// launch rather than restored, since the windows may have moved since.
+    func discardTutorialDesk() {
+        RelaunchHandoffStore.tutorialDesk.discard()
+    }
+
+    /// Same desk apart from when each was written.
+    static func sameDesk(_ a: RelaunchHandoff, _ b: RelaunchHandoff) -> Bool {
+        var b = b
+        b = RelaunchHandoff(savedAt: a.savedAt, displayKey: b.displayKey, visibleWorkspaces: b.visibleWorkspaces,
+                            focused: b.focused, workspaces: b.workspaces, floaters: b.floaters, scratchpad: b.scratchpad)
+        return a == b
+    }
+
+    /// Where every window is now: trees, floaters and their frames, the
+    /// scratchpad, the workspace each screen shows, the focused window.
+    private func currentDesk() -> RelaunchHandoff {
         let ghosts = stateCache.hiddenWindowIDs
         let exact = layoutRestorer(ref: { RelaunchHandoff.ref(id: $0.windowID, pid: $0.ownerPID) })
         func key(_ id: CGWindowID) -> RelaunchHandoff.WindowKey? {
@@ -2282,15 +2345,7 @@ class WindowManager {
             workspaces: exact.capture(),
             floaters: floaters,
             scratchpad: scratchpad.members.subtracting(ghosts).sorted().compactMap(key))
-        do {
-            try relaunchHandoffStore.write(handoff)
-            let tiled = handoff.workspaces.reduce(0) { $0 + $1.refs.count }
-            hyprLog(.notice, .lifecycle, "relaunch handoff saved: \(tiled) tiled on \(handoff.workspaces.count) workspaces,"
-                    + " \(floaters.count) floating, \(handoff.scratchpad.count) in the scratchpad,"
-                    + " showing \(handoff.visibleWorkspaces)")
-        } catch {
-            hyprLog(.warning, .lifecycle, "relaunch handoff not written: \(error)")
-        }
+        return handoff
     }
 
     /// Put the desk back the way `saveRelaunchHandoff` found it. Runs once,

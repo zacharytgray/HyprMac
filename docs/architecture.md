@@ -1414,6 +1414,15 @@ Lesson 4 starts from three tiled practice windows: one away on lesson 3's
 other workspace, or floating, closes and opens again tiled. It teaches that
 floating windows tuck behind the tile you go back to, and that
 Hypr+Shift+T brings each one forward.
+When the tutorial starts (a replay, or onboarding leading into it),
+`WindowManager.snapshotDeskForTutorial` writes the user's desk the way an
+update relaunch does (`tutorial-desk.json` in Application Support): trees,
+floaters and their frames, the scratchpad, each screen's workspace and the
+focused window. Every way out (Done, Skip Tutorial, Leave, quitting)
+puts it back after the practice cleanup (`restoreDeskAfterTutorial`).
+Windows opened since stay put, closed ones are skipped, an unchanged desk
+is left alone, and settings picked in Make it yours stay. A desk left by a
+crash is dropped at the next launch.
 Esc on a lesson asks first, in the card: "Leave the tutorial? You can pick
 up here later." Keep Going (Return) or Esc again carries on; Leave exits.
 Esc in Hypr+K or Hypr+I only closes that panel. Leaving early (Leave, Skip

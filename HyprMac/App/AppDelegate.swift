@@ -228,6 +228,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // a tutorial cut short by a crash can leave its practice app's rule
         PracticeSession.removeRules(bundleID: PracticeSession.helperBundleID, from: config)
+        // and its saved desk, which is dropped rather than put back
+        windowManager?.discardTutorialDesk()
         if config.enabled {
             windowManager?.start()
         }
@@ -294,7 +296,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func presentStage(_ session: StageSession) {
         guard stage?.isShowing != true else { return }
         whatsNewController?.dismiss()
-        session.onClose = { [weak self] in self?.stage = nil }
+        // the user's desk, written when the tutorial starts and put back on
+        // every way out, after the practice cleanup
+        session.onTutorialStart = { [weak self] in self?.windowManager?.snapshotDeskForTutorial() }
+        session.onClose = { [weak self, weak session] in
+            if session?.tutorialStarted == true { self?.windowManager?.restoreDeskAfterTutorial() }
+            self?.stage = nil
+        }
         session.onQuit = { [weak self] in
             self?.permissionPollTimer?.invalidate()
             self?.permissionPollTimer = nil
@@ -310,6 +318,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // then the helper, its rules and its workspace go
         stage?.noteLeaving()
         stage?.cleanUp()
+        if stage?.tutorialStarted == true { windowManager?.restoreDeskAfterTutorial() }
         windowManager?.stop(keepPauseShortcut: false)
         // restore caps lock to normal when quitting
         KeyRemapper.restoreCapsLock()

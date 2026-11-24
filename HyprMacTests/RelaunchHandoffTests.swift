@@ -85,6 +85,22 @@ final class RelaunchHandoffTests: XCTestCase {
         store.discard()
     }
 
+    // the tutorial's desk has no age limit: a tutorial takes minutes
+    func testTheTutorialDeskIsKeptAtAnyAge() throws {
+        let old = RelaunchHandoff(savedAt: Date(timeIntervalSince1970: 1000), displayKey: "k", visibleWorkspaces: [1],
+                                  focused: nil, workspaces: [], floaters: [], scratchpad: [])
+        XCTAssertFalse(old.isUsable(now: Date(timeIntervalSince1970: 1000 + 3600), displayKey: "k"))
+        XCTAssertTrue(old.isUsable(now: Date(timeIntervalSince1970: 1000 + 3600), displayKey: "k", maxAge: nil))
+        XCTAssertFalse(old.isUsable(now: Date(timeIntervalSince1970: 1000 + 3600), displayKey: "other", maxAge: nil))
+        // only when it was written differs: the same desk, nothing to put back
+        let later = RelaunchHandoff(savedAt: Date(timeIntervalSince1970: 5000), displayKey: "k", visibleWorkspaces: [1],
+                                    focused: nil, workspaces: [], floaters: [], scratchpad: [])
+        XCTAssertTrue(WindowManager.sameDesk(old, later))
+        let moved = RelaunchHandoff(savedAt: Date(timeIntervalSince1970: 5000), displayKey: "k", visibleWorkspaces: [2],
+                                    focused: nil, workspaces: [], floaters: [], scratchpad: [])
+        XCTAssertFalse(WindowManager.sameDesk(old, moved))
+    }
+
     func testNoFileMeansNoHandoff() {
         XCTAssertNil(store.take(now: saved, displayKey: "Built-in:1512x982"))
     }

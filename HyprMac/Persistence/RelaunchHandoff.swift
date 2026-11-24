@@ -45,10 +45,10 @@ struct RelaunchHandoff: Codable, Equatable {
     }
 
     /// Fresh, from this build's schema, and for the displays connected now.
-    func isUsable(now: Date, displayKey: String) -> Bool {
+    func isUsable(now: Date, displayKey: String, maxAge: TimeInterval? = RelaunchHandoff.maxAge) -> Bool {
         let age = now.timeIntervalSince(savedAt)
         return schemaVersion == Self.currentSchemaVersion
-            && age >= 0 && age <= Self.maxAge
+            && age >= 0 && age <= (maxAge ?? .infinity)
             && displayKey == self.displayKey
     }
 
@@ -82,7 +82,14 @@ struct RelaunchHandoffStore {
 
     /// Read the handoff and delete the file, so it applies to one launch
     /// only. Returns nil when there is none or it no longer fits.
-    func take(now: Date = Date(), displayKey: String) -> RelaunchHandoff? {
+    /// The tutorial's desk, next to the config on this Mac (Application
+    /// Support, never iCloud). It has no age limit: a tutorial takes minutes.
+    static let tutorialDesk = RelaunchHandoffStore(
+        fileURL: ConfigStore.configDir.appendingPathComponent("tutorial-desk.json"))
+
+    /// `maxAge` nil for the tutorial's desk, which can be any age.
+    func take(now: Date = Date(), displayKey: String,
+              maxAge: TimeInterval? = RelaunchHandoff.maxAge) -> RelaunchHandoff? {
         guard let data = try? Data(contentsOf: fileURL) else { return nil }
         try? FileManager.default.removeItem(at: fileURL)
         let decoder = JSONDecoder()
@@ -91,7 +98,7 @@ struct RelaunchHandoffStore {
             hyprLog(.notice, .lifecycle, "relaunch handoff: unreadable, ignored")
             return nil
         }
-        guard handoff.isUsable(now: now, displayKey: displayKey) else {
+        guard handoff.isUsable(now: now, displayKey: displayKey, maxAge: maxAge) else {
             hyprLog(.notice, .lifecycle, "relaunch handoff: ignored, saved \(Int(now.timeIntervalSince(handoff.savedAt)))s ago"
                     + " for '\(handoff.displayKey)', now '\(displayKey)'")
             return nil

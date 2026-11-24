@@ -44,6 +44,16 @@ final class StageSession: ObservableObject {
     private let controller = TutorialWindowController()
     var onClose: () -> Void = {}
     var onQuit: () -> Void = {}
+    /// the tutorial is about to start: before its first screen, practice
+    /// included. Once per run, also when onboarding leads into it
+    var onTutorialStart: () -> Void = {}
+    private(set) var tutorialStarted = false
+
+    private func noteTutorialStart() {
+        guard !tutorialStarted else { return }
+        tutorialStarted = true
+        onTutorialStart()
+    }
 
     /// Onboarding starts at Access only while access is missing.
     static func onboarding(accessGranted: Bool, practiceHost: PracticeHost? = nil) -> StageSession {
@@ -92,6 +102,7 @@ final class StageSession: ObservableObject {
     func show() {
         controller.show(StageFlowView(session: self), level: level)
         addEscMonitor()
+        if case .tutorial = screen { noteTutorialStart() }
         // a resumed run can start on a practice lesson
         enterScreen(wasPractice: false)
     }
@@ -138,6 +149,7 @@ final class StageSession: ObservableObject {
     func finishOnboarding(takeTutorial: Bool) {
         onboardingDone.insert(.makeItYours)
         if takeTutorial {
+            noteTutorialStart()
             go(to: .tutorial(Self.builtLessons[0]))
         } else {
             close()
