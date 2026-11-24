@@ -10,6 +10,8 @@ final class MoveAroundLessonTests: XCTestCase {
         var switches: [Int] = []
         /// a refused switch, as mid display change
         var refuses = false
+        var capacity = 8
+        func tileCapacity(of workspace: Int) -> Int { capacity }
         func currentWorkspace() -> Int? { current }
         func emptyWorkspaces() -> [Int] { empty }
         func switchToWorkspace(_ number: Int) {
@@ -144,6 +146,23 @@ final class MoveAroundLessonTests: XCTestCase {
         XCTAssertEqual(host.switches, [])
     }
 
+    // a low Max splits would spill the third practice window onto another,
+    // maybe occupied, workspace: practice doesn't start and names the setting
+    func testTooFewTilesStartsNoPractice() {
+        let host = FakeHost()
+        host.capacity = 2
+        let stage = StageSession.tutorial(practiceHost: host)
+        stage.practice.begin()
+        XCTAssertFalse(stage.practice.isActive)
+        XCTAssertEqual(host.switches, [])
+        XCTAssertEqual(stage.practiceBlocked(.floating), PracticeSession.needsRoomForTiles)
+        XCTAssertTrue(PracticeSession.needsRoomForTiles.contains("Settings → Monitors"))
+        host.capacity = 4
+        stage.practice.begin()
+        XCTAssertTrue(stage.practice.isActive)
+        stage.practice.end()
+    }
+
     // a refused switch leaves the user on their own workspace: no practice there
     func testARefusedSwitchStartsNoPractice() {
         let host = FakeHost()
@@ -168,13 +187,19 @@ final class MoveAroundLessonTests: XCTestCase {
         let stage = StageSession.tutorial(practiceHost: host)
         stage.practice.begin()
         XCTAssertEqual(stage.practice.practiceWorkspace, 3)
+        stage.practice.pickSendTarget()
         XCTAssertEqual(stage.practice.otherWorkspace, 4)
         XCTAssertNil(stage.practiceBlocked(.workspaces))
+        // picked again when lesson 3 opens: 4 filled up since
+        host.empty = [3]
+        stage.practice.pickSendTarget()
+        XCTAssertNil(stage.practice.otherWorkspace)
         stage.practice.end()
 
         host.current = 1
         host.empty = [3]
         stage.practice.begin()
+        stage.practice.pickSendTarget()
         XCTAssertEqual(stage.practice.practiceWorkspace, 3)
         XCTAssertNil(stage.practice.otherWorkspace)
         XCTAssertEqual(stage.practiceBlocked(.workspaces), PracticeSession.needsSecondEmptyWorkspace)

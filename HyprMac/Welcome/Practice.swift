@@ -22,6 +22,10 @@ protocol PracticeHost: AnyObject {
     /// current one; the one on screen never counts
     func emptyWorkspaces() -> [Int]
     func switchToWorkspace(_ number: Int)
+    /// how many windows `workspace` tiles before the next one spills to
+    /// another workspace: Max splits on its display, 0 when the display
+    /// doesn't tile
+    func tileCapacity(of workspace: Int) -> Int
     /// the helper's windows HyprMac knows, by the number in their title
     func practiceWindows(pid: pid_t) -> [PracticeWindowState]
     /// float one practice window, as Hypr+T would
@@ -58,6 +62,13 @@ final class WindowManagerPracticeHost: PracticeHost {
 
     func switchToWorkspace(_ number: Int) {
         windowManager?.handleAction(.switchWorkspace(number))
+    }
+
+    func tileCapacity(of workspace: Int) -> Int {
+        guard let wm = windowManager, let workspaces = wm.workspaceManager,
+              let screen = workspaces.homeScreenForWorkspace(workspace),
+              !workspaces.isMonitorDisabled(screen) else { return 0 }
+        return RetileAllPlanner.workspaceCapacity(maxDepth: wm.tilingEngine.maxDepth(for: screen))
     }
 
     func practiceWindows(pid: pid_t) -> [PracticeWindowState] {
@@ -111,6 +122,7 @@ final class LatePracticeHost: PracticeHost {
     func currentWorkspace() -> Int? { host.currentWorkspace() }
     func emptyWorkspaces() -> [Int] { host.emptyWorkspaces() }
     func switchToWorkspace(_ number: Int) { host.switchToWorkspace(number) }
+    func tileCapacity(of workspace: Int) -> Int { host.tileCapacity(of: workspace) }
     func practiceWindows(pid: pid_t) -> [PracticeWindowState] { host.practiceWindows(pid: pid) }
     func floatPracticeWindow(pid: pid_t, number: Int) -> Bool { host.floatPracticeWindow(pid: pid, number: number) }
     func keybindSearchText() -> String { host.keybindSearchText() }
@@ -149,6 +161,9 @@ final class PracticeSession: ObservableObject {
     @Published private(set) var unavailable: String?
 
     static let needsEmptyWorkspace = "Practice needs one empty workspace. Move the windows off one, then try again."
+    /// lesson 5 can have four practice windows tiled at once
+    static let tilesNeeded = 4
+    static let needsRoomForTiles = "Practice needs this display to tile 4 windows. Check Tile windows on this display and Max splits in Settings → Monitors, then try again."
     static let switchRefused = "Practice couldn't move to an empty workspace just now. Wait a moment, then try again."
     static let needsSecondEmptyWorkspace = "This lesson needs a second empty workspace. Move the windows off one, then try again."
 
@@ -192,6 +207,12 @@ final class PracticeSession: ObservableObject {
             hyprLog(.notice, .lifecycle, "tutorial practice: no empty workspace on this screen, not starting")
             return
         }
+        // a window past Max splits spills to another workspace, maybe one in use
+        guard (host?.tileCapacity(of: home) ?? 0) >= Self.tilesNeeded else {
+            unavailable = Self.needsRoomForTiles
+            hyprLog(.notice, .lifecycle, "tutorial practice: ws\(home) tiles fewer than \(Self.tilesNeeded) windows, not starting")
+            return
+        }
         let start = host?.currentWorkspace()
         host?.switchToWorkspace(home)
         // a switch can be refused, as mid display change; the windows
@@ -205,8 +226,7 @@ final class PracticeSession: ObservableObject {
         launch += 1
         startWorkspace = start
         practiceWorkspace = home
-        // picked before the windows open, so it's empty too; nil without one
-        otherWorkspace = empty.dropFirst().first
+        otherWorkspace = nil
         observer = DistributedNotificationCenter.default().addObserver(
             forName: Self.stateNotification, object: nil, queue: .main
         ) { [weak self] note in
@@ -242,6 +262,15 @@ final class PracticeSession: ObservableObject {
             return
         }
         helper = app
+    }
+
+    /// Lesson 3's send target: an empty workspace other than practice's,
+    /// checked when the lesson opens, since windows may have moved since
+    /// begin(). nil without one, and the lesson says so.
+    func pickSendTarget() {
+        otherWorkspace = isActive
+            ? host?.emptyWorkspaces().first { $0 != practiceWorkspace }
+            : nil
     }
 
     /// Open one more practice window; with `floating`, HyprMac floats it as

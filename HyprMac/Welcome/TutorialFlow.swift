@@ -195,6 +195,7 @@ final class StageSession: ObservableObject {
     static let windowLessons: Set<TutorialLesson> = [.moveAround, .workspaces, .floating, .fixWindow]
 
     private func startScreen() {
+        if case .tutorial(.workspaces) = screen { practice.pickSendTarget() }
         if case let .tutorial(lesson) = screen, let reason = practiceBlocked(lesson) {
             controller.showBar(LessonBar(lesson: lesson,
                                          why: "This lesson runs on practice windows, never on yours.",
