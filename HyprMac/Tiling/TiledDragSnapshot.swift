@@ -15,19 +15,13 @@ struct TiledDragSnapshot {
     /// How far inside a frame's left, right or bottom edge a press grabs its
     /// resize border.
     static let resizeBorderBand: CGFloat = 8
-    /// How far outside a frame's edge a press still grabs it. macOS starts
-    /// a resize a few points outside the window, which is the gap between
-    /// tiles.
-    static let resizeOutsideBand: CGFloat = 5
-
-    /// The outside band for `gap`: half the gap at most, so a press in the
-    /// gap belongs to one side.
-    static func outsideBand(gap: CGFloat) -> CGFloat {
-        max(0, min(resizeOutsideBand, gap / 2))
-    }
     /// The top edge's band, narrower because the title bar starts right
     /// below it.
     static let resizeTopBorderBand: CGFloat = 4
+    /// How far outside a frame's edge a press still grabs it. macOS starts
+    /// a resize a few points outside the window, which is the gap between
+    /// tiles. `outsideBand(gap:)` caps it.
+    static let resizeOutsideBand: CGFloat = 5
     /// How far the edge opposite a grabbed one may drift and still count as
     /// held. A point of slack over the one-point readback tolerance, for an
     /// app that rounds its size to cells as it resizes.
@@ -35,6 +29,12 @@ struct TiledDragSnapshot {
     /// How much a grabbed axis has to change size before a border press is
     /// a resize rather than a move that barely started.
     static let resizeMinimumChange: CGFloat = 4
+
+    /// The outside band for `gap`: half the gap at most, so a press in the
+    /// gap belongs to one side.
+    static func outsideBand(gap: CGFloat) -> CGFloat {
+        max(0, min(resizeOutsideBand, gap / 2))
+    }
 
     /// The edges whose band holds the press, corners giving two. nil when
     /// the press point is not known.

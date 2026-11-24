@@ -260,17 +260,17 @@ final class TiledDragTransactionTests: XCTestCase {
         }
     }
 
-    func testNearestTileNeedsOneTileWithinTheBand() {
-        let frames: [CGWindowID: CGRect] = [1: CGRect(x: 0, y: 0, width: 100, height: 100),
-                                            2: CGRect(x: 110, y: 0, width: 100, height: 100)]
-        XCTAssertEqual(TiledDragTransaction.nearestTile(to: CGPoint(x: 102, y: 50), frames: frames, within: 5), 1)
-        XCTAssertEqual(TiledDragTransaction.nearestTile(to: CGPoint(x: 107, y: 50), frames: frames, within: 5), 2)
-        XCTAssertNil(TiledDragTransaction.nearestTile(to: CGPoint(x: 105, y: 50), frames: frames, within: 5),
-                     "equally near")
-        XCTAssertNil(TiledDragTransaction.nearestTile(to: CGPoint(x: 50, y: 110), frames: frames, within: 5),
-                     "beyond the band")
-        XCTAssertNil(TiledDragTransaction.nearestTile(to: CGPoint(x: 102, y: 50), frames: frames, within: 0),
-                     "no gap, no band")
+    func testPointerCaptureInTheGapUnderAFloaterIsNotATilePress() {
+        let (tree, _, context) = fixture()
+        let floater = makeWindow(id: 40)
+        var frames = layoutFrames(tree, context)
+        let press = CGPoint(x: frames[1]!.maxX + 3, y: frames[2]!.midY)
+        frames[40] = CGRect(x: press.x - 50, y: press.y - 50, width: 100, height: 100)
+        guard case .ineligible(.noTarget) = TiledDragTransaction(ioFactory: FakeAX(frames: frames).factory)
+            .capture(pointer: press, tree: tree, context: context, occludingWindows: [floater],
+                     generation: 1, currentContext: { context }) else {
+            return XCTFail("a press on a floater over the gap must not capture a tile")
+        }
     }
 
     func testPointerCaptureReadFailureIsUnknownAndDoesNotPublish() {

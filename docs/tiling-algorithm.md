@@ -1355,8 +1355,11 @@ its existing feedback behavior.
 
 `TiledDragHandler` owns a press snapshot and a deferred release. It captures
 the actual frames of the source tree and visible floating occluders once.
-A press must hit exactly one tile and no occluder. Floating and scratchpad
-presses do not start tiled insertion.
+A press must hit exactly one tile and no occluder. A press that hits no tile
+and no occluder takes the tile whose edge is within the outer band below,
+the nearest one when two are, and none when two are equally near. macOS
+starts an edge resize a few points outside the window, which is the gap
+between tiles. Floating and scratchpad presses do not start tiled insertion.
 
 The mouse-up event supplies the release point. The mouse lifecycle latches the
 logical Hypr key when it is held at press, pressed during the drag, or still
@@ -1369,8 +1372,10 @@ resize only when all three of these hold:
 - The press landed on the window's resize border. The border is a band just
   inside the captured frame: 8 points at the left, right and bottom edges and
   4 at the top, corners giving two edges. The top band is narrow because the
-  title bar starts right below it. There is no outer band: a press outside
-  the frame is not a tile press at all.
+  title bar starts right below it. An outer band of 5 points, capped at half
+  the gap so a press in the gap belongs to one side, counts the same as the
+  inner band (`TiledDragSnapshot.outsideBand`). With no gap there is no outer
+  band.
 - The edge opposite every grabbed edge stayed within 3 points: maxX for a
   left edge, minY for a bottom edge, and so on.
 - At least one grabbed axis changed size by more than 4 points.
