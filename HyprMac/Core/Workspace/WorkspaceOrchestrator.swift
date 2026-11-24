@@ -452,7 +452,8 @@ final class WorkspaceOrchestrator {
 
         noteDepartedFocus(hiding: result.toHide)
 
-        // the dim follows a switch at once, both ways
+        // the outgoing dim goes at once, so it never fades over the incoming
+        // windows; theirs fades in once the switch's focus lands
         dimmingOverlay.beginInstantSwitch(incoming: result.toShow, outgoing: result.toHide)
         // the outgoing floaters' outlines go with them, also at once
         focusBorder.beginInstantSwitch(outgoing: result.toHide)

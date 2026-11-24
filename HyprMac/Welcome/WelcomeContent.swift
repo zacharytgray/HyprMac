@@ -33,8 +33,8 @@ enum WhatsNewFeatures {
         ),
         WhatsNewFeature(
             icon: "circle.lefthalf.filled",
-            title: "Instant Dim on Switch",
-            description: "Switching workspaces changes the dim at once, with no fade over the new windows.",
+            title: "Cleaner Dim on Switch",
+            description: "The old workspace's dim no longer fades over the new one's windows when you switch.",
             credit: "dex157"
         ),
         WhatsNewFeature(

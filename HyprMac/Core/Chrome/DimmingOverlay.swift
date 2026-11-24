@@ -16,9 +16,10 @@ import Cocoa
 /// resizes, focus-region carve-outs, floater carve-outs) re-stamp the
 /// path inside `setDisableActions(true)` and are instant. Opacity
 /// changes (window becoming focused or unfocused, dim turning on or
-/// off) animate over `fadeDurationSec` with `easeInEaseOut`, except
-/// during a workspace switch (`beginInstantSwitch`), when the windows it
-/// brings in and takes away change at once.
+/// off) animate over `fadeDurationSec` with `easeInEaseOut`. A workspace
+/// switch (`beginInstantSwitch`) removes the dim of the windows it takes
+/// away at once, so it never fades over the windows it brings in; theirs
+/// fades in as usual.
 ///
 /// A floater's carve-out covers only the part of it that is in front.
 /// The caller passes, per floater, the frames stacked above it (from the
@@ -35,8 +36,8 @@ import Cocoa
 /// dim disabled        → every layer animates → 0, panel orderOuts
 /// dim re-enabled      → orderFront, every non-focused layer 0 → 1
 /// workspace switch    → outgoing: removed at once when they leave the
-///                       screen. incoming: created at their target at
-///                       once, after the switch's focus lands on one
+///                       screen. incoming: created after the switch's
+///                       focus lands on one, then fade in like any new one
 /// ```
 ///
 /// Threading: main-thread only.
@@ -71,8 +72,8 @@ class DimmingOverlay {
     // inside update() so a mid-drag full update doesn't stomp it, and
     // re-stamped path-only by setDragOverride at mouse-drag rate.
     private var dragOverride: (id: CGWindowID, rect: CGRect)?
-    // the windows a running workspace switch brings in and takes away.
-    // both change their dim at once. see `beginInstantSwitch`
+    // the windows a running workspace switch brings in and takes away. the
+    // outgoing ones lose their dim at once. see `beginInstantSwitch`
     private var switchIncoming: Set<CGWindowID> = []
     private var switchOutgoing: Set<CGWindowID> = []
     // bumped on each hideAll; the deferred orderOut closure captures the
@@ -97,7 +98,8 @@ class DimmingOverlay {
     var panelLevel: NSWindow.Level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue - 1)
 
     /// Fade duration for opacity transitions (focus traversal AND
-    /// enable/disable; a workspace switch takes none). `easeInEaseOut`
+    /// enable/disable, and the incoming dim of a workspace switch).
+    /// `easeInEaseOut`
     /// (set in `animateOpacity`) spreads the alpha ramp evenly so the
     /// small-delta dim reads as a fade rather than a step — `.easeOut`
     /// packs the change into the first
@@ -230,16 +232,12 @@ class DimmingOverlay {
                 CATransaction.commit()
 
                 // opacity: changes only on a target change. fresh layers
-                // start at 0 (set in createWindowLayer) and fade in, unless
-                // a workspace switch brought the window in: then it is set
+                // start at 0 (set in createWindowLayer) and fade in, a
+                // workspace switch's incoming windows included
                 if isNew { entry.lastTargets[wid] = 0 }
                 let lastTarget = entry.lastTargets[wid] ?? 0
                 if lastTarget != target {
-                    if switchIncoming.contains(wid) {
-                        setOpacityNow(layer, to: target)
-                    } else {
-                        animateOpacity(layer, to: target)
-                    }
+                    animateOpacity(layer, to: target)
                     entry.lastTargets[wid] = target
                 }
             }
@@ -308,23 +306,23 @@ class DimmingOverlay {
     }
 
     /// Start a workspace switch: until `endInstantSwitch`, the dim of the
-    /// windows it brings in and takes away changes at once. The fade is for
-    /// focus moving on screen; with a long fade, the outgoing windows' dim
-    /// lingered over the incoming ones and coming back faded the dim in.
+    /// windows it takes away goes at once. With a long fade, the outgoing
+    /// windows' dim lingered over the incoming ones (#111). The incoming
+    /// windows' dim fades in at the usual rate.
     ///
     /// An outgoing window's layer goes when an update no longer has it on
     /// screen: the switch places the incoming windows over the outgoing ones
     /// before it parks them. An incoming window's layer waits for an update
     /// whose focus is one of the incoming windows: the switch places them
-    /// before it moves focus, and a layer made under the old focus would dim
-    /// the window about to be focused for that moment.
+    /// before it moves focus, and a layer made under the old focus would start
+    /// dimming the window about to be focused.
     func beginInstantSwitch(incoming: Set<CGWindowID>, outgoing: Set<CGWindowID>) {
         mainThreadOnly()
         switchIncoming = incoming
         switchOutgoing = outgoing
     }
 
-    /// End the switch `beginInstantSwitch` started. Later changes fade.
+    /// End the switch `beginInstantSwitch` started.
     func endInstantSwitch() {
         mainThreadOnly()
         switchIncoming = []
