@@ -124,7 +124,8 @@ final class WorkspacesLessonModel: PracticeLessonModel {
     private var lastHome: Set<Int> = []
 
     var practiceWorkspace: Int { practice.practiceWorkspace ?? 1 }
-    var otherWorkspace: Int { practice.otherWorkspace ?? (practiceWorkspace % 10) + 1 }
+    /// nil without a second empty workspace; the lesson then says so
+    var otherWorkspace: Int? { practice.otherWorkspace }
 
     override func noteAction(_ action: String) {
         // no helper: the send can't be seen
@@ -132,6 +133,7 @@ final class WorkspacesLessonModel: PracticeLessonModel {
     }
 
     override func evaluate() {
+        guard let otherWorkspace else { return }
         let switched = recorder.recent("switchWorkspace")
         if !wentAway, switched, practice.workspace == otherWorkspace { mark(self, \.wentAway) }
         if wentAway, !cameBack, switched, practice.workspace == practiceWorkspace { mark(self, \.cameBack) }
@@ -154,7 +156,7 @@ struct WorkspacesLessonBar: View {
     let onNext: () -> Void
 
     var body: some View {
-        let other = model.otherWorkspace, home = model.practiceWorkspace
+        let other = model.otherWorkspace ?? 0, home = model.practiceWorkspace
         LessonBar(
             lesson: .workspaces,
             why: "Ten workspaces, each its own screen. Windows stay where you leave them.",

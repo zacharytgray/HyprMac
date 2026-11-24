@@ -168,9 +168,11 @@ final class StageSession: ObservableObject {
         let wasPractice = isPractice
         stopScreen()
         screen = next
-        if isPractice, !wasPractice {
-            controller.setPracticeMode(true, level: level)
+        if isPractice, !practice.isActive {
+            // each practice lesson tries again; without an empty workspace
+            // the stage stays in front of the user's windows
             practice.begin()
+            if practice.isActive { controller.setPracticeMode(true, level: level) }
             addEscMonitor()
         } else if !isPractice, wasPractice {
             cleanUp()
@@ -181,7 +183,25 @@ final class StageSession: ObservableObject {
         startScreen()
     }
 
+    /// Why a lesson that works on windows can't run, if it can't.
+    func practiceBlocked(_ lesson: TutorialLesson) -> String? {
+        guard Self.windowLessons.contains(lesson) else { return nil }
+        if let reason = practice.unavailable { return reason }
+        if lesson == .workspaces, practice.otherWorkspace == nil { return PracticeSession.needsSecondEmptyWorkspace }
+        return nil
+    }
+
+    /// lessons that focus, move, float or give rules to windows
+    static let windowLessons: Set<TutorialLesson> = [.moveAround, .workspaces, .floating, .fixWindow]
+
     private func startScreen() {
+        if case let .tutorial(lesson) = screen, let reason = practiceBlocked(lesson) {
+            controller.showBar(LessonBar(lesson: lesson,
+                                         why: "This lesson runs on practice windows, never on yours.",
+                                         tasks: [], hyprKey: UserConfig.shared.hyprKey, blocked: reason,
+                                         onExit: exit, onNext: next))
+            return
+        }
         switch screen {
         case .tutorial(.hyprKey): hyprKeyLesson.start()
         case .onboarding(.hyprKey): hyprKeyHold.start()

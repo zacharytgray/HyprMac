@@ -188,6 +188,16 @@ class WorkspaceManager {
         return nil
     }
 
+    /// Every empty, hidden workspace anchored to `screen`, in order after
+    /// `source`. Hidden windows count as windows, so a ghost's workspace
+    /// isn't empty.
+    func emptyWorkspaces(after source: Int, on screen: NSScreen) -> [Int] {
+        let anchored = workspacesAnchoredTo(screen)
+        guard let sourceIndex = anchored.firstIndex(of: source) else { return [] }
+        return (1..<max(anchored.count, 1)).map { anchored[(sourceIndex + $0) % anchored.count] }
+            .filter { !isWorkspaceVisible($0) && windowIDs(onWorkspace: $0).isEmpty }
+    }
+
     /// Establish or refresh the screen→workspace mapping.
     ///
     /// Each enabled monitor's currently-visible workspace must be one

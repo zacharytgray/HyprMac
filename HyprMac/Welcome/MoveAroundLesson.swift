@@ -118,6 +118,8 @@ struct LessonBar: View {
     let hyprKey: HyprKey
     /// a quiet line under the tasks, e.g. the two-display key
     var note: String? = nil
+    /// why the lesson can't run; replaces the tasks, Skip still works
+    var blocked: String? = nil
     let onExit: () -> Void
     let onNext: () -> Void
 
@@ -139,18 +141,28 @@ struct LessonBar: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 12)
-                Text("\(done) of \(tasks.count) done")
-                    .font(.system(size: 11.5, weight: .medium, design: .monospaced))
-                    .foregroundStyle(done == tasks.count ? TutorialStageColor.cyan : TutorialStageColor.faint)
-                if done < tasks.count {
+                if blocked != nil {
                     StageQuietButton("Skip Lesson", action: onNext)
+                } else {
+                    Text("\(done) of \(tasks.count) done")
+                        .font(.system(size: 11.5, weight: .medium, design: .monospaced))
+                        .foregroundStyle(done == tasks.count ? TutorialStageColor.cyan : TutorialStageColor.faint)
+                    if done < tasks.count {
+                        StageQuietButton("Skip Lesson", action: onNext)
+                    }
+                    StagePrimaryButton(lesson.nextTitle, enabled: done == tasks.count, isDefault: false, action: onNext)
                 }
-                StagePrimaryButton(lesson.nextTitle, enabled: done == tasks.count, isDefault: false, action: onNext)
             }
 
             HStack(spacing: 10) {
-                ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
-                    taskView(task, current: index == currentIndex)
+                if let blocked {
+                    Text(blocked)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(TutorialStageColor.text)
+                } else {
+                    ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
+                        taskView(task, current: index == currentIndex)
+                    }
                 }
                 Spacer(minLength: 12)
                 StageQuietButton("Skip Tutorial", action: onExit)

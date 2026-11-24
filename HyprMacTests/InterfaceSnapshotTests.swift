@@ -247,6 +247,15 @@ final class InterfaceSnapshotTests: XCTestCase {
             try shot("3-workspaces-2-done", tiled: [1, 2],
                      WorkspacesLessonBar(model: workspaces, displayCount: 1, onExit: {}, onNext: {}))
 
+            // no empty workspace: the line says why, Skip still works
+            try render("tutorial-2-move-around-no-empty-workspace-\(mode)",
+                       StageBackdrop().overlay(alignment: .bottom) {
+                           LessonBar(lesson: .moveAround, why: "This lesson runs on practice windows, never on yours.",
+                                     tasks: [], hyprKey: .capsLock, blocked: PracticeSession.needsEmptyWorkspace,
+                                     onExit: {}, onNext: {})
+                               .padding(16)
+                       }, size: size, dark: dark)
+
             let floating = FloatingLessonModel(practice: practice)
             try shot("4-floating-1-start", tiled: [1, 2],
                      FloatingLessonBar(model: floating, onExit: {}, onNext: {}))

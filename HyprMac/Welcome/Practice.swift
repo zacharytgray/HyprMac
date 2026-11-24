@@ -1,6 +1,7 @@
 // The tutorial's practice windows. Lessons 2 to 6 run on HyprMac Practice
 // (Contents/Helpers), on an empty workspace, so the user's own windows are
-// never focused, moved, floated or given rules. The helper reports which of
+// never focused, moved, floated or given rules. With no empty workspace on
+// the screen, practice doesn't start and those lessons say why. The helper reports which of
 // its windows has focus and their order on screen; the window manager says
 // where each one is and whether it floats.
 
@@ -17,8 +18,9 @@ struct PracticeWindowState: Equatable {
 protocol PracticeHost: AnyObject {
     /// the workspace showing on the pointer's screen
     func currentWorkspace() -> Int?
-    /// an empty workspace on the pointer's screen, after the current one
-    func emptyWorkspace() -> Int?
+    /// the empty workspaces on the pointer's screen, in order after the
+    /// current one; the one on screen never counts
+    func emptyWorkspaces() -> [Int]
     func switchToWorkspace(_ number: Int)
     /// the helper's windows HyprMac knows, by the number in their title
     func practiceWindows(pid: pid_t) -> [PracticeWindowState]
@@ -49,9 +51,9 @@ final class WindowManagerPracticeHost: PracticeHost {
         return workspaces.workspaceForScreen(wm.displayManager.screenUnderCursor())
     }
 
-    func emptyWorkspace() -> Int? {
-        guard let wm = windowManager, let workspaces = wm.workspaceManager, let current = currentWorkspace() else { return nil }
-        return workspaces.nextEmptyWorkspace(after: current, on: wm.displayManager.screenUnderCursor())
+    func emptyWorkspaces() -> [Int] {
+        guard let wm = windowManager, let workspaces = wm.workspaceManager, let current = currentWorkspace() else { return [] }
+        return workspaces.emptyWorkspaces(after: current, on: wm.displayManager.screenUnderCursor())
     }
 
     func switchToWorkspace(_ number: Int) {
@@ -107,7 +109,7 @@ final class LatePracticeHost: PracticeHost {
 
     private var host: WindowManagerPracticeHost { WindowManagerPracticeHost(windowManager()) }
     func currentWorkspace() -> Int? { host.currentWorkspace() }
-    func emptyWorkspace() -> Int? { host.emptyWorkspace() }
+    func emptyWorkspaces() -> [Int] { host.emptyWorkspaces() }
     func switchToWorkspace(_ number: Int) { host.switchToWorkspace(number) }
     func practiceWindows(pid: pid_t) -> [PracticeWindowState] { host.practiceWindows(pid: pid) }
     func floatPracticeWindow(pid: pid_t, number: Int) -> Bool { host.floatPracticeWindow(pid: pid, number: number) }
@@ -139,9 +141,15 @@ final class PracticeSession: ObservableObject {
     /// Hypr+K's search text while the list is open
     @Published private(set) var keybindSearch = ""
 
-    /// where the practice windows live, and a second empty one for lesson 3
+    /// where the practice windows live, and a second empty one for lesson 3;
+    /// nil when the screen has no such workspace
     private(set) var practiceWorkspace: Int?
     private(set) var otherWorkspace: Int?
+    /// why practice didn't start, for the lesson bar
+    @Published private(set) var unavailable: String?
+
+    static let needsEmptyWorkspace = "Practice needs one empty workspace. Move the windows off one, then try again."
+    static let needsSecondEmptyWorkspace = "This lesson needs a second empty workspace. Move the windows off one, then try again."
 
     static let stateNotification = Notification.Name("com.zachgray.HyprMac.practice.state")
     static let commandNotification = Notification.Name("com.zachgray.HyprMac.practice.command")
@@ -173,19 +181,23 @@ final class PracticeSession: ObservableObject {
             ?? NSRunningApplication.runningApplications(withBundleIdentifier: Self.helperBundleID).first?.processIdentifier
     }
 
-    /// Move to an empty workspace and open the practice windows there.
+    /// Move to an empty workspace and open the practice windows there. With
+    /// none, nothing starts: the user's own windows are never practice.
     func begin(windows count: Int = 3) {
         guard !isActive else { return }
+        let empty = host?.emptyWorkspaces() ?? []
+        guard let home = empty.first else {
+            unavailable = Self.needsEmptyWorkspace
+            hyprLog(.notice, .lifecycle, "tutorial practice: no empty workspace on this screen, not starting")
+            return
+        }
+        unavailable = nil
         launch += 1
         startWorkspace = host?.currentWorkspace()
-        if let empty = host?.emptyWorkspace() {
-            host?.switchToWorkspace(empty)
-            practiceWorkspace = empty
-        } else {
-            practiceWorkspace = startWorkspace
-            hyprLog(.notice, .lifecycle, "tutorial practice: no empty workspace on this screen, using the current one")
-        }
-        otherWorkspace = host?.emptyWorkspace() ?? startWorkspace
+        host?.switchToWorkspace(home)
+        practiceWorkspace = home
+        // picked before the windows open, so it's empty too; nil without one
+        otherWorkspace = empty.dropFirst().first
         observer = DistributedNotificationCenter.default().addObserver(
             forName: Self.stateNotification, object: nil, queue: .main
         ) { [weak self] note in
@@ -234,6 +246,7 @@ final class PracticeSession: ObservableObject {
     /// Quit the helper, drop any rule made for it, and go back to where the
     /// tutorial started. Safe to call more than once.
     func end() {
+        unavailable = nil
         guard isActive || helper != nil else { return }
         if let observer { DistributedNotificationCenter.default().removeObserver(observer) }
         observer = nil
