@@ -52,27 +52,6 @@ struct KeybindsSettingsView: View {
                 }
             }
 
-            if search.trimmingCharacters(in: .whitespaces).isEmpty
-                || "Swap tiles by dragging hypr mouse".localizedCaseInsensitiveContains(search.trimmingCharacters(in: .whitespaces)) {
-                HyprPanel("Mouse", footer: "Hold hypr and drag a tiled window by its title bar onto another tile to swap them. The tile can be on another monitor.") {
-                    HStack(spacing: HyprSpacing.md) {
-                        Image(systemName: "hand.draw")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(Color.hyprTextSecondary)
-                            .frame(width: 16)
-                        Text("Swap tiles by dragging")
-                            .font(.hyprBody)
-                        Spacer()
-                        HStack(spacing: 3) {
-                            HyprKeyChip()
-                            KeyChip("drag")
-                        }
-                    }
-                    .padding(.horizontal, HyprSpacing.md)
-                    .padding(.vertical, HyprSpacing.sm + 1)
-                }
-            }
-
             Button("Reset to defaults") {
                 config.resetKeybindsToDefaults()
             }

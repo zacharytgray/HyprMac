@@ -176,7 +176,7 @@ struct SettingsSectionContent: View {
         case .monitors:
             TilingSettingsView(panels: [.monitors])
         case .mouse:
-            MovedGeneralPanels(panels: [.mouse])
+            MouseSettingsView()
         case .appearance:
             TilingSettingsView(panels: [.focus])
             MovedGeneralPanels(panels: [.overlays])
@@ -225,14 +225,14 @@ enum SettingsSection: String, CaseIterable, Hashable {
         case .tiling:     return "Space between tiles, and which apps float or tile."
         case .workspaces: return "Workspace names, app pins and the scratchpad."
         case .monitors:   return "Tiling, splits, edge room and workspaces for each display."
-        case .mouse:      return "Focus follows mouse, hover speed and the cursor on switches."
+        case .mouse:      return "Focus follows mouse, hover speed, the cursor on switches and Hypr+drag."
         case .appearance: return "Focus indicator, dimming, colors and overlays."
         case .advanced:   return "iCloud sync, other apps and status bars, files, logging and reset."
         }
     }
 
     // drawn in the navy style; the rest wait their turn
-    var isRedesigned: Bool { [.general, .advanced].contains(self) }
+    var isRedesigned: Bool { [.general, .mouse, .advanced].contains(self) }
 }
 
 // MARK: - search index
@@ -264,7 +264,6 @@ enum SettingsSearchIndex {
         .init(title: "Keybinds", keywords: "shortcut chord binding hotkey key", section: .keys),
         .init(title: "App launchers", keywords: "launch open app shortcut", section: .keys),
         .init(title: "Commands", keywords: "run command shell script", section: .keys),
-        .init(title: "Swap tiles by dragging", keywords: "hypr drag mouse swap", section: .keys),
         // tiling
         .init(title: "Inner gap", keywords: "gaps spacing between windows", section: .tiling),
         .init(title: "Outer padding", keywords: "gaps screen edges margin", section: .tiling),
@@ -281,8 +280,9 @@ enum SettingsSearchIndex {
         .init(title: "Workspaces on each display", keywords: "monitor home workspace screen", section: .monitors),
         // mouse
         .init(title: "Focus follows mouse", keywords: "hover pointer focus", section: .mouse),
-        .init(title: "Hover response", keywords: "hover speed rate hz pointer", section: .mouse),
-        .init(title: "Keep cursor in place when switching workspaces", keywords: "cursor pointer warp center", section: .mouse),
+        .init(title: "Hover speed", keywords: "hover response rate hz pointer", section: .mouse),
+        .init(title: "Keep the cursor in place on workspace switches", keywords: "cursor pointer warp center", section: .mouse),
+        .init(title: "Swap tiles by dragging", keywords: "hypr drag mouse swap gesture", section: .mouse),
         // appearance
         .init(title: "Dim inactive windows", keywords: "dim darken unfocused", section: .appearance),
         .init(title: "Dim intensity", keywords: "dim amount strength", section: .appearance),
