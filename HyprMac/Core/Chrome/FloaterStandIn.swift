@@ -41,6 +41,10 @@ final class FloaterStandIn {
     /// a fresh window-list read: does a tile still cover the floater
     var isCovered: (CGWindowID) -> Bool = { _ in false }
     var handOffFinished: () -> Void = {}
+    /// the mouse button is down: a panel shown on the press stays up
+    var isPressDown: () -> Bool = { NSEvent.pressedMouseButtons & 1 != 0 }
+    /// a press hold ran out: refresh so a wrong guess comes down
+    var holdEnded: () -> Void = {}
     /// the Settings switch, "Keep floating windows in front"
     var isOn: () -> Bool = { false }
     var forcesCard: () -> Bool = { FloaterStandInMode.debugForcesCard() }
@@ -50,6 +54,12 @@ final class FloaterStandIn {
     /// how long a hand-off waits for the real window to come up
     static let handOffTimeout: CFAbsoluteTime = 0.3
     static let handOffPoll: TimeInterval = 0.01
+    /// the least time a panel shown on a press stays up, for a click shorter
+    /// than the clicked app's raise
+    static let pressHold: CFAbsoluteTime = 0.25
+    /// after the panel goes, before the click is passed on, so the window
+    /// server routes it to the real window and not to the panel
+    static let passOnDelay: TimeInterval = 0.02
     /// how often a refresh asks again whether Screen Recording is granted
     static let captureRecheck: CFAbsoluteTime = 2
 
@@ -61,6 +71,9 @@ final class FloaterStandIn {
         // a stream that failed is not retried before this
         var streamRetryAfter: CFAbsoluteTime = 0
         var shown = false
+        // shown on a press, before the tile rose. a refresh during the press
+        // still sees the floater in front and must not take it down
+        var heldUntil: CFAbsoluteTime?
         init(floater: Floater, panel: StandInPanel, view: StandInView) {
             self.floater = floater
             self.panel = panel
@@ -117,10 +130,14 @@ final class FloaterStandIn {
             guard let floater = floaters[id] else { continue }
             entry(for: floater)
         }
+        let now = CFAbsoluteTimeGetCurrent()
         for entry in entries.values where entry.floater.id != handOff?.id {
             if covered.contains(entry.floater.id) {
+                entry.heldUntil = nil
                 show(entry, reason: "covered")
             } else if entry.shown {
+                if let held = entry.heldUntil, now < held || isPressDown() { continue }
+                entry.heldUntil = nil
                 hide(entry, reason: "uncovered")
             }
         }
@@ -142,9 +159,21 @@ final class FloaterStandIn {
     func showPredicted(_ ids: Set<CGWindowID>, floaters: [CGWindowID: Floater], tile: CGWindowID) {
         mainThreadOnly()
         guard currentMode() != .off else { return }
+        var held = false
         for id in ids where id != handOff?.id {
             guard let floater = floaters[id] else { continue }
-            show(entry(for: floater), reason: "press on tile \(tile)")
+            let entry = entry(for: floater)
+            if !entry.shown {
+                entry.heldUntil = CFAbsoluteTimeGetCurrent() + Self.pressHold
+                held = true
+            }
+            show(entry, reason: "press on tile \(tile)")
+        }
+        guard held else { return }
+        // the mouse-up's refresh decides; this one catches a guess that was
+        // wrong when that refresh came inside the hold
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.pressHold + 0.02) { [weak self] in
+            self?.holdEnded()
         }
     }
 
@@ -230,6 +259,7 @@ final class FloaterStandIn {
     private func hide(_ entry: Entry, reason: String) {
         entry.panel.orderOut(nil)
         entry.shown = false
+        entry.heldUntil = nil
         hyprLog(.notice, .floating, "stand-in hidden wid=\(entry.floater.id) reason=\(reason)")
     }
 
@@ -277,15 +307,32 @@ final class FloaterStandIn {
                 self.handOffFinished()
                 return
             }
-            var passed = "nothing passed on"
-            if touch == .click {
-                let held = NSEvent.pressedMouseButtons & 1 != 0
-                Self.postClick(at: point, held: held)
-                passed = held ? "press passed on, button still down" : "click passed on"
+            guard touch == .click else {
+                hyprLog(.notice, .floating, "stand-in hand-off wid=\(id) real window up after \(ms) ms; nothing passed on")
+                self.handOffFinished()
+                return
             }
-            hyprLog(.notice, .floating, "stand-in hand-off wid=\(id) real window up after \(ms) ms; \(passed)")
-            self.handOffFinished()
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.passOnDelay) { [weak self] in
+                let held = NSEvent.pressedMouseButtons & 1 != 0
+                let target = Self.windowUnder(point)
+                Self.postClick(at: point, held: held)
+                hyprLog(.notice, .floating, "stand-in hand-off wid=\(id) real window up after \(ms) ms; "
+                        + (held ? "press passed on, button still down" : "click passed on")
+                        + " to wid=\(target.map(String.init) ?? "?")")
+                self?.handOffFinished()
+            }
         }
+    }
+
+    /// The window a click at `point` reaches, for the log. Our own panels
+    /// (the dim) take no clicks.
+    private static func windowUnder(_ point: CGPoint) -> CGWindowID? {
+        let own = getpid()
+        return WindowStacking.onScreen()?.first {
+            // the Dock keeps a screen-sized window above layer 0 that takes no clicks
+            $0.ownerPID != own && $0.alpha > 0.01 && WindowStacking.isFloaterLayer($0.layer)
+                && ($0.bounds?.contains(point) ?? false)
+        }?.windowID
     }
 
     /// The press goes to whatever is under `point` now, the real floater.
@@ -378,6 +425,9 @@ final class StandInPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         hidesOnDeactivate = false
+        // set outright: a clear window passes clicks through wherever its
+        // backing is clear, and the live picture is a layer, not the backing
+        ignoresMouseEvents = false
         becomesKeyOnlyIfNeeded = true
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         animationBehavior = .none

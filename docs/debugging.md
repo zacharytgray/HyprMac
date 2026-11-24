@@ -1080,12 +1080,20 @@ covers a floater, `FloaterStandIn` puts a HyprMac panel on the floater's frame a
 floater looks like it stayed on top. `FloaterStandInPlan` decides which floaters get one:
 managed floaters on a visible workspace, not scratchpad members, not an app's pop-up
 (#114), with a tile stacked above them where they overlap. A press on a tile that overlaps
-a floater shows the panel on the mouse-down, before the tile rises; the restack refresh
-after the mouse-up corrects it. With the switch off there are no panels and no streams.
+a floater shows the panel on the mouse-down, before the tile rises. That panel stays up
+while the button is down and for at least 250 ms: a refresh during the press still sees
+the floater in front, and taking the panel down then blinked the floater. The restack
+refresh after the mouse-up, or the one when the hold runs out, corrects a wrong guess.
+With the switch off there are no panels and no streams.
+
+The panel sets `ignoresMouseEvents = false` outright. A clear window otherwise lets a
+click through wherever its backing is clear, and the live picture is a layer, so on the
+hub a drag on the panel's title-bar strip went to the tile below.
 
 Touching the panel hands off to the real window. A click focuses the floater the way the
 floater cycle does, waits up to 300 ms for the window list to show it uncovered, hides the
-panel, then posts the click at the same point. With the button still held only the
+panel, then posts the click at the same point 20 ms later. On the hub the real window was
+up 46 to 170 ms after the click. With the button still held only the
 mouse-down is posted, so a drag that started on the panel drags the window. A scroll or a
 right click brings the floater up without passing anything on. With focus follows mouse
 on, hovering the panel focuses the floater, which raises it and hides the panel.
@@ -1131,7 +1139,8 @@ stand-in stream started wid=1234 in 120 ms 600x800
 stand-in stream first picture wid=1234 after 310 ms
 stand-in stream stopped wid=1234 reason=no overlap
 stand-in hand-off wid=1234 touch=click at=(150,260)
-stand-in hand-off wid=1234 real window up after 140 ms; click passed on
+stand-in hand-off wid=1234 real window up after 140 ms; click passed on to wid=1234
+stand-in hand-off wid=1234 real window up after 67 ms; press passed on, button still down to wid=1234
 ```
 
 ```bash

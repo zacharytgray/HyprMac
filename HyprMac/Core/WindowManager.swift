@@ -1980,6 +1980,7 @@ class WindowManager {
         floaterStandIn.isCovered = { [weak self] id in self?.isFloaterCovered(id) ?? false }
         floaterStandIn.handOffFinished = { [weak self] in self?.scheduleRestackRefresh(after: 0.06) }
         floaterStandIn.isOn = { [weak self] in self?.config.keepFloatingWindowsInFront ?? false }
+        floaterStandIn.holdEnded = { [weak self] in self?.scheduleRestackRefresh(after: 0) }
     }
 
     /// The visible floaters a stand-in may stand for, with their drawn
