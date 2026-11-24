@@ -120,6 +120,11 @@ final class RelaunchHandoffTests: XCTestCase {
         }
     }
 
+    // full-screen windows and the user's own get no restore write
+    func testTheRestoreSkipsFullScreenAndTheUsersWindows() {
+        XCTAssertEqual(WindowManager.restorableIDs([1, 2, 3, 4], touched: [2], fullScreen: [3]), [1, 4])
+    }
+
     func testNoFileMeansNoHandoff() {
         XCTAssertNil(store.take(now: saved, displayKey: "Built-in:1512x982"))
     }

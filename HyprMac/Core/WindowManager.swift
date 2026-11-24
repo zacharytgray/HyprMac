@@ -2297,6 +2297,13 @@ class WindowManager {
         !untouchingActions.contains(ActionDispatcher.discriminator(for: action))
     }
 
+    /// The windows the tutorial's restore may move: not one the user acted
+    /// on, not one in native full screen.
+    static func restorableIDs(_ ids: [CGWindowID], touched: Set<CGWindowID>,
+                              fullScreen: Set<CGWindowID>) -> [CGWindowID] {
+        ids.filter { !touched.contains($0) && !fullScreen.contains($0) }
+    }
+
     private static let untouchingActions: Set<String> = [
         "switchWorkspace", "cycleWorkspace", "focusDirection", "focusFloating", "focusMenuBar",
         "showKeybinds", "showWorkspaceOverview", "showWindowRules", "toggleTiling", "retileAll",
@@ -2345,7 +2352,13 @@ class WindowManager {
         hyprLog(.notice, .lifecycle, "tutorial desk: putting the user's windows back")
         // never undo the user: a window they moved, sent, floated or
         // dragged on purpose stays; only what HyprMac moved goes back
-        let windows = accessibility.getAllWindows().filter { !touched.contains($0.windowID) }
+        // and a window in native full screen (or its Space) gets no write:
+        // one would take it out of full screen (#104)
+        let all = accessibility.getAllWindows()
+        let fullScreen = Set(all.filter { workspaceManager.isInNativeFullScreen($0) }.map(\.windowID))
+        let keep = Set(Self.restorableIDs(all.map(\.windowID), touched: touched, fullScreen: fullScreen))
+        let windows = all.filter { keep.contains($0.windowID) }
+        if !fullScreen.isEmpty { hyprLog(.notice, .lifecycle, "tutorial desk: leaving \(fullScreen.count) full-screen window(s) alone") }
         if !touched.isEmpty { hyprLog(.notice, .lifecycle, "tutorial desk: leaving \(touched.count) window(s) the user moved") }
         // a tiled window that floats now (Hypr+R pushed it onto a full
         // workspace, where it floated in place) tiles again, so the restore
