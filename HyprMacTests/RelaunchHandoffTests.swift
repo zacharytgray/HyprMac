@@ -107,6 +107,19 @@ final class RelaunchHandoffTests: XCTestCase {
         XCTAssertNil(RelaunchHandoff.windowID(SavedWindowRef(bundleID: "com.apple.Safari", title: "Start Page")))
     }
 
+    // the desk restore never undoes the user: a key that acts on the
+    // focused window marks it; HyprMac's bulk moves and views don't
+    func testOnlyActionsOnTheWindowMarkItAsTheUsers() {
+        for action in [Action.moveToWorkspace(3), .toggleFloating, .swapDirection(.left), .resizeDirection(.right),
+                       .moveWindowToMonitor(.right), .toggleMaximize, .moveToScratchpad] {
+            XCTAssertTrue(WindowManager.actionTouchesWindow(action), "\(action)")
+        }
+        for action in [Action.retileAll, .switchWorkspace(2), .focusDirection(.left), .toggleTiling, .showKeybinds,
+                       .showWindowRules, .focusFloating] {
+            XCTAssertFalse(WindowManager.actionTouchesWindow(action), "\(action)")
+        }
+    }
+
     func testNoFileMeansNoHandoff() {
         XCTAssertNil(store.take(now: saved, displayKey: "Built-in:1512x982"))
     }

@@ -1428,6 +1428,10 @@ class WindowManager {
                         + "threshold=\(String(format: "%g", Double(TilingConfig.dragThresholdPx))) "
                         + "drag=\(isDrag)")
                 floaterDragged = isDrag && draggedFloatingID != 0
+                // a window dragged by hand during the tutorial stays where it's put
+                if isDrag {
+                    self.noteTutorialTouch(draggedFloatingID != 0 ? draggedFloatingID : self.focusController.lastFocusedID)
+                }
                 let release = TiledDragEvent.release(
                     event: event,
                     primaryHeight: primaryHeight,
@@ -1964,6 +1968,10 @@ class WindowManager {
     func handleAction(_ action: Action) {
         // the menu bar calls in here too, and nobody reaches it while locked
         discovery.endSessionInterruption(evidence: "action")
+        // the tutorial's desk restore leaves alone a window the user acted on
+        if tutorialTouched != nil, Self.actionTouchesWindow(action) {
+            noteTutorialTouch(focusController.lastFocusedID)
+        }
         // any other action moves on from the window the overlay is about
         if action != .showWindowRules { windowRulesOverlay.noteOtherAction() }
         let decision = ActionPolicy.decide(action,
@@ -2273,6 +2281,28 @@ class WindowManager {
 
     // MARK: - the tutorial's desk
 
+    /// windows the user moved, resized, floated, sent or dragged during the
+    /// tutorial; nil when none runs. The desk restore leaves these alone.
+    private var tutorialTouched: Set<CGWindowID>?
+
+    private func noteTutorialTouch(_ id: CGWindowID?) {
+        guard let id, tutorialTouched != nil else { return }
+        tutorialTouched?.insert(id)
+    }
+
+    /// Whether `action` acts on the focused window itself. Retile All, a
+    /// switch, focus moves, Pause and HyprMac's panels don't: what they
+    /// move is HyprMac's doing, which the restore undoes.
+    static func actionTouchesWindow(_ action: Action) -> Bool {
+        !untouchingActions.contains(ActionDispatcher.discriminator(for: action))
+    }
+
+    private static let untouchingActions: Set<String> = [
+        "switchWorkspace", "cycleWorkspace", "focusDirection", "focusFloating", "focusMenuBar",
+        "showKeybinds", "showWorkspaceOverview", "showWindowRules", "toggleTiling", "retileAll",
+        "saveLayout", "restoreLayout", "toggleScratchpad", "launchApp", "runCommand",
+    ]
+
     /// The tutorial ended: HyprMac's own panels it may have opened close
     /// with it (the Hypr+K list, the Hypr+I rules, the workspace overview).
     func closeOwnPanels() {
@@ -2285,6 +2315,7 @@ class WindowManager {
     /// update relaunch does, so every way out of the tutorial puts it back.
     func snapshotDeskForTutorial() {
         guard isRunning else { return }
+        tutorialTouched = []
         let desk = currentDesk()
         do {
             try RelaunchHandoffStore.tutorialDesk.write(desk)
@@ -2303,6 +2334,8 @@ class WindowManager {
     /// touched, so nothing flickers. Only placement: settings stay as picked.
     func restoreDeskAfterTutorial() {
         let key = LayoutSnapshotStore.displayKey(screens: displayManager.screens)
+        let touched = tutorialTouched ?? []
+        tutorialTouched = nil
         guard let saved = RelaunchHandoffStore.tutorialDesk.take(displayKey: key, maxAge: nil) else { return }
         guard isRunning else { return }
         if Self.sameDesk(saved, currentDesk()) {
@@ -2310,7 +2343,10 @@ class WindowManager {
             return
         }
         hyprLog(.notice, .lifecycle, "tutorial desk: putting the user's windows back")
-        let windows = accessibility.getAllWindows()
+        // never undo the user: a window they moved, sent, floated or
+        // dragged on purpose stays; only what HyprMac moved goes back
+        let windows = accessibility.getAllWindows().filter { !touched.contains($0.windowID) }
+        if !touched.isEmpty { hyprLog(.notice, .lifecycle, "tutorial desk: leaving \(touched.count) window(s) the user moved") }
         // a tiled window that floats now (Hypr+R pushed it onto a full
         // workspace, where it floated in place) tiles again, so the restore
         // can put it back in its tree
@@ -2323,7 +2359,7 @@ class WindowManager {
         }
         // window ids hold for a tutorial: a window that closed is skipped,
         // never stood in for by another window of its app
-        restoreRelaunchHandoff(saved, windows: windows, exactOnly: true)
+        restoreRelaunchHandoff(saved, windows: windows, exactOnly: true, keepFloatersInPlace: true)
     }
 
     /// A tutorial cut short by a crash: its desk is dropped at the next
@@ -2372,8 +2408,10 @@ class WindowManager {
     /// Put the desk back the way `saveRelaunchHandoff` found it. Runs once,
     /// right after the launch tile has spread the windows out on its own.
     /// `exactOnly`: the tutorial's restore, where a leaf takes only its own window.
+    /// `keepFloatersInPlace`: a floater still floating on its workspace keeps
+    /// its frame (the tutorial's restore; the user may have moved it).
     private func restoreRelaunchHandoff(_ handoff: RelaunchHandoff, windows allWindows: [HyprWindow],
-                                        exactOnly: Bool = false) {
+                                        exactOnly: Bool = false, keepFloatersInPlace: Bool = false) {
         let live = Dictionary(allWindows.map { ($0.windowID, $0) }, uniquingKeysWith: { first, _ in first })
         // a window counts only if the same process still owns that id
         func window(_ key: RelaunchHandoff.WindowKey) -> HyprWindow? {
@@ -2400,8 +2438,13 @@ class WindowManager {
         // the launch tile put every floater in a tree. take them out again
         // before the trees are rebuilt, then send each to its workspace
         var floated: [(floater: RelaunchHandoff.Floater, window: HyprWindow)] = []
+        var inPlace = Set<CGWindowID>()
         for floater in handoff.floaters {
             guard let w = window(floater.window), !scratchpad.contains(w.windowID) else { continue }
+            if keepFloatersInPlace, stateCache.floatingWindowIDs.contains(w.windowID),
+               workspaceManager.workspaceFor(w.windowID) == floater.workspace {
+                inPlace.insert(w.windowID)
+            }
             if !stateCache.floatingWindowIDs.contains(w.windowID) {
                 if let workspace = workspaceManager.workspaceFor(w.windowID) {
                     tilingEngine.removeWindow(w, fromWorkspace: workspace)
@@ -2413,7 +2456,7 @@ class WindowManager {
         workspaceOrchestrator.moveWindows(floated.map { ($0.window, $0.floater.workspace) })
         for (floater, w) in floated {
             guard workspaceManager.workspaceFor(w.windowID) == floater.workspace,
-                  let frame = floater.frame else { continue }
+                  !inPlace.contains(w.windowID), let frame = floater.frame else { continue }
             if workspaceManager.isWorkspaceVisible(floater.workspace) {
                 w.placeFloating(frame, reason: "update relaunch, saved frame", displayManager: displayManager)
             } else {
