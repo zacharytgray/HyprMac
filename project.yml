@@ -44,6 +44,12 @@ targets:
       - HyprMac
     dependencies:
       - package: Sparkle
+      - target: HyprMac Practice
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
     settings:
       base:
         INFOPLIST_FILE: HyprMac/Info.plist
@@ -65,6 +71,13 @@ targets:
     platform: macOS
     sources:
       - HyprMac
+    dependencies:
+      - target: HyprMac Practice
+        embed: true
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
     settings:
       base:
         INFOPLIST_FILE: HyprMac/Info.plist
@@ -84,6 +97,28 @@ targets:
           - "-F/System/Library/PrivateFrameworks"
           - "-framework"
           - "SkyLight"
+
+  # the tutorial's practice windows, embedded in Contents/Helpers
+  HyprMac Practice:
+    type: application
+    platform: macOS
+    sources:
+      - HyprMacPractice
+    settings:
+      base:
+        PRODUCT_NAME: HyprMac Practice
+        PRODUCT_BUNDLE_IDENTIFIER: com.zachgray.HyprMac.practice
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: HyprMac Practice
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        MARKETING_VERSION: "0.27.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_OBJC_BRIDGING_HEADER: ""
+        SKIP_INSTALL: YES
+        CODE_SIGN_IDENTITY: "Apple Development"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: $(DEVELOPMENT_TEAM)
+        ENABLE_HARDENED_RUNTIME: false
 
   HyprMacTests:
     type: bundle.unit-test

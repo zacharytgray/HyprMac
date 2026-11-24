@@ -13,6 +13,7 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
     private var welcomeController: WelcomeWindowController?
+    private var stage: StageSession?
     private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
@@ -199,9 +200,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.permissionPollTimer = nil
             self?.startAfterPermissionGranted()
             self?.permissionsGate?.markAccessibilityGrantedAndDismiss()
+            self?.stage?.noteAccessGranted()
         }
         RunLoop.main.add(timer, forMode: .common)
         permissionPollTimer = timer
+
+        #if HYPRMAC_DEBUG_VARIANT
+        if Self.usesNewTutorial {
+            presentStage(.onboarding(accessGranted: false, practiceHost: practiceHost))
+            return
+        }
+        #endif
 
         let gate = PermissionsGateWindowController()
         gate.show { [weak self] in
@@ -225,6 +234,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowManager?.keybindOverlay.onShowTutorial = { [weak self] in
             self?.showTour()
         }
+        // a tutorial cut short by a crash can leave its practice app's rule
+        PracticeSession.removeRules(bundleID: PracticeSession.helperBundleID, from: config)
         if config.enabled {
             windowManager?.start()
         }
@@ -253,8 +264,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Public entry for replaying the first-run tour from Settings.
     func showTour() {
         hyprLog(.debug, .lifecycle, "tutorial requested")
+        #if HYPRMAC_DEBUG_VARIANT
+        // the full-screen tutorial, one lesson so far: Debug app only, and
+        // only when launched with --new-tutorial
+        if Self.usesNewTutorial {
+            presentStage(.tutorial(practiceHost: practiceHost))
+            return
+        }
+        #endif
         presentWelcome(mode: .firstRun)
     }
+
+    #if HYPRMAC_DEBUG_VARIANT
+    private static var usesNewTutorial: Bool { CommandLine.arguments.contains("--new-tutorial") }
+
+    /// the window manager starts after access, so look it up late
+    private var practiceHost: PracticeHost { LatePracticeHost { [weak self] in self?.windowManager } }
+
+    /// The full-screen stage. Onboarding runs from the launch gate (or the
+    /// first-run decision when access was already there); a replay opens
+    /// the tutorial. One stage at a time.
+    private func presentStage(_ session: StageSession) {
+        guard stage?.isShowing != true else { return }
+        welcomeController?.dismiss()
+        session.onClose = { [weak self] in self?.stage = nil }
+        session.onQuit = { [weak self] in
+            self?.permissionPollTimer?.invalidate()
+            self?.permissionPollTimer = nil
+            NSApp.terminate(nil)
+        }
+        stage = session
+        session.show()
+    }
+    #endif
 
     private func showWelcome(mode: WelcomeMode) {
         // small delay so tiling engine settles first
@@ -264,6 +306,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentWelcome(mode: WelcomeMode) {
+        #if HYPRMAC_DEBUG_VARIANT
+        // the first-run decision lands here too; the tutorial already covers it
+        if Self.usesNewTutorial, mode == .firstRun {
+            presentStage(.onboarding(accessGranted: true, practiceHost: practiceHost))
+            return
+        }
+        #endif
         welcomeController?.dismiss()
         let controller = WelcomeWindowController()
         welcomeController = controller
@@ -272,6 +321,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         guard !diagnosticOnly else { return }
+        // the tutorial's helper, its rules and its workspace go first
+        stage?.cleanUp()
         windowManager?.stop(keepPauseShortcut: false)
         // restore caps lock to normal when quitting
         KeyRemapper.restoreCapsLock()

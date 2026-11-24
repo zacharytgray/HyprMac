@@ -23,7 +23,7 @@ mkdir -p "$BUILD_DIR" "$PROJECT_DIR"
 cp "$ROOT/project.yml" "$SPEC"
 perl -0pi -e 's/packages:\n  Sparkle:\n    url: https:\/\/github\.com\/sparkle-project\/Sparkle\n    from: "2\.6\.0"\n\n//' "$SPEC"
 SPARKLE_FRAMEWORK="$SPARKLE_FRAMEWORK" perl -0pi -e 's/- package: Sparkle/- framework: $ENV{SPARKLE_FRAMEWORK}/g' "$SPEC"
-ROOT="$ROOT" perl -0pi -e 's{(?<=: )HyprMac/}{$ENV{ROOT}/HyprMac/}g; s{(?m)^(\s+- )HyprMac$}{$1$ENV{ROOT}/HyprMac}g; s{(?m)^(\s+- )HyprMacTests$}{$1$ENV{ROOT}/HyprMacTests}g' "$SPEC"
+ROOT="$ROOT" perl -0pi -e 's{(?<=: )HyprMac/}{$ENV{ROOT}/HyprMac/}g; s{(?m)^(\s+- )(HyprMac|HyprMacPractice)$}{$1$ENV{ROOT}/$2}g; s{(?m)^(\s+- )HyprMacTests$}{$1$ENV{ROOT}/HyprMacTests}g' "$SPEC"
 if rg -q 'packages:|package: Sparkle' "$SPEC"; then
     echo "ERROR: unresolved Sparkle package dependency in generated spec" >&2
     exit 1

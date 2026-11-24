@@ -467,11 +467,13 @@ class WindowManager {
             // window so the user sees which window the next Hypr action
             // will target. shown regardless of focus-border setting.
             self.showFocusBracketsForCurrentFocus()
+            NotificationCenter.default.post(name: .hyprMacHyprKeyChanged, object: nil, userInfo: ["down": true])
         }
         hotkeyManager.onHyprKeyUp = { [weak self] in
             self?.hyprHeld = false
             self?.focusBrackets.hide()
             self?.reassertFocusBorderAfterHyprRelease()
+            NotificationCenter.default.post(name: .hyprMacHyprKeyChanged, object: nil, userInfo: ["down": false])
         }
 
         // wire up mouse tracker dependencies

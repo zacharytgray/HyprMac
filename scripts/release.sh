@@ -148,6 +148,10 @@ done < <(find "$APP_PATH/Contents/Frameworks" \( -name '*.xpc' -o -name '*.app' 
 while IFS= read -r -d '' framework; do
     codesign --force --sign "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp --options runtime "$framework"
 done < <(find "$APP_PATH/Contents/Frameworks" -name '*.framework' -print0)
+# the tutorial's practice windows app
+while IFS= read -r -d '' helper; do
+    codesign --force --sign "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp --options runtime "$helper"
+done < <(find "$APP_PATH/Contents/Helpers" -maxdepth 1 -name '*.app' -print0)
 codesign --force --sign "$SIGN_ID" --keychain "$KEYCHAIN" --timestamp --options runtime \
     --entitlements "$PROJECT_DIR/HyprMac/HyprMac-Release.entitlements" "$APP_PATH"
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"

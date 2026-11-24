@@ -729,9 +729,12 @@ Control for older configs.
 
 ### Double-tap Hypr to toggle Caps Lock
 
-`doubleTapHyprTogglesCapsLock` in `config.json`, off by default, is the
+`doubleTapHyprTogglesCapsLock` in `config.json` is the
 toggle of the same name in Settings → Keys. With Caps Lock as the Hypr key
 there is otherwise no way to turn Caps Lock on while HyprMac is active.
+A new install, with no `config.json` yet, starts with it on. So does every
+reset: Reset all settings in Settings → Advanced, and Reset keybinds in
+Keys. A saved config without the key predates it and reads as off.
 
 `HyprDoubleTap` (in `HotkeyManager.swift`) decides. A tap is a press and
 release of the Hypr key within 300 ms with no other key or modifier going

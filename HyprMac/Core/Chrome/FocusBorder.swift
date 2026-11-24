@@ -205,6 +205,9 @@ class FocusBorder {
         static let errorFillAlpha: CGFloat = 0.12
     }
 
+    /// The focused window's border once it settles, for drawn previews.
+    static let settledBorderWidth = Tuning.settledBorderWidth
+
     /// How far a floater panel reaches past its window on each side: half
     /// the stroke, plus room for the glow.
     static let floaterPanelExpansion = FloaterOutlineGeometry.panelExpansion(
