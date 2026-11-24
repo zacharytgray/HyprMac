@@ -1684,12 +1684,16 @@ grid (#114). It stays managed: outline and workspace hiding. Hover
 does not focus it, because the AX main write and the synthetic click close
 it. Hover over it is blocked as for an unmanaged popover, and the refocus
 after a click leaves it alone as for any floater on top. A click on it still
-records focus. The mark is made once, at first sight, and clears if the
-window becomes resizable and goes back to tiling.
+records focus. The mark is made at first sight and asked again on the
+fixed-size re-checks (0.5, 1 and 2 s later), for any floating reason, Never
+tile included. Apps often set a window's title or add its close button a
+moment after it opens, and such a window loses the mark. The mark also
+clears when the window becomes resizable.
 
 ```
 auto-float window is not resizable: '' (9354) com.example.App — re-checked 3 times over 3.5s; a pop-up, hover leaves it alone
 auto-float excluded app: 9354 is a pop-up, hover leaves it alone
+pop-up re-check: 9354 has a title or close button now — hover focuses it again
 ```
 
 The observer side retries each registration on its own. Every poll asks

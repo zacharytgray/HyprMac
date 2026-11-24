@@ -989,6 +989,9 @@ final class WindowDiscoveryService {
             if popup, reason != .fixedSize {
                 hyprLog(.notice, .discovery, "auto-float \(reason.rawValue): \(w.windowID) is a pop-up,"
                         + " hover leaves it alone")
+                // apps often give a window its title or close button a moment
+                // after it opens, so the mark is asked again like a fixed size
+                fixedSizeRechecks[w.windowID] = (0, now().addingTimeInterval(Self.fixedSizeRecheckDelays[0]))
             }
         } else if case let .tile(rule)? = verdict, rule.match != nil {
             hyprLog(.notice, .discovery, "tile rule: \(w.windowID) \(rule.bundleID) \(rule.matchDescription)")
@@ -1102,6 +1105,11 @@ final class WindowDiscoveryService {
         !known.contains(id) && !hidden.contains(id) && !unreadable.contains(id) && !assigned
     }
 
+    private func clearPopupMark(_ id: CGWindowID, because reason: String) {
+        guard stateCache.popupWindowIDs.remove(id) != nil else { return }
+        hyprLog(.notice, .discovery, "pop-up re-check: \(id) \(reason) — hover focuses it again")
+    }
+
     /// Ask again whether the windows auto-floated as not resizable are.
     /// One that is now goes back to tiling: its floating flag clears and
     /// the caller's retile places it. One the user tiled meanwhile, one
@@ -1133,6 +1141,8 @@ final class WindowDiscoveryService {
             }
             if isWindowSizeSettable(w) == true {
                 fixedSizeRechecks[id] = nil
+                // a window HyprMac can size is no pop-up
+                clearPopupMark(id, because: "is resizable now")
                 // resizable now, but a float rule that matches it keeps it floating
                 if ruleBook.verdict(bundleID: bundleIDForPID(w.ownerPID) ?? w.bundleID,
                                     title: { self.windowTitle(w) })?
@@ -1142,13 +1152,19 @@ final class WindowDiscoveryService {
                     continue
                 }
                 stateCache.setFloating(false, window: w)
-                stateCache.popupWindowIDs.remove(id)
                 unfloated.insert(id)
                 // this is not the user tiling it: a title rule still gets its turn
                 titleRuleRechecks[id]?.floating = false
                 hyprLog(.notice, .discovery, "auto-float re-check: '\(w.title ?? "?")' (\(id)) is resizable now"
                         + " — handing it back to tiling")
                 continue
+            }
+            // still fixed size. a title or close button that arrived since
+            // means it is an ordinary floater after all
+            if stateCache.popupWindowIDs.contains(id),
+               !FloatingAdmissionPolicy.isPopup(isSizeSettable: false, title: windowTitle(w),
+                                                hasCloseButton: { self.hasCloseButton(w) }) {
+                clearPopupMark(id, because: "has a title or close button now")
             }
             let next = entry.attempts + 1
             if next < Self.fixedSizeRecheckDelays.count {

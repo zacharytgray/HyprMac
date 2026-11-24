@@ -339,6 +339,51 @@ final class WindowDiscoveryServiceTests: XCTestCase {
         XCTAssertEqual(cache.popupWindowIDs, [])
     }
 
+    /// apps often set a window's title or add its close button a moment
+    /// after it opens. the fixed-size re-checks ask again, and a window that
+    /// is no pop-up after all gets hover focus back
+    func testAWindowThatGetsItsTitleLateLosesThePopupMark() {
+        var title = ""
+        let (svc, cache, workspaces) = makeService(isWindowSizeSettable: { _ in false },
+                                                   windowTitle: { _ in title }, hasCloseButton: { _ in false })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 2, pid: 100)
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        workspaces.assignWindow(2, toWorkspace: 1)
+        XCTAssertEqual(cache.popupWindowIDs, [2])
+
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        XCTAssertEqual(cache.popupWindowIDs, [2], "still untitled: still a pop-up")
+
+        title = "Settings"
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        _ = compute(svc, snapshot: [w], runningPIDs: [100])
+        XCTAssertEqual(cache.popupWindowIDs, [], "titled now")
+        XCTAssertTrue(cache.floatingWindowIDs.contains(2), "still a fixed-size floater")
+    }
+
+    /// the same for a Never tile app's window, which floats before the size
+    /// check: its close button arrives late
+    func testANeverTileWindowThatGetsItsCloseButtonLateLosesThePopupMark() {
+        var closable = false
+        let (svc, cache, workspaces) = makeService(bundleIDForPID: { _ in "com.example.Mail" },
+                                                   isWindowSizeSettable: { _ in false },
+                                                   windowTitle: { _ in "" }, hasCloseButton: { _ in closable })
+        var clock = Date(timeIntervalSinceReferenceDate: 1000)
+        svc.now = { clock }
+        let w = makeWindow(id: 2, pid: 100)
+        _ = compute(svc, snapshot: [w], runningPIDs: [100], excluded: ["com.example.Mail"])
+        workspaces.assignWindow(2, toWorkspace: 1)
+        XCTAssertEqual(cache.popupWindowIDs, [2])
+
+        closable = true
+        clock += svc.secondsUntilARetryIsDue ?? 100
+        _ = compute(svc, snapshot: [w], runningPIDs: [100], excluded: ["com.example.Mail"])
+        XCTAssertEqual(cache.popupWindowIDs, [])
+    }
+
     func testForgettingAWindowDropsItsPopupMark() {
         let cache = WindowStateCache()
         cache.popupWindowIDs = [2]
