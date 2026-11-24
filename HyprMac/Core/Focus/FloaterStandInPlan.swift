@@ -193,3 +193,58 @@ extension FloaterStandInPlan {
         }
     }
 }
+
+/// Why a floater may not have a stand-in right now.
+enum StandInBlock: String, Equatable {
+    case notFloating = "not a managed floater"
+    /// HyprMac counts it hidden: closed while its app runs (a ghost),
+    /// minimized, or its app hidden
+    case hidden = "hidden or closed"
+    /// the window list doesn't show it: ordered out (Teams keeps a closed
+    /// window and its id), minimized or app-hidden before HyprMac knows
+    case offScreen = "not on screen"
+    case excluded = "scratchpad member or pop-up"
+}
+
+extension FloaterStandInPlan {
+    /// The one test every stand-in path asks: may `id` have a stand-in now?
+    ///
+    /// HyprMac's own floater list can hold a window that is gone: a window
+    /// closed while its app keeps running keeps its workspace (a ghost), and
+    /// discovery may only call it hidden seconds later. So the window list
+    /// decides too: the floater must be on screen there. A floater HyprMac
+    /// parked for a hidden workspace still is (in the hide corner), so it
+    /// keeps its picture; a closed, minimized or app-hidden one is ordered
+    /// out and is not.
+    static func standInBlock(_ id: CGWindowID, floating: Set<CGWindowID>, hidden: Set<CGWindowID>,
+                             excluded: Set<CGWindowID>, in windows: [StackedWindow]) -> StandInBlock? {
+        guard floating.contains(id) else { return .notFloating }
+        if excluded.contains(id) { return .excluded }
+        if hidden.contains(id) { return .hidden }
+        guard windows.contains(where: { $0.windowID == id && $0.isVisible && WindowStacking.isFloaterLayer($0.layer) })
+        else { return .offScreen }
+        return nil
+    }
+
+    /// A switch put `revealed` back. Of the kept pictures (`kept`, by the
+    /// frame each floater was last seen at), `show` are the ones that go up
+    /// at once: the gate lets the floater through and a tile of the incoming
+    /// workspace will cover it, by the slots the layout gives its tiles.
+    /// `drop` are kept pictures of revealed floaters the gate stops (a
+    /// closed Teams window keeps its id but is ordered out): they go for good.
+    static func revealPictures(kept: [CGWindowID: CGRect], revealed: Set<CGWindowID>,
+                               floating: Set<CGWindowID>, hidden: Set<CGWindowID>, excluded: Set<CGWindowID>,
+                               tileSlots: [CGRect], in windows: [StackedWindow])
+        -> (show: Set<CGWindowID>, drop: [CGWindowID: StandInBlock]) {
+        var show: Set<CGWindowID> = []
+        var drop: [CGWindowID: StandInBlock] = [:]
+        for (id, frame) in kept where revealed.contains(id) {
+            if let block = standInBlock(id, floating: floating, hidden: hidden, excluded: excluded, in: windows) {
+                drop[id] = block
+            } else if tileSlots.contains(where: { WindowStacking.overlaps($0, frame) }) {
+                show.insert(id)
+            }
+        }
+        return (show, drop)
+    }
+}

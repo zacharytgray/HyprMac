@@ -259,6 +259,15 @@ final class FloaterStandIn {
         mainThreadOnly()
         guard let entry = entries[id] else { return }
         destroy(entry, reason: reason)
+        hyprLog(.notice, .floating, "stand-in dropped wid=\(id) reason=\(reason)")
+        // the mouse-down tap must not keep a zone for it
+        panelsChanged()
+    }
+
+    /// Every floater with a panel, shown or not, and the frame it was last
+    /// seen at (where a switch puts it back).
+    var keptFrames: [CGWindowID: CGRect] {
+        entries.mapValues(\.floater.frame)
     }
 
     /// Every panel and stream gone.

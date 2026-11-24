@@ -267,4 +267,70 @@ final class FloaterStandInPlanTests: XCTestCase {
         XCTAssertEqual(alpha(75, 75), 0, "inside the cut it doesn't")
         XCTAssertEqual(alpha(51, 51), 255, "the cut's rounded corner leaves the chrome")
     }
+
+    // MARK: ghosts (Zach's Teams window, 0.29.0)
+
+    // the floater as HyprMac parked it for a hidden workspace: on screen, in
+    // the hide corner, full size
+    private let parked = CGRect(x: 1919, y: 1079, width: 744, height: 414)
+    private let lastSeen = CGRect(x: 223, y: 238, width: 744, height: 414)
+    private let slot = CGRect(x: 8, y: 33, width: 1904, height: 954)
+
+    private func reveal(_ windows: [StackedWindow], hidden: Set<CGWindowID> = [],
+                        floating: Set<CGWindowID> = [8905]) -> (show: Set<CGWindowID>, drop: [CGWindowID: StandInBlock]) {
+        FloaterStandInPlan.revealPictures(kept: [8905: lastSeen], revealed: [8905, 1], floating: floating,
+                                          hidden: hidden, excluded: [], tileSlots: [slot], in: windows)
+    }
+
+    func testATeamsStyleClosedFloaterGetsNoStandInOnAnyPath() {
+        // closed while its workspace was away: the app keeps the window and
+        // its id but orders it out. HyprMac still lists it as a floater
+        let stack = [win(1, slot)]
+        XCTAssertEqual(FloaterStandInPlan.standInBlock(8905, floating: [8905], hidden: [], excluded: [], in: stack),
+                       .offScreen, "pre-raise and refresh take their floaters through this")
+        let back = reveal(stack)
+        XCTAssertEqual(back.show, [], "the return shows nothing")
+        XCTAssertEqual(back.drop, [8905: .offScreen], "and drops the kept picture for good")
+        let zone = StandInPressTap.Zone(tileID: 1, tileFrame: slot, panels: [8905: 4242])
+        XCTAssertEqual(StandInPressTap.livePanels(zone, in: stack), [:], "a stale tap zone raises nothing")
+    }
+
+    func testAParkedLiveFloaterKeepsItsPictureForTheReturn() {
+        let stack = [win(8905, pid: floaterPID, parked), win(1, slot)]
+        XCTAssertNil(FloaterStandInPlan.standInBlock(8905, floating: [8905], hidden: [], excluded: [], in: stack),
+                     "parked in the hide corner is still on screen")
+        XCTAssertEqual(reveal(stack).show, [8905])
+        let zone = StandInPressTap.Zone(tileID: 1, tileFrame: slot, panels: [8905: 4242])
+        XCTAssertEqual(StandInPressTap.livePanels(zone, in: stack), [8905: 4242])
+    }
+
+    func testARevealShowsNothingNoTileWillCover() {
+        let stack = [win(8905, pid: floaterPID, parked)]
+        let back = FloaterStandInPlan.revealPictures(kept: [8905: lastSeen], revealed: [8905], floating: [8905],
+                                                     hidden: [], excluded: [], tileSlots: [], in: stack)
+        XCTAssertEqual(back.show, [])
+        XCTAssertEqual(back.drop, [:], "still a live floater: its picture stays kept")
+    }
+
+    func testMinimizedAppHiddenAndDestroyedFloatersGetNoStandIn() {
+        let stack = [win(1, slot)]
+        // minimized: ordered out, discovery not caught up yet
+        XCTAssertEqual(reveal(stack).drop, [8905: .offScreen])
+        // app hidden (Cmd-H) once discovery knows: HyprMac's hidden set
+        XCTAssertEqual(reveal(stack, hidden: [8905]).drop, [8905: .hidden])
+        XCTAssertEqual(FloaterStandInPlan.standInBlock(8905, floating: [8905], hidden: [8905], excluded: [],
+                                                       in: [win(8905, pid: floaterPID, lastSeen)]), .hidden,
+                       "HyprMac's own word wins even while the list still shows it")
+        // destroyed and forgotten: no longer a floater
+        XCTAssertEqual(reveal(stack, floating: []).drop, [8905: .notFloating])
+        // a transparent or zero-size leftover is not on screen either
+        XCTAssertEqual(FloaterStandInPlan.standInBlock(8905, floating: [8905], hidden: [], excluded: [],
+                                                       in: [win(8905, pid: floaterPID, lastSeen, alpha: 0)]),
+                       .offScreen)
+    }
+
+    func testScratchpadMembersAndPopUpsAreExcluded() {
+        XCTAssertEqual(FloaterStandInPlan.standInBlock(8905, floating: [8905], hidden: [], excluded: [8905],
+                                                       in: [win(8905, pid: floaterPID, lastSeen)]), .excluded)
+    }
 }

@@ -1122,6 +1122,18 @@ for a real window in front, a click passes through to that window. A floater cha
 other until the window list shows where it landed (`floater order unsettled` / `settled` in
 the log), so no frame draws the old order or the new one ahead of the windows.
 
+**One gate for every stand-in.** `FloaterStandInPlan.standInBlock` decides whether a floater
+may have a stand-in right now, and every path asks it: the refresh, the workspace reveal, the
+pre-raise show, the press monitor and the mouse-down tap (against the window list it hit-tests
+with). HyprMac's floater list alone can hold a closed window: Teams hides a closed window and
+keeps its id, and a ghost keeps its workspace, while discovery may call it hidden only seconds
+later. So the window list must show the floater on screen. A floater parked for a hidden
+workspace still is (in the hide corner, full size), so it keeps its picture for the return; a
+closed, minimized or app-hidden one is ordered out and is not. A reveal shows a kept picture
+only for a floater the gate lets through that a tile of the incoming workspace will cover
+(`intendedTileRects`). The AX destroyed and miniaturized events, an app hide and every refresh
+drop the panel and picture of a floater the gate stops (`stand-in dropped wid=… reason=…`).
+
 **A switch takes the outgoing chrome down with its windows.** Right before the park writes,
 the outgoing outlines are dropped and the outgoing stand-ins go, flushed: the main thread
 stays busy until the switch ends, and an outline dropped without a flush stayed on the new

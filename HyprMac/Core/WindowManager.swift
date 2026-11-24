@@ -327,9 +327,23 @@ class WindowManager {
             self?.workspaceOverview.showSwitchHUD(workspace: workspace, screen: screen)
         }
         self.workspaceOrchestrator.didRevealFloaters = { [weak self] ids in
-            guard let self, self.isRunning, self.floaterStandIn.isEnabled, !self.scratchpad.isVisible else { return }
-            // the last picture, up before the tiles can land on the floater
-            self.floaterStandIn.showKept(ids.intersection(self.stateCache.floatingWindowIDs),
+            guard let self, self.isRunning, self.floaterStandIn.isEnabled, !self.scratchpad.isVisible,
+                  let stack = WindowStacking.onScreen() else { return }
+            // the last picture, up before the tiles can land on the floater:
+            // only for a floater still on screen (a parked one is, in the
+            // hide corner; a closed one is ordered out) that a tile of this
+            // workspace will cover
+            let slots = self.tilingEngine.intendedTileRects()
+                .filter { ids.contains($0.key) && !self.stateCache.floatingWindowIDs.contains($0.key) }
+            let excluded = self.stateCache.popupWindowIDs.union(ids.filter { self.scratchpad.contains($0) })
+            let decision = FloaterStandInPlan.revealPictures(
+                kept: self.floaterStandIn.keptFrames, revealed: ids,
+                floating: self.stateCache.floatingWindowIDs, hidden: self.stateCache.hiddenWindowIDs,
+                excluded: excluded, tileSlots: Array(slots.values), in: stack)
+            for (id, block) in decision.drop {
+                self.floaterStandIn.forget(id, reason: "workspace reveal: \(block.rawValue)")
+            }
+            self.floaterStandIn.showKept(decision.show,
                                          trigger: "workspace reveal")
         }
         // the outgoing stand-ins go with their windows, not before: the
@@ -1063,6 +1077,7 @@ class WindowManager {
             self.discoveryFollowUp.noteEvent("\(kind)", pid: pid, now: CFAbsoluteTimeGetCurrent())
             switch kind {
             case .windowDestroyed:
+                self.dropStandInsNoLongerAllowed("destroyed")
                 self.destroyRecheck.noteDestroy(pid: pid)
                 self.pollingScheduler.schedule(trigger: .destroy)
             case .windowCreated, .windowDeminiaturized:
@@ -1075,6 +1090,7 @@ class WindowManager {
                 hyprLog(.notice, .discovery, "ax \(kind) pid=\(pid): \(outcome.description)"
                         + (self.pollHoldReason.map { ", polls held: \($0)" } ?? ""))
             case .windowMiniaturized:
+                self.dropStandInsNoLongerAllowed("minimized")
                 self.pollingScheduler.schedule(after: 0.2)
             case .focusedWindowChanged:
                 self.scheduleFocusPoll(pid: pid, via: "axFocus", after: 0.15)
@@ -2011,7 +2027,7 @@ class WindowManager {
         standInPressTap.onPress = { [weak self] tile, ids, windowNumbers in
             guard let self else { return }
             if self.isRunning, let stack = self.mouseTracker.stackedWindows() {
-                let frames = self.standInCandidates(windows: nil, listed: Self.listedFrames(stack))
+                let frames = self.standInCandidates(windows: nil, stack: stack)
                 self.floaterStandIn.showPredicted(ids, floaters: self.standInInfo(ids, frames: frames, windows: nil),
                                                   trigger: "mouseDown on tile \(tile)")
             }
@@ -2028,13 +2044,43 @@ class WindowManager {
         }
     }
 
-    /// The visible floaters a stand-in may stand for, with their drawn
-    /// frames. Scratchpad members never: the scrim owns their stack. An
-    /// app's pop-up never either: it closes when anything else is touched (#114).
-    private func standInCandidates(windows: [HyprWindow]?, listed: [CGWindowID: CGRect])
+    /// The floaters a stand-in may stand for now, with their drawn frames:
+    /// the visible ones `standInBlock` lets through. Every stand-in path
+    /// takes its floaters from here.
+    private func standInCandidates(windows: [HyprWindow]?, stack: [StackedWindow])
         -> [CGWindowID: CGRect] {
-        floatingFrames(from: windows ?? Array(stateCache.cachedWindows.values), listed: listed)
-            .filter { !scratchpad.contains($0.key) && !stateCache.popupWindowIDs.contains($0.key) }
+        floatingFrames(from: windows ?? Array(stateCache.cachedWindows.values), listed: Self.listedFrames(stack))
+            .filter { standInBlock($0.key, in: stack) == nil }
+    }
+
+    /// The one place that decides whether `id` may have a stand-in right
+    /// now, from a window list the caller read. HyprMac's floater list
+    /// alone can hold a closed window (a ghost keeps its workspace), so the
+    /// window list must show the floater on screen. Scratchpad members
+    /// never: the scrim owns their stack. An app's pop-up never either: it
+    /// closes when anything else is touched (#114).
+    private func standInBlock(_ id: CGWindowID, in stack: [StackedWindow]) -> StandInBlock? {
+        let excluded = stateCache.popupWindowIDs.union(scratchpad.contains(id) ? [id] : [])
+        return FloaterStandInPlan.standInBlock(id, floating: stateCache.floatingWindowIDs,
+                                               hidden: stateCache.hiddenWindowIDs,
+                                               excluded: excluded, in: stack)
+    }
+
+    /// Drop every kept panel and picture whose floater `standInBlock` no
+    /// longer lets through: closed, minimized, its app hidden. Called on
+    /// the events that say so, not at the next refresh. A miss (the window
+    /// server a moment behind the event) is caught by a second look.
+    private func dropStandInsNoLongerAllowed(_ reason: String, again: Bool = true) {
+        guard isRunning, floaterStandIn.isEnabled, let stack = WindowStacking.onScreen() else { return }
+        for id in floaterStandIn.keptFrames.keys {
+            if let block = standInBlock(id, in: stack) {
+                floaterStandIn.forget(id, reason: "\(reason): \(block.rawValue)")
+            }
+        }
+        guard again else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.dropStandInsNoLongerAllowed(reason, again: false)
+        }
     }
 
     private func standInInfo(_ ids: Set<CGWindowID>, frames: [CGWindowID: CGRect],
@@ -2073,11 +2119,16 @@ class WindowManager {
         }
         if !standInPressTap.isRunning { standInPressTap.start() }
         guard let stack = mouseTracker.stackedWindows() else { return }
-        let frames = standInCandidates(windows: windows, listed: Self.listedFrames(stack))
+        let frames = standInCandidates(windows: windows, stack: stack)
         let tiles = currentTiledRects()
         let covered = FloaterStandInPlan.covered(floaters: frames, tiles: tiles, in: stack)
         let atRisk = FloaterStandInPlan.atRisk(floaters: frames, tiles: tiles, in: stack)
         standInStack = (tiles, frames, atRisk)
+        // a kept panel whose floater the gate no longer lets through goes
+        // for good, picture and all
+        for id in floaterStandIn.keptFrames.keys {
+            if let block = standInBlock(id, in: stack) { floaterStandIn.forget(id, reason: "refresh: \(block.rawValue)") }
+        }
         floaterStandIn.apply(covered: covered, atRisk: atRisk,
                              floaters: standInInfo(covered.union(atRisk), frames: frames, windows: windows),
                              known: stateCache.floatingWindowIDs)
@@ -2094,8 +2145,8 @@ class WindowManager {
                 warm[id] != nil && seen.frames[id].map { WindowStacking.overlaps($0, tileFrame) } == true
             }
             guard !ids.isEmpty else { continue }
-            zones.append(.init(tileID: tile, tileFrame: tileFrame, floaterIDs: ids,
-                               windowNumbers: ids.compactMap { warm[$0] }))
+            zones.append(.init(tileID: tile, tileFrame: tileFrame,
+                               panels: Dictionary(uniqueKeysWithValues: ids.compactMap { id in warm[id].map { (id, $0) } })))
         }
         standInPressTap.update(zones: zones, floaterIDs: Set(seen.frames.keys))
     }
@@ -2107,7 +2158,7 @@ class WindowManager {
         guard isRunning, floaterStandIn.isEnabled, !scratchpad.isVisible,
               let stack = mouseTracker.stackedWindows() else { return }
         let listed = Self.listedFrames(stack)
-        let frames = standInCandidates(windows: nil, listed: listed)
+        let frames = standInCandidates(windows: nil, stack: stack)
         guard !frames.isEmpty else { return }
         guard let press = FloaterStandInPlan.coveredByPress(
             at: point, in: stack, floaters: frames, tiles: listedTiles(listed),
@@ -2133,7 +2184,7 @@ class WindowManager {
         let listed = Self.listedFrames(stack)
         guard let tileFrame = listed[target.windowID] ?? target.cachedFrame else { return }
         let onScreen = Set(stack.filter(\.isVisible).map(\.windowID))
-        let frames = standInCandidates(windows: nil, listed: listed)
+        let frames = standInCandidates(windows: nil, stack: stack)
         let ids = Set(frames.filter { onScreen.contains($0.key) && WindowStacking.overlaps($0.value, tileFrame) }.keys)
         guard !ids.isEmpty else { return }
         floaterStandIn.showPredicted(ids, floaters: standInInfo(ids, frames: frames, windows: nil),
@@ -3238,7 +3289,7 @@ class WindowManager {
         guard isRunning, let stack = WindowStacking.onScreen() else { return }
         let listed = Self.listedFrames(stack)
         var floaters = outlineFrames
-        for (id, frame) in standInCandidates(windows: nil, listed: listed) where floaters[id] == nil {
+        for (id, frame) in standInCandidates(windows: nil, stack: stack) where floaters[id] == nil {
             floaters[id] = frame
         }
         let cuts = FloaterStandInPlan.chromeCuts(
@@ -3995,6 +4046,7 @@ class WindowManager {
     /// React to an app being hidden or unhidden (Cmd-H, Hide Others, etc.).
     /// Short delay lets AX settle before discovery picks up the change.
     @objc private func appVisibilityChanged(_ notification: Notification) {
+        dropStandInsNoLongerAllowed("app hidden")
         pollingScheduler.schedule(after: 0.3, trigger: .visibility)
     }
 

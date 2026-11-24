@@ -16,8 +16,9 @@ final class StandInPressTap {
     struct Zone: Equatable {
         let tileID: CGWindowID
         let tileFrame: CGRect
-        let floaterIDs: Set<CGWindowID>
-        let windowNumbers: [Int]
+        /// floater to its panel's window number
+        let panels: [CGWindowID: Int]
+        var floaterIDs: Set<CGWindowID> { Set(panels.keys) }
     }
 
     /// main thread, after the tap raised panels: the tile pressed, the
@@ -116,9 +117,22 @@ final class StandInPressTap {
         guard case .window(let hit) = WindowStacking.hitTest(point, in: windows, frontmostPID: nil,
                                                              ownPID: getpid(), managedFloaters: floaters),
               let zone = candidates.first(where: { $0.tileID == hit }) else { return }
-        for number in zone.windowNumbers { Self.setAlpha(number, 1) }
+        // the same gate as every other path, against this very list: a
+        // floater closed or hidden since the zones were built gets nothing
+        let live = Self.livePanels(zone, in: windows)
+        guard !live.isEmpty else { return }
+        for number in live.values { Self.setAlpha(number, 1) }
         DispatchQueue.main.async { [weak self] in
-            self?.onPress(zone.tileID, zone.floaterIDs, zone.windowNumbers)
+            self?.onPress(zone.tileID, Set(live.keys), Array(live.values))
+        }
+    }
+
+    /// The zone's panels whose floater the gate still lets through in
+    /// `windows`, the list the press is hit-tested against.
+    static func livePanels(_ zone: Zone, in windows: [StackedWindow]) -> [CGWindowID: Int] {
+        zone.panels.filter { id, _ in
+            FloaterStandInPlan.standInBlock(id, floating: zone.floaterIDs, hidden: [], excluded: [],
+                                            in: windows) == nil
         }
     }
 
