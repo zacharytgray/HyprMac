@@ -1,47 +1,58 @@
-// Full-screen tutorial shell: a navy stage with the lesson rail on top and
-// skip / next at the bottom. One lesson at a time sits in the middle.
+// Full-screen tutorial shell: a navy stage with the step rail on top and
+// exit / next at the bottom. One step at a time sits in the middle, with
+// its tasks on a navy glass card.
 
 import SwiftUI
 
-// MARK: - lessons
+// MARK: - steps
 
-/// The tutorial's steps in order. Access is the permission gate; the rest
-/// are lessons the user does on real keys.
+/// The tutorial's steps in order. Access is the permission; the lessons
+/// are done on real keys; Make it yours sets a few choices.
 enum TutorialLesson: Int, CaseIterable {
-    case access, hyprKey, focus, move, workspaces, floatOrTile, cycleFloaters, fixWindow, allKeys, pause
+    case access, hyprKey, moveAround, workspaces, floating, fixWindow, menuBarAndKeys, pause, makeItYours
 
     var railLabel: String {
         switch self {
         case .access: return "Access"
         case .hyprKey: return "Hypr key"
-        case .focus: return "Focus"
-        case .move: return "Move windows"
+        case .moveAround: return "Move around"
         case .workspaces: return "Workspaces"
-        case .floatOrTile: return "Float or tile"
-        case .cycleFloaters: return "Cycle floaters"
+        case .floating: return "Floating"
         case .fixWindow: return "Fix a window"
-        case .allKeys: return "All keys"
+        case .menuBarAndKeys: return "Menu bar & keys"
         case .pause: return "Pause"
+        case .makeItYours: return "Make it yours"
         }
     }
 
     var next: TutorialLesson? { TutorialLesson(rawValue: rawValue + 1) }
+
+    /// "Lesson 2 of 7" for the lessons; the two ends say what they are
+    var counterLabel: String {
+        switch self {
+        case .access: return "Before you start"
+        case .makeItYours: return "Last step"
+        default: return "Lesson \(rawValue) of \(TutorialLesson.pause.rawValue)"
+        }
+    }
 }
 
 // MARK: - stage colors
 
-/// The stage is navy in both appearances, like the showreel's desktop. Its
-/// own text and accents are fixed to the dark-mode brand values; cards on it
-/// follow the system appearance.
+/// The stage is navy in both appearances, like the showreel's desktop.
+/// Everything on it, cards included, uses the dark-mode brand values.
 enum TutorialStageColor {
     static let navyTop = Color(red: 0x0A/255, green: 0x10/255, blue: 0x24/255)
     static let navyBottom = Color(red: 0x13/255, green: 0x1B/255, blue: 0x3A/255)
+    static let glassTop = Color(red: 0x1D/255, green: 0x28/255, blue: 0x55/255)
+    static let glassBottom = Color(red: 0x16/255, green: 0x1F/255, blue: 0x45/255)
     static let cyan = Color(red: 0x56/255, green: 0xD8/255, blue: 0xF0/255)
     static let magenta = Color(red: 0xE8/255, green: 0x4B/255, blue: 0xCB/255)
     static let text = Color.white
     static let quiet = Color.white.opacity(0.62)
     static let faint = Color.white.opacity(0.38)
     static let line = Color.white.opacity(0.10)
+    static let surface = Color.white.opacity(0.06)
 }
 
 // MARK: - shell
@@ -52,7 +63,10 @@ struct TutorialStage<Content: View>: View {
     /// e.g. "1 of 3 done"; nil hides it
     let progress: String?
     let canContinue: Bool
-    let onSkipTutorial: () -> Void
+    /// bottom-left: "Skip Tutorial" on lessons, "Quit HyprMac" on Access
+    var exitTitle = "Skip Tutorial"
+    var canSkipLesson = true
+    let onExit: () -> Void
     let onSkipLesson: () -> Void
     let onNext: () -> Void
     @ViewBuilder let content: Content
@@ -65,6 +79,8 @@ struct TutorialStage<Content: View>: View {
             bottomBar
         }
         .background(backdrop)
+        // one look in light and dark: system controls on the stage draw dark
+        .environment(\.colorScheme, .dark)
     }
 
     // navy with a faint cyan and magenta glow in opposite corners
@@ -80,17 +96,15 @@ struct TutorialStage<Content: View>: View {
         .ignoresSafeArea()
     }
 
-    // MARK: top: lockup · lesson rail · lesson count
+    // MARK: top: lockup · step rail · counter
 
     private var topBar: some View {
         HStack(spacing: 24) {
             HyprLockup(markSize: 20)
-                .environment(\.colorScheme, .dark)
-                .foregroundStyle(TutorialStageColor.text)
             Spacer(minLength: 0)
             rail
             Spacer(minLength: 0)
-            Text("Lesson \(lesson.rawValue) of \(TutorialLesson.allCases.count - 1)")
+            Text(lesson.counterLabel)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundStyle(TutorialStageColor.faint)
         }
@@ -102,7 +116,7 @@ struct TutorialStage<Content: View>: View {
         }
     }
 
-    // the current lesson gets an inset accent bar, a colored icon and
+    // the current step gets an inset accent bar, a colored icon and
     // heavier text, never a filled chip
     private var rail: some View {
         HStack(spacing: 18) {
@@ -129,18 +143,18 @@ struct TutorialStage<Content: View>: View {
                 // the bar matches the label; without this each step stretches
                 .fixedSize()
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(step.railLabel), \(done ? "done" : current ? "current lesson" : "not started")")
+                .accessibilityLabel("\(step.railLabel), \(done ? "done" : current ? "current step" : "not started")")
             }
         }
     }
 
-    // MARK: bottom: skip tutorial · progress · skip lesson · next
+    // MARK: bottom: exit · progress · skip lesson · next
 
     private var bottomBar: some View {
         HStack(spacing: 16) {
-            Button(action: onSkipTutorial) {
+            Button(action: onExit) {
                 HStack(spacing: 6) {
-                    Text("Skip Tutorial")
+                    Text(exitTitle)
                     StageKeyHint("esc")
                 }
             }
@@ -156,7 +170,7 @@ struct TutorialStage<Content: View>: View {
                     .font(.system(size: 11.5, weight: .medium, design: .monospaced))
                     .foregroundStyle(canContinue ? TutorialStageColor.cyan : TutorialStageColor.faint)
             }
-            if !canContinue {
+            if !canContinue, canSkipLesson {
                 Button("Skip Lesson", action: onSkipLesson)
                     .buttonStyle(.plain)
                     .font(.system(size: 12))
@@ -177,17 +191,129 @@ struct TutorialStage<Content: View>: View {
     }
 }
 
+// MARK: - task card
+
+/// One thing to do in a step. It ticks itself off from what HyprMac sees.
+struct TutorialTask {
+    let title: String
+    let detail: String
+    let done: Bool
+    var trailing: AnyView? = nil
+}
+
+/// The step's to-do list on navy glass, the Hypr+I look on the stage. The
+/// next task gets the inset accent bar and heavier text; done tasks a check.
+struct TutorialTaskCard<Accessory: View>: View {
+    var heading = "Do these to continue"
+    let tasks: [TutorialTask]
+    @ViewBuilder var accessory: Accessory
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text(tasks.allSatisfy(\.done) ? "All done" : heading)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(TutorialStageColor.text)
+                Spacer()
+                accessory
+            }
+            .padding(.horizontal, 4)
+
+            VStack(spacing: 2) {
+                ForEach(Array(tasks.enumerated()), id: \.offset) { index, task in
+                    row(task, current: index == currentIndex)
+                }
+            }
+        }
+        .padding(EdgeInsets(top: 14, leading: 14, bottom: 12, trailing: 14))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .tutorialGlass(cornerRadius: 14)
+    }
+
+    private var currentIndex: Int? { tasks.firstIndex { !$0.done } }
+
+    private func row(_ task: TutorialTask, current: Bool) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(current ? TutorialStageColor.cyan : Color.clear)
+                .frame(width: 3, height: 16)
+                .padding(.top, 2)
+            Image(systemName: task.done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(task.done || current ? TutorialStageColor.cyan : TutorialStageColor.faint)
+                .frame(width: 16)
+                .padding(.top, 1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.title)
+                    .font(.system(size: 13, weight: current ? .semibold : .regular))
+                    .foregroundStyle(task.done ? TutorialStageColor.quiet : TutorialStageColor.text)
+                Text(task.detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(TutorialStageColor.quiet)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if let trailing = task.trailing {
+                trailing
+            } else if task.done {
+                Text("Done")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(TutorialStageColor.cyan)
+                    .padding(.top, 1)
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.trailing, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityValue(task.done ? "done" : current ? "to do next" : "to do")
+    }
+}
+
+extension TutorialTaskCard where Accessory == EmptyView {
+    init(heading: String = "Do these to continue", tasks: [TutorialTask]) {
+        self.init(heading: heading, tasks: tasks) { EmptyView() }
+    }
+}
+
+// MARK: - navy glass
+
+extension View {
+    /// Translucent navy with a light top edge: the overlay glass, tinted to
+    /// the stage. Drawn, not blurred, so it looks the same in a snapshot.
+    func tutorialGlass(cornerRadius: CGFloat) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        return self
+            .background(
+                shape.fill(LinearGradient(colors: [TutorialStageColor.glassTop.opacity(0.86),
+                                                   TutorialStageColor.glassBottom.opacity(0.86)],
+                                          startPoint: .top, endPoint: .bottom))
+            )
+            .overlay(
+                shape.strokeBorder(LinearGradient(colors: [Color.white.opacity(0.18), Color.white.opacity(0.06)],
+                                                  startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+    }
+}
+
 // MARK: - stage controls
 
-/// Cyan filled button with dark text, dimmed while the lesson isn't done.
+/// Cyan filled button with dark text. Not yet allowed, it is an outline
+/// with quiet text, so it can't read as pressable.
 struct StagePrimaryButton: View {
     let title: String
     let enabled: Bool
+    var showsArrow = true
+    /// Return presses it; only the bottom bar's Next should claim that
+    var isDefault = true
     let action: () -> Void
 
-    init(_ title: String, enabled: Bool = true, action: @escaping () -> Void) {
+    init(_ title: String, enabled: Bool = true, showsArrow: Bool = true, isDefault: Bool = true,
+         action: @escaping () -> Void) {
         self.title = title
         self.enabled = enabled
+        self.showsArrow = showsArrow
+        self.isDefault = isDefault
         self.action = action
     }
 
@@ -195,11 +321,12 @@ struct StagePrimaryButton: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Text(title)
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 10, weight: .bold))
+                if showsArrow {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 10, weight: .bold))
+                }
             }
             .font(.system(size: 12.5, weight: .semibold))
-            // not done yet: an outline with quiet text, so it can't read as pressable
             .foregroundStyle(enabled ? TutorialStageColor.navyTop : TutorialStageColor.faint)
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -214,7 +341,53 @@ struct StagePrimaryButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
-        .keyboardShortcut(.defaultAction)
+        .keyboardShortcut(isDefault ? .defaultAction : nil)
+    }
+}
+
+/// Outlined cyan button for actions inside a card.
+struct StageSecondaryButton: View {
+    let title: String
+    let action: () -> Void
+
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(TutorialStageColor.cyan)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 5)
+                .overlay(
+                    RoundedRectangle(cornerRadius: HyprRadius.md, style: .continuous)
+                        .strokeBorder(TutorialStageColor.cyan.opacity(0.6), lineWidth: 1)
+                )
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+    }
+}
+
+/// A plain quiet text button, for "Not Now" and the like.
+struct StageQuietButton: View {
+    let title: String
+    let action: () -> Void
+
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+
+    var body: some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .font(.system(size: 11.5))
+            .foregroundStyle(TutorialStageColor.quiet)
+            .fixedSize()
     }
 }
 
@@ -236,34 +409,66 @@ struct StageKeyHint: View {
     }
 }
 
+/// A rounded chip with a live state, e.g. "Capitals on".
+struct StageStatusChip: View {
+    let icon: String
+    let label: String
+    let lit: Bool
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(label)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundStyle(lit ? TutorialStageColor.cyan : TutorialStageColor.quiet)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(TutorialStageColor.surface, in: Capsule())
+        .accessibilityElement(children: .combine)
+    }
+}
+
 // MARK: - window
 
-/// One borderless window over the whole screen under the pointer, above
-/// passive chrome like the old tour. HyprMac never tiles its own windows.
+/// One borderless window over the whole screen under the pointer.
+/// HyprMac never tiles its own windows.
 final class TutorialWindowController {
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
 
     private final class StageWindow: NSWindow {
         override var canBecomeKey: Bool { true }
         override var canBecomeMain: Bool { true }
     }
 
-    func show<V: View>(_ view: V) {
+    /// Access sits at the normal level, so System Settings can come in
+    /// front of it. Lessons sit above passive chrome, like the old tour.
+    static func level(for step: TutorialLesson) -> NSWindow.Level {
+        step == .access ? .normal : Constants.interfaceWindowLevel
+    }
+
+    func show<V: View>(_ view: V, level: NSWindow.Level) {
         dismiss()
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         guard let frame = screen?.frame else { return }
         let win = StageWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
         win.contentViewController = NSHostingController(rootView: view)
         win.setFrame(frame, display: true)
-        win.level = Constants.interfaceWindowLevel
+        win.level = level
+        win.appearance = NSAppearance(named: .darkAqua)
         win.isReleasedWhenClosed = false
         win.collectionBehavior = [.fullScreenAuxiliary]
         win.title = "HyprMac Tutorial"
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        window = win
+        bringToFront()
         // hover focus must not reach through the stage
         OwnPanelTracker.shared.track(win)
-        window = win
+    }
+
+    func bringToFront() {
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func dismiss() {

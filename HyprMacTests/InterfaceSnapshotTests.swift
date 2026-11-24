@@ -124,7 +124,7 @@ final class InterfaceSnapshotTests: XCTestCase {
         func lesson(_ setup: (HyprKeyLessonModel) -> Void) -> some View {
             let model = HyprKeyLessonModel()
             setup(model)
-            return HyprKeyLessonView(model: model, onSkipTutorial: {}, onNext: {})
+            return HyprKeyLessonView(model: model, onExit: {}, onNext: {})
         }
         for dark in [true, false] {
             let mode = dark ? "dark" : "light"
@@ -148,6 +148,27 @@ final class InterfaceSnapshotTests: XCTestCase {
             try render("lesson-hypr-key-5-double-tap-off-\(mode)", lesson { $0.heldOnce = true },
                        size: size, dark: dark)
         }
+    }
+
+    // the full-screen access step: before Grant, waiting on the drag, granted
+    func testRenderAccessStep() throws {
+        let size = CGSize(width: 1440, height: 900)
+        func step(granted: Bool, waiting: Bool) -> some View {
+            let model = AccessStepModel(granted: granted)
+            model.waiting = waiting
+            return AccessStepView(model: model, onGrant: {}, onQuit: {}, onNext: {})
+        }
+        for dark in [true, false] {
+            let mode = dark ? "dark" : "light"
+            try render("access-1-start-\(mode)", step(granted: false, waiting: false), size: size, dark: dark)
+            try render("access-2-waiting-\(mode)", step(granted: false, waiting: true), size: size, dark: dark)
+            try render("access-3-granted-\(mode)", step(granted: true, waiting: false), size: size, dark: dark)
+        }
+        // dex157's drag panel, which shows under System Settings meanwhile
+        try render("access-drag-panel-dark", AccessibilityDragHelperView(onClose: {}),
+                   width: AccessibilityDragHelperPlacement.panelWidth)
+        try render("access-drag-panel-light", AccessibilityDragHelperView(onClose: {}),
+                   width: AccessibilityDragHelperPlacement.panelWidth, dark: false)
     }
 
     func testRenderKeybindChips() throws {

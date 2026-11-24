@@ -13,7 +13,7 @@ import Cocoa
 class AppDelegate: NSObject, NSApplicationDelegate {
     var windowManager: WindowManager?
     private var welcomeController: WelcomeWindowController?
-    private var tutorialController: TutorialWindowController?
+    private var tutorial: TutorialSession?
     private var permissionsGate: PermissionsGateWindowController?
     private var permissionPollTimer: Timer?
     private var diagnosticOnly = false
@@ -200,9 +200,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             self?.permissionPollTimer = nil
             self?.startAfterPermissionGranted()
             self?.permissionsGate?.markAccessibilityGrantedAndDismiss()
+            self?.tutorial?.noteAccessGranted()
         }
         RunLoop.main.add(timer, forMode: .common)
         permissionPollTimer = timer
+
+        #if HYPRMAC_DEBUG_VARIANT
+        if Self.usesNewTutorial {
+            presentTutorial(startAt: .access)
+            return
+        }
+        #endif
 
         let gate = PermissionsGateWindowController()
         gate.show { [weak self] in
@@ -257,8 +265,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         #if HYPRMAC_DEBUG_VARIANT
         // the full-screen tutorial, one lesson so far: Debug app only, and
         // only when launched with --new-tutorial
-        if CommandLine.arguments.contains("--new-tutorial") {
-            presentHyprKeyLesson()
+        if Self.usesNewTutorial {
+            presentTutorial(startAt: .hyprKey)
             return
         }
         #endif
@@ -266,18 +274,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     #if HYPRMAC_DEBUG_VARIANT
-    private func presentHyprKeyLesson() {
+    private static var usesNewTutorial: Bool { CommandLine.arguments.contains("--new-tutorial") }
+
+    /// The full-screen tutorial. A first run starts it at Access from the
+    /// launch gate, and Next carries on into the lessons; a replay starts
+    /// at the Hypr key.
+    private func presentTutorial(startAt step: TutorialLesson) {
+        guard tutorial?.isShowing != true else { return }
         welcomeController?.dismiss()
-        let model = HyprKeyLessonModel()
-        let controller = TutorialWindowController()
-        let close = { [weak self, weak model] in
-            model?.stop()
-            self?.tutorialController?.dismiss()
-            self?.tutorialController = nil
+        let session = TutorialSession(startAt: step)
+        session.onClose = { [weak self] in self?.tutorial = nil }
+        session.onQuit = { [weak self] in
+            self?.permissionPollTimer?.invalidate()
+            self?.permissionPollTimer = nil
+            NSApp.terminate(nil)
         }
-        controller.show(HyprKeyLessonView(model: model, onSkipTutorial: close, onNext: close))
-        model.start()
-        tutorialController = controller
+        tutorial = session
+        session.show()
     }
     #endif
 
@@ -289,6 +302,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func presentWelcome(mode: WelcomeMode) {
+        #if HYPRMAC_DEBUG_VARIANT
+        // the first-run decision lands here too; the tutorial already covers it
+        if Self.usesNewTutorial, mode == .firstRun {
+            presentTutorial(startAt: .hyprKey)
+            return
+        }
+        #endif
         welcomeController?.dismiss()
         let controller = WelcomeWindowController()
         welcomeController = controller
