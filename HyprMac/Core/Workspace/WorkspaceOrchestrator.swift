@@ -431,6 +431,9 @@ final class WorkspaceOrchestrator {
         // up as the backdrop until the incoming ones are placed. a workspace
         // with nothing to show (empty, or only hidden windows) has nothing to
         // wait for
+        // the dim follows a switch at once, both ways. reset below
+        dimmingOverlay.removeImmediately(result.toHide)
+        dimmingOverlay.showImmediately(result.toShow)
         let revealFirst = !result.toShow.subtracting(stateCache.hiddenWindowIDs).isEmpty
         var parkStart = Date(), parkEnd = parkStart
         // the handles come from the walk, or the cache for a window whose app
@@ -506,6 +509,7 @@ final class WorkspaceOrchestrator {
             warpToEmptyScreen(result.screen, cursorScreen: currentScreen)
             focusBorder.hide(); dimmingOverlay.hideAll()
         }
+        dimmingOverlay.showImmediately([])
 
         NotificationCenter.default.post(name: .hyprMacWorkspaceChanged, object: nil)
         onDidSwitch(number, result.screen)
