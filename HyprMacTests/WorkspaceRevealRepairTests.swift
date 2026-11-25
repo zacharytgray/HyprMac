@@ -227,6 +227,34 @@ final class WorkspaceRevealRepairTests: XCTestCase {
         XCTAssertTrue(orchestrator.departedFocusedFloater.isEmpty, "used once")
     }
 
+    // the user left this workspace with the second tile focused. coming
+    // back focuses that tile again, not the first one in the walk
+    func testComingBackFocusesTheTileThatHadFocusWhenTheWorkspaceWasLeft() {
+        let first = shownWindow(id: 7340, on: visible, floating: false)
+        let second = shownWindow(id: 7341, on: visible, floating: false)
+        orchestrator.allWindows = { [first, second] }
+        focus.recordFocus(second.windowID, reason: "test")
+
+        orchestrator.switchWorkspace(hidden)
+        orchestrator.switchWorkspace(visible)
+
+        XCTAssertEqual(focus.lastFocusedID, second.windowID)
+        XCTAssertTrue(orchestrator.departedFocusedTile.isEmpty, "used once")
+    }
+
+    // pressing the key for the workspace already showing keeps focus on
+    // the window that has it, not the first tile
+    func testSwitchingToTheWorkspaceAlreadyShowingKeepsTheFocusedTile() {
+        let first = shownWindow(id: 7342, on: visible, floating: false)
+        let second = shownWindow(id: 7343, on: visible, floating: false)
+        orchestrator.allWindows = { [first, second] }
+        focus.recordFocus(second.windowID, reason: "test")
+
+        orchestrator.switchWorkspace(visible)
+
+        XCTAssertEqual(focus.lastFocusedID, second.windowID)
+    }
+
     // the floater's reveal kept its saved frame (its app could not say
     // whether it is in full screen), so it is still parked: the return must
     // not focus a window off screen, and takes the usual pick
