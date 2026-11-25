@@ -9,6 +9,7 @@ struct GeneralSettingsView: View {
     let showTutorial: () -> Void
     @ObservedObject var config = UserConfig.shared
     @AppStorage(UserConfig.menuBarStyleKey) private var menuBarStyle: MenuBarStyle = .full
+    @AppStorage(UserConfig.menuBarGlyphStyleKey) private var menuBarGlyphStyle: MenuBarGlyphStyle = .squares
     @State private var accessibilityGranted = AccessibilityManager.isAccessibilityEnabled()
     /// Grant pressed and the drag panel up
     @State private var waitingForGrant = false
@@ -141,11 +142,24 @@ struct GeneralSettingsView: View {
         }
     }
 
+    private var menuBarGlyphSubtitle: String {
+        switch menuBarGlyphStyle {
+        case .squares: return "■ shown, □ has windows, · empty."
+        case .numbers: return "Only workspaces in use, by number. The shown one is filled."
+        }
+    }
+
     private var presenceCard: some View {
         SettingsCard("Menu bar and Dock") {
             SettingsRow("Menu bar item", icon: "menubar.rectangle", subtitle: menuBarSubtitle) {
                 SettingsSegmented(options: MenuBarStyle.allCases.map { ($0, $0.displayName) },
                                   selection: $menuBarStyle)
+            }
+            if menuBarStyle == .full {
+                SettingsRow("Workspace glyphs", icon: "number.square", subtitle: menuBarGlyphSubtitle) {
+                    SettingsSegmented(options: MenuBarGlyphStyle.allCases.map { ($0, $0.displayName) },
+                                      selection: $menuBarGlyphStyle)
+                }
             }
             SettingsRow("Show in Dock", icon: "dock.rectangle",
                         subtitle: "Also puts HyprMac in ⌘-Tab.", divider: false) {

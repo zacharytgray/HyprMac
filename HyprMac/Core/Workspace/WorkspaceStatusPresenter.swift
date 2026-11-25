@@ -87,6 +87,8 @@ final class WorkspaceStatusPresenter {
         let floating = workspacesWithFloatingWindows()
         let labelText = MenuBarPresentation.workspaceGlyphs(
             active: active, occupied: occupied, floating: floating)
+        let numbersText = MenuBarPresentation.workspaceNumbers(active: active, occupied: occupied)
+        let numberEntries = MenuBarPresentation.workspaceNumberEntries(active: active, occupied: occupied)
         let enabledScreens = workspaceManager.enabledScreensLeftToRight()
         let monitors = enabledScreens.enumerated().map {
             index, screen in
@@ -127,6 +129,8 @@ final class WorkspaceStatusPresenter {
         DispatchQueue.main.async {
             let state = MenuBarState.shared
             if state.labelText != labelText { state.labelText = labelText }
+            if state.numbersText != numbersText { state.numbersText = numbersText }
+            if state.numberEntries != numberEntries { state.numberEntries = numberEntries }
             if state.isFullscreen != isFullscreen { state.isFullscreen = isFullscreen }
             if state.monitors != monitors { state.monitors = monitors }
             if state.compactWorkspace != compactWorkspace { state.compactWorkspace = compactWorkspace }
