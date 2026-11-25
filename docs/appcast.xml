@@ -3,6 +3,14 @@
     <channel>
         <title>HyprMac</title>
         <item>
+            <title>0.29.0</title>
+            <pubDate>Tue, 24 Nov 2026 18:01:42 -0600</pubDate>
+            <sparkle:version>117</sparkle:version>
+            <sparkle:shortVersionString>0.29.0</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.29.0/HyprMac.dmg" length="11152242" type="application/octet-stream" sparkle:edSignature="oSfWXAUj1HrqBa1wl+cUtnIUAw144+XYW0O5LZlswJI0iigMeGDCE6YS5M0JwuKm0nXMMsnGRNgxtP05y34EDQ=="/>
+        </item>
+        <item>
             <title>0.28.0</title>
             <pubDate>Tue, 24 Nov 2026 11:02:03 -0600</pubDate>
             <sparkle:version>116</sparkle:version>
@@ -17,14 +25,6 @@
             <sparkle:shortVersionString>0.27.1</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.27.1/HyprMac.dmg" length="9558697" type="application/octet-stream" sparkle:edSignature="iy2eJdZzF0DZmDN8tluibVRvvEWvPlX/bp9DWEA+MbQ+JB3YPOWSnlfCSG6zQDuq9EHx8IbOxwQAUXhFlX5tAg=="/>
-        </item>
-        <item>
-            <title>0.27.0</title>
-            <pubDate>Mon, 23 Nov 2026 09:30:03 -0600</pubDate>
-            <sparkle:version>114</sparkle:version>
-            <sparkle:shortVersionString>0.27.0</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/zacharytgray/HyprMac/releases/download/v0.27.0/HyprMac.dmg" length="9426536" type="application/octet-stream" sparkle:edSignature="3t+K+u6FslSYJiNLWznqFxjX1aalCcuLRtIdl0IXNtw/Po0qV9zjARLbt6otCNyrhINCLmB8V15AdqKD39dzDA=="/>
         </item>
     </channel>
 </rss>
