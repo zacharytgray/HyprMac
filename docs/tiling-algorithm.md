@@ -154,6 +154,16 @@ refuses before anything moves still shakes the focused window: the known
 minima rule out the swap as a whole and name no window. A move to a
 workspace has its own red shake and is unchanged.
 
+With no tile beyond the focused one on its own screen, the keyboard swap
+continues past the monitor edge (#105): it swaps with the nearest tile on
+the nearest enabled monitor that way, the one `Hypr+Ctrl+arrow` would move
+to. Each window takes the other's leaf and workspace, and both trees keep
+their shape. The fit check judges both screens, both are laid out in one
+generation, and a refusal on either restores both trees and puts both
+windows back, with the shake rule above. With no monitor that way, no tiled
+window on its visible workspace, or the scratchpad layer up, the key does
+nothing, as before.
+
 ## Ratio memory
 
 A Cmd-H looks like a close followed by an open a poll or two later.

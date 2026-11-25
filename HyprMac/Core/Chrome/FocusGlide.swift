@@ -54,6 +54,17 @@ enum TeleportPlanner {
     static func travel(_ a: CGRect, _ b: CGRect) -> CGFloat {
         max(abs(a.minX - b.minX), abs(a.minY - b.minY), abs(a.maxX - b.maxX), abs(a.maxY - b.maxY))
     }
+
+    /// Whether the centers of `a` and `b` (CG) sit on one of `screens` (NS
+    /// frames). A panel can't draw across two displays, so only these glide.
+    static func sameScreen(_ a: CGRect, _ b: CGRect, screens: [CGRect], primaryHeight: CGFloat) -> Bool {
+        func screen(_ cg: CGRect) -> Int? {
+            let r = CoordinateSpace.nsRect(fromCG: cg, primaryHeight: primaryHeight)
+            return screens.firstIndex { $0.contains(NSPoint(x: r.midX, y: r.midY)) }
+        }
+        let screenA = screen(a)
+        return screenA != nil && screenA == screen(b)
+    }
 }
 
 /// Glides the brackets and border for one press.
@@ -134,16 +145,20 @@ final class FocusGlide {
     func willWrite(_ moves: [TeleportMove]) {
         mainThreadOnly()
         guard isArmed, !isTraversal, !moves.isEmpty else { return }
+        // a window sent to another screen: the marks leave the old screen and
+        // fade in on the new one, as a focus move across screens already does
         var glided = false
         if let brackets, brackets.isVisible,
-           let move = moves.first(where: { $0.windowID == brackets.trackedWindowID }),
-           sameScreen(move.from, move.to) {
-            glided = brackets.glide(from: move.from, to: move.to, duration: Self.swapDuration) || glided
+           let move = moves.first(where: { $0.windowID == brackets.trackedWindowID }) {
+            glided = (sameScreen(move.from, move.to)
+                ? brackets.glide(from: move.from, to: move.to, duration: Self.swapDuration)
+                : brackets.arrive(at: move.to)) || glided
         }
         if let border, let id = border.trackedWindowID,
-           let move = moves.first(where: { $0.windowID == id }),
-           sameScreen(move.from, move.to) {
-            glided = border.glide(from: move.from, to: move.to, duration: Self.swapDuration) || glided
+           let move = moves.first(where: { $0.windowID == id }) {
+            glided = (sameScreen(move.from, move.to)
+                ? border.glide(from: move.from, to: move.to, duration: Self.swapDuration)
+                : border.arrive(at: move.to)) || glided
         }
         // hand the layers to the render server now. the main thread is about
         // to block in AX writes and readback, and nothing would draw till then
@@ -154,13 +169,7 @@ final class FocusGlide {
     }
 
     private func sameScreen(_ a: CGRect, _ b: CGRect) -> Bool {
-        let screenA = NSScreen.screens.first { $0.frame.contains(nsCenter(a)) }
-        let screenB = NSScreen.screens.first { $0.frame.contains(nsCenter(b)) }
-        return screenA != nil && screenA == screenB
-    }
-
-    private func nsCenter(_ cg: CGRect) -> NSPoint {
-        let r = CoordinateSpace.nsRect(fromCG: cg, primaryHeight: primaryScreenHeight)
-        return NSPoint(x: r.midX, y: r.midY)
+        TeleportPlanner.sameScreen(a, b, screens: NSScreen.screens.map(\.frame),
+                                   primaryHeight: primaryScreenHeight)
     }
 }

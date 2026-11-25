@@ -47,6 +47,33 @@ final class TeleportPlannerTests: XCTestCase {
         XCTAssertTrue(TeleportPlanner.moves(originals: originals, targets: ids.map { ($0, right) }).isEmpty)
     }
 
+    // two 1512x982 screens side by side, NS frames; primary on the left
+    private let screens = [CGRect(x: 0, y: 0, width: 1512, height: 982),
+                           CGRect(x: 1512, y: 0, width: 1512, height: 982)]
+    private var otherScreenLeft: CGRect { left.offsetBy(dx: 1512, dy: 0) }
+
+    func testSwapOnOneScreenIsSameScreen() {
+        XCTAssertTrue(TeleportPlanner.sameScreen(left, right, screens: screens, primaryHeight: 982))
+    }
+
+    // a swap past the monitor edge must not glide: one panel can't draw on
+    // both displays, so the marks fade in on the new screen instead
+    func testSwapAcrossTheMonitorEdgeIsNotSameScreen() {
+        XCTAssertFalse(TeleportPlanner.sameScreen(right, otherScreenLeft, screens: screens, primaryHeight: 982))
+    }
+
+    func testFrameOffEveryScreenIsNotSameScreen() {
+        let off = left.offsetBy(dx: -5000, dy: 0)
+        XCTAssertFalse(TeleportPlanner.sameScreen(off, off, screens: screens, primaryHeight: 982))
+    }
+
+    // each tree's pass reports the window arriving from the other screen
+    func testCrossScreenPassReportsTheArrivingWindow() {
+        let moves = TeleportPlanner.moves(originals: [1: right, 3: left.offsetBy(dx: 1512 + 760, dy: 0)],
+                                          targets: [(1, otherScreenLeft), (3, left.offsetBy(dx: 1512 + 760, dy: 0))])
+        XCTAssertEqual(moves, [TeleportMove(windowID: 1, from: right, to: otherScreenLeft)])
+    }
+
     func testOnlyKeyboardFocusAndTeleportsGlide() {
         XCTAssertTrue(TeleportPlanner.animates(.swapDirection(.left)))
         XCTAssertTrue(TeleportPlanner.animates(.moveWindowToMonitor(.right)))

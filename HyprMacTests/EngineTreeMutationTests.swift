@@ -157,3 +157,130 @@ final class EngineTreeMutationTests: XCTestCase {
         XCTAssertEqual(tree()?.root.splitOverride, beforeOverride)
     }
 }
+
+// a keyboard swap past a monitor edge: each window takes the other's leaf in
+// the other screen's tree.
+final class EngineCrossScreenSwapTests: XCTestCase {
+
+    private let left = CrossSwapLeftScreen()
+    private let right = CrossSwapRightScreen()
+
+    private func makeEngine(
+        io: @escaping ([CGWindowID: HyprWindow], @escaping () -> UInt64) -> FrameSizingIO
+            = acceptingFrameSizingIOFactory()
+    ) -> TilingEngine {
+        TilingEngine(displayManager: DisplayManager(screenSource: { [left, right] in [left, right] }),
+                     frameSizingIOFactory: io)
+    }
+
+    private func ids(_ engine: TilingEngine, _ workspace: Int, _ screen: NSScreen) -> [CGWindowID] {
+        engine.existingTree(forWorkspace: workspace, screen: screen)?.allWindows.map(\.windowID) ?? []
+    }
+
+    func testSwapAcrossScreensExchangesLeavesAndKeepsBothShapes() {
+        let engine = makeEngine()
+        let (w1, w2, w3, w4) = (makeWindow(id: 1), makeWindow(id: 2), makeWindow(id: 3), makeWindow(id: 4))
+        engine.seedTree([w1, w2], onWorkspace: 1, screen: left)
+        engine.seedTree([w3, w4], onWorkspace: 2, screen: right)
+
+        // w3 is the right screen's leftmost tile, w2 the left screen's rightmost
+        XCTAssertTrue(engine.canSwapWindows(w3, onWorkspace: 2, screen: right,
+                                            with: w2, onWorkspace: 1, screen: left))
+        XCTAssertTrue(engine.swapWindows(w3, onWorkspace: 2, screen: right,
+                                         with: w2, onWorkspace: 1, screen: left))
+
+        XCTAssertEqual(ids(engine, 1, left), [1, 3])
+        XCTAssertEqual(ids(engine, 2, right), [2, 4])
+        XCTAssertEqual(engine.existingTree(forWorkspace: 1, screen: left)?.root.right?.window?.windowID, 3)
+        XCTAssertEqual(engine.existingTree(forWorkspace: 2, screen: right)?.root.left?.window?.windowID, 2)
+    }
+
+    func testSwapAcrossScreensWithASoleWindowOnEachSide() {
+        let engine = makeEngine()
+        let (w1, w2) = (makeWindow(id: 1), makeWindow(id: 2))
+        engine.seedTree([w1], onWorkspace: 1, screen: left)
+        engine.seedTree([w2], onWorkspace: 2, screen: right)
+
+        XCTAssertTrue(engine.swapWindows(w2, onWorkspace: 2, screen: right,
+                                         with: w1, onWorkspace: 1, screen: left))
+        XCTAssertEqual(ids(engine, 1, left), [2])
+        XCTAssertEqual(ids(engine, 2, right), [1])
+    }
+
+    func testSwapAcrossScreensRefusesAWindowNotInItsTree() {
+        let engine = makeEngine()
+        let (w1, w2, stranger) = (makeWindow(id: 1), makeWindow(id: 2), makeWindow(id: 99))
+        engine.seedTree([w1], onWorkspace: 1, screen: left)
+        engine.seedTree([w2], onWorkspace: 2, screen: right)
+
+        XCTAssertFalse(engine.swapWindows(w2, onWorkspace: 2, screen: right,
+                                          with: stranger, onWorkspace: 1, screen: left))
+        XCTAssertEqual(ids(engine, 1, left), [1])
+        XCTAssertEqual(ids(engine, 2, right), [2])
+    }
+
+    func testSwapAcrossScreensRefusesAMinimumTheOtherScreenCannotHold() {
+        let engine = makeEngine()
+        let (w1, w2, w3) = (makeWindow(id: 1), makeWindow(id: 2), makeWindow(id: 3))
+        engine.seedTree([w1], onWorkspace: 1, screen: left)
+        engine.seedTree([w2, w3], onWorkspace: 2, screen: right)
+        // wider than the whole right screen
+        w1.observedMinSize = CGSize(width: 1000, height: 0)
+        w1.minSizeProvenance = .seeded
+
+        XCTAssertFalse(engine.canSwapWindows(w1, onWorkspace: 1, screen: left,
+                                             with: w2, onWorkspace: 2, screen: right))
+        XCTAssertFalse(engine.swapWindows(w1, onWorkspace: 1, screen: left,
+                                          with: w2, onWorkspace: 2, screen: right))
+        XCTAssertEqual(ids(engine, 1, left), [1])
+        XCTAssertEqual(ids(engine, 2, right), [2, 3])
+    }
+
+    /// the right screen's pass, laid out first, cannot read w1 back.
+    func testSwapAcrossScreensRestoresBothTreesWhenTheFirstScreenRefuses() {
+        assertRefusedSwapRestoresBothTrees(unreadable: 1)
+    }
+
+    /// the right screen's pass takes w1 and is accepted; the left screen's
+    /// then cannot read w2 back. both trees go back as they were.
+    func testSwapAcrossScreensRestoresBothTreesWhenTheSecondScreenRefuses() {
+        assertRefusedSwapRestoresBothTrees(unreadable: 2)
+    }
+
+    private func assertRefusedSwapRestoresBothTrees(unreadable: CGWindowID,
+                                                    line: UInt = #line) {
+        var positions: [CGWindowID: CGPoint] = [:]
+        var sizes: [CGWindowID: CGSize] = [:]
+        var now: TimeInterval = 0
+        let engine = makeEngine(io: { _, generation in
+            FrameSizingIO(
+                setMessagingTimeout: { _, _ in .success },
+                writeSize: { id, size, _ in sizes[id] = size; return .success },
+                writePosition: { id, position, _ in positions[id] = position; return .success },
+                readPosition: { id, _ in
+                    id == unreadable && positions[id] != nil ? (.cannotComplete, nil)
+                        : (.success, positions[id] ?? .zero)
+                },
+                readSize: { id, _ in (.success, sizes[id] ?? CGSize(width: 100, height: 100)) },
+                now: { now }, sleep: { now += $0 }, currentGeneration: generation)
+        })
+        let (w1, w2) = (makeWindow(id: 1), makeWindow(id: 2))
+        engine.seedTree([w1], onWorkspace: 1, screen: left)
+        engine.seedTree([w2], onWorkspace: 2, screen: right)
+
+        XCTAssertFalse(engine.swapWindows(w2, onWorkspace: 2, screen: right,
+                                          with: w1, onWorkspace: 1, screen: left), line: line)
+        XCTAssertEqual(ids(engine, 1, left), [1], line: line)
+        XCTAssertEqual(ids(engine, 2, right), [2], line: line)
+    }
+}
+
+private final class CrossSwapLeftScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 0, y: 0, width: 1920, height: 1080) }
+    override var visibleFrame: NSRect { frame }
+}
+
+private final class CrossSwapRightScreen: SyntheticScreen {
+    override var frame: NSRect { NSRect(x: 1920, y: 0, width: 800, height: 600) }
+    override var visibleFrame: NSRect { frame }
+}

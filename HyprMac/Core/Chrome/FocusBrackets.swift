@@ -329,6 +329,22 @@ class FocusBrackets {
         return true
     }
 
+    /// Move the marks to `new` and play the entrance there, for a window
+    /// sent to another screen, where `glide` can't follow.
+    @discardableResult
+    func arrive(at new: CGRect) -> Bool {
+        mainThreadOnly()
+        guard panel != nil, isVisible, cornerLayers.count == 4 else { return false }
+        updatePosition(new)
+        // the press's own show() for this frame keeps the entrance running
+        glideTarget = new
+        CATransaction.begin()
+        CATransaction.setCompletionBlock { [weak self] in self?.finishGlide(at: new) }
+        animateScaleIn()
+        CATransaction.commit()
+        return true
+    }
+
     private func isGliding(to rect: CGRect, windowID: CGWindowID?) -> Bool {
         guard let glideTarget, isVisible, windowID == trackedWindowID else { return false }
         return TeleportPlanner.travel(glideTarget, rect) < TeleportPlanner.minimumTravel
