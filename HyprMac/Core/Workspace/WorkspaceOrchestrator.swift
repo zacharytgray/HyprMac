@@ -112,6 +112,10 @@ final class WorkspaceOrchestrator {
     /// back focuses it again, in front, the way the user left it. A tile
     /// focused at the switch clears the entry: the switch's usual pick stands.
     private(set) var departedFocusedFloater: [Int: CGWindowID] = [:]
+    /// Per workspace, the tile that had focus when a switch hid it. Coming
+    /// back focuses it again instead of the first tile in the walk, so the
+    /// window the user left is the one that gets the keys.
+    private(set) var departedFocusedTile: [Int: CGWindowID] = [:]
     // the rule that keeps a window floating (Never tile or a float rule),
     // nil when none does. FloatingWindowController.floatRule(for:)
     var floatRule: (HyprWindow) -> FloatingRuleVerdict? = { _ in nil }
@@ -368,8 +372,10 @@ final class WorkspaceOrchestrator {
               let workspace = workspaceManager.workspaceFor(focused) else { return }
         if stateCache.floatingWindowIDs.contains(focused) {
             departedFocusedFloater[workspace] = focused
+            departedFocusedTile.removeValue(forKey: workspace)
         } else {
             departedFocusedFloater.removeValue(forKey: workspace)
+            departedFocusedTile[workspace] = focused
         }
     }
 
@@ -442,8 +448,13 @@ final class WorkspaceOrchestrator {
         if result.alreadyVisible {
             // workspace is showing on result.screen — just focus it
             let visibleWindows = allWindows.filter { result.toShow.contains($0.windowID) }
+            // the window that already has focus here keeps it: pressing the
+            // key for the workspace you are on must not move focus to the
+            // first tile
+            let focusedHere = focusController.lastFocusedID
             if let best = visibleWindows.first(where: { $0.windowID == preferredWindowID })
                 ?? visibleWindows.first(where: { $0.windowID == maximizedHere })
+                ?? visibleWindows.first(where: { $0.windowID == focusedHere })
                 ?? visibleWindows.first(where: { !stateCache.floatingWindowIDs.contains($0.windowID) })
                 ?? visibleWindows.first {
                 willFocusSwitchPick(best)
@@ -470,6 +481,14 @@ final class WorkspaceOrchestrator {
         // the outgoing floaters' outlines go with them, also at once
         focusBorder.beginInstantSwitch(outgoing: result.toHide)
         defer { dimmingOverlay.endInstantSwitch(); focusBorder.endInstantSwitch() }
+        // the focus border on an outgoing window goes now, with no fade. the
+        // retile and park below hold the main thread, so a fade (or the
+        // border left up) would trail on the old frame over the incoming
+        // windows until the switch's focus lands
+        if let tracked = focusBorder.trackedWindowID, result.toHide.contains(tracked) {
+            focusBorder.hide(fade: false)
+            CATransaction.flush()
+        }
 
         // a park is one position write that lands at once. the reveal moves,
         // resizes and verifies each window in turn, so parking first showed
@@ -556,8 +575,12 @@ final class WorkspaceOrchestrator {
                 && workspaceManager.savedFloatingFrame(for: id) == nil }
         }
         let maximized = newWorkspaceWindows.first { $0.windowID == maximizedHere }
+        // the tile focused when this workspace was left, still tiled here
+        let departedTile = departedFocusedTile.removeValue(forKey: number).flatMap { id in
+            newWorkspaceWindows.first { $0.windowID == id && !stateCache.floatingWindowIDs.contains(id) }
+        }
         let tiled = newWorkspaceWindows.first { !stateCache.floatingWindowIDs.contains($0.windowID) }
-        if let best = preferred ?? departed ?? maximized ?? tiled ?? newWorkspaceWindows.first {
+        if let best = preferred ?? departed ?? maximized ?? departedTile ?? tiled ?? newWorkspaceWindows.first {
             willFocusSwitchPick(best)
             best.focus()
             warp(toSwitchPick: best, preferredWindowID: preferredWindowID,
