@@ -36,6 +36,37 @@ final class MenuBarPresentationTests: XCTestCase {
             active: [2, 5], occupied: [], floating: [5]), "· ■ · · ●")
     }
 
+    // numbers list only workspaces in use, the shown one circled
+    func testWorkspaceNumbersSkipEmptyWorkspacesAndCircleTheShownOne() {
+        XCTAssertEqual(MenuBarPresentation.workspaceNumbers(
+            active: [4], occupied: [1, 2, 3, 4, 6]), "1 2 3 ❹ 6")
+        XCTAssertEqual(MenuBarPresentation.workspaceNumbers(
+            active: [2, 10], occupied: [7]), "❷ 7 ❿")
+        XCTAssertEqual(MenuBarPresentation.workspaceNumbers(active: [], occupied: []), "")
+    }
+
+    func testWorkspaceNumberEntriesListOnlyWorkspacesInUse() {
+        XCTAssertEqual(MenuBarPresentation.workspaceNumberEntries(active: [4], occupied: [1, 6]), [
+            MenuBarNumberEntry(id: 1, isActive: false),
+            MenuBarNumberEntry(id: 4, isActive: true),
+            MenuBarNumberEntry(id: 6, isActive: false)
+        ])
+    }
+
+    func testNumbersImageIsATemplateAndWiderForMoreWorkspaces() throws {
+        let one = try XCTUnwrap(MenuBarPresentation.numbersImage([MenuBarNumberEntry(id: 1, isActive: true)]))
+        let three = try XCTUnwrap(MenuBarPresentation.numbersImage(
+            MenuBarPresentation.workspaceNumberEntries(active: [1], occupied: [2, 10])))
+        XCTAssertTrue(one.isTemplate)
+        XCTAssertGreaterThan(three.size.width, one.size.width)
+        XCTAssertNil(MenuBarPresentation.numbersImage([]))
+    }
+
+    func testWorkspaceNumbersBracketAShownWorkspacePastTen() {
+        XCTAssertEqual(MenuBarPresentation.workspaceNumbers(
+            active: [11], occupied: [1]), "1 [11]")
+    }
+
     func testTooltipNamesEachMonitorAndCurrentWorkspace() {
         XCTAssertEqual(MenuBarPresentation.monitorSummary([
             monitor(0, "Studio Display", workspace: 7),

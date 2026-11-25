@@ -320,6 +320,9 @@ enum SettingsWindow {
 class MenuBarState: ObservableObject {
     static let shared = MenuBarState()
     @Published var labelText = ""
+    /// The same strip as numbers, for `MenuBarGlyphStyle.numbers`.
+    @Published var numbersText = ""
+    @Published var numberEntries: [MenuBarNumberEntry] = []
     /// A window fills a display showing now. The label swaps the glyphs for one icon.
     @Published var isFullscreen = false
     @Published var monitors: [MenuBarMonitorSnapshot] = []
@@ -351,6 +354,12 @@ struct MenuBarMonitorSnapshot: Equatable, Identifiable {
         self.isPortrait = isPortrait
         self.workspaces = workspaces
     }
+}
+
+/// One workspace in the Numbers strip.
+struct MenuBarNumberEntry: Equatable, Identifiable {
+    let id: Int
+    let isActive: Bool
 }
 
 struct MenuBarWorkspaceBadge: Equatable, Identifiable {
@@ -403,6 +412,23 @@ enum MenuBarStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// How the Full style draws the workspace strip. Per Mac, kept in UserDefaults.
+enum MenuBarGlyphStyle: String, CaseIterable, Identifiable {
+    /// every workspace up to the last one in use, empty ones as dots
+    case squares
+    /// only the workspaces in use, by number, the shown one circled
+    case numbers
+
+    var id: Self { self }
+
+    var displayName: String {
+        switch self {
+        case .squares: return "Squares"
+        case .numbers: return "Numbers"
+        }
+    }
+}
+
 enum MenuBarPresentation {
     static func workspaceBadgeRows(_ badges: [MenuBarWorkspaceBadge]) -> [[MenuBarWorkspaceBadge]] {
         stride(from: 0, to: badges.count, by: 5).map { start in
@@ -424,6 +450,72 @@ enum MenuBarPresentation {
             }
             return HyprGlyph.workspaceEmpty
         }.joined(separator: " ")
+    }
+
+    /// The Numbers strip: each workspace shown or holding windows, by
+    /// number, in order. A shown one is a filled circle (❶ to ❿), so it
+    /// reads at a glance the way the filled square does; past 10, which
+    /// has no circled glyph, it is bracketed. Empty workspaces are left out.
+    static func workspaceNumbers(active: Set<Int>, occupied: Set<Int>) -> String {
+        active.union(occupied).filter { $0 > 0 }.sorted().map { workspace in
+            guard active.contains(workspace) else { return "\(workspace)" }
+            guard workspace <= 10, let scalar = Unicode.Scalar(0x2775 + workspace) else {
+                return "[\(workspace)]"
+            }
+            return String(Character(scalar))
+        }.joined(separator: " ")
+    }
+
+    /// The Numbers strip as entries in order: the workspace, and whether
+    /// it is shown now. Empty workspaces are left out.
+    static func workspaceNumberEntries(active: Set<Int>, occupied: Set<Int>) -> [MenuBarNumberEntry] {
+        active.union(occupied).filter { $0 > 0 }.sorted().map {
+            MenuBarNumberEntry(id: $0, isActive: active.contains($0))
+        }
+    }
+
+    // the app's own mono face (`Font.hyprMonoSm` and the menu's badges)
+    static let numbersFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .medium)
+    static let numbersBadgeHeight: CGFloat = 15
+    static let numbersGap: CGFloat = 4
+
+    /// The Numbers strip drawn as one template image in SF Mono: a menu bar
+    /// label draws text in the menu bar's own font and ignores a set one.
+    /// A shown workspace is a filled rounded badge with its number cut out,
+    /// like the shown workspace in the menu's grid.
+    static func numbersImage(_ entries: [MenuBarNumberEntry]) -> NSImage? {
+        guard !entries.isEmpty else { return nil }
+        let attrs: [NSAttributedString.Key: Any] = [.font: numbersFont, .foregroundColor: NSColor.black]
+        let strings = entries.map { NSAttributedString(string: "\($0.id)", attributes: attrs) }
+        let widths = zip(entries, strings).map { entry, text in
+            ceil(text.size().width) + (entry.isActive ? 8 : 2)
+        }
+        let height = numbersBadgeHeight
+        let width = widths.reduce(0, +) + numbersGap * CGFloat(entries.count - 1)
+        let image = NSImage(size: NSSize(width: width, height: height), flipped: false) { _ in
+            guard let context = NSGraphicsContext.current?.cgContext else { return false }
+            var x: CGFloat = 0
+            for (index, entry) in entries.enumerated() {
+                let text = strings[index]
+                let size = text.size()
+                let slot = NSRect(x: x, y: 0, width: widths[index], height: height)
+                let origin = NSPoint(x: slot.midX - size.width / 2, y: slot.midY - size.height / 2)
+                if entry.isActive {
+                    NSColor.black.setFill()
+                    NSBezierPath(roundedRect: slot, xRadius: 3.5, yRadius: 3.5).fill()
+                    context.saveGState()
+                    context.setBlendMode(.destinationOut)
+                    text.draw(at: origin)
+                    context.restoreGState()
+                } else {
+                    text.draw(at: origin)
+                }
+                x += widths[index] + numbersGap
+            }
+            return true
+        }
+        image.isTemplate = true
+        return image
     }
 
     static func monitorSummary(_ monitors: [MenuBarMonitorSnapshot], names: [String: String]) -> String {
@@ -557,6 +649,7 @@ struct WorkspaceIndicatorLabel: View {
     @ObservedObject private var config = UserConfig.shared
     @ObservedObject private var state = MenuBarState.shared
     @AppStorage(UserConfig.menuBarStyleKey) private var style: MenuBarStyle = .full
+    @AppStorage(UserConfig.menuBarGlyphStyleKey) private var glyphStyle: MenuBarGlyphStyle = .squares
     @Environment(\.openWindow) private var openWindow
 
     @ObservedObject private var updateState = UpdateState.shared
@@ -570,6 +663,10 @@ struct WorkspaceIndicatorLabel: View {
             }
         }
         .onAppear { SettingsWindow.openWindow = openWindow }
+    }
+
+    private var stripText: String {
+        glyphStyle == .numbers ? state.numbersText : state.labelText
     }
 
     @ViewBuilder private var content: some View {
@@ -591,12 +688,18 @@ struct WorkspaceIndicatorLabel: View {
             .help(MenuBarPresentation.monitorSummary(state.monitors, names: config.workspaceNames))
         } else if style != .compact, MenuBarPresentation.showsIndicator(
             hasData: state.hasData,
-            labelText: state.labelText,
+            labelText: stripText,
             scratchpadCount: state.scratchpadCount) {
             HStack(spacing: 5) {
                 // the icon stands in for the glyphs
-                MenuBarLabelText(fullscreen: state.isFullscreen,
-                                 text: state.isFullscreen ? "" : state.labelText)
+                if glyphStyle == .numbers, !state.isFullscreen,
+                   let image = MenuBarPresentation.numbersImage(state.numberEntries) {
+                    Image(nsImage: image)
+                        .accessibilityLabel(state.numbersText)
+                } else {
+                    MenuBarLabelText(fullscreen: state.isFullscreen,
+                                     text: state.isFullscreen ? "" : stripText)
+                }
                 if state.scratchpadCount > 0 {
                     Image(systemName: state.scratchpadVisible ? "tray.fill" : "tray")
                     if state.scratchpadCount > 1 {

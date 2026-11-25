@@ -279,6 +279,8 @@ class UserConfig: ObservableObject {
     // per Mac too. read through @AppStorage by the menu bar scene and the
     // Settings picker; a direct UserDefaults write can miss the first update
     static let menuBarStyleKey = "menuBarStyle"
+    // per Mac as well: squares or numbers in the Full style's strip
+    static let menuBarGlyphStyleKey = "menuBarGlyphStyle"
 
     // per Mac like iCloud sync: stored in UserDefaults, not config.json.
     // off (the default) keeps HyprMac out of the Dock; AppDelegate applies it
