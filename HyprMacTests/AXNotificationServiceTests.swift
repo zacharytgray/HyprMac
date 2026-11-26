@@ -181,6 +181,63 @@ final class AXNotificationServiceTests: XCTestCase {
         XCTAssertEqual(retry.gaveUp, [created])
     }
 
+    // MARK: - an app that does not answer
+
+    private let names = [kAXFocusedWindowChangedNotification as String,
+                         kAXMainWindowChangedNotification as String,
+                         kAXWindowCreatedNotification as String]
+
+    func testAPassStopsAtTheFirstAddTheAppLeavesUnanswered() {
+        // a launching app: every add waited out its timeout on the main thread
+        var retry = AppSubscriptionRetry()
+        var asked: [String] = []
+        let results = retry.pass(names, now: 10) { asked.append($0); return .cannotComplete }
+        XCTAssertEqual(asked, [names[0]])
+        XCTAssertEqual(results.map(\.name), [names[0]])
+        XCTAssertEqual(retry.due, names.sorted())
+
+        // it answers: the pass asks for all three and nothing is owed
+        asked = []
+        _ = retry.pass(retry.due, now: 12) { asked.append($0); return .success }
+        XCTAssertEqual(asked, names.sorted())
+        XCTAssertTrue(retry.due.isEmpty)
+    }
+
+    func testNamesNotAskedKeepTheirTries() {
+        var retry = AppSubscriptionRetry()
+        var last = false
+        for pass in 0..<AppSubscriptionRetry.maxAttempts {
+            last = retry.pass(pass == 0 ? names : retry.due, now: Double(pass) * 2) { _ in .cannotComplete }
+                .first?.lastTry ?? false
+        }
+        XCTAssertTrue(last)
+        XCTAssertEqual(retry.gaveUp, [names[0]])
+        XCTAssertEqual(retry.due, [names[1], names[2]].sorted())
+    }
+
+    func testAnAppThatLeftAnAddUnansweredIsLeftAloneForThePause() {
+        var retry = AppSubscriptionRetry()
+        XCTAssertTrue(retry.mayAsk(now: 0))
+        _ = retry.pass(names, now: 10) { _ in .cannotComplete }
+        XCTAssertFalse(retry.mayAsk(now: 10.5))
+        XCTAssertTrue(retry.mayAsk(now: 10 + AppSubscriptionRetry.silentPause))
+        // an answer, even a refusal, ends the pause
+        _ = retry.pass(retry.due, now: 11) { _ in .failure }
+        XCTAssertTrue(retry.mayAsk(now: 11))
+    }
+
+    func testARefusalTheAppAnsweredDoesNotEndThePass() {
+        var retry = AppSubscriptionRetry()
+        var asked: [String] = []
+        let results = retry.pass(names, now: 0) { name in
+            asked.append(name)
+            return name == self.names[0] ? .notificationUnsupported : .success
+        }
+        XCTAssertEqual(asked, names)
+        XCTAssertEqual(results.map(\.wasOwed), [false, false, false])
+        XCTAssertEqual(retry.due, [names[0]])
+    }
+
     func testStartupAttachesAppsBeforeSubscribingInitialWindows() {
         var calls: [String] = []
         var subscribed: [CGWindowID] = []
