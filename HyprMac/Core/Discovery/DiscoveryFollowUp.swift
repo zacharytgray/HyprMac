@@ -17,6 +17,12 @@ import Foundation
 /// unknown window no poll has walked past yet, so a window discovery
 /// rejects (a dialog, an excluded app) costs one poll, not one per focus.
 ///
+/// A window a watch spent its whole budget on is no evidence for the next
+/// watch while it stays on screen. Safari keeps two layer-0 windows up
+/// that AX never lists, and sends a create for every popover; each of
+/// those used to cost the create poll and three retries, four walks of
+/// the desktop for a window that was never coming.
+///
 /// Pure: the caller supplies the clock and the window list.
 struct DiscoveryFollowUp {
     /// waits before each retry, from the poll that missed
@@ -51,19 +57,28 @@ struct DiscoveryFollowUp {
     private(set) var seenByPoll: Set<CGWindowID> = []
     /// unknown windows a poll was already asked for, until it runs
     private(set) var asked: Set<CGWindowID> = []
+    /// unknown on-screen windows a watch gave up on, until they leave the
+    /// screen. The reconcile still looks at them
+    private(set) var givenUp: Set<CGWindowID> = []
     /// when each unknown on-screen window was first noticed
     private(set) var firstSeen: [CGWindowID: TimeInterval] = [:]
     /// the last AX event from each app, for the reconcile line
     private(set) var lastEvent: [pid_t: (kind: String, at: TimeInterval)] = [:]
     private(set) var lastCreate: [pid_t: TimeInterval] = [:]
 
-    /// Unknown on-screen layer-0 windows by app.
+    /// Unknown on-screen layer-0 windows by app. `filtered` are the windows
+    /// the last walk read and its filter kept out: a browser's dropdown or
+    /// hover card is listed by AX and answered for, so it is not a window a
+    /// later poll could still admit. Every one of them used to cost its
+    /// create three retries.
     static func unknownOnScreen(_ windows: [StackedWindow], known: Set<CGWindowID>,
-                                hidden: Set<CGWindowID>, ownPID: pid_t) -> [pid_t: [CGWindowID]] {
+                                hidden: Set<CGWindowID>, filtered: Set<CGWindowID> = [],
+                                ownPID: pid_t) -> [pid_t: [CGWindowID]] {
         var result: [pid_t: [CGWindowID]] = [:]
         for w in windows where w.layer == 0 && w.alpha > 0.01 && w.ownerPID != ownPID {
             guard let b = w.bounds, b.width >= minimumSide, b.height >= minimumSide,
-                  !known.contains(w.windowID), !hidden.contains(w.windowID) else { continue }
+                  !known.contains(w.windowID), !hidden.contains(w.windowID),
+                  !filtered.contains(w.windowID) else { continue }
             result[w.ownerPID, default: []].append(w.windowID)
         }
         return result
@@ -108,6 +123,7 @@ struct DiscoveryFollowUp {
         firstSeen = firstSeen.filter { onScreen.contains($0.key) }
         seenByPoll = onScreen
         asked = []
+        givenUp.formIntersection(onScreen)
 
         var outcomes: [Outcome] = []
         for pid in watches.keys.sorted() {
@@ -120,7 +136,7 @@ struct DiscoveryFollowUp {
                 continue
             }
             if now - w.since < Self.minimumLook { continue }
-            let left = (unknown[pid] ?? []).sorted()
+            let left = (unknown[pid] ?? []).filter { !givenUp.contains($0) }.sorted()
             let evidence = !left.isEmpty || (w.blindRetry && w.retries == 0)
             if w.retries < Self.backoff.count, evidence {
                 outcomes.append(.retry(pid: pid, after: Self.backoff[w.retries], attempt: w.retries + 1,
@@ -133,6 +149,7 @@ struct DiscoveryFollowUp {
             } else {
                 outcomes.append(.gaveUp(pid: pid, retries: w.retries, unknown: left,
                                         afterMS: afterMS, reason: w.reason))
+                givenUp.formUnion(left)
                 watches[pid] = nil
             }
         }

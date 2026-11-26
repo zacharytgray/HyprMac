@@ -3606,7 +3606,8 @@ class WindowManager {
         let now = CFAbsoluteTimeGetCurrent()
         let stack = WindowStacking.onScreen() ?? []
         let unknown = DiscoveryFollowUp.unknownOnScreen(
-            stack, known: stateCache.knownWindowIDs, hidden: stateCache.hiddenWindowIDs, ownPID: getpid())
+            stack, known: stateCache.knownWindowIDs, hidden: stateCache.hiddenWindowIDs,
+            filtered: accessibility.filteredWindowIDs, ownPID: getpid())
         var admitted: [pid_t: [CGWindowID]] = [:]
         for w in changes.newWindows + changes.returned { admitted[w.ownerPID, default: []].append(w.windowID) }
         let trigger = "(" + (fire?.summary ?? "direct") + ")"
@@ -3694,7 +3695,8 @@ class WindowManager {
         let now = CFAbsoluteTimeGetCurrent()
         let unknown = DiscoveryFollowUp.unknownOnScreen(
             stack.filter { $0.ownerPID == pid }, known: stateCache.knownWindowIDs,
-            hidden: stateCache.hiddenWindowIDs, ownPID: getpid())[pid] ?? []
+            hidden: stateCache.hiddenWindowIDs, filtered: accessibility.filteredWindowIDs,
+            ownPID: getpid())[pid] ?? []
         let unseen = discoveryFollowUp.unpolled(unknown, now: now)
         guard !unseen.isEmpty else { return false }
         discoveryFollowUp.watch(pid: pid, reason: via, blindRetry: false, now: now)
