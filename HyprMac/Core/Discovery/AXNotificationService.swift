@@ -62,10 +62,57 @@ struct WindowSubscriptionLedger {
 /// The app-level notifications one app has not taken yet, and the tries
 /// each has had. An app still launching can refuse some and take others,
 /// and each is asked again on its own until it takes or runs out of tries.
+///
+/// An add the app does not answer at all ends the pass. Every add on a
+/// launching app used to wait out its own messaging timeout on the main
+/// thread, five in a row, and the log of a real desk shows HyprMac silent
+/// for a median 1.8 s, up to 3.1 s, on 52 of 83 app launches: no hotkey, no
+/// tiling, and the launch poll due after half a second ran two seconds late.
+/// The names not asked stay owed and keep their tries, and the app is left
+/// alone for `silentPause` before a poll asks it again.
 struct AppSubscriptionRetry {
     static let maxAttempts = 5
+    /// how long an app that left an add unanswered is left alone
+    static let silentPause: TimeInterval = 1.0
+
+    /// What one add came to.
+    struct Result: Equatable {
+        let name: String
+        let error: AXError
+        /// this failure was the name's last try
+        let lastTry: Bool
+        /// an earlier pass had already asked for it, or owed it
+        let wasOwed: Bool
+    }
 
     private(set) var attempts: [String: Int] = [:]
+    /// when the app last left an add unanswered, nil once it answered
+    private(set) var silentAt: TimeInterval?
+
+    /// One pass: ask for each of `names` through `add`, in order, and record
+    /// the result. `cannotComplete` is the app not answering, so the pass
+    /// ends there and the rest stay owed without spending a try.
+    mutating func pass(_ names: [String], now: TimeInterval, add: (String) -> AXError) -> [Result] {
+        var results: [Result] = []
+        silentAt = nil
+        for (index, name) in names.enumerated() {
+            let wasOwed = attempts[name] != nil
+            let error = add(name)
+            let lastTry = note(name, tookHold: AXNotificationService.registered(error))
+            results.append(Result(name: name, error: error, lastTry: lastTry, wasOwed: wasOwed))
+            guard error == .cannotComplete else { continue }
+            silentAt = now
+            for rest in names[(index + 1)...] where attempts[rest] == nil { attempts[rest] = 0 }
+            break
+        }
+        return results
+    }
+
+    /// Whether a poll may ask again: not within `silentPause` of an add the
+    /// app left unanswered.
+    func mayAsk(now: TimeInterval) -> Bool {
+        silentAt.map { now - $0 >= Self.silentPause } ?? true
+    }
 
     /// Record one try. - Returns: true when this failure was the last try.
     @discardableResult
@@ -332,6 +379,9 @@ final class AXNotificationService {
         }
 
         let entry = Entry(observer: observer, appElement: AXUIElementCreateApplication(pid))
+        // the adds below message the app, and one that is still launching
+        // does not answer. the walk's budget bounds what that costs
+        AXUIElementSetMessagingTimeout(entry.appElement, AccessibilityManager.discoveryMessagingTimeout)
         CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
         entries[pid] = entry
         retrying[pid] = nil
@@ -352,11 +402,13 @@ final class AXNotificationService {
     /// new window waits for a focus event or the reconcile poll.
     private func addAppSubscriptions(_ names: [String], pid: pid_t, entry: Entry) {
         let refcon = Unmanaged.passUnretained(self).toOpaque()
-        for name in names {
-            let err = AXObserverAddNotification(entry.observer, entry.appElement, name as CFString, refcon)
-            let wasOwed = entry.appRetry.attempts[name] != nil
+        let results = entry.appRetry.pass(names, now: CFAbsoluteTimeGetCurrent()) { name in
+            AXObserverAddNotification(entry.observer, entry.appElement, name as CFString, refcon)
+        }
+        for result in results {
+            let (name, err, wasOwed) = (result.name, result.error, result.wasOwed)
             let tookHold = Self.registered(err)
-            if entry.appRetry.note(name, tookHold: tookHold) {
+            if result.lastTry {
                 let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "pid \(pid)"
                 let effect = name == kAXWindowCreatedNotification as String
                     ? "its new windows wait for a focus event or the reconcile poll"
@@ -375,7 +427,8 @@ final class AXNotificationService {
 
     /// One more try for every attached app's owed app-level adds.
     private func retryAppSubscriptions() {
-        for (pid, entry) in entries where !entry.appRetry.due.isEmpty {
+        let now = CFAbsoluteTimeGetCurrent()
+        for (pid, entry) in entries where !entry.appRetry.due.isEmpty && entry.appRetry.mayAsk(now: now) {
             addAppSubscriptions(entry.appRetry.due, pid: pid, entry: entry)
         }
     }
